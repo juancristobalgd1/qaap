@@ -158,7 +158,12 @@ describe('GitHub API wrappers with a stubbed fetch', () => {
         expect((error as Error).message).to.equal('The code passed is incorrect or expired.');
     });
 
-    const MERGE_INPUT = { owner: 'octocat', repo: 'hello', number: 7 };
+    // The allowed merge methods are cached per repository, so every test uses its own repository.
+    let mergeRepoCounter = 0;
+    let MERGE_INPUT = { owner: 'octocat', repo: 'hello', number: 7 };
+    beforeEach(() => {
+        MERGE_INPUT = { owner: 'octocat', repo: `hello-${++mergeRepoCounter}`, number: 7 };
+    });
 
     async function mergeRejection(): Promise<Error> {
         try {
@@ -180,9 +185,11 @@ describe('GitHub API wrappers with a stubbed fetch', () => {
         };
         const result = await mergeGithubPullRequest('token', MERGE_INPUT);
         expect(result).to.deep.equal({ merged: true, message: 'Pull request merged.', sha: 'abc123' });
+        const repoUrl = `https://api.github.com/repos/octocat/${MERGE_INPUT.repo}`;
         expect(calls).to.deep.equal([
-            'PUT https://api.github.com/repos/octocat/hello/pulls/7/merge',
-            'GET https://api.github.com/repos/octocat/hello/pulls/7',
+            `GET ${repoUrl}`,
+            `PUT ${repoUrl}/pulls/7/merge`,
+            `GET ${repoUrl}/pulls/7`,
         ]);
     });
 
@@ -202,10 +209,66 @@ describe('GitHub API wrappers with a stubbed fetch', () => {
         const calls: string[] = [];
         handler = async url => {
             calls.push(url);
-            return json({ message: 'Pull Request is not mergeable' }, 405);
+            return url.endsWith('/merge') ? json({ message: 'Pull Request is not mergeable' }, 405) : json({});
         };
         expect((await mergeRejection()).message).to.equal('Pull Request is not mergeable');
-        expect(calls).to.have.length(1);
+        // Repository settings, then the merge; no re-read of the pull request.
+        expect(calls.filter(url => url.endsWith('/merge'))).to.have.length(1);
+        expect(calls.filter(url => url.includes('/pulls/7') && !url.endsWith('/merge'))).to.have.length(0);
+    });
+
+    function mergeMethodHandler(settings: Record<string, boolean>, bodies: string[], counts: { settings: number }): typeof handler {
+        return async (url, init) => {
+            if (url.endsWith('/merge')) {
+                bodies.push(String(init?.body));
+                return json({ merged: true, sha: 's', message: 'ok' });
+            }
+            counts.settings++;
+            return json(settings);
+        };
+    }
+
+    it('uses the first allowed merge method (merge, then squash, then rebase)', async () => {
+        const cases: Array<[Record<string, boolean>, string]> = [
+            [{}, 'merge'],
+            [{ allow_merge_commit: false }, 'squash'],
+            [{ allow_merge_commit: false, allow_squash_merge: false }, 'rebase'],
+            [{ allow_merge_commit: true, allow_squash_merge: false, allow_rebase_merge: false }, 'merge'],
+        ];
+        for (const [settings, expected] of cases) {
+            const bodies: string[] = [];
+            handler = mergeMethodHandler(settings, bodies, { settings: 0 });
+            const input = { owner: 'octocat', repo: `method-${++mergeRepoCounter}`, number: 1 };
+            await mergeGithubPullRequest('token', input);
+            expect(JSON.parse(bodies[0]).merge_method, JSON.stringify(settings)).to.equal(expected);
+        }
+    });
+
+    it('reads the repository merge settings once and reuses them', async () => {
+        const bodies: string[] = [];
+        const counts = { settings: 0 };
+        handler = mergeMethodHandler({ allow_merge_commit: false }, bodies, counts);
+        await mergeGithubPullRequest('token', MERGE_INPUT);
+        await mergeGithubPullRequest('token', MERGE_INPUT);
+        expect(counts.settings).to.equal(1);
+        expect(bodies.map(body => JSON.parse(body).merge_method)).to.deep.equal(['squash', 'squash']);
+    });
+
+    it('falls back to merge without caching when the settings cannot be read', async () => {
+        const bodies: string[] = [];
+        let settingsCalls = 0;
+        handler = async (url, init) => {
+            if (url.endsWith('/merge')) {
+                bodies.push(String(init?.body));
+                return json({ merged: true });
+            }
+            settingsCalls++;
+            return json({ message: 'Not Found' }, 404);
+        };
+        await mergeGithubPullRequest('token', MERGE_INPUT);
+        await mergeGithubPullRequest('token', MERGE_INPUT);
+        expect(settingsCalls).to.equal(2);
+        expect(bodies.map(body => JSON.parse(body).merge_method)).to.deep.equal(['merge', 'merge']);
     });
 
     it('reads the per-request timeout from QAAP_GITHUB_API_TIMEOUT_MS', () => {

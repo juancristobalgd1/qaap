@@ -763,13 +763,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,): Record<string, string> {
-        return buildTemplateVarsExtracted(this, agentId, agentModel, interaction);
+    public buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,
+        ownerLogin?: string): Record<string, string> {
+        return buildTemplateVarsExtracted(this, agentId, agentModel, interaction, ownerLogin);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public resolveQaiqProviderFlags(): string {
-        return resolveQaiqProviderFlagsExtracted(this);
+    public resolveQaiqProviderFlags(ownerLogin?: string): string {
+        return resolveQaiqProviderFlagsExtracted(this, ownerLogin);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -788,8 +789,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public previewProviderEnv(): NodeJS.ProcessEnv {
-        return previewProviderEnvExtracted(this);
+    public previewProviderEnv(ownerLogin?: string): NodeJS.ProcessEnv {
+        return previewProviderEnvExtracted(this, ownerLogin);
     }
 
     /** Env-only fallback when no model alias or provider list is configured yet. */
@@ -799,8 +800,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public assertQaiqConfigured(agentId: string): void {
-        assertQaiqConfiguredExtracted(this, agentId);
+    public assertQaiqConfigured(agentId: string, ownerLogin?: string): void {
+        assertQaiqConfiguredExtracted(this, agentId, ownerLogin);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1175,17 +1176,17 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         applyProviderPreferenceEnvExtracted(this, env, ownerLogin);
     }
 
-    /** Remove provider API keys inherited from the shared process.env so they
-     *  don't leak across users. Operator-level keys are intentionally stripped;
-     *  each user must configure their own keys via per-user settings. */
+    /** Remove backend secrets, and operator provider API keys whenever `ownerLogin` must not use them
+     *  (signed-in tenants; every owner on a multi-user backend). Each user configures their own keys. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public stripSharedProviderEnv(env: NodeJS.ProcessEnv): void {
-        stripSharedProviderEnvHelper(env);
+    public stripSharedProviderEnv(env: NodeJS.ProcessEnv, ownerLogin: string | undefined): void {
+        stripSharedProviderEnvHelper(env, ownerLogin);
     }
 
     /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
      *  Authenticated ownerLogin reads only the per-user settings file. */
-    protected readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
         return readUserSettingsFromDiskHelper(ownerLogin);
     }
 
@@ -1273,7 +1274,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return isDirectoryHelper(target);
     }
 
-    async improveComposerPrompt(options: { readonly prompt: string; readonly agentId: string; readonly agentModel?: QaapCreateAgentTaskQaiqModel; readonly cwd?: string; }): Promise<string> {
+    async improveComposerPrompt(options: {
+        readonly prompt: string; readonly agentId: string; readonly agentModel?: QaapCreateAgentTaskQaiqModel; readonly cwd?: string;
+        readonly ownerLogin?: string;
+    }): Promise<string> {
         return improveComposerPromptExtracted(this, options);
     }
 

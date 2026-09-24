@@ -11,6 +11,7 @@ import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-s
 import { AGENT_ENV_PREFS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { applyProviderPreferenceEnvExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { previewProviderEnvExtracted } from './qaap-agent-task-runner-streaming2';
 import {
     preferenceReaderForOwner,
     readUserSettingsFromDisk,
@@ -60,6 +61,27 @@ describe('qaap-agent-task-runner-utils2', () => {
             expect(scopesSeen.every(scope => scope === PreferenceScope.Default)).to.equal(true);
         });
 
+        it('no login / anonymous on a multi-user backend: schema defaults only, never the shared settings', () => {
+            const saved = process.env.QAAP_CLOUD_MODE;
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            try {
+                for (const owner of [undefined, '_anonymous']) {
+                    const read = preferenceReaderForOwner({
+                        readUserSettingsFromDisk: () => ({ 'ai-features.openAiOfficial.openAiApiKey': 'sk-shared-file' }),
+                        preferenceService,
+                    }, owner);
+                    expect(read('ai-features.openAiOfficial.openAiApiKey'), String(owner)).to.equal(undefined);
+                    expect(read('ai-features.openAiOfficial.officialOpenAiModels'), String(owner)).to.deep.equal(['gpt-5.5', 'gpt-5.4']);
+                }
+            } finally {
+                if (saved === undefined) {
+                    delete process.env.QAAP_CLOUD_MODE;
+                } else {
+                    process.env.QAAP_CLOUD_MODE = saved;
+                }
+            }
+        });
+
         it('tolerates a preference service without inspectInScope', () => {
             const read = preferenceReaderForOwner({ readUserSettingsFromDisk: () => ({}), preferenceService: { get: () => 'leak' } }, 'alice');
             expect(read('ai-features.openAiOfficial.officialOpenAiModels')).to.equal(undefined);
@@ -86,7 +108,39 @@ describe('qaap-agent-task-runner-utils2', () => {
             expect(env.PATH).to.equal('/usr/bin');
         });
 
-        it('local / anonymous single user: keeps the operator provider keys, still removes backend secrets', () => {
+        const withEnv = (overrides: Record<string, string | undefined>, fn: () => void): void => {
+            const saved = Object.fromEntries(Object.keys(overrides).map(key => [key, process.env[key]]));
+            const apply = (values: Record<string, string | undefined>): void => {
+                for (const [key, value] of Object.entries(values)) {
+                    if (value === undefined) {
+                        delete process.env[key];
+                    } else {
+                        process.env[key] = value;
+                    }
+                }
+            };
+            apply(overrides);
+            try {
+                fn();
+            } finally {
+                apply(saved);
+            }
+        };
+        const LOCAL = { NODE_ENV: undefined, QAAP_CLOUD_MODE: undefined, QAAP_TENANT_BACKEND_MODE: undefined };
+
+        it('multi-user backend: removes operator provider credentials for every owner, even without a login', () => {
+            withEnv({ ...LOCAL, QAAP_CLOUD_MODE: 'docker' }, () => {
+                for (const owner of [undefined, '_anonymous', 'alice']) {
+                    const env = inherited();
+                    stripSharedProviderEnv(env, owner);
+                    for (const name of providerEnv()) {
+                        expect(env[name], `${owner}:${name}`).to.equal(undefined);
+                    }
+                }
+            });
+        });
+
+        it('local / anonymous single user: keeps the operator provider keys, still removes backend secrets', () => withEnv(LOCAL, () => {
             for (const owner of [undefined, '_dev', '_anonymous']) {
                 const env = inherited();
                 stripSharedProviderEnv(env, owner);
@@ -95,13 +149,23 @@ describe('qaap-agent-task-runner-utils2', () => {
                 }
                 expect(env.QAAP_GITHUB_CLIENT_SECRET).to.equal(undefined);
             }
-        });
+        }));
 
         it('covers the credentials read by the built-in agent CLIs', () => {
             for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'COPILOT_GITHUB_TOKEN', 'CURSOR_API_KEY', 'DASHSCOPE_API_KEY', 'XAI_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) {
                 expect(SHARED_PROVIDER_ONLY_ENV, name).to.include(name);
             }
         });
+    });
+
+    it('previewProviderEnv applies the same credential policy as the real spawn env', () => {
+        const calls: string[] = [];
+        const ctx = {
+            stripSharedProviderEnv: (env: NodeJS.ProcessEnv, owner: string | undefined) => calls.push(`strip:${owner}`),
+            applyProviderPreferenceEnv: (env: NodeJS.ProcessEnv, owner?: string) => calls.push(`apply:${owner}`),
+        };
+        previewProviderEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'alice');
+        expect(calls).to.deep.equal(['strip:alice', 'apply:alice']);
     });
 
     it('applyProviderPreferenceEnv prefers the user\'s Settings over inherited env keys', () => {

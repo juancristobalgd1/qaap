@@ -36,6 +36,10 @@ interface GithubRepoResponse {
     private: boolean;
     description?: string | null;
     updated_at: string;
+    /** Merge settings; only reported to callers with push access. Absent means "unknown". */
+    allow_merge_commit?: boolean;
+    allow_squash_merge?: boolean;
+    allow_rebase_merge?: boolean;
 }
 
 interface GithubCreateRepoResponse extends GithubRepoResponse {
@@ -335,6 +339,44 @@ async function fetchRepositoryPullRequests(
     }));
 }
 
+export type GithubMergeMethod = 'merge' | 'squash' | 'rebase';
+
+/** How long a repository's allowed merge methods are reused before GitHub is asked again. */
+const GITHUB_MERGE_METHOD_TTL_MS = 5 * 60_000;
+const githubMergeMethodCache = new Map<string, { method: GithubMergeMethod; expiresAt: number }>();
+
+/**
+ * Pick the first merge method the repository allows, in the order merge → squash → rebase, so repos
+ * that disable merge commits no longer fail with 405. The answer is cached per repository for a few
+ * minutes; if GitHub cannot be asked, fall back to `merge` without caching.
+ */
+export async function resolveGithubMergeMethod(accessToken: string, owner: string, repo: string): Promise<GithubMergeMethod> {
+    const key = `${owner}/${repo}`.toLowerCase();
+    const cached = githubMergeMethodCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.method;
+    }
+    let settings: GithubRepoResponse | undefined;
+    try {
+        const response = await fetchGithubRepositoryRequest(
+            `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+            { headers: githubHeaders(accessToken) },
+        );
+        settings = response.ok ? await response.json() as GithubRepoResponse : undefined;
+    } catch {
+        settings = undefined;
+    }
+    if (!settings) {
+        return 'merge';
+    }
+    const method: GithubMergeMethod = settings.allow_merge_commit !== false ? 'merge'
+        : settings.allow_squash_merge !== false ? 'squash'
+            : settings.allow_rebase_merge !== false ? 'rebase'
+                : 'merge';
+    githubMergeMethodCache.set(key, { method, expiresAt: Date.now() + GITHUB_MERGE_METHOD_TTL_MS });
+    return method;
+}
+
 /** Budget for re-reading a pull request after an ambiguous merge outcome. */
 const GITHUB_MERGE_RECHECK_TIMEOUT_MS = 15_000;
 
@@ -348,6 +390,7 @@ export async function mergeGithubPullRequest(
     input: { owner: string; repo: string; number: number }
 ): Promise<QaapGithubMergePullRequestResponse> {
     const pullUrl = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/pulls/${input.number}`;
+    const mergeMethod = await resolveGithubMergeMethod(accessToken, input.owner, input.repo);
     let response: Response;
     try {
         response = await fetchGithubRepositoryRequest(`${pullUrl}/merge`, {
@@ -357,7 +400,7 @@ export async function mergeGithubPullRequest(
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                merge_method: 'merge',
+                merge_method: mergeMethod,
                 commit_title: `Merge pull request #${input.number}`,
             }),
         });
@@ -369,6 +412,10 @@ export async function mergeGithubPullRequest(
         return confirmGithubPullRequestMerged(accessToken, pullUrl, input.number, body.message || `GitHub merge API failed (${response.status})`);
     }
     if (!response.ok) {
+        if (response.status === 405) {
+            // Possibly a stale cached method (settings changed): ask GitHub again next time.
+            githubMergeMethodCache.delete(`${input.owner}/${input.repo}`.toLowerCase());
+        }
         throw new Error(body.message || `GitHub merge API failed (${response.status})`);
     }
     return {

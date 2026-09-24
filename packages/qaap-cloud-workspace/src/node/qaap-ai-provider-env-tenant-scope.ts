@@ -8,17 +8,18 @@ import { GoogleLanguageModelsManagerImpl } from '@theia/ai-google/lib/node/googl
 import { OllamaLanguageModelsManagerImpl } from '@theia/ai-ollama/lib/node/ollama-language-models-manager-impl';
 import { OpenAiLanguageModelsManagerImpl } from '@theia/ai-openai/lib/node/openai-language-models-manager-impl';
 import { VercelAiLanguageModelFactory, VercelAiProviderConfig } from '@theia/ai-vercel-ai/lib/node/vercel-ai-language-model-factory';
-import { usesSharedAiSettingsFallback } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 
 /**
  * Whether the operator's provider env (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OLLAMA_HOST`, …) must be hidden
- * from the current caller: authenticated tenants of a shared backend use only the keys their own frontend
- * pushed. Local / skip-auth / anonymous single-user runs (and calls outside any RPC) keep the upstream env
- * fallback. Per-tenant backends never receive those env vars in the first place.
+ * from the current caller: authenticated tenants use only the keys their own frontend pushed, and on a
+ * multi-user backend so does every other caller (no login, anonymous) — fail closed like the keystore RPC.
+ * Local / skip-auth single-user runs keep the upstream env fallback. Per-tenant backends never receive
+ * those env vars in the first place.
  */
-export function shouldHideOperatorProviderEnv(login: string | undefined): boolean {
-    return !!login?.trim() && !usesSharedAiSettingsFallback(login);
+export function shouldHideOperatorProviderEnv(login: string | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
+    return mustWithholdOperatorProviderCredentials(login?.trim() || undefined, env);
 }
 
 /**
@@ -35,6 +36,8 @@ interface QaapEnvBackedGetter {
 
 const ENV_BACKED_GETTERS: readonly QaapEnvBackedGetter[] = [
     { prototype: OpenAiLanguageModelsManagerImpl.prototype, property: 'apiKey', field: '_apiKey' },
+    // OPENAI_API_VERSION switches the client to Azure OpenAI: an operator's Azure setup must not redirect tenants' keys.
+    { prototype: OpenAiLanguageModelsManagerImpl.prototype, property: 'apiVersion', field: '_apiVersion' },
     { prototype: AnthropicLanguageModelsManagerImpl.prototype, property: 'apiKey', field: '_apiKey' },
     { prototype: GoogleLanguageModelsManagerImpl.prototype, property: 'apiKey', field: '_apiKey' },
     { prototype: OllamaLanguageModelsManagerImpl.prototype, property: 'host', field: '_host' },

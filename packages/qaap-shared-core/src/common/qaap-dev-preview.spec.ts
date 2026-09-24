@@ -202,4 +202,16 @@ describe('qaap-dev-preview', () => {
         expect(isQaapDevPreviewServedResponse(503, null)).to.equal(true);
         expect(isQaapDevPreviewServedResponse(503, '1')).to.equal(false);
     });
+
+    it('injectQaapPreviewDocumentScripts places the bridge loader in the same single insertion', () => {
+        const bridge = '<script data-qaap-preview-bridge-loader></script>';
+        const head = injectQaapPreviewDocumentScripts('<html><head><title>t</title></head><body></body></html>', '/qaap-preview/abc', 'head', true, bridge);
+        const order = ['data-qaap-preview-diagnostics', 'data-qaap-preview-history-base', 'data-qaap-preview-vite-env', 'data-qaap-preview-bridge-loader', '<title>']
+            .map(marker => head.indexOf(marker));
+        expect(order).to.deep.equal([...order].sort((a, b) => a - b));
+        const body = injectQaapPreviewDocumentScripts('<html><head></head><body><main></main></body></html>', '/qaap-preview/abc', 'body-end', false, bridge);
+        const bodyOrder = ['<main>', 'data-qaap-preview-bridge-loader', 'data-qaap-preview-history-base', 'data-qaap-preview-diagnostics', '</body>']
+            .map(marker => body.indexOf(marker));
+        expect(bodyOrder).to.deep.equal([...bodyOrder].sort((a, b) => a - b));
+    });
 });

@@ -303,23 +303,25 @@ function buildViteEnvBootstrapScript(html: string, publicPrefix: string): string
 }
 
 /**
- * Injects the diagnostics, history-base and (optionally, always into `<head>`) Vite env bootstrap
- * scripts with one insertion per location instead of one full-document pass per script. The
- * result is identical to calling the individual `inject*` functions in the proxy's order.
+ * Injects the diagnostics, history-base, (optionally, always into `<head>`) Vite env bootstrap
+ * and the prebuilt bridge loader (`buildQaapPreviewBridgeLoaderScript`, may be `''`) with one
+ * insertion per location instead of one full-document pass per script. Order: `head` puts the
+ * bridge last after `<head>`; `body-end` puts it first before `</body>`, as the proxy always did.
  */
 export function injectQaapPreviewDocumentScripts(
     html: string,
     publicPrefix: string,
     placement: PreviewScriptPlacement,
     includeViteEnvBootstrap: boolean,
+    bridgeLoader: string = '',
 ): string {
     const diagnostics = buildDiagnosticsScript(html);
     const historyBase = buildHistoryBaseScript(html, publicPrefix);
     const viteEnv = includeViteEnvBootstrap ? buildViteEnvBootstrapScript(html, publicPrefix) : '';
     if (placement === 'head') {
-        return insertPreviewScript(html, diagnostics + historyBase + viteEnv, 'head');
+        return insertPreviewScript(html, diagnostics + historyBase + viteEnv + bridgeLoader, 'head');
     }
-    return insertPreviewScript(insertPreviewScript(html, viteEnv, 'head'), historyBase + diagnostics, placement);
+    return insertPreviewScript(insertPreviewScript(html, viteEnv, 'head'), bridgeLoader + historyBase + diagnostics, placement);
 }
 
 /**

@@ -88,7 +88,7 @@ export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerCon
         if (!agentUsesSettingsModelCatalog(agentId)) {
             return resolved;
         }
-        const env = ctx.previewProviderEnv();
+        const env = ctx.previewProviderEnv(ownerLogin);
         return coerceRunnableAgentModel(
             resolved,
             readPref,
@@ -347,7 +347,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             resolvedCwd ? ctx.readProjectInfo(resolvedCwd) : undefined,
             repoContext,
         );
-        ctx.assertQaiqConfigured(id);
+        ctx.assertQaiqConfigured(id, ownerLogin);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
         const interaction: QaapQaiqInteractionFlagOptions = {
@@ -382,14 +382,14 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             : undefined));
         const usesOffArgvPrompt = promptTransport.kind !== 'argv';
         if (detected) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction);
+            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
                 : usesOffArgvPrompt
                     ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
                     : ctx.applyTemplate(detected.template, agentPrompt, vars);
         } else if (envTemplate) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction);
+            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin);
             command = useStdioApprovals || usesOffArgvPrompt
                 ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
                     ? { kind: 'plain-stdin', placeholder: 'omit' }
@@ -546,7 +546,8 @@ export function stripLeadingAgentMentionExtracted(ctx: QaapAgentTaskRunnerContex
 
 export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string,
         agentModel?: QaapCreateAgentTaskQaiqModel,
-        interaction?: QaapQaiqInteractionFlagOptions,): Record<string, string> {
+        interaction?: QaapQaiqInteractionFlagOptions,
+        ownerLogin?: string,): Record<string, string> {
         const empty = { qaiq_flags: '', model_flags: '' };
         // QAIQ and OpenClaude share the stream-json/approval protocol, but only QAIQ owns the
         // Settings → AI Features model catalog. Reusing isQaiqAgent here would make OpenClaude
@@ -557,7 +558,7 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
             : '';
         const joinQaiqFlags = (...parts: string[]): string => parts.map(part => part.trim()).filter(Boolean).join(' ');
         if (agentModel?.provider && agentModel.modelId?.trim()) {
-            const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel));
+            const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
             const flags = formatModelFlagsForAgent(agentId, binding);
             if (isQaiqAgent(agentId)) {
                 return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '' };
@@ -565,16 +566,16 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
             return { qaiq_flags: '', model_flags: flags };
         }
         if (usesQaiqSettingsCatalog) {
-            return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags()), model_flags: '' };
+            return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags(ownerLogin)), model_flags: '' };
         }
         return empty;
 }
 
-export function resolveQaiqProviderFlagsExtracted(ctx: QaapAgentTaskRunnerContext): string {
-        const env = ctx.previewProviderEnv();
-        const binding = ctx.resolveQaapQaiqBinding();
+export function resolveQaiqProviderFlagsExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): string {
+        const env = ctx.previewProviderEnv(ownerLogin);
+        const binding = ctx.resolveQaapQaiqBinding(ownerLogin);
         if (binding && vendorHasByokCredential(
-            ctx.preferenceReaderForOwner(undefined),
+            ctx.preferenceReaderForOwner(ownerLogin),
             binding.vendor,
             key => env[key],
         )) {
@@ -606,20 +607,22 @@ export function normalizeAgentBindingExtracted(ctx: QaapAgentTaskRunnerContext, 
         return normalizeQaiqModelBinding(binding, ctx.preferenceReaderForOwner(ownerLogin));
 }
 
-export function previewProviderEnvExtracted(ctx: QaapAgentTaskRunnerContext): NodeJS.ProcessEnv {
+export function previewProviderEnvExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
-        ctx.applyProviderPreferenceEnv(env, undefined);
+        // Same credential policy as the real spawn env (buildChildEnv): what the owner's agent would actually get.
+        ctx.stripSharedProviderEnv(env, ownerLogin);
+        ctx.applyProviderPreferenceEnv(env, ownerLogin);
         return env;
 }
 
-export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string): void {
+export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string, ownerLogin?: string): void {
         // OpenClaude has its own model/auth configuration. The shared stream protocol does not
         // make QAIQ's Settings catalog a prerequisite for running it.
         if (!agentUsesSettingsModelCatalog(agentId)) {
             return;
         }
-        const env = ctx.previewProviderEnv();
-        if (ctx.resolveQaiqProviderFlags()) {
+        const env = ctx.previewProviderEnv(ownerLogin);
+        if (ctx.resolveQaiqProviderFlags(ownerLogin)) {
             return;
         }
         if (env.ANTHROPIC_API_KEY?.trim() || env.OPENAI_API_KEY?.trim()) {

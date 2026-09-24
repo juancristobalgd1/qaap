@@ -476,6 +476,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 agentId,
                 agentModel: body.agentModel,
                 cwd,
+                ownerLogin: this.auth.resolveUserLogin(ctx),
             });
             res.json({ improved });
         } catch (error) {

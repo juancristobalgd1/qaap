@@ -60,20 +60,43 @@ export interface WaitForDevPreviewOptions {
     readonly signal?: AbortSignal;
 }
 
-/** Polls the backend probe until the dev server responds or attempts are exhausted. */
+const MAX_PROBE_BACKOFF_MS = 4000;
+
+/**
+ * Sleep schedule between probes: starts at `intervalMs`, grows ×1.5 up to 4 s (or `intervalMs`
+ * if larger), and keeps the caller's historical sleep budget of `(maxAttempts - 1) × intervalMs`
+ * — the last sleep is clamped so the final probe lands where the fixed schedule's would.
+ */
+export function devPreviewProbeBackoffDelays(maxAttempts: number, intervalMs: number): number[] {
+    const delays: number[] = [];
+    let remaining = Math.max(0, maxAttempts - 1) * Math.max(0, intervalMs);
+    let delay = intervalMs;
+    const maxDelay = Math.max(intervalMs, MAX_PROBE_BACKOFF_MS);
+    while (remaining > 0 && delay > 0) {
+        const next = Math.min(delay, remaining);
+        delays.push(next);
+        remaining -= next;
+        delay = Math.min(delay * 1.5, maxDelay);
+    }
+    return delays;
+}
+
+/** Polls the backend probe with backoff until the dev server responds or the budget is spent. */
 export async function waitForQaapDevPreviewPort(
     port: number,
     options: WaitForDevPreviewOptions = {},
 ): Promise<QaapDevPreviewProbeResponse | undefined> {
-    const maxAttempts = options.maxAttempts ?? 30;
-    const intervalMs = options.intervalMs ?? 500;
     const signal = options.signal;
-    for (let attempt = 0; attempt < maxAttempts && !signal?.aborted; attempt++) {
+    if ((options.maxAttempts ?? 30) <= 0) {
+        return undefined;
+    }
+    const delays = devPreviewProbeBackoffDelays(options.maxAttempts ?? 30, options.intervalMs ?? 500);
+    for (let attempt = 0; attempt <= delays.length && !signal?.aborted; attempt++) {
         const probe = await probeQaapDevPreviewPort(port, signal);
         if (probe.ready) {
             return probe;
         }
-        if (attempt < maxAttempts - 1 && !signal?.aborted) {
+        if (attempt < delays.length && !signal?.aborted) {
             await new Promise<void>(resolve => {
                 const onAbort = (): void => {
                     clearTimeout(timer);
@@ -82,7 +105,7 @@ export async function waitForQaapDevPreviewPort(
                 const timer = setTimeout(() => {
                     signal?.removeEventListener('abort', onAbort);
                     resolve();
-                }, intervalMs);
+                }, delays[attempt]);
                 signal?.addEventListener('abort', onAbort, { once: true });
             });
         }

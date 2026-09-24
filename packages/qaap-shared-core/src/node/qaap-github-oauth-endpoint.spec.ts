@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn, type ChildProcess } from 'child_process';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import type { QaapProjectSessionSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapPlanRepoLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
@@ -451,5 +452,132 @@ describe('QaapGithubOauthEndpoint git deadlines', () => {
         const finishedSignal = endpoint.abortOnResponseClose({ writableFinished: true, once });
         listeners[1]();
         expect(finishedSignal.aborted).to.equal(false);
+    });
+});
+
+describe('QaapGithubOauthEndpoint hosted git cancellation (runTenantGit)', () => {
+    const children: ChildProcess[] = [];
+
+    afterEach(() => {
+        for (const child of children.splice(0)) {
+            if (child.exitCode === null && child.signalCode === null) {
+                child.kill('SIGKILL');
+            }
+        }
+    });
+
+    function longRunningChild(): ChildProcess {
+        const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: ['ignore', 'ignore', 'pipe'] });
+        children.push(child);
+        return child;
+    }
+
+    function exitSignal(child: ChildProcess): Promise<NodeJS.Signals | null> {
+        if (child.exitCode !== null || child.signalCode !== null) {
+            return Promise.resolve(child.signalCode);
+        }
+        return new Promise(resolve => child.once('exit', (_code, signal) => resolve(signal)));
+    }
+
+    function createHostedEndpoint(spawnPrepared: () => Promise<ChildProcess>): {
+        runTenantGit(cwd: string, args: string[], capture: boolean, options?: { signal?: AbortSignal; deadline?: number }): Promise<string>;
+    } {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            gitOperationTimeoutMs: 60_000,
+            tenantProcess: {
+                resolveProcessEnv: (_cwd: string, env: NodeJS.ProcessEnv) => env,
+                spawnArgvPreparedAsync: spawnPrepared,
+            },
+        });
+        return endpoint as unknown as ReturnType<typeof createHostedEndpoint>;
+    }
+
+    async function rejection(promise: Promise<unknown>): Promise<Error> {
+        try {
+            await promise;
+        } catch (err) {
+            return err as Error;
+        }
+        throw new Error('expected a rejection');
+    }
+
+    it('kills the running tenant git child when the request is aborted', async () => {
+        const child = longRunningChild();
+        const endpoint = createHostedEndpoint(async () => child);
+        const controller = new AbortController();
+        const pending = endpoint.runTenantGit('/workspace', ['fetch'], false, { signal: controller.signal });
+        await new Promise(resolve => setImmediate(resolve));
+        controller.abort();
+        expect((await rejection(pending)).message).to.contain('cancelled');
+        expect(await exitSignal(child)).to.equal('SIGTERM');
+    });
+
+    it('kills a tenant worker that finishes starting after the request was aborted', async () => {
+        let finishStarting!: (child: ChildProcess) => void;
+        const endpoint = createHostedEndpoint(() => new Promise<ChildProcess>(resolve => { finishStarting = resolve; }));
+        const controller = new AbortController();
+        const pending = endpoint.runTenantGit('/workspace', ['clone'], false, { signal: controller.signal });
+        controller.abort();
+        expect((await rejection(pending)).message).to.contain('cancelled');
+        // The worker only now comes up (e.g. slow Docker ensure): it must not run git unsupervised.
+        const late = longRunningChild();
+        finishStarting(late);
+        expect(await exitSignal(late)).to.equal('SIGTERM');
+    });
+
+    it('does not start the tenant worker when the request was already aborted', async () => {
+        let started = false;
+        const endpoint = createHostedEndpoint(async () => {
+            started = true;
+            return longRunningChild();
+        });
+        const controller = new AbortController();
+        controller.abort();
+        expect((await rejection(endpoint.runTenantGit('/workspace', ['fetch'], false, { signal: controller.signal }))).message).to.contain('cancelled');
+        expect(started).to.equal(false);
+    });
+});
+
+describe('QaapGithubOauthEndpoint create repository when the clone fails', () => {
+    const originalFetch = globalThis.fetch;
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    it('says the repository exists on GitHub and that opening it will clone it', async () => {
+        globalThis.fetch = (async () => new Response(JSON.stringify({
+            id: 1, full_name: 'alice/demo', name: 'demo', owner: { login: 'alice' },
+            clone_url: 'https://github.com/alice/demo.git', html_url: 'https://github.com/alice/demo',
+            default_branch: 'main', private: true, updated_at: '2026-01-01T00:00:00Z',
+        }), { status: 201, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            auth: { authenticate: () => ({ kind: 'authenticated', userLogin: 'alice', session: { accessToken: 'token' } }) },
+            assertBillingAllowsNewRepo: async () => undefined,
+            ensureRepositoryWorkspace: async () => { throw new Error('Git operation cancelled: the request was closed.'); },
+        });
+        const res = {
+            statusCode: 0,
+            body: undefined as unknown,
+            once: () => undefined,
+            status(code: number): { json: (body: unknown) => void } {
+                res.statusCode = code;
+                return { json: body => { res.body = body; } };
+            },
+            json(body: unknown): void {
+                res.statusCode = 200;
+                res.body = body;
+            },
+        };
+        await (endpoint as unknown as {
+            handleCreateGithubRepository(req: unknown, response: typeof res): Promise<void>;
+        }).handleCreateGithubRepository({ body: { name: 'demo' } }, res);
+        expect(res.statusCode).to.equal(502);
+        const error = (res.body as { error: string }).error;
+        expect(error).to.contain('alice/demo was created on GitHub');
+        expect(error).to.contain('Git operation cancelled');
+        expect(error).to.contain('Open it from your repository list to clone it');
     });
 });

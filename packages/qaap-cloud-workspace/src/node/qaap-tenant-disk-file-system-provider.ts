@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 import * as os from 'os';
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, interfaces } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import {
@@ -20,6 +20,7 @@ import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-githu
 import { isRealPathUnder } from '@theia/qaap-shared-core/lib/node/qaap-realpath-guard';
 import {
     createFileSystemProviderError,
+    FileSystemProvider,
     FileDeleteOptions,
     FileOpenOptions,
     FileOverwriteOptions,
@@ -173,4 +174,18 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
         this.assertAllowed(resource);
         return super.watch(resource, opts);
     }
+}
+
+/**
+ * Bind the guarded provider as the browser-reachable `FileSystemProvider`.
+ *
+ * Transient on purpose, like upstream's `DiskFileSystemProvider`: every browser connection gets its
+ * own `RemoteFileSystemServer`, which subscribes to its provider's change events and disposes the
+ * provider (and its file watcher) when the connection closes. A shared singleton made the first
+ * closed connection dispose the watcher for every other connection, and broadcast each tenant's
+ * file-change events to all connected clients.
+ */
+export function bindQaapTenantDiskFileSystemProvider(bind: interfaces.Bind, rebind: interfaces.Rebind): void {
+    bind(QaapTenantDiskFileSystemProvider).toSelf();
+    rebind(FileSystemProvider).toService(QaapTenantDiskFileSystemProvider);
 }

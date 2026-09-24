@@ -5,6 +5,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
+import { isQaapHostedEnvironment } from './qaap-hosted-runtime';
 
 /** Well-known segment under {@link resolveQaapReposRoot} for per-user clones. */
 export const QAAP_USER_REPOS_SEGMENT = 'users';
@@ -94,6 +95,33 @@ export function usesSharedAiSettingsFallback(ownerLogin: string | undefined): bo
         return true;
     }
     return login === QAAP_SKIP_AUTH_USER_LOGIN || login === QAAP_ANONYMOUS_USER_LOGIN;
+}
+
+/**
+ * Whether this backend process may serve more than one person: a hosted runtime (where skip-auth is refused,
+ * so callers are signed-in logins or the unauthenticated `_anonymous` bucket) that is not a dedicated
+ * per-tenant backend (`QAAP_TENANT_BACKEND_MODE=1` serves exactly one login and receives no operator
+ * provider credentials). Local / dev runs are single-user.
+ */
+export function isQaapMultiUserBackend(env: NodeJS.ProcessEnv = process.env): boolean {
+    // Literal on purpose: `QAAP_TENANT_BACKEND_MODE_ENV` lives in a crypto-importing module this browser-shared file avoids.
+    if (/^(1|true)$/i.test(env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '')) {
+        return false;
+    }
+    return isQaapHostedEnvironment(env);
+}
+
+/**
+ * Whether the operator's provider credentials (backend env such as `OPENAI_API_KEY`) must be withheld from
+ * work done for `ownerLogin`: always for signed-in tenants, and for every caller (no login, skip-auth,
+ * anonymous) on a multi-user backend — mirroring the fail-closed generic keystore RPC. Single-user /
+ * local runs keep them.
+ */
+export function mustWithholdOperatorProviderCredentials(
+    ownerLogin: string | undefined,
+    env: NodeJS.ProcessEnv = process.env,
+): boolean {
+    return !usesSharedAiSettingsFallback(ownerLogin) || isQaapMultiUserBackend(env);
 }
 
 /** Per-user AI/BYOK settings: `{home}/.qaap/users/{login}/settings.json`. */

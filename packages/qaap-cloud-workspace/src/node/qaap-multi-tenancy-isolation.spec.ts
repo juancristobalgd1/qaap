@@ -873,7 +873,7 @@ describe('Multi-tenancy isolation', () => {
                 QAAP_VAPID_PUBLIC_KEY: 'vapid-public',
                 PATH: '/usr/bin:/bin',
             };
-            (runner as unknown as { stripSharedProviderEnv(e: NodeJS.ProcessEnv): void }).stripSharedProviderEnv(env);
+            runner.stripSharedProviderEnv(env, undefined);
             // The two real secrets (OAuth app impersonation, forged Web Push) must be gone.
             expect(env.QAAP_GITHUB_CLIENT_SECRET).to.be.undefined;
             expect(env.QAAP_VAPID_PRIVATE_KEY).to.be.undefined;

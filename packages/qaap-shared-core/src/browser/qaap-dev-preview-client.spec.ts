@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { devPreviewProbeBackoffDelays, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 
 describe('qaap-dev-preview-client cancellation', () => {
     const globals = globalThis as unknown as { window?: unknown; fetch: typeof fetch };
@@ -48,5 +48,29 @@ describe('qaap-dev-preview-client cancellation', () => {
         expect(Date.now() - startedAt).to.be.lessThan(500);
         globals.fetch = (() => Promise.resolve(new Response(JSON.stringify({ ready: true, previewUrl: 'http://ide.test/qaap-dev/5173/' })))) as typeof fetch;
         expect((await probeQaapDevPreviewPort(5173)).ready).to.equal(true);
+    });
+
+    it('backs off ×1.5 up to 4 s while keeping the fixed schedule\'s sleep budget', () => {
+        const delays = devPreviewProbeBackoffDelays(30, 500);
+        expect(delays.slice(0, 4)).to.deep.equal([500, 750, 1125, 1687.5]);
+        expect(Math.max(...delays)).to.equal(4000);
+        expect(delays.reduce((sum, delay) => sum + delay, 0)).to.equal(29 * 500);
+        expect(devPreviewProbeBackoffDelays(8, 5000).every(delay => delay === 5000)).to.equal(true);
+        expect(devPreviewProbeBackoffDelays(1, 500)).to.deep.equal([]);
+    });
+
+    it('probes once per backoff step within the budget', async () => {
+        globals.fetch = (() => {
+            requests++;
+            return Promise.resolve(new Response(JSON.stringify({ ready: false, previewUrl: '' })));
+        }) as typeof fetch;
+        const startedAt = Date.now();
+        expect(await waitForQaapDevPreviewPort(5173, { maxAttempts: 5, intervalMs: 20 })).to.equal(undefined);
+        // Budget 4 × 20 ms = 80 ms of sleep as [20, 30, 30] → 4 probes instead of 5.
+        expect(requests).to.equal(4);
+        expect(Date.now() - startedAt).to.be.at.least(75);
+        requests = 0;
+        expect(await waitForQaapDevPreviewPort(5173, { maxAttempts: 0 })).to.equal(undefined);
+        expect(requests).to.equal(0);
     });
 });

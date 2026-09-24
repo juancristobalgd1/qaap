@@ -32,15 +32,23 @@ window.parent.postMessage({type:${readyType}},parentOrigin);
 })();</script>`;
 }
 
+/**
+ * The loader script for `html`, or `''` when the document is empty or already has one. Lets the
+ * proxy insert the loader together with its other preview scripts in a single pass.
+ */
+export function buildQaapPreviewBridgeLoaderScript(html: string, parentOrigin: string): string {
+    return !html || html.includes('data-qaap-preview-bridge-loader') ? '' : buildQaapPreviewBridgeLoader(parentOrigin);
+}
+
 export function injectQaapPreviewBridgeLoader(
     html: string,
     parentOrigin: string,
     placement: 'head' | 'body-end' = 'head',
 ): string {
-    if (!html || html.includes('data-qaap-preview-bridge-loader')) {
+    const loader = buildQaapPreviewBridgeLoaderScript(html, parentOrigin);
+    if (!loader) {
         return html;
     }
-    const loader = buildQaapPreviewBridgeLoader(parentOrigin);
     if (placement === 'body-end') {
         const bodyClose = /<\/body\s*>/i;
         if (bodyClose.test(html)) {
