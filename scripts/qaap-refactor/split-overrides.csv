@@ -1,0 +1,18 @@
+# Manual placements applied on top of split-seed.js before settling (split-settle.js).
+# `re:<regex>` matches file basenames; otherwise an exact repo-relative path. Last match wins.
+# Shared services and their extracted clusters: consumed by transcript, composer and work-hub alike.
+re:^mobile-projects-(conversations|service|types|active-tasks|conversation-index-ui|hub-query-ui|dedup|open|session-cache|user-storage|conversation-flags)(-[a-z-]+)?(\.spec)?\.ts$,shared-core
+re:^mobile-shell-session-state(\.spec)?\.ts$,shared-core
+re:^qaap-project-bootstrap-(?!contribution).*\.ts$,shared-core
+re:^qaap-(ag-ui-transcript-adapter|transcript-user-image-preview|git-review|agent-branding)(\.spec)?\.ts$,shared-core
+# Compositions that embed transcript + composer belong to the Work Hub layer.
+re:^mobile-projects-agents-hub-inline-ui(\.spec)?\.ts$,work-hub
+re:^mobile-shell-transcript-chrome-controller(\.spec)?\.ts$,work-hub
+re:^qaap-work-hub-composer-prompt-service(\.spec)?\.ts$,work-hub
+re:^mobile-projects-transcript-composer-ui(\.spec)?\.ts$,composer
+re:^qaap-transcript-preview-bootstrap-failure(\.spec)?\.ts$,transcript
+re:^mobile-projects-transcript-overlay-host\.spec\.ts$,work-hub
+# Mobile bottom navigation bar is narrow-viewport chrome with no product dependencies.
+re:^mobile-shell-bottom-bar-widget\.ts$,mechanics
+re:^qaap-agent-login-background\.ts$,work-hub
+re:^(mobile-work-hub-catalog|qaap-work-hub-team|mobile-projects-dashboard-commands)\.ts$,shared-core
