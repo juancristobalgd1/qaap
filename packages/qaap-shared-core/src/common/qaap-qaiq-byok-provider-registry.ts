@@ -8,6 +8,7 @@ import {
     OPENROUTER_DEFAULT_BASE_URL,
     OPENROUTER_DEFAULT_FREE_MODELS,
 } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
+import { NVIDIA_DEFAULT_BASE_URL, NVIDIA_FREE_MODELS } from '@theia/qaap-ai-nvidia/lib/common/nvidia-models';
 import type { QaapQaiqModelOption } from './qaap-agent-task-client';
 
 export type QaapQaiqProviderId = QaapQaiqModelOption['provider'];
@@ -51,11 +52,6 @@ export interface QaapQaiqByokProviderDescriptor {
     }[];
 }
 
-const NVIDIA_FALLBACK_MODELS = [
-    'meta/llama-3.3-70b-instruct',
-    'nvidia/llama-3.3-nemotron-super-49b-v1',
-] as const;
-
 const HUGGINGFACE_FALLBACK_MODELS = [
     'meta-llama/Llama-3.2-3B-Instruct',
     'meta-llama/Llama-3.1-8B-Instruct',
@@ -96,12 +92,13 @@ export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[]
         provider: 'openai',
         credentialPref: 'ai-features.nvidia.nvidiaApiKey',
         modelListPrefs: ['ai-features.nvidia.nvidiaModels'],
-        fallbackModels: NVIDIA_FALLBACK_MODELS,
+        // Same list as the `nvidiaModels` schema default (single source in qaap-ai-nvidia).
+        fallbackModels: NVIDIA_FREE_MODELS,
         label: 'NVIDIA NIM',
         credentialEnv: [
             { env: 'NVIDIA_API_KEY', pref: 'ai-features.nvidia.nvidiaApiKey' },
             { env: 'OPENAI_API_KEY', pref: 'ai-features.nvidia.nvidiaApiKey' },
-            { env: 'OPENAI_BASE_URL', pref: 'ai-features.nvidia.nvidiaBaseUrl', defaultValue: 'https://integrate.api.nvidia.com/v1' },
+            { env: 'OPENAI_BASE_URL', pref: 'ai-features.nvidia.nvidiaBaseUrl', defaultValue: NVIDIA_DEFAULT_BASE_URL },
         ],
     },
     {
@@ -141,7 +138,7 @@ export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[]
         provider: 'ollama',
         credentialPref: 'ai-features.ollama.ollamaHost',
         modelListPrefs: ['ai-features.ollama.ollamaModels'],
-        fallbackModels: ['qwen2.5-coder:7b'],
+        // No fallback: the `ollamaModels` schema default is empty, so only models the user pulled/configured are listed.
         label: 'Ollama',
         credentialEnv: [{ env: 'OLLAMA_HOST', pref: 'ai-features.ollama.ollamaHost' }],
     },
@@ -187,7 +184,29 @@ const EXTRA_AI_SETTINGS_PREF_KEYS = [
     'ai-features.llamafile.llamafiles',
 ] as const;
 
-/** Preference keys persisted per authenticated user (API keys, model lists, aliases). */
+/** Prefix of every AI setting; all of them are persisted per authenticated user. */
+export const QAAP_AI_SETTINGS_PREF_PREFIX = 'ai-features.';
+
+/**
+ * Every AI setting stored in the per-user settings file (never in the process-wide User scope) for
+ * authenticated tenants. Keep the frontend overlay, backend endpoint filter and spawn reader on this predicate.
+ */
+export function isQaapAiSettingsPrefKey(key: string): boolean {
+    return key.startsWith(QAAP_AI_SETTINGS_PREF_PREFIX);
+}
+
+let isolatedAiSettingsPrefKeys: ReadonlySet<string> | undefined;
+
+/**
+ * Credentials / BYOK settings of an authenticated tenant. Unlike other AI settings, these never fall back to
+ * the shared User scope (operator policy or legacy values), only to the schema default.
+ */
+export function isQaapIsolatedAiSettingsPrefKey(key: string): boolean {
+    isolatedAiSettingsPrefKeys ??= new Set(listQaapAiSettingsPrefKeys());
+    return isolatedAiSettingsPrefKeys.has(key);
+}
+
+/** Credential / BYOK preference keys persisted per authenticated user (API keys, model lists, aliases). */
 export function listQaapAiSettingsPrefKeys(): string[] {
     const keys = new Set<string>();
     for (const provider of QAAP_QAIQ_BYOK_PROVIDERS) {

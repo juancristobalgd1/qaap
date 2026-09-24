@@ -14,6 +14,7 @@ import { applyProviderPreferenceEnvExtracted } from './qaap-agent-task-runner-to
 import {
     preferenceReaderForOwner,
     readUserSettingsFromDisk,
+    SHARED_PROVIDER_ONLY_ENV,
     stripSharedProviderEnv,
     writeUserSettingsToDisk,
 } from './qaap-agent-task-runner-utils2';
@@ -52,10 +53,11 @@ describe('qaap-agent-task-runner-utils2', () => {
             expect(read('ai-features.openAiOfficial.officialOpenAiModels')).to.deep.equal([]);
         });
 
-        it('never returns shared values: no default for API keys, nothing for keys outside the allowlist', () => {
+        it('never returns shared values: no default for API keys, nothing for non-AI keys', () => {
             const read = reader({});
             expect(read('ai-features.openAiOfficial.openAiApiKey')).to.equal(undefined);
             expect(read('files.autoSave')).to.equal(undefined);
+            expect(scopesSeen.every(scope => scope === PreferenceScope.Default)).to.equal(true);
         });
 
         it('tolerates a preference service without inspectInScope', () => {
@@ -64,17 +66,63 @@ describe('qaap-agent-task-runner-utils2', () => {
         });
     });
 
-    it('stripSharedProviderEnv removes every canonical AGENT_ENV_PREFS env var and other provider keys', () => {
-        const env: NodeJS.ProcessEnv = { PATH: '/usr/bin' };
-        const extra = ['HF_TOKEN', 'MISTRAL_API_KEY', 'XAI_API_KEY', 'GROK_API_KEY', 'GROQ_API_KEY', 'DEEPSEEK_API_KEY', 'CODEX_API_KEY'];
-        for (const name of [...AGENT_ENV_PREFS.map(mapping => mapping.env), ...extra]) {
-            env[name] = 'shared';
+    describe('stripSharedProviderEnv', () => {
+        const providerEnv = (): string[] => [...AGENT_ENV_PREFS.map(mapping => mapping.env), ...SHARED_PROVIDER_ONLY_ENV, 'OPENAI_BASE_URL'];
+        const inherited = (): NodeJS.ProcessEnv => {
+            const env: NodeJS.ProcessEnv = { PATH: '/usr/bin', QAAP_GITHUB_CLIENT_SECRET: 'oauth-secret' };
+            for (const name of providerEnv()) {
+                env[name] = 'operator';
+            }
+            return env;
+        };
+
+        it('authenticated tenant: removes every operator provider credential and backend secret', () => {
+            const env = inherited();
+            stripSharedProviderEnv(env, 'alice');
+            for (const name of providerEnv()) {
+                expect(env[name], name).to.equal(undefined);
+            }
+            expect(env.QAAP_GITHUB_CLIENT_SECRET).to.equal(undefined);
+            expect(env.PATH).to.equal('/usr/bin');
+        });
+
+        it('local / anonymous single user: keeps the operator provider keys, still removes backend secrets', () => {
+            for (const owner of [undefined, '_dev', '_anonymous']) {
+                const env = inherited();
+                stripSharedProviderEnv(env, owner);
+                for (const name of providerEnv()) {
+                    expect(env[name], `${owner}:${name}`).to.equal('operator');
+                }
+                expect(env.QAAP_GITHUB_CLIENT_SECRET).to.equal(undefined);
+            }
+        });
+
+        it('covers the credentials read by the built-in agent CLIs', () => {
+            for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'COPILOT_GITHUB_TOKEN', 'CURSOR_API_KEY', 'DASHSCOPE_API_KEY', 'XAI_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) {
+                expect(SHARED_PROVIDER_ONLY_ENV, name).to.include(name);
+            }
+        });
+    });
+
+    it('applyProviderPreferenceEnv prefers the user\'s Settings over inherited env keys', () => {
+        const env: NodeJS.ProcessEnv = { OPENROUTER_API_KEY: 'operator', NVIDIA_API_KEY: 'operator' };
+        const ctx = {
+            preferenceReaderForOwner: () => (key: string) => key === 'ai-features.openrouter.openrouterApiKey' ? 'sk-user' : undefined,
+            applyOpenRouterOpenAiCompatEnv: () => undefined,
+        };
+        applyProviderPreferenceEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, env, undefined);
+        expect(env.OPENROUTER_API_KEY).to.equal('sk-user');
+        expect(env.NVIDIA_API_KEY).to.equal('operator');
+    });
+
+    it('writeUserSettingsToDisk stores every ai-features.* key but no other key', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-ai-prefix-'));
+        try {
+            const stored = writeUserSettingsToDisk('alice', { 'ai-features.chat.defaultChatAgent': 'Coder', 'editor.fontSize': 14 }, home);
+            expect(stored).to.deep.equal({ 'ai-features.chat.defaultChatAgent': 'Coder' });
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
         }
-        stripSharedProviderEnv(env);
-        for (const name of [...AGENT_ENV_PREFS.map(mapping => mapping.env), ...extra]) {
-            expect(env[name], name).to.equal(undefined);
-        }
-        expect(env.PATH).to.equal('/usr/bin');
     });
 
     it('writeUserSettingsToDisk deletes AI keys patched with null and never other keys', () => {

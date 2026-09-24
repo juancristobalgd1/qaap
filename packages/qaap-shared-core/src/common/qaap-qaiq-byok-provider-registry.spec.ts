@@ -4,6 +4,9 @@ import {
     findCustomOpenAiEndpointForModelId,
     findQaiqByokProvider,
     hasAnyConfiguredByokCredential,
+    isQaapAiSettingsPrefKey,
+    isQaapIsolatedAiSettingsPrefKey,
+    listByokModelIds,
     formatQaiqModelProviderLabel,
     listCustomOpenAiModels,
     listQaapAiSettingsPrefKeys,
@@ -24,6 +27,19 @@ describe('qaap-qaiq-byok-provider-registry', () => {
         expect(keys).to.include('ai-features.vercelAi.openaiApiKey');
         expect(keys.some(key => key.startsWith('ai-features.mistral.'))).to.equal(false);
         expect(findQaiqByokProvider('mistral')).to.equal(undefined);
+    });
+
+    it('persists every ai-features.* key per user, isolating credentials/BYOK keys from the shared scope', () => {
+        expect(isQaapAiSettingsPrefKey('ai-features.chat.defaultChatAgent')).to.equal(true);
+        expect(isQaapAiSettingsPrefKey('editor.fontSize')).to.equal(false);
+        expect(isQaapIsolatedAiSettingsPrefKey('ai-features.openrouter.openrouterApiKey')).to.equal(true);
+        expect(isQaapIsolatedAiSettingsPrefKey('ai-features.chat.defaultChatAgent')).to.equal(false);
+    });
+
+    it('takes NVIDIA fallbacks from qaap-ai-nvidia and lists no invented Ollama model', () => {
+        const nvidia = findQaiqByokProvider('nvidia')!;
+        expect(listByokModelIds(() => undefined, nvidia)).to.include('meta/llama-3.3-70b-instruct');
+        expect(listByokModelIds(() => undefined, findQaiqByokProvider('ollama')!)).to.deep.equal([]);
     });
 
     it('resolves alias vendors to the canonical provider', () => {

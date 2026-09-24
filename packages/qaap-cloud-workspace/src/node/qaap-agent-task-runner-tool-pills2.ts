@@ -4,6 +4,7 @@ import {
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { OLLAMA_DEFAULT_HOST } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import { stripSharedProviderEnv } from './qaap-agent-task-runner-utils2';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess } from 'child_process';
@@ -225,7 +226,8 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         // Strip shared provider API keys from process.env so per-user settings
         // are the sole source. Without this, User B's agent would inherit User
         // A's keys (or operator-level keys) from the shared backend process.
-        ctx.stripSharedProviderEnv(env);
+        // Called directly (not through ctx) so the owner decides local vs multi-tenant stripping.
+        stripSharedProviderEnv(env, task.ownerLogin);
         // QAIQ and OpenClaude share the hosted protocol, but OpenClaude must not inherit QAIQ's
         // Settings → AI Features credentials/base URL as an implicit model selection. Explicit
         // OpenClaude picks still receive their own binding below.
@@ -315,10 +317,9 @@ export function applyQaiqProviderEnvExtracted(ctx: QaapAgentTaskRunnerContext, e
 
 export function applyProviderPreferenceEnvExtracted(ctx: QaapAgentTaskRunnerContext, env: NodeJS.ProcessEnv, ownerLogin?: string): void {
         const readPref = ctx.preferenceReaderForOwner(ownerLogin);
+        // Settings win over inherited env: local runs keep the operator's env keys (see stripSharedProviderEnv)
+        // only as a fallback for providers the user has not configured.
         for (const mapping of AGENT_ENV_PREFS) {
-            if (env[mapping.env]?.trim()) {
-                continue;
-            }
             const value = readPref(mapping.pref);
             // The Ollama host schema default is not a user choice (see providerHasByokCredential).
             if (typeof value === 'string' && value.trim() && !(mapping.env === 'OLLAMA_HOST' && value.trim() === OLLAMA_DEFAULT_HOST)) {
