@@ -4,22 +4,23 @@
 // *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import { buildWorkHubHomeUsageSummary } from '../common/qaap-work-hub-usage-summary';
 import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
 import { MobileProjectsHomeUi, type MobileProjectsHomeUiDeps } from './mobile-projects-home-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('MobileProjectsHomeUi', () => {
-    let disableJSDOM: () => void;
 
-    before(() => {
-        disableJSDOM = enableJSDOM();
-    });
-
-    after(() => {
-        disableJSDOM();
-    });
+    useSuiteJSDOM();
 
     function project(id: string, name: string): MobileProjectEntry {
         return {

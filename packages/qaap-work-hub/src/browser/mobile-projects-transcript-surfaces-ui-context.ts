@@ -118,6 +118,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'transcriptPreviewAppPickerCancel'
     | 'transcriptPreviewConversationScopeId'
     | 'transcriptPreviewEnsureRequests'
+    | 'transcriptPreviewIdentityHealthyChecks'
     | 'transcriptPreviewIdentityWatchTimer'
     | 'transcriptPreviewIdleDiscovery'
     | 'transcriptPreviewProbeIdleTicks'

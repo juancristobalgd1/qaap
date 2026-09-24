@@ -3,14 +3,20 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
+
 // streaming2 pulls shell/layout modules that touch `document` at import time.
-enableJSDOM();
 
 import { toggleSessionsSidebarProjectSortPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming';
 import { stampSessionsSidebarRowFingerprintsExtracted } from './mobile-projects-sessions-sidebar-ui-render';
+
+disableImportJSDOM();
 
 describe('sessions sidebar head popovers', () => {
     let disableJSDOM: (() => void) | undefined;

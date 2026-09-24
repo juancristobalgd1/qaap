@@ -3,6 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -12,6 +18,8 @@ import {
 } from './mobile-projects-panel-lifecycle-ui';
 import type { QaapConversationChangeEvent } from '@theia/qaap-shared-core/lib/common/qaap-conversation-change';
 import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+
+disableImportJSDOM();
 
 describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
 

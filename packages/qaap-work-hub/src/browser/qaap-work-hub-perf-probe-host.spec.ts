@@ -3,8 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
 import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-perf-probe';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
@@ -15,6 +20,8 @@ import {
     ensureProbeWorkspaceProject,
     QAAP_PROBE_WORKSPACE_PROJECT_ID,
 } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-perf-probe-host';
+
+disableImportJSDOM();
 
 describe('qaap-work-hub-perf-probe-host', () => {
 

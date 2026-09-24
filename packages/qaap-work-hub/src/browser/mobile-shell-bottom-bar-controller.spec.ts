@@ -3,8 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
@@ -14,6 +19,8 @@ import type {
 } from './mobile-shell-bottom-bar-controller';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+
+disableImportJSDOM();
 
 const MOBILE_BOTTOM_OPEN_CLASS = 'theia-mod-mobile-bottom-open';
 const MOBILE_BOTTOM_SPLIT_DEFAULT_BOTTOM_RATIO = 0.38;

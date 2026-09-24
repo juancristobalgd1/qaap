@@ -4,15 +4,19 @@
 // *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import type { MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-
-let disableJSDOM = enableJSDOM();
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { MobileProjectsCardMenuUi } = require('./mobile-projects-card-menu-ui') as typeof import('./mobile-projects-card-menu-ui');
 
-// Each suite (re-)enables its own DOM: another spec's disableJSDOM() deletes the shared globals.
+disableImportJSDOM();
 
 const project = (overrides: Partial<MobileProjectEntry> = {}): MobileProjectEntry => ({
     id: 'proj-1',
@@ -33,13 +37,8 @@ const project = (overrides: Partial<MobileProjectEntry> = {}): MobileProjectEntr
 
 describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
 
-    before(() => {
-        disableJSDOM = enableJSDOM();
-    });
+    useSuiteJSDOM();
 
-    after(() => {
-        disableJSDOM();
-    });
     it('lists Pin first (New agent is now a standalone row button)', () => {
         const target = project({ id: 'alpha' });
         const host = {
@@ -69,13 +68,8 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
 
 describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
 
-    before(() => {
-        disableJSDOM = enableJSDOM();
-    });
+    useSuiteJSDOM();
 
-    after(() => {
-        disableJSDOM();
-    });
     it('offers Retry for self-reported stop failures even when status is idle', () => {
         const target = project({ id: 'alpha' });
         let retried = false;
@@ -166,13 +160,8 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
 
 describe('MobileProjectsCardMenuUi.toggleCardMenu', () => {
 
-    before(() => {
-        disableJSDOM = enableJSDOM();
-    });
+    useSuiteJSDOM();
 
-    after(() => {
-        disableJSDOM();
-    });
     it('closes when the same anchor is clicked with a new menu instance', () => {
         window.requestAnimationFrame = ((callback: FrameRequestCallback): number => {
             callback(0);

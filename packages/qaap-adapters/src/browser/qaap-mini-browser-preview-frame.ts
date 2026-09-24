@@ -34,15 +34,16 @@ export function forEachQaapMiniBrowserContent(
 
 /**
  * Unloads preview iframes so embedded dev servers stop HMR noise while Work Hub is foreground.
- * The unload is deferred (see `QaapMiniBrowserContent.suspendPreviewFrame`), so a quick switch
- * back to the IDE resumes the live page instead of reloading it.
+ * A preview that was on screen gets the deferred unload (see `QaapMiniBrowserContent.suspendPreviewFrame`),
+ * so a quick switch back to the IDE resumes the live page; one already hidden in a background tab
+ * cannot be missed by a quick round trip and is unloaded right away.
  */
 export function suspendQaapMiniBrowserPreviews(shell: ApplicationShell, exceptWidgetId?: string): void {
     forEachQaapMiniBrowserContent(shell, (content, widget) => {
         if (exceptWidgetId && widget.id === exceptWidgetId) {
             return;
         }
-        content.suspendPreviewFrame();
+        content.suspendPreviewFrame({ immediate: !widget.isVisible });
     });
 }
 

@@ -5,9 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-// Each suite owns its DOM: another spec's `disableJSDOM()` deletes the shared globals, so a
-// load-time-only `enableJSDOM()` left these suites without `document` when run with other files.
-let disableJSDOM = enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 const browserGlobals = globalThis as unknown as { DragEvent?: unknown };
 if (!browserGlobals.DragEvent) {
     browserGlobals.DragEvent = class DragEvent { };
@@ -30,17 +30,12 @@ import * as sinon from 'sinon';
 import { fallBackFromSupersededTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
 import { USER_NAVIGATED_PREVIEW_CLASS } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 import { TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS, TRANSCRIPT_PREVIEW_TAB_PROBE_MS } from './mobile-projects-transcript-surfaces-ui-activity';
+import { firstInPriorityOrder } from './mobile-projects-transcript-surfaces-ui-thought-brief';
+import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS } from './mobile-projects-transcript-surfaces-ui-timeline';
+import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS } from './mobile-projects-transcript-surfaces-ui';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
 
-disableJSDOM();
-
-function useSuiteJSDOM(): void {
-    before(() => {
-        disableJSDOM = enableJSDOM();
-    });
-    after(() => {
-        disableJSDOM();
-    });
-}
+disableImportJSDOM();
 
 const historyUiStub = {} as unknown as MobileProjectsTranscriptHistoryUi;
 
@@ -485,6 +480,29 @@ describe('MobileProjectsTranscriptSurfacesUi — superseded preview fallback', (
         expect(host.projects[0].previewUrl).to.equal('http://localhost/qaap-dev/5174/');
     });
 
+    it('offers to restart the dev server when Retry finds nothing running', async () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        ui.transcriptPreviewProjectId = sampleProject().id;
+        const requests: Array<{ readonly allowAgentFallback?: boolean } | undefined> = [];
+        ui.discoverProjectDevPreviewUrl = async () => undefined;
+        ui.requestTranscriptPreview = async (_project, _summary, options) => {
+            requests.push(options);
+        };
+        const previewHost = host.transcriptPreviewHost!;
+        mountLiveRoot(ui, previewHost);
+
+        fallBackFromSupersededTranscriptPreviewExtracted(ui, previewHost, host.projects[0], sampleSummary(), PREVIEW_URL);
+        (snackbar.firstCall.args[1] as { onAction?: () => void }).onAction?.();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const restart = snackbar.secondCall.args[1] as { kind?: string; actionLabel?: string; onAction?: () => void };
+        expect(restart.kind).to.equal('warning');
+        expect(restart.actionLabel).to.be.a('string').and.not.equal('');
+        restart.onAction?.();
+        expect(requests).to.deep.equal([{ allowAgentFallback: false }]);
+    });
+
     it('keeps a URL the user navigated to by hand, without a notice', () => {
         const host = buildIdlePreviewHost();
         const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
@@ -553,5 +571,84 @@ describe('MobileProjectsTranscriptSurfacesUi — idle preview discovery', () => 
         await ui.discoverAndMountTranscriptPreviewIfReady(sampleProject(), sampleSummary());
         await ui.discoverAndMountTranscriptPreviewIfReady(sampleProject(), sampleSummary());
         expect(ui.discoveries).to.equal(2);
+    });
+});
+
+describe('firstInPriorityOrder', () => {
+
+    it('returns the earliest hit in list order even when a later item answers first', async () => {
+        const delays = [30, 5, 1, 1];
+        const result = await firstInPriorityOrder([0, 1, 2, 3], 4, async index => {
+            await new Promise(resolve => setTimeout(resolve, delays[index]));
+            return index >= 1 ? `hit-${index}` : undefined;
+        });
+        expect(result).to.equal('hit-1');
+    });
+
+    it('keeps at most `concurrency` probes in flight and stops launching after the answer', async () => {
+        let inFlight = 0;
+        let maxInFlight = 0;
+        const started: number[] = [];
+        const result = await firstInPriorityOrder(Array.from({ length: 12 }, (_, index) => index), 3, async index => {
+            started.push(index);
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await new Promise(resolve => setTimeout(resolve, 1));
+            inFlight -= 1;
+            return index === 4 ? 'found' : undefined;
+        });
+        expect(result).to.equal('found');
+        expect(maxInFlight).to.equal(3);
+        expect(started.length).to.be.lessThan(12);
+    });
+
+    it('treats a rejected probe as a miss and resolves undefined when nothing hits', async () => {
+        const result = await firstInPriorityOrder([1, 2, 3], 2, async index => {
+            if (index === 2) {
+                throw new Error('probe failed');
+            }
+            return undefined;
+        });
+        expect(result).to.equal(undefined);
+    });
+});
+
+describe('MobileProjectsTranscriptSurfacesUi — preview identity watch backoff', () => {
+
+    useSuiteJSDOM();
+
+    let delays: number[];
+    let originalSetTimeout: typeof window.setTimeout;
+
+    beforeEach(() => {
+        delays = [];
+        originalSetTimeout = window.setTimeout;
+        window.setTimeout = ((_handler: () => void, delay?: number) => {
+            delays.push(delay ?? 0);
+            return delays.length;
+        }) as typeof window.setTimeout;
+    });
+
+    afterEach(() => {
+        window.setTimeout = originalSetTimeout;
+    });
+
+    it('backs off while the mount stays healthy and resets on any other reschedule', () => {
+        const ui = new MobileProjectsTranscriptSurfacesUi(buildIdlePreviewHost(), historyUiStub);
+        const project = sampleProject();
+
+        ui.scheduleTranscriptPreviewIdentityWatch(project);
+        ui.scheduleTranscriptPreviewIdentityWatch(project, true);
+        ui.scheduleTranscriptPreviewIdentityWatch(project, true);
+        ui.scheduleTranscriptPreviewIdentityWatch(project, true);
+        ui.scheduleTranscriptPreviewIdentityWatch(project);
+
+        expect(delays).to.deep.equal([
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS,
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS * 2,
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS,
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS,
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS,
+        ]);
     });
 });

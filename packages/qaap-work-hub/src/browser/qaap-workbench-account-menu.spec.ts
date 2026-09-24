@@ -3,8 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import {
     buildQaapAccountMenuEntries,
@@ -15,6 +20,8 @@ import {
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
+
+disableImportJSDOM();
 
 describe('buildQaapAccountMenuEntries', () => {
     describe('signed-in menu', () => {

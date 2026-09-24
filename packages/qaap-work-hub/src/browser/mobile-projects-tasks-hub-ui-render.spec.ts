@@ -4,24 +4,23 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
 import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 import { createAgentsHubQuickActionsBlockExtracted } from './mobile-projects-tasks-hub-ui-render';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
 
-let disableJSDOM = enableJSDOM();
-
-// Each suite (re-)enables its own DOM: another spec's disableJSDOM() deletes the shared globals.
+disableImportJSDOM();
 
 describe('mobile-projects-tasks-hub-ui-render', () => {
 
-    before(() => {
-        disableJSDOM = enableJSDOM();
-    });
+    useSuiteJSDOM();
 
-    after(() => {
-        disableJSDOM();
-    });
     it('turns Run app into a busy colored action immediately when pressed', () => {
         let launched = false;
         const block = createAgentsHubQuickActionsBlockExtracted({

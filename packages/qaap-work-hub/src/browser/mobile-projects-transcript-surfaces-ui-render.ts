@@ -191,6 +191,8 @@ export function ensurePreviewProjectContextExtracted(ctx: MobileProjectsTranscri
     }
     ctx.stopTranscriptPreviewTabProbe();
     ctx.suspendTranscriptPreviewIframe();
+    // Idle-probe discovery results only matter for the project on screen.
+    ctx.transcriptPreviewIdleDiscovery.clear();
     ctx.transcriptPreviewProjectId = project.id;
 }
 

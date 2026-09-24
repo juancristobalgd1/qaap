@@ -11,7 +11,7 @@ import { expect } from 'chai';
 import type { ApplicationShell } from '@theia/core/lib/browser/shell';
 import { MiniBrowser } from '@theia/mini-browser/lib/browser/mini-browser';
 import { QaapMiniBrowserContent } from './qaap-mini-browser-content';
-import { syncQaapMiniBrowserPreviewSuspension } from './qaap-mini-browser-preview-frame';
+import { suspendQaapMiniBrowserPreviews, syncQaapMiniBrowserPreviewSuspension } from './qaap-mini-browser-preview-frame';
 
 disableJSDOM();
 
@@ -24,7 +24,7 @@ function fakePreview(id: string, isVisible: boolean): FakePreview {
     const calls: string[] = [];
     const content = Object.create(QaapMiniBrowserContent.prototype);
     Object.assign(content, {
-        suspendPreviewFrame: () => calls.push('suspend'),
+        suspendPreviewFrame: (options?: { readonly immediate?: boolean }) => calls.push(options?.immediate ? 'suspend-now' : 'suspend'),
         resumePreviewFrame: () => calls.push('resume'),
     });
     const widget = Object.create(MiniBrowser.prototype);
@@ -59,5 +59,18 @@ describe('syncQaapMiniBrowserPreviewSuspension', () => {
         expect(active.calls).to.deep.equal(['resume']);
         expect(split.calls).to.deep.equal(['resume']);
         expect(background.calls).to.deep.equal(['suspend']);
+    });
+
+    it('unloads background previews right away when Work Hub comes to the front', () => {
+        const onScreen = fakePreview('on-screen', true);
+        const background = fakePreview('background', false);
+        const shell = {
+            getWidgets: (area: string) => area === 'main' ? [onScreen.widget, background.widget] : [],
+        } as unknown as ApplicationShell;
+
+        suspendQaapMiniBrowserPreviews(shell);
+
+        expect(onScreen.calls).to.deep.equal(['suspend']);
+        expect(background.calls).to.deep.equal(['suspend-now']);
     });
 });

@@ -197,6 +197,9 @@ export class MobileProjectsTranscriptSurfacesUi {
     public readonly transcriptPreviewIdleDiscovery = new Map<string, { readonly at: number; readonly result: Promise<string | undefined> }>();
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewIdentityWatchTimer: number | undefined;
+    /** Consecutive healthy identity checks; drives the identity-watch backoff. */
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public transcriptPreviewIdentityHealthyChecks = 0;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public readonly previewRuntimeByConversationId = new Map<string, ConversationPreviewRuntimeState>();
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
@@ -447,8 +450,8 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
-    public scheduleTranscriptPreviewIdentityWatch(project: MobileProjectEntry): void {
-        scheduleTranscriptPreviewIdentityWatchExtracted(this, project);
+    public scheduleTranscriptPreviewIdentityWatch(project: MobileProjectEntry, healthy: boolean = false): void {
+        scheduleTranscriptPreviewIdentityWatchExtracted(this, project, healthy);
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */

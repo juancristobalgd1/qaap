@@ -328,12 +328,25 @@ export function stopTranscriptPreviewIdentityWatchExtracted(ctx: MobileProjectsT
         }
 }
 
-export function scheduleTranscriptPreviewIdentityWatchExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): void {
+/** Ceiling for the identity watch once the mounted preview keeps answering healthy. */
+export const TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS = 30_000;
+
+/**
+ * `healthy` grows the interval (8 s → 16 s → 30 s) after a check that found the mount alive (or a
+ * hidden page that was not checked); any other call — a new mount, a dead claim — resets it to 8 s.
+ */
+export function scheduleTranscriptPreviewIdentityWatchExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+        healthy: boolean = false): void {
         ctx.stopTranscriptPreviewIdentityWatch();
+        ctx.transcriptPreviewIdentityHealthyChecks = healthy ? ctx.transcriptPreviewIdentityHealthyChecks + 1 : 0;
+        const delay = Math.min(
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS * 2 ** ctx.transcriptPreviewIdentityHealthyChecks,
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS,
+        );
         ctx.transcriptPreviewIdentityWatchTimer = window.setTimeout(() => {
             ctx.transcriptPreviewIdentityWatchTimer = undefined;
             void ctx.verifyMountedTranscriptPreviewIdentity(project);
-        }, TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS);
+        }, delay);
 }
 
 export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): Promise<void> {
@@ -344,7 +357,7 @@ export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: Mobil
             return;
         }
         if (document.hidden) {
-            ctx.scheduleTranscriptPreviewIdentityWatch(project);
+            ctx.scheduleTranscriptPreviewIdentityWatch(project, true);
             return;
         }
         const conversationScopeId = ctx.previewScopeId();
@@ -370,7 +383,7 @@ export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: Mobil
             return;
         }
         if (probe.ready) {
-            ctx.scheduleTranscriptPreviewIdentityWatch(project);
+            ctx.scheduleTranscriptPreviewIdentityWatch(project, true);
             return;
         }
         const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
@@ -439,10 +452,19 @@ async function retrySupersededTranscriptPreview(ctx: MobileProjectsTranscriptSur
             return;
         }
         if (!url) {
+            // Nothing is serving this project any more: offer to start its dev server again
+            // (bootstrap only — never hand the request to the agent from a snackbar tap).
             MobileSnackbar.show(nls.localize(
                 'qaap/mobileProjects/previewSupersededRetryMissing',
-                'No running preview was found for this project yet.',
-            ), { kind: 'warning' });
+                'No running preview was found for this project.',
+            ), {
+                kind: 'warning',
+                duration: 6000,
+                actionLabel: nls.localize('qaap/mobileProjects/previewRestartDevServer', 'Restart dev server'),
+                onAction: () => {
+                    void ctx.requestTranscriptPreview(latestProject, summary, { allowAgentFallback: false });
+                },
+            });
             return;
         }
         const adopted = ctx.adoptReconciledProjectPreviewUrl(latestProject, url);

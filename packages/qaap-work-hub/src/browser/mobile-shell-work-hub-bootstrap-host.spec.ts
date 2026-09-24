@@ -5,23 +5,21 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-// Imports below touch the DOM at load time; each suite re-enables it after other specs' cleanup.
-let disableJSDOM = enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { initWorkHubBootstrapControllerExtracted } from './mobile-one-column-shell-contribution-render';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('mobile-shell-work-hub-bootstrap host wiring', () => {
 
-    before(() => {
-        disableJSDOM = enableJSDOM();
-    });
-
-    after(() => {
-        disableJSDOM();
-    });
+    useSuiteJSDOM();
 
     it('provides the sessions sidebar layout synchronizer', () => {
         let syncCalls = 0;
