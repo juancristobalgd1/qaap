@@ -77,6 +77,8 @@ export interface QaapDevPreviewEndpointContext {
 
     resolveTargetHost(port: number): Promise<string | undefined>;
 
+    invalidateTargetHost(port: number): void;
+
     handleWebSocketUpgrade(req: http.IncomingMessage, socket: net.Socket, head: Buffer): void;
 
     proxyWebSocket(req: http.IncomingMessage, socket: net.Socket, head: Buffer, port: number, path: string): Promise<void>;

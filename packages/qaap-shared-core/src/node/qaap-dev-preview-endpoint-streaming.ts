@@ -384,6 +384,8 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
         head: Buffer,
         port: number,
         path: string,): Promise<void> {
+        // Without an error listener an ECONNRESET on an HMR socket is an uncaught backend exception.
+        socket.on('error', () => socket.destroy());
         const targetHost = await ctx.resolveTargetHost(port);
         if (!targetHost) {
             socket.destroy();
@@ -414,10 +416,19 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
             if (proxyHead.length > 0) {
                 proxySocket.write(proxyHead);
             }
+            proxySocket.on('error', () => socket.destroy());
+            socket.on('close', () => proxySocket.destroy());
+            proxySocket.on('close', () => socket.destroy());
             proxySocket.pipe(socket);
             socket.pipe(proxySocket);
         });
+        // Dev server refused the upgrade (404/400): relay the status instead of leaving the client socket hanging.
+        proxyReq.on('response', proxyRes => {
+            socket.end(`HTTP/1.1 ${proxyRes.statusCode ?? 502} ${proxyRes.statusMessage ?? 'Bad Gateway'}\r\nConnection: close\r\n\r\n`);
+            proxyRes.resume();
+        });
         proxyReq.on('error', () => {
+            ctx.invalidateTargetHost(port);
             socket.destroy();
         });
         proxyReq.end();

@@ -17,6 +17,7 @@ import { probeQaapDevPreviewPort, waitForQaapDevPreviewPort } from '@theia/qaap-
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { getSameOriginPreviewProxyPort } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     mountTranscriptFilesView,
@@ -131,6 +132,49 @@ export function ensureTranscriptPreviewServingExtracted(ctx: MobileProjectsTrans
     });
 }
 
+/**
+ * Falls the Preview tab back to the empty URL chrome. Probe ticks (~900 ms), conversation updates
+ * and identity reconciles all land here; tearing the chrome down while the user types in its URL
+ * field, or after they navigated it by hand, blanked the field on every tick. Returns false when
+ * the live chrome was kept; the next probe tick / render re-evaluates.
+ */
+export function resetTranscriptPreviewToEmptyExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO): boolean {
+    const live = ctx.host.transcriptEmbeddedPreview?.root;
+    const liveInHost = !!live?.isConnected && host.contains(live);
+    if (liveInHost && (ctx.isTranscriptPreviewUrlFieldActive() || live.classList.contains(USER_NAVIGATED_PREVIEW_CLASS))) {
+        return false;
+    }
+    ctx.disposeTranscriptEmbeddedPreview();
+    host.replaceChildren();
+    ctx.mountTranscriptEmptyPreview(host, project, summary);
+    return true;
+}
+
+/** Claims a typed same-origin `/qaap-dev/:port` URL for this conversation so the proxy lets it through. */
+export async function resolveTranscriptTypedPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext,
+    summary: QaapAgentConversationSummaryDTO,
+    url: string): Promise<string | undefined> {
+    const port = getSameOriginPreviewProxyPort(url);
+    const bootstrap = ctx.host.projectBootstrap;
+    if (port === undefined || !bootstrap) {
+        return url;
+    }
+    const claim = await bootstrap.claimPreviewExecution(port, summary.id);
+    if (claim.kind === 'conflict') {
+        MobileSnackbar.show(nls.localize(
+            'qaap/preview/portClaimConflict',
+            'Port :{0} is used by another workspace. Stop its dev server or choose another port.',
+            String(port),
+        ), { kind: 'warning' });
+    }
+    return claim.kind === 'claimed' ? claim.previewUrl ?? url : url;
+}
+
+/** Marks an empty-state preview chrome the user pointed at a URL themselves. */
+export const USER_NAVIGATED_PREVIEW_CLASS = 'theia-mod-user-navigated-preview';
+
 export function mountTranscriptEmptyPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): void {
@@ -140,9 +184,14 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: MobileProjectsTranscri
     if (ctx.isTranscriptPreviewUrlFieldActive()) {
         return;
     }
-    const removeEmptyState = (): void => {
-        ctx.host.transcriptEmbeddedPreview?.root.classList.remove('theia-mod-empty-preview');
-        ctx.host.transcriptEmbeddedPreview?.root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
+    const removeEmptyState = (url: string): void => {
+        const root = ctx.host.transcriptEmbeddedPreview?.root;
+        if (!root || !url || url === 'about:blank') {
+            return;
+        }
+        root.classList.remove('theia-mod-empty-preview');
+        root.classList.add(USER_NAVIGATED_PREVIEW_CLASS);
+        root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
     };
     ctx.host.transcriptEmbeddedPreview = mountEmbeddedAgentPreviewChrome(host, {
         url: 'about:blank',
@@ -152,6 +201,7 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: MobileProjectsTranscri
         previewSurfaces: ctx.host.previewSurfaceRegistry,
         inspectorDeps: ctx.host.previewInspectorDeps,
         onNavigate: removeEmptyState,
+        resolveTypedUrl: url => resolveTranscriptTypedPreviewUrlExtracted(ctx, summary, url),
         notify: (message, kind) => {
             MobileSnackbar.show(message, { kind: kind === 'warn' ? 'warning' : 'success' });
         },

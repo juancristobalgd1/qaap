@@ -37,6 +37,11 @@ export class QaapDevPreviewTargetHostResolver {
         return undefined;
     }
 
+    /** Drops a cached loopback family after a failed proxy hop (dev server restarted on the other family). */
+    invalidate(port: number): void {
+        this.cache.delete(port);
+    }
+
     protected canConnect(host: string, port: number): Promise<boolean> {
         return new Promise(resolve => {
             const socket = net.connect({ host, port });

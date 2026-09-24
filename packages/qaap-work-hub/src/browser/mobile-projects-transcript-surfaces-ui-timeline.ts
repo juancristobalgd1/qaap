@@ -1,4 +1,5 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
+import { resetTranscriptPreviewToEmptyExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -48,9 +49,7 @@ export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProj
                 && host.contains(ctx.host.transcriptEmbeddedPreview.root)
                 && ctx.host.transcriptEmbeddedPreview.root.classList.contains('theia-mod-empty-preview');
             if (!canKeepEmptyPreview) {
-                ctx.disposeTranscriptEmbeddedPreview();
-                host.replaceChildren();
-                ctx.mountTranscriptEmptyPreview(host, project, summary);
+                resetTranscriptPreviewToEmptyExtracted(ctx, host, project, summary);
             } else {
                 ctx.updateTranscriptPreviewRunButtonState(conv);
             }
@@ -69,9 +68,7 @@ export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProj
             }
             const cleared = ctx.clearMismatchedProjectPreviewUrl(latestProject, readyUrl);
             if (ctx.transcriptPreviewProjectId === project.id && host.isConnected) {
-                ctx.disposeTranscriptEmbeddedPreview();
-                host.replaceChildren();
-                ctx.mountTranscriptEmptyPreview(host, cleared, summary);
+                resetTranscriptPreviewToEmptyExtracted(ctx, host, cleared, summary);
                 void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
             }
             return;
@@ -274,7 +271,7 @@ export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: Mobil
             return;
         }
         const conversationScopeId = ctx.previewScopeId();
-        const mountedUrl = ctx.getTranscriptEmbeddedPreviewUrl() ?? ctx.mountedPreviewUrl(conversationScopeId);
+        const mountedUrl = ctx.mountedPreviewUrl(conversationScopeId) ?? ctx.getTranscriptEmbeddedPreviewUrl();
         if (!mountedUrl) {
             return;
         }
@@ -346,9 +343,7 @@ export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsT
                 return;
             }
             const cleared = ctx.clearMismatchedProjectPreviewUrl(latestProject, candidateUrl);
-            ctx.disposeTranscriptEmbeddedPreview();
-            host.replaceChildren();
-            ctx.mountTranscriptEmptyPreview(host, cleared, summary);
+            resetTranscriptPreviewToEmptyExtracted(ctx, host, cleared, summary);
             void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
             return;
         }
@@ -374,9 +369,7 @@ export function renderPreviewTabExtracted(ctx: MobileProjectsTranscriptSurfacesU
             return;
         }
         if (ctx.host.transcriptPreviewSuppressedByUser) {
-            ctx.disposeTranscriptEmbeddedPreview();
-            host.replaceChildren();
-            ctx.mountTranscriptEmptyPreview(host, project, summary);
+            resetTranscriptPreviewToEmptyExtracted(ctx, host, project, summary);
             ctx.syncHeaderPreviewRunButton(project, summary);
             return;
         }
@@ -435,9 +428,7 @@ export function renderPreviewTabExtracted(ctx: MobileProjectsTranscriptSurfacesU
             return;
         }
 
-        ctx.disposeTranscriptEmbeddedPreview();
-        host.replaceChildren();
-        ctx.mountTranscriptEmptyPreview(host, project, summary);
+        resetTranscriptPreviewToEmptyExtracted(ctx, host, project, summary);
         ctx.scheduleTranscriptPreviewTabProbe(project, summary);
 }
 

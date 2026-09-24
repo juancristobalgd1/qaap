@@ -30,7 +30,7 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
         publicPrefix: string = `${QAAP_DEV_PREVIEW_PREFIX}/${targetPort}`,): Promise<void> {
         const targetHost = await ctx.resolveTargetHost(targetPort);
         if (!targetHost) {
-            outgoing.status(503).type('text/html').send(buildDevPreviewWaitingHtml(targetPort));
+            sendDevPreviewUnavailable(incoming, outgoing, targetPort);
             return;
         }
         // Qaap session/capability cookies and x-qaap-* internal headers never reach the dev server.
@@ -45,6 +45,7 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             method: incoming.method,
             headers,
         }, proxyRes => {
+            clearTimeout(headersTimer);
             const responseHeaders = { ...proxyRes.headers };
             sanitizeQaapPreviewResponseHeaders(responseHeaders);
             // Every proxied preview is rendered inside Qaap's mini-browser. Remove upstream
@@ -107,14 +108,42 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                 ));
             });
         });
+        // A dev server that accepts the connection but never answers used to hang the iframe
+        // forever. Bound only the wait for response headers: streamed bodies (SSE HMR) stay open.
+        const headersTimer = setTimeout(() => proxyReq.destroy(new Error('dev server response timeout')), DEV_PREVIEW_HEADERS_TIMEOUT_MS);
         proxyReq.on('error', () => {
+            clearTimeout(headersTimer);
+            ctx.invalidateTargetHost(targetPort);
             if (!outgoing.headersSent) {
-                outgoing.status(503).type('text/html').send(buildDevPreviewWaitingHtml(targetPort));
+                sendDevPreviewUnavailable(incoming, outgoing, targetPort);
             } else {
                 outgoing.end();
             }
         });
+        incoming.on('aborted', () => {
+            clearTimeout(headersTimer);
+            proxyReq.destroy();
+        });
         incoming.pipe(proxyReq);
+}
+
+const DEV_PREVIEW_HEADERS_TIMEOUT_MS = 60_000;
+
+/**
+ * The holding page is only useful for document loads. Scripts/styles/fetches that received it
+ * were parsed as HTML (syntax errors, MIME blocks) and each re-ran the auto-reload.
+ */
+function sendDevPreviewUnavailable(incoming: Request, outgoing: Response, targetPort: number): void {
+    const dest = String(incoming.headers['sec-fetch-dest'] ?? '');
+    const accept = String(incoming.headers.accept ?? '');
+    const isDocument = dest ? dest === 'document' || dest === 'iframe' : /\btext\/html\b/i.test(accept);
+    outgoing.setHeader('cache-control', 'no-store');
+    outgoing.setHeader('retry-after', '2');
+    if (isDocument && incoming.method !== 'HEAD') {
+        outgoing.status(503).type('text/html').send(buildDevPreviewWaitingHtml(targetPort));
+    } else {
+        outgoing.status(503).type('text/plain').send(`Dev server on port ${targetPort} is not reachable yet.`);
+    }
 }
 
 export function rewriteNextPreviewDocument(body: string, publicPrefix: string): string {

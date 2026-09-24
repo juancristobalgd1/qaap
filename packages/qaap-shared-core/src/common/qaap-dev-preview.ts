@@ -314,7 +314,18 @@ export function buildDevPreviewWaitingHtml(targetPort: number): string {
     <p>Waiting for port ${safePort}… This page refreshes automatically.</p>
   </div>
   <script>
-    setTimeout(function () { location.reload(); }, 2000);
+    // Poll with HEAD (no frame reload, no history/URL-bar churn) and back off; reload once the
+    // dev server answers with anything other than this holding page.
+    (function () {
+      var delay = 1000;
+      function check() {
+        fetch(location.href, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
+          .then(function (r) { if (r.status !== 503) { location.reload(); } else { retry(); } })
+          .catch(retry);
+      }
+      function retry() { delay = Math.min(delay * 1.5, 8000); setTimeout(check, delay); }
+      setTimeout(check, delay);
+    })();
   </script>
 </body>
 </html>`;
