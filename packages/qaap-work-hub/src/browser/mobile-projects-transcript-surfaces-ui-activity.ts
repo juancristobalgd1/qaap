@@ -103,8 +103,10 @@ export async function refreshTranscriptPreviewTabProbeExtracted(ctx: MobileProje
     } catch {
         /* best-effort */
     } finally {
-        if (ctx.shouldKeepTranscriptPreviewTabProbe(project, summary, conv)) {
-            ctx.scheduleTranscriptPreviewTabProbe(project, summary, conv);
+        // The probe awaited network: judge (and reschedule) against the conversation as it is now.
+        const latestConv = ctx.host.transcriptLastConv;
+        if (latestConv && ctx.shouldKeepTranscriptPreviewTabProbe(project, summary, latestConv)) {
+            ctx.scheduleTranscriptPreviewTabProbe(project, summary, latestConv);
         }
     }
 }

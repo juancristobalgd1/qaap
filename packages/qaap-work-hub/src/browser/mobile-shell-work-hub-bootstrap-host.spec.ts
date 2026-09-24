@@ -3,12 +3,25 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Imports below touch the DOM at load time; each suite re-enables it after other specs' cleanup.
+let disableJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import { initWorkHubBootstrapControllerExtracted } from './mobile-one-column-shell-contribution-render';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 
 describe('mobile-shell-work-hub-bootstrap host wiring', () => {
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
 
     it('provides the sessions sidebar layout synchronizer', () => {
         let syncCalls = 0;

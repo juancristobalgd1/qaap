@@ -458,8 +458,31 @@ describe('MobileProjectsTranscriptSurfacesUi — superseded preview fallback', (
         expect(host.transcriptEmbeddedPreview?.root.classList.contains('theia-mod-empty-preview')).to.equal(true);
         expect(host.projects[0].previewUrl).to.equal(undefined);
         expect(snackbar.calledOnce).to.equal(true);
-        expect(snackbar.firstCall.args[1]).to.deep.equal({ kind: 'warning' });
+        expect(snackbar.firstCall.args[1]).to.include({ kind: 'warning' });
         expect(ui.rediscoveries).to.equal(1);
+    });
+
+    it('offers a Retry action that mounts the project\'s current preview', async () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        ui.transcriptPreviewProjectId = sampleProject().id;
+        Object.assign(host, { projectsService: { recordProjectPreviewUrl: () => Promise.resolve() } });
+        const mounted: string[] = [];
+        ui.discoverProjectDevPreviewUrl = async () => 'http://localhost/qaap-dev/5174/';
+        ui.tryMountProjectScopedPreview = async (_host, _project, _summary, _latest, url) => {
+            mounted.push(url);
+        };
+        const previewHost = host.transcriptPreviewHost!;
+        mountLiveRoot(ui, previewHost);
+
+        fallBackFromSupersededTranscriptPreviewExtracted(ui, previewHost, host.projects[0], sampleSummary(), PREVIEW_URL);
+        const options = snackbar.firstCall.args[1] as { actionLabel?: string; onAction?: () => void };
+        expect(options.actionLabel).to.be.a('string').and.not.equal('');
+        options.onAction?.();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(mounted).to.deep.equal(['http://localhost/qaap-dev/5174/']);
+        expect(host.projects[0].previewUrl).to.equal('http://localhost/qaap-dev/5174/');
     });
 
     it('keeps a URL the user navigated to by hand, without a notice', () => {
@@ -485,5 +508,50 @@ describe('MobileProjectsTranscriptSurfacesUi — superseded preview fallback', (
 
         expect(snackbar.called).to.equal(false);
         expect(ui.rediscoveries).to.equal(1);
+    });
+});
+
+class DiscoveryCountingTranscriptSurfacesUi extends MobileProjectsTranscriptSurfacesUi {
+    discoveries = 0;
+
+    override resolveTranscriptPreviewUrl(): string | undefined {
+        return undefined;
+    }
+
+    override async discoverProjectDevPreviewUrl(): Promise<string | undefined> {
+        this.discoveries += 1;
+        return undefined;
+    }
+}
+
+describe('MobileProjectsTranscriptSurfacesUi — idle preview discovery', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('reuses a recent discovery miss on idle probe ticks', async () => {
+        const host = buildIdlePreviewHost();
+        const ui = new DiscoveryCountingTranscriptSurfacesUi(host, historyUiStub);
+
+        await ui.discoverAndMountTranscriptPreviewIfReady(sampleProject(), sampleSummary());
+        await ui.discoverAndMountTranscriptPreviewIfReady(sampleProject(), sampleSummary());
+        expect(ui.discoveries).to.equal(1);
+
+        ui.transcriptPreviewIdleDiscovery.clear();
+        await ui.discoverAndMountTranscriptPreviewIfReady(sampleProject(), sampleSummary());
+        expect(ui.discoveries).to.equal(2);
+    });
+
+    it('always discovers afresh while a preview request is in flight', async () => {
+        const host = buildIdlePreviewHost();
+        host.transcriptPreviewRequestPending = true;
+        const ui = new DiscoveryCountingTranscriptSurfacesUi(host, historyUiStub);
+
+        await ui.discoverAndMountTranscriptPreviewIfReady(sampleProject(), sampleSummary());
+        await ui.discoverAndMountTranscriptPreviewIfReady(sampleProject(), sampleSummary());
+        expect(ui.discoveries).to.equal(2);
     });
 });

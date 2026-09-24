@@ -3,6 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Imports below touch the DOM at load time; each suite re-enables it after other specs' cleanup.
+let disableJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,6 +19,14 @@ const STYLE_DIR = path.join(__dirname, '..', '..', 'src', 'browser', 'style');
 const BROWSER_DIR = path.join(__dirname, '..', '..', 'src', 'browser');
 
 describe('mobile-open-repository-dialog styles', () => {
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
     it('is imported from the boot-critical frontend module', () => {
         const src = fs.readFileSync(
             path.join(BROWSER_DIR, 'qaap-work-hub-frontend-module.ts'),
@@ -37,6 +50,14 @@ describe('mobile-open-repository-dialog styles', () => {
 });
 
 describe('MobileOpenRepositoryDialog clone flow', () => {
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
     it('opens the returned workspace and notifies the host after cloning', async () => {
         const nextProjects: MobileProjectEntry[] = [];
         let clonedRepository: string | undefined;

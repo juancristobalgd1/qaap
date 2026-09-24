@@ -5,14 +5,24 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+let disableJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { MobileProjectsProjectRowsUi } from './mobile-projects-project-rows-ui';
 import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
+// Each suite (re-)enables its own DOM: another spec's disableJSDOM() deletes the shared globals.
+
 describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
 
     function newUi(): MobileProjectsProjectRowsUi {
         return new MobileProjectsProjectRowsUi({
@@ -226,6 +236,14 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
 });
 
 describe('MobileProjectsProjectRowsUi — task block', () => {
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
 
     it('collapses a long conversation list behind a "More tasks" row', () => {
         const conversations = Array.from({ length: 8 }, (_, index) => ({

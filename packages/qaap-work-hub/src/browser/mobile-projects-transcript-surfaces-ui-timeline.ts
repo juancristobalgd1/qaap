@@ -193,6 +193,34 @@ export function isTranscriptPreviewDevServerExpectedExtracted(ctx: MobileProject
             || (!!conv && conversationShouldWatchDevPreview(conv, window.location.origin));
 }
 
+/** How long an idle-probe discovery miss (claim lookup + localhost port scan) is reused per project. */
+export const TRANSCRIPT_PREVIEW_IDLE_DISCOVERY_TTL_MS = 15_000;
+
+/**
+ * Idle probe ticks come back every few seconds for as long as the Preview tab stays empty; share one
+ * in-flight discovery and reuse a miss for {@link TRANSCRIPT_PREVIEW_IDLE_DISCOVERY_TTL_MS} instead of
+ * re-running the claim lookup and port scan each tick. Hits are never cached (they get mounted).
+ */
+function discoverProjectDevPreviewUrlForIdleProbe(ctx: MobileProjectsTranscriptSurfacesUiContext,
+        project: MobileProjectEntry): Promise<string | undefined> {
+        const cache = ctx.transcriptPreviewIdleDiscovery;
+        const cached = cache.get(project.id);
+        if (cached && Date.now() - cached.at < TRANSCRIPT_PREVIEW_IDLE_DISCOVERY_TTL_MS) {
+            return cached.result;
+        }
+        const entry = {
+            at: Date.now(),
+            result: ctx.discoverProjectDevPreviewUrl(project).catch(() => undefined),
+        };
+        cache.set(project.id, entry);
+        void entry.result.then(url => {
+            if (url && cache.get(project.id) === entry) {
+                cache.delete(project.id);
+            }
+        });
+        return entry.result;
+}
+
 export async function discoverAndMountTranscriptPreviewIfReadyExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         const conv = ctx.host.transcriptLastConv;
@@ -203,8 +231,8 @@ export async function discoverAndMountTranscriptPreviewIfReadyExtracted(ctx: Mob
         if (ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
             return;
         }
-        if (!ctx.isTranscriptPreviewWaiting(conv, project)
-            && !isTranscriptPreviewDevServerExpectedExtracted(ctx, project, conv)) {
+        const waiting = ctx.isTranscriptPreviewWaiting(conv, project);
+        if (!waiting && !isTranscriptPreviewDevServerExpectedExtracted(ctx, project, conv)) {
             return;
         }
         const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
@@ -226,7 +254,9 @@ export async function discoverAndMountTranscriptPreviewIfReadyExtracted(ctx: Mob
             );
             return;
         }
-        const discovered = await ctx.discoverProjectDevPreviewUrl(latestProject);
+        const discovered = waiting
+            ? await ctx.discoverProjectDevPreviewUrl(latestProject)
+            : await discoverProjectDevPreviewUrlForIdleProbe(ctx, latestProject);
         if (!discovered || !host.isConnected || !ctx.matchesActivePreviewSummary(summary)) {
             return;
         }
@@ -386,9 +416,37 @@ export function fallBackFromSupersededTranscriptPreviewExtracted(ctx: MobileProj
             MobileSnackbar.show(nls.localize(
                 'qaap/mobileProjects/previewSuperseded',
                 'This preview was replaced by a newer run and is no longer available. Looking for the current one…',
-            ), { kind: 'warning' });
+            ), {
+                kind: 'warning',
+                duration: 6000,
+                actionLabel: nls.localizeByDefault('Retry'),
+                onAction: () => {
+                    void retrySupersededTranscriptPreview(ctx, host, cleared, summary);
+                },
+            });
         }
         void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
+}
+
+/** Snackbar "Retry": look the project's live preview up again and mount it, bypassing the idle-probe cache. */
+async function retrySupersededTranscriptPreview(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        ctx.transcriptPreviewIdleDiscovery.delete(project.id);
+        const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
+        const url = await ctx.discoverProjectDevPreviewUrl(latestProject).catch(() => undefined);
+        if (!host.isConnected || ctx.transcriptPreviewProjectId !== project.id) {
+            return;
+        }
+        if (!url) {
+            MobileSnackbar.show(nls.localize(
+                'qaap/mobileProjects/previewSupersededRetryMissing',
+                'No running preview was found for this project yet.',
+            ), { kind: 'warning' });
+            return;
+        }
+        const adopted = ctx.adoptReconciledProjectPreviewUrl(latestProject, url);
+        void ctx.tryMountProjectScopedPreview(host, project, summary, adopted, url);
 }
 
 export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,

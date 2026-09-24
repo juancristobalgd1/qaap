@@ -9,9 +9,19 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 import { createAgentsHubQuickActionsBlockExtracted } from './mobile-projects-tasks-hub-ui-render';
 
-enableJSDOM();
+let disableJSDOM = enableJSDOM();
+
+// Each suite (re-)enables its own DOM: another spec's disableJSDOM() deletes the shared globals.
 
 describe('mobile-projects-tasks-hub-ui-render', () => {
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
     it('turns Run app into a busy colored action immediately when pressed', () => {
         let launched = false;
         const block = createAgentsHubQuickActionsBlockExtracted({

@@ -61,7 +61,8 @@ export function syncQaapMiniBrowserPreviewSuspension(
 ): void {
     if (userViewingIdePreview) {
         forEachQaapMiniBrowserContent(shell, (content, widget) => {
-            if (shell.activeWidget?.id === widget.id || shell.currentWidget?.id === widget.id) {
+            // A preview still on screen (e.g. the other half of a split layout) keeps its page.
+            if (shell.activeWidget?.id === widget.id || shell.currentWidget?.id === widget.id || widget.isVisible) {
                 content.resumePreviewFrame();
             } else {
                 content.suspendPreviewFrame();

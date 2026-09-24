@@ -192,6 +192,9 @@ export class MobileProjectsTranscriptSurfacesUi {
     public transcriptPreviewProbeIdleTicks = 0;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewProbeScopeKey: string | undefined;
+    /** Idle-probe dev-preview discovery per project id (in flight or a recent miss). */
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public readonly transcriptPreviewIdleDiscovery = new Map<string, { readonly at: number; readonly result: Promise<string | undefined> }>();
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewIdentityWatchTimer: number | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
