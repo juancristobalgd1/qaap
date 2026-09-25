@@ -108,6 +108,13 @@ jobs:
         shell: bash
         run: cd examples/playwright && npm run rioja-e2e-eval
 
+      - name: Collect agent task logs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p test-results/qaap-rioja-ui-flow/agent-task-logs
+          cp "${HOME}/.qaap/agent-tasks/"*.log test-results/qaap-rioja-ui-flow/agent-task-logs/ 2>/dev/null || true
+
       - name: Upload E2E artifacts
         if: always()
         uses: actions/upload-artifact@v4
