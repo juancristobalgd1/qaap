@@ -16,7 +16,7 @@ import {
     createComposerBranchSheetRow,
     findComposerBranchSheetRow,
 } from './qaap-composer-branch-sheet-row';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

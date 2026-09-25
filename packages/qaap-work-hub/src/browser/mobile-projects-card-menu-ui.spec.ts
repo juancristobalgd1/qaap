@@ -12,7 +12,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import type { MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { MobileProjectsCardMenuUi } = require('./mobile-projects-card-menu-ui') as typeof import('./mobile-projects-card-menu-ui');
 

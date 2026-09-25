@@ -13,7 +13,7 @@ import { expect } from 'chai';
 import { MobileProjectsBackgroundTaskUi } from './mobile-projects-background-task-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

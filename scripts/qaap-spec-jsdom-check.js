@@ -5,16 +5,22 @@
 // *****************************************************************************
 
 /**
- * Fails when a Work Hub spec turns jsdom on at load time without turning it off again after its
- * imports. Mocha loads every spec file before running any suite, so a leaked load-time DOM makes
- * other specs pass only in one file order. Required shape (see
- * packages/qaap-work-hub/src/browser/test/qaap-jsdom-suite.ts):
+ * Keeps qaap specs independent of mocha's file order. Mocha loads every spec file before running any
+ * suite, so a DOM one file leaves behind makes other files pass in one order only. Two rules:
  *
- *     const disableImportJSDOM = enableJSDOM();
- *     // ...imports...
- *     disableImportJSDOM();          // top level, before the first describe()
+ * 1. A top-level `enableJSDOM()` must be undone after the imports, before the first `describe()`:
  *
- * Usage: node scripts/qaap-spec-jsdom-check.js [dir ...]   (default: packages/qaap-work-hub/src)
+ *        const disableImportJSDOM = enableJSDOM();
+ *        // ...imports...
+ *        disableImportJSDOM();
+ *
+ * 2. A spec that uses the DOM in its tests (`document.createElement`, `window.addEventListener`, …)
+ *    must set one up itself — `useSuiteJSDOM()` from
+ *    packages/qaap-mobile-shell/src/browser/test/qaap-jsdom-suite.ts, or its own `enableJSDOM()`
+ *    hooks — instead of relying on one another spec file left on. Packages whose `test` script
+ *    preloads jsdom (`--require …jsdom…`) are exempt.
+ *
+ * Usage: node scripts/qaap-spec-jsdom-check.js [dir ...]   (default: every packages/qaap-* /src)
  */
 'use strict';
 
@@ -22,7 +28,15 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const dirs = process.argv.slice(2).length ? process.argv.slice(2) : ['packages/qaap-work-hub/src'];
+
+function defaultDirs() {
+    const packages = path.join(root, 'packages');
+    return fs.readdirSync(packages)
+        .filter(name => name.startsWith('qaap-') && fs.existsSync(path.join(packages, name, 'src')))
+        .map(name => path.join('packages', name, 'src'));
+}
+
+const dirs = process.argv.slice(2).length ? process.argv.slice(2) : defaultDirs();
 
 function listSpecs(dir) {
     const out = [];
@@ -37,12 +51,40 @@ function listSpecs(dir) {
     return out;
 }
 
+/** True when the spec's package test script preloads a DOM for every spec file. */
+const preloadCache = new Map();
+function packagePreloadsDom(file) {
+    let dir = path.dirname(file);
+    while (dir.startsWith(root) && !fs.existsSync(path.join(dir, 'package.json'))) {
+        dir = path.dirname(dir);
+    }
+    if (!preloadCache.has(dir)) {
+        let preloads = false;
+        try {
+            const test = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).scripts?.test ?? '';
+            preloads = /--require\s+\S*jsdom/i.test(test);
+        } catch {
+            preloads = false;
+        }
+        preloadCache.set(dir, preloads);
+    }
+    return preloadCache.get(dir);
+}
+
+// Runtime DOM use that needs a real document/window (type positions like `HTMLElement` do not count).
+// `run.document.x` / `dom.window.x` are someone else's DOM, so a leading `.` does not count.
+const DOM_USE = /(?<![.\w$])(?:document\.(?:createElement|createTextNode|createRange|body|head|documentElement|querySelector(?:All)?|getElementById|activeElement|addEventListener|dispatchEvent)|window\.(?:addEventListener|dispatchEvent|getComputedStyle|matchMedia|innerWidth|innerHeight|location|requestAnimationFrame)|new (?:window\.)?(?:KeyboardEvent|MouseEvent|PointerEvent|CustomEvent|MutationObserver))\b/;
+// A local variable / parameter named `document` or `window` shadows the global.
+const SHADOWED = /\b(?:const|let|var)\s+(?:document|window)\b|\(\s*(?:document|window)\s*[:,)]/;
+// Any DOM setup of the spec's own.
+const DOM_SETUP = /\b(?:enableJSDOM|useSuiteJSDOM|JSDOM|parseHTML|linkedom|happy-dom)\b/;
+
 function checkSpec(file) {
     const source = fs.readFileSync(file, 'utf8');
     const firstDescribe = source.search(/^describe\(/m);
     const loadTime = firstDescribe < 0 ? source : source.slice(0, firstDescribe);
     const problems = [];
-    // Only column-0 statements are load-time; calls inside hooks/tests are indented.
+    // Rule 1 — only column-0 statements are load-time; calls inside hooks/tests are indented.
     for (const match of loadTime.matchAll(/^(?:(?:const|let)\s+(\w+)\s*(?::[^=]+)?=\s*)?enableJSDOM\(\);?/gm)) {
         const line = loadTime.slice(0, match.index).split('\n').length;
         const name = match[1];
@@ -55,6 +97,13 @@ function checkSpec(file) {
         if (!disable.test(rest)) {
             problems.push(`${line}: '${name}' from top-level enableJSDOM() is never called before the first describe()`);
         }
+    }
+    // Rule 2 — DOM used in tests with no setup of its own.
+    const tests = firstDescribe < 0 ? '' : source.slice(firstDescribe);
+    const use = DOM_USE.exec(tests);
+    if (use && !DOM_SETUP.test(source) && !SHADOWED.test(source) && !packagePreloadsDom(file)) {
+        const line = source.slice(0, firstDescribe + use.index).split('\n').length;
+        problems.push(`${line}: uses '${use[0]}' without any jsdom setup; add useSuiteJSDOM() to the suite`);
     }
     return problems;
 }
@@ -69,7 +118,7 @@ for (const dir of dirs) {
     }
 }
 if (failures) {
-    console.error(`[qaap-spec-jsdom] ${failures} load-time jsdom leak(s); see the header of scripts/qaap-spec-jsdom-check.js.`);
+    console.error(`[qaap-spec-jsdom] ${failures} problem(s); see the header of scripts/qaap-spec-jsdom-check.js.`);
     process.exit(1);
 }
-console.log('[qaap-spec-jsdom] OK — no spec leaks a load-time jsdom.');
+console.log('[qaap-spec-jsdom] OK — specs set up and tear down their own jsdom.');

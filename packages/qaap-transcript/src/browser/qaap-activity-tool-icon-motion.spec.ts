@@ -17,7 +17,7 @@ import {
     resolveActivityToolIconMotionKind,
     syncActivityToolIconMotion,
 } from './qaap-activity-tool-icon-motion';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

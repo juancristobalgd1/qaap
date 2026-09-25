@@ -28,7 +28,7 @@ import {
     type TranscriptFileTreeEntry,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

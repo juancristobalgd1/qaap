@@ -14,7 +14,7 @@ import { buildWorkHubHomeUsageSummary } from '../common/qaap-work-hub-usage-summ
 import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
 import { MobileProjectsHomeUi, type MobileProjectsHomeUiDeps } from './mobile-projects-home-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

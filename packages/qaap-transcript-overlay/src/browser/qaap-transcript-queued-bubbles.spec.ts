@@ -14,10 +14,17 @@ import {
 
 describe('qaap-transcript-queued-bubbles', () => {
 
+    // Own DOM per suite (qaap-transcript-overlay cannot use the qaap-mobile-shell helper): specs
+    // no longer leave jsdom on for each other, so enable here and remove it again afterwards.
+    let disableJSDOM: (() => void) | undefined;
+
     before(() => {
-        // Not torn down on purpose: sibling suites enable JSDOM at module scope, so restoring
-        // the globals here would strip the document from whichever spec file runs next.
-        enableJSDOM();
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+        disableJSDOM = undefined;
     });
 
     function createChatHost(options: { liveStatus?: boolean } = {}): HTMLElement {

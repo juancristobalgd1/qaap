@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import { QaapConversationMessageError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -12,8 +11,12 @@ import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '@theia/qaap-shared-core/li
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
+
+    useSuiteJSDOM();
+
     // The composer module pulls @lumino/widgets, which reads `document` at load time — it can
     // only be required once JSDOM is up, so it is loaded here instead of at module scope.
     let composerModule: typeof import('./mobile-projects-transcript-sticky-composer-ui');
@@ -21,10 +24,6 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     let timelineModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-timeline');
 
     before(() => {
-        // Deliberately not torn down: sibling suites in this package enable JSDOM at module
-        // scope (load time), so restoring the globals here would strip the document out from
-        // under whichever spec file runs next.
-        enableJSDOM();
         // @lumino/dragdrop reads DragEvent at module load; jsdom does not provide it.
         const globals = globalThis as unknown as { DragEvent?: unknown };
         if (!globals.DragEvent) {

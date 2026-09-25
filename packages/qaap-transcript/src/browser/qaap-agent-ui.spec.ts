@@ -19,7 +19,7 @@ import {
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveAgentApprovalPolicyOption } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { QAIQ_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

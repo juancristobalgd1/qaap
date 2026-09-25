@@ -23,7 +23,7 @@ import { QaapThreadStore } from '@theia/qaap-shared-core/lib/common/qaap-thread-
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { MobileProjectsTranscriptLiveUi, type MobileProjectsTranscriptLiveHost } from './mobile-projects-transcript-live-ui';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
@@ -32,9 +32,6 @@ describe('MobileProjectsTranscriptLiveUi', () => {
     useSuiteJSDOM();
 
     beforeEach(() => {
-        if (typeof HTMLElement === 'undefined') {
-            enableJSDOM();
-        }
         if (!HTMLElement.prototype.scrollIntoView) {
             HTMLElement.prototype.scrollIntoView = () => undefined;
         }

@@ -19,6 +19,7 @@ import type {
 } from './mobile-shell-bottom-bar-controller';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
@@ -28,10 +29,11 @@ const MOBILE_BOTTOM_SPLIT_MAIN_MIN_RATIO = 0.28;
 
 describe('mobile-shell-bottom-bar-controller', () => {
 
+    useSuiteJSDOM();
+
     let MobileShellBottomBarController: typeof MobileShellBottomBarControllerType;
 
     before(() => {
-        enableJSDOM();
         // Lumino loads at require time — JSDOM must be enabled first.
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         MobileShellBottomBarController = require('./mobile-shell-bottom-bar-controller').MobileShellBottomBarController;

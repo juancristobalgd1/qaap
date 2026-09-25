@@ -24,7 +24,7 @@ import {
     enhanceTranscriptMarkdownRichContent,
     TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS,
 } from './qaap-transcript-rich-content-ui';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

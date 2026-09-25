@@ -24,7 +24,7 @@ import {
     ensureTranscriptToolSpeculativePlaceholderExtracted,
 } from './mobile-projects-transcript-messages-tool-ui-streaming';
 import { patchTranscriptToolResultStreamBodyExtracted } from './mobile-projects-transcript-messages-tool-ui-timeline';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

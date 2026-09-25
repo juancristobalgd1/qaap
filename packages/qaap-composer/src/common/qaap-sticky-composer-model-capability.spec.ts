@@ -19,7 +19,7 @@ import {
     snapModelCapabilityFraction,
     writeStoredModelCapabilityLevel,
 } from './qaap-sticky-composer-model-capability';
-import { useSuiteJSDOM } from '../browser/test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

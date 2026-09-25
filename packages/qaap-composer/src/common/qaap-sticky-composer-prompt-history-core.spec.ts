@@ -15,7 +15,7 @@ import {
     isTextareaCaretAtEnd,
     textareaCaretLineColumn,
 } from './qaap-sticky-composer-prompt-history-core';
-import { useSuiteJSDOM } from '../browser/test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

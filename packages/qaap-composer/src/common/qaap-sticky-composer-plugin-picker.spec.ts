@@ -12,7 +12,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { QAAP_MCP_MARKETPLACE_PLUGINS } from './qaap-mcp-plugin-marketplace-catalog';
 import { renderStickyComposerAddPluginPicker } from './qaap-sticky-composer-plugin-picker';
-import { useSuiteJSDOM } from '../browser/test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

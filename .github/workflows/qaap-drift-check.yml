@@ -72,8 +72,9 @@ jobs:
       - name: Run qaap:ts-nocheck-check
         run: npm run qaap:ts-nocheck-check
 
-      - name: Verify specs restore jsdom after imports
-        run: node scripts/qaap-spec-jsdom-check.js packages/qaap-work-hub/src packages/qaap-adapters/src packages/qaap-mobile-shell/src packages/qaap-shared-core/src packages/qaap-agents-ui/src packages/qaap-composer/src packages/qaap-transcript/src packages/qaap-shell/src
+      # Every packages/qaap-*/src: specs undo load-time jsdom and set up their own DOM.
+      - name: Verify specs own their jsdom
+        run: node scripts/qaap-spec-jsdom-check.js
 
       - name: Verify drift guard failure modes
         run: node --test scripts/qaap-drift-check.test.js

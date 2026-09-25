@@ -13,7 +13,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 import { createAgentsHubQuickActionsBlockExtracted } from './mobile-projects-tasks-hub-ui-render';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
