@@ -72,7 +72,7 @@ export class GoogleFrontendApplicationContribution implements FrontendApplicatio
     }
 
     protected syncModels(...models: GoogleModelDescription[]): void {
-        void this.manager.createOrUpdateLanguageModels(...models).catch(error => {
+        this.manager.createOrUpdateLanguageModels(...models).catch(error => {
             console.warn('Gemini model synchronization failed:', error);
         });
     }
