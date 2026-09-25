@@ -10,31 +10,31 @@
   ],
   "references": [
     {
+      "path": "../ai-anthropic"
+    },
+    {
       "path": "../ai-chat"
     },
     {
       "path": "../ai-chat-ui"
     },
     {
-      "path": "../ai-core"
-    },
-    {
-      "path": "../ai-ide"
-    },
-    {
-      "path": "../ai-mcp"
-    },
-    {
-      "path": "../ai-anthropic"
-    },
-    {
       "path": "../ai-claude-code"
+    },
+    {
+      "path": "../ai-core"
     },
     {
       "path": "../ai-google"
     },
     {
       "path": "../ai-hugging-face"
+    },
+    {
+      "path": "../ai-ide"
+    },
+    {
+      "path": "../ai-mcp"
     },
     {
       "path": "../ai-ollama"
