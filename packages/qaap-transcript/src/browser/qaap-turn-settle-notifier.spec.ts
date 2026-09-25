@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
 import { QaapTurnSettleNotifier } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 class MockNotification {
 
@@ -45,21 +45,15 @@ function setVisibility(state: 'visible' | 'hidden'): void {
 
 describe('QaapTurnSettleNotifier', () => {
 
-    let disableJSDOM: (() => void) | undefined;
+    // One jsdom for the suite: a fresh one per test cost enough to hit mocha's 2 s hook timeout on a loaded machine.
+    useSuiteJSDOM();
 
     beforeEach(() => {
-        disableJSDOM?.();
-        disableJSDOM = enableJSDOM();
         MockNotification.permission = 'granted';
         MockNotification.requestPermissionCalls = 0;
         MockNotification.instances = [];
         (globalThis as unknown as { Notification: typeof MockNotification }).Notification = MockNotification;
         setVisibility('hidden');
-    });
-
-    after(() => {
-        disableJSDOM?.();
-        disableJSDOM = undefined;
     });
 
     it('fires a notification when hidden, Notification exists and permission is granted', () => {
