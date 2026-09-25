@@ -97,6 +97,9 @@ jobs:
           npm run ui-tests:qaap-mobile
         env:
           QAAP_SKIP_AUTH: 'true'
+          # The mock QAIQ ignores it, but the runner starts a QAIQ task only with a configured provider
+          # (the Ollama schema default stopped counting as one); without it every agent turn fails before spawn.
+          OPENROUTER_API_KEY: mock-rioja-e2e
           QAAP_CLOUD_MODE: local
           QAAP_MOCK_RIOJA_SUBFOLDER: '0'
           # Keep disconnected Playwright frontends alive for the complete suite.
