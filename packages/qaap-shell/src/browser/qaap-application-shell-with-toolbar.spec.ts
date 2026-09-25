@@ -10,8 +10,8 @@ import { useAnimationFrameStub } from './test/qaap-animation-frame-stub';
 // The shell modules touch the DOM while loading; give them one only for the import.
 const disableImportJSDOM = enableJSDOM();
 import '@theia/core/lib/browser';
-import { Panel, Widget } from '@lumino/widgets';
-import { MAXIMIZED_CLASS } from '@theia/core/lib/browser';
+import { BoxLayout, BoxPanel, Layout, Panel, SplitPanel, Widget } from '@lumino/widgets';
+import { MAXIMIZED_CLASS, TheiaSplitPanel } from '@theia/core/lib/browser';
 import { SidePanel } from '@theia/core/lib/browser/shell/side-panel-handler';
 import { QaapApplicationShellWithToolbar } from './qaap-application-shell-with-toolbar';
 disableImportJSDOM();
@@ -27,6 +27,12 @@ interface TestableShell {
     collapseBottomPanel(): Promise<void>;
     refreshBottomPanelToggleButton(): void;
     createTopPanel(): Panel;
+    createLayout(): Layout;
+    mainPanel: Widget;
+    toolbar: Widget;
+    leftPanelHandler: { container: Widget };
+    rightPanelHandler: { container: Widget };
+    leftRightSplitPanel: TheiaSplitPanel;
 }
 
 describe('QaapApplicationShellWithToolbar', () => {
@@ -124,4 +130,72 @@ describe('QaapApplicationShellWithToolbar', () => {
             expect(removed).to.deep.equal(['bottom-panel-toggle']);
         });
     });
+
+    /**
+     * `createLayout` only arranges widgets the shell already owns, so the regions are plain lumino
+     * widgets here. Building a real ApplicationShell through DI would need ~15 core services plus
+     * the toolbar's for no extra coverage of this arrangement.
+     */
+    describe('layout', () => {
+        function shellWithRegions(): TestableShell & Record<'regions', Record<string, Widget>> {
+            const shell = createShell() as TestableShell & Record<'regions', Record<string, Widget>>;
+            const regions = {
+                top: widget('theia-top-panel'),
+                toolbar: widget('main-toolbar'),
+                main: widget('theia-main-content-panel'),
+                bottom: widget('theia-bottom-content-panel'),
+                left: widget('theia-left-content-panel'),
+                right: widget('theia-right-content-panel'),
+                status: widget('theia-statusBar'),
+            };
+            Object.assign(shell, {
+                regions,
+                topPanel: regions.top,
+                toolbar: regions.toolbar,
+                mainPanel: regions.main,
+                bottomPanel: regions.bottom,
+                leftPanelHandler: { container: regions.left },
+                rightPanelHandler: { container: regions.right },
+                statusBar: regions.status,
+            });
+            return shell;
+        }
+
+        it('stacks top panel, toolbar, the side split and the status bar, stretching only the split', () => {
+            const shell = shellWithRegions();
+            const layout = shell.createLayout() as BoxLayout;
+            expect(layout).to.be.instanceOf(BoxLayout);
+            expect(layout.direction).to.equal('top-to-bottom');
+            expect(layout.widgets.map(item => item.id)).to.deep.equal([
+                'theia-top-panel', 'main-toolbar', 'theia-left-right-split-panel', 'theia-statusBar',
+            ]);
+            expect(layout.widgets.map(item => BoxPanel.getStretch(item))).to.deep.equal([0, 0, 1, 0]);
+        });
+
+        it('splits left | main+bottom | right horizontally and exposes it as leftRightSplitPanel', () => {
+            const shell = shellWithRegions();
+            const layout = shell.createLayout() as BoxLayout;
+            const sides = shell.leftRightSplitPanel;
+            // The mobile one-column layout drives this exact panel (QaapShellWithLeftRightSplit).
+            expect(sides).to.be.instanceOf(TheiaSplitPanel);
+            expect(layout.widgets[2]).to.equal(sides);
+            expect(sides.orientation).to.equal('horizontal');
+            expect(sides.spacing).to.equal(0);
+            expect(sides.widgets.map(item => item.id)).to.deep.equal([
+                'theia-left-content-panel', 'theia-bottom-split-panel', 'theia-right-content-panel',
+            ]);
+            expect(sides.widgets.map(item => SplitPanel.getStretch(item))).to.deep.equal([0, 1, 0]);
+        });
+
+        it('stacks the main area over the bottom panel in a vertical split', () => {
+            const shell = shellWithRegions();
+            shell.createLayout();
+            const mainAndBottom = shell.leftRightSplitPanel.widgets[1] as SplitPanel;
+            expect(mainAndBottom).to.be.instanceOf(TheiaSplitPanel);
+            expect(mainAndBottom.orientation).to.equal('vertical');
+            expect(mainAndBottom.widgets).to.deep.equal([shell.regions.main, shell.regions.bottom]);
+            expect(mainAndBottom.widgets.map(item => SplitPanel.getStretch(item))).to.deep.equal([1, 0]);
+        });
+    });
 });
+

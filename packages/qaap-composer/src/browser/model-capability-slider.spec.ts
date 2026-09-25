@@ -11,7 +11,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { createModelCapabilitySlider } from './model-capability-slider';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

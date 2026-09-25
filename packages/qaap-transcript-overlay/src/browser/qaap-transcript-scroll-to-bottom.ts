@@ -78,9 +78,11 @@ function scrollTranscriptToEnd(scroller: HTMLElement): void {
     if ('onscrollend' in scroller) {
         scroller.addEventListener('scrollend', snapToEnd, { once: true });
     }
-    window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(snapToEnd);
-    });
+    if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(snapToEnd);
+        });
+    }
     window.setTimeout(snapToEnd, 480);
 }
 
@@ -218,6 +220,10 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     let fabMode: TranscriptScrollFabMode = 'bottom';
     let debounceTimer: number | undefined;
     let syncRaf = 0;
+    let disposed = false;
+    // Only a host that has been in the document can be "detached"; one built offscreen and
+    // inserted later must not be torn down by mutations that happen before insertion.
+    let wasConnected = mountHost.isConnected;
 
     const setButtonVisible = (visible: boolean, mode: TranscriptScrollFabMode = fabMode): void => {
         if (showButton === visible && fabMode === mode) {
@@ -278,6 +284,9 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     };
 
     const applyScrollVisibility = (): void => {
+        if (disposed) {
+            return;
+        }
         const next = readShouldShow(boundScroller);
         if (!next.visible) {
             hideButtonImmediately();
@@ -296,7 +305,8 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     };
 
     const scheduleSync = (): void => {
-        if (syncRaf) {
+        // No frame scheduler (jsdom, detached realms): there is no layout to sync against.
+        if (syncRaf || disposed || typeof requestAnimationFrame !== 'function') {
             return;
         }
         syncRaf = requestAnimationFrame(() => {
@@ -343,10 +353,17 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
             scroller.addEventListener('scrollend', scrollEndListener, { passive: true });
         }
         if (typeof ResizeObserver !== 'undefined') {
-            resizeObserver = new ResizeObserver(scheduleSync);
+            resizeObserver = new ResizeObserver(() => {
+                if (!disposeIfDetached()) {
+                    scheduleSync();
+                }
+            });
             resizeObserver.observe(scroller);
         }
         contentObserver = new MutationObserver(mutations => {
+            if (disposeIfDetached()) {
+                return;
+            }
             countNewMessages(mutations);
             scheduleSync();
         });
@@ -355,7 +372,9 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     };
 
     const resolveAndBindScroller = (): void => {
-        bindScroller(resolveTranscriptScroller(mountHost));
+        if (!disposeIfDetached()) {
+            bindScroller(resolveTranscriptScroller(mountHost));
+        }
     };
 
     button.addEventListener('click', (event: MouseEvent) => {
@@ -398,20 +417,41 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     });
 
     const mutationObserver = new MutationObserver(resolveAndBindScroller);
-    mutationObserver.observe(mountHost, { childList: true, subtree: false });
 
-    resolveAndBindScroller();
-
-    return Disposable.create(() => {
-        if (syncRaf) {
+    const dispose = (): void => {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        if (syncRaf && typeof cancelAnimationFrame === 'function') {
             cancelAnimationFrame(syncRaf);
         }
-        if (debounceTimer !== undefined) {
-            window.clearTimeout(debounceTimer);
-        }
+        syncRaf = 0;
+        clearShowDebounce();
         mutationObserver.disconnect();
         unbindScroller();
         button.remove();
+        liveRegion.remove();
         mountHost.classList.remove(TRANSCRIPT_SCROLL_TO_BOTTOM_MOUNT_CLASS);
-    });
+    };
+
+    /**
+     * Transcript hosts are recreated on conversation switches, and not every path disposes the
+     * old controller. Observer callbacks run asynchronously (microtask / frame), so a host that
+     * is merely moved in the DOM is connected again by then; one that is still detached is gone
+     * — release its observers and timers instead of keeping them alive with the old subtree.
+     */
+    function disposeIfDetached(): boolean {
+        if (mountHost.isConnected) {
+            wasConnected = true;
+        } else if (wasConnected && !disposed) {
+            dispose();
+        }
+        return disposed;
+    }
+
+    mutationObserver.observe(mountHost, { childList: true, subtree: false });
+    resolveAndBindScroller();
+
+    return Disposable.create(dispose);
 }

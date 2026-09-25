@@ -13,16 +13,14 @@ import { expect } from 'chai';
 import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './mobile-projects-hub-header-ui';
 import { mountHeaderProjectButtonContents } from './mobile-projects-panel-chrome-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('MobileProjectsHubHeaderUi', () => {
 
-    beforeEach(() => {
-        if (typeof document === 'undefined') {
-            enableJSDOM();
-        }
-    });
+    useSuiteJSDOM();
+
     function project(id: string, name: string): MobileProjectEntry {
         return {
             id,

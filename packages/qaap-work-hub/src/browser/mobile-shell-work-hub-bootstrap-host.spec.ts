@@ -13,7 +13,7 @@ import { expect } from 'chai';
 import { initWorkHubBootstrapControllerExtracted } from './mobile-one-column-shell-contribution-render';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

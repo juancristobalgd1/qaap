@@ -33,7 +33,7 @@ import { TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS, TRANSCRIPT_PREVIEW_TAB_PROBE_MS } 
 import { firstInPriorityOrder } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS } from './mobile-projects-transcript-surfaces-ui-timeline';
 import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS } from './mobile-projects-transcript-surfaces-ui';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 

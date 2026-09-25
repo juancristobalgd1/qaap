@@ -19,10 +19,13 @@ import {
     type MobileProjectsPanelChromeHost,
 } from './mobile-projects-panel-chrome-ui';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
+
+    useSuiteJSDOM();
 
     let disableJSDOM: (() => void) | undefined;
 
@@ -162,11 +165,7 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
 
 describe('mountHeaderProjectButtonContents', () => {
 
-    beforeEach(() => {
-        if (typeof document === 'undefined') {
-            enableJSDOM();
-        }
-    });
+    useSuiteJSDOM();
 
     it('puts the project chevron beside the folder and a conversations chevron after the title', () => {
         const cluster = document.createElement('div');

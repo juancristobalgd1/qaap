@@ -15,7 +15,7 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import { MobileProjectsStickyComposerWorkspaceUi, type MobileProjectsStickyComposerWorkspaceHost } from './mobile-projects-sticky-composer-workspace-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { COMPOSER_BRANCH_SHEET_ROW_SELECTOR } from './qaap-composer-branch-sheet-row';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
@@ -27,9 +27,6 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
 
     beforeEach(() => {
         originalFetch = globalThis.fetch;
-        if (typeof document === 'undefined') {
-            enableJSDOM();
-        }
         // Node's AbortSignal is incompatible with jsdom addEventListener({ signal }).
         globalThis.AbortController = window.AbortController;
         document.body.replaceChildren();

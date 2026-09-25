@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 // These modules touch the DOM while loading; give them one only for the import.
 const disableImportJSDOM = enableJSDOM();
 // Load core's browser barrel first: entering via @theia/workspace alone hits a core import cycle.

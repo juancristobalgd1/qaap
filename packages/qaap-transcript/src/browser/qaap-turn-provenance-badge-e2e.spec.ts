@@ -51,60 +51,19 @@ import {
     MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS,
     MOBILE_TURN_PROVENANCE_STANDALONE_CLASS,
 } from './qaap-execution-event-timeline';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
 
     useSuiteJSDOM();
-
-    /** Frames the shim scheduled; cleared after each test so none runs once this suite's DOM is gone. */
-    const pendingFrames = new Set<ReturnType<typeof setTimeout>>();
-    let previousFrameApi: Pick<typeof globalThis, 'requestAnimationFrame' | 'cancelAnimationFrame'> | undefined;
-
-    before(() => {
-        previousFrameApi = {
-            requestAnimationFrame: globalThis.requestAnimationFrame,
-            cancelAnimationFrame: globalThis.cancelAnimationFrame,
-        };
-    });
+    useSuiteAnimationFrameStub();
 
     beforeEach(() => {
-        if (typeof HTMLElement === 'undefined') {
-            enableJSDOM();
-        }
         if (!HTMLElement.prototype.scrollTo) {
             HTMLElement.prototype.scrollTo = () => undefined;
         }
-        const raf = (callback: FrameRequestCallback): number => {
-            const handle = setTimeout(() => {
-                pendingFrames.delete(handle);
-                callback(performance.now());
-            }, 0);
-            pendingFrames.add(handle);
-            return handle as unknown as number;
-        };
-        const caf = (handle: number): void => {
-            const timer = handle as unknown as ReturnType<typeof setTimeout>;
-            pendingFrames.delete(timer);
-            clearTimeout(timer);
-        };
-        window.requestAnimationFrame = raf;
-        window.cancelAnimationFrame = caf;
-        globalThis.requestAnimationFrame = raf;
-        globalThis.cancelAnimationFrame = caf;
-    });
-
-    afterEach(() => {
-        pendingFrames.forEach(handle => clearTimeout(handle));
-        pendingFrames.clear();
-    });
-
-    after(() => {
-        // Do not leave this suite's shim behind for later spec files.
-        globalThis.requestAnimationFrame = previousFrameApi!.requestAnimationFrame;
-        globalThis.cancelAnimationFrame = previousFrameApi!.cancelAnimationFrame;
     });
 
     // ─── Full renderTranscriptMessages() harness (mirrors mobile-projects-transcript-messages-render-ui.spec.ts) ───

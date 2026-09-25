@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 // The registry touches the DOM while loading; give it one only for the import.
 const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';

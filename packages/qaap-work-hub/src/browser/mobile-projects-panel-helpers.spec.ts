@@ -11,16 +11,13 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { renderHeaderOverflowMenuItems } from './mobile-projects-panel-helpers';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('renderHeaderOverflowMenuItems', () => {
 
-    beforeEach(() => {
-        if (typeof document === 'undefined') {
-            enableJSDOM();
-        }
-    });
+    useSuiteJSDOM();
 
     it('keeps empty-chat actions visible while disabling conversation-only copy', () => {
         const menu = document.createElement('div');

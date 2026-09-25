@@ -23,16 +23,15 @@ import {
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('mobile-shell-landing-controller', () => {
 
-    const storage = new Map<string, string>();
+    useSuiteJSDOM();
 
-    before(() => {
-        enableJSDOM();
-    });
+    const storage = new Map<string, string>();
 
     beforeEach(() => {
         storage.clear();

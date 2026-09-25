@@ -11,7 +11,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
@@ -20,9 +20,6 @@ describe('qaap-transcript-inline-search', () => {
     useSuiteJSDOM();
 
     beforeEach(() => {
-        if (typeof HTMLElement === 'undefined') {
-            enableJSDOM();
-        }
         HTMLElement.prototype.scrollIntoView = () => undefined;
     });
 

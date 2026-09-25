@@ -5,14 +5,12 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { attachStickyComposerSyntaxHighlight } from './qaap-sticky-composer-syntax-highlight';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 describe('qaap-sticky-composer-syntax-highlight', () => {
 
-    before(() => {
-        enableJSDOM();
-    });
+    useSuiteJSDOM();
 
     it('highlights known /skill-name tokens in the mirror layer', () => {
         const inputEditor = document.createElement('div');

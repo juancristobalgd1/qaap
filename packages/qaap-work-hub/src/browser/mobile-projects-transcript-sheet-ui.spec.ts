@@ -17,14 +17,15 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsTranscriptSheetUi, type MobileProjectsTranscriptSheetHost } from './mobile-projects-transcript-sheet-ui';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('MobileProjectsTranscriptSheetUi', () => {
+
+    useSuiteJSDOM();
+
     beforeEach(() => {
-        if (typeof HTMLElement === 'undefined') {
-            enableJSDOM();
-        }
         document.body.replaceChildren();
     });
 

@@ -33,60 +33,19 @@ import { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/b
 import { ensureTranscriptScrollController } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-controller';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('MobileProjectsTranscriptMessagesRenderUi', () => {
 
     useSuiteJSDOM();
-
-    /** Frames the shim scheduled; cleared after each test so none runs once this suite's DOM is gone. */
-    const pendingFrames = new Set<ReturnType<typeof setTimeout>>();
-    let previousFrameApi: Pick<typeof globalThis, 'requestAnimationFrame' | 'cancelAnimationFrame'> | undefined;
-
-    before(() => {
-        previousFrameApi = {
-            requestAnimationFrame: globalThis.requestAnimationFrame,
-            cancelAnimationFrame: globalThis.cancelAnimationFrame,
-        };
-    });
+    useSuiteAnimationFrameStub();
 
     beforeEach(() => {
-        if (typeof HTMLElement === 'undefined') {
-            enableJSDOM();
-        }
         if (!HTMLElement.prototype.scrollTo) {
             HTMLElement.prototype.scrollTo = () => undefined;
         }
-        const raf = (callback: FrameRequestCallback): number => {
-            const handle = setTimeout(() => {
-                pendingFrames.delete(handle);
-                callback(performance.now());
-            }, 0);
-            pendingFrames.add(handle);
-            return handle as unknown as number;
-        };
-        const caf = (handle: number): void => {
-            const timer = handle as unknown as ReturnType<typeof setTimeout>;
-            pendingFrames.delete(timer);
-            clearTimeout(timer);
-        };
-        window.requestAnimationFrame = raf;
-        window.cancelAnimationFrame = caf;
-        globalThis.requestAnimationFrame = raf;
-        globalThis.cancelAnimationFrame = caf;
-    });
-
-    afterEach(() => {
-        pendingFrames.forEach(handle => clearTimeout(handle));
-        pendingFrames.clear();
-    });
-
-    after(() => {
-        // Do not leave this suite's shim behind for later spec files.
-        globalThis.requestAnimationFrame = previousFrameApi!.requestAnimationFrame;
-        globalThis.cancelAnimationFrame = previousFrameApi!.cancelAnimationFrame;
     });
 
     function createRenderUi(): {

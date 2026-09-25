@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     clearPreferAgentsSurface,
     clearPreferDesktopIde,
@@ -30,14 +29,13 @@ import {
     resolveInitialLandingBodyClass,
     shouldMarkLandingLeftFromStorage,
 } from '../browser/mobile-shell-landing-state';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 describe('mobile-projects-open work hub bootstrap', () => {
 
-    const storage = new Map<string, string>();
+    useSuiteJSDOM();
 
-    before(() => {
-        enableJSDOM();
-    });
+    const storage = new Map<string, string>();
 
     beforeEach(() => {
         storage.clear();
@@ -132,12 +130,10 @@ describe('mobile-projects-open work hub bootstrap', () => {
 
 describe('work hub hide-ide-side-panels invariant', () => {
 
+    useSuiteJSDOM();
+
     const HIDE_CLASS = 'theia-mobile-mod-workhub-hide-ide-side-panels';
     const storage = new Map<string, string>();
-
-    before(() => {
-        enableJSDOM();
-    });
 
     beforeEach(() => {
         storage.clear();
@@ -188,11 +184,9 @@ describe('work hub hide-ide-side-panels invariant', () => {
 
 describe('mobile-shell-landing-state', () => {
 
-    const storage = new Map<string, string>();
+    useSuiteJSDOM();
 
-    before(() => {
-        enableJSDOM();
-    });
+    const storage = new Map<string, string>();
 
     beforeEach(() => {
         storage.clear();

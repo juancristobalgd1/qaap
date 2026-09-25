@@ -16,7 +16,7 @@ if (!browserGlobals.DragEvent) {
 import { expect } from 'chai';
 import type { QaapMessageDeliveryMode, QaapPendingUserMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
