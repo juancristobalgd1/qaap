@@ -161,6 +161,27 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             expect(response.headers['content-length']).to.equal(undefined);
         });
 
+        it('releases the dev-server connection when the browser leaves mid-stream', async () => {
+            let upstreamClosed!: Promise<void>;
+            upstreamHandler = (_req, res) => {
+                upstreamClosed = new Promise(resolve => res.once('close', () => resolve()));
+                res.writeHead(200, { 'content-type': 'text/event-stream' });
+                res.write('data: hello\n\n'); // SSE HMR: the stream never ends on its own
+            };
+            await new Promise<void>((resolve, reject) => {
+                const req = http.request({ host: '127.0.0.1', port: frontPort, method: 'GET', path: '/__hmr' }, res => {
+                    res.once('data', () => {
+                        req.destroy();
+                        resolve();
+                    });
+                });
+                req.on('error', () => undefined);
+                req.end();
+            });
+            // Resolves only once the proxy destroyed its upstream request.
+            await upstreamClosed;
+        });
+
         it('keeps content-length for HEAD and 304 responses', async () => {
             upstreamHandler = (_req, res) => {
                 res.writeHead(200, { 'content-type': 'application/javascript', 'content-length': '1234' });
@@ -531,6 +552,40 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             expect(Buffer.concat(received).toString()).to.contain('504 Gateway Timeout');
             expect(proxied.bytesWritten).to.be.greaterThan(0);
             // Resolves only once the proxy tore down its upstream connection.
+            await upstreamClosed;
+        } finally {
+            client.destroy();
+            silent.close();
+        }
+    });
+
+    it('drops the pending upstream handshake when the browser closes before the 101', async () => {
+        let upstreamClosed!: Promise<void>;
+        let upstreamConnected!: () => void;
+        const connected = new Promise<void>(resolve => { upstreamConnected = resolve; });
+        const silent = net.createServer(upstreamSocket => {
+            upstreamClosed = new Promise(resolve => upstreamSocket.once('close', () => resolve()));
+            upstreamSocket.resume();
+            upstreamConnected();
+        });
+        await new Promise<void>(resolve => silent.listen(0, '127.0.0.1', resolve));
+        const port = (silent.address() as AddressInfo).port;
+        const [client, proxied] = await new Promise<[net.Socket, net.Socket]>(resolve => {
+            const pair = net.createServer(serverSide => resolve([clientSide, serverSide]));
+            const clientSide = new net.Socket();
+            pair.listen(0, '127.0.0.1', () => clientSide.connect((pair.address() as AddressInfo).port, '127.0.0.1'));
+            clientSide.once('close', () => pair.close());
+        });
+        const ctx = {
+            resolveTargetHost: () => Promise.resolve('127.0.0.1'),
+            invalidateTargetHost: () => undefined,
+        } as unknown as QaapDevPreviewEndpointContext;
+        const request = { method: 'GET', headers: { upgrade: 'websocket', connection: 'Upgrade' } } as unknown as http.IncomingMessage;
+        try {
+            // Handshake bound far beyond the test: only the client's close can release the upstream socket.
+            await proxyWebSocketExtracted(ctx, request, proxied, Buffer.alloc(0), port, '/_next/webpack-hmr', 60_000);
+            await connected;
+            client.destroy();
             await upstreamClosed;
         } finally {
             client.destroy();

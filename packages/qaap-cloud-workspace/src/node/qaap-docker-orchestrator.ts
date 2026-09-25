@@ -147,6 +147,8 @@ export class QaapDockerOrchestrator {
     /** Tenant Theia backends are separate from legacy worker containers. */
     protected readonly tenantBackendTargets = new Map<string, QaapTenantBackendTarget>();
     protected readonly tenantBackendEnsurePromises = new Map<string, Promise<QaapTenantBackendTarget>>();
+    /** Underlying Docker create/validate runs, shared past a caller's timeout (see {@link shareTenantEnsureOperation}). */
+    protected readonly tenantEnsureOperations = new Map<string, { readonly promise: Promise<unknown>; readonly startedAt: number }>();
     /** Internal BrowserConnectionToken values captured from each tenant backend's health response. */
     protected readonly tenantBackendConnectionTokens = new Map<string, string>();
 
@@ -190,7 +192,10 @@ export class QaapDockerOrchestrator {
             stoppedAt: undefined,
             destroyAfter: undefined,
         });
-        const promise = this.boundTenantEnsure(this.createOrValidateTenantBackend(tenant, tenantRootHostPath), `backend for ${tenant}`);
+        const promise = this.boundTenantEnsure(
+            this.shareTenantEnsureOperation(`backend:${key}`, () => this.createOrValidateTenantBackend(tenant, tenantRootHostPath)),
+            `backend for ${tenant}`,
+        );
         this.tenantBackendEnsurePromises.set(key, promise);
         try {
             const target = await promise;
@@ -233,12 +238,11 @@ export class QaapDockerOrchestrator {
 
     /**
      * Stop waiting for a Docker ensure that never settles (hung daemon, stuck pull). The deduped
-     * in-flight promise is the bounded one, so the caller's `finally` evicts it and the next
-     * request retries. The underlying Docker operation is not cancelled.
+     * in-flight promise is the bounded one, so the caller's `finally` evicts it; the next request
+     * rejoins the still-running Docker operation ({@link shareTenantEnsureOperation}), which is not cancelled.
      */
     protected boundTenantEnsure<T>(operation: Promise<T>, label: string): Promise<T> {
-        const configured = Number.parseInt(process.env.QAAP_TENANT_ENSURE_TIMEOUT_MS?.trim() ?? '', 10);
-        const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : 180_000;
+        const timeoutMs = this.resolveTenantEnsureTimeoutMs();
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timeout = new Promise<never>((_, reject) => {
             timer = setTimeout(
@@ -248,6 +252,32 @@ export class QaapDockerOrchestrator {
             timer.unref?.();
         });
         return Promise.race([operation, timeout]).finally(() => clearTimeout(timer));
+    }
+
+    protected resolveTenantEnsureTimeoutMs(): number {
+        const configured = Number.parseInt(process.env.QAAP_TENANT_ENSURE_TIMEOUT_MS?.trim() ?? '', 10);
+        return Number.isInteger(configured) && configured > 0 ? configured : 180_000;
+    }
+
+    /**
+     * A caller that timed out only stops waiting: the Docker create/validate keeps running. A retry joins that
+     * run instead of racing a second create on the same container name. A run older than twice the ensure
+     * timeout counts as hung (dead daemon) and no longer blocks a fresh attempt.
+     */
+    protected shareTenantEnsureOperation<T>(key: string, start: () => Promise<T>): Promise<T> {
+        const running = this.tenantEnsureOperations.get(key);
+        if (running && Date.now() - running.startedAt < 2 * this.resolveTenantEnsureTimeoutMs()) {
+            return running.promise as Promise<T>;
+        }
+        const entry = { promise: start(), startedAt: Date.now() };
+        this.tenantEnsureOperations.set(key, entry);
+        const forget = (): void => {
+            if (this.tenantEnsureOperations.get(key) === entry) {
+                this.tenantEnsureOperations.delete(key);
+            }
+        };
+        entry.promise.then(forget, forget);
+        return entry.promise;
     }
 
     getTenantBackendTarget(ownerLogin: string | undefined): QaapTenantBackendTarget | undefined {
@@ -657,12 +687,12 @@ export class QaapDockerOrchestrator {
         const networkMode = this.getTenantNetworkMode(ownerLogin);
         const coldStartAt = Date.now();
         const wasReady = this.isTenantContainerReady(ownerLogin, mounts.reposRoot);
-        const promise = this.boundTenantEnsure(this.createOrValidateTenantContainer(
+        const promise = this.boundTenantEnsure(this.shareTenantEnsureOperation(`container:${name}`, () => this.createOrValidateTenantContainer(
             name,
             mounts,
             networkMode,
             ownerLogin,
-        ), `container ${name}`);
+        )), `container ${name}`);
         this.tenantEnsurePromises.set(name, promise);
         try {
             const result = await promise;

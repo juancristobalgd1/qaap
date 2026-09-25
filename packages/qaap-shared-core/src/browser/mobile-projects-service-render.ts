@@ -141,27 +141,33 @@ async function resolveWorkspaceRootExtracted(ctx: MobileProjectsServiceContext, 
 /**
  * Fire `onNoReload` if the page is still alive {@link OPEN_WORKSPACE_RELOAD_WATCHDOG_MS} after the
  * open. `pagehide` means the reload is committing, so the watchdog is cancelled instead of flashing
- * an error and the restored panel right before the reload. `beforeunload` only restarts the grace
- * period: navigation has started but may be slow, or vetoed (dirty-editor prompt), in which case
- * the error must still appear.
+ * an error and the restored panel right before the reload. `beforeunload` switches to the longer
+ * `navigationGraceMs`: navigation has started, and `pagehide` only fires once the new page starts
+ * arriving, which a cold tenant backend can delay well past `timeoutMs`. A vetoed navigation
+ * (dirty-editor prompt) still reports once that longer grace elapses.
  */
-export function armWorkspaceReloadWatchdog(onNoReload: () => void, timeoutMs = OPEN_WORKSPACE_RELOAD_WATCHDOG_MS): () => void {
+export function armWorkspaceReloadWatchdog(
+    onNoReload: () => void,
+    timeoutMs = OPEN_WORKSPACE_RELOAD_WATCHDOG_MS,
+    navigationGraceMs = 3 * timeoutMs,
+): () => void {
         let timer: ReturnType<typeof setTimeout> | undefined;
-        const arm = (): void => {
+        const arm = (delayMs: number): void => {
             clearTimeout(timer);
             timer = setTimeout(() => {
                 cancel();
                 onNoReload();
-            }, timeoutMs);
+            }, delayMs);
         };
+        const onBeforeUnload = (): void => arm(navigationGraceMs);
         const cancel = (): void => {
             clearTimeout(timer);
-            window.removeEventListener('beforeunload', arm);
+            window.removeEventListener('beforeunload', onBeforeUnload);
             window.removeEventListener('pagehide', cancel);
         };
-        window.addEventListener('beforeunload', arm);
+        window.addEventListener('beforeunload', onBeforeUnload);
         window.addEventListener('pagehide', cancel);
-        arm();
+        arm(timeoutMs);
         return cancel;
 }
 

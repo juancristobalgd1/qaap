@@ -334,11 +334,11 @@ describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
         const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
         Object.assign(endpoint, {
             reposRoot,
-            runGit: async (args: string[]) => {
+            runGit: async (args: string[], _token: string | undefined, cwd: string) => {
                 if (args[0] === 'clone') {
-                    const target = path.join(reposRoot, 'users', 'alice', 'octocat', 'Hello-World');
-                    fs.mkdirSync(target, { recursive: true });
-                    fs.writeFileSync(path.join(target, 'partial-pack'), 'incomplete');
+                    const destination = path.join(cwd, args[2]);
+                    fs.mkdirSync(path.join(destination, '.git'), { recursive: true });
+                    fs.writeFileSync(path.join(destination, 'partial-pack'), 'incomplete');
                 }
                 throw new Error('Git operation timed out after 120 seconds');
             },
@@ -367,6 +367,58 @@ describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
         }
 
         expect(fs.existsSync(path.join(reposRoot, 'users', 'alice', 'octocat', 'Hello-World'))).to.equal(false);
+        expect(fs.readdirSync(path.join(reposRoot, 'users', 'alice', 'octocat'))).to.deep.equal([]);
+        fs.rmSync(reposRoot, { recursive: true, force: true });
+    });
+
+    type WorkspaceEnsurer = {
+        ensureRepositoryWorkspace(repository: { owner: string; name: string; cloneUrl: string }, accessToken: undefined, userLogin: string): Promise<string>;
+    };
+    const helloWorld = { owner: 'octocat', name: 'Hello-World', cloneUrl: 'https://github.com/octocat/Hello-World.git' };
+
+    it('a git that keeps writing after a cancelled clone never creates the repository path', async () => {
+        const reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-clone-cancel-'));
+        const target = path.join(reposRoot, 'users', 'alice', 'octocat', 'Hello-World');
+        let lateWrite: (() => void) | undefined;
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            reposRoot,
+            runGit: async (args: string[], _token: string | undefined, cwd: string) => {
+                // The killed exec client returns, but git inside the worker still writes its destination later.
+                lateWrite = () => fs.mkdirSync(path.join(cwd, args[2], '.git'), { recursive: true });
+                throw new Error('Git operation cancelled');
+            },
+        });
+        try {
+            await (endpoint as unknown as WorkspaceEnsurer).ensureRepositoryWorkspace(helloWorld, undefined, 'alice');
+            expect.fail('Expected the clone to fail');
+        } catch (err) {
+            expect((err as Error).message).to.contain('cancelled');
+        }
+        lateWrite!();
+        expect(fs.existsSync(target)).to.equal(false);
+        fs.rmSync(reposRoot, { recursive: true, force: true });
+    });
+
+    it('moves a finished clone into a pre-existing empty workspace directory', async () => {
+        const reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-clone-empty-'));
+        const target = path.join(reposRoot, 'users', 'alice', 'octocat', 'Hello-World');
+        fs.mkdirSync(target, { recursive: true });
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            reposRoot,
+            runGit: async (args: string[], _token: string | undefined, cwd: string) => {
+                if (args[0] === 'clone') {
+                    fs.mkdirSync(path.join(cwd, args[2], '.git'), { recursive: true });
+                    fs.writeFileSync(path.join(cwd, args[2], 'README.md'), 'hello');
+                } else {
+                    throw new Error(`unexpected git ${args.join(' ')}`);
+                }
+            },
+        });
+        expect(await (endpoint as unknown as WorkspaceEnsurer).ensureRepositoryWorkspace(helloWorld, undefined, 'alice')).to.equal(target);
+        expect(fs.readFileSync(path.join(target, 'README.md'), 'utf8')).to.equal('hello');
+        expect(fs.readdirSync(path.dirname(target))).to.deep.equal(['Hello-World']);
         fs.rmSync(reposRoot, { recursive: true, force: true });
     });
 });
@@ -385,10 +437,10 @@ describe('QaapGithubOauthEndpoint git deadlines', () => {
         const deadlines: Array<number | undefined> = [];
         const endpoint = createEndpoint({
             reposRoot,
-            runGit: async (args: string[], _token: string | undefined, _cwd: string, options?: { deadline?: number }) => {
+            runGit: async (args: string[], _token: string | undefined, cwd: string, options?: { deadline?: number }) => {
                 deadlines.push(options?.deadline);
                 if (args[0] === 'clone') {
-                    fs.mkdirSync(path.join(target, '.git'), { recursive: true });
+                    fs.mkdirSync(path.join(cwd, args[2], '.git'), { recursive: true });
                 }
             },
         });
@@ -397,6 +449,7 @@ describe('QaapGithubOauthEndpoint git deadlines', () => {
             await (endpoint as unknown as {
                 ensureRepositoryWorkspace(repository: { owner: string; name: string; cloneUrl: string }, token: undefined, login: string): Promise<string>;
             }).ensureRepositoryWorkspace({ owner: 'octocat', name: 'empty', cloneUrl: 'https://github.com/octocat/empty.git' }, undefined, 'alice');
+            expect(fs.existsSync(path.join(target, '.git'))).to.equal(true);
             // clone + add + commit + push
             expect(deadlines).to.have.length(4);
             expect(new Set(deadlines).size).to.equal(1);

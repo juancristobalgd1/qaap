@@ -9,7 +9,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 describe('armWorkspaceReloadWatchdog', () => {
     let disableJSDOM: (() => void) | undefined;
-    let arm: (onNoReload: () => void, timeoutMs?: number) => () => void;
+    let arm: (onNoReload: () => void, timeoutMs?: number, navigationGraceMs?: number) => () => void;
     let clock: sinon.SinonFakeTimers;
 
     before(() => {
@@ -49,14 +49,26 @@ describe('armWorkspaceReloadWatchdog', () => {
         expect(fired).to.equal(0);
     });
 
-    it('restarts the grace period on beforeunload so a vetoed navigation still reports', () => {
+    it('switches to the navigation grace on beforeunload so a vetoed navigation still reports', () => {
         let fired = 0;
-        arm(() => fired++, 1_000);
+        arm(() => fired++, 1_000, 2_000);
         clock.tick(800);
         fire('beforeunload');
-        clock.tick(800);
+        clock.tick(1_999);
         expect(fired).to.equal(0);
-        clock.tick(200);
+        clock.tick(1);
         expect(fired).to.equal(1);
+    });
+
+    it('stays quiet through a reload slower than the open timeout (cold backend)', () => {
+        let fired = 0;
+        arm(() => fired++, 1_000);
+        clock.tick(100);
+        fire('beforeunload');
+        // The server takes 2.5x the open timeout to answer; pagehide fires only when the new page arrives.
+        clock.tick(2_500);
+        fire('pagehide');
+        clock.tick(10_000);
+        expect(fired).to.equal(0);
     });
 });

@@ -34,6 +34,9 @@ describe('qaap-qaiq-byok-provider-registry', () => {
         expect(isQaapAiSettingsPrefKey('editor.fontSize')).to.equal(false);
         expect(isQaapIsolatedAiSettingsPrefKey('ai-features.openrouter.openrouterApiKey')).to.equal(true);
         expect(isQaapIsolatedAiSettingsPrefKey('ai-features.mcp.mcpServers')).to.equal(true);
+        for (const secret of ['ai-features.claudeCode.apiKey', 'ai-features.codex.apiKey', 'ai-features.SCANOSS.apiKey', 'ai-features.registry.githubToken']) {
+            expect(isQaapIsolatedAiSettingsPrefKey(secret), secret).to.equal(true);
+        }
         expect(isQaapIsolatedAiSettingsPrefKey('ai-features.chat.defaultChatAgent')).to.equal(false);
     });
 

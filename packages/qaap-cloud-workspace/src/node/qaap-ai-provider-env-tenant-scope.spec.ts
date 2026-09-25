@@ -6,10 +6,11 @@
 import { expect } from 'chai';
 import { AnthropicLanguageModelsManagerImpl } from '@theia/ai-anthropic/lib/node/anthropic-language-models-manager-impl';
 import { GoogleLanguageModelsManagerImpl } from '@theia/ai-google/lib/node/google-language-models-manager-impl';
+import { HuggingFaceLanguageModelsManagerImpl } from '@theia/ai-huggingface/lib/node/huggingface-language-models-manager-impl';
 import { OllamaLanguageModelsManagerImpl } from '@theia/ai-ollama/lib/node/ollama-language-models-manager-impl';
 import { OpenAiLanguageModelsManagerImpl } from '@theia/ai-openai/lib/node/openai-language-models-manager-impl';
 import { VercelAiLanguageModelFactory } from '@theia/ai-vercel-ai/lib/node/vercel-ai-language-model-factory';
-import { installQaapAiProviderEnvTenantScope, shouldHideOperatorProviderEnv } from './qaap-ai-provider-env-tenant-scope';
+import { installQaapAiProviderEnvTenantScope, shouldHideOperatorProviderEnv, withholdOperatorEnvFromClaudeCode } from './qaap-ai-provider-env-tenant-scope';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 
 const OPERATOR_ENV: Record<string, string | undefined> = {
@@ -22,6 +23,7 @@ const OPERATOR_ENV: Record<string, string | undefined> = {
     ANTHROPIC_API_KEY: 'operator-anthropic',
     GOOGLE_API_KEY: 'operator-google',
     OLLAMA_HOST: 'http://operator-ollama:11434',
+    HUGGINGFACE_API_KEY: 'operator-hf',
 };
 
 describe('qaap-ai-provider-env-tenant-scope', () => {
@@ -113,5 +115,22 @@ describe('qaap-ai-provider-env-tenant-scope', () => {
         setEnv('QAAP_TENANT_BACKEND_MODE', '1');
         expect(shouldHideOperatorProviderEnv(undefined)).to.equal(false);
         expect(shouldHideOperatorProviderEnv('alice')).to.equal(true);
+    });
+    it('hides the operator Hugging Face key from tenants but keeps the pushed one', () => {
+        const hf = (login: string | undefined, pushed?: string): unknown => registry.runWithLogin(login, () =>
+            (Object.assign(Object.create(HuggingFaceLanguageModelsManagerImpl.prototype), { _apiKey: pushed }) as { apiKey?: string }).apiKey);
+        expect(hf('alice')).to.equal(undefined);
+        expect(hf('alice', 'mine')).to.equal('mine');
+        expect(hf(undefined)).to.equal(OPERATOR_ENV.HUGGINGFACE_API_KEY);
+    });
+
+    it('Claude Code spawn env drops the operator Anthropic fallback and shared secrets, keeps the pushed key', () => {
+        const operatorEnv = { ANTHROPIC_API_KEY: 'operator-anthropic', OPENAI_API_KEY: 'operator-openai', QAAP_GITHUB_CLIENT_SECRET: 's', PATH: '/bin' };
+        const fallback = withholdOperatorEnvFromClaudeCode({ ...operatorEnv, NODE_OPTIONS: '' }, 'alice', operatorEnv);
+        expect(fallback).to.not.have.any.keys('ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'QAAP_GITHUB_CLIENT_SECRET');
+        expect(fallback.PATH).to.equal('/bin');
+        const pushed = withholdOperatorEnvFromClaudeCode({ ...operatorEnv, ANTHROPIC_API_KEY: 'mine' }, 'alice', operatorEnv);
+        expect(pushed.ANTHROPIC_API_KEY).to.equal('mine');
+        expect(pushed).to.not.have.any.keys('OPENAI_API_KEY');
     });
 });

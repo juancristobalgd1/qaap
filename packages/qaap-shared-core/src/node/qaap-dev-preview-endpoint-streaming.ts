@@ -396,7 +396,7 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
         socket.on('error', () => socket.destroy());
         const releaseUpgradeHold = holdUpgradeSocket(socket);
         const targetHost = await ctx.resolveTargetHost(port);
-        if (!targetHost) {
+        if (!targetHost || socket.destroyed) {
             releaseUpgradeHold();
             socket.destroy();
             return;
@@ -416,9 +416,22 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
             socket.end('HTTP/1.1 504 Gateway Timeout\r\nConnection: close\r\n\r\n');
             proxyReq.destroy();
         }, handshakeTimeoutMs);
+        // Browser gone (reload during a slow first compile) before the dev server answered: drop the pending
+        // upstream handshake, otherwise a late 101 leaves an HMR connection open with nobody on the other end.
+        const onClientClosedBeforeHandshake = (): void => {
+            clearTimeout(handshakeTimer);
+            releaseUpgradeHold();
+            proxyReq.destroy();
+        };
+        socket.once('close', onClientClosedBeforeHandshake);
         proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
             clearTimeout(handshakeTimer);
             releaseUpgradeHold();
+            socket.off('close', onClientClosedBeforeHandshake);
+            if (socket.destroyed) {
+                proxySocket.destroy();
+                return;
+            }
             const upgradeHeaders = { ...proxyRes.headers };
             sanitizeQaapPreviewResponseHeaders(upgradeHeaders);
             const headerLines = Object.entries(upgradeHeaders)
@@ -445,6 +458,7 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
         proxyReq.on('response', proxyRes => {
             clearTimeout(handshakeTimer);
             releaseUpgradeHold();
+            socket.off('close', onClientClosedBeforeHandshake);
             socket.end(`HTTP/1.1 ${proxyRes.statusCode ?? 502} ${proxyRes.statusMessage ?? 'Bad Gateway'}\r\nConnection: close\r\n\r\n`);
             proxyRes.resume();
         });

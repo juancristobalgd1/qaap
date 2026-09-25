@@ -48,6 +48,8 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             headers,
         }, proxyRes => {
             clearTimeout(headersTimer);
+            // The upstream body can fail mid-stream (dev server restart): end the browser response with it.
+            proxyRes.on('error', () => outgoing.destroy());
             const responseHeaders = { ...proxyRes.headers };
             sanitizeQaapPreviewResponseHeaders(responseHeaders);
             // Only the proxy's own holding 503 may carry the waiting marker.
@@ -160,9 +162,14 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                 outgoing.end();
             }
         });
-        incoming.on('aborted', () => {
+        // Browser went away (reload, closed tab) before the response finished. `incoming` 'aborted' does not fire
+        // for a GET whose body is already complete, and a paused stream would otherwise wait for a 'drain'
+        // that never comes: release the dev-server connection from the response side.
+        outgoing.on('close', () => {
             clearTimeout(headersTimer);
-            proxyReq.destroy();
+            if (!outgoing.writableFinished) {
+                proxyReq.destroy();
+            }
         });
         incoming.pipe(proxyReq);
 }

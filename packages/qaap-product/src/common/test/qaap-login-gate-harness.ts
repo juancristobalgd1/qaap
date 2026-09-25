@@ -39,6 +39,8 @@ export interface LoginGateRun {
     readonly document: Document;
     readonly requests: string[];
     readonly consoleErrors: string[];
+    /** Uncaught exceptions of the page's scripts and timers (jsdom reports them apart from `console.error`). */
+    readonly pageErrors: string[];
     readonly bundleAppended: Promise<LoginGateBundleAppend>;
     /** Resolve once `predicate` holds, polling on macrotasks (the gate chains fetch promises). */
     waitFor(predicate: () => boolean, description: string): Promise<void>;
@@ -53,6 +55,8 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
     const consoleErrors: string[] = [];
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('error', (...args: unknown[]) => consoleErrors.push(args.map(String).join(' ')));
+    const pageErrors: string[] = [];
+    virtualConsole.on('jsdomError', (error: Error) => pageErrors.push(error.stack ?? error.message));
     const dom = new JSDOM(`<!doctype html><html lang="es"><head></head><body>${options.bodyHtml ?? ''}</body></html>`, {
         url,
         runScripts: 'outside-only',
@@ -98,5 +102,5 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
         }
         throw new Error(`Timed out waiting for: ${description}`);
     };
-    return { dom, window, document: window.document, requests, consoleErrors, bundleAppended, waitFor };
+    return { dom, window, document: window.document, requests, consoleErrors, pageErrors, bundleAppended, waitFor };
 }

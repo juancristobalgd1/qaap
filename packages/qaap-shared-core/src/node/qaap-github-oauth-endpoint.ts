@@ -9,6 +9,7 @@ import { json } from 'body-parser';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { spawn, type ChildProcess } from 'child_process';
+import { randomBytes } from 'crypto';
 import { existsSync, readdirSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -848,28 +849,29 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken, target, gitOptions);
             return target;
         }
-        let cloneTargetCreated = false;
-        if (await this.pathExists(target)) {
-            const entries = await fs.readdir(target);
-            if (entries.length > 0) {
-                throw new Error(`Workspace path already exists and is not a Git repository: ${target}`);
-            }
-            cloneTargetCreated = true;
-        } else {
-            cloneTargetCreated = true;
+        const targetExists = await this.pathExists(target);
+        if (targetExists && (await fs.readdir(target)).length > 0) {
+            throw new Error(`Workspace path already exists and is not a Git repository: ${target}`);
         }
         await this.assertBillingAllowsNewRepo(userLogin);
+        // Clone into a hidden sibling and move it into place only once git succeeded. A cancelled or timed-out
+        // git (notably inside a tenant container, where killing the exec client does not stop it) may keep
+        // writing after we gave up; it must never leave a half-written `.git` at the path the next open
+        // trusts as a repository. Dot-prefixed names are skipped by repo listings and invalid repo names.
+        const staging = path.join(path.dirname(target), `.qaap-clone-${path.basename(target)}-${randomBytes(4).toString('hex')}`);
         try {
-            await this.runGit(['clone', repository.cloneUrl, path.basename(target)], accessToken, path.dirname(target), gitOptions);
-        } catch (err) {
-            if (cloneTargetCreated) {
-                await fs.rm(target, { recursive: true, force: true }).catch(cleanupErr => {
-                    console.warn(
-                        '[qaap-oauth] Failed to remove incomplete clone workspace:',
-                        cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-                    );
-                });
+            await this.runGit(['clone', repository.cloneUrl, path.basename(staging)], accessToken, path.dirname(target), gitOptions);
+            if (targetExists) {
+                await fs.rmdir(target);
             }
+            await fs.rename(staging, target);
+        } catch (err) {
+            await fs.rm(staging, { recursive: true, force: true }).catch(cleanupErr => {
+                console.warn(
+                    '[qaap-oauth] Failed to remove incomplete clone workspace:',
+                    cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+                );
+            });
             throw err;
         }
         try {

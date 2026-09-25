@@ -182,6 +182,11 @@ const EXTRA_AI_SETTINGS_PREF_KEYS = [
     'ai-features.copilot.enterpriseUrl',
     'ai-features.copilot.modelOverrides',
     'ai-features.llamafile.llamafiles',
+    // Secrets of AI features outside the QAIQ catalog (agents, scanners, registry).
+    'ai-features.claudeCode.apiKey',
+    'ai-features.codex.apiKey',
+    'ai-features.SCANOSS.apiKey',
+    'ai-features.registry.githubToken',
     // MCP servers carry per-user tokens (`env`, `serverAuthToken`, headers) and start commands with the user's
     // authority: per user only, never inherited from the operator's shared settings.
     'ai-features.mcp.mcpServers',
