@@ -5,8 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
-import { useAnimationFrameStub } from './test/qaap-animation-frame-stub';
+import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 // The shell modules touch the DOM while loading; give them one only for the import.
 const disableImportJSDOM = enableJSDOM();
 import '@theia/core/lib/browser';
@@ -37,7 +36,7 @@ interface TestableShell {
 
 describe('QaapApplicationShellWithToolbar', () => {
     useSuiteJSDOM();
-    useAnimationFrameStub();
+    useSuiteAnimationFrameStub();
 
     function createShell(): TestableShell {
         return Object.create(QaapApplicationShellWithToolbar.prototype) as TestableShell;

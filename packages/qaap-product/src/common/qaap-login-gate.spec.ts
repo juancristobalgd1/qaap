@@ -4,7 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { runLoginGate, type LoginGateResponder, type LoginGateRun } from './test/qaap-login-gate-harness';
+import { withGlobal, type InstalledClock } from '@sinonjs/fake-timers';
+import { runLoginGate, type LoginGateOptions, type LoginGateResponder, type LoginGateRun } from './test/qaap-login-gate-harness';
 
 const CONFIG = '/qaap/api/auth/config';
 const SESSION = '/qaap/api/auth/session';
@@ -17,8 +18,8 @@ describe('Qaap login gate', () => {
         runs.splice(0).forEach(run => run.dom.window.close());
     });
 
-    function start(responder: LoginGateResponder, url?: string): LoginGateRun {
-        const run = runLoginGate(responder, url);
+    function start(responder: LoginGateResponder, url?: string, options?: LoginGateOptions): LoginGateRun {
+        const run = runLoginGate(responder, url, options);
         runs.push(run);
         return run;
     }
@@ -120,4 +121,125 @@ describe('Qaap login gate', () => {
             expect(status(run)).to.contain('Ask the administrator');
         });
     });
+
+    describe('sign-out and local mode', () => {
+        it('?qaapLogout=1 clears every qaap.auth key but keeps unrelated storage', async () => {
+            const run = start(() => undefined, 'http://localhost:3000/?qaapLogout=1', {
+                localStorage: {
+                    'theia:/:qaap.auth.signedIn': 'true',
+                    'theia:/:qaap.auth.provider': '"github"',
+                    'theia:/other/:qaap.auth.user': '{}',
+                    'theia:/:workbench.layout': '{}',
+                },
+            });
+            await run.bundleAppended;
+            const keys = Object.keys(run.window.localStorage);
+            expect(keys.filter(key => key.includes('qaap.auth'))).to.deep.equal([]);
+            expect(keys).to.include('theia:/:workbench.layout');
+            // Signed out, so the gate is shown.
+            expect(run.document.getElementById('qaap-login-host')).to.not.equal(null);
+        });
+
+        it('"Continue in local mode" writes the dev session and hands over to the loading bundle', async () => {
+            // First config read (dev skip-auth probe) says no; the gate's availability check then
+            // finds a local-development server without GitHub OAuth.
+            const run = start((pathname, call) => pathname === CONFIG
+                ? { ok: true, body: call === 0 ? { skipAuth: false } : { skipAuth: true, githubOAuth: false } }
+                : undefined);
+            const local = (): HTMLButtonElement => run.document.getElementById('qaap-login-local') as HTMLButtonElement;
+            await run.waitFor(() => local()?.hidden === false, 'local mode offered');
+            await run.bundleAppended;
+            local().click();
+            expect(run.window.localStorage.getItem('theia:/:qaap.auth.signedIn')).to.equal('true');
+            expect(JSON.parse(run.window.localStorage.getItem('theia:/:qaap.auth.provider') ?? 'null')).to.equal('gitlab');
+            expect(JSON.parse(run.window.localStorage.getItem('theia:/:qaap.auth.user') ?? '{}').login).to.equal('dev');
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+            expect(run.document.body.classList.contains('qaap-login-active')).to.equal(false);
+            // The gate already started the bundle behind itself; it is not requested twice.
+            expect(run.document.querySelectorAll('script[src*="bundle.js"]')).to.have.length(1);
+        });
+    });
+
+    describe('focus trap', () => {
+        function tab(run: LoginGateRun, shiftKey = false): KeyboardEvent {
+            const event = new run.window.KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true });
+            (run.document.activeElement ?? run.document.body).dispatchEvent(event);
+            return event;
+        }
+
+        it('wraps Tab and Shift+Tab between the first and last control of the gate', async () => {
+            const run = start(pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: false, githubOAuth: true } } : undefined);
+            await run.bundleAppended;
+            const github = run.document.getElementById('qaap-login-github') as HTMLButtonElement;
+            const privacy = run.document.querySelector('a[href="/legal/privacy.html"]') as HTMLAnchorElement;
+            github.focus();
+            expect(tab(run, true).defaultPrevented).to.equal(true);
+            expect(run.document.activeElement).to.equal(privacy);
+            expect(tab(run).defaultPrevented).to.equal(true);
+            expect(run.document.activeElement).to.equal(github);
+        });
+
+        it('wraps to the first visible control when the leading buttons are disabled or hidden', async () => {
+            const run = start(() => undefined);
+            const retry = (): HTMLButtonElement => run.document.getElementById('qaap-login-retry') as HTMLButtonElement;
+            await run.waitFor(() => retry()?.hidden === false, 'retry button visible');
+            const privacy = run.document.querySelector('a[href="/legal/privacy.html"]') as HTMLAnchorElement;
+            // GitHub is disabled and local mode hidden: Retry is the first reachable control.
+            privacy.focus();
+            expect(tab(run).defaultPrevented).to.equal(true);
+            expect(run.document.activeElement).to.equal(retry());
+            expect(tab(run, true).defaultPrevented).to.equal(true);
+            expect(run.document.activeElement).to.equal(privacy);
+        });
+    });
+
+    describe('startup watchdog', () => {
+        let clock: InstalledClock | undefined;
+
+        afterEach(() => {
+            clock?.uninstall();
+            clock = undefined;
+        });
+
+        function startWithFakeTimers(): LoginGateRun {
+            return start(pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined, undefined, {
+                bodyHtml: '<div class="theia-preload"></div>',
+                beforeRun: window => { clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] }); },
+            });
+        }
+
+        async function loadedBundle(run: LoginGateRun): Promise<void> {
+            const { script } = await run.bundleAppended;
+            script.dispatchEvent(new run.window.Event('load'));
+            // jsdom has no layout, so the splash never has an offsetParent; pretend it is on screen.
+            Object.defineProperty(run.document.querySelector('.theia-preload'), 'offsetParent', { get: () => run.document.body });
+        }
+
+        it('shows the "took too long to start" screen when the splash is still up after 30 s', async () => {
+            const run = startWithFakeTimers();
+            await loadedBundle(run);
+            clock!.tick(29_999);
+            expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+            clock!.tick(1);
+            expect(run.document.getElementById('qaap-startup-error')?.textContent).to.contain('The application took too long to start.');
+        });
+
+        it('qaap-startup-ready removes a shown retry screen', async () => {
+            const run = startWithFakeTimers();
+            await loadedBundle(run);
+            clock!.tick(30_000);
+            expect(run.document.getElementById('qaap-startup-error')).to.not.equal(null);
+            run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+            expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+        });
+
+        it('qaap-startup-ready before the deadline disarms the watchdog', async () => {
+            const run = startWithFakeTimers();
+            await loadedBundle(run);
+            run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+            clock!.tick(60_000);
+            expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+        });
+    });
 });
+
