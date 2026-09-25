@@ -15,7 +15,10 @@ describe('Qaap login gate', () => {
     const runs: LoginGateRun[] = [];
 
     afterEach(() => {
-        runs.splice(0).forEach(run => run.dom.window.close());
+        const closed = runs.splice(0);
+        closed.forEach(run => run.dom.window.close());
+        // A gate exception (e.g. inside a watchdog timer) must fail the test even when the DOM looks right.
+        expect(closed.flatMap(run => run.pageErrors)).to.deep.equal([]);
     });
 
     function start(responder: LoginGateResponder, url?: string, options?: LoginGateOptions): LoginGateRun {

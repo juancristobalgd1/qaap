@@ -99,10 +99,13 @@ function checkSpec(file) {
         }
     }
     // Rule 2 — DOM used in tests with no setup of its own.
-    const tests = firstDescribe < 0 ? '' : source.slice(firstDescribe);
+    // Setup must live where the tests run: the load-time enable/disable pair (and its import) is gone by then.
+    // Without a column-0 describe() the whole file minus its imports is the test body.
+    const testsStart = firstDescribe < 0 ? 0 : firstDescribe;
+    const tests = firstDescribe < 0 ? source.replace(/^import\b.*$/gm, '') : source.slice(firstDescribe);
     const use = DOM_USE.exec(tests);
-    if (use && !DOM_SETUP.test(source) && !SHADOWED.test(source) && !packagePreloadsDom(file)) {
-        const line = source.slice(0, firstDescribe + use.index).split('\n').length;
+    if (use && !DOM_SETUP.test(tests) && !SHADOWED.test(source) && !packagePreloadsDom(file)) {
+        const line = firstDescribe < 0 ? '?' : source.slice(0, testsStart + use.index).split('\n').length;
         problems.push(`${line}: uses '${use[0]}' without any jsdom setup; add useSuiteJSDOM() to the suite`);
     }
     return problems;

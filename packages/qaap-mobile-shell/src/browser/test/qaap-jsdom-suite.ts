@@ -42,19 +42,19 @@ export function useSuiteJSDOM(): void {
 /**
  * Replaces `requestAnimationFrame` / `cancelAnimationFrame` (on `window` and `globalThis`) with a
  * `setTimeout(0)` stub for each test of the enclosing `describe`. Frames still pending after a test
- * are cancelled, so none fires once the suite's DOM is gone, and the previous globals are restored
- * after the suite so the stub never leaks into later spec files. Call it after {@link useSuiteJSDOM}.
+ * are cancelled, so none fires once the suite's DOM is gone, and the previous functions are restored
+ * after each test so the stub never leaks into later spec files. Call it after {@link useSuiteJSDOM}.
  */
 export function useSuiteAnimationFrameStub(): void {
+    type AnimationFrameGlobals = Pick<typeof globalThis, 'requestAnimationFrame' | 'cancelAnimationFrame'>;
     const pendingFrames = new Set<ReturnType<typeof setTimeout>>();
-    let previous: Pick<typeof globalThis, 'requestAnimationFrame' | 'cancelAnimationFrame'> | undefined;
-    before(() => {
-        previous = {
-            requestAnimationFrame: globalThis.requestAnimationFrame,
-            cancelAnimationFrame: globalThis.cancelAnimationFrame,
-        };
-    });
+    // Per test: a jsdom preload may swap `window` between tests, and the suite may not own (nor tear down) it.
+    let restore: Array<{ target: AnimationFrameGlobals; previous: AnimationFrameGlobals }> = [];
     beforeEach(() => {
+        restore = [window, globalThis].map(target => ({
+            target,
+            previous: { requestAnimationFrame: target.requestAnimationFrame, cancelAnimationFrame: target.cancelAnimationFrame },
+        }));
         const raf = (callback: FrameRequestCallback): number => {
             const handle = setTimeout(() => {
                 pendingFrames.delete(handle);
@@ -76,9 +76,10 @@ export function useSuiteAnimationFrameStub(): void {
     afterEach(() => {
         pendingFrames.forEach(handle => clearTimeout(handle));
         pendingFrames.clear();
-    });
-    after(() => {
-        globalThis.requestAnimationFrame = previous!.requestAnimationFrame;
-        globalThis.cancelAnimationFrame = previous!.cancelAnimationFrame;
+        for (const { target, previous } of restore) {
+            target.requestAnimationFrame = previous.requestAnimationFrame;
+            target.cancelAnimationFrame = previous.cancelAnimationFrame;
+        }
+        restore = [];
     });
 }
