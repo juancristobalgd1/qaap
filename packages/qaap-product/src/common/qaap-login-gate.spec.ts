@@ -201,9 +201,9 @@ describe('Qaap login gate', () => {
             clock = undefined;
         });
 
-        function startWithFakeTimers(): LoginGateRun {
-            return start(pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined, undefined, {
-                bodyHtml: '<div class="theia-preload"></div>',
+        function startWithFakeTimers(config: object = { skipAuth: true }, splash = '<div class="theia-preload"></div>'): LoginGateRun {
+            return start(pathname => pathname === CONFIG ? { ok: true, body: config } : undefined, undefined, {
+                bodyHtml: splash,
                 beforeRun: window => { clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] }); },
             });
         }
@@ -222,6 +222,44 @@ describe('Qaap login gate', () => {
             expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
             clock!.tick(1);
             expect(run.document.getElementById('qaap-startup-error')?.textContent).to.contain('The application took too long to start.');
+        });
+
+        for (const [label, splash] of [
+            ['hidden by Theia (.theia-hidden)', '<div class="theia-preload theia-hidden"></div>'],
+            ['hidden inline (display: none)', '<div class="theia-preload" style="display: none"></div>'],
+        ]) {
+            it(`stays quiet when the splash is already ${label} at the deadline`, async () => {
+                const run = startWithFakeTimers(undefined, splash);
+                await loadedBundle(run);
+                clock!.tick(30_000);
+                expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+            });
+        }
+
+        it('shows the bundle retry screen when bundle.js never finishes loading', async () => {
+            const run = startWithFakeTimers();
+            await run.bundleAppended;
+            clock!.tick(29_999);
+            expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+            clock!.tick(1);
+            expect(run.document.getElementById('qaap-startup-error')?.textContent).to.contain('The application bundle could not load.');
+        });
+
+        it('does not arm the bundle watchdog once bundle.js has loaded', async () => {
+            // No splash: only the bundle watchdog could produce a screen here.
+            const run = startWithFakeTimers(undefined, '');
+            const { script } = await run.bundleAppended;
+            script.dispatchEvent(new run.window.Event('load'));
+            clock!.tick(60_000);
+            expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+        });
+
+        it('keeps the sign-in gate instead of the bundle retry screen when bundle.js never loads', async () => {
+            const run = startWithFakeTimers({ skipAuth: false, githubOAuth: true });
+            await run.bundleAppended;
+            clock!.tick(30_000);
+            expect(run.document.getElementById('qaap-login-host')).to.not.equal(null);
+            expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
         });
 
         it('qaap-startup-ready removes a shown retry screen', async () => {
