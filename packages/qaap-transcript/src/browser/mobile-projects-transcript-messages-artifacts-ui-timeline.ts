@@ -337,37 +337,89 @@ export function resolvePendingTranscriptToolUseIdsExtracted(ctx: MobileProjectsT
         return pending.size > 0 ? pending : undefined;
 }
 
+/** One stall-watch ticker per artifacts UI, shared by every streaming row it renders. */
+interface TranscriptStreamStallWatch {
+    readonly view: Window & typeof globalThis;
+    readonly timer: number;
+    /** Watched row → conversation it was rendered for (`undefined` when unknown). */
+    readonly rows: Map<HTMLElement, string | undefined>;
+}
+
+const TRANSCRIPT_STREAM_STALL_TICK_MS = 1000;
+const transcriptStreamStallWatches = new WeakMap<MobileProjectsTranscriptMessagesArtifactsUiContext, TranscriptStreamStallWatch>();
+
 export function ensureTranscriptStreamStallWatchExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, row: HTMLElement): void {
-        if (row.dataset.transcriptStallWatch === '1') {
+        // Bind to the row's own document view rather than the global `window`: the global jsdom
+        // window is torn down between specs, so global timer lookups would throw post-teardown.
+        const view = row.ownerDocument?.defaultView as (Window & typeof globalThis) | null | undefined;
+        if (!view) {
             return;
         }
+        let watch = transcriptStreamStallWatches.get(ctx);
+        if (watch?.rows.has(row)) {
+            return;
+        }
+        if (watch && watch.view !== view) {
+            stopTranscriptStreamStallWatchExtracted(ctx);
+            watch = undefined;
+        }
+        if (!watch) {
+            const rows = new Map<HTMLElement, string | undefined>();
+            const timer = view.setInterval(() => tickTranscriptStreamStallWatch(ctx), TRANSCRIPT_STREAM_STALL_TICK_MS);
+            watch = { view, timer, rows };
+            transcriptStreamStallWatches.set(ctx, watch);
+        }
+        watch.rows.set(row, ctx.host.transcriptLastConv?.id);
         row.dataset.transcriptStallWatch = '1';
-        // Bind to the row's own document view rather than the global `window`: the
-        // interval outlives synchronous test bodies, and the global jsdom window is
-        // torn down between specs, so a global `window.clearInterval` in the callback
-        // would throw `window is not defined` once the timer fires post-teardown.
-        const view = (row.ownerDocument?.defaultView ?? window) as Window & typeof globalThis;
-        const timer = view.setInterval(() => {
-            if (!row.isConnected) {
-                view.clearInterval(timer);
+}
+
+/** Stops the UI's stall ticker and forgets every watched row (dispose / teardown). */
+export function stopTranscriptStreamStallWatchExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext): void {
+        const watch = transcriptStreamStallWatches.get(ctx);
+        if (!watch) {
+            return;
+        }
+        transcriptStreamStallWatches.delete(ctx);
+        watch.view.clearInterval(watch.timer);
+        for (const row of watch.rows.keys()) {
+            row.removeAttribute('data-transcript-stall-watch');
+        }
+        watch.rows.clear();
+}
+
+function tickTranscriptStreamStallWatch(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext): void {
+        const watch = transcriptStreamStallWatches.get(ctx);
+        if (!watch) {
+            return;
+        }
+        // DOM globals gone (jsdom torn down under a pending timer): nothing left to update.
+        if (typeof HTMLElement === 'undefined') {
+            stopTranscriptStreamStallWatchExtracted(ctx);
+            return;
+        }
+        const conv = ctx.host.transcriptLastConv;
+        for (const [row, conversationId] of watch.rows) {
+            const detached = !row.isConnected;
+            const otherConversation = conversationId !== undefined && conv?.id !== conversationId;
+            const finished = !row.classList.contains('theia-mod-streaming');
+            if (detached || otherConversation || finished) {
+                watch.rows.delete(row);
                 row.removeAttribute('data-transcript-stall-watch');
-                return;
+                if (finished && !detached) {
+                    row.classList.remove('theia-mod-stream-stalled');
+                }
             }
-            if (!row.classList.contains('theia-mod-streaming')) {
-                view.clearInterval(timer);
-                row.removeAttribute('data-transcript-stall-watch');
-                row.classList.remove('theia-mod-stream-stalled');
-                return;
-            }
-            if (!isTranscriptDocumentVisible()) {
-                return;
-            }
-            const conv = ctx.host.transcriptLastConv;
-            if (!conv || conv.status !== 'streaming') {
-                return;
-            }
+        }
+        if (watch.rows.size === 0) {
+            stopTranscriptStreamStallWatchExtracted(ctx);
+            return;
+        }
+        if (!isTranscriptDocumentVisible() || !conv || conv.status !== 'streaming') {
+            return;
+        }
+        for (const row of watch.rows.keys()) {
             ctx.syncTranscriptStreamStallChrome(row, conv);
-        }, 1000);
+        }
 }
 
 export function syncTranscriptStreamStallChromeExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, row: HTMLElement, conv: QaapAgentConversationDTO): void {
