@@ -13,6 +13,7 @@ import {
 import {
     isPathUnderUserWorkspace,
     isUserWorkspaceContainerPath,
+    normalizeIsolationPath,
     QAAP_SKIP_AUTH_USER_LOGIN,
     QAAP_USER_REPOS_SEGMENT,
     resolveQaapReposRoot,
@@ -188,7 +189,10 @@ export class QaapGithubAuthGuard {
         // 1. Already a concrete owned repository path (not a container level) — keep as-is.
         if (isPathUnderUserWorkspace(trimmed, this.reposRoot, login)
             && !isUserWorkspaceContainerPath(trimmed, this.reposRoot, login)) {
-            return this.acceptOwnedRepositoryCwd(login, trimmed);
+            // The lexical checks above normalize separators (a Windows browser sends
+            // `\workspace\repos\users\...` from FileUri.fsPath); stat/return the same normalized
+            // path so the task does not keep, or fail on, the backslash form on a Linux host.
+            return this.acceptOwnedRepositoryCwd(login, normalizeIsolationPath(trimmed));
         }
         // 2. Derive {owner, repo} from a `github:` key or a legacy/new repository path.
         const derived = this.deriveOwnerRepoFromCwd(trimmed);

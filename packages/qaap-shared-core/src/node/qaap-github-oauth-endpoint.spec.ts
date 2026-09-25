@@ -592,6 +592,109 @@ describe('QaapGithubOauthEndpoint hosted git cancellation (runTenantGit)', () =>
     });
 });
 
+describe('QaapGithubOauthEndpoint GitHub credential transport', () => {
+    const token = 'ghp_argvLeakCanary123';
+    const encoded = Buffer.from(`x-access-token:${token}`).toString('base64');
+    let previousCloudMode: string | undefined;
+    let previousNodeEnv: string | undefined;
+
+    beforeEach(() => {
+        previousCloudMode = process.env.QAAP_CLOUD_MODE;
+        previousNodeEnv = process.env.NODE_ENV;
+    });
+
+    afterEach(() => {
+        const restore = (key: string, value: string | undefined): void => {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        };
+        restore('QAAP_CLOUD_MODE', previousCloudMode);
+        restore('NODE_ENV', previousNodeEnv);
+    });
+
+    function exitingChild(): ChildProcess {
+        return spawn(process.execPath, ['-e', ''], { stdio: ['ignore', 'pipe', 'pipe'] });
+    }
+
+    function expectNoToken(argv: readonly string[]): void {
+        const joined = argv.join(' ');
+        expect(joined).to.not.include(token);
+        expect(joined).to.not.include(encoded);
+        expect(joined).to.not.include('extraheader');
+    }
+
+    it('hosted: passes the auth header through env config, never through the git argv', async () => {
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        const calls: Array<{ file: string; args: string[]; env: NodeJS.ProcessEnv }> = [];
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            gitOperationTimeoutMs: 60_000,
+            reposRoot: '/workspace/repos',
+            tenantProcess: {
+                resolveProcessEnv: (_cwd: string, env: NodeJS.ProcessEnv) => env,
+                spawnArgvPreparedAsync: async (file: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
+                    calls.push({ file, args, env: options.env });
+                    return exitingChild();
+                },
+            },
+        });
+        await (endpoint as unknown as { runGit(args: string[], accessToken: string | undefined, cwd: string): Promise<void> })
+            .runGit(['-C', '/workspace/repos/users/alice/o/r', 'fetch', '--all'], token, '/workspace/repos/users/alice/o/r');
+
+        expect(calls).to.have.length(1);
+        expectNoToken([calls[0].file, ...calls[0].args]);
+        expect(calls[0].args).to.include.members(['core.hooksPath=/dev/null', 'fetch', '--all']);
+        expect(calls[0].env.GIT_CONFIG_COUNT).to.equal('1');
+        expect(calls[0].env.GIT_CONFIG_KEY_0).to.equal('http.https://github.com/.extraheader');
+        expect(calls[0].env.GIT_CONFIG_VALUE_0).to.equal(`AUTHORIZATION: basic ${encoded}`);
+    });
+
+    it('local: passes the auth header through env config, never through the git argv', async () => {
+        delete process.env.QAAP_CLOUD_MODE;
+        process.env.NODE_ENV = 'test';
+        const calls: Array<{ args: readonly string[]; env: NodeJS.ProcessEnv | undefined }> = [];
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            gitOperationTimeoutMs: 60_000,
+            reposRoot: os.tmpdir(),
+            spawnLocalGit: (_cwd: string, args: readonly string[], _capture: boolean, env?: NodeJS.ProcessEnv) => {
+                calls.push({ args, env });
+                return exitingChild();
+            },
+        });
+        const runner = endpoint as unknown as {
+            runGit(args: string[], accessToken: string | undefined, cwd: string): Promise<void>;
+            runGitOutput(args: string[], cwd: string): Promise<string>;
+        };
+        await runner.runGit(['clone', 'https://github.com/o/r.git', 'r'], token, os.tmpdir());
+        await runner.runGitOutput(['rev-parse', 'HEAD'], os.tmpdir());
+
+        expect(calls).to.have.length(2);
+        expectNoToken(calls[0].args);
+        const index = Number(calls[0].env?.GIT_CONFIG_COUNT) - 1;
+        expect(calls[0].env?.[`GIT_CONFIG_KEY_${index}`]).to.equal('http.https://github.com/.extraheader');
+        expect(calls[0].env?.[`GIT_CONFIG_VALUE_${index}`]).to.equal(`AUTHORIZATION: basic ${encoded}`);
+        expect(calls[0].env?.PATH).to.equal(process.env.PATH);
+        // Token-less reads keep inheriting process.env unchanged.
+        expect(calls[1].env).to.equal(undefined);
+    });
+
+    it('appends the header after git env-config entries already present', () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as unknown as {
+            githubAuthEnvironment(accessToken: string, base?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+        };
+        const env = endpoint.githubAuthEnvironment(token, { GIT_CONFIG_COUNT: '2' });
+        expect(env).to.deep.equal({
+            GIT_CONFIG_COUNT: '3',
+            GIT_CONFIG_KEY_2: 'http.https://github.com/.extraheader',
+            GIT_CONFIG_VALUE_2: `AUTHORIZATION: basic ${encoded}`,
+        });
+    });
+});
+
 describe('QaapGithubOauthEndpoint create repository when the clone fails', () => {
     const originalFetch = globalThis.fetch;
 

@@ -1179,14 +1179,19 @@ export class QaapDockerOrchestrator {
         const containerName = this.containerNameForTenant(ownerLogin);
         const root = tenantRootHostPath ?? this.tenantRoots.get(containerName);
         const containerCwd = this.toContainerPath(cwd, root);
-        const containerArgs = file === 'git' && root ? this.translateTenantGitArgs(args, root) : [...args];
+        const containerArgs = !root
+            ? [...args]
+            : file === 'git' ? this.translateTenantGitArgs(args, root) : this.translateTenantShellArgs(args, root);
         return {
             file: 'docker',
             args: [
                 ...this.dockerCliGlobalArgs(ownerLogin),
                 'exec',
                 '-i',
-                ...this.buildTenantEnvironmentArgs(environment),
+                // Callers (QaapTenantSpawnService.spawn / spawnArgvPrepared) launch this docker CLI
+                // with exactly `environment` as its process env, so values are inherited by name and
+                // never appear on the docker argv (`docker events` exec_create, `ps`).
+                ...this.buildTenantEnvironmentArgs(environment, true),
                 '--user',
                 this.getTenantContainerUser(),
                 '-w',
@@ -1207,13 +1212,17 @@ export class QaapDockerOrchestrator {
         environment?: NodeJS.ProcessEnv,
     ): { file: string; args: string[] } {
         const containerName = this.containerNameForTenant(ownerLogin);
-        const containerCwd = this.toContainerPath(cwd, tenantRootHostPath ?? this.tenantRoots.get(containerName));
+        const root = tenantRootHostPath ?? this.tenantRoots.get(containerName);
+        const containerCwd = this.toContainerPath(cwd, root);
         return {
             file: this.dockerCliExecutable(),
             args: [
                 ...this.dockerCliGlobalArgs(ownerLogin),
                 'exec',
                 '-it',
+                // The node-pty launch env is merged/mutated after this wrapper runs (process.env merge,
+                // extension env collections, HOME overlay), so it cannot be proven equal to
+                // `environment`: keep passing explicit values here.
                 ...this.buildTenantEnvironmentArgs(environment),
                 '--user',
                 this.getTenantContainerUser(),
@@ -1221,13 +1230,22 @@ export class QaapDockerOrchestrator {
                 containerCwd,
                 containerName,
                 file,
-                ...args,
+                // Managed shells (project bootstrap / preview) embed the host cwd, e.g.
+                // `bash -l -c "cd -- '<reposRoot>/users/<login>/<repo>' && npm install"`.
+                ...(root ? this.translateTenantShellArgs(args, root) : args),
             ],
         };
     }
 
-    /** Build `docker exec -e` flags without exposing the shared Docker/backend control plane. */
-    protected buildTenantEnvironmentArgs(environment?: NodeJS.ProcessEnv): string[] {
+    /**
+     * Build `docker exec -e` flags without exposing the shared Docker/backend control plane.
+     *
+     * With `inheritByName`, only the variable NAME is emitted (`-e KEY`): the docker CLI copies the
+     * value from its own process env, so secrets (git credential headers, provider keys, task
+     * tokens) never appear in the docker argv. Only use it when the docker CLI child is launched
+     * with exactly `environment` as its env — otherwise the variable is silently not set.
+     */
+    protected buildTenantEnvironmentArgs(environment?: NodeJS.ProcessEnv, inheritByName = false): string[] {
         if (!environment) {
             return [];
         }
@@ -1236,7 +1254,7 @@ export class QaapDockerOrchestrator {
             if (value === undefined || TENANT_WORKER_ENV_DENYLIST.has(key) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
                 continue;
             }
-            args.push('-e', `${key}=${value}`);
+            args.push('-e', inheritByName ? key : `${key}=${value}`);
         }
         return args;
     }
@@ -1409,6 +1427,43 @@ export class QaapDockerOrchestrator {
                 return arg;
             }
         });
+    }
+
+    /**
+     * Rewrite host tenant roots embedded anywhere inside shell/argv strings (for example
+     * `cd -- '<reposRoot>/users/<login>/<repo>' && npm install`) to their worker mount paths. The
+     * worker only sees its own mounts, so a host path is never meaningful inside it. Matches require
+     * a path boundary on both sides so `/other/<root>` or `<root>-suffix` are left untouched.
+     */
+    protected translateTenantShellArgs(args: readonly string[], tenantRootHostPath: string): string[] {
+        const pairs = this.tenantHostMountPairs(tenantRootHostPath)
+            .sort((left, right) => right.root.length - left.root.length);
+        if (pairs.length === 0) {
+            return [...args];
+        }
+        const escape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = new RegExp(`(^|[^A-Za-z0-9_.\\-/])(${pairs.map(pair => escape(pair.root)).join('|')})(?=$|[/'"\\s;&|)<>\`])`, 'g');
+        return args.map(arg => arg.replace(pattern, (_match, prefix: string, hostRoot: string) =>
+            `${prefix}${pairs.find(pair => pair.root === hostRoot)!.mount}`));
+    }
+
+    /** Host root → worker mount pairs for the tenant owning `tenantRootHostPath` (POSIX separators). */
+    protected tenantHostMountPairs(tenantRootHostPath: string): Array<{ root: string; mount: string }> {
+        const clean = (value: string): string => value.replace(/\\/g, '/').replace(/\/$/, '');
+        const root = clean(tenantRootHostPath);
+        if (!root || root === '/') {
+            return [];
+        }
+        const mounts = [...this.tenantMounts.values()].find(candidate =>
+            [candidate.reposRoot, candidate.worktreesRoot, candidate.parallelRoot].map(clean).includes(root));
+        if (!mounts) {
+            return [{ root, mount: WORKSPACE_MOUNT }];
+        }
+        return [
+            { root: clean(mounts.reposRoot), mount: WORKSPACE_MOUNT },
+            { root: clean(mounts.worktreesRoot), mount: WORKTREES_MOUNT },
+            { root: clean(mounts.parallelRoot), mount: PARALLEL_MOUNT },
+        ].filter(pair => pair.root && pair.root !== '/');
     }
 
     protected isDockerNotFound(error: unknown): boolean {
