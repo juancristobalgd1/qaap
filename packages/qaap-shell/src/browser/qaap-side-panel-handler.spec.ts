@@ -5,8 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
-import { useAnimationFrameStub } from './test/qaap-animation-frame-stub';
+import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 // The shell modules touch the DOM while loading; give them one only for the import.
 const disableImportJSDOM = enableJSDOM();
 import '@theia/core/lib/browser';
@@ -47,7 +46,7 @@ interface TestableHandler {
 
 describe('QaapSidePanelHandler', () => {
     useSuiteJSDOM();
-    useAnimationFrameStub();
+    useSuiteAnimationFrameStub();
 
     function fakeTabBar(patch: Partial<FakeTabBar> = {}): FakeTabBar {
         const tabBar: FakeTabBar = {

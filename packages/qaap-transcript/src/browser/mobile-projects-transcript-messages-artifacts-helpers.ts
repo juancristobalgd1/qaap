@@ -6,6 +6,7 @@
 // Helpers extracted from MobileProjectsTranscriptMessagesArtifactsUi.
 // Pure helpers operate only on their parameters; interaction helpers receive dependencies explicitly.
 
+import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { shouldShowTranscriptLiveStatus } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
@@ -794,32 +795,42 @@ export function refreshTranscriptThoughtBriefTitle(
             }
         };
         update();
-        if (block.dataset.thoughtLiveTimer !== '1') {
+        // Rides the shared 1s ticker instead of a per-block `setInterval`. Membership (not the
+        // data attribute) decides re-registration: the ticker drops disconnected blocks on its
+        // own, so a block remounted by the virtual list must be able to register again.
+        if (!sharedSecondTicker.has(block)) {
             block.dataset.thoughtLiveTimer = '1';
-            // Capture the block's document view instead of the global `window` so the
-            // interval can clear itself after jsdom teardown between specs without a
-            // global `window is not defined` error (see ensureTranscriptStreamStallWatch).
-            const view = (block.ownerDocument?.defaultView ?? window) as Window & typeof globalThis;
-            const timer = view.setInterval(() => {
-                if (!title.isConnected) {
-                    view.clearInterval(timer);
-                    block.removeAttribute('data-thought-live-timer');
-                    return;
-                }
-                if (!block.classList.contains('theia-mod-thinking-live')) {
-                    view.clearInterval(timer);
-                    block.removeAttribute('data-thought-live-timer');
-                    deps.refreshTranscriptThoughtBriefTitle(title, block, {
-                        ...options,
-                        thinkingActive: false,
-                    });
-                    return;
-                }
-                if (!isTranscriptDocumentVisible()) {
-                    return;
-                }
-                update();
-            }, 1000);
+            // `register` renders once synchronously; skip it so the first check happens a tick
+            // later, as with the former interval (the live class may still be applied after this).
+            let armed = false;
+            const stop = (): void => {
+                sharedSecondTicker.unregister(block);
+                block.removeAttribute('data-thought-live-timer');
+            };
+            sharedSecondTicker.register({
+                element: block,
+                render: () => {
+                    if (!armed) {
+                        armed = true;
+                        return;
+                    }
+                    if (!title.isConnected) {
+                        stop();
+                        return;
+                    }
+                    if (!block.classList.contains('theia-mod-thinking-live')) {
+                        stop();
+                        deps.refreshTranscriptThoughtBriefTitle(title, block, {
+                            ...options,
+                            thinkingActive: false,
+                        });
+                        return;
+                    }
+                    if (isTranscriptDocumentVisible()) {
+                        update();
+                    }
+                },
+            });
         }
         return;
     }

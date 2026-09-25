@@ -17,6 +17,15 @@ export interface LoginGateResponse {
 /** Answers a stubbed request; `call` counts earlier requests to the same pathname (0-based). */
 export type LoginGateResponder = (pathname: string, call: number) => LoginGateResponse | undefined;
 
+export interface LoginGateOptions {
+    /** Entries present in `localStorage` before the gate runs. */
+    readonly localStorage?: Record<string, string>;
+    /** Extra markup for `<body>` (e.g. Theia's `.theia-preload` splash). */
+    readonly bodyHtml?: string;
+    /** Runs against the page window before the gate script, e.g. to install fake timers. */
+    readonly beforeRun?: (window: Window & typeof globalThis) => void;
+}
+
 export interface LoginGateBundleAppend {
     readonly script: HTMLScriptElement;
     /** `localeId` and `<html lang>` as they were when the bundle `<script>` was appended. */
@@ -40,11 +49,11 @@ export interface LoginGateRun {
  * starts in Spanish so English enforcement is observable. Close `run.dom.window` when done: that
  * also clears the gate's watchdog timers.
  */
-export function runLoginGate(responder: LoginGateResponder, url = 'http://localhost:3000/'): LoginGateRun {
+export function runLoginGate(responder: LoginGateResponder, url = 'http://localhost:3000/', options: LoginGateOptions = {}): LoginGateRun {
     const consoleErrors: string[] = [];
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('error', (...args: unknown[]) => consoleErrors.push(args.map(String).join(' ')));
-    const dom = new JSDOM('<!doctype html><html lang="es"><head></head><body></body></html>', {
+    const dom = new JSDOM(`<!doctype html><html lang="es"><head></head><body>${options.bodyHtml ?? ''}</body></html>`, {
         url,
         runScripts: 'outside-only',
         pretendToBeVisual: true,
@@ -52,6 +61,9 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
     });
     const window = dom.window as unknown as Window & typeof globalThis & { eval(source: string): unknown };
     window.localStorage.setItem('localeId', 'es');
+    for (const [key, value] of Object.entries(options.localStorage ?? {})) {
+        window.localStorage.setItem(key, value);
+    }
     const requests: string[] = [];
     const calls = new Map<string, number>();
     (window as unknown as { fetch: unknown }).fetch = async (input: string): Promise<unknown> => {
@@ -75,6 +87,7 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
             return appendChild.call(this, child) as T;
         };
     });
+    options.beforeRun?.(window);
     window.eval(GATE_SOURCE);
     const waitFor = async (predicate: () => boolean, description: string): Promise<void> => {
         for (let attempt = 0; attempt < 200; attempt++) {

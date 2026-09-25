@@ -123,6 +123,14 @@ export class MobileProjectsTranscriptMessagesUi {
         this.renderUi = renderUi;
     }
 
+    /**
+     * Releases per-UI timers (the shared stream-stall ticker). Called by the owning Work Hub
+     * panel on dispose; rows rendered afterwards simply start a new ticker.
+     */
+    dispose(): void {
+        this.artifactsUi.disposeTranscriptStreamStallWatch();
+    }
+
     resolveTranscriptMessageHost(host: HTMLElement): HTMLElement {
         return this.renderUi.resolveTranscriptMessageHost(host);
     }

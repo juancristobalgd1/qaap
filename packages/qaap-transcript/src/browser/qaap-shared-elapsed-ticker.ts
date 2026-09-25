@@ -42,6 +42,11 @@ export class QaapSharedElapsedTicker {
         }
     }
 
+    /** Whether `element` is still ticking (targets self-remove once disconnected). */
+    has(element: HTMLElement): boolean {
+        return this.targets.has(element);
+    }
+
     unregister(element: HTMLElement): void {
         this.targets.delete(element);
         if (this.targets.size === 0) {

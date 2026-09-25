@@ -474,9 +474,11 @@
             if (event.key !== 'Tab') {
                 return;
             }
+            // `hidden` buttons (local mode / retry until offered) cannot take focus: leaving them
+            // in the list made the trap wrap onto an element focus() ignores, letting Tab escape.
             var focusable = Array.prototype.slice.call(host.querySelectorAll(
                 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
-            ));
+            )).filter(function (element) { return !element.hidden; });
             if (!focusable.length) {
                 event.preventDefault();
                 host.focus();

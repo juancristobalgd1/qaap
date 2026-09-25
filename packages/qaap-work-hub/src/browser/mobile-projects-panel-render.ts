@@ -175,6 +175,7 @@ export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.panelChromeUi.dispose();
     ctx.panelLifecycleUi.dispose();
     ctx.executionSurfaceTabsUi.dispose();
+    ctx.transcriptMessagesUi.dispose();
 }
 
 export function hideExtracted(ctx: MobileProjectsPanelContext): void {
