@@ -75,6 +75,9 @@ jobs:
         shell: bash
         env:
           QAAP_SKIP_AUTH: 'true'
+          # The mock QAIQ ignores it, but the runner starts a QAIQ task only with a configured provider
+          # (the Ollama schema default stopped counting as one); without it every turn fails before spawn.
+          OPENROUTER_API_KEY: mock-rioja-e2e
           # Rioja E2E asserts scaffold + preview, not headless visual verification. Disabling
           # the backend capture avoids racing the browser autopilot and flaky repair→failed.
           QAAP_HEADLESS_VISUAL_CAPTURE: '0'
@@ -107,6 +110,14 @@ jobs:
       - name: Rioja API flow eval (regression)
         shell: bash
         run: cd examples/playwright && npm run rioja-e2e-eval
+
+      - name: Collect agent task logs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p test-results/qaap-rioja-ui-flow/agent-task-logs
+          # Authenticated/dev owners write under owners/<login>/.
+          find "${HOME}/.qaap/agent-tasks" -name '*.log' -exec cp {} test-results/qaap-rioja-ui-flow/agent-task-logs/ \; 2>/dev/null || true
 
       - name: Upload E2E artifacts
         if: always()

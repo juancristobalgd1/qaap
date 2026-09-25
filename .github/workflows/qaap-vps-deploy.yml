@@ -108,6 +108,9 @@ jobs:
         # keeps QAAP_SKIP_AUTH honored (it is refused in a production runtime).
         env:
           QAAP_SKIP_AUTH: 'true'
+          # The mock QAIQ ignores it, but the runner starts a QAIQ task only with a configured provider
+          # (the Ollama schema default stopped counting as one); without it every turn fails before spawn.
+          OPENROUTER_API_KEY: mock-rioja-e2e
           QAAP_CLOUD_MODE: local
         run: |
           MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
