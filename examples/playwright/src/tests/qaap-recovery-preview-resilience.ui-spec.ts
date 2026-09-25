@@ -335,7 +335,12 @@ test.describe('@qaap-mobile recovery and preview resilience', () => {
             }
             expect(state?.previewUrl).toBeTruthy();
             if (initialPhase === 'running') {
-                expect(state?.previewUrl).toMatch(/5174|5175|5176|5177|5178|5179|5180/);
+                // Identity previews are served from /qaap-preview/<previewId>/, so the recovered
+                // port is only visible on the forwarded-port record, never in the URL itself.
+                const recoveredPort = state?.forwardedPorts?.find(entry => entry.primary)?.port
+                    ?? state?.forwardedPorts?.[0]?.port;
+                expect(recoveredPort).toBeGreaterThanOrEqual(5174);
+                expect(recoveredPort).toBeLessThanOrEqual(5180);
             }
         } finally {
             await page.close();
