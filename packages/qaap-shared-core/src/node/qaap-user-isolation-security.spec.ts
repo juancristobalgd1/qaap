@@ -288,6 +288,16 @@ describe('qaap-github-auth-guard security', () => {
             expect(guard.ownsWorkspacePath(ctx, p('acme', 'missing'))).to.equal(false);
             expect(guard.ownsWorkspacePath(ctx, reposRoot)).to.equal(false);
         });
+
+        it('owns the caller\'s New Worktree / parallel-run cwds, never another tenant\'s', () => {
+            const ctx = { kind: 'authenticated' as const, userLogin: 'alice', session: {} as never, sessionId: 's' };
+            const worktrees = path.join(os.tmpdir(), 'qaap-worktrees');
+            const parallel = path.join(os.tmpdir(), 'qaap-parallel');
+            expect(guard.ownsWorkspacePath(ctx, path.join(worktrees, 'alice', 'bcd8daa6'))).to.equal(true);
+            expect(guard.ownsWorkspacePath(ctx, path.join(parallel, 'alice', 'run-1', 'v1'))).to.equal(true);
+            expect(guard.ownsWorkspacePath(ctx, path.join(worktrees, 'bob', 'bcd8daa6'))).to.equal(false);
+            expect(guard.ownsWorkspacePath(ctx, worktrees)).to.equal(false);
+        });
     });
 
     it('scopes work-hub routine ownership by ownerLogin', () => {

@@ -16,9 +16,12 @@ import {
     normalizeIsolationPath,
     QAAP_SKIP_AUTH_USER_LOGIN,
     QAAP_USER_REPOS_SEGMENT,
+    resolveQaapParallelRoot,
     resolveQaapReposRoot,
+    resolveQaapWorktreesRoot,
     resolveRepositoryWorkspacePath,
     resolveUserReposRoot,
+    safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
@@ -143,7 +146,7 @@ export class QaapGithubAuthGuard {
         if (ctx.kind === 'unauthorized') {
             return false;
         }
-        if (this.pathBelongsToUser(ctx.userLogin, targetPath)) {
+        if (this.pathBelongsToUser(ctx.userLogin, targetPath) || this.pathIsUserWorktree(ctx.userLogin, targetPath)) {
             return true;
         }
         // A legacy/flat (`.../repos/{owner}/{repo}`) or bare-name cwd that maps to an existing clone
@@ -280,6 +283,19 @@ export class QaapGithubAuthGuard {
      * (e.g. `.../alice/link -> .../bob/secret`): the string still starts with alice's root, but the
      * real target is bob's tree. Requiring BOTH closes that cross-tenant escape.
      */
+    /**
+     * "New Worktree" and parallel-run conversations live outside the repos tree, under the caller's own
+     * tenant segment of the worktrees / parallel roots (`/tmp/qaap-worktrees/<login>/<id>`). Without this
+     * their conversations and tasks were treated as foreign: hidden from the owner's list and answered
+     * with "Conversation not found". Symlink-safe like {@link pathBelongsToUser}.
+     */
+    protected pathIsUserWorktree(userLogin: string, targetPath: string): boolean {
+        const tenant = safeUserIdSegment(userLogin);
+        return [resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]
+            .map(root => path.join(root, tenant))
+            .some(root => isRealPathUnder(targetPath, root));
+    }
+
     protected pathBelongsToUser(userLogin: string, targetPath: string): boolean {
         if (!isPathUnderUserWorkspace(targetPath, this.reposRoot, userLogin)) {
             return false;
