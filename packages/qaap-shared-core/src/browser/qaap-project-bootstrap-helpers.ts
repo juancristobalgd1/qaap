@@ -52,8 +52,11 @@ export function normalizeDevUrl(raw: string): string | undefined {
     }
 }
 
+/** Extracts the port from Vite's strict-port failure, `Error: Port 5173 is already in use`. */
+export const PORT_IN_USE_PHRASE_REGEX = /\bport (\d{2,5}) is (?:already )?in use/i;
+
 export function extractPortFromInUseMessage(text: string): number | undefined {
-    const match = PORT_IN_USE_ADDR_REGEX.exec(text);
+    const match = PORT_IN_USE_ADDR_REGEX.exec(text) ?? PORT_IN_USE_PHRASE_REGEX.exec(text);
     if (!match) {
         return undefined;
     }
