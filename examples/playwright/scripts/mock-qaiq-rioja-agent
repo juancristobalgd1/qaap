@@ -4,6 +4,17 @@
 # Simulates: scaffold Vite app, write Rioja content, npm install, report port 5173.
 set -euo pipefail
 
+# Debug trail for CI: the backend only records the exit code, so log argv and the failing command next
+# to the eval report (uploaded as the job artifact). Never fails the mock itself.
+MOCK_SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+MOCK_DEBUG_LOG="${QAAP_MOCK_QAIQ_DEBUG_LOG:-${MOCK_SCRIPT_DIR}/../../../test-results/qaap-rioja-ui-flow/mock-qaiq-debug.log}"
+mock_debug() {
+    { mkdir -p "$(dirname "$MOCK_DEBUG_LOG")" && printf '%s\n' "$*" >> "$MOCK_DEBUG_LOG"; } 2>/dev/null || true
+}
+mock_debug "--- $(date -u +%FT%TZ) pid=$$ cwd=$(pwd) python3=$(command -v python3 || echo missing)"
+mock_debug "argv($#): $*"
+trap 'mock_debug "exit $? at line $LINENO: $BASH_COMMAND"' ERR
+
 TS=1
 
 emit_json() {
