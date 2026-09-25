@@ -28,7 +28,13 @@
       "path": "../ai-anthropic"
     },
     {
+      "path": "../ai-claude-code"
+    },
+    {
       "path": "../ai-google"
+    },
+    {
+      "path": "../ai-hugging-face"
     },
     {
       "path": "../ai-ollama"

@@ -4,11 +4,14 @@
 // *****************************************************************************
 
 import { AnthropicLanguageModelsManagerImpl } from '@theia/ai-anthropic/lib/node/anthropic-language-models-manager-impl';
+import { ClaudeCodeServiceImpl } from '@theia/ai-claude-code/lib/node/claude-code-service-impl';
 import { GoogleLanguageModelsManagerImpl } from '@theia/ai-google/lib/node/google-language-models-manager-impl';
+import { HuggingFaceLanguageModelsManagerImpl } from '@theia/ai-huggingface/lib/node/huggingface-language-models-manager-impl';
 import { OllamaLanguageModelsManagerImpl } from '@theia/ai-ollama/lib/node/ollama-language-models-manager-impl';
 import { OpenAiLanguageModelsManagerImpl } from '@theia/ai-openai/lib/node/openai-language-models-manager-impl';
 import { VercelAiLanguageModelFactory, VercelAiProviderConfig } from '@theia/ai-vercel-ai/lib/node/vercel-ai-language-model-factory';
 import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { stripSharedProviderEnv } from './qaap-agent-task-runner-utils2';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 
 /**
@@ -40,6 +43,7 @@ const ENV_BACKED_GETTERS: readonly QaapEnvBackedGetter[] = [
     { prototype: OpenAiLanguageModelsManagerImpl.prototype, property: 'apiVersion', field: '_apiVersion' },
     { prototype: AnthropicLanguageModelsManagerImpl.prototype, property: 'apiKey', field: '_apiKey' },
     { prototype: GoogleLanguageModelsManagerImpl.prototype, property: 'apiKey', field: '_apiKey' },
+    { prototype: HuggingFaceLanguageModelsManagerImpl.prototype, property: 'apiKey', field: '_apiKey' },
     { prototype: OllamaLanguageModelsManagerImpl.prototype, property: 'host', field: '_host' },
 ];
 
@@ -78,4 +82,57 @@ export function installQaapAiProviderEnvTenantScope(registry: QaapWebsocketAuthR
     } else {
         console.warn('[qaap-ai-provider-env] VercelAiLanguageModelFactory.getApiKeyBasedOnProvider not found; operator env stays visible.');
     }
+
+    // Claude Code: `sendMessages` spawns the CLI with `{ ...process.env, ANTHROPIC_API_KEY: request.apiKey || env }`,
+    // i.e. every operator credential plus the operator's Anthropic key when the user pushed none. Wrap the SDK's
+    // `query` so the spawn env goes through the same chokepoint as agent tasks.
+    const claudeCodePrototype = ClaudeCodeServiceImpl.prototype as unknown as {
+        importClaudeCodeSDK(customClaudeCodePath?: string): Promise<{ query: unknown; SDKUserMessage: unknown; Options: unknown }>;
+    };
+    const originalImport = claudeCodePrototype.importClaudeCodeSDK;
+    if (typeof originalImport === 'function') {
+        claudeCodePrototype.importClaudeCodeSDK = async function patchedImportClaudeCodeSDK(
+            customClaudeCodePath?: string
+        ): Promise<{ query: unknown; SDKUserMessage: unknown; Options: unknown }> {
+            const login = registry.getCurrentLogin();
+            const sdk = await originalImport.call(this, customClaudeCodePath);
+            if (!shouldHideOperatorProviderEnv(login) || typeof sdk.query !== 'function') {
+                return sdk;
+            }
+            const query = sdk.query as (args: QaapClaudeCodeQueryArgs) => unknown;
+            return {
+                ...sdk,
+                query: (args: QaapClaudeCodeQueryArgs): unknown => query({
+                    ...args,
+                    options: args.options && { ...args.options, env: withholdOperatorEnvFromClaudeCode(args.options.env, login) },
+                }),
+            };
+        };
+    } else {
+        console.warn('[qaap-ai-provider-env] ClaudeCodeServiceImpl.importClaudeCodeSDK not found; operator env stays visible.');
+    }
+}
+
+interface QaapClaudeCodeQueryArgs {
+    readonly options?: { readonly env?: NodeJS.ProcessEnv };
+}
+
+/**
+ * Spawn env for a Claude Code run of a caller who must not see operator credentials: keeps the key that caller
+ * pushed (`request.apiKey`) and drops the operator's `ANTHROPIC_API_KEY` fallback and every other shared secret.
+ */
+export function withholdOperatorEnvFromClaudeCode(
+    spawnEnv: NodeJS.ProcessEnv | undefined,
+    login: string | undefined,
+    operatorEnv: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+    const env = { ...(spawnEnv ?? operatorEnv) };
+    const pushedKey = env.ANTHROPIC_API_KEY && env.ANTHROPIC_API_KEY !== operatorEnv.ANTHROPIC_API_KEY ? env.ANTHROPIC_API_KEY : undefined;
+    stripSharedProviderEnv(env, login);
+    if (pushedKey) {
+        env.ANTHROPIC_API_KEY = pushedKey;
+    } else {
+        delete env.ANTHROPIC_API_KEY;
+    }
+    return env;
 }
