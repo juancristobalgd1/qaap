@@ -165,16 +165,20 @@ describe('QaapDevPreviewPortRegistry sweepExpiredClaims', () => {
         const registry = new AgingRegistry();
         const fired: number[] = [];
         registry.onDidReleasePort(port => fired.push(port));
+        // Every sweep gets an explicit clock; claims are aged relative to their own timestamp, so
+        // the verdict never depends on wall time. The refresh happens in the same millisecond as
+        // the original claim on fast runs — the case that used to be misread as "already reported".
         registry.claim(5173, 'alice');
         registry.claim(5174, 'alice');
-        expect(registry.sweepExpiredClaims()).to.deep.equal([]);
-        registry.age(5173, 31 * 60_000);
-        expect(registry.sweepExpiredClaims()).to.deep.equal([5173]);
-        expect(registry.sweepExpiredClaims()).to.deep.equal([], 'reported once');
+        const now = Date.now() + 60_000;
+        expect(registry.sweepExpiredClaims(now)).to.deep.equal([]);
+        registry.age(5173, 31 * 60_000 + 60_000);
+        expect(registry.sweepExpiredClaims(now)).to.deep.equal([5173]);
+        expect(registry.sweepExpiredClaims(now)).to.deep.equal([], 'reported once');
         expect(registry.staleOwnerOf(5173)).to.equal('alice', 'the stale claim itself is kept');
         registry.claim(5173, 'alice');
-        registry.age(5173, 31 * 60_000);
-        expect(registry.sweepExpiredClaims()).to.deep.equal([5173]);
+        registry.age(5173, 31 * 60_000 + 60_000);
+        expect(registry.sweepExpiredClaims(now)).to.deep.equal([5173]);
         expect(fired).to.deep.equal([5173, 5173]);
     });
 });

@@ -76,8 +76,12 @@ export class QaapDevPreviewPortRegistry {
     protected persistTimer: NodeJS.Timeout | undefined;
     protected persistenceEnabled = false;
     protected readonly onDidReleasePortEmitter = new Emitter<number>();
-    /** Claim timestamp already reported as expired, per port, so each expiry fires once. */
-    protected readonly expiryReportedAt = new Map<number, number>();
+    /**
+     * Claim entry already reported as expired, per port, so each expiry fires once. Tracked by
+     * entry identity (every claim/refresh stores a new entry), not by timestamp: two claims made
+     * in the same millisecond must still count as separate expiries.
+     */
+    protected readonly expiryReported = new Map<number, { readonly ownerLogin: string; at: number }>();
 
     /**
      * Fires with a port whose preview claim was released, expired, rebound or handed to a new
@@ -371,14 +375,14 @@ export class QaapDevPreviewPortRegistry {
     sweepExpiredClaims(now: number = Date.now()): number[] {
         const expired: number[] = [];
         for (const [port, entry] of this.claims) {
-            if (now - entry.at > QaapDevPreviewPortRegistry.CLAIM_TTL_MS && this.expiryReportedAt.get(port) !== entry.at) {
-                this.expiryReportedAt.set(port, entry.at);
+            if (now - entry.at > QaapDevPreviewPortRegistry.CLAIM_TTL_MS && this.expiryReported.get(port) !== entry) {
+                this.expiryReported.set(port, entry);
                 expired.push(port);
             }
         }
-        for (const port of this.expiryReportedAt.keys()) {
+        for (const port of this.expiryReported.keys()) {
             if (!this.claims.has(port)) {
-                this.expiryReportedAt.delete(port);
+                this.expiryReported.delete(port);
             }
         }
         for (const port of expired) {
