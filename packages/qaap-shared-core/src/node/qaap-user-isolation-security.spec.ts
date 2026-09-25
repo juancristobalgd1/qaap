@@ -62,6 +62,25 @@ describe('qaap-user-isolation', () => {
 });
 
 describe('qaap-github-auth-guard security', () => {
+    // The session store's beta policy reads process.env: a developer `.env` (Nx loads it into `lerna run`)
+    // with `QAAP_BETA_ALLOWED_LOGINS=` or a production mode would refuse these sessions.
+    const betaEnvKeys = ['QAAP_BETA_ALLOWED_LOGINS', 'NODE_ENV', 'QAAP_CLOUD_MODE'] as const;
+    const savedBetaEnv: Partial<Record<typeof betaEnvKeys[number], string>> = {};
+    before(() => {
+        for (const key of betaEnvKeys) {
+            savedBetaEnv[key] = process.env[key];
+            delete process.env[key];
+        }
+    });
+    after(() => {
+        for (const key of betaEnvKeys) {
+            if (savedBetaEnv[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = savedBetaEnv[key];
+            }
+        }
+    });
 
     it('returns 403 for workspace paths outside the authenticated user (case B/C)', () => {
         const sessions = new QaapGithubSessionStore();
