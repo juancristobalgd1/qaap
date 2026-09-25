@@ -657,3 +657,58 @@ describe('QaapDockerOrchestrator', () => {
         });
     });
 });
+
+describe('QaapDockerOrchestrator tenant ensure timeout', () => {
+    type EnsureInternals = {
+        boundTenantEnsure<T>(operation: Promise<T>, label: string): Promise<T>;
+        shareTenantEnsureOperation<T>(key: string, start: () => Promise<T>): Promise<T>;
+    };
+    let savedTimeout: string | undefined;
+
+    beforeEach(() => {
+        savedTimeout = process.env.QAAP_TENANT_ENSURE_TIMEOUT_MS;
+        process.env.QAAP_TENANT_ENSURE_TIMEOUT_MS = '20';
+    });
+
+    afterEach(() => {
+        if (savedTimeout === undefined) {
+            delete process.env.QAAP_TENANT_ENSURE_TIMEOUT_MS;
+        } else {
+            process.env.QAAP_TENANT_ENSURE_TIMEOUT_MS = savedTimeout;
+        }
+    });
+
+    it('a retry after a timed-out wait joins the still-running create instead of starting a second one', async () => {
+        const orchestrator = new QaapDockerOrchestrator() as unknown as EnsureInternals;
+        let starts = 0;
+        let finish!: (value: string) => void;
+        const start = (): Promise<string> => {
+            starts += 1;
+            return new Promise(resolve => { finish = resolve; });
+        };
+        const first = orchestrator.boundTenantEnsure(orchestrator.shareTenantEnsureOperation('container:t', start), 'container t');
+        const firstError = await first.then(() => undefined, (err: Error) => err);
+        expect(firstError?.message).to.contain('Timed out after 20ms');
+        const retry = orchestrator.boundTenantEnsure(orchestrator.shareTenantEnsureOperation('container:t', start), 'container t');
+        finish('ready');
+        expect(await retry).to.equal('ready');
+        expect(starts).to.equal(1);
+        // Settled: the next ensure starts a fresh run.
+        void orchestrator.shareTenantEnsureOperation('container:t', start);
+        expect(starts).to.equal(2);
+        finish('again');
+    });
+
+    it('a run older than twice the timeout no longer blocks a fresh attempt', async () => {
+        const orchestrator = new QaapDockerOrchestrator() as unknown as EnsureInternals;
+        let starts = 0;
+        const hung = (): Promise<string> => {
+            starts += 1;
+            return new Promise<string>(() => undefined);
+        };
+        void orchestrator.shareTenantEnsureOperation('backend:t', hung);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        void orchestrator.shareTenantEnsureOperation('backend:t', hung);
+        expect(starts).to.equal(2);
+    });
+});
