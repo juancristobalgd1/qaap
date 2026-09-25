@@ -17,7 +17,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
         const css = fs.readFileSync(
             path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
             'utf8',
-        );
+        ).replace(/\r\n/g, '\n'); // Windows checkouts get CRLF
         const narrowCss = css.slice(css.indexOf('@media (max-width: 767px)'));
         expect(narrowCss).to.include(
             '/* Keep Preview / Run aligned with the empty-chat prompt suggestion chips. */\n'

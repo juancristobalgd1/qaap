@@ -152,7 +152,7 @@ async function waitForTcpListener(port: number): Promise<void> {
 async function occupyTcpPort(port: number): Promise<ChildProcess> {
     const script = [
         "const net = require('net');",
-        "const server = net.createServer();",
+        'const server = net.createServer();',
         "server.listen(Number(process.argv[1]), '127.0.0.1');",
         'process.stdin.resume();',
     ].join('');
