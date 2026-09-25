@@ -142,3 +142,109 @@ describe('qaap-transcript-scroll-to-bottom deferred snap', () => {
         mount.remove();
     });
 });
+
+describe('qaap-transcript-scroll-to-bottom observer lifecycle', () => {
+    let disableJSDOM: () => void;
+    let observers: Array<{ observing: number }>;
+    let restoreMutationObserver: () => void;
+    let errors: unknown[];
+    const onError = (event: ErrorEvent): void => {
+        errors.push(event.error ?? event.message);
+    };
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
+
+    beforeEach(() => {
+        observers = [];
+        errors = [];
+        // Count live observe() registrations per MutationObserver the module creates.
+        const Original = globalThis.MutationObserver;
+        class CountingMutationObserver extends Original {
+            readonly record = { observing: 0 };
+            constructor(callback: MutationCallback) {
+                super(callback);
+                observers.push(this.record);
+            }
+            override observe(target: Node, options?: MutationObserverInit): void {
+                this.record.observing++;
+                super.observe(target, options);
+            }
+            override disconnect(): void {
+                this.record.observing = 0;
+                super.disconnect();
+            }
+        }
+        Object.defineProperty(globalThis, 'MutationObserver', { configurable: true, writable: true, value: CountingMutationObserver });
+        restoreMutationObserver = () => Object.defineProperty(globalThis, 'MutationObserver', { configurable: true, writable: true, value: Original });
+        window.addEventListener('error', onError);
+    });
+
+    afterEach(() => {
+        restoreMutationObserver();
+        window.removeEventListener('error', onError);
+    });
+
+    function buildHost(): { mount: HTMLElement; scroller: HTMLElement } {
+        const mount = document.createElement('div');
+        mount.className = 'theia-mobile-agent-transcript-real-chat';
+        const scroller = document.createElement('div');
+        scroller.className = 'theia-mobile-agent-transcript';
+        mount.append(scroller);
+        document.body.append(mount);
+        return { mount, scroller };
+    }
+
+    const liveObservers = (): number => observers.filter(observer => observer.observing > 0).length;
+    const flushMutations = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+    it('disconnects every observer on dispose', () => {
+        const { mount } = buildHost();
+        const handle = attachTranscriptScrollToBottomButton(mount);
+        expect(liveObservers()).to.equal(2, 'mount + scroller observers');
+        handle.dispose();
+        handle.dispose();
+        expect(liveObservers()).to.equal(0);
+        expect(mount.querySelector('.theia-mobile-agent-transcript-scroll-to-bottom') ?? undefined).to.equal(undefined);
+        mount.remove();
+    });
+
+    it('releases observers when the host is detached without being disposed', async () => {
+        const { mount, scroller } = buildHost();
+        attachTranscriptScrollToBottomButton(mount);
+        mount.remove();
+        scroller.append(document.createElement('div'));
+        await flushMutations();
+        expect(liveObservers()).to.equal(0);
+    });
+
+    it('survives a synchronous move to another parent', async () => {
+        const { mount, scroller } = buildHost();
+        const handle = attachTranscriptScrollToBottomButton(mount);
+        const other = document.createElement('section');
+        document.body.append(other);
+        other.append(mount);
+        scroller.append(document.createElement('div'));
+        await flushMutations();
+        expect(liveObservers()).to.equal(2);
+        handle.dispose();
+        other.remove();
+    });
+
+    it('does not throw from observer callbacks when requestAnimationFrame is unavailable', async () => {
+        expect(typeof (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame).to.not.equal('function');
+        const { mount, scroller } = buildHost();
+        const handle = attachTranscriptScrollToBottomButton(mount);
+        scroller.append(document.createElement('div'));
+        await flushMutations();
+        expect(errors).to.deep.equal([]);
+        handle.dispose();
+        mount.remove();
+    });
+});
+
