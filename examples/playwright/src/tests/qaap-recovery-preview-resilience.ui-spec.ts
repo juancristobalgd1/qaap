@@ -25,6 +25,8 @@ interface QaapBootstrapProbeState {
     readonly error?: string;
     readonly needsInstall?: boolean;
     readonly nodeModulesPresent?: boolean;
+    readonly lastPort?: number;
+    readonly forwardedPorts?: ReadonlyArray<{ readonly port: number; readonly url: string; readonly opened: boolean }>;
 }
 
 interface QaapBootstrapWindow {
@@ -337,8 +339,7 @@ test.describe('@qaap-mobile recovery and preview resilience', () => {
             if (initialPhase === 'running') {
                 // Identity previews are served from /qaap-preview/<previewId>/, so the recovered
                 // port is only visible on the forwarded-port record, never in the URL itself.
-                const recoveredPort = state?.forwardedPorts?.find(entry => entry.primary)?.port
-                    ?? state?.forwardedPorts?.[0]?.port;
+                const recoveredPort = state?.lastPort ?? state?.forwardedPorts?.[0]?.port;
                 expect(recoveredPort).toBeGreaterThanOrEqual(5174);
                 expect(recoveredPort).toBeLessThanOrEqual(5180);
             }
