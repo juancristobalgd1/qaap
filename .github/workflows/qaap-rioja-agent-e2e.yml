@@ -75,6 +75,9 @@ jobs:
         shell: bash
         env:
           QAAP_SKIP_AUTH: 'true'
+          # The mock QAIQ ignores it, but the runner starts a QAIQ task only with a configured provider
+          # (the Ollama schema default stopped counting as one); without it every turn fails before spawn.
+          OPENROUTER_API_KEY: mock-rioja-e2e
           # Rioja E2E asserts scaffold + preview, not headless visual verification. Disabling
           # the backend capture avoids racing the browser autopilot and flaky repair→failed.
           QAAP_HEADLESS_VISUAL_CAPTURE: '0'
