@@ -24,7 +24,7 @@ This is a Lerna-managed Eclipse Theia monorepo fork for Qaap.
 
 ## Required environment
 
-- Node.js `>=22` (`package.json` engines). Node 24 is the recommended default in project docs.
+- Node.js `>=22.13.0` (`package.json` engines; first release with unflagged `node:sqlite`). Node 24 is the recommended default in project docs.
 - npm workspaces with Lerna.
 - Python 3 and native build tooling may be required by `node-gyp` dependencies.
 

@@ -47,7 +47,8 @@ backup, stop the backend or use a filesystem snapshot; copying only the main
 
 ## Runtime requirement
 
-`node:sqlite` requires Node.js 22.5 or newer. Node.js 24 is recommended for
+`node:sqlite` requires Node.js 22.13.0 or newer (22.5–22.12 only expose it behind
+`--experimental-sqlite`, which Qaap does not pass). Node.js 24 is recommended for
 development and deployment. Compile before executing compiled tests:
 
 ```bash

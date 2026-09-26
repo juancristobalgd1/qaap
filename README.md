@@ -73,7 +73,7 @@ doc/                       architecture, deployment, and agent docs
 
 Prerequisites:
 
-- Node.js 22.5 or newer (`node:sqlite`; Node.js 24 recommended)
+- Node.js 22.13.0 or newer (`node:sqlite` without flags; Node.js 24 recommended)
 - npm
 - native build tools for Theia dependencies
 
