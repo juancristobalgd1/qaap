@@ -198,6 +198,9 @@ const ALLOWED = [
     /^examples\/playwright\/src\/tests\/qaap-mobile\.test\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-transcript-preview-flow\.ui-spec\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-recovery-preview-resilience\.ui-spec\.ts$/,
+    // Opt-in classic-IDE surface (QAAP_PLAYWRIGHT_SURFACE=ide) so the upstream suite in
+    // playwright.yml drives the IDE instead of the default Work Hub; unset = upstream behaviour.
+    /^examples\/playwright\/src\/theia-app-loader\.ts$/,
     // Upstream sample plugins removed in this fork — we ship our own plugin set.
     /^sample-plugins\//,
     // Fork-specific build tooling and dev scripts (not user-facing product code).

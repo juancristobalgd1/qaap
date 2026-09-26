@@ -81,7 +81,15 @@ jobs:
         # `qaap-mobile-playwright.yml` workflow with a longer per-test timeout. Running them here too
         # (without that setup) made each fail after up to 5 min x 3 attempts and pushed this job past
         # its 60 min timeout on every run, so the upstream suite never got to report.
-        run: cd examples/playwright && npm run ui-tests-ci -- --grep-invert @qaap-mobile
+        run: cd examples/playwright && npm run ui-tests-ci -- --grep-invert @qaap-mobile --retries 0
+        env:
+          # Qaap: without these the local backend rejects unauthenticated file-system RPCs
+          # ("Not signed in") and the login gate covers the workbench.
+          QAAP_SKIP_AUTH: 'true'
+          QAAP_CLOUD_MODE: local
+          # Qaap: open the classic IDE surface (per-tab "Open IDE" preference) instead of the
+          # default Work Hub, which the upstream suite does not know about. See theia-app-loader.ts.
+          QAAP_PLAYWRIGHT_SURFACE: ide
 
       - name: Archive test results
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
