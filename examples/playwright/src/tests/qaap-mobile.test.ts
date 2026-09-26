@@ -295,7 +295,7 @@ async function waitForDevServerOnPort(port: number, timeoutMs: number = 120_000)
 
 async function startWorkspaceViteDevServer(workspacePath: string): Promise<ChildProcess> {
     try {
-        execSync('lsof -ti:5173 | xargs kill -9', { stdio: 'ignore' });
+        execSync('lsof -ti tcp:5173 -sTCP:LISTEN | xargs kill -9', { stdio: 'ignore' });
     } catch {
         // Port was free.
     }
@@ -546,7 +546,7 @@ test.describe('@qaap-mobile Qaap time to preview', () => {
 
     test.beforeEach(() => {
         try {
-            execSync('lsof -ti:5173 | xargs kill -9', { stdio: 'ignore' });
+            execSync('lsof -ti tcp:5173 -sTCP:LISTEN | xargs kill -9', { stdio: 'ignore' });
         } catch {
             // Port was free.
         }

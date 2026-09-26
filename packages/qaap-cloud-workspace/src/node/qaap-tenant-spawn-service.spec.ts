@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { ChildProcess } from 'child_process';
+import { spawnSync, type ChildProcess } from 'child_process';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
@@ -208,6 +208,22 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         expect(svc.launches[0].args[0]).to.equal('-c');
         expect(svc.launches[0].args[1]).to.contain('ulimit -v');
         expect(svc.launches[0].args.slice(-3)).to.deep.equal(['node', '-e', 'process.exit(0)']);
+    });
+
+    it('rlimit fallback execs the wrapped executable itself, not its first argument', function (): void {
+        // The fallback is Linux-only in production (isLinuxResourceLimitPlatform); it runs the
+        // real /bin/sh ulimit script, whose -v/-t flags are not portable to macOS or Windows.
+        if (process.platform !== 'linux') {
+            this.skip();
+        }
+        const svc = new TestTenantSpawnService();
+        svc.linuxResourceLimits = true;
+        svc.systemdRun = false;
+        svc.spawnArgvPrepared('/bin/echo', ['qaap-wrapped-ok'], { cwd: tenantCwd, env: {} });
+        const launch = svc.launches[0];
+        const result = spawnSync(launch.file, launch.args, { encoding: 'utf8' });
+        expect(result.status).to.equal(0);
+        expect(result.stdout.trim()).to.equal('qaap-wrapped-ok');
     });
 
     it('does not add a host uid or resource wrapper inside a backend-per-tenant container', () => {
