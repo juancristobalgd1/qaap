@@ -76,12 +76,12 @@ jobs:
 
       - name: Test (playwright)
         shell: bash
-        # Qaap: the `@qaap-mobile` specs (Work Hub, agents, dev preview) need their own fixtures,
-        # mock agent and env (QAAP_SKIP_AUTH, FRONTEND_CONNECTION_TIMEOUT, ...) and run in the dedicated
-        # `qaap-mobile-playwright.yml` workflow with a longer per-test timeout. Running them here too
-        # (without that setup) made each fail after up to 5 min x 3 attempts and pushed this job past
-        # its 60 min timeout on every run, so the upstream suite never got to report.
-        run: cd examples/playwright && npm run ui-tests-ci -- --grep-invert @qaap-mobile --retries 0
+        # Qaap: playwright.qaap-upstream-ci.config.ts = upstream CI config minus the `@qaap-mobile`
+        # specs (run by qaap-mobile-playwright.yml with their own fixtures/env/timeouts) and minus the
+        # upstream specs whose page objects depend on workbench chrome Qaap replaces (reasons inline).
+        # Including them made every run hit the 60 min job timeout before reporting anything.
+        # The playwright package is already built by the previous step.
+        run: cd examples/playwright && npx playwright test --config=./configs/playwright.qaap-upstream-ci.config.ts
         env:
           # Qaap: without these the local backend rejects unauthenticated file-system RPCs
           # ("Not signed in") and the login gate covers the workbench.
