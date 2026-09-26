@@ -198,6 +198,16 @@ const ALLOWED = [
     /^examples\/playwright\/src\/tests\/qaap-mobile\.test\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-transcript-preview-flow\.ui-spec\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-recovery-preview-resilience\.ui-spec\.ts$/,
+    // Opt-in classic-IDE surface (QAAP_PLAYWRIGHT_SURFACE=ide) so the upstream suite in
+    // playwright.yml drives the IDE instead of the default Work Hub; unset = upstream behaviour.
+    /^examples\/playwright\/src\/theia-app-loader\.ts$/,
+    // Qaap page-object adapters (e.g. menus via the "Open menu" button) that the loader swaps in
+    // on the IDE surface, so the upstream specs and page objects stay byte-identical.
+    /^examples\/playwright\/src\/qaap-menu-bar\.ts$/,
+    // Qaap-only Playwright config for the upstream suite in playwright.yml (documented exclusions).
+    /^examples\/playwright\/configs\/playwright\.qaap-upstream-ci\.config\.ts$/,
+    // Its webServer command: upstream `theia:start` plus seeded user settings (startupEditor=welcomePage).
+    /^examples\/playwright\/configs\/qaap-upstream-ci-theia-start\.js$/,
     // Upstream sample plugins removed in this fork — we ship our own plugin set.
     /^sample-plugins\//,
     // Fork-specific build tooling and dev scripts (not user-facing product code).

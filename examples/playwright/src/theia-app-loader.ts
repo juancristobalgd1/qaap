@@ -15,7 +15,9 @@
 // *****************************************************************************
 
 import { Page, PlaywrightWorkerArgs, _electron as electron } from '@playwright/test';
+import { QaapMenuBar } from './qaap-menu-bar';
 import { TheiaApp } from './theia-app';
+import { TheiaMenuBar } from './theia-main-menu';
 import { TheiaWorkspace } from './theia-workspace';
 
 export interface TheiaAppFactory<T extends TheiaApp> {
@@ -37,6 +39,21 @@ export interface TheiaPlaywrightTestConfig {
 
 function theiaAppFactory<T extends TheiaApp>(factory?: TheiaAppFactory<T>): TheiaAppFactory<T> {
     return (factory ?? TheiaApp) as TheiaAppFactory<T>;
+}
+
+/**
+ * Qaap: on the IDE surface `#theia:menubar` is hidden in favour of the top-bar "Open menu" button, so
+ * swap in {@link QaapMenuBar}. Done at construction time because some apps (e.g. the sample app's
+ * `waitForInitialized()`) already use `menuBar` while loading.
+ */
+function qaapIdeAppFactory<T extends TheiaApp>(factory?: TheiaAppFactory<T>): TheiaAppFactory<T> {
+    const base = theiaAppFactory<T>(factory) as unknown as new (...args: ConstructorParameters<TheiaAppFactory<T>>) => TheiaApp;
+    class QaapIdeApp extends base {
+        protected override createMenuBar(): TheiaMenuBar {
+            return new QaapMenuBar(this);
+        }
+    }
+    return QaapIdeApp as unknown as TheiaAppFactory<T>;
 }
 
 function initializeWorkspace(initialWorkspace?: TheiaWorkspace): TheiaWorkspace {
@@ -158,6 +175,16 @@ export namespace TheiaAppLoader {
             return TheiaElectronAppLoader.load(args, initialWorkspace, factory);
         }
         const page = await args.browser.newPage();
+        // Qaap: a fresh tab boots into the Work Hub, which hides the classic IDE chrome the upstream
+        // suite drives. `QAAP_PLAYWRIGHT_SURFACE=ide` opts into the per-tab "Open IDE" preference
+        // (sessionStorage, same contract as the product's markPreferDesktopIde()) before first load.
+        if (process.env.QAAP_PLAYWRIGHT_SURFACE === 'ide') {
+            await page.addInitScript(() => {
+                window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');
+                window.sessionStorage.setItem('qaap.mobileProjects.explicitDesktopIde', '1');
+            });
+            return TheiaBrowserAppLoader.load(page, initialWorkspace, qaapIdeAppFactory(factory));
+        }
         return TheiaBrowserAppLoader.load(page, initialWorkspace, factory);
     }
 }
