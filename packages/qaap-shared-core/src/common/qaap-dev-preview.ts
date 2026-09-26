@@ -45,6 +45,28 @@ export interface QaapDevPreviewProbeResponse {
     readonly port?: number;
     /** Work Hub section that owns this claim. Present on `/api/current` when the registry has it. */
     readonly conversationId?: string;
+    /**
+     * Why an identity probe is (not) ready. Additive: older backends omit it and clients derive it
+     * from `ready` and the HTTP status. See {@link QaapDevPreviewClaimState}.
+     */
+    readonly state?: QaapDevPreviewClaimState;
+}
+
+/**
+ * Liveness of one identity-scoped preview claim:
+ * - `ready` — the dev server behind the claim answers.
+ * - `booting` — the claim exists but its dev server is not answering yet (within the start grace).
+ * - `stopped` — the claim exists but its dev server stopped answering after the start grace.
+ * - `gone` — no such claim for this user (released, reaped, superseded or lost on backend restart).
+ * - `unknown` — client-side only: the probe itself failed (network error, 5xx while a tenant
+ *   backend cold-starts). Transient; never evidence that the preview is dead.
+ */
+export type QaapDevPreviewClaimState = 'ready' | 'booting' | 'stopped' | 'gone' | 'unknown';
+
+const QAAP_DEV_PREVIEW_CLAIM_STATES: ReadonlySet<string> = new Set(['ready', 'booting', 'stopped', 'gone', 'unknown']);
+
+export function isQaapDevPreviewClaimState(value: unknown): value is QaapDevPreviewClaimState {
+    return typeof value === 'string' && QAAP_DEV_PREVIEW_CLAIM_STATES.has(value);
 }
 
 /** Single definition in qaap-adapters, shared with the browser preview URL helpers. */
