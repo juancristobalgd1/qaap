@@ -22,6 +22,8 @@ export interface MobileProjectsPullRequestDetailHost {
 
     closePullRequestDetail(): void;
     refreshInboxPullRequests(projects?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
+    /** Lets the all-pull-requests navigator flip the merged PR's state without a full reload. */
+    onPullRequestMerged?(pullRequest: QaapGithubPullRequestSummary): void;
 }
 
 export type MobileProjectsPullRequestDetailTab = 'summary' | 'code';
@@ -69,7 +71,7 @@ export class MobileProjectsPullRequestDetailUi {
 
     toggleMergeConfirmation(): void {
         const pullRequest = this.host.pullRequestDetail;
-        if (!pullRequest || this.merged || this.merging || pullRequest.mergeable === false) {
+        if (!pullRequest || this.merged || this.merging || !this.canMerge(pullRequest)) {
             return;
         }
         this.mergeConfirming = !this.mergeConfirming;
@@ -171,7 +173,7 @@ export class MobileProjectsPullRequestDetailUi {
             'theia-mobile-work-hub-pull-request-merge-button',
             'codicon-git-merge',
         );
-        mergeButton.disabled = this.merged || this.merging || pullRequest.mergeable === false;
+        mergeButton.disabled = this.merged || this.merging || !this.canMerge(pullRequest);
         mergeButton.addEventListener('click', () => {
             if (!this.merged) {
                 this.mergeConfirming = !this.mergeConfirming;
@@ -551,6 +553,9 @@ export class MobileProjectsPullRequestDetailUi {
             this.merged = response.merged;
             this.mergeConfirming = false;
             this.notice = response.message || nls.localize('qaap/pullRequests/mergedNotice', 'Pull request merged.');
+            if (response.merged) {
+                this.host.onPullRequestMerged?.(pullRequest);
+            }
             await this.host.refreshInboxPullRequests(undefined, true);
         } catch (error) {
             this.notice = error instanceof Error
@@ -581,6 +586,17 @@ export class MobileProjectsPullRequestDetailUi {
         icon.setAttribute('aria-hidden', 'true');
         button.append(icon);
         return button;
+    }
+
+    /**
+     * Closed PRs cannot be merged, and a partial summary from the all-PRs search does not know its
+     * mergeability yet (the detail is still loading), so the merge action waits for it.
+     */
+    protected canMerge(pullRequest: QaapGithubPullRequestSummary): boolean {
+        return pullRequest.mergeable !== false
+            && pullRequest.state !== 'closed'
+            && pullRequest.state !== 'merged'
+            && pullRequest.partial !== true;
     }
 
     protected defaultDescription(pullRequest: QaapGithubPullRequestSummary): string {

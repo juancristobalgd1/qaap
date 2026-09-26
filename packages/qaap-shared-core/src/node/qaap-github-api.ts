@@ -11,6 +11,7 @@ import type {
     QaapGithubPullRequestSummary,
     QaapGithubRepositorySummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { parseGithubRepositoryApiUrl } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import type { QaapGithubOAuthConfig } from './qaap-github-oauth-config';
 
 interface GithubTokenResponse {
@@ -62,6 +63,29 @@ interface GithubPullResponse {
     draft?: boolean;
     merged_at?: string | null;
     merge_commit_sha?: string | null;
+}
+
+interface GithubSearchIssueItem {
+    number: number;
+    title: string;
+    body?: string | null;
+    html_url: string;
+    updated_at: string;
+    state: 'open' | 'closed';
+    draft?: boolean;
+    user?: { login?: string | null } | null;
+    repository_url?: string;
+    pull_request?: { merged_at?: string | null; html_url?: string } | null;
+}
+
+interface GithubSearchIssuesResponse {
+    total_count?: number;
+    incomplete_results?: boolean;
+    items?: GithubSearchIssueItem[];
+}
+
+interface GithubOrgResponse {
+    login?: string;
 }
 
 interface GithubPullFileResponse {
@@ -337,6 +361,156 @@ async function fetchRepositoryPullRequests(
             updatedAt: pull.updated_at,
         };
     }));
+}
+
+/** Error carrying the GitHub HTTP status and whether it was a (primary or secondary) rate limit. */
+export class GithubApiError extends Error {
+    constructor(message: string, readonly status: number, readonly rateLimited = false) {
+        super(message);
+    }
+}
+
+function isGithubRateLimitResponse(response: Response): boolean {
+    if (response.status === 429) {
+        return true;
+    }
+    return response.status === 403
+        && (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after'));
+}
+
+/** GitHub search never serves more than the first 1000 results of a query. */
+export const GITHUB_SEARCH_RESULT_CAP = 1000;
+
+export interface GithubPullRequestSearchPage {
+    pullRequests: QaapGithubPullRequestSummary[];
+    /** GitHub `total_count`, capped at what search can actually page through. */
+    totalCount: number;
+    incompleteResults: boolean;
+}
+
+/**
+ * One page of `GET /search/issues` for a pull-request query, sorted by last update. Items are mapped
+ * to partial summaries (search omits branches, diff stats and files). Pages beyond the 1000-result
+ * cap come back empty instead of failing.
+ */
+export async function searchGithubPullRequests(
+    accessToken: string,
+    query: string,
+    page: number,
+    perPage: number,
+    timeoutMs = resolveGithubApiTimeoutMs(),
+): Promise<GithubPullRequestSearchPage> {
+    const url = new URL('https://api.github.com/search/issues');
+    url.searchParams.set('q', query);
+    url.searchParams.set('sort', 'updated');
+    url.searchParams.set('order', 'desc');
+    url.searchParams.set('per_page', String(perPage));
+    url.searchParams.set('page', String(page));
+    const response = await fetchGithubRepositoryRequest(url.toString(), { headers: githubHeaders(accessToken) }, timeoutMs);
+    if (response.status === 422) {
+        // Past the 1000-result window (or a query GitHub refuses): nothing more to show.
+        return { pullRequests: [], totalCount: 0, incompleteResults: false };
+    }
+    if (!response.ok) {
+        const rateLimited = isGithubRateLimitResponse(response);
+        throw new GithubApiError(
+            rateLimited ? 'GitHub search rate limit reached' : `GitHub search API failed (${response.status})`,
+            response.status,
+            rateLimited,
+        );
+    }
+    const body = await response.json() as GithubSearchIssuesResponse;
+    const pullRequests: QaapGithubPullRequestSummary[] = [];
+    for (const item of body.items ?? []) {
+        const repository = parseGithubRepositoryApiUrl(item.repository_url);
+        if (!repository || !item.pull_request) {
+            continue;
+        }
+        pullRequests.push({
+            owner: repository.owner,
+            repo: repository.repo,
+            number: item.number,
+            title: item.title,
+            description: item.body ?? undefined,
+            branch: '',
+            base: '',
+            author: item.user?.login || 'unknown',
+            files: 0,
+            adds: 0,
+            dels: 0,
+            tests: 'unknown',
+            state: item.pull_request.merged_at ? 'merged' : item.state,
+            draft: item.draft === true,
+            htmlUrl: item.pull_request.html_url || item.html_url,
+            filesPreview: [],
+            updatedAt: item.updated_at,
+            partial: true,
+        });
+    }
+    return {
+        pullRequests,
+        totalCount: Math.min(GITHUB_SEARCH_RESULT_CAP, Math.max(0, body.total_count ?? 0)),
+        incompleteResults: body.incomplete_results === true,
+    };
+}
+
+/** Logins of the organizations the user belongs to (public memberships unless `read:org` was granted). */
+export async function fetchGithubUserOrganizations(accessToken: string, timeoutMs = resolveGithubApiTimeoutMs()): Promise<string[]> {
+    const response = await fetchGithubRepositoryRequest('https://api.github.com/user/orgs?per_page=100', {
+        headers: githubHeaders(accessToken),
+    }, timeoutMs);
+    if (!response.ok) {
+        throw new GithubApiError(`GitHub organizations API failed (${response.status})`, response.status, isGithubRateLimitResponse(response));
+    }
+    const orgs = await response.json() as GithubOrgResponse[];
+    return Array.isArray(orgs) ? orgs.map(org => org.login ?? '').filter(Boolean) : [];
+}
+
+/** Full summary (branches, diff stats, mergeability, files preview) for one pull request. */
+export async function fetchGithubPullRequestDetail(
+    accessToken: string,
+    owner: string,
+    repo: string,
+    number: number,
+): Promise<QaapGithubPullRequestSummary> {
+    const response = await fetchGithubRepositoryRequest(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+        { headers: githubHeaders(accessToken) },
+    );
+    if (!response.ok) {
+        throw new GithubApiError(`GitHub pull request API failed (${response.status})`, response.status, isGithubRateLimitResponse(response));
+    }
+    const pull = await response.json() as GithubPullResponse;
+    const filesPreview = await fetchGithubPullRequestFiles(accessToken, owner, repo, number);
+    return githubPullToSummary(owner, repo, pull, filesPreview);
+}
+
+function githubPullToSummary(
+    owner: string,
+    repo: string,
+    pull: GithubPullResponse,
+    filesPreview: QaapGithubPullRequestFile[],
+): QaapGithubPullRequestSummary {
+    return {
+        owner,
+        repo,
+        number: pull.number,
+        title: pull.title,
+        description: pull.body ?? undefined,
+        branch: pull.head.ref,
+        base: pull.base.ref,
+        author: pull.user?.login || 'unknown',
+        files: pull.changed_files ?? 0,
+        adds: pull.additions ?? 0,
+        dels: pull.deletions ?? 0,
+        tests: 'unknown',
+        state: pull.merged_at ? 'merged' : pull.state,
+        draft: pull.draft === true,
+        htmlUrl: pull.html_url,
+        mergeable: pull.mergeable ?? undefined,
+        filesPreview,
+        updatedAt: pull.updated_at,
+    };
 }
 
 export type GithubMergeMethod = 'merge' | 'squash' | 'rebase';

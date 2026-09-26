@@ -134,7 +134,7 @@ export interface QaapGithubPullRequestSummary {
     adds: number;
     dels: number;
     tests: 'passing' | 'failing' | 'pending' | 'unknown';
-    /** GitHub lifecycle state. Inbox polling currently returns open PRs; webhooks may also report closed/merged. */
+    /** GitHub lifecycle state. Inbox polling returns open PRs; the all-PRs search and webhooks also report closed/merged. */
     state?: 'open' | 'closed' | 'merged';
     /** Open PR is still a draft and is not ready for review. */
     draft?: boolean;
@@ -143,6 +143,32 @@ export interface QaapGithubPullRequestSummary {
     filesPreview: QaapGithubPullRequestFile[];
     /** ISO-8601 — used for inbox ordering (GitHub `updated_at`). */
     updatedAt: string;
+    /**
+     * True when the summary comes from the GitHub search API, which omits branches, diff stats,
+     * mergeability and files. Fetch the detail endpoint before relying on those fields.
+     */
+    partial?: boolean;
+}
+
+/** State chip of the all-pull-requests navigator; `closed` means closed without merging. */
+export type QaapGithubPullRequestStateFilter = 'all' | 'open' | 'merged' | 'closed';
+
+export interface QaapGithubPullRequestSearchResponse {
+    pullRequests: QaapGithubPullRequestSummary[];
+    /** 1-based page that was served. */
+    page: number;
+    /** True when at least one underlying GitHub search has further pages. */
+    hasMore: boolean;
+    /** False when the request was rejected because the session is missing/expired. */
+    signedIn: boolean;
+    /** GitHub search rate limit was hit; results (if any) are the last cached copy. */
+    rateLimited?: boolean;
+    /** GitHub reported `incomplete_results` (search timed out on its side) or a sub-query failed. */
+    incompleteResults?: boolean;
+}
+
+export interface QaapGithubPullRequestDetailResponse {
+    pullRequest?: QaapGithubPullRequestSummary;
 }
 
 export interface QaapGithubPullRequestsResponse {
