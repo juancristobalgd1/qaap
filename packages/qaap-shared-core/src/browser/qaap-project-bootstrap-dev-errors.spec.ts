@@ -12,7 +12,8 @@ import {
     terminalOutputNextDevLock,
     terminalOutputPortInUse,
 } from './qaap-project-bootstrap-dev-errors';
-import { extractPortFromInUseMessage } from './qaap-project-bootstrap-helpers';
+import type { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
+import { extractPortFromInUseMessage, readTerminalTail } from './qaap-project-bootstrap-helpers';
 
 describe('qaap-project-bootstrap-dev-errors', () => {
 
@@ -77,5 +78,27 @@ describe('qaap-project-bootstrap-dev-errors', () => {
         const diagnosis = diagnoseBootstrapFailure('Error: EACCES: permission denied, open .next/cache', 'fallback');
         expect(diagnosis.kind).to.equal('permission');
         expect(diagnosis.message).to.contain('permissions');
+    });
+
+    describe('readTerminalTail', () => {
+        const terminalWithRows = (rows: string[]): TerminalWidget => ({
+            buffer: {
+                length: rows.length,
+                getLines: (start: number, length: number): string[] => rows.slice(start, start + length),
+            },
+        } as unknown as TerminalWidget);
+
+        it('skips the blank viewport rows under the last output line', () => {
+            const rows = ['$ npm run dev', 'Error: Port 5174 is already in use', ...new Array<string>(40).fill('')];
+            expect(readTerminalTail(terminalWithRows(rows))).to.equal('$ npm run dev\nError: Port 5174 is already in use');
+        });
+
+        it('returns an empty tail for an all-blank buffer so callers use their fallback', () => {
+            expect(readTerminalTail(terminalWithRows(new Array<string>(24).fill('   ')))).to.equal('');
+        });
+
+        it('keeps only the last maxLines output lines', () => {
+            expect(readTerminalTail(terminalWithRows(['a', 'b', 'c', '', '']), 2)).to.equal('b\nc');
+        });
     });
 });

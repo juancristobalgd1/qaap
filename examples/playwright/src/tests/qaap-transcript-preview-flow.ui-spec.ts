@@ -205,17 +205,24 @@ async function mountPreviewIframeFallback(page: Page, port: number): Promise<voi
 
 async function expectDevPreviewMounted(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => {
-        const onPreview = document.querySelector('[data-active-surface="preview"]') !== null;
-        const iframe = document.querySelector(
+        // On the one-column Work Hub the Preview surface opens in the execution-surface drawer
+        // (`data-surface="preview"`) while the inline conversation deliberately stays on
+        // `data-active-surface="messages"`; wider layouts switch the inline surface itself.
+        const previewSurfaces = document.querySelectorAll(
+            '[data-active-surface="preview"], .theia-mobile-execution-surface-sidebar[data-surface="preview"]',
+        );
+        const mounted = [...previewSurfaces].some(surface => surface.querySelector(
             'iframe[src*="/qaap-dev/"], iframe[src*="/qaap-preview/"]',
-        ) !== null;
-        if (onPreview && iframe) {
+        ) !== null);
+        if (mounted) {
             return 'mounted';
         }
         // On failure the poll reports what the page shows instead of a bare `false`.
         return JSON.stringify({
             activeSurfaces: [...document.querySelectorAll('[data-active-surface]')].map(element =>
                 `${element.className}=${element.getAttribute('data-active-surface')}`),
+            drawerSurfaces: [...document.querySelectorAll('.theia-mobile-execution-surface-sidebar')].map(element =>
+                element.getAttribute('data-surface')),
             iframes: [...document.querySelectorAll('iframe')].map(element => element.getAttribute('src')),
         });
     }), { timeout: 60_000 }).toBe('mounted');

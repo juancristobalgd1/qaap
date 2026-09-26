@@ -63,6 +63,7 @@ export function initExtracted(ctx: QaapProjectBootstrapServiceContext): void {
                     forwardedPorts: ctx._forwardedPorts,
                     lastPort: ctx._lastPort,
                     error: ctx._error,
+                    devOutputTail: ctx.devOutputTail.slice(-1500),
                     nodeModulesPresent: ctx._descriptor?.nodeModulesPresent,
                     needsInstall: ctx._needsInstall,
                 }),
