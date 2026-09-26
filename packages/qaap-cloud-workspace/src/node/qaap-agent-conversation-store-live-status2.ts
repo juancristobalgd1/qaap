@@ -28,6 +28,7 @@ import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER } from '@theia/qaap-shared-core/lib/
 
 import { resolveRunAgentMessageId as resolveRunAgentMessageIdHelper, sweepZombieStreamingTurns as sweepZombieStreamingTurnsHelper, forceStopZombieTurn as forceStopZombieTurnHelper, fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper } from './qaap-agent-conversation-store-helpers';
 
+import { backfillQaapWorktreeOrdinals, parseQaapWorktreeOrdinalHighWater, QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
 import { STREAMING_PERSIST_DEBOUNCE_MS, TURN_WATCHDOG_SWEEP_MS, QAAP_AUTO_RESUME_TURNS_ENABLED, MAX_RESTART_RESUMES } from './qaap-agent-conversation-store-constants';
 
 export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation, turnAgentId = conv.agentId): string {
@@ -284,6 +285,16 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreCo
             if (changed) {
                 anyChanged = true;
             }
+        }
+        const highWater = ctx.worktreeOrdinalHighWater;
+        if (highWater) {
+            for (const [key, value] of parseQaapWorktreeOrdinalHighWater(store.get(QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY))) {
+                highWater.set(key, Math.max(value, highWater.get(key) ?? 0));
+            }
+        }
+        // Freeze `<projectName>_<n>` labels of worktree conversations created before ordinals existed.
+        if (backfillQaapWorktreeOrdinals(ctx)) {
+            anyChanged = true;
         }
         const now = Date.now();
         // First try to auto-resume turns the restart interrupted (bounded, persisted counter).

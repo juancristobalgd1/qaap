@@ -49,6 +49,13 @@ export interface MobileProjectsProjectActionsHost {
     ): void;
     /** Tests stub confirmation; production uses ConfirmDialog. */
     confirmRemoveProject?(project: MobileProjectEntry): Promise<boolean | undefined>;
+    /** Work Hub sessions sidebar; keeps its own DOM/fingerprint cache, so it needs a forced refresh. */
+    sessionsSidebar?: { isVisible(): boolean; refreshList(options?: { force?: boolean }): void };
+    /**
+     * Re-add surfaces the plain catalog omits (synthetic conversation-cwd / worktree projects) after
+     * a reload, so reconciling a delete does not drop unrelated sidebar projects.
+     */
+    reconcileLoadedProjects?(projects: MobileProjectEntry[]): MobileProjectEntry[];
 }
 
 /** Repository card actions: rename, duplicate, clear tasks, clear failed tasks, remove. */
@@ -82,6 +89,29 @@ export class MobileProjectsProjectActionsUi {
             started: true,
             promise: new Promise(resolve => window.setTimeout(resolve, reducedMotion ? 0 : 280)),
         };
+    }
+
+    /** Undo {@link animateProjectRemoval} on cards that survive a failed delete (no full re-render). */
+    protected restoreProjectCards(project: MobileProjectEntry): void {
+        if (typeof document === 'undefined') {
+            return;
+        }
+        for (const card of Array.from(document.querySelectorAll<HTMLElement>('.theia-mobile-projects-card'))) {
+            if (card.dataset.qaapProjectId !== project.id) {
+                continue;
+            }
+            card.style.removeProperty('max-height');
+            card.style.removeProperty('overflow');
+            card.removeAttribute('aria-busy');
+            card.classList.remove('theia-mod-removing');
+        }
+    }
+
+    /** The sessions sidebar caches its DOM by fingerprint; force it so the row appears/disappears now. */
+    protected refreshSessionsSidebar(): void {
+        if (this.host.sessionsSidebar?.isVisible()) {
+            this.host.sessionsSidebar.refreshList({ force: true });
+        }
     }
 
     async onRenameProject(project: MobileProjectEntry): Promise<void> {
@@ -211,11 +241,25 @@ export class MobileProjectsProjectActionsUi {
         }
 
         const previousProjects = this.host.projects;
+        // Optimistic delete: hide the project everywhere right away — the hub card animates out,
+        // the sidebar row disappears now — and keep it hidden from every background reload until
+        // the backend answers. On failure the exact previous list is restored.
+        const projectsService = this.host.projectsService;
+        projectsService.markProjectRemovalPending?.(project.id, project.uri);
         const removalAnimation = this.animateProjectRemoval(project);
         this.host.projects = previousProjects.filter(candidate => candidate.id !== project.id);
-        if (!removalAnimation.started) {
+        let settled = false;
+        if (removalAnimation.started) {
+            // Repaint the hub once the collapse animation ends, without waiting for the backend.
+            void removalAnimation.promise.then(() => {
+                if (!settled) {
+                    this.host.render();
+                }
+            });
+        } else {
             this.host.render();
         }
+        this.refreshSessionsSidebar();
         this.host.delegate.onProjectsChanged?.();
 
         // Release every section's embedded preview + backend dev-server claim owned by this
@@ -238,25 +282,42 @@ export class MobileProjectsProjectActionsUi {
                     this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
                 }
             }
-            const projectCwd = this.host.projectsService.getProjectCwd?.(project)
+            const projectCwd = projectsService.getProjectCwd?.(project)
                 ?? projectConversations.map(summary => summary.cwd).find(Boolean);
             if (projectCwd) {
                 await deleteAgentTasksForCwd(projectCwd);
             }
-            const removed = await this.host.projectsService.removeProject(project);
+            const removed = await projectsService.removeProject(project);
             if (!removed) {
                 throw new Error(nls.localize('qaap/mobileProjects/removeRejected', 'The project could not be removed.'));
             }
-            await removalAnimation.promise;
             // Reconcile with storage in the background after the optimistic paint. The service
-            // keeps removed recent workspaces hidden even if its upstream list is momentarily stale.
-            this.host.projects = await this.host.projectsService.loadProjects();
+            // keeps removed recent workspaces hidden even if its upstream list is momentarily stale;
+            // the pending mark stays until this reload so it cannot race the row back in.
+            let reloaded: MobileProjectEntry[];
+            try {
+                reloaded = await projectsService.loadProjects();
+            } catch {
+                // The delete itself succeeded; a transient catalog failure must not resurrect it.
+                reloaded = this.host.projects;
+            }
+            projectsService.clearProjectRemovalPending?.(project.id);
+            const reconciled = (this.host.reconcileLoadedProjects?.(reloaded) ?? reloaded)
+                .filter(candidate => candidate.id !== project.id);
+            await removalAnimation.promise;
+            settled = true;
+            this.host.projects = reconciled;
             this.host.render();
+            this.refreshSessionsSidebar();
             this.host.delegate.onProjectsChanged?.();
         } catch (error) {
+            projectsService.clearProjectRemovalPending?.(project.id);
             await removalAnimation.promise;
+            settled = true;
+            this.restoreProjectCards(project);
             this.host.projects = previousProjects;
             this.host.render();
+            this.refreshSessionsSidebar();
             this.host.delegate.onProjectsChanged?.();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/removeFailed',

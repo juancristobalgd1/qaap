@@ -210,6 +210,49 @@ export class MobileProjectsService {
         return removeProjectExtracted(this, project);
     }
 
+    /**
+     * Projects the user confirmed deleting whose backend removal is still in flight. Every project
+     * list this service returns omits them, so a background reload (active-task refresh, sidebar
+     * prepare) cannot resurrect an optimistically removed row before persistence finishes.
+     */
+    protected readonly pendingRemovalProjectIds = new Set<string>();
+    /** Lower-cased workspace URIs of {@link pendingRemovalProjectIds}, so synthetic `ws:` rows for the same folder stay hidden too. */
+    protected readonly pendingRemovalProjectUris = new Map<string, string>();
+
+    markProjectRemovalPending(projectId: string, uri?: { toString(): string }): void {
+        this.pendingRemovalProjectIds.add(projectId);
+        if (uri) {
+            this.pendingRemovalProjectUris.set(projectId, uri.toString().toLowerCase());
+        }
+    }
+
+    clearProjectRemovalPending(projectId: string): void {
+        this.pendingRemovalProjectIds.delete(projectId);
+        this.pendingRemovalProjectUris.delete(projectId);
+    }
+
+    isProjectRemovalPending(projectId: string, uri?: { toString(): string }): boolean {
+        if (this.pendingRemovalProjectIds.has(projectId)) {
+            return true;
+        }
+        if (!uri || this.pendingRemovalProjectUris.size === 0) {
+            return false;
+        }
+        const key = uri.toString().toLowerCase();
+        for (const pendingUri of this.pendingRemovalProjectUris.values()) {
+            if (pendingUri === key) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected withoutPendingRemovals(projects: MobileProjectEntry[]): MobileProjectEntry[] {
+        return this.pendingRemovalProjectIds.size === 0
+            ? projects
+            : projects.filter(project => !this.isProjectRemovalPending(project.id, project.uri));
+    }
+
     getCurrentWorkspaceDisplayName(): string | undefined {
         return getCurrentWorkspaceDisplayNameExtracted(this);
     }
@@ -236,7 +279,7 @@ export class MobileProjectsService {
     }
 
     peekCachedProjects(): MobileProjectEntry[] {
-        return peekCachedProjectsExtracted(this);
+        return this.withoutPendingRemovals(peekCachedProjectsExtracted(this));
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
@@ -260,7 +303,7 @@ export class MobileProjectsService {
     }
 
     async loadProjects(): Promise<MobileProjectEntry[]> {
-        return loadProjectsExtracted(this);
+        return this.withoutPendingRemovals(await loadProjectsExtracted(this));
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */

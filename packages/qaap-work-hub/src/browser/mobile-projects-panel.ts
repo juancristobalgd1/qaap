@@ -1870,6 +1870,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.projectActionsUi.onRemoveProject(project);
     }
 
+    /** Host hook for {@link MobileProjectsProjectActionsUi}: keep synthetic conversation/worktree projects after a reload. */
+    reconcileLoadedProjects(projects: MobileProjectEntry[]): MobileProjectEntry[] {
+        return this.sessionsSidebarUi.mergeSessionsSidebarProjects(projects);
+    }
+
     protected renderReviewHubView(projects: MobileProjectEntry[]): void {
         this.workHubInboxUi.renderReviewHubView(projects);
     }
