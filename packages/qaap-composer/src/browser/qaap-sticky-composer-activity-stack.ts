@@ -89,6 +89,11 @@ export interface StickyComposerActivityStackOptions {
      */
     hasFileActivity?: boolean;
     /**
+     * This conversation is about running the app (asked for it, runs a dev server or announced a
+     * local URL): its verified preview is shown even when the agent edited no files.
+     */
+    previewInConversation?: boolean;
+    /**
      * True when the working tree has something to commit (staged or unstaged).
      * Gates the Commit split-button: it stays after Accept (staged files are
      * committable) but drops off after a Discard that leaves the tree clean.
@@ -240,7 +245,7 @@ function stickyComposerHasActivityRow(options: StickyComposerActivityStackOption
         || !!options.hasCommittableChanges
         // A preview/run action belongs to the post-edit state. A stale preview URL must not
         // push the prompt suggestions out of a fresh, empty composer.
-        || !!(options.hasFileActivity && !!options.onOpenPreview)
+        || !!((options.hasFileActivity || options.previewInConversation) && !!options.onOpenPreview)
         || !!(options.hasFileActivity && !!options.onRunApp);
 }
 
@@ -256,6 +261,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         paths,
         stickyComposerHasChangesToReview(options) ? 1 : 0,
         options.hasFileActivity ? 1 : 0,
+        options.previewInConversation ? 1 : 0,
         options.hasCommittableChanges ? 1 : 0,
         options.agentWorking ? 1 : 0,
         options.commitBusy ? 1 : 0,

@@ -51,9 +51,9 @@ export interface QaapDevPreviewEndpointContext {
         readonly conversationId: string;
     }, owner: string): void;
 
-    terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number }): void;
+    terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): void;
 
-    isPreviewProcessDead(record: { readonly osProcessId?: number }): boolean;
+    isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): boolean;
 
     nextAllocationCandidate(preferredPort: number, offset: number): number;
 
@@ -75,7 +75,9 @@ export interface QaapDevPreviewEndpointContext {
 
     handleIdentityProxy(req: Request, res: Response): void;
 
-    resolveTargetHost(port: number): Promise<string | undefined>;
+    resolveTargetHost(port: number, ownerLogin?: string): Promise<string | undefined>;
+    /** Agent reaching the dev server on `port` (tunnelled runtimes), or undefined for loopback. */
+    upstreamAgentFor(port: number, ownerLogin?: string): http.Agent | undefined;
 
     invalidateTargetHost(port: number): void;
 
@@ -103,7 +105,9 @@ export interface QaapDevPreviewEndpointContext {
 
     isIdeListenPort(port: number): boolean;
 
-    probeLocalDevServer(port: number): Promise<boolean>;
+    probeLocalDevServer(port: number, ownerLogin?: string): Promise<boolean>;
+    /** True when every unclaimed listener of this runtime belongs to `login` (single-tenant backend). */
+    ownsUnclaimedPorts(login: string | undefined): boolean;
 
     resolvePublicOrigin(req: Request): string;
 

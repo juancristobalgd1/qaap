@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
@@ -14,6 +14,8 @@ import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-
 import { QAAP_DEV_PREVIEW_PREFIX } from '../common/qaap-dev-preview';
 import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-headers';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
+import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel';
+import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { configureExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
 import { authorizePreviewHostRequestExtracted, buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, hasPreviewCapabilityExtracted, matchesPreviewTokenExtracted, previewBaseDomainExtracted, previewIdFromHostExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
@@ -46,6 +48,13 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     @inject(QaapDevPreviewPortRegistry)
     public readonly portRegistry: QaapDevPreviewPortRegistry;
+
+    /**
+     * Present when dev servers live in another network/pid namespace than this process (hosted
+     * per-tenant workers). Absent → classic loopback previews.
+     */
+    @inject(QaapDevPreviewUpstreamTunnel) @optional()
+    protected readonly upstreamTunnel?: QaapDevPreviewUpstreamTunnel;
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public reaperRunning = false;
@@ -87,12 +96,24 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number }): void {
+    public terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): void {
+        const tunnelOwner = record.port !== undefined ? this.tunnelOwnerFor(record.port, record.ownerLogin) : undefined;
+        if (tunnelOwner !== undefined && record.port !== undefined && this.upstreamTunnel) {
+            // The recorded pid and the port's listeners live in the tenant runtime, not in this
+            // process' namespace: signalling them locally could hit an unrelated process.
+            this.upstreamTunnel.terminateListeners(tunnelOwner, record.port);
+            return;
+        }
         terminatePreviewProcessExtracted(this, record);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public isPreviewProcessDead(record: { readonly osProcessId?: number }): boolean {
+    public isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): boolean {
+        if (record.port !== undefined && this.tunnelOwnerFor(record.port, record.ownerLogin) !== undefined) {
+            // Pids reported for tunnelled runtimes belong to another pid namespace; liveness is
+            // decided by probing the port through the tunnel instead.
+            return false;
+        }
         return isPreviewProcessDeadExtracted(this, record);
     }
 
@@ -156,13 +177,43 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
      * Picks the loopback family the dev server actually listens on (IPv4 first, then IPv6).
      * @internal Used by the extracted qaap-dev-preview-endpoint-* modules.
      */
-    public resolveTargetHost(port: number): Promise<string | undefined> {
+    public resolveTargetHost(port: number, ownerLogin?: string): Promise<string | undefined> {
+        const tunnelOwner = this.tunnelOwnerFor(port, ownerLogin);
+        if (tunnelOwner !== undefined && this.upstreamTunnel) {
+            return this.upstreamTunnel.resolveHost(tunnelOwner, port);
+        }
         return this.targetHostResolver.resolve(port);
+    }
+
+    /**
+     * HTTP agent that reaches the dev server on `port`, or undefined for the default (loopback)
+     * connection. Pass it to every upstream `http.request` next to {@link resolveTargetHost}.
+     * @internal Used by the extracted qaap-dev-preview-endpoint-* modules.
+     */
+    public upstreamAgentFor(port: number, ownerLogin?: string): http.Agent | undefined {
+        const tunnelOwner = this.tunnelOwnerFor(port, ownerLogin);
+        return tunnelOwner !== undefined && this.upstreamTunnel ? this.upstreamTunnel.agentFor(tunnelOwner) : undefined;
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public invalidateTargetHost(port: number): void {
         this.targetHostResolver.invalidate(port);
+        this.upstreamTunnel?.invalidate(port);
+    }
+
+    /**
+     * The tenant whose runtime serves `port` when that runtime must be reached through the tunnel.
+     * Ports are owned per tenant by the registry; an explicit hint covers not-yet-claimed ports.
+     */
+    protected tunnelOwnerFor(port: number, ownerHint?: string): string | undefined {
+        if (!this.upstreamTunnel) {
+            return undefined;
+        }
+        const owner = ownerHint
+            ?? this.portRegistry.ownerOf(port)
+            ?? this.portRegistry.staleOwnerOf(port)
+            ?? this.portRegistry.getByPort(port)?.ownerLogin;
+        return owner !== undefined && this.upstreamTunnel.handles(owner) ? owner : undefined;
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
@@ -215,9 +266,24 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
         return port === getQaapBackendListenPort();
     }
 
+    /**
+     * A per-tenant backend (`QAAP_TENANT_BACKEND_MODE=1`) serves exactly one login and runs only that
+     * tenant's processes, so a listener nobody claimed yet (a dev server the agent started from its
+     * shell) is that tenant's by construction and may be probed, proxied and adopted by a claim.
+     * On shared runtimes unclaimed listeners stay fail-closed.
+     * @internal Used by the extracted qaap-dev-preview-endpoint-* modules.
+     */
+    public ownsUnclaimedPorts(login: string | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
+        if (!login || !/^(1|true)$/i.test(env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '')) {
+            return false;
+        }
+        const tenant = env[QAAP_TENANT_LOGIN_ENV]?.trim().toLowerCase();
+        return !!tenant && tenant === login.trim().toLowerCase();
+    }
+
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public async probeLocalDevServer(port: number): Promise<boolean> {
-        return probeLocalDevServerExtracted(this, port);
+    public async probeLocalDevServer(port: number, ownerLogin?: string): Promise<boolean> {
+        return probeLocalDevServerExtracted(this, port, ownerLogin);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

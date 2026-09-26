@@ -8,6 +8,8 @@ import * as http from 'http';
 import * as net from 'net';
 import { PassThrough } from 'stream';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
+import { QAAP_TENANT_BACKEND_ASSERTION_HEADER } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { QAAP_AUTH_SESSION_COOKIE } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 
 const TARGET = {
     containerId: 'container-id',
@@ -185,12 +187,13 @@ describe('QaapTenantBackendProxyContribution', () => {
                 const res = {
                     headersSent: false,
                     writableFinished: false,
+                    statusCode: 200,
                     once: () => undefined,
-                    status: (code: number) => {
-                        statuses.push(code);
-                        return { json: () => resolve() };
+                    setHeader: () => undefined,
+                    end: () => {
+                        statuses.push(res.statusCode);
+                        resolve();
                     },
-                    end: () => resolve(),
                 };
                 const req = new PassThrough() as unknown as Record<string, unknown>;
                 Object.assign(req, { method: 'GET', url: '/slow', headers: {} });
@@ -232,7 +235,7 @@ describe('QaapTenantBackendProxyContribution', () => {
                         browserClose = listener;
                     }
                 },
-                status: () => ({ json: () => undefined }),
+                setHeader: () => undefined,
                 end: () => undefined,
             };
             const req = new PassThrough() as unknown as Record<string, unknown>;
@@ -247,5 +250,153 @@ describe('QaapTenantBackendProxyContribution', () => {
             server.closeAllConnections();
             await new Promise<void>(resolve => server.close(() => resolve()));
         }
+    });
+
+    describe('early request routing (before Express and Socket.IO)', () => {
+        const SECRET = 'y'.repeat(40);
+        const SESSION = { accessToken: 'gh-token', user: { provider: 'github' as const, login: 'alice', name: 'Alice' } };
+
+        interface Seen { url?: string; headers: http.IncomingHttpHeaders }
+
+        async function withTenantAndFront(
+            tenantHandler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
+            options: { authenticated: boolean; perTenant?: boolean; wsAllowed?: boolean },
+            run: (front: { port: number; originalHits: string[] }) => Promise<void>,
+        ): Promise<void> {
+            const tenant = http.createServer(tenantHandler);
+            await new Promise<void>(resolve => tenant.listen(0, '127.0.0.1', resolve));
+            const front = http.createServer();
+            const originalHits: string[] = [];
+            // Stand-in for Express + engine.io, registered before the router like in production.
+            front.on('request', (req: http.IncomingMessage, res: http.ServerResponse) => {
+                originalHits.push(req.url ?? '');
+                res.end('control-plane');
+            });
+            const proxy = createProxy() as unknown as Record<string, unknown> & { installRequestRouter(server: http.Server): void };
+            proxy.auth = {
+                authenticate: () => options.authenticated
+                    ? { kind: 'authenticated', userLogin: 'alice', sessionId: 's', session: SESSION }
+                    : { kind: 'unauthorized' },
+                userWorkspaceRoot: () => '/srv/qaap/users/alice',
+                logSecurityEvent: () => undefined,
+            };
+            proxy.activity = { touch: () => undefined, beginOperation: () => () => undefined };
+            proxy.wsRequestValidator = { allowWsUpgrade: async () => options.wsAllowed ?? true };
+            proxy.docker = {
+                isBackendPerTenantEnabled: () => options.perTenant ?? true,
+                ensureTenantBackend: async () => ({ ...TARGET, port: (tenant.address() as net.AddressInfo).port }),
+                getTenantBackendConnectionToken: () => 'tenant-token',
+                getTenantBackendAssertionSecret: () => SECRET,
+                invalidateTenantBackendTarget: () => undefined,
+            };
+            proxy.installRequestRouter(front);
+            await new Promise<void>(resolve => front.listen(0, '127.0.0.1', resolve));
+            try {
+                await run({ port: (front.address() as net.AddressInfo).port, originalHits });
+            } finally {
+                front.closeAllConnections();
+                tenant.closeAllConnections();
+                await new Promise<void>(resolve => front.close(() => resolve()));
+                await new Promise<void>(resolve => tenant.close(() => resolve()));
+            }
+        }
+
+        function request(port: number, path: string, headers: http.OutgoingHttpHeaders = {}): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
+            return new Promise((resolve, reject) => {
+                const req = http.request({ host: '127.0.0.1', port, path, headers }, res => {
+                    let body = '';
+                    res.setEncoding('utf8');
+                    res.on('data', chunk => { body += chunk; });
+                    res.on('end', () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
+                });
+                req.on('error', reject);
+                req.end();
+            });
+        }
+
+        it('sends Socket.IO polling of a signed-in tenant to its backend with the tenant token and origin', async () => {
+            const seen: Seen[] = [];
+            await withTenantAndFront((req, res) => {
+                seen.push({ url: req.url, headers: req.headers });
+                res.end('tenant');
+            }, { authenticated: true }, async ({ port, originalHits }) => {
+                const response = await request(port, '/socket.io/?EIO=4&transport=polling', {
+                    cookie: 'qaap-auth-session=control-plane-secret; theia-connection-token=browser-token',
+                    origin: 'https://qaap.example.test',
+                });
+                expect(response.body).to.equal('tenant');
+                expect(originalHits).to.deep.equal([]);
+            });
+            expect(seen).to.have.length(1);
+            expect(seen[0].url).to.equal('/socket.io/?EIO=4&transport=polling');
+            expect(seen[0].headers.cookie).to.equal('theia-connection-token=tenant-token');
+            expect(seen[0].headers.origin).to.match(/^http:\/\/127\.0\.0\.1:\d+$/);
+            expect(seen[0].headers[QAAP_TENANT_BACKEND_ASSERTION_HEADER]).to.be.a('string');
+        });
+
+        it('rejects a polling handshake the outer WebSocket validators refuse', async () => {
+            await withTenantAndFront((_req, res) => res.end('tenant'), { authenticated: true, wsAllowed: false }, async ({ port }) => {
+                const response = await request(port, '/socket.io/?EIO=4&transport=polling');
+                expect(response.status).to.equal(403);
+            });
+        });
+
+        it('routes IDE and preview paths that earlier contributions would have served locally', async () => {
+            await withTenantAndFront((req, res) => res.end(`tenant:${req.url}`), { authenticated: true }, async ({ port, originalHits }) => {
+                expect((await request(port, '/qaap-dev/5173/')).body).to.equal('tenant:/qaap-dev/5173/');
+                expect((await request(port, '/qaap-dev/api/current?projectId=p')).body).to.equal('tenant:/qaap-dev/api/current?projectId=p');
+                expect((await request(port, '/files/?uri=x')).body).to.equal('tenant:/files/?uri=x');
+                expect(originalHits).to.deep.equal([]);
+            });
+        });
+
+        it('keeps control-plane paths, anonymous requests and the non-tenant mode on the original listeners', async () => {
+            await withTenantAndFront((_req, res) => res.end('tenant'), { authenticated: true }, async ({ port, originalHits }) => {
+                expect((await request(port, '/qaap/api/health')).body).to.equal('control-plane');
+                expect(originalHits).to.deep.equal(['/qaap/api/health']);
+            });
+            await withTenantAndFront((_req, res) => res.end('tenant'), { authenticated: false }, async ({ port }) => {
+                expect((await request(port, '/socket.io/?EIO=4&transport=polling')).body).to.equal('control-plane');
+            });
+            await withTenantAndFront((_req, res) => res.end('tenant'), { authenticated: true, perTenant: false }, async ({ port }) => {
+                expect((await request(port, '/')).body).to.equal('control-plane');
+            });
+        });
+
+        it('lets previewed apps keep their own cookies while Qaap cookies never cross', async () => {
+            const seen: Seen[] = [];
+            await withTenantAndFront((req, res) => {
+                seen.push({ url: req.url, headers: req.headers });
+                res.setHeader('Set-Cookie', ['app_session=1; Path=/', `${QAAP_AUTH_SESSION_COOKIE}=evil; Path=/`]);
+                res.end('ok');
+            }, { authenticated: true }, async ({ port }) => {
+                const cookie = `${QAAP_AUTH_SESSION_COOKIE}=secret; app_session=abc; theia-connection-token=t`;
+                const preview = await request(port, '/qaap-preview/u-alice-x/', { cookie });
+                expect(preview.headers['set-cookie']).to.deep.equal(['app_session=1; Path=/']);
+                const ide = await request(port, '/services/x', { cookie });
+                expect(ide.headers['set-cookie']).to.equal(undefined);
+            });
+            expect(seen[0].headers.cookie).to.equal('app_session=abc');
+            expect(seen[1].headers.cookie).to.equal(undefined);
+        });
+
+        it('can be switched off for middleware-only routing', () => {
+            const previous = process.env.QAAP_TENANT_PROXY_EARLY_ROUTING;
+            try {
+                process.env.QAAP_TENANT_PROXY_EARLY_ROUTING = '0';
+                const proxy = createProxy() as unknown as { installRequestRouter(server: http.Server): void };
+                const server = http.createServer();
+                const listener = (): void => undefined;
+                server.on('request', listener);
+                proxy.installRequestRouter(server);
+                expect(server.listeners('request')).to.deep.equal([listener]);
+            } finally {
+                if (previous === undefined) {
+                    delete process.env.QAAP_TENANT_PROXY_EARLY_ROUTING;
+                } else {
+                    process.env.QAAP_TENANT_PROXY_EARLY_ROUTING = previous;
+                }
+            }
+        });
     });
 });

@@ -212,7 +212,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public composerCommitBusy = false;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
-    public verifiedComposerPreview: { readonly projectId: string; readonly url: string } | undefined;
+    /** `candidate` is the runtime candidate the probe verified (a port probe answers with the identity URL). */
+    public verifiedComposerPreview: { readonly projectId: string; readonly url: string; readonly candidate?: string } | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public composerPreviewProbeInFlight: Promise<void> | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
