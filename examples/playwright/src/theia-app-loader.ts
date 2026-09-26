@@ -158,6 +158,15 @@ export namespace TheiaAppLoader {
             return TheiaElectronAppLoader.load(args, initialWorkspace, factory);
         }
         const page = await args.browser.newPage();
+        // Qaap: a fresh tab boots into the Work Hub, which hides the classic IDE chrome the upstream
+        // suite drives. `QAAP_PLAYWRIGHT_SURFACE=ide` opts into the per-tab "Open IDE" preference
+        // (sessionStorage, same contract as the product's markPreferDesktopIde()) before first load.
+        if (process.env.QAAP_PLAYWRIGHT_SURFACE === 'ide') {
+            await page.addInitScript(() => {
+                window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');
+                window.sessionStorage.setItem('qaap.mobileProjects.explicitDesktopIde', '1');
+            });
+        }
         return TheiaBrowserAppLoader.load(page, initialWorkspace, factory);
     }
 }
