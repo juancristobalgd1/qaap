@@ -97,6 +97,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
+    /** Per-source-project worktree number; the sidebar labels the worktree `<projectName>_<n>`. */
+    readonly worktreeOrdinal?: number;
     readonly activityLabel?: string;
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
@@ -220,6 +222,7 @@ export interface QaapAgentConversationDTO {
     readonly parallelRunId?: string;
     readonly parallelBaseCwd?: string;
     readonly worktreeBranch?: string;
+    readonly worktreeOrdinal?: number;
     readonly checkpoints?: QaapConversationCheckpointDTO[];
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly contextPreamble?: string;
@@ -409,6 +412,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         parallelRunId: conv.parallelRunId,
         parallelBaseCwd: conv.parallelBaseCwd,
         worktreeBranch: conv.worktreeBranch,
+        ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),
         linkedPullRequest: conv.linkedPullRequest,
         ...metrics,
         hasGitOperation,

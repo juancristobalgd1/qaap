@@ -59,6 +59,8 @@ export interface QaapAgentConversationStoreContext {
 
     // ─── State maps / sets ──────────────────────────────────────────────────
     readonly conversations: Map<string, QaapAgentConversation>;
+    /** Optional so narrow unit-test fakes of the context keep compiling. */
+    readonly worktreeOrdinalHighWater?: Map<string, number>;
     readonly chatTurnRunByTask: Map<string, { runId: string; ownerLogin?: string; nodeId: string }>;
     readonly visualVerificationInFlight: Set<string>;
     readonly taskToConversation: Map<string, QaapConversationTaskRef>;

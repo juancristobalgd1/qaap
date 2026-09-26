@@ -17,6 +17,7 @@ import { QAAP_CHAT_TURN_NODE, QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT, QAAP_CHAT_TU
 import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 
 import { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
+import { QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
 
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 
@@ -356,7 +357,12 @@ export function interruptStreamingTurnForRestartExtracted(ctx: QaapAgentConversa
 export async function persistExtracted(ctx: QaapAgentConversationStoreContext): Promise<void> {
     ctx.persistChain = (ctx.persistChain ?? Promise.resolve()).catch(() => undefined).then(async () => {
         try {
-            await ctx.getSqliteStore().replace([['conversations', [...ctx.conversations.values()]]]);
+            // `replace` rewrites the whole namespace, so every persisted key must be listed here.
+            const entries: Array<[string, unknown]> = [['conversations', [...ctx.conversations.values()]]];
+            if (ctx.worktreeOrdinalHighWater?.size) {
+                entries.push([QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY, Object.fromEntries(ctx.worktreeOrdinalHighWater)]);
+            }
+            await ctx.getSqliteStore().replace(entries);
             ctx.persistFailureLoggedAtMs = 0;
         } catch (error) {
             // Best-effort persistence, but a swallowed error hides disk-full/corruption; surface it

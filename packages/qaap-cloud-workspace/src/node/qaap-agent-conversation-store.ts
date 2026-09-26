@@ -141,6 +141,9 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public readonly conversations = new Map<string, QaapAgentConversation>();
+    /** Highest worktree ordinal handed out per (owner, source repo) — see qaap-worktree-ordinal-allocator. */
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly worktreeOrdinalHighWater = new Map<string, number>();
     /** Task id → the chat-turn run it is executing, so its terminal settles the run's edge. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public readonly chatTurnRunByTask = new Map<string, { runId: string; ownerLogin?: string; nodeId: string }>();

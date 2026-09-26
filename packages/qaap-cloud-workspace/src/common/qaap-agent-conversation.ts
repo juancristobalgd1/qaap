@@ -234,6 +234,12 @@ export interface QaapAgentConversation {
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
+    /**
+     * Per-source-project worktree number (1-based), allocated once by the server when the
+     * conversation is created in a worktree of {@link parallelBaseCwd}. The UI labels the worktree
+     * `<projectName>_<n>`; the on-disk hash directory stays the internal key.
+     */
+    readonly worktreeOrdinal?: number;
     /** Working-tree snapshots captured per turn — the Timeline / rollback feature. */
     readonly checkpoints?: QaapConversationCheckpoint[];
     /**
@@ -301,6 +307,12 @@ export interface QaapAgentConversationSummary {
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
+    /**
+     * Per-source-project worktree number (1-based), allocated once by the server when the
+     * conversation is created in a worktree of {@link parallelBaseCwd}. The UI labels the worktree
+     * `<projectName>_<n>`; the on-disk hash directory stays the internal key.
+     */
+    readonly worktreeOrdinal?: number;
     /** In-flight tool/status label while {@link status} is `'streaming'`. */
     readonly activityLabel?: string;
     readonly linesAdded?: number;
@@ -545,6 +557,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         parallelRunId: conv.parallelRunId,
         parallelBaseCwd: conv.parallelBaseCwd,
         worktreeBranch: conv.worktreeBranch,
+        ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),
         linkedPullRequest: conv.linkedPullRequest,
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,

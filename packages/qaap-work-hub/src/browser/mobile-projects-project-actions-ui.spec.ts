@@ -146,6 +146,109 @@ describe('MobileProjectsProjectActionsUi', () => {
         expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['removed', 'kept']);
     });
 
+    /** Fake projects service with the pending-removal tombstone of MobileProjectsService. */
+    const pendingAwareService = (catalog: () => MobileProjectEntry[], removeProject: () => Promise<boolean>) => {
+        const pending = new Set<string>();
+        return {
+            pending,
+            canRemove: () => true,
+            removeProject,
+            markProjectRemovalPending: (id: string) => { pending.add(id); },
+            clearProjectRemovalPending: (id: string) => { pending.delete(id); },
+            isProjectRemovalPending: (id: string) => pending.has(id),
+            // Mirrors MobileProjectsService.loadProjects: pending removals are filtered out.
+            loadProjects: async () => catalog().filter(candidate => !pending.has(candidate.id)),
+        };
+    };
+
+    it('hides the project from the sessions sidebar immediately and from background reloads until the delete settles', async () => {
+        const removed = project('removed');
+        const kept = project('kept');
+        let finishRemoval!: (value: boolean) => void;
+        let catalog = [removed, kept];
+        const service = pendingAwareService(() => catalog, () => new Promise<boolean>(resolve => { finishRemoval = resolve; }));
+        const sidebarRefreshes: Array<{ force?: boolean } | undefined> = [];
+        const host = {
+            projects: [removed, kept],
+            projectsService: service,
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
+            delegate: {},
+            render: () => undefined,
+            sessionsSidebar: { isVisible: () => true, refreshList: (options?: { force?: boolean }) => { sidebarRefreshes.push(options); } },
+            reconcileLoadedProjects: (projects: MobileProjectEntry[]) => [...projects, project('ws:synthetic-worktree')],
+        } as unknown as MobileProjectsProjectActionsHost;
+
+        const completion = new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+        await Promise.resolve();
+
+        // Optimistic: gone from the list and the sidebar was force-refreshed before the backend answered.
+        expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
+        expect(sidebarRefreshes).to.deep.equal([{ force: true }]);
+        expect(service.isProjectRemovalPending('removed')).to.equal(true);
+        // A background reload (e.g. active-task refresh) while the delete is in flight cannot resurrect it.
+        expect((await service.loadProjects()).map(candidate => candidate.id)).to.deep.equal(['kept']);
+
+        catalog = [kept];
+        finishRemoval(true);
+        await completion;
+        expect(service.isProjectRemovalPending('removed')).to.equal(false);
+        // Reconciled with storage while keeping synthetic worktree/conversation projects.
+        expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept', 'ws:synthetic-worktree']);
+        expect(sidebarRefreshes).to.have.length(2);
+    });
+
+    it('restores the sidebar row and shows an error when the backend delete fails', async () => {
+        const removed = project('removed');
+        const kept = project('kept');
+        const errors: string[] = [];
+        const service = pendingAwareService(() => [removed, kept], async () => { throw new Error('backend down'); });
+        const sidebarRefreshes: Array<{ force?: boolean } | undefined> = [];
+        const host = {
+            projects: [removed, kept],
+            projectsService: service,
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
+            delegate: {},
+            messageService: { error: (message: string) => { errors.push(message); } },
+            render: () => undefined,
+            sessionsSidebar: { isVisible: () => true, refreshList: (options?: { force?: boolean }) => { sidebarRefreshes.push(options); } },
+        } as unknown as MobileProjectsProjectActionsHost;
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(host.projects).to.deep.equal([removed, kept]);
+        expect(service.isProjectRemovalPending('removed')).to.equal(false);
+        expect((await service.loadProjects()).map(candidate => candidate.id)).to.deep.equal(['removed', 'kept']);
+        expect(sidebarRefreshes).to.deep.equal([{ force: true }, { force: true }]);
+        expect(errors).to.have.length(1);
+        expect(errors[0]).to.contain('backend down');
+    });
+
+    it('keeps a successful delete even if the follow-up catalog reload fails', async () => {
+        const removed = project('removed');
+        const kept = project('kept');
+        const errors: string[] = [];
+        const host = {
+            projects: [removed, kept],
+            projectsService: {
+                canRemove: () => true,
+                removeProject: async () => true,
+                loadProjects: async () => { throw new Error('offline'); },
+            },
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
+            delegate: {},
+            messageService: { error: (message: string) => { errors.push(message); } },
+            render: () => undefined,
+        } as unknown as MobileProjectsProjectActionsHost;
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
+        expect(errors).to.deep.equal([]);
+    });
+
     it('resolveFailedTasksToClear keeps only the selected failed ids when provided', () => {
         const { resolveFailedTasksToClear } = require('./mobile-projects-project-actions-ui') as typeof import('./mobile-projects-project-actions-ui');
         const failed = [

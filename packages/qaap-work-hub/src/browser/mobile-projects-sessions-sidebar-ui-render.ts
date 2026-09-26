@@ -2,7 +2,7 @@ import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-s
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
 import type { SessionsSidebarConversationEntry } from './mobile-projects-sessions-sidebar-ui';
-import { FileUri } from '@theia/core/lib/common/file-uri';
+import { mergeConversationCwdProjects } from './mobile-projects-sessions-sidebar-conversation-projects';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
@@ -53,20 +53,15 @@ export async function prepareSessionsSidebarDataExtracted(ctx: MobileProjectsSes
 }
 
 export function mergeSessionsSidebarProjectsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
-    const merged = [...projects];
     // The authenticated history can arrive before the repository catalog or workspace service.
-    // Keep those real sessions reachable instead of claiming there is no history.
-    for (const summary of ctx.host.conversations?.threadStore?.listAllSummaries?.() ?? []) {
-        if (!summary.cwd) { continue; }
-        const uri = FileUri.create(summary.cwd);
-        if (merged.some(project => project.uri?.toString().toLowerCase() === uri.toString().toLowerCase())) { continue; }
-        merged.push({
-            id: `ws:${uri.toString()}`, name: uri.path.base, uri,
-            color: 'var(--theia-descriptionForeground)', branch: '', status: 'idle',
-            task: '', progress: 0, agents: [], lastActive: '', tokens: '—', cost: '—', pinned: false, isCurrent: false
-        });
-    }
-    projects = merged;
+    // Keep those real sessions reachable instead of claiming there is no history. Worktree
+    // conversations are labelled `<projectName>_<n>` rather than by their hash directory.
+    const projectsService = ctx.host.projectsService;
+    projects = mergeConversationCwdProjects(
+        projects,
+        ctx.host.conversations?.threadStore?.listAllSummaries?.() ?? [],
+        (projectId, uri) => projectsService.isProjectRemovalPending?.(projectId, uri) === true,
+    );
     const current = ctx.host.projectsService.resolveCurrentWorkspaceProject(projects);
     if (!current) {
         return [...projects];

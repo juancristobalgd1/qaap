@@ -9,13 +9,15 @@ import { injectable, inject } from '@theia/core/shared/inversify';
 import { WsRequestValidator } from '@theia/core/lib/node/ws-request-validators';
 import type { BackendApplicationContribution } from '@theia/core/lib/node';
 import type { Application, Request, Response, NextFunction } from '@theia/core/shared/express';
-import { QAAP_AUTH_API_PATH, QAAP_HEALTH_API_PATH, QAAP_GITHUB_OAUTH_CALLBACK_PATH, QAAP_GITHUB_OAUTH_START_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { QAAP_AUTH_API_PATH, QAAP_GITHUB_API_PATH, QAAP_HEALTH_API_PATH, QAAP_GITHUB_OAUTH_CALLBACK_PATH, QAAP_GITHUB_OAUTH_START_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     createQaapTenantBackendAssertion,
     QAAP_TENANT_BACKEND_ASSERTION_HEADER,
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
-import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
+import { filterQaapReservedSetCookies, stripQaapReservedCookies } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forward-headers';
+import { QAAP_DEV_PREVIEW_PREFIX, QAAP_IDENTITY_PREVIEW_PREFIX } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
+import { QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantActivityReason } from '../common/qaap-cloud-api-types';
 import { QaapDockerOrchestrator, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 
@@ -66,7 +68,132 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     onStart(server: http.Server): void {
         // Theia and preview contributions register upgrade listeners during startup. Install after
         // those listeners are present, then dispatch non-tenant upgrades back to the original set.
-        setImmediate(() => this.installUpgradeRouter(server));
+        setImmediate(() => {
+            this.installUpgradeRouter(server);
+            this.installRequestRouter(server);
+        });
+    }
+
+    /**
+     * Routes authenticated tenant HTTP traffic BEFORE Express and Socket.IO see it.
+     *
+     * The Express middleware above only runs after every contribution loaded earlier (plugin-ext,
+     * filesystem, mini-browser, the dev-preview endpoint, ...) had its chance, and Socket.IO's
+     * long-polling transport never reaches Express at all (engine.io intercepts `/socket.io/` on
+     * the server's `request` event). Without this router the browser's IDE session, terminals and
+     * preview registry silently stayed on the control plane while the agent ran in the tenant
+     * backend: a dev server the agent started was invisible to the preview proxy and to the
+     * Preview pill. Set `QAAP_TENANT_PROXY_EARLY_ROUTING=0` to fall back to middleware routing.
+     */
+    protected installRequestRouter(server: http.Server): void {
+        if (!this.isEarlyRequestRoutingEnabled()) {
+            return;
+        }
+        const originalListeners = server.listeners('request').slice();
+        for (const listener of originalListeners) {
+            server.removeListener('request', listener as (...args: any[]) => void);
+        }
+        const dispatchOriginal = (request: http.IncomingMessage, response: http.ServerResponse): void => {
+            for (const listener of originalListeners) {
+                listener.call(server, request, response);
+            }
+        };
+        server.on('request', (request: http.IncomingMessage, response: http.ServerResponse) => {
+            if (!this.docker.isBackendPerTenantEnabled() || this.isControlPlanePath(request.url)) {
+                dispatchOriginal(request, response);
+                return;
+            }
+            const context = this.auth.authenticate(request as Request);
+            if (context.kind !== 'authenticated') {
+                dispatchOriginal(request, response);
+                return;
+            }
+            void this.routeRequestToTenant(request, response, context.userLogin, context.session);
+        });
+    }
+
+    protected async routeRequestToTenant(
+        request: http.IncomingMessage,
+        response: http.ServerResponse,
+        userLogin: string,
+        session: { accessToken: string; user: { provider: 'github' | 'gitlab'; login: string; name: string; avatarUrl?: string } },
+    ): Promise<void> {
+        this.activity.touch(userLogin, 'user');
+        // Requests that bypass Express also bypass QaapTenantActivityContribution: keep the tenant
+        // busy for the lifetime of each proxied request so the reaper never stops a backend that
+        // is streaming an agent run, a long poll or a preview.
+        const release = this.activity.beginOperation(userLogin,
+            `http:${request.method}:${(request.url ?? '/').split('?', 1)[0]}:${Date.now()}`, this.activityReasonFor(request.url));
+        response.once('finish', release);
+        response.once('close', release);
+        const deadline = Date.now() + this.getTenantProxyIdleTimeoutMs();
+        try {
+            const socketIo = this.isSocketIoPath(request.url);
+            if (socketIo && this.wsRequestValidator && !await this.wsRequestValidator.allowWsUpgrade(request)) {
+                // Same outer check Socket.IO's allowRequest applies to the polling handshake.
+                this.writeJson(response, 403, { error: 'Forbidden' });
+                return;
+            }
+            const root = this.auth.userWorkspaceRoot({ kind: 'authenticated', userLogin, session, sessionId: '' });
+            if (!root) {
+                this.auth.logSecurityEvent('ownership_denied', { action: 'workspace_path', userLogin, reason: 'tenant_root_missing' });
+                this.writeJson(response, 403, { error: 'Forbidden' });
+                return;
+            }
+            const target = await this.docker.ensureTenantBackend(userLogin, root);
+            const assertion = createQaapTenantBackendAssertion({
+                tenantLogin: userLogin,
+                user: session.user,
+                githubAccessToken: session.accessToken,
+            }, this.docker.getTenantBackendAssertionSecret(userLogin));
+            let socketIoHeaders: Record<string, string> | undefined;
+            if (socketIo) {
+                const tenantConnectionToken = this.docker.getTenantBackendConnectionToken(userLogin);
+                if (!tenantConnectionToken) {
+                    this.writeJson(response, 503, { error: 'Tenant backend is not ready' });
+                    return;
+                }
+                // The tenant's Socket.IO validates its own connection token and Origin for the
+                // polling transport exactly like for the WebSocket upgrade.
+                socketIoHeaders = {
+                    cookie: `theia-connection-token=${encodeURIComponent(tenantConnectionToken)}`,
+                    origin: `http://${target.host}:${target.port}`,
+                };
+            }
+            this.forwardHttp(request as Request, response as Response, target, assertion, userLogin,
+                this.remainingTenantProxyBudgetMs(deadline), socketIoHeaders);
+        } catch (error) {
+            this.writeProxyError(response as Response, error);
+        }
+    }
+
+    protected activityReasonFor(url: string | undefined): QaapTenantActivityReason {
+        const pathname = (url ?? '/').split('?', 1)[0];
+        if (this.isSocketIoPath(pathname)) {
+            return 'websocket';
+        }
+        if (this.isPreviewPath(pathname)) {
+            return 'preview';
+        }
+        if (pathname.startsWith('/qaap/api/agent-')) {
+            return 'agent';
+        }
+        return pathname.startsWith('/qaap/api/jobs') ? 'job' : 'user';
+    }
+
+    /** Same-origin dev previews (`/qaap-dev/<port>/`, `/qaap-preview/<id>/`) served by the tenant backend. */
+    protected isPreviewPath(url: string | undefined): boolean {
+        const pathname = (url ?? '/').split('?', 1)[0];
+        return pathname.startsWith(`${QAAP_DEV_PREVIEW_PREFIX}/`) || pathname.startsWith(`${QAAP_IDENTITY_PREVIEW_PREFIX}/`);
+    }
+
+    protected isSocketIoPath(url: string | undefined): boolean {
+        const pathname = (url ?? '/').split('?', 1)[0];
+        return pathname === '/socket.io' || pathname.startsWith('/socket.io/');
+    }
+
+    protected isEarlyRequestRoutingEnabled(): boolean {
+        return !/^(0|false|off|no)$/i.test(process.env.QAAP_TENANT_PROXY_EARLY_ROUTING?.trim() ?? '');
     }
 
     protected async proxyAuthenticatedRequest(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -244,8 +371,17 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         assertion: string,
         tenantLogin?: string,
         responseTimeoutMs = this.getTenantProxyIdleTimeoutMs(),
+        extraHeaders?: Record<string, string>,
     ): void {
-        const headers = this.forwardHeaders(req.headers, target, assertion);
+        const headers = { ...this.forwardHeaders(req.headers, target, assertion), ...extraHeaders };
+        const previewTraffic = this.isPreviewPath(req.url);
+        if (previewTraffic) {
+            // Previewed apps keep their own cookies (sessions, CSRF); Qaap-owned ones never cross.
+            const appCookies = stripQaapReservedCookies(req.headers.cookie);
+            if (appCookies) {
+                headers.cookie = appCookies;
+            }
+        }
         const body = req.body !== undefined && req.method !== 'GET' && req.method !== 'HEAD'
             ? Buffer.from(JSON.stringify(req.body), 'utf8')
             : undefined;
@@ -266,6 +402,10 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 if (HOP_BY_HOP_HEADERS.has(key.toLowerCase()) || key.toLowerCase() === 'set-cookie') {
                     delete responseHeaders[key];
                 }
+            }
+            const appSetCookies = previewTraffic ? filterQaapReservedSetCookies(response.headers['set-cookie']) : undefined;
+            if (appSetCookies) {
+                responseHeaders['set-cookie'] = appSetCookies;
             }
             res.writeHead(response.statusCode ?? 502, responseHeaders);
             response.pipe(res);
@@ -294,7 +434,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 this.docker.invalidateTenantBackendTarget(tenantLogin, target);
             }
             if (timedOut && !res.headersSent) {
-                res.status(504).json({ error: 'Tenant backend timed out', detail: error.message.slice(0, 240) });
+                this.writeJson(res, 504, { error: 'Tenant backend timed out', detail: error.message.slice(0, 240) });
                 return;
             }
             this.writeProxyError(res, error);
@@ -355,7 +495,10 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             || pathname === QAAP_GITHUB_OAUTH_START_PATH
             || pathname === QAAP_GITHUB_OAUTH_CALLBACK_PATH
             || pathname === QAAP_TENANT_RUNTIME_API_PATH
-            || pathname.startsWith(`${QAAP_TENANT_RUNTIME_API_PATH}/`);
+            || pathname.startsWith(`${QAAP_TENANT_RUNTIME_API_PATH}/`)
+            // GitHub delivers webhooks to the control plane, whose inbox hub streams them.
+            || pathname === `${QAAP_GITHUB_API_PATH}/webhook`
+            || pathname.startsWith(`${QAAP_GITHUB_API_PATH}/inbox/`);
     }
 
     protected getTenantProxyIdleTimeoutMs(): number {
@@ -407,6 +550,19 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        res.status(502).json({ error: 'Tenant backend unavailable', detail: message.slice(0, 240) });
+        this.writeJson(res, 502, { error: 'Tenant backend unavailable', detail: message.slice(0, 240) });
+    }
+
+    /** Works for Express and raw `http.ServerResponse`s (the early request router has no Express). */
+    protected writeJson(res: http.ServerResponse, status: number, body: unknown): void {
+        if (res.headersSent) {
+            res.end();
+            return;
+        }
+        const payload = JSON.stringify(body);
+        res.statusCode = status;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Length', Buffer.byteLength(payload));
+        res.end(payload);
     }
 }

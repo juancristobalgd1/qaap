@@ -507,6 +507,23 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host).to.equal(undefined);
         });
 
+        it('shows View Preview without file edits when the conversation started the app', () => {
+            const host = renderStickyComposerChangesPill({
+                hasFileActivity: false,
+                previewInConversation: true,
+                onOpenPreview: () => undefined,
+            });
+            expect(host).to.exist;
+            document.body.append(host!);
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(a => a.textContent)).to.deep.equal(['View Preview']);
+        });
+
+        it('keeps a fresh conversation without edits or app intent free of the preview row', () => {
+            expect(renderStickyComposerChangesPill({ hasFileActivity: false, onOpenPreview: () => undefined })).to.equal(undefined);
+            expect(renderStickyComposerChangesPill({ hasFileActivity: false, previewInConversation: true })).to.equal(undefined);
+        });
+
         it('keeps Open preview after commit when the project has a live preview URL', () => {
             const host = renderStickyComposerChangesPill({
                 hasFileActivity: true,

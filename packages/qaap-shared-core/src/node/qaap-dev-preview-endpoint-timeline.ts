@@ -46,6 +46,8 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             path: targetPath,
             method: incoming.method,
             headers,
+            // Tunnelled runtimes (hosted workers) are reached through their own agent.
+            agent: ctx.upstreamAgentFor(targetPort),
         }, proxyRes => {
             clearTimeout(headersTimer);
             // The upstream body can fail mid-stream (dev server restart): end the browser response with it.
@@ -392,11 +394,11 @@ export function rewritePreviewCspExtracted(ctx: QaapDevPreviewEndpointContext, r
         return rewritten.join('; ');
 }
 
-export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointContext, port: number): Promise<boolean> {
+export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointContext, port: number, ownerLogin?: string): Promise<boolean> {
         if (!isAllowedDevPreviewPort(port) || ctx.isIdeListenPort(port)) {
             return false;
         }
-        const targetHost = await ctx.resolveTargetHost(port);
+        const targetHost = await ctx.resolveTargetHost(port, ownerLogin);
         if (!targetHost) {
             return false;
         }
@@ -458,6 +460,7 @@ function probeDevServerOnce(
             method,
             headers: { host: `localhost:${port}` },
             timeout: PROBE_TIMEOUT_MS,
+            agent: ctx.upstreamAgentFor(port),
         }, res => {
             res.resume();
             const status = res.statusCode ?? 0;

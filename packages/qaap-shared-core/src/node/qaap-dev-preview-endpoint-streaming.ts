@@ -78,6 +78,11 @@ export function mayProxyPortExtracted(ctx: QaapDevPreviewEndpointContext, req: R
         }
         const owner = ctx.portRegistry.ownerOf(port);
         const login = ctx.auth.resolveUserLogin(authResult);
+        if (owner === undefined && ctx.ownsUnclaimedPorts(login)) {
+            // Single-tenant runtime: every listener here was started by this tenant (e.g. its
+            // agent's own `npm run dev`), so there is no other tenant to shield it from.
+            return true;
+        }
         if (owner === undefined || login === undefined || login !== owner) {
             return false;
         }
@@ -409,6 +414,8 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
             path,
             method: req.method,
             headers,
+            // Tunnelled runtimes (hosted workers) are reached through their own agent.
+            agent: ctx.upstreamAgentFor(port),
         });
         // The hold keeps engine.io from reaping this socket, so bound the upstream handshake here.
         const handshakeTimer = setTimeout(() => {

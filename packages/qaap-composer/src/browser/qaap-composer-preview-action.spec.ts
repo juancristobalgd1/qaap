@@ -4,8 +4,11 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
+    composerConversationInvolvesPreview,
     openCurrentComposerPreview,
+    resolveComposerFallbackPreviewUrls,
     resolveComposerPreviewCandidate,
     resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
@@ -116,5 +119,59 @@ describe('qaap-composer-preview-action', () => {
         );
         expect(didOpen).to.equal(true);
         expect(opened).to.deep.equal([IDENTITY_URL]);
+    });
+
+    describe('previews the Run flow did not start (agent shell dev servers)', () => {
+        const ORIGIN = 'https://qaap.example.test';
+        const idle: ComposerPreviewRuntime = {
+            projectId: 'project-a',
+            projectCwd: '/workspace/project-a',
+            dependenciesInstalled: false,
+            phase: 'idle',
+        };
+
+        function conversation(messages: Array<{ role: 'user' | 'agent'; content: string }>): QaapAgentConversationDTO {
+            return { id: 'c1', status: 'idle', messages } as unknown as QaapAgentConversationDTO;
+        }
+
+        const started = conversation([
+            { role: 'user', content: 'start the project' },
+            { role: 'agent', content: 'Done: the dev server is running at http://localhost:5173/' },
+        ]);
+
+        it('falls back to the first previewable URL when the bootstrap is not running', () => {
+            expect(resolveComposerPreviewCandidate({ ...idle, fallbackPreviewUrls: ['not a preview', `${ORIGIN}/qaap-dev/5173/`] }, ORIGIN))
+                .to.equal(`${ORIGIN}/qaap-dev/5173/`);
+            expect(resolveComposerPreviewCandidate({ ...idle, fallbackPreviewUrls: [] }, ORIGIN)).to.equal(undefined);
+        });
+
+        it('still prefers the running Run-flow URL over any fallback', () => {
+            expect(resolveComposerPreviewCandidate({ ...ready, fallbackPreviewUrls: [`${ORIGIN}/qaap-dev/3000/`] }))
+                .to.equal(ready.previewUrl);
+        });
+
+        it('derives the fallback from what the conversation announced', () => {
+            expect(resolveComposerFallbackPreviewUrls(started, undefined, ORIGIN)).to.deep.equal([`${ORIGIN}/qaap-dev/5173/`]);
+            // The URL the transcript already adopted for the project comes first.
+            expect(resolveComposerFallbackPreviewUrls(started, `${ORIGIN}/qaap-preview/u-alice-x-1/`, ORIGIN))
+                .to.deep.equal([`${ORIGIN}/qaap-preview/u-alice-x-1/`, `${ORIGIN}/qaap-dev/5173/`]);
+        });
+
+        it('never resurrects a stale project URL in a conversation unrelated to running the app', () => {
+            const unrelated = conversation([{ role: 'user', content: 'rename the helper' }, { role: 'agent', content: 'Renamed.' }]);
+            expect(composerConversationInvolvesPreview(unrelated, ORIGIN)).to.equal(false);
+            expect(resolveComposerFallbackPreviewUrls(unrelated, `${ORIGIN}/qaap-dev/5173/`, ORIGIN)).to.deep.equal([]);
+            expect(resolveComposerFallbackPreviewUrls(undefined, `${ORIGIN}/qaap-dev/5173/`, ORIGIN)).to.deep.equal([]);
+            expect(composerConversationInvolvesPreview(started, ORIGIN)).to.equal(true);
+        });
+
+        it('accepts the identity URL a port probe answers with as verification of that port', () => {
+            const runtime: ComposerPreviewRuntime = { ...idle, fallbackPreviewUrls: [`${ORIGIN}/qaap-dev/5173/`] };
+            const identity = `${ORIGIN}/qaap-preview/u-alice-x-1/`;
+            expect(resolveVerifiedComposerPreviewUrl(runtime, identity, ORIGIN)).to.equal(undefined);
+            expect(resolveVerifiedComposerPreviewUrl(runtime, identity, ORIGIN, `${ORIGIN}/qaap-dev/5173/`)).to.equal(identity);
+            // A verification made for another candidate does not carry over.
+            expect(resolveVerifiedComposerPreviewUrl(runtime, identity, ORIGIN, `${ORIGIN}/qaap-dev/3000/`)).to.equal(undefined);
+        });
     });
 });

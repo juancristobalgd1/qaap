@@ -37,6 +37,7 @@ import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transc
 
 import { hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper } from './qaap-agent-conversation-store-helpers';
 
+import { allocateQaapWorktreeOrdinal } from './qaap-worktree-ordinal-allocator';
 import { QAAP_MAX_BATCH_SIZE, QAAP_COALESCE_WINDOW_MS, type PostUserMessageInternalOptions } from './qaap-agent-conversation-store-constants';
 
 export function mutatingGitSyncExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
@@ -183,6 +184,8 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
     const now = Date.now();
     const id = randomUUID();
     const titleSeed = (request.title ?? request.message ?? '').trim();
+    // Worktree conversations get a stable `<projectName>_<n>` ordinal (the hash dir stays the key).
+    const worktreeOrdinal = allocateQaapWorktreeOrdinal(ctx, cwd, request.parallelBaseCwd, ownerLogin);
     const conversation: QaapAgentConversation = {
         id,
         cwd,
@@ -196,6 +199,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         ...(request.parallelRunId ? { parallelRunId: request.parallelRunId } : {}),
         ...(request.parallelBaseCwd ? { parallelBaseCwd: request.parallelBaseCwd } : {}),
         ...(request.worktreeBranch ? { worktreeBranch: request.worktreeBranch } : {}),
+        ...(worktreeOrdinal ? { worktreeOrdinal } : {}),
         ...(request.forkedFromId ? { forkedFromId: request.forkedFromId } : {}),
         ...(request.autoApprove === false ? { autoApprove: false } : {}),
         ...(request.contextPreamble ? { contextPreamble: request.contextPreamble } : {}),
