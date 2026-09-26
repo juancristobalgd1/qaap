@@ -20,6 +20,7 @@ This is a Lerna-managed Eclipse Theia monorepo fork for Qaap.
 - Keep the upstream-drift policy green. After changes that could affect drift, run `node scripts/qaap-drift-check.js`.
 - Treat existing uncommitted changes as user-owned. Do not reset, overwrite, or revert unrelated work.
 - User-facing strings must be localized with `nls.localize()` or `nls.localizeByDefault()`.
+- CI/CD invariants are critical: before touching tenant spawning, terminals, preview, `examples/playwright` or `.github/workflows`, read `doc/qaap-ci-invariants.md` (each rule fixed a red workflow; e.g. the rlimit fallback must `shift 2`, never add `grepInvert` to hide an unexplained failure).
 
 ## Required environment
 

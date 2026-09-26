@@ -335,6 +335,8 @@ const ALLOWED = [
     // Fork-local agent guidance and post-task preview workflow (not upstream product code).
     /^AGENTS\.md$/,
     /^\.cursor\/rules\/post-task-build-preview\.mdc$/,
+    // Fork-local CI/CD invariants rule (pairs with doc/qaap-ci-invariants.md).
+    /^\.cursor\/rules\/ci-invariants\.mdc$/,
     // ---- Misc product seams in upstream Theia packages ---------------------
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-product-chrome\.ts$/,
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-widget\.tsx$/,
