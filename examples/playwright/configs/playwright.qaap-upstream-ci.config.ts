@@ -50,6 +50,11 @@ const qaapUpstreamCiConfig: PlaywrightTestConfig = {
         // Qaap expands the Explorer on startup, so the spec's unscoped `getByText('sample.txt')` matches
         // both the Explorer tree and the file dialog (Playwright strict-mode violation).
         /open sample\.txt via file menu/,
+        // TODO(qaap): on the Linux CI runner the xterm helper textarea of a menu-created terminal stays
+        // 0px wide, so Playwright reports it hidden and `TheiaTerminal.write()` cannot fill it (both pass
+        // on Windows; opening, switching and closing terminals pass everywhere). Needs a Linux repro.
+        /should allow to write and read terminal contents/,
+        /should allow to submit a command and read output/,
     ],
 };
 
