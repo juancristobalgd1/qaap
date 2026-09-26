@@ -1363,3 +1363,68 @@ describe('QaapDevPreviewEndpoint', () => {
         });
     });
 });
+
+describe('QaapDevPreviewEndpoint identity probe state', () => {
+    class IdentityProbeEndpoint extends TestQaapDevPreviewEndpoint {
+        listening = false;
+
+        override probeLocalDevServer(): Promise<boolean> {
+            return Promise.resolve(this.listening);
+        }
+    }
+
+    const previewId = 'p-project-c-conv-r-run-abc1234';
+
+    const setup = (record: QaapDevPreviewRecord | undefined): IdentityProbeEndpoint => {
+        const ep = new IdentityProbeEndpoint();
+        const mutable = ep as unknown as { auth: unknown; portRegistry: unknown };
+        mutable.auth = {
+            authenticate: () => ({ kind: 'authenticated', userLogin: 'alice', session: {}, sessionId: 's' }),
+            resolveUserLogin: () => 'alice',
+        };
+        mutable.portRegistry = {
+            getForOwner: (id: string, login: string) => id === previewId && login === 'alice' ? record : undefined,
+            touchPreview: () => undefined,
+        };
+        return ep;
+    };
+
+    const probe = async (ep: IdentityProbeEndpoint): Promise<{ code: number; body?: { ready?: boolean; state?: string } }> => {
+        const result: { code: number; body?: { ready?: boolean; state?: string } } = { code: 200 };
+        const res = {
+            status(code: number): unknown { result.code = code; return res; },
+            json(body: never): void { result.body = body; },
+        };
+        const req = { params: { previewId }, headers: {}, protocol: 'http', get: () => 'localhost:3000' };
+        await ep.handleIdentityProbe(req as never, res as never);
+        return result;
+    };
+
+    const record = (claimedAt: number): QaapDevPreviewRecord => ({
+        previewId,
+        ownerLogin: 'alice',
+        root: '/tmp/site',
+        port: 5173,
+        claimedAt,
+        touchedAt: claimedAt,
+        accessToken: 'token',
+    } as QaapDevPreviewRecord);
+
+    it('reports gone for a claim this user does not have', async () => {
+        const result = await probe(setup(undefined));
+        expect(result.code).to.equal(403);
+        expect(result.body).to.include({ ready: false, state: 'gone' });
+    });
+
+    it('tells a booting claim from a stopped one and keeps `ready` for older clients', async () => {
+        const booting = await probe(setup(record(Date.now())));
+        expect(booting.body).to.include({ ready: false, state: 'booting' });
+
+        const stopped = await probe(setup(record(Date.now() - 60 * 60_000)));
+        expect(stopped.body).to.include({ ready: false, state: 'stopped' });
+
+        const live = setup(record(Date.now() - 60 * 60_000));
+        live.listening = true;
+        expect((await probe(live)).body).to.include({ ready: true, state: 'ready' });
+    });
+});
