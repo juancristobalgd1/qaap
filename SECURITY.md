@@ -167,6 +167,12 @@ Current state of these paths:
 > verification). A failed check or fewer than two provisioned test tenants now
 > **blocks the beta release**. Provision two disposable invited GitHub accounts
 > and exercise agent + New Worktree + parallel runs before declaring the release ready.
+> Tenant evidence depends on the mode: with backend-per-tenant (`QAAP_BACKEND_PER_TENANT=1`) the
+> gate counts distinct tenants with a Qaap-managed `qaap-backend-*` container in the tenant Docker
+> daemon and verifies two of them with `scripts/qaap-tenant-backend-isolation-check.js` (labels,
+> non-root or rootless-mapped uid, no capabilities/privileges, read-only rootfs, only that tenant's
+> mounts, no Docker socket or control-plane secrets, no shared storage/network/secret); otherwise it
+> reads the host-mode uid registry and runs `qaap-verify-multitenant.sh`.
 > Production admission requires `QAAP_BETA_ALLOWED_LOGINS` (comma-separated GitHub
 > logins). Empty or malformed lists deny all users, including restored sessions.
 > Set the operator's login before deployment. Restart the backend after changing

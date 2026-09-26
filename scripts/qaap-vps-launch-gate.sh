@@ -125,24 +125,64 @@ else
     echo "  WARN PID 1 has no --no-cluster token (verify manually if docker --init is in use)"
 fi
 
-REG="${QAAP_TENANT_UID_REGISTRY_PATH:-/workspace/.qaap/uid-registry.json}"
-TENANT_COUNT="$(dexec "node -e 'try{const j=require(\"$REG\");process.stdout.write(String(Object.keys(j.map||{}).length))}catch(e){process.stdout.write(\"0\")}'" || echo 0)"
-TENANT_LOGINS="$(dexec "node -e 'try{const j=require(\"$REG\");process.stdout.write(Object.keys(j.map||{}).join(\" \"))}catch(e){}'" || true)"
-echo "  INFO tenant uid registry size: ${TENANT_COUNT} (${TENANT_LOGINS:-none})"
-
-if [[ "$TENANT_COUNT" -ge 2 ]]; then
-    # shellcheck disable=SC2086
-    set -- $TENANT_LOGINS
-    LOGIN_A="$1"
-    LOGIN_B="$2"
-    echo "  INFO running multi-tenant isolation against ${LOGIN_A} and ${LOGIN_B}"
-    if ./scripts/qaap-verify-multitenant.sh "$LOGIN_A" "$LOGIN_B"; then
-        ok "multi-tenant isolation PASSED"
+# Tenant evidence depends on the isolation mode. In backend-per-tenant mode each tenant runs in its
+# own Qaap-managed backend container in the rootless Docker the control plane drives; the host-mode
+# uid registry is never written there (tenant backends run with QAAP_AGENT_UID_PER_USER=0), and
+# qaap-verify-multitenant.sh asserts a root backend, which this mode forbids. Count distinct tenants
+# with a managed backend container and verify the pair's container isolation instead. Both paths
+# still FAIL with fewer than two tenants.
+if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|true)$ ]]; then
+    # Only the logins of managed tenant backends; names/logins are validated before any reuse.
+    BACKEND_ROWS="$(dexec 'docker ps -a --filter label=com.qaap.managed=true --filter label=com.qaap.tenant-backend=true --format "{{.Label \"com.qaap.tenant-login\"}} {{.Names}}"' || true)"
+    declare -A BACKEND_BY_LOGIN=()
+    while read -r row_login row_name _; do
+        [[ "$row_login" =~ ^[a-z0-9][a-z0-9_.-]*$ && "$row_login" != "__anonymous__" ]] || continue
+        [[ "$row_name" =~ ^qaap-backend-[0-9a-f]{12}$ ]] || continue
+        [[ -n "${BACKEND_BY_LOGIN[$row_login]:-}" ]] || BACKEND_BY_LOGIN[$row_login]="$row_name"
+    done <<< "$BACKEND_ROWS"
+    TENANT_LOGINS="$(printf '%s\n' "${!BACKEND_BY_LOGIN[@]}" | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ $//')"
+    TENANT_COUNT="${#BACKEND_BY_LOGIN[@]}"
+    echo "  INFO tenant backend containers: ${TENANT_COUNT} (${TENANT_LOGINS:-none})"
+    if [[ "$TENANT_COUNT" -ge 2 ]]; then
+        # shellcheck disable=SC2086
+        set -- $TENANT_LOGINS
+        LOGIN_A="$1"
+        LOGIN_B="$2"
+        echo "  INFO verifying backend-per-tenant isolation for ${LOGIN_A} and ${LOGIN_B}"
+        CHECK_JS="$(sed '1{/^#!/d;}' ./scripts/qaap-tenant-backend-isolation-check.js)"
+        # Rootless daemons map container uid 0 to the unprivileged daemon owner; ask the daemon itself.
+        DAEMON_SECURITY="$(dexec 'docker info --format "{{json .SecurityOptions}}"' 2>/dev/null || true)"
+        DAEMON_MODE=rootful
+        [[ "$DAEMON_SECURITY" == *'name=rootless'* ]] && DAEMON_MODE=rootless
+        if dexec "docker inspect '${BACKEND_BY_LOGIN[$LOGIN_A]}' '${BACKEND_BY_LOGIN[$LOGIN_B]}'" \
+            | docker compose exec -T "$SVC" node -e "$CHECK_JS" "$LOGIN_A" "$LOGIN_B" "$DAEMON_MODE"; then
+            ok "backend-per-tenant isolation PASSED"
+        else
+            bad "backend-per-tenant isolation failed for ${LOGIN_A} / ${LOGIN_B} — release blocked"
+        fi
     else
-        bad "multi-tenant isolation failed for ${LOGIN_A} / ${LOGIN_B} — release blocked"
+        bad "only ${TENANT_COUNT} tenant backend(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"
     fi
 else
-    bad "only ${TENANT_COUNT} tenant(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"
+    REG="${QAAP_TENANT_UID_REGISTRY_PATH:-/workspace/.qaap/uid-registry.json}"
+    TENANT_COUNT="$(dexec "node -e 'try{const j=require(\"$REG\");process.stdout.write(String(Object.keys(j.map||{}).length))}catch(e){process.stdout.write(\"0\")}'" || echo 0)"
+    TENANT_LOGINS="$(dexec "node -e 'try{const j=require(\"$REG\");process.stdout.write(Object.keys(j.map||{}).join(\" \"))}catch(e){}'" || true)"
+    echo "  INFO tenant uid registry size: ${TENANT_COUNT} (${TENANT_LOGINS:-none})"
+
+    if [[ "$TENANT_COUNT" -ge 2 ]]; then
+        # shellcheck disable=SC2086
+        set -- $TENANT_LOGINS
+        LOGIN_A="$1"
+        LOGIN_B="$2"
+        echo "  INFO running multi-tenant isolation against ${LOGIN_A} and ${LOGIN_B}"
+        if ./scripts/qaap-verify-multitenant.sh "$LOGIN_A" "$LOGIN_B"; then
+            ok "multi-tenant isolation PASSED"
+        else
+            bad "multi-tenant isolation failed for ${LOGIN_A} / ${LOGIN_B} — release blocked"
+        fi
+    else
+        bad "only ${TENANT_COUNT} tenant(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"
+    fi
 fi
 
 # Paid-beta Stripe: WARN if incomplete; FAIL only when DEV_CHECKOUT is on.
