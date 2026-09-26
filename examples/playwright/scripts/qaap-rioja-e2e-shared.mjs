@@ -519,7 +519,7 @@ export function checkWorkspaceFiles(cwd) {
 
 export function killDevPort(port = 5173) {
     try {
-        execSync(`lsof -ti:${port} | xargs kill -9 2>/dev/null || true`, { stdio: 'ignore', shell: '/bin/bash' });
+        execSync(`lsof -ti tcp:${port} -sTCP:LISTEN | xargs kill -9 2>/dev/null || true`, { stdio: 'ignore', shell: '/bin/bash' });
     } catch {
         // Port was free.
     }

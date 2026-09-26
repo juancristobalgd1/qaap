@@ -306,9 +306,12 @@ export class QaapTenantSpawnService {
         }
 
         const memoryKilobytes = Math.max(1, Math.floor(limits.memoryBytes / 1024));
-        // POSIX /bin/sh has no ${@:4}; use a small argv-preserving script instead. The command is
-        // passed as positional arguments, never interpolated into shell source.
-        const portableFallbackScript = 'ulimit -v "$1" && ulimit -t "$2" && shift 3 && exec "$@"';
+        // POSIX /bin/sh has no ${@:3}; use a small argv-preserving script instead. The command is
+        // passed as positional arguments, never interpolated into shell source. `$0` is the
+        // `qaap-resource-limited` label, `$1`/`$2` are the limits and `$3…` is the command, so shift
+        // exactly the two limits: `shift 3` also dropped the executable and made every wrapped
+        // spawn (including every terminal shell) exec its first argument, e.g. `-l`.
+        const portableFallbackScript = 'ulimit -v "$1" && ulimit -t "$2" && shift 2 && exec "$@"';
         const fallbackArgs = invocation.shell
             ? ['-c', 'ulimit -v "$1" && ulimit -t "$2" && exec /bin/sh -c "$3"',
                 'qaap-resource-limited', String(memoryKilobytes), String(Math.max(1, Math.ceil(limits.cpuCores * 3600))), invocation.file]

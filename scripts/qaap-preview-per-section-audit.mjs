@@ -30,7 +30,7 @@ function ensureFixtureDeps(cwd) {
 }
 
 function killPort(port) {
-    try { execSync(`lsof -ti:${port} | xargs kill -9 2>/dev/null`, { stdio: 'ignore' }); } catch { /* free */ }
+    try { execSync(`lsof -ti tcp:${port} -sTCP:LISTEN | xargs kill -9 2>/dev/null`, { stdio: 'ignore' }); } catch { /* free */ }
 }
 
 // Collect performance metrics from a page via CDP + Performance API.

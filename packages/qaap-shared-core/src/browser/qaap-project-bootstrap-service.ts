@@ -68,8 +68,8 @@ export const DEV_URL_REGEX = /\b(https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0
 /** Strip ANSI escape sequences so URL detection works against raw xterm output. */
 export const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
-/** Node / Theia emit this when the dev port is already bound by another process. */
-export const PORT_IN_USE_REGEX = /EADDRINUSE|address already in use/i;
+/** Node / Theia / Vite emit this when the dev port is already bound by another process. */
+export { PORT_IN_USE_REGEX } from './qaap-project-bootstrap-dev-errors';
 
 /** Keep only the tail of dev stdout so we can surface the last error line on fast exit. */
 const DEV_OUTPUT_TAIL_MAX = 12_000;

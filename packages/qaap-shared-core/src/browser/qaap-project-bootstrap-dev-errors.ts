@@ -6,7 +6,13 @@
 /** Dev/install output that usually means dependencies were not installed (or only production deps). */
 export const DEV_INSTALL_NEEDED_REGEX = /ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|(?:sh|bash):\s*1:\s*(?:vite|esbuild|next|nuxt|astro): not found|Missing script:|npm error code ENOENT/i;
 
-export const PORT_IN_USE_REGEX = /EADDRINUSE|address already in use/i;
+/**
+ * A dev port bound by another process. Node prints `EADDRINUSE` / `address already in use`, but
+ * Vite (and Astro/SvelteKit on top of it) with `--strictPort` catches that error and prints only
+ * `Error: Port 5173 is already in use` — without this phrase the conflict was never recognized,
+ * so automatic port recovery never ran and the run retried the occupied port.
+ */
+export const PORT_IN_USE_REGEX = /EADDRINUSE|address already in use|\bport \d{2,5} is (?:already )?in use/i;
 
 /** Next.js refuses a second `next dev` while `.next/dev/lock` is held. */
 export const NEXT_DEV_LOCK_REGEX = /Unable to acquire lock|another instance of next dev running/i;

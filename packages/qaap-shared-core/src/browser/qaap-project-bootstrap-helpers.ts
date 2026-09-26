@@ -52,8 +52,11 @@ export function normalizeDevUrl(raw: string): string | undefined {
     }
 }
 
+/** Extracts the port from Vite's strict-port failure, `Error: Port 5173 is already in use`. */
+export const PORT_IN_USE_PHRASE_REGEX = /\bport (\d{2,5}) is (?:already )?in use/i;
+
 export function extractPortFromInUseMessage(text: string): number | undefined {
-    const match = PORT_IN_USE_ADDR_REGEX.exec(text);
+    const match = PORT_IN_USE_ADDR_REGEX.exec(text) ?? PORT_IN_USE_PHRASE_REGEX.exec(text);
     if (!match) {
         return undefined;
     }
@@ -69,11 +72,20 @@ export function normalizeRestoredPhase(phase: QaapBootstrapPhase, descriptor: Qa
 
 // ─── Terminal utilities ──────────────────────────────────────────────────────
 
+/**
+ * The last `maxLines` lines of real terminal output. The xterm buffer always holds a full viewport,
+ * so a process that printed a few lines and exited leaves blank rows under the cursor: reading the
+ * raw last rows returned only newlines, which then replaced the exit diagnostic with an empty
+ * error. Trailing blank rows are skipped, and an all-blank buffer yields `''` so callers fall back.
+ */
 export function readTerminalTail(terminal: TerminalWidget, maxLines: number = 40): string {
     try {
-        const length = terminal.buffer.length;
-        const start = Math.max(0, length - maxLines);
-        return terminal.buffer.getLines(start, length - start, true).join('\n');
+        let end = terminal.buffer.length;
+        while (end > 0 && !terminal.buffer.getLines(end - 1, 1, true)[0]?.trim()) {
+            end--;
+        }
+        const start = Math.max(0, end - maxLines);
+        return terminal.buffer.getLines(start, end - start, true).join('\n');
     } catch {
         return '';
     }
