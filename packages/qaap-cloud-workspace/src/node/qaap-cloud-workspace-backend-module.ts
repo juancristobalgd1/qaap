@@ -95,6 +95,7 @@ import { QaapTenantRuntimeEndpoint } from './qaap-tenant-runtime-endpoint';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
+import { QaapTenantPreviewRouteTable } from './qaap-tenant-preview-route-table';
 import { QaapDockerDevPreviewUpstreamTunnel } from './qaap-docker-dev-preview-upstream-tunnel';
 import { QaapDevPreviewUpstreamTunnel } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-upstream-tunnel';
 import { QaapObservability } from './qaap-observability';
@@ -127,6 +128,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapTenantContainerReaper);
     bind(QaapTenantRuntimeEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTenantRuntimeEndpoint);
+    bind(QaapTenantPreviewRouteTable).toSelf().inSingletonScope();
     bind(QaapTenantBackendProxyContribution).toSelf().inSingletonScope();
     // Dev servers of docker-isolated tenants listen inside their worker; the preview proxy reaches
     // them through a docker-exec bridge. Inert unless QAAP_CLOUD_MODE=docker (see handles()).

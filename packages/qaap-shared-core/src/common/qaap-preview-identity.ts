@@ -62,6 +62,11 @@ function shortPreviewIdPart(value: string): string {
     return normalizePreviewIdPart(value).slice(0, 8).replace(/-+$/g, '') || 'unknown';
 }
 
+/** The owner segment a process preview id carries for `userId` (`u-<segment>-w-…`). */
+export function qaapPreviewIdOwnerSegment(userId: string): string {
+    return shortPreviewIdPart(userId);
+}
+
 /** Small deterministic suffix; the full coordinates remain authoritative in the backend record. */
 function hashPreviewIdentity(value: string): string {
     let left = 0x811c9dc5;

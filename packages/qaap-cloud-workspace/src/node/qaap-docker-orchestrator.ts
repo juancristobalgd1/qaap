@@ -653,6 +653,18 @@ export class QaapDockerOrchestrator {
     }
 
     /** Whether a validated tenant container is available for synchronous docker-exec wrappers. */
+    /**
+     * Public-URL settings a tenant backend needs to mint preview URLs that the control plane routes
+     * back to it (isolated preview hosts, share links). Part of the backend contract: a change
+     * recreates stale backends.
+     */
+    protected tenantBackendPublicUrlEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+        return ['QAAP_OAUTH_PUBLIC_URL', 'QAAP_PREVIEW_BASE_DOMAIN', 'QAAP_PREVIEW_ALLOW_SAME_SITE', 'QAAP_PREVIEW_SHARE_TTL_HOURS']
+            .map(key => [key, env[key]?.trim()] as const)
+            .filter((entry): entry is readonly [string, string] => !!entry[1] && !/[\r\n\0]/.test(entry[1]))
+            .map(([key, value]) => `${key}=${value}`);
+    }
+
     isTenantContainerReady(ownerLogin: string | undefined, tenantRootHostPath: string): boolean {
         const name = this.containerNameForTenant(ownerLogin);
         const requested = this.normalizeHostPath(tenantRootHostPath);
@@ -901,6 +913,7 @@ export class QaapDockerOrchestrator {
                 'THEIA_SHELL=/bin/bash',
                 'THEIA_PLUGINS_DIR=/app/plugins',
                 'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
+                ...this.tenantBackendPublicUrlEnv(),
             ];
             const repoMount = `${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
             const worktreeMount = `${dockerMounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
@@ -1108,6 +1121,7 @@ export class QaapDockerOrchestrator {
             'THEIA_SHELL=/bin/bash',
             'THEIA_PLUGINS_DIR=/app/plugins',
             'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
+            ...this.tenantBackendPublicUrlEnv(),
         ];
         // Docker keeps the requested empty HostPort in HostConfig, while the allocated ephemeral
         // port is authoritative in NetworkSettings after the container starts.
