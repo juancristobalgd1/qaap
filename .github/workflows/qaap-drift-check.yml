@@ -88,6 +88,9 @@ jobs:
       - name: Verify candidate image gate orchestration
         run: bash scripts/qaap-image-smoke.test.sh
 
+      - name: Verify post-deploy image cleanup retention
+        run: bash scripts/qaap-vps-image-prune.test.sh
+
       - name: Use Python with safe tar extraction filters
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.0.0
         with:

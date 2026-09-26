@@ -28,9 +28,13 @@ import {
 } from './qaap-agent-spawn-identity';
 import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
+
+/** HOME/USER/LOGNAME for a tenant child plus, inside tenant containers, cache/data relocation vars. */
+export type QaapTenantHomeEnvOverlay = { HOME?: string; USER?: string; LOGNAME?: string } & Record<string, string>;
 
 /** Options for {@link QaapTenantSpawnService.spawn}. */
 export interface QaapTenantSpawnOptions {
@@ -671,7 +675,7 @@ export class QaapTenantSpawnService {
      * The tenant HOME/USER/LOGNAME overlay for a dropped process, or `{}` when no uid drop applies.
      * Without a writable HOME a dropped process inherits root's `/root`, which it cannot write.
      */
-    tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
+    tenantHomeEnvOverlay(cwd: string): QaapTenantHomeEnvOverlay {
         cwd = this.canonicalizeCwd(cwd);
         if (this.isContainerIsolationEnabled() || this.isTenantBackendMode()) {
             // The host-side per-uid HOME is not mounted into a tenant worker. Passing it through
@@ -681,18 +685,60 @@ export class QaapTenantSpawnService {
             // backend running inside that worker uses the same rule even though its own
             // QAAP_CLOUD_MODE is local and it therefore does not enable host-side Docker routing.
             const home = process.env.QAAP_TENANT_CONTAINER_HOME?.trim() || '/tmp/qaap-home';
-            return { HOME: home, USER: 'qaap-tenant', LOGNAME: 'qaap-tenant' };
+            return { HOME: home, USER: 'qaap-tenant', LOGNAME: 'qaap-tenant', ...this.tenantAgentStorageEnv() };
         }
         if (this.resolveSpawnIdentity(cwd).uid === undefined) {
             return {};
         }
-        const overlay: { HOME?: string; USER?: string; LOGNAME?: string } = { HOME: this.resolveTenantHome(cwd) };
+        const overlay: QaapTenantHomeEnvOverlay = { HOME: this.resolveTenantHome(cwd) };
         const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
         if (target) {
             overlay.USER = `qaap-t-${target.segment}`;
             overlay.LOGNAME = overlay.USER;
         }
         return overlay;
+    }
+
+    /**
+     * Cache/data locations for processes inside a tenant container, whose HOME is on the
+     * memory-backed `/tmp` tmpfs (read-only rootfs). A backend running inside the tenant container
+     * relocates them to its disk-backed, tenant-private config mount by default; host-side worker
+     * routing (`docker exec` into a `qaap-ws-*` worker) has no such mount and only relocates when
+     * `QAAP_TENANT_AGENT_STORAGE_ROOT` names an in-container path. HOME (agent config/credentials)
+     * deliberately stays on the tmpfs.
+     */
+    protected tenantAgentStorageEnv(): Record<string, string> {
+        const fallback = this.isTenantBackendMode() ? QaapTenantAgentStorageEnv.defaultTenantBackendRoot(process.env) : undefined;
+        const root = QaapTenantAgentStorageEnv.resolveRoot(process.env, fallback);
+        if (!root) {
+            return {};
+        }
+        if (this.isTenantBackendMode()) {
+            this.ensureTenantAgentStorage(root);
+        }
+        return QaapTenantAgentStorageEnv.build(root);
+    }
+
+    protected readonly preparedAgentStorageRoots = new Set<string>();
+
+    /**
+     * Create the storage directories (0700) in this container so the first tool that uses them does
+     * not race another one creating the parent. Best effort: tools create missing dirs themselves.
+     */
+    protected ensureTenantAgentStorage(root: string): void {
+        if (this.preparedAgentStorageRoots.has(root)) {
+            return;
+        }
+        try {
+            for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]) {
+                fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+            }
+            fs.chmodSync(root, 0o700);
+            this.preparedAgentStorageRoots.add(root);
+        } catch (error) {
+            console.warn(`[qaap-security] could not prepare tenant agent storage ${root}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     /**

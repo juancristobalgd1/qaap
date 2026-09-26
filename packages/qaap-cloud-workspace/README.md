@@ -195,6 +195,14 @@ PWA service worker includes `push` / `notificationclick` handlers (see `Frontend
   production fails closed instead of launching an unbounded process.
 - `QAAP_TENANT_MEMORY_LIMIT` / `QAAP_TENANT_CPU_LIMIT` — optional Docker worker limits (bytes and
   cores respectively); these are also accepted as host-limit fallbacks for deployment consistency.
+- `QAAP_TENANT_TMPFS_SIZE` — size of the tenant container `/tmp` tmpfs that also holds the tenant
+  HOME (`<n>[k|m|g]`, default `512m`). tmpfs pages count against the container memory limit, so values
+  above half of `QAAP_TENANT_MEMORY_LIMIT` are ignored.
+- `QAAP_TENANT_AGENT_STORAGE_ROOT` — in-container directory for package-manager caches and agent data
+  (`XDG_CACHE_HOME`, `XDG_DATA_HOME`, npm/pnpm/bun/yarn-berry caches). Tenant backends default to
+  `/home/theia/.qaap/.qaap-agent-storage` on the tenant's private, disk-backed data mount (its `cache/`
+  is excluded from VPS backups); host-routed `qaap-ws-*` workers only relocate when it is set to a path
+  inside the worker. `off` keeps everything under the tmpfs HOME. HOME itself always stays on the tmpfs.
 - `QAAP_OAUTH_PUBLIC_URL` — canonical Qaap application origin (also the trusted parent of preview iframes)
 - `QAAP_PREVIEW_BASE_DOMAIN` — optional isolated preview domain, for example `preview.qaap.example`.
   Configure wildcard DNS/TLS (`*.preview.qaap.example`) to the Qaap backend. Each execution then

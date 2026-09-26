@@ -163,6 +163,10 @@ preload_tenant_image() {
     docker exec "$container_id" docker pull "$tenant_image"
 }
 
+# Post-deploy image cleanup (prune_old_qaap_images); sourced so it can be tested with a fake docker.
+# shellcheck source=scripts/qaap-vps-image-prune.sh
+source "$REPO_DIR/scripts/qaap-vps-image-prune.sh"
+
 preserve_legacy_bind_mounts() {
     local container_id="$1"
     local legacy_root='/opt/qaap-runtime'
@@ -280,6 +284,13 @@ if [[ -n "$REVISION" && "$(git rev-parse "${REVISION}^{commit}")" != "$SOURCE_SH
 fi
 echo "[qaap-vps-update] commit: $BEFORE"
 
+# Image serving before this deploy: retained by the post-deploy cleanup for rollback.
+PRE_DEPLOY_IMAGE_ID=''
+PRE_DEPLOY_CONTAINER_ID="$(docker compose ps -aq theia 2>/dev/null | tr -d '\r' | sed -n '1p' || true)"
+if [[ -n "$PRE_DEPLOY_CONTAINER_ID" ]]; then
+    PRE_DEPLOY_IMAGE_ID="$(docker inspect -f '{{.Image}}' "$PRE_DEPLOY_CONTAINER_ID" 2>/dev/null || true)"
+fi
+
 # Bake the deployed commit into the image (served via /qaap/api/auth/config and shown in the
 # Work Hub footer) so "which build is serving?" is answerable at a glance. docker compose reads
 # this from the environment for the QAAP_BUILD_SHA build arg.
@@ -381,6 +392,9 @@ for _ in $(seq 1 60); do
         if [[ "$SX_HEALTH" == "unhealthy" ]]; then
             echo "[qaap-vps-update] WARNING: searxng is unhealthy — @qaiq web search will fail (docker compose logs searxng)" >&2
         fi
+        # Only after a healthy deploy, and never fatal: a cleanup problem must not fail the release.
+        prune_old_qaap_images "$THEIA_CONTAINER_ID" \
+            || echo '[qaap-vps-update] WARNING: post-deploy image cleanup failed (ignored)' >&2
         echo "[qaap-vps-update] running launch gate (backup cron + isolation snapshot)..."
         chmod +x "$REPO_DIR/scripts/qaap-vps-launch-gate.sh" "$REPO_DIR/scripts/qaap-vps-ensure-backup-cron.sh" || true
         "$REPO_DIR/scripts/qaap-vps-launch-gate.sh"

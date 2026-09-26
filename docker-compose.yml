@@ -150,6 +150,12 @@ services:
       QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-2147483648}
       QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
+      # Size of each tenant container's /tmp tmpfs (holds the tenant HOME). Charged to the tenant memory
+      # limit, so values above half of QAAP_TENANT_MEMORY_LIMIT are ignored. Package caches and agent
+      # databases are kept on the tenant's disk-backed data mount instead (QAAP_TENANT_AGENT_STORAGE_ROOT=off
+      # keeps them in HOME).
+      QAAP_TENANT_TMPFS_SIZE: ${QAAP_TENANT_TMPFS_SIZE:-512m}
+      QAAP_TENANT_AGENT_STORAGE_ROOT: ${QAAP_TENANT_AGENT_STORAGE_ROOT:-}
       QAAP_TENANT_CONTAINER_UID: ${QAAP_TENANT_CONTAINER_UID:-1000}
       QAAP_TENANT_CONTAINER_GID: ${QAAP_TENANT_CONTAINER_GID:-1000}
       # Set only when DOCKER_HOST points at a rootless daemon. Container uid 0 then maps to the

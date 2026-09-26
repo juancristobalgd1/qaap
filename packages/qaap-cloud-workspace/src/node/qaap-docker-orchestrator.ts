@@ -29,6 +29,11 @@ import {
 } from './qaap-docker-control-plane';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
+import {
+    QAAP_TENANT_AGENT_STORAGE_DIRNAME,
+    QAAP_TENANT_AGENT_STORAGE_ROOT_ENV,
+    QaapTenantAgentStorageEnv,
+} from './qaap-tenant-agent-storage-env';
 
 const QAAP_CONTAINER_PREFIX = 'qaap-ws-';
 const QAAP_TENANT_NETWORK_PREFIX = 'qaap-net-';
@@ -47,8 +52,11 @@ const TENANT_BACKEND_LOGS_MOUNT = `${TENANT_BACKEND_THEIA_HOME_MOUNT}/logs`;
 const TENANT_BACKEND_SQLITE_STORE_PATH = `${TENANT_BACKEND_QAAP_HOME_MOUNT}/tenant.sqlite`;
 // Agent CLIs such as Copilot extract native addons under HOME. Keep the worker scratch space
 // executable while retaining the other hardening flags; a noexec tmpfs makes those addons look
-// missing even when the extracted .node file is present.
-const TENANT_TMPFS_OPTIONS = 'rw,exec,nosuid,nodev,size=512m';
+// missing even when the extracted .node file is present. The size is configurable through
+// QAAP_TENANT_TMPFS_SIZE (see getTenantTmpfsOptions); tmpfs pages are charged to the container's
+// memory cgroup, so it must stay well below QAAP_TENANT_MEMORY_LIMIT.
+const TENANT_TMPFS_BASE_OPTIONS = 'rw,exec,nosuid,nodev';
+const TENANT_TMPFS_DEFAULT_SIZE = '512m';
 // Plugin session logs are disposable runtime state. Keeping them on a tmpfs prevents a
 // rootless-runtime UID migration from making Theia's asynchronous old-log cleanup fail with
 // EACCES on a directory that was created by an older worker namespace.
@@ -796,7 +804,7 @@ export class QaapDockerOrchestrator {
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
                     ReadonlyRootfs: true,
-                    Tmpfs: { '/tmp': TENANT_TMPFS_OPTIONS },
+                    Tmpfs: { '/tmp': this.getTenantTmpfsOptions() },
                     NetworkMode: networkMode,
                     AutoRemove: false,
                 },
@@ -904,6 +912,9 @@ export class QaapDockerOrchestrator {
                 `QAAP_TENANT_BACKEND_SECRET=${secret}`,
                 `QAAP_TENANT_LOGIN=${ownerLogin}`,
                 `QAAP_SQLITE_STORE_PATH=${TENANT_BACKEND_SQLITE_STORE_PATH}`,
+                // Agent processes inside the backend keep HOME on the /tmp tmpfs but put package
+                // caches and harness databases on this tenant's disk-backed config mount.
+                `${QAAP_TENANT_AGENT_STORAGE_ROOT_ENV}=${this.getTenantBackendAgentStorageRoot()}`,
                 `HOME=${TENANT_BACKEND_QAAP_HOME_MOUNT.replace('/.qaap', '')}`,
                 'USER=theia',
                 'LOGNAME=theia',
@@ -963,7 +974,7 @@ export class QaapDockerOrchestrator {
                     CapDrop: ['ALL'],
                     ReadonlyRootfs: true,
                     Tmpfs: {
-                        '/tmp': TENANT_TMPFS_OPTIONS,
+                        '/tmp': this.getTenantTmpfsOptions(),
                         [TENANT_BACKEND_LOGS_MOUNT]: TENANT_BACKEND_LOGS_TMPFS_OPTIONS,
                     },
                     NetworkMode: networkMode,
@@ -1112,6 +1123,7 @@ export class QaapDockerOrchestrator {
             `QAAP_TENANT_BACKEND_SECRET=${this.tenantBackendSecret(ownerLogin)}`,
             `QAAP_TENANT_LOGIN=${ownerLogin}`,
             `QAAP_SQLITE_STORE_PATH=${TENANT_BACKEND_SQLITE_STORE_PATH}`,
+            `${QAAP_TENANT_AGENT_STORAGE_ROOT_ENV}=${this.getTenantBackendAgentStorageRoot()}`,
             `HOME=${TENANT_BACKEND_QAAP_HOME_MOUNT.replace('/.qaap', '')}`,
             'USER=theia',
             'LOGNAME=theia',
@@ -1148,7 +1160,7 @@ export class QaapDockerOrchestrator {
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.ReadonlyRootfs === true
-            && hostConfig.Tmpfs?.['/tmp'] === TENANT_TMPFS_OPTIONS
+            && hostConfig.Tmpfs?.['/tmp'] === this.getTenantTmpfsOptions()
             && hostConfig.Tmpfs?.[TENANT_BACKEND_LOGS_MOUNT] === TENANT_BACKEND_LOGS_TMPFS_OPTIONS
             && hostConfig.Privileged !== true
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
@@ -1404,7 +1416,7 @@ export class QaapDockerOrchestrator {
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.ReadonlyRootfs === true
-            && hostConfig.Tmpfs?.['/tmp'] === TENANT_TMPFS_OPTIONS
+            && hostConfig.Tmpfs?.['/tmp'] === this.getTenantTmpfsOptions()
             && hostConfig.Privileged !== true
             // Docker Desktop reports the default IPC namespace as `private`; reject only
             // host/container namespace sharing, not the safe private default.
@@ -1494,6 +1506,37 @@ export class QaapDockerOrchestrator {
         return Number.isInteger(num) && num > 0 ? num : 2 * 1024 * 1024 * 1024;
     }
 
+    /**
+     * Mount options of the tenant `/tmp` tmpfs (which also holds the tenant HOME). The size comes
+     * from `QAAP_TENANT_TMPFS_SIZE` (`<n>[k|m|g]`, default 512m). Values that are malformed or not
+     * below half of the container memory limit fall back to the default: tmpfs pages are charged to
+     * the container memory cgroup, so a larger tmpfs would let a full `/tmp` OOM-kill the tenant.
+     */
+    protected getTenantTmpfsOptions(): string {
+        return `${TENANT_TMPFS_BASE_OPTIONS},size=${this.getTenantTmpfsSize()}`;
+    }
+
+    protected getTenantTmpfsSize(): string {
+        const raw = process.env.QAAP_TENANT_TMPFS_SIZE?.trim().toLowerCase();
+        if (!raw) {
+            return TENANT_TMPFS_DEFAULT_SIZE;
+        }
+        const match = /^(\d+)([kmg]?)$/.exec(raw);
+        const multiplier = match ? { '': 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[match[2] as '' | 'k' | 'm' | 'g'] : 0;
+        const bytes = match ? Number.parseInt(match[1], 10) * multiplier : 0;
+        if (!match || bytes <= 0 || bytes > this.getTenantMemoryLimit() / 2) {
+            if (!this.warnedInvalidTmpfsSize) {
+                this.warnedInvalidTmpfsSize = true;
+                console.warn(`[qaap-docker] Ignoring QAAP_TENANT_TMPFS_SIZE=${raw}: expected <n>[k|m|g] no larger than half of `
+                    + `QAAP_TENANT_MEMORY_LIMIT; using ${TENANT_TMPFS_DEFAULT_SIZE}.`);
+            }
+            return TENANT_TMPFS_DEFAULT_SIZE;
+        }
+        return `${match[1]}${match[2]}`;
+    }
+
+    protected warnedInvalidTmpfsSize = false;
+
     protected getTenantCpuLimit(): number {
         const raw = process.env.QAAP_TENANT_CPU_LIMIT?.trim();
         const num = raw ? Number.parseFloat(raw) : Number.NaN;
@@ -1548,6 +1591,16 @@ export class QaapDockerOrchestrator {
             ? 0
             : this.parsePositiveInteger(process.env.QAAP_TENANT_CONTAINER_GID, uid);
         return `${uid}:${gid}`;
+    }
+
+    /**
+     * In-container agent storage root for tenant backends: a directory on the tenant's private,
+     * disk-backed config mount, or `off` when the operator disabled the relocation on the control plane.
+     */
+    protected getTenantBackendAgentStorageRoot(): string {
+        return QaapTenantAgentStorageEnv.isDisabled(process.env[QAAP_TENANT_AGENT_STORAGE_ROOT_ENV])
+            ? 'off'
+            : path.posix.join(TENANT_BACKEND_QAAP_HOME_MOUNT, QAAP_TENANT_AGENT_STORAGE_DIRNAME);
     }
 
     protected getTenantContainerHome(): string {
