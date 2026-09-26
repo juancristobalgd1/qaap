@@ -27,7 +27,7 @@ import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/brows
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import * as sinon from 'sinon';
-import { fallBackFromSupersededTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
+import { fallBackFromSupersededTranscriptPreviewExtracted, handleUnavailableTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
 import { USER_NAVIGATED_PREVIEW_CLASS } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 import { TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS, TRANSCRIPT_PREVIEW_TAB_PROBE_MS } from './mobile-projects-transcript-surfaces-ui-activity';
 import { firstInPriorityOrder } from './mobile-projects-transcript-surfaces-ui-thought-brief';
@@ -717,5 +717,152 @@ describe('MobileProjectsTranscriptSurfacesUi — preview identity watch backoff'
         // The listener went with the timer: a second visibility change does nothing.
         document.dispatchEvent(new window.Event('visibilitychange'));
         expect(ui.verifications).to.equal(1);
+    });
+});
+
+class LossTrackingTranscriptSurfacesUi extends FallbackTrackingTranscriptSurfacesUi {
+    tabProbes = 0;
+    identityWatches = 0;
+    mounted: string[] = [];
+    restarts: Array<{ readonly allowAgentFallback?: boolean } | undefined> = [];
+
+    override scheduleTranscriptPreviewTabProbe(): void {
+        this.tabProbes += 1;
+    }
+
+    override scheduleTranscriptPreviewIdentityWatch(): void {
+        this.identityWatches += 1;
+    }
+
+    override async tryMountProjectScopedPreview(_host: HTMLElement, _project: MobileProjectEntry, _summary: QaapAgentConversationSummaryDTO,
+        _latest: MobileProjectEntry, url: string): Promise<void> {
+        this.mounted.push(url);
+    }
+
+    override async requestTranscriptPreview(_project: MobileProjectEntry, _summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly allowAgentFallback?: boolean }): Promise<void> {
+        this.restarts.push(options);
+    }
+
+    override bootstrapAppliesToProject(): boolean {
+        return false;
+    }
+}
+
+describe('MobileProjectsTranscriptSurfacesUi — unavailable preview causes', () => {
+
+    useSuiteJSDOM();
+
+    const STALE_URL = 'http://localhost/qaap-preview/p-old/';
+    const globals = globalThis as unknown as { fetch: typeof fetch };
+    let originalFetch: typeof fetch;
+    let snackbar: sinon.SinonStub;
+
+    beforeEach(() => {
+        snackbar = sinon.stub(MobileSnackbar, 'show');
+        originalFetch = globals.fetch;
+    });
+
+    afterEach(() => {
+        snackbar.restore();
+        globals.fetch = originalFetch;
+        document.body.replaceChildren();
+    });
+
+    /** `/qaap-dev/api/current` answers with `body` (404 without one). */
+    function answerCurrentClaim(body?: unknown): void {
+        globals.fetch = (() => Promise.resolve(body === undefined
+            ? new Response(JSON.stringify({ ready: false, previewUrl: '' }), { status: 404 })
+            : new Response(JSON.stringify(body), { status: 200 }))) as typeof fetch;
+    }
+
+    function setup(options: { showingPage: boolean }): { ui: LossTrackingTranscriptSurfacesUi; previewHost: HTMLElement; live?: HTMLElement } {
+        const host = buildIdlePreviewHost();
+        Object.assign(host, {
+            projects: [{ ...sampleProject(), previewUrl: STALE_URL }],
+            projectsService: { getProjectCwd: () => undefined, recordProjectPreviewUrl: () => Promise.resolve() },
+            preparedCwdByProjectId: new Map<string, string>(),
+        });
+        const ui = new LossTrackingTranscriptSurfacesUi(host, historyUiStub);
+        ui.transcriptPreviewProjectId = sampleProject().id;
+        const previewHost = host.transcriptPreviewHost!;
+        let live: HTMLElement | undefined;
+        if (options.showingPage) {
+            live = document.createElement('div');
+            previewHost.append(live);
+            host.transcriptEmbeddedPreview = { root: live } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        }
+        return { ui, previewHost, live };
+    }
+
+    function overlay(ui: MobileProjectsTranscriptSurfacesUi): HTMLElement | undefined {
+        return ui.host.transcriptEmbeddedPreview?.root.querySelector<HTMLElement>('.theia-mobile-transcript-preview-empty-overlay') ?? undefined;
+    }
+
+    it('keeps a showing page when the backend is only unreachable', async () => {
+        const { ui, previewHost, live } = setup({ showingPage: true });
+        answerCurrentClaim();
+
+        await handleUnavailableTranscriptPreviewExtracted(ui, previewHost, ui.host.projects[0], sampleSummary(), ui.host.projects[0], STALE_URL, 'unreachable');
+
+        expect(live!.isConnected).to.equal(true);
+        expect(ui.host.projects[0].previewUrl).to.equal(STALE_URL);
+        expect(ui.identityWatches).to.equal(1);
+        expect(snackbar.called).to.equal(false);
+    });
+
+    it('swaps silently to a newer live claim', async () => {
+        const { ui, previewHost, live } = setup({ showingPage: true });
+        answerCurrentClaim({ ready: true, previewUrl: 'http://localhost/qaap-preview/p-new/', previewId: 'p-new', conversationId: sampleSummary().id });
+
+        await handleUnavailableTranscriptPreviewExtracted(ui, previewHost, ui.host.projects[0], sampleSummary(), ui.host.projects[0], STALE_URL, 'dead');
+
+        expect(ui.mounted).to.deep.equal(['http://localhost/qaap-preview/p-new/']);
+        expect(live!.isConnected).to.equal(true);
+        expect(snackbar.called).to.equal(false);
+    });
+
+    it('explains a stopped dev server and offers to restart it instead of "replaced by a newer run"', async () => {
+        const { ui, previewHost, live } = setup({ showingPage: true });
+        answerCurrentClaim();
+
+        await handleUnavailableTranscriptPreviewExtracted(ui, previewHost, ui.host.projects[0], sampleSummary(), ui.host.projects[0], STALE_URL, 'dead');
+
+        expect(live!.isConnected).to.equal(false);
+        expect(ui.host.projects[0].previewUrl).to.equal(undefined);
+        expect(ui.rediscoveries).to.equal(0);
+        expect(ui.tabProbes).to.equal(1);
+        expect(snackbar.calledOnce).to.equal(true);
+        expect(snackbar.firstCall.args[0]).to.equal('The dev server for this project stopped.');
+        const notice = snackbar.firstCall.args[1] as { actionLabel?: string; onAction?: () => void };
+        expect(notice.actionLabel).to.equal('Restart dev server');
+        notice.onAction?.();
+        const stopped = overlay(ui);
+        expect(stopped?.classList.contains('theia-mod-preview-stopped')).to.equal(true);
+        stopped?.querySelector<HTMLButtonElement>('button')?.click();
+        expect(ui.restarts).to.deep.equal([{ allowAgentFallback: false }, { allowAgentFallback: false }]);
+    });
+
+    it('shows the stopped state with a restart action on an empty Preview tab, without a snackbar', async () => {
+        const { ui, previewHost } = setup({ showingPage: false });
+        answerCurrentClaim();
+
+        await handleUnavailableTranscriptPreviewExtracted(ui, previewHost, ui.host.projects[0], sampleSummary(), ui.host.projects[0], STALE_URL, 'dead');
+
+        expect(overlay(ui)?.classList.contains('theia-mod-preview-stopped')).to.equal(true);
+        expect(overlay(ui)?.querySelector('button')?.textContent).to.equal('Restart dev server');
+        expect(snackbar.called).to.equal(false);
+    });
+
+    it('shows the starting state and follows a successor claim that is still booting', async () => {
+        const { ui, previewHost } = setup({ showingPage: false });
+        answerCurrentClaim({ ready: false, previewUrl: 'http://localhost/qaap-preview/p-next/', previewId: 'p-next', conversationId: sampleSummary().id });
+
+        await handleUnavailableTranscriptPreviewExtracted(ui, previewHost, ui.host.projects[0], sampleSummary(), ui.host.projects[0], STALE_URL, 'dead');
+
+        expect(overlay(ui)?.classList.contains('theia-mod-preview-starting')).to.equal(true);
+        expect(ui.host.projects[0].previewUrl).to.equal('http://localhost/qaap-preview/p-next/');
+        expect(ui.tabProbes).to.equal(1);
+        expect(snackbar.called).to.equal(false);
     });
 });

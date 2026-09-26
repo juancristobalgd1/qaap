@@ -23,7 +23,9 @@ import {
     type QaapGithubCreateRepositoryRequest,
     type QaapGithubMergePullRequestRequest,
     type QaapGithubOpenRepositoryRequest,
+    type QaapGithubOpenRepositoryResponse,
     type QaapGithubRepositorySummary,
+    type QaapGithubWorkspaceJobRequest,
     type QaapProjectSessionSummary,
     type QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -48,6 +50,7 @@ import {
 import {
     createGithubRepository,
     exchangeGithubCode,
+    fetchGithubPullRequestDetail,
     fetchGithubPullRequests,
     fetchGithubRepositories,
     fetchGithubRepository,
@@ -55,6 +58,8 @@ import {
     mergeGithubPullRequest,
 } from './qaap-github-api';
 import { seedEmptyRepository } from './qaap-github-seed-empty-repository';
+import { QaapGithubPullRequestSearchService } from './qaap-github-pull-request-search-service';
+import { parseGithubPullRequestStateFilter } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -62,6 +67,17 @@ import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
 import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
+import {
+    QaapGitProgressParser,
+    describeRepositoryImportFailure,
+    summarizeGitFailure,
+    type QaapWorkspaceProgressReporter,
+} from './qaap-git-clone-progress';
+import {
+    QaapGithubWorkspaceJobError,
+    QaapGithubWorkspaceJobRegistry,
+    type QaapGithubWorkspaceJobContext,
+} from './qaap-github-workspace-jobs';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -73,6 +89,13 @@ const GIT_OPERATION_TIMEOUT_MS = 120_000;
  * 210 s open/clone/create timeout, so the user gets this server's error instead of a client abort.
  */
 const WORKSPACE_PREPARE_TIMEOUT_MS = 150_000;
+/**
+ * Background imports (`/workspace-jobs`) are not bound to one HTTP request or the tenant proxy's
+ * budget, so a large repository gets a longer overall deadline; the user can cancel at any time.
+ */
+const WORKSPACE_JOB_TIMEOUT_MS = 15 * 60_000;
+/** Staging directories older than this belong to a crashed or abandoned clone and are removed. */
+const STALE_CLONE_STAGING_MS = 30 * 60_000;
 
 /** Bounds shared by the git calls of one request. */
 interface QaapGitRunOptions {
@@ -80,6 +103,17 @@ interface QaapGitRunOptions {
     readonly deadline?: number;
     /** Aborted when the HTTP request that asked for the work went away (browser or proxy gave up). */
     readonly signal?: AbortSignal;
+    /** Per-call cap overriding {@link QaapGithubOauthEndpoint.gitOperationTimeoutMs} (background jobs). */
+    readonly operationTimeoutMs?: number;
+    /** Receives raw stderr chunks, e.g. `--progress` output. */
+    readonly onStderr?: (chunk: string) => void;
+}
+
+/** Progress + budget for one workspace preparation. */
+interface QaapWorkspacePrepareOptions {
+    readonly report?: QaapWorkspaceProgressReporter;
+    /** Overall deadline for the preparation; defaults to {@link WORKSPACE_PREPARE_TIMEOUT_MS}. */
+    readonly timeoutMs?: number;
 }
 const GIT_MAX_OUTPUT = 16 * 1024 * 1024;
 
@@ -119,6 +153,14 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     protected readonly workspacePrepareTimeoutMs = WORKSPACE_PREPARE_TIMEOUT_MS;
 
+    /** Cached GitHub search behind the Work Hub "all pull requests" navigator. */
+    protected readonly pullRequestSearch = new QaapGithubPullRequestSearchService();
+
+    protected readonly workspaceJobTimeoutMs = WORKSPACE_JOB_TIMEOUT_MS;
+
+    @inject(QaapGithubWorkspaceJobRegistry) @optional()
+    protected readonly workspaceJobs: QaapGithubWorkspaceJobRegistry | undefined;
+
     configure(app: Application): void {
         app.use(json());
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
@@ -130,6 +172,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleGithubRepositories(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleCreateGithubRepository(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories/open`, (req, res) => this.handleCloneGithubRepository(req, res));
+        app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleStartWorkspaceJob(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleListWorkspaceJobs(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id`, (req, res) => this.handleGetWorkspaceJob(req, res));
+        app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id/cancel`, (req, res) => this.handleCancelWorkspaceJob(req, res));
         // POST, not GET: opening clones/pulls to disk, and SameSite=Lax only shields non-GET
         // requests from cross-site initiation (a top-level GET navigation would send the cookie).
         app.post(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, (req, res) => this.handleOpenGithubRepository(req, res));
@@ -137,6 +183,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             void this.handleDeleteGithubRepository(req, res);
         });
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, (req, res) => this.handleGithubPullRequests(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, (req, res) => this.handleSearchGithubPullRequests(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, (req, res) => this.handleGithubPullRequestDetail(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, (req, res) => this.handleMergeGithubPullRequest(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleUpsertProjectSession(req, res));
@@ -457,6 +505,78 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
     }
 
+    /**
+     * All pull requests (open, merged, closed) across the user's repositories, organizations and
+     * involvement, paged via GitHub search. `state=all|open|merged|closed`, `page` is 1-based,
+     * `repos=owner/name,...` adds Work Hub project repositories, `force=1` skips the fresh cache.
+     */
+    protected async handleSearchGithubPullRequests(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in', signedIn: false, pullRequests: [], page: 1, hasMore: false });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            // Local dev without GitHub auth: nothing to search, but not a sign-in prompt either.
+            res.json({ pullRequests: [], page: 1, hasMore: false, signedIn: true });
+            return;
+        }
+        const stored = auth.session;
+        const page = Number.parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10);
+        try {
+            const response = await this.pullRequestSearch.search({
+                accessToken: stored.accessToken,
+                login: stored.user.login,
+                state: parseGithubPullRequestStateFilter(req.query.state),
+                page: Number.isInteger(page) && page > 0 ? page : 1,
+                repositories: this.parseGithubReposQuery(req.query.repos).map(repo => repo.fullName),
+                force: req.query.force === '1',
+            });
+            if (response.rateLimited && response.pullRequests.length === 0) {
+                res.status(429).json({ ...response, error: 'GitHub search rate limit reached. Try again in a minute.' });
+                return;
+            }
+            res.json(response);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to search pull requests';
+            res.status(502).json({ error: message, signedIn: true, pullRequests: [], page: 1, hasMore: false });
+        }
+    }
+
+    /** Full detail (branches, stats, files) for a pull request surfaced by the search listing. */
+    protected async handleGithubPullRequestDetail(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            res.status(503).json({ error: 'GitHub sign-in required' });
+            return;
+        }
+        const segment = (value: unknown): string | undefined => {
+            try {
+                return this.cleanGithubPathSegment(typeof value === 'string' ? value : undefined);
+            } catch {
+                return undefined;
+            }
+        };
+        const owner = segment(req.query.owner);
+        const repo = segment(req.query.repo);
+        const number = Number(req.query.number);
+        if (!owner || !repo || !Number.isInteger(number) || number <= 0) {
+            res.status(400).json({ error: 'Invalid pull request' });
+            return;
+        }
+        try {
+            const pullRequest = await fetchGithubPullRequestDetail(auth.session.accessToken, owner, repo, number);
+            res.json({ pullRequest });
+        } catch (err) {
+            const status = (err as { status?: number }).status;
+            res.status(status === 404 ? 404 : 502).json({ error: err instanceof Error ? err.message : 'Failed to load pull request' });
+        }
+    }
+
     /** `repos=owner/name,owner2/name2` — Work Hub inbox scans multiple GitHub repositories. */
     protected parseGithubReposQuery(raw: unknown): QaapGithubRepositorySummary[] {
         if (typeof raw !== 'string' || !raw.trim()) {
@@ -524,6 +644,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 return;
             }
             const result = await mergeGithubPullRequest(stored.accessToken, { owner, repo, number });
+            // The merged PR must not keep showing as open in the cached all-PRs listing.
+            this.pullRequestSearch.invalidateUser(stored.user.login);
             res.json(result);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to merge pull request';
@@ -737,6 +859,148 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
     }
 
+    /**
+     * Start a background import. Validation and authentication answer synchronously; the GitHub
+     * lookup, clone/fetch and registration run in a job the browser polls, so the dialog can show
+     * phases + git progress, be closed without killing the clone, and cancel explicitly.
+     */
+    protected handleStartWorkspaceJob(req: Request, res: Response): void {
+        const registry = this.workspaceJobs;
+        if (!registry) {
+            res.status(404).json({ error: 'Background repository imports are not available' });
+            return;
+        }
+        const auth = this.auth.authenticate(req);
+        const body = (req.body ?? {}) as Partial<Record<'kind' | 'repository' | 'owner' | 'name', unknown>>;
+        const kind = body.kind === 'open' || body.kind === 'clone' ? body.kind : undefined;
+        let target: { owner: string; name: string } | undefined;
+        if (kind === 'clone') {
+            target = this.parseGithubRepositoryInput(typeof body.repository === 'string' ? body.repository : '');
+        } else if (kind === 'open') {
+            const owner = this.cleanGithubPathSegment(typeof body.owner === 'string' ? body.owner : undefined);
+            const name = this.cleanGithubPathSegment(typeof body.name === 'string' ? body.name : undefined);
+            target = owner && name ? { owner, name } : undefined;
+        }
+        if (!kind || !target) {
+            res.status(400).json({ error: 'Enter a GitHub repository as owner/name or URL' });
+            return;
+        }
+        if (kind === 'open' && auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (kind === 'open' && auth.kind === 'skip') {
+            res.status(503).json({ error: 'GitHub sign-in required' });
+            return;
+        }
+        const identity = {
+            accessToken: auth.kind === 'authenticated' ? auth.session.accessToken : undefined,
+            userLogin: auth.kind === 'unauthorized' ? QAAP_ANONYMOUS_USER_LOGIN : auth.userLogin,
+            anonymous: auth.kind === 'unauthorized',
+        };
+        const repositoryRequest: QaapGithubWorkspaceJobRequest = kind === 'open'
+            ? { kind, owner: target.owner, name: target.name }
+            : { kind, repository: `${target.owner}/${target.name}` };
+        try {
+            const job = registry.start({
+                ownerKey: identity.anonymous ? undefined : identity.userLogin,
+                kind,
+                label: `${target.owner}/${target.name}`,
+                dedupeKey: `${target.owner}/${target.name}`,
+                describeError: err => this.describeWorkspaceJobError(err),
+            }, context => this.runWorkspaceJob(repositoryRequest, target!, identity, context));
+            res.status(202).json(job);
+        } catch (err) {
+            if (err instanceof QaapGithubWorkspaceJobError) {
+                res.status(429).json({ error: err.code ?? 'workspace_job_rejected', message: err.message });
+                return;
+            }
+            res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to start the repository import' });
+        }
+    }
+
+    protected handleGetWorkspaceJob(req: Request, res: Response): void {
+        const job = this.workspaceJobs?.get(this.workspaceJobOwnerKey(req), String(req.params.id ?? ''));
+        if (!job) {
+            res.status(404).json({ error: 'Repository import not found' });
+            return;
+        }
+        res.json(job);
+    }
+
+    protected handleListWorkspaceJobs(req: Request, res: Response): void {
+        res.json({ jobs: this.workspaceJobs?.list(this.workspaceJobOwnerKey(req)) ?? [] });
+    }
+
+    protected async handleCancelWorkspaceJob(req: Request, res: Response): Promise<void> {
+        const job = await this.workspaceJobs?.cancel(this.workspaceJobOwnerKey(req), String(req.params.id ?? ''));
+        if (!job) {
+            res.status(404).json({ error: 'Repository import not found' });
+            return;
+        }
+        res.json(job);
+    }
+
+    /** Owner of the caller's jobs; anonymous callers only reach jobs through their random id. */
+    protected workspaceJobOwnerKey(req: Request): string | undefined {
+        const auth = this.auth.authenticate(req);
+        return auth.kind === 'unauthorized' ? undefined : auth.userLogin;
+    }
+
+    protected async runWorkspaceJob(
+        request: QaapGithubWorkspaceJobRequest,
+        target: { owner: string; name: string },
+        identity: { accessToken: string | undefined; userLogin: string; anonymous: boolean },
+        context: QaapGithubWorkspaceJobContext,
+    ): Promise<QaapGithubOpenRepositoryResponse> {
+        context.report({ phase: 'resolving', percent: 2 });
+        let repository: QaapGithubRepositorySummary | undefined;
+        if (request.kind === 'open') {
+            repository = await this.resolveAccessibleRepository(identity.accessToken!, target.owner, target.name);
+            if (!repository) {
+                this.auth.logSecurityEvent('ownership_denied', {
+                    action: 'open_repository',
+                    userLogin: identity.userLogin,
+                    owner: target.owner,
+                    repo: target.name,
+                });
+                throw new QaapGithubWorkspaceJobError('You do not have access to this GitHub repository.', 'forbidden');
+            }
+        } else {
+            // Clone-by-URL accepts any public repository; GitHub enforces private access via the token.
+            repository = await this.fetchRepositoryForClone(identity.accessToken, target.owner, target.name);
+            if (identity.anonymous && repository.private) {
+                throw new QaapGithubWorkspaceJobError('Sign in with GitHub to clone private repositories.', 'sign_in_required');
+            }
+        }
+        context.relabel(repository.fullName);
+        if (context.signal.aborted) {
+            throw this.gitCancelledError();
+        }
+        let workspacePath: string;
+        try {
+            workspacePath = await this.ensureRepositoryWorkspace(repository, identity.accessToken, identity.userLogin, context.signal, {
+                report: context.report,
+                timeoutMs: this.workspaceJobTimeoutMs,
+            });
+        } catch (err) {
+            if (err instanceof QaapPlanRepoLimitError) {
+                throw new QaapGithubWorkspaceJobError(err.message, 'plan_repo_limit');
+            }
+            throw err;
+        }
+        context.report({ phase: 'registering', percent: 98 });
+        this.rememberGithubCloneSession(identity.userLogin, repository);
+        return { repository, workspaceUri: FileUri.create(workspacePath).toString() };
+    }
+
+    protected describeWorkspaceJobError(err: unknown): string {
+        if (err instanceof QaapGithubWorkspaceJobError) {
+            return err.message;
+        }
+        return describeRepositoryImportFailure(err instanceof Error ? err.message : String(err));
+    }
+
     protected cleanGithubPathSegment(value: string | undefined): string | undefined {
         const decoded = typeof value === 'string' ? decodeURIComponent(value).trim() : '';
         if (!/^[A-Za-z0-9_.-]+$/.test(decoded)) {
@@ -835,10 +1099,20 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         accessToken: string | undefined,
         userLogin: string,
         signal?: AbortSignal,
+        prepare: QaapWorkspacePrepareOptions = {},
     ): Promise<string> {
-        const gitOptions: QaapGitRunOptions = { deadline: Date.now() + this.workspacePrepareTimeoutMs, signal };
+        const report: QaapWorkspaceProgressReporter = prepare.report ?? (() => undefined);
+        const timeoutMs = prepare.timeoutMs ?? this.workspacePrepareTimeoutMs;
+        const gitOptions: QaapGitRunOptions = {
+            deadline: Date.now() + timeoutMs,
+            signal,
+            // A background job owns its whole budget; the per-call cap only protects request-bound work.
+            ...(prepare.timeoutMs !== undefined ? { operationTimeoutMs: timeoutMs } : {}),
+        };
         const target = resolveRepositoryWorkspacePath(this.reposRoot, userLogin, repository.owner, repository.name);
+        report({ phase: 'preparing', percent: 4 });
         await fs.mkdir(path.dirname(target), { recursive: true });
+        await this.removeStaleCloneStaging(target);
         if (await this.isGitRepository(target)) {
             // SEC-1/C-3: `fetch` updates refs + downloads objects with NO checkout and NO filters, so it
             // is safe to run as the backend uid (root in prod). The former `pull --ff-only` here CHECKED
@@ -846,7 +1120,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             // (from the repo's own .git/config) as ROOT, i.e. a root-RCE. We deliberately do NOT check
             // out in the open flow: the working tree fast-forwards on the tenant's next git operation
             // (agent / terminal), which runs UNDER THE TENANT UID and is therefore safe. See SECURITY.md.
-            await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken, target, gitOptions);
+            report({ phase: 'fetching', percent: 5 });
+            const fetchProgress = new QaapGitProgressParser('fetch', report);
+            await this.runGit(['-C', target, 'fetch', '--all', '--prune', '--progress'], accessToken, target, {
+                ...gitOptions,
+                onStderr: chunk => fetchProgress.push(chunk),
+            });
             return target;
         }
         const targetExists = await this.pathExists(target);
@@ -858,20 +1137,31 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         // git (notably inside a tenant container, where killing the exec client does not stop it) may keep
         // writing after we gave up; it must never leave a half-written `.git` at the path the next open
         // trusts as a repository. Dot-prefixed names are skipped by repo listings and invalid repo names.
-        const staging = path.join(path.dirname(target), `.qaap-clone-${path.basename(target)}-${randomBytes(4).toString('hex')}`);
+        const staging = path.join(path.dirname(target), `${this.cloneStagingPrefix(target)}${randomBytes(4).toString('hex')}`);
+        report({ phase: 'cloning', percent: 5 });
+        const cloneProgress = new QaapGitProgressParser('clone', report);
         try {
-            await this.runGit(['clone', repository.cloneUrl, path.basename(staging)], accessToken, path.dirname(target), gitOptions);
-            if (targetExists) {
-                await fs.rmdir(target);
-            }
-            await fs.rename(staging, target);
-        } catch (err) {
-            await fs.rm(staging, { recursive: true, force: true }).catch(cleanupErr => {
-                console.warn(
-                    '[qaap-oauth] Failed to remove incomplete clone workspace:',
-                    cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-                );
+            await this.runGit(['clone', '--progress', repository.cloneUrl, path.basename(staging)], accessToken, path.dirname(target), {
+                ...gitOptions,
+                onStderr: chunk => cloneProgress.push(chunk),
             });
+            report({ phase: 'finalizing', percent: 95 });
+            if (targetExists) {
+                await fs.rmdir(target).catch(() => undefined);
+            }
+            try {
+                await fs.rename(staging, target);
+            } catch (renameErr) {
+                // A concurrent import of the same repository (another tab, or a job racing a direct
+                // open) finished first: its clone is as good as ours, so keep it and drop ours.
+                if (await this.isGitRepository(target)) {
+                    await this.removeCloneStaging(staging);
+                    return target;
+                }
+                throw renameErr;
+            }
+        } catch (err) {
+            await this.removeCloneStaging(staging);
             throw err;
         }
         try {
@@ -881,6 +1171,51 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
         }
         return target;
+    }
+
+    /** Hidden sibling name prefix used for the staging clone of `target`. */
+    protected cloneStagingPrefix(target: string): string {
+        return `.qaap-clone-${path.basename(target)}-`;
+    }
+
+    protected async removeCloneStaging(staging: string): Promise<void> {
+        await fs.rm(staging, { recursive: true, force: true }).catch(cleanupErr => {
+            console.warn(
+                '[qaap-oauth] Failed to remove incomplete clone workspace:',
+                cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+            );
+        });
+    }
+
+    /**
+     * Remove staging clones of `target` left behind by a crash or by a cancelled git that kept
+     * writing inside the tenant worker after its cleanup ran. Recent ones may still belong to a
+     * running import and are kept.
+     */
+    protected async removeStaleCloneStaging(target: string): Promise<void> {
+        const parent = path.dirname(target);
+        const prefix = this.cloneStagingPrefix(target);
+        let entries: string[];
+        try {
+            entries = await fs.readdir(parent);
+        } catch {
+            return;
+        }
+        const cutoff = Date.now() - STALE_CLONE_STAGING_MS;
+        for (const entry of entries) {
+            if (!entry.startsWith(prefix)) {
+                continue;
+            }
+            const candidate = path.join(parent, entry);
+            try {
+                const stat = await fs.stat(candidate);
+                if (stat.mtimeMs < cutoff) {
+                    await this.removeCloneStaging(candidate);
+                }
+            } catch {
+                // Raced with another cleanup.
+            }
+        }
     }
 
     /** Count on-disk git clones under the user's repos root (active repos for plan limits). */
@@ -1001,8 +1336,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /** Absolute deadline for one git call: the per-operation cap, or the shared deadline if sooner. */
-    protected resolveGitDeadline(deadline: number | undefined): number {
-        const capped = Date.now() + this.gitOperationTimeoutMs;
+    protected resolveGitDeadline(deadline: number | undefined, operationTimeoutMs = this.gitOperationTimeoutMs): number {
+        const capped = Date.now() + operationTimeoutMs;
         return deadline === undefined ? capped : Math.min(capped, deadline);
     }
 
@@ -1046,7 +1381,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         extraEnv: NodeJS.ProcessEnv = {},
     ): Promise<string> {
         const { signal } = options;
-        const effectiveDeadline = this.resolveGitDeadline(options.deadline);
+        const effectiveDeadline = this.resolveGitDeadline(options.deadline, options.operationTimeoutMs);
         if (signal?.aborted) {
             return Promise.reject(this.gitCancelledError());
         }
@@ -1082,7 +1417,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 stdout += String(chunk);
             });
             child.stderr?.on('data', chunk => {
-                stderr += String(chunk);
+                const text = String(chunk);
+                stderr += text;
+                options.onStderr?.(text);
             });
             child.on('error', err => complete(() => reject(err)));
             child.on('close', code => {
@@ -1090,7 +1427,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                     if (code === 0) {
                         resolve(stdout);
                     } else {
-                        reject(new Error(stderr.trim() || `git exited with status ${code}`));
+                        reject(new Error(summarizeGitFailure(stderr, code)));
                     }
                 });
             });
@@ -1139,7 +1476,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         // One deadline covers preparing the tenant worker (Docker ensure can hang) and git itself.
         const { signal } = options;
-        const deadline = this.resolveGitDeadline(options.deadline);
+        const deadline = this.resolveGitDeadline(options.deadline, options.operationTimeoutMs);
         const timeoutError = (): Error => this.gitTimeoutError();
         if (signal?.aborted) {
             throw this.gitCancelledError();
@@ -1214,6 +1551,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                     stdout += value;
                 } else {
                     stderr += value;
+                    options.onStderr?.(value);
                 }
                 if (stdout.length + stderr.length > GIT_MAX_OUTPUT) {
                     child.kill();
@@ -1227,7 +1565,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 if (code === 0) {
                     resolve(stdout);
                 } else {
-                    reject(new Error(stderr.trim() || `git exited with status ${code}`));
+                    reject(new Error(summarizeGitFailure(stderr, code)));
                 }
             }));
             timeout = setTimeout(() => {

@@ -9,6 +9,8 @@ import {
     QAAP_IDENTITY_PREVIEW_PROBE_PATH,
     buildQaapDevPreviewOpenUrl,
     buildQaapIdentityPreviewUrl,
+    isQaapDevPreviewClaimState,
+    type QaapDevPreviewClaimState,
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 
@@ -199,35 +201,72 @@ export async function fetchQaapCurrentDevPreview(
 }
 
 /** Resolves an owner-authorized execution preview without exposing its reserved port. */
+/**
+ * Maps an identity-probe HTTP outcome to a {@link QaapDevPreviewClaimState}. Only a 403 (no claim
+ * for this user) or an explicit backend `state` is definitive; network errors, timeouts and
+ * non-403 error statuses (5xx/503 while a tenant backend cold-starts, 404 on an older router)
+ * are `unknown` — transient, never evidence that the preview is dead.
+ */
+export function resolveQaapIdentityProbeState(
+    outcome: { readonly status: number; readonly body?: { readonly ready?: unknown; readonly state?: unknown } } | 'network-error',
+): QaapDevPreviewClaimState {
+    if (outcome === 'network-error') {
+        return 'unknown';
+    }
+    if (outcome.status === 403) {
+        return 'gone';
+    }
+    if (outcome.status < 200 || outcome.status >= 300 || !outcome.body) {
+        return 'unknown';
+    }
+    if (isQaapDevPreviewClaimState(outcome.body.state)) {
+        return outcome.body.state;
+    }
+    // Backends predating `state` answer 200 only for an existing claim.
+    return outcome.body.ready ? 'ready' : 'stopped';
+}
+
 export async function probeQaapIdentityPreview(previewId: string, signal?: AbortSignal): Promise<QaapDevPreviewProbeResponse> {
     const origin = getQaapPublicOrigin();
-    const fallback: QaapDevPreviewProbeResponse = {
+    const fallback = (state: QaapDevPreviewClaimState): QaapDevPreviewProbeResponse => ({
         ready: false,
         previewUrl: origin ? buildQaapIdentityPreviewUrl(origin, previewId) : '',
         previewId,
-    };
-    if (!origin || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(previewId)) {
-        return fallback;
+        state,
+    });
+    if (!origin) {
+        return fallback('unknown');
     }
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(previewId)) {
+        return fallback('gone');
+    }
+    let response: Response;
     try {
-        const response = await fetch(`${origin}${QAAP_IDENTITY_PREVIEW_PROBE_PATH}/${encodeURIComponent(previewId)}`, {
+        response = await fetch(`${origin}${QAAP_IDENTITY_PREVIEW_PROBE_PATH}/${encodeURIComponent(previewId)}`, {
             cache: 'no-store',
             signal: probeSignal(signal),
         });
-        if (!response.ok) {
-            return fallback;
-        }
-        const body = await response.json() as QaapDevPreviewProbeResponse;
-        return {
-            ready: !!body.ready,
-            readiness: body.ready ? 'transport_ready' : body.readiness === 'failed' ? 'failed' : undefined,
-            previewUrl: body.previewUrl || fallback.previewUrl,
-            previewId: typeof body.previewId === 'string' ? body.previewId : previewId,
-            workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
-            projectId: typeof body.projectId === 'string' ? body.projectId : undefined,
-            processId: typeof body.processId === 'string' ? body.processId : undefined,
-        };
     } catch {
-        return fallback;
+        return fallback('unknown');
     }
+    if (!response.ok) {
+        return fallback(resolveQaapIdentityProbeState({ status: response.status }));
+    }
+    let body: QaapDevPreviewProbeResponse;
+    try {
+        body = await response.json() as QaapDevPreviewProbeResponse;
+    } catch {
+        return fallback('unknown');
+    }
+    const state = resolveQaapIdentityProbeState({ status: response.status, body });
+    return {
+        ready: state === 'ready',
+        readiness: state === 'ready' ? 'transport_ready' : body.readiness === 'failed' ? 'failed' : undefined,
+        previewUrl: body.previewUrl || fallback(state).previewUrl,
+        previewId: typeof body.previewId === 'string' ? body.previewId : previewId,
+        workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
+        projectId: typeof body.projectId === 'string' ? body.projectId : undefined,
+        processId: typeof body.processId === 'string' ? body.processId : undefined,
+        state,
+    };
 }

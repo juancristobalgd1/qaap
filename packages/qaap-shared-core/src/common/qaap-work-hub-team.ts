@@ -179,6 +179,45 @@ export function buildTeamTree(members: readonly WorkHubTeamMember[]): WorkHubTea
     return { roots: sortTeamMembers(grouped.roots), childrenByParent: grouped.childrenByParent };
 }
 
+/**
+ * Restrict Team rows to one conversation "section": the conversation itself plus everything that
+ * transitively descends from it — isolated worktree forks / subagent conversations (`parentId` is
+ * the `forkedFromId`), a VPS leader task backing the conversation (its `id` equals the
+ * conversation id) and subtasks at any depth. Agents of other conversations — even in the same
+ * project — are excluded, so the per-conversation "N Working" pill and its expand list never
+ * reflect global activity. Ancestors of the open conversation are not part of its section.
+ */
+export function scopeTeamMembersToConversation(
+    members: readonly WorkHubTeamMember[],
+    conversationId: string | undefined,
+): WorkHubTeamMember[] {
+    const rootId = conversationId?.trim();
+    if (!rootId) {
+        return [];
+    }
+    const sectionIds = new Set<string>([rootId]);
+    const belongs = (member: WorkHubTeamMember): boolean =>
+        sectionIds.has(member.id)
+        || (!!member.conversationId && sectionIds.has(member.conversationId))
+        || (!!member.parentId && sectionIds.has(member.parentId));
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const member of members) {
+            if (!belongs(member)) {
+                continue;
+            }
+            for (const id of [member.id, member.conversationId, member.taskId]) {
+                if (id && !sectionIds.has(id)) {
+                    sectionIds.add(id);
+                    changed = true;
+                }
+            }
+        }
+    }
+    return members.filter(belongs);
+}
+
 export function filterTeamMembers(members: readonly WorkHubTeamMember[], query: string): WorkHubTeamMember[] {
     const normalized = query.trim().toLowerCase();
     if (!normalized) {

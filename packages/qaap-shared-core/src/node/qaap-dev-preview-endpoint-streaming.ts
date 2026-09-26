@@ -281,18 +281,24 @@ export async function handleIdentityProbeExtracted(ctx: QaapDevPreviewEndpointCo
         const previewId = req.params.previewId;
         const record = ctx.previewForRequest(req, previewId);
         if (!record) {
-            res.status(403).json({ ready: false, previewUrl: '', previewId } satisfies QaapDevPreviewProbeResponse);
+            // `gone`: no claim for this user — released, reaped, superseded, or lost on restart.
+            res.status(403).json({ ready: false, previewUrl: '', previewId, state: 'gone' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
         const previewUrl = ctx.buildIdentityPreviewUrl(req, record);
         if (ctx.isIdeListenPort(record.port)) {
-            res.json({ ready: false, previewUrl, previewId } satisfies QaapDevPreviewProbeResponse);
+            res.json({ ready: false, previewUrl, previewId, state: 'stopped' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
         const ready = await ctx.probeLocalDevServer(record.port);
+        // Additive `state` lets the Work Hub tell a claim still booting from a dev server that stopped.
+        const state = ready
+            ? 'ready' as const
+            : Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS ? 'booting' as const : 'stopped' as const;
         res.json({
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),
+            state,
             previewUrl,
             previewId,
             projectId: record.projectId,

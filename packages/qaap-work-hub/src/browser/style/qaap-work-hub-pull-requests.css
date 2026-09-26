@@ -187,6 +187,105 @@
   color: color-mix(in srgb, var(--theia-descriptionForeground, #8d8983) 82%, transparent);
 }
 
+/* All-PRs navigator: state chips, repo name, state badge and "Load more" footer. */
+.theia-mobile-work-hub-pull-request-status.theia-mod-closed { color: #f07178; }
+
+.theia-mobile-work-hub-pull-requests-state-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.theia-mobile-work-hub-pull-requests-state-chip {
+  min-height: 28px;
+  padding: 4px 11px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--theia-descriptionForeground, #9f9b95);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.theia-mobile-work-hub-pull-requests-state-chip:hover {
+  color: var(--theia-foreground, #f4f1e8);
+}
+
+.theia-mobile-work-hub-pull-requests-state-chip.theia-mod-active {
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 60%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 16%, transparent);
+  color: var(--theia-foreground, #f4f1e8);
+}
+
+.theia-mobile-work-hub-pull-request-repo {
+  color: var(--theia-foreground, #f4f1e8);
+  opacity: 0.82;
+}
+
+.theia-mobile-work-hub-pull-request-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.theia-mobile-work-hub-pull-request-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.theia-mobile-work-hub-pull-request-badge.theia-mod-open { color: #6bd48a; }
+.theia-mobile-work-hub-pull-request-badge.theia-mod-draft { color: #b0a7ff; }
+.theia-mobile-work-hub-pull-request-badge.theia-mod-merged { color: #c39af5; }
+.theia-mobile-work-hub-pull-request-badge.theia-mod-closed { color: #f07178; }
+
+.theia-mobile-work-hub-pull-requests-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px 4px;
+}
+
+.theia-mobile-work-hub-pull-requests-footer-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--theia-descriptionForeground, #8d8983);
+  font-size: 11px;
+  text-align: center;
+}
+
+.theia-mobile-work-hub-pull-requests-footer-note.theia-mod-error {
+  color: var(--theia-errorForeground, #f48771);
+}
+
+.theia-mobile-work-hub-pull-requests-load-more {
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+  color: var(--theia-foreground, #f4f1e8);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theia-mobile-work-hub-pull-requests-load-more:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+}
+
 .theia-mobile-work-hub-pull-requests-status-state {
   display: flex;
   flex-direction: column;

@@ -253,6 +253,8 @@ import {
     type WorkHubCatalogAction,
 } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import {
+    githubRepoKeysForProjects,
+    pullRequestKey,
     type MobileWorkHubInboxItem,
 } from './mobile-work-hub-inbox';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
@@ -1298,6 +1300,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.inboxStream?.start();
         this.subscribeToInboxStream();
         const refresh = this.refreshInboxPullRequests(undefined, true);
+        // Served from the backend's short-lived cache when fresh, so reopening stays rate-limit friendly.
+        void this.pullRequestsSidebarUi.reloadSearch(false);
         this.sessionsSidebar?.refreshList({ force: true });
         await refresh;
         this.sessionsSidebar?.refreshList({ force: true });
@@ -1320,6 +1324,28 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         if (this.visible) {
             this.render();
         }
+    }
+
+    /** Swap in the hydrated summary (branches, stats, files) of a PR opened from the all-PRs search. */
+    protected updatePullRequestDetail(pullRequest: QaapGithubPullRequestSummary): void {
+        const current = this.pullRequestDetail;
+        if (!current || pullRequestKey(current) !== pullRequestKey(pullRequest)) {
+            return;
+        }
+        this.pullRequestDetail = pullRequest;
+        if (this.visible) {
+            this.render();
+        }
+    }
+
+    /** Called by the detail view after a successful merge so the all-PRs navigator reflects it. */
+    protected onPullRequestMerged(pullRequest: QaapGithubPullRequestSummary): void {
+        this.pullRequestsSidebarUi.markPullRequestMerged(pullRequest);
+    }
+
+    /** Work Hub project repositories that the all-PRs search should cover besides the user's own scope. */
+    protected pullRequestRepoKeys(): string[] {
+        return githubRepoKeysForProjects(this.hubQueryUi.projectsForCurrentHubList());
     }
 
     protected closePullRequestDetail(): void {

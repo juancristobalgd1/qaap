@@ -15,6 +15,7 @@ import { bindStickyComposerControlClick } from '@theia/qaap-composer/lib/common/
 import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { syncStickyComposerWorkingPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-pill';
+import { resolveWorkingPillDisplayCount } from '../common/qaap-working-pill-count';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     closeWorkingAgentsPopover,
@@ -317,76 +318,117 @@ export function updateTasksAttentionChromeExtracted(ctx: MobileProjectsTasksHubU
         );
 }
 
+/** Last conversation section the Working pill was scoped to, per tasks-hub UI instance. */
+const lastWorkingPillSectionByUi = new WeakMap<MobileProjectsTasksHubUiContext, string | undefined>();
+
+/**
+ * Conversation whose section the conversation composer's Working pill is scoped to. Undefined
+ * when no conversation composer is mounted (hub home), where the pill stays global.
+ */
+function resolveWorkingPillSectionConversationId(ctx: MobileProjectsTasksHubUiContext): string | undefined {
+        const host = ctx.host.transcriptComposerHost;
+        if (!host?.isConnected) {
+            return undefined;
+        }
+        const summary = ctx.host.transcriptComposerSummary ?? ctx.host.transcriptOpenSummary;
+        return summary?.id?.trim() || undefined;
+}
+
+/**
+ * True when the pill lives in the conversation composer — including the Agents Hub shell,
+ * which mounts the conversation composer into the home sticky host (no transcript-root class).
+ */
+function isSectionScopedWorkingPill(ctx: MobileProjectsTasksHubUiContext, anchor: HTMLElement | undefined): boolean {
+        const host = ctx.host.transcriptComposerHost;
+        return !!anchor && !!host && host.contains(anchor)
+            && resolveWorkingPillSectionConversationId(ctx) !== undefined;
+}
+
+function findWorkingPill(root: HTMLElement | undefined): HTMLButtonElement | undefined {
+        return root?.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-working-pill') ?? undefined;
+}
+
 export function updateWorkingPillChromeExtracted(ctx: MobileProjectsTasksHubUiContext): void {
         const rawCount = ctx.countWorkingAgentsForPill();
         noteWorkingPillChromeCount(rawCount);
         // After Stop All, hide the pill until a new live working agent appears (attention
         // count can lag behind cancel; reading-retain must not keep "1 Working").
-        const realCount = isWorkingPillSuppressedAfterStopAll() ? 0 : rawCount;
-        const reading = isWorkingAgentsExpandPinnedOpen() && !isWorkingPillSuppressedAfterStopAll();
+        const suppressedAfterStopAll = isWorkingPillSuppressedAfterStopAll();
         const suppressForEmptyComposer = ctx.shouldSuppressWorkingPillForEmptyComposer();
+        const homeRoot = ctx.host.stickyComposerHost;
+        const transcriptRoot = ctx.host.transcriptComposerHost;
+        const sameRoot = !!homeRoot && homeRoot === transcriptRoot;
+        const sectionId = resolveWorkingPillSectionConversationId(ctx);
+        // Switching conversations must not carry the previous section's expand (and its
+        // members) into the new one — the pill and its list are strictly per conversation.
+        if (lastWorkingPillSectionByUi.has(ctx) && lastWorkingPillSectionByUi.get(ctx) !== sectionId
+            && (isWorkingAgentsPopoverOpen() || isWorkingAgentsExpandSessionOpen())) {
+            closeWorkingAgentsPopover(true);
+        }
+        lastWorkingPillSectionByUi.set(ctx, sectionId);
+        // Per-section count: agents working in the open conversation plus its forks/subagents
+        // and VPS subtasks only. The hub home pill (no conversation open) keeps the global count.
+        const sectionCount = sectionId !== undefined ? ctx.countWorkingAgentsForTranscriptPill() : 0;
+        const reading = isWorkingAgentsExpandPinnedOpen() && !suppressedAfterStopAll;
+        const transcriptPill = findWorkingPill(transcriptRoot);
+        const readingInSection = reading && sectionId !== undefined
+            && (sameRoot || (!!transcriptPill && isWorkingAgentsPopoverOpen(transcriptPill)));
+        const readingAtHome = reading && !readingInSection;
         // Never auto-collapse while the user is reading (list or detail). Summary/settled
         // often drops the working count to 0 (streaming → idle); only ✕ / Escape / Stop All
         // / pill toggle may close in that case. Empty/new chat surfaces always hide the pill.
-        if (suppressForEmptyComposer || (realCount <= 0 && !reading)) {
+        const activeLiveCount = suppressedAfterStopAll ? 0 : (sectionId !== undefined ? sectionCount : rawCount);
+        if (suppressForEmptyComposer || (activeLiveCount <= 0 && !reading)) {
             closeWorkingAgentsPopover(true);
         }
         // Keep chrome alive while home/transcript composers exist, or while an expand session
         // is still open (pill may be briefly parked during remount).
         const composerMounted = !!(
-            ctx.host.stickyComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
-            || ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
+            homeRoot?.querySelector('.theia-mobile-projects-sticky-composer-inner')
+            || transcriptRoot?.querySelector('.theia-mobile-projects-sticky-composer-inner')
         );
-        const count = !suppressForEmptyComposer && (realCount > 0 || reading)
-            && (ctx.host.homeMode || composerMounted || reading)
-            ? Math.max(realCount, reading ? 1 : 0)
-            : 0;
-        // Per-section count: the transcript composer pill shows only agents working in the
-        // currently open conversation/section (and its forks/subagents), not the global hub
-        // count. The home sticky composer keeps the global count. When both hosts are the same
-        // element (e.g. transcript overlay reusing the home host), a single sync with the
-        // section-scoped count wins.
-        const transcriptCount = ctx.countWorkingAgentsForTranscriptPill();
-        const forceHide = isWorkingPillSuppressedAfterStopAll() || suppressForEmptyComposer;
-        const homeRoot = ctx.host.stickyComposerHost;
-        const transcriptRoot = ctx.host.transcriptComposerHost;
-        const sameRoot = !!homeRoot && homeRoot === transcriptRoot;
-        syncStickyComposerWorkingPillInRoots(
-            sameRoot ? [] : [homeRoot],
-            {
-                count,
+        const forceHide = suppressedAfterStopAll || suppressForEmptyComposer;
+        const homeCount = resolveWorkingPillDisplayCount({
+            liveCount: rawCount,
+            suppressedAfterStopAll,
+            reading: readingAtHome,
+            suppressForEmptyComposer,
+            surfaceMounted: ctx.host.homeMode || composerMounted,
+        });
+        const sectionDisplayCount = sectionId === undefined ? 0 : resolveWorkingPillDisplayCount({
+            liveCount: sectionCount,
+            suppressedAfterStopAll,
+            reading: readingInSection,
+            suppressForEmptyComposer,
+            surfaceMounted: composerMounted,
+        });
+        // When the conversation composer is mounted into the home host (Agents Hub shell),
+        // that single pill IS the conversation's pill and must be section-scoped.
+        if (!sameRoot) {
+            syncStickyComposerWorkingPillInRoots([homeRoot], {
+                count: homeCount,
                 forceHide,
                 onOpen: anchor => ctx.openWorkingAgentsPopoverFromPill(anchor),
-            },
-        );
-        syncStickyComposerWorkingPillInRoots(
-            [transcriptRoot],
-            {
-                count: sameRoot ? count : transcriptCount,
-                forceHide: sameRoot ? forceHide : (forceHide || transcriptCount <= 0),
-                onOpen: anchor => ctx.openWorkingAgentsPopoverFromPill(anchor),
-            },
-        );
+            });
+        }
+        const conversationPillCount = sectionId !== undefined ? sectionDisplayCount : (sameRoot ? homeCount : 0);
+        syncStickyComposerWorkingPillInRoots([transcriptRoot], {
+            count: conversationPillCount,
+            forceHide: forceHide || (sectionId !== undefined ? sectionDisplayCount <= 0 : !sameRoot),
+            onOpen: anchor => ctx.openWorkingAgentsPopoverFromPill(anchor),
+        });
         ctx.updateStepPillChrome();
-        if (count > 0 || reading) {
-            const roots = [ctx.host.stickyComposerHost, ctx.host.transcriptComposerHost];
-            let pill: HTMLButtonElement | undefined;
-            for (const root of roots) {
-                const candidate = root?.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-working-pill');
-                if (candidate) {
-                    pill = candidate;
-                    break;
-                }
-            }
-            const isTranscriptPill = !!pill?.closest('.theia-mobile-agent-transcript-root');
-            const members = isTranscriptPill
+        if (homeCount > 0 || conversationPillCount > 0 || reading) {
+            // Prefer the conversation pill: it sits on top (overlay / shell) when both exist.
+            const pill = findWorkingPill(transcriptRoot) ?? findWorkingPill(homeRoot);
+            const members = isSectionScopedWorkingPill(ctx, pill)
                 ? ctx.collectTeamMembersForTranscriptSection()
                 : ctx.host.collectTeamMembersForHub();
             if (pill && (isWorkingAgentsPopoverOpen() || isWorkingAgentsExpandSessionOpen())) {
                 restoreWorkingAgentsExpandIfNeeded({
                     anchor: pill,
                     members,
-                    transcriptOverlay: isTranscriptPill,
+                    transcriptOverlay: !!pill.closest('.theia-mobile-agent-transcript-root'),
                     onSelect: member => ctx.host.onTeamMemberClick(member),
                     onStop: member => ctx.stopWorkingAgent(member),
                     onStopAll: working => ctx.stopAllWorkingAgents(working),
@@ -401,10 +443,10 @@ export function updateWorkingPillChromeExtracted(ctx: MobileProjectsTasksHubUiCo
 }
 
 export function openWorkingAgentsPopoverFromPillExtracted(ctx: MobileProjectsTasksHubUiContext, anchor: HTMLButtonElement): void {
+        // Positioning follows the transcript overlay; membership follows the composer the pill
+        // belongs to — a conversation composer lists only this conversation's agents.
         const transcriptOverlay = !!anchor.closest('.theia-mobile-agent-transcript-root');
-        // When the pill is in the transcript overlay, show only this section's working agents.
-        // The home sticky composer pill shows the full hub team.
-        const members = transcriptOverlay
+        const members = isSectionScopedWorkingPill(ctx, anchor)
             ? ctx.collectTeamMembersForTranscriptSection()
             : ctx.host.collectTeamMembersForHub();
         ctx.prefetchWorkingDetailDocuments(members);

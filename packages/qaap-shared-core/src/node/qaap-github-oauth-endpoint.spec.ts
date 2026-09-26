@@ -336,7 +336,7 @@ describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
             reposRoot,
             runGit: async (args: string[], _token: string | undefined, cwd: string) => {
                 if (args[0] === 'clone') {
-                    const destination = path.join(cwd, args[2]);
+                    const destination = path.join(cwd, args[args.length - 1]);
                     fs.mkdirSync(path.join(destination, '.git'), { recursive: true });
                     fs.writeFileSync(path.join(destination, 'partial-pack'), 'incomplete');
                 }
@@ -385,7 +385,7 @@ describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
             reposRoot,
             runGit: async (args: string[], _token: string | undefined, cwd: string) => {
                 // The killed exec client returns, but git inside the worker still writes its destination later.
-                lateWrite = () => fs.mkdirSync(path.join(cwd, args[2], '.git'), { recursive: true });
+                lateWrite = () => fs.mkdirSync(path.join(cwd, args[args.length - 1], '.git'), { recursive: true });
                 throw new Error('Git operation cancelled');
             },
         });
@@ -409,8 +409,8 @@ describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
             reposRoot,
             runGit: async (args: string[], _token: string | undefined, cwd: string) => {
                 if (args[0] === 'clone') {
-                    fs.mkdirSync(path.join(cwd, args[2], '.git'), { recursive: true });
-                    fs.writeFileSync(path.join(cwd, args[2], 'README.md'), 'hello');
+                    fs.mkdirSync(path.join(cwd, args[args.length - 1], '.git'), { recursive: true });
+                    fs.writeFileSync(path.join(cwd, args[args.length - 1], 'README.md'), 'hello');
                 } else {
                     throw new Error(`unexpected git ${args.join(' ')}`);
                 }
@@ -440,7 +440,7 @@ describe('QaapGithubOauthEndpoint git deadlines', () => {
             runGit: async (args: string[], _token: string | undefined, cwd: string, options?: { deadline?: number }) => {
                 deadlines.push(options?.deadline);
                 if (args[0] === 'clone') {
-                    fs.mkdirSync(path.join(cwd, args[2], '.git'), { recursive: true });
+                    fs.mkdirSync(path.join(cwd, args[args.length - 1], '.git'), { recursive: true });
                 }
             },
         });
