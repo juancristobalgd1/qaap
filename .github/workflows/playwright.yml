@@ -76,7 +76,12 @@ jobs:
 
       - name: Test (playwright)
         shell: bash
-        run: cd examples/playwright && npm run ui-tests-ci
+        # Qaap: the `@qaap-mobile` specs (Work Hub, agents, dev preview) need their own fixtures,
+        # mock agent and env (QAAP_SKIP_AUTH, FRONTEND_CONNECTION_TIMEOUT, ...) and run in the dedicated
+        # `qaap-mobile-playwright.yml` workflow with a longer per-test timeout. Running them here too
+        # (without that setup) made each fail after up to 5 min x 3 attempts and pushed this job past
+        # its 60 min timeout on every run, so the upstream suite never got to report.
+        run: cd examples/playwright && npm run ui-tests-ci -- --grep-invert @qaap-mobile
 
       - name: Archive test results
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
