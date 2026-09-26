@@ -24,10 +24,31 @@ import {
     resolveQaapPreviewIdentity,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
+import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes } from '../common/qaap-preview-route';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
+
+/** True inside a per-tenant backend (`QAAP_TENANT_BACKEND_MODE=1`). */
+export function isQaapTenantBackendRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+    return /^(1|true)$/i.test(env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
+}
+
+/** Adds {@link QAAP_PREVIEW_ROUTE_HEADER} for a `previewId` carried by the JSON body about to be sent. */
+export function advertisePreviewRouteOnJson(res: Response): void {
+    const json = res.json.bind(res);
+    res.json = ((body?: unknown) => {
+        const previewId = (body as { previewId?: unknown } | undefined)?.previewId;
+        if (typeof previewId === 'string' && !res.headersSent) {
+            const header = formatQaapPreviewRoutes([{ kind: 'preview', id: previewId }]);
+            if (header) {
+                res.setHeader(QAAP_PREVIEW_ROUTE_HEADER, header);
+            }
+        }
+        return json(body);
+    }) as Response['json'];
+}
 
 export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Application): void {
     // Optional isolated-origin mode. DNS/TLS should route `*.QAAP_PREVIEW_BASE_DOMAIN` here;
@@ -64,6 +85,14 @@ export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Appl
         if (shellPath === '/' || shellPath === '/index.html') {
             res.setHeader('X-Frame-Options', 'DENY');
             res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+        }
+        next();
+    });
+    // A per-tenant backend advertises every preview id it hands out, so the control plane can route
+    // the id's isolated preview host (reached without the IDE session) back to this backend.
+    app.use([`${QAAP_DEV_PREVIEW_PREFIX}/api`, `${QAAP_IDENTITY_PREVIEW_PREFIX}/api`], (req: Request, res: Response, next: NextFunction) => {
+        if (isQaapTenantBackendRuntime()) {
+            advertisePreviewRouteOnJson(res);
         }
         next();
     });

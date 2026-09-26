@@ -38,6 +38,8 @@ import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
+import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes } from '@theia/qaap-shared-core/lib/common/qaap-preview-route';
+import { isQaapTenantBackendRuntime } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-endpoint-render';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
@@ -264,6 +266,10 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             }
         }
         const summary = await this.shares.create(port, body.repoKey, origin, ownerLogin);
+        if (isQaapTenantBackendRuntime()) {
+            // Lets the control plane route this public link (no session) back to this backend.
+            res.setHeader(QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes([{ kind: 'share', id: summary.token }]));
+        }
         res.json({ share: summary });
     }
 

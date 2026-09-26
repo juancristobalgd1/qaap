@@ -3,8 +3,7 @@
 import type { Request, Response } from '@theia/core/shared/express';
 import * as http from 'http';
 import { timingSafeEqual } from 'crypto';
-import { isQaapPreviewId } from '../common/qaap-preview-identity';
-import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
+import { parseQaapPreviewIdFromHost, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
 import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
@@ -494,37 +493,13 @@ export function buildIdentityPreviewUrlExtracted(ctx: QaapDevPreviewEndpointCont
 }
 
 export function previewBaseDomainExtracted(ctx: QaapDevPreviewEndpointContext): string | undefined {
-        // The main origin is also baked into the bridge loader and frame-ancestors policy. Refuse
-        // isolated-host mode unless it is explicit; deriving it from the preview Host is unsafe.
-        if (!process.env.QAAP_OAUTH_PUBLIC_URL?.trim()) {
-            return undefined;
-        }
-        return normalizeQaapPreviewBaseDomain(process.env.QAAP_PREVIEW_BASE_DOMAIN);
+        return resolveQaapPreviewBaseDomain();
 }
 
 export function previewIdFromHostExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage): string | undefined {
-        const baseDomain = ctx.previewBaseDomain();
-        if (!baseDomain) {
-            return undefined;
-        }
         const rawHost = ctx.firstHeaderValue(req.headers['x-forwarded-host'])
             ?? ctx.firstHeaderValue(req.headers.host);
-        if (!rawHost) {
-            return undefined;
-        }
-        let hostname: string;
-        try {
-            hostname = new URL(`http://${rawHost}`).hostname.toLowerCase();
-        } catch {
-            return undefined;
-        }
-        const domainHostname = baseDomain.replace(/:\d+$/, '');
-        const suffix = `.${domainHostname}`;
-        if (!hostname.endsWith(suffix)) {
-            return undefined;
-        }
-        const previewId = hostname.slice(0, -suffix.length);
-        return isQaapPreviewId(previewId) ? previewId : undefined;
+        return parseQaapPreviewIdFromHost(rawHost, ctx.previewBaseDomain());
 }
 
 export function authorizePreviewHostRequestExtracted(ctx: QaapDevPreviewEndpointContext, req: Request,
