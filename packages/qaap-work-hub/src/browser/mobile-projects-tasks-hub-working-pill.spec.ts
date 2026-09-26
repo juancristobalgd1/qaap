@@ -646,4 +646,93 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-control.theia-mod-expanded'))
             .to.not.equal(null);
     });
+
+    describe('per-conversation scoping', () => {
+        function member(id: string, parentId?: string): WorkHubTeamMember {
+            return {
+                id,
+                kind: 'conversation',
+                title: `Agent ${id}`,
+                projectName: 'Demo',
+                cwd: `/srv/demo/${id}`,
+                agentId: 'qaiq',
+                state: 'streaming',
+                parentId,
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: id,
+                projectId: 'p1',
+                activityLabel: 'Working',
+            };
+        }
+
+        function summary(id: string): QaapAgentConversationSummaryDTO {
+            return {
+                id,
+                cwd: `/srv/demo/${id}`,
+                agentId: 'qaiq',
+                title: `Conversation ${id}`,
+                status: 'streaming',
+                createdAt: 1,
+                updatedAt: 2,
+                messageCount: 3,
+            } as QaapAgentConversationSummaryDTO;
+        }
+
+        /** Agents Hub shell: the conversation composer is mounted into the home sticky host. */
+        function createShellHost(openConversationId: string): ReturnType<typeof createHost> {
+            const host = createHost({
+                members: [member('a'), member('a-fork', 'a'), member('b'), member('c')],
+            });
+            host.transcriptComposerHost = host.stickyComposerHost;
+            host.transcriptComposerSummary = summary(openConversationId);
+            return host;
+        }
+
+        it('counts only agents of the open conversation (and its forks), not every running session', () => {
+            const host = createShellHost('a');
+            new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+            const pill = host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill');
+            expect(pill?.textContent).to.contain('2 Working');
+        });
+
+        it('lists only the open conversation agents in the expand', () => {
+            const host = createShellHost('a');
+            new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+            const pill = host.stickyComposerHost.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-working-pill');
+            pill!.click();
+            const panel = host.stickyComposerHost.querySelector('.qaap-working-agents-expand-clip');
+            expect(panel?.textContent).to.contain('Agent a');
+            expect(panel?.textContent).to.contain('Agent a-fork');
+            expect(panel?.textContent).to.not.contain('Agent b');
+            expect(panel?.textContent).to.not.contain('Agent c');
+        });
+
+        it('re-scopes live when switching conversations and closes the previous expand', () => {
+            const host = createShellHost('a');
+            const ui = new MobileProjectsTasksHubUi(host);
+            ui.updateWorkingPillChrome();
+            host.stickyComposerHost.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-working-pill')!.click();
+            expect(isWorkingAgentsExpandSessionOpen()).to.equal(true);
+            host.transcriptComposerSummary = summary('b');
+            ui.updateWorkingPillChrome();
+            expect(isWorkingAgentsExpandSessionOpen()).to.equal(false);
+            const pill = host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill');
+            expect(pill?.textContent).to.contain('1 Working');
+        });
+
+        it('hides the pill when nothing in the open conversation is working', () => {
+            const host = createShellHost('idle-conv');
+            new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+            expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.equal(null);
+        });
+
+        it('keeps the global count on the hub home composer when no conversation is open', () => {
+            const host = createHost({ members: [member('a'), member('b'), member('c')] });
+            new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+            const pill = host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill');
+            expect(pill?.textContent).to.contain('3 Working');
+        });
+    });
 });

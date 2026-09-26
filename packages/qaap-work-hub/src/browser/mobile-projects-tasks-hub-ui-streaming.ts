@@ -7,7 +7,7 @@ import { type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/com
 import {
     isAgentsHubIdleConversationSummary,
 } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
+import { scopeTeamMembersToConversation, type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import { cancelConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { cancelAgentTask, fetchAgentTaskDetail } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
@@ -330,41 +330,8 @@ export function resolveOpenComposerConversationIdExtracted(ctx: MobileProjectsTa
 
 export function collectTeamMembersForTranscriptSectionExtracted(ctx: MobileProjectsTasksHubUiContext): WorkHubTeamMember[] {
         const summary = ctx.host.transcriptComposerSummary ?? ctx.host.transcriptOpenSummary;
-        const conversationId = summary?.id?.trim();
-        if (!conversationId) {
-            return [];
-        }
-        const all = ctx.host.collectTeamMembersForHub();
-        // Collect conversation ids that belong to this section: the root conversation plus
-        // any forks (parentId chain). Also match VPS tasks whose parentId resolves to
-        // a conversation in this section.
-        const sectionConversationIds = new Set<string>([conversationId]);
-        let changed = true;
-        while (changed) {
-            changed = false;
-            for (const member of all) {
-                if (member.kind === 'conversation' && member.parentId
-                    && sectionConversationIds.has(member.parentId)
-                    && member.conversationId
-                    && !sectionConversationIds.has(member.conversationId)) {
-                    sectionConversationIds.add(member.conversationId);
-                    changed = true;
-                }
-            }
-        }
-        return all.filter(member => {
-            if (member.conversationId && sectionConversationIds.has(member.conversationId)) {
-                return true;
-            }
-            // VPS subtask: include if its parent conversation is in this section.
-            if (member.kind === 'subtask' && member.parentId) {
-                const parent = all.find(m => m.id === member.parentId);
-                if (parent?.conversationId && sectionConversationIds.has(parent.conversationId)) {
-                    return true;
-                }
-            }
-            return false;
-        });
+        // Only the open conversation plus its forks/subagents/VPS subtasks — never other sessions.
+        return scopeTeamMembersToConversation(ctx.host.collectTeamMembersForHub(), summary?.id);
 }
 
 export function isEmptyComposerQuickActionsSurfacePaintedExtracted(ctx: MobileProjectsTasksHubUiContext): boolean {
