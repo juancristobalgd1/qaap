@@ -963,19 +963,32 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         // worker so clean/smudge filters, config helpers and repository hooks cannot execute as the
         // shared backend uid. The hooks-path override remains defense in depth inside the tenant.
         const hardening = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
-        const gitArgs = accessToken
-            ? [
-                ...hardening,
-                '-c',
-                `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${accessToken}`).toString('base64')
-                }`,
-                ...invocation.args,
-            ]
-            : [...hardening, ...invocation.args];
-        if (isQaapHostedEnvironment()) {
-            return this.runTenantGit(invocation.cwd, gitArgs, false, options).then(() => undefined);
+        const gitArgs = [...hardening, ...invocation.args];
+        // The credential header travels in git's env config (GIT_CONFIG_COUNT/KEY_n/VALUE_n, git
+        // >= 2.31), never in argv: in hosted mode argv becomes the `docker exec` argv, which is
+        // visible to `ps` and in `docker events` (exec_create). See githubAuthEnvironment.
+        const hosted = isQaapHostedEnvironment();
+        // Local git inherits process.env, so keep any GIT_CONFIG_COUNT entries it already has.
+        const authEnv = accessToken ? this.githubAuthEnvironment(accessToken, hosted ? {} : process.env) : {};
+        if (hosted) {
+            return this.runTenantGit(invocation.cwd, gitArgs, false, options, authEnv).then(() => undefined);
         }
-        return this.runLocalGit(invocation.cwd, gitArgs, false, options).then(() => undefined);
+        return this.runLocalGit(invocation.cwd, gitArgs, false, options, authEnv).then(() => undefined);
+    }
+
+    /**
+     * Git env-config entries carrying the GitHub `Authorization` extra header. Appends after any
+     * `GIT_CONFIG_COUNT` entries already present in `base` so they are preserved.
+     */
+    protected githubAuthEnvironment(accessToken: string, base: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+        const existing = Number.parseInt(base.GIT_CONFIG_COUNT ?? '', 10);
+        const index = Number.isInteger(existing) && existing > 0 ? existing : 0;
+        const credential = Buffer.from(`x-access-token:${accessToken}`).toString('base64');
+        return {
+            GIT_CONFIG_COUNT: String(index + 1),
+            [`GIT_CONFIG_KEY_${index}`]: 'http.https://github.com/.extraheader',
+            [`GIT_CONFIG_VALUE_${index}`]: `AUTHORIZATION: basic ${credential}`,
+        };
     }
 
     protected runGitOutput(args: string[], cwd = this.reposRoot, options: QaapGitRunOptions = {}): Promise<string> {
@@ -1016,12 +1029,22 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /** Spawn the non-hosted git child; a seam so tests can substitute a long-running process. */
-    protected spawnLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean): ChildProcess {
-        return spawn('git', [...gitArgs], { cwd, stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'] });
+    protected spawnLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean, env?: NodeJS.ProcessEnv): ChildProcess {
+        return spawn('git', [...gitArgs], { cwd, env, stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'] });
     }
 
-    /** Non-hosted git (local dev): same deadline semantics as the tenant worker path. */
-    protected runLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean, options: QaapGitRunOptions = {}): Promise<string> {
+    /**
+     * Non-hosted git (local dev): same deadline semantics as the tenant worker path. `extraEnv`
+     * (credential env config) is layered over the inherited process env; when empty the child
+     * inherits `process.env` exactly as before.
+     */
+    protected runLocalGit(
+        cwd: string,
+        gitArgs: readonly string[],
+        captureStdout: boolean,
+        options: QaapGitRunOptions = {},
+        extraEnv: NodeJS.ProcessEnv = {},
+    ): Promise<string> {
         const { signal } = options;
         const effectiveDeadline = this.resolveGitDeadline(options.deadline);
         if (signal?.aborted) {
@@ -1031,7 +1054,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return Promise.reject(this.gitTimeoutError());
         }
         return new Promise((resolve, reject) => {
-            const child = this.spawnLocalGit(cwd, gitArgs, captureStdout);
+            const env = Object.keys(extraEnv).length > 0
+                ? { ...process.env, ...extraEnv }
+                : undefined;
+            const child = this.spawnLocalGit(cwd, gitArgs, captureStdout, env);
             let stdout = '';
             let stderr = '';
             let settled = false;
@@ -1091,7 +1117,13 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /** Execute git with a minimal environment and a fail-closed tenant worker in hosted mode. */
-    protected async runTenantGit(cwd: string, args: readonly string[], captureStdout: boolean, options: QaapGitRunOptions = {}): Promise<string> {
+    protected async runTenantGit(
+        cwd: string,
+        args: readonly string[],
+        captureStdout: boolean,
+        options: QaapGitRunOptions = {},
+        extraEnv: NodeJS.ProcessEnv = {},
+    ): Promise<string> {
         if (!this.tenantProcess) {
             throw new Error('Hosted GitHub repository operations are unavailable: the tenant worker is not bound.');
         }
@@ -1117,7 +1149,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         const prepared = this.tenantProcess.spawnArgvPreparedAsync('git', args, {
             cwd,
-            env: this.tenantProcess.resolveProcessEnv(cwd, baseEnv),
+            // extraEnv (credential env config) reaches the worker via `docker exec -e NAME`: the
+            // tenant spawn service launches the docker CLI with exactly this env, so the value
+            // never appears in any argv.
+            env: this.tenantProcess.resolveProcessEnv(cwd, { ...baseEnv, ...extraEnv }),
             stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'],
             detached: true,
         });

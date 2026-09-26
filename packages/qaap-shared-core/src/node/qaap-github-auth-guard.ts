@@ -13,11 +13,15 @@ import {
 import {
     isPathUnderUserWorkspace,
     isUserWorkspaceContainerPath,
+    normalizeIsolationPath,
     QAAP_SKIP_AUTH_USER_LOGIN,
     QAAP_USER_REPOS_SEGMENT,
+    resolveQaapParallelRoot,
     resolveQaapReposRoot,
+    resolveQaapWorktreesRoot,
     resolveRepositoryWorkspacePath,
     resolveUserReposRoot,
+    safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
@@ -142,7 +146,7 @@ export class QaapGithubAuthGuard {
         if (ctx.kind === 'unauthorized') {
             return false;
         }
-        if (this.pathBelongsToUser(ctx.userLogin, targetPath)) {
+        if (this.pathBelongsToUser(ctx.userLogin, targetPath) || this.pathIsUserWorktree(ctx.userLogin, targetPath)) {
             return true;
         }
         // A legacy/flat (`.../repos/{owner}/{repo}`) or bare-name cwd that maps to an existing clone
@@ -188,7 +192,10 @@ export class QaapGithubAuthGuard {
         // 1. Already a concrete owned repository path (not a container level) — keep as-is.
         if (isPathUnderUserWorkspace(trimmed, this.reposRoot, login)
             && !isUserWorkspaceContainerPath(trimmed, this.reposRoot, login)) {
-            return this.acceptOwnedRepositoryCwd(login, trimmed);
+            // The lexical checks above normalize separators (a Windows browser sends
+            // `\workspace\repos\users\...` from FileUri.fsPath); stat/return the same normalized
+            // path so the task does not keep, or fail on, the backslash form on a Linux host.
+            return this.acceptOwnedRepositoryCwd(login, normalizeIsolationPath(trimmed));
         }
         // 2. Derive {owner, repo} from a `github:` key or a legacy/new repository path.
         const derived = this.deriveOwnerRepoFromCwd(trimmed);
@@ -276,6 +283,19 @@ export class QaapGithubAuthGuard {
      * (e.g. `.../alice/link -> .../bob/secret`): the string still starts with alice's root, but the
      * real target is bob's tree. Requiring BOTH closes that cross-tenant escape.
      */
+    /**
+     * "New Worktree" and parallel-run conversations live outside the repos tree, under the caller's own
+     * tenant segment of the worktrees / parallel roots (`/tmp/qaap-worktrees/<login>/<id>`). Without this
+     * their conversations and tasks were treated as foreign: hidden from the owner's list and answered
+     * with "Conversation not found". Symlink-safe like {@link pathBelongsToUser}.
+     */
+    protected pathIsUserWorktree(userLogin: string, targetPath: string): boolean {
+        const tenant = safeUserIdSegment(userLogin);
+        return [resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]
+            .map(root => path.join(root, tenant))
+            .some(root => isRealPathUnder(targetPath, root));
+    }
+
     protected pathBelongsToUser(userLogin: string, targetPath: string): boolean {
         if (!isPathUnderUserWorkspace(targetPath, this.reposRoot, userLogin)) {
             return false;

@@ -32,7 +32,7 @@ interface QaapDockerOrchestratorTestAccess {
     toContainerPath(hostPath: string, tenantRootHostPath?: string): string;
     dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config'): string;
     tenantContainerMatches(inspect: Dockerode.ContainerInspectInfo, mounts: QaapTenantMountSet, networkMode: string): boolean;
-    buildTenantEnvironmentArgs(environment?: NodeJS.ProcessEnv): string[];
+    buildTenantEnvironmentArgs(environment?: NodeJS.ProcessEnv, inheritByName?: boolean): string[];
     getTenantNetworkMode(ownerLogin?: string): string;
     getTenantContainerUser(): string;
     getTenantImage(): string;
@@ -594,6 +594,18 @@ describe('QaapDockerOrchestrator', () => {
             });
 
             expect(args).to.deep.equal(['-e', 'GOOD_NAME=ok']);
+        });
+
+        it('emits names only (no values) when the docker CLI inherits the same env', () => {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const args = orchestrator.buildTenantEnvironmentArgs({
+                GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic c2VjcmV0',
+                DOCKER_HOST: 'unix:///var/run/docker.sock',
+                'bad-name': 'x',
+                UNSET_VAR: undefined,
+            }, true);
+
+            expect(args).to.deep.equal(['-e', 'GIT_CONFIG_VALUE_0']);
         });
 
         it('skips entries whose value is undefined', () => {

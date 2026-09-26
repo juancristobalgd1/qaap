@@ -364,17 +364,55 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                 },
             );
 
-            expect(wrapped.args).to.include.members([
-                '-e',
-                'PATH=/usr/local/bin:/usr/bin',
-                '-e',
-                'HOME=/tmp/qaap-home',
-                '-e',
-                'OPENAI_API_KEY=tenant-key',
-            ]);
-            expect(wrapped.args).to.not.include('DOCKER_HOST=unix:///run/user/1000/docker.sock');
-            expect(wrapped.args).to.not.include('QAAP_GITHUB_CLIENT_SECRET=backend-secret');
-            expect(wrapped.args).to.not.include('INVALID-NAME=must-not-cross');
+            // Names only: the docker CLI inherits the values from its own env (the same object).
+            expect(wrapped.args).to.include.members(['-e', 'PATH', 'HOME', 'OPENAI_API_KEY']);
+            const joined = wrapped.args.join(' ');
+            expect(joined).to.not.include('tenant-key');
+            expect(joined).to.not.include('/usr/local/bin:/usr/bin');
+            expect(joined).to.not.include('DOCKER_HOST');
+            expect(joined).to.not.include('QAAP_GITHUB_CLIENT_SECRET');
+            expect(joined).to.not.include('INVALID-NAME');
+        });
+
+        it('translates a host cwd embedded in a managed bootstrap shell command (terminal)', () => {
+            (orchestrator as any).tenantRoots.set(orchestrator.containerNameForTenant('alice'), aliceRoot);
+            const hostCwd = aliceCwd.replace(/\\/g, '/');
+            const wrapped = orchestrator.wrapInteractiveTerminalForTenant(
+                'alice',
+                aliceCwd,
+                '/bin/bash',
+                ['-l', '-c', `cd -- '${hostCwd}' && npm install`],
+                aliceRoot,
+            );
+
+            expect(wrapped.args.slice(-3)).to.deep.equal(['/bin/bash', '-l', '-c', "cd -- '/workspace/acme/webapp' && npm install"].slice(-3));
+            expect(wrapped.args).to.include('/workspace/acme/webapp');
+            expect(wrapped.args.join(' ')).to.not.include(hostCwd);
+        });
+
+        it('translates host tenant roots inside shell strings with path boundaries and per-mount roots', () => {
+            const name = orchestrator.containerNameForTenant('alice');
+            (orchestrator as any).tenantRoots.set(name, aliceRoot);
+            (orchestrator as any).tenantMounts.set(name, {
+                reposRoot: aliceRoot,
+                worktreesRoot: aliceWorktreesRoot,
+                parallelRoot: aliceParallelRoot,
+            });
+            try {
+                const posix = (value: string): string => value.replace(/\\/g, '/');
+                const root = posix(aliceRoot);
+                const worktree = `${posix(aliceWorktreesRoot)}/fork-1`;
+                const wrapped = orchestrator.wrapShellForTenantContainer('alice', aliceCwd, '/bin/bash', [
+                    '-c',
+                    `cd ${root}/acme/webapp && ls "${worktree}" ${root}-other /prefix${root}/x; echo ${root}`,
+                ], aliceRoot);
+
+                expect(wrapped.args[wrapped.args.length - 1]).to.equal(
+                    `cd /workspace/acme/webapp && ls "/workspace/.qaap-worktrees/fork-1" ${root}-other /prefix${root}/x; echo /workspace`,
+                );
+            } finally {
+                (orchestrator as any).tenantMounts.delete(name);
+            }
         });
 
         it('wraps interactive terminal into docker exec -it targeting the tenant container', () => {
@@ -482,6 +520,32 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             expect(launch.args).to.include(orchestrator.containerNameForTenant('bob'));
             expect(launch.args).to.include('npm');
             expect(launch.args).to.include('dev');
+        });
+
+        it('keeps the git credential header out of the docker argv and in the docker CLI env', () => {
+            const orchestrator = new QaapDockerOrchestrator();
+            const service = new TestDockerTenantSpawnService(orchestrator);
+            (orchestrator as any).tenantRoots.set(orchestrator.containerNameForTenant('alice'), aliceRoot);
+            const header = 'AUTHORIZATION: basic eC1hY2Nlc3MtdG9rZW46Z2hvX3NlY3JldA==';
+            const env = {
+                PATH: '/usr/bin',
+                DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+                GIT_CONFIG_COUNT: '1',
+                GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+                GIT_CONFIG_VALUE_0: header,
+            };
+
+            service.spawnArgvPrepared('git', ['-c', 'core.hooksPath=/dev/null', 'fetch', '--all'], { cwd: aliceCwd, env });
+
+            const launch = service.launches[0];
+            const joined = [launch.file, ...launch.args].join(' ');
+            expect(joined).to.not.include('eC1hY2Nlc3MtdG9rZW46Z2hvX3NlY3JldA==');
+            expect(joined).to.not.include('AUTHORIZATION');
+            expect(joined).to.not.include('DOCKER_HOST');
+            expect(launch.args).to.include.members(['-e', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']);
+            // `docker exec -e NAME` copies NAME from the CLI's env: it must carry the exact value.
+            expect(launch.options.env?.GIT_CONFIG_VALUE_0).to.equal(header);
+            expect(launch.options.env?.DOCKER_HOST).to.equal(env.DOCKER_HOST);
         });
 
         it('translates the explicit git -C path into the tenant mount', () => {
