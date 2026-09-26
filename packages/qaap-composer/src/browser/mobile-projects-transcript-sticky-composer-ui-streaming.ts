@@ -22,6 +22,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
+    composerConversationInvolvesPreview,
     resolveComposerPreviewCandidate,
     resolveVerifiedComposerPreviewUrl,
 } from './qaap-composer-preview-action';
@@ -199,7 +200,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const previewCandidate = resolveComposerPreviewCandidate(previewRuntime);
     ctx.syncComposerPreviewAvailability(project, previewCandidate);
     const verifiedPreviewUrl = ctx.verifiedComposerPreview?.projectId === project.id
-        ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url)
+        ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
         : undefined;
     return {
         queueEntries: ctx.host.transcriptFollowUpQueue.peek(summary.id),
@@ -274,6 +275,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         changedFiles: activityFiles.files,
         diffStats: activityFiles.stats,
         hasFileActivity,
+        previewInConversation: composerConversationInvolvesPreview(conv, window.location.origin),
         hasCommittableChanges,
         filesExpanded: ctx.peekTranscriptComposerChangedFilesExpanded(summary.id),
         onFilesExpandedChange: expanded => { ctx.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },

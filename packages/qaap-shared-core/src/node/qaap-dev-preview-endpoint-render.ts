@@ -248,7 +248,8 @@ export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, r
             return;
         }
         if (ctx.portRegistry.ownerOf(port) === undefined && stale === undefined
-            && await ctx.probeLocalDevServer(port)) {
+            && !ctx.ownsUnclaimedPorts(owner)
+            && await ctx.probeLocalDevServer(port, owner)) {
             // After a backend restart an unregistered listener has no trustworthy project or
             // tenant identity. Adopting it based only on liveness is the exact cross-project
             // failure this endpoint must prevent. Local skip-auth never enters this branch.
@@ -400,7 +401,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
                 ownerLogin: occupiedRecord.ownerLogin,
                 port,
             });
-        } else if (await ctx.probeLocalDevServer(port)) {
+        } else if (await ctx.probeLocalDevServer(port, owner)) {
             // Crucial fail-closed rule: never infer project ownership from a responding port.
             continue;
         }

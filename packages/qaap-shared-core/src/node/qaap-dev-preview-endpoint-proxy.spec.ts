@@ -543,6 +543,7 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
         const clientClosed = new Promise<void>(resolve => client.once('close', () => resolve()));
         const ctx = {
             resolveTargetHost: () => Promise.resolve('127.0.0.1'),
+            upstreamAgentFor: () => undefined,
             invalidateTargetHost: () => undefined,
         } as unknown as QaapDevPreviewEndpointContext;
         const request = { method: 'GET', headers: { upgrade: 'websocket', connection: 'Upgrade' } } as unknown as http.IncomingMessage;
@@ -578,6 +579,7 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
         });
         const ctx = {
             resolveTargetHost: () => Promise.resolve('127.0.0.1'),
+            upstreamAgentFor: () => undefined,
             invalidateTargetHost: () => undefined,
         } as unknown as QaapDevPreviewEndpointContext;
         const request = { method: 'GET', headers: { upgrade: 'websocket', connection: 'Upgrade' } } as unknown as http.IncomingMessage;

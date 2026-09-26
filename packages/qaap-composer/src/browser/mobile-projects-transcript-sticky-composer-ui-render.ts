@@ -32,6 +32,7 @@ import { extractTranscriptPreviewId } from '@theia/qaap-transcript/lib/browser/m
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import {
     openCurrentComposerPreview,
+    resolveComposerFallbackPreviewUrls,
     resolveComposerPreviewCandidate,
     resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
@@ -72,6 +73,10 @@ export function scheduleIdleComposerFocusRetentionExtracted(ctx: MobileProjectsT
 export function resolveComposerPreviewRuntimeExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry): ComposerPreviewRuntime {
         const bootstrap = ctx.host.projectBootstrap;
         const descriptor = bootstrap?.descriptor;
+        // The transcript (Preview tab, agent tools) records the preview it adopted on the project
+        // entry; the open conversation may also have announced one from the agent's own shell.
+        const adoptedProjectPreviewUrl = ctx.host.projects?.find(candidate => candidate.id === project.id)?.previewUrl
+            ?? project.previewUrl;
         return {
             projectId: project.id,
             projectCwd: ctx.host.projectsService.getProjectCwd(project),
@@ -79,6 +84,7 @@ export function resolveComposerPreviewRuntimeExtracted(ctx: MobileProjectsTransc
             dependenciesInstalled: descriptor?.nodeModulesPresent === true,
             phase: bootstrap?.phase ?? 'idle',
             previewUrl: bootstrap?.previewUrl,
+            fallbackPreviewUrls: resolveComposerFallbackPreviewUrls(ctx.host.transcriptLastConv, adoptedProjectPreviewUrl, window.location.origin),
         };
 }
 
@@ -112,7 +118,7 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
         }
         const runtime = ctx.resolveComposerPreviewRuntime(project);
         const verified = ctx.verifiedComposerPreview?.projectId === project.id
-            ? resolveVerifiedComposerPreviewUrl(runtime, ctx.verifiedComposerPreview.url)
+            ? resolveVerifiedComposerPreviewUrl(runtime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
             : undefined;
         if (verified && Date.now() - ctx.composerPreviewLastCheckedAt < COMPOSER_PREVIEW_HEALTH_INTERVAL_MS) {
             ctx.scheduleComposerPreviewHealthCheck(project.id);
@@ -156,7 +162,7 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
                 }
             }
             const next = probe.ready && stillCurrent
-                ? { projectId: project.id, url: probe.previewUrl }
+                ? { projectId: project.id, url: probe.previewUrl, candidate }
                 : undefined;
             const changed = ctx.verifiedComposerPreview?.projectId !== next?.projectId
                 || ctx.verifiedComposerPreview?.url !== next?.url;
