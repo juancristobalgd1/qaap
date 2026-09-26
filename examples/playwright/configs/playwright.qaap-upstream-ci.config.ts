@@ -21,41 +21,34 @@ import ciConfig from './playwright.ci.config';
  * Qaap: upstream Theia Playwright suite as run by `.github/workflows/playwright.yml`.
  *
  * The suite runs against the Qaap product on the classic IDE surface
- * (`QAAP_PLAYWRIGHT_SURFACE=ide`, see `theia-app-loader.ts`). Qaap deliberately replaces
- * parts of the upstream workbench chrome that some upstream page objects depend on;
- * those specs are excluded below with the reason. Everything else runs unchanged.
+ * (`QAAP_PLAYWRIGHT_SURFACE=ide`, see `theia-app-loader.ts`). Qaap deliberately replaces parts of
+ * the upstream workbench chrome; instead of editing the upstream specs / page objects, the gaps are
+ * bridged here and in Qaap-only adapters:
  *
- * TODO(qaap): adapt the upstream page objects (menu via `#theia:workbench-menu-button`,
- * Qaap side-panel activity tabs) so the excluded specs can run again.
+ * - `#theia:menubar` is hidden in favour of the top-bar "Open menu" button: the loader swaps in
+ *   `QaapMenuBar` (`src/qaap-menu-bar.ts`) on the IDE surface.
+ * - Qaap defaults `workbench.startupEditor` to `none`: `qaap-upstream-ci-theia-start.js` seeds the
+ *   upstream `welcomePage` default in the fresh user config dir.
+ *
+ * Only the tests below that are genuinely incompatible with a deliberate Qaap behaviour stay excluded.
  */
 const qaapUpstreamCiConfig: PlaywrightTestConfig = {
     ...ciConfig,
-    testIgnore: [
-        // The IDE hides the horizontal `#theia:menubar` (replaced by the top-bar "Open menu"
-        // button); these specs, or their setup, drive the upstream menubar page object.
-        '**/theia-main-menu.test.js',
-        '**/theia-preference-view.test.js',
-        '**/theia-terminal-view.test.js',
-        '**/theia-text-editor.test.js',
-        '**/theia-toolbar.test.js',
-        '**/theia-sample-app.test.js',
-        '**/theia-workspace.test.js',
-        // Qaap's side panel renders its own activity tab strip; the upstream explorer page
-        // object waits for the upstream `#shell-tab-explorer-view-container` tab.
-        '**/theia-explorer-view.test.js',
-        '**/theia-notebook-editor.test.js',
-        // The upstream Welcome / getting-started page is not opened by the Qaap IDE.
-        '**/theia-getting-started.test.js',
-    ],
+    webServer: {
+        command: 'node ./configs/qaap-upstream-ci-theia-start.js',
+        port: 3000,
+        reuseExistingServer: true
+    },
     grepInvert: [
         // Covered by `qaap-mobile-playwright.yml`, which provides their fixtures, mock agent,
         // env and longer timeouts. Without that setup each one burns up to 5 min x 3 attempts.
         /@qaap-mobile/,
-        // Qaap opens the Explorer by default, so "Toggle Explorer" closes it.
+        // Qaap expands the Explorer on startup (`QaapFileNavigatorContribution`), so "Toggle Explorer"
+        // collapses it instead of revealing it.
         /should trigger 'Toggle Explorer View' command after typing/,
-        // "Close All Tabs in Main Area" is only enabled with closable main-area tabs; upstream
-        // relies on the Welcome page being open at startup, which Qaap does not open.
-        /retrieve and check visible items/,
+        // Qaap expands the Explorer on startup, so the spec's unscoped `getByText('sample.txt')` matches
+        // both the Explorer tree and the file dialog (Playwright strict-mode violation).
+        /open sample\.txt via file menu/,
     ],
 };
 
