@@ -128,12 +128,14 @@ async function waitForPreviewStaged(page: Page): Promise<void> {
         const hasOpenExisting = [...document.querySelectorAll('.qaap-project-bootstrap-banner button')].some(
             element => /open preview/i.test(element.textContent?.trim() ?? ''),
         );
-        return Boolean(state?.previewUrl)
+        const staged = Boolean(state?.previewUrl)
             || state?.phase === 'running'
             || hasOpen
             || hasViewPreview
             || hasOpenExisting;
-    }), { timeout: 120_000 }).toBe(true);
+        // On failure the poll reports the observed bootstrap state instead of a bare `false`.
+        return staged ? 'staged' : JSON.stringify({ state, hasOpen, hasViewPreview, hasOpenExisting });
+    }), { timeout: 120_000 }).toBe('staged');
 }
 
 async function selectPreviewTab(page: Page): Promise<void> {
@@ -207,8 +209,16 @@ async function expectDevPreviewMounted(page: Page): Promise<void> {
         const iframe = document.querySelector(
             'iframe[src*="/qaap-dev/"], iframe[src*="/qaap-preview/"]',
         ) !== null;
-        return onPreview && iframe;
-    }), { timeout: 60_000 }).toBe(true);
+        if (onPreview && iframe) {
+            return 'mounted';
+        }
+        // On failure the poll reports what the page shows instead of a bare `false`.
+        return JSON.stringify({
+            activeSurfaces: [...document.querySelectorAll('[data-active-surface]')].map(element =>
+                `${element.className}=${element.getAttribute('data-active-surface')}`),
+            iframes: [...document.querySelectorAll('iframe')].map(element => element.getAttribute('src')),
+        });
+    }), { timeout: 60_000 }).toBe('mounted');
 }
 
 /**
