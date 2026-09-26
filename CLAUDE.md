@@ -25,6 +25,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Critical Qaap product contract (owner-confirmed 2026-09-05):** Preserve the active IDE or ADE/Agents/Work Hub surface across reload/F5 in the same tab using `sessionStorage`. Keeping IDE active on reload is intentional. Only a new tab without a stored surface defaults to Work Hub. Do not use `localStorage`, URL state or restored layout as the surface selector. See `.cursor/rules/work-hub-reload-default.mdc`.
 
+**Critical CI/CD invariants:** every workflow is green on master since #125 (Sep 26, 2026). Before touching tenant spawning (`qaap-tenant-spawn-service.ts`), terminals, preview bootstrap, `examples/playwright` or `.github/workflows`, read `doc/qaap-ci-invariants.md`. Linux-only terminal failures with a 0px xterm textarea mean the spawn wrapper dropped the shell, not an xterm bug. See `.cursor/rules/ci-invariants.mdc`.
+
 ## Development Commands
 
 **Essential commands:**
