@@ -904,8 +904,9 @@ export class QaapSideTabBar extends SideTabBar {
             } else {
                 rd = { title, current, zIndex };
             }
-            // Based on how renderTabs() is called, assume renderData will be undefined when invoked for this.hiddenContentNode
-            content[i] = renderer.renderTab(rd, true, renderData === undefined);
+            // Qaap: the horizontal activity strip renders straight into `contentNode` without renderData,
+            // so key the `-hidden` tab id off the host (upstream assumed renderData === undefined).
+            content[i] = renderer.renderTab(rd, true, host === this.hiddenContentNode);
         }
         VirtualDOM.render(content, host);
     }

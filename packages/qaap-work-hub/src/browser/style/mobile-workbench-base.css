@@ -300,6 +300,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 /* Work Hub owns the AI Chat slot, so the side-panel overflow tab would only block app chrome. */
+.lm-TabBar.theia-app-sides #shell-tab-chat-view-widget,
 #shell-tab-chat-view-widget-hidden {
   display: none !important;
 }
