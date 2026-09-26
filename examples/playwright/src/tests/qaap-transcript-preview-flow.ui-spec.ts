@@ -42,7 +42,7 @@ function ensureFixtureDeps(cwd: string): void {
 
 function killDevPreviewPort(): void {
     try {
-        execSync(`lsof -ti:${DEV_PREVIEW_PORT} | xargs kill -9`, { stdio: 'ignore' });
+        execSync(`lsof -ti tcp:${DEV_PREVIEW_PORT} -sTCP:LISTEN | xargs kill -9`, { stdio: 'ignore' });
     } catch {
         // Port was free.
     }
