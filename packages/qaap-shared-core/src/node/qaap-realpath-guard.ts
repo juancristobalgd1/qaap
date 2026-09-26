@@ -41,13 +41,9 @@ export function resolveRealPathWithinExisting(targetPath: string): string {
  * an agent/file operation into another tenant's tree or into the server's secret files.
  */
 export function isRealPathUnder(targetPath: string, rootPath: string): boolean {
-    let realRoot: string;
-    try {
-        realRoot = fs.realpathSync(path.resolve(rootPath));
-    } catch {
-        // Root does not exist yet — fall back to its lexical form.
-        realRoot = path.resolve(rootPath);
-    }
+    // Resolve the root like the target: a root that does not exist yet keeps its symlinked ancestors
+    // resolved (macOS tmpdir `/var` -> `/private/var`), otherwise the two sides never compare equal.
+    const realRoot = resolveRealPathWithinExisting(rootPath);
     const realTarget = resolveRealPathWithinExisting(targetPath);
     const relative = path.relative(realRoot, realTarget);
     return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
