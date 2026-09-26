@@ -211,7 +211,9 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
     });
 
     it('rlimit fallback execs the wrapped executable itself, not its first argument', function (): void {
-        if (process.platform === 'win32') {
+        // The fallback is Linux-only in production (isLinuxResourceLimitPlatform); it runs the
+        // real /bin/sh ulimit script, whose -v/-t flags are not portable to macOS or Windows.
+        if (process.platform !== 'linux') {
             this.skip();
         }
         const svc = new TestTenantSpawnService();
