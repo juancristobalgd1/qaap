@@ -12,6 +12,7 @@ import {
     terminalOutputNextDevLock,
     terminalOutputPortInUse,
 } from './qaap-project-bootstrap-dev-errors';
+import { extractPortFromInUseMessage } from './qaap-project-bootstrap-helpers';
 
 describe('qaap-project-bootstrap-dev-errors', () => {
 
@@ -21,6 +22,19 @@ describe('qaap-project-bootstrap-dev-errors', () => {
 
     it('terminalOutputPortInUse detects EADDRINUSE', () => {
         expect(terminalOutputPortInUse('Error: listen EADDRINUSE: address already in use :::3000')).to.equal(true);
+    });
+
+    it('terminalOutputPortInUse detects the Vite strict-port failure', () => {
+        const viteTail = '\u001b[31merror when starting dev server:\nError: Port 5173 is already in use\n    at Server.onError (vite/dist/node/chunks/dep.js:25119:18)';
+        expect(terminalOutputPortInUse(viteTail)).to.equal(true);
+        expect(diagnoseBootstrapFailure(viteTail, 'Dev server exited with code 1.').kind).to.equal('port-conflict');
+        expect(extractPortFromInUseMessage(viteTail)).to.equal(5173);
+    });
+
+    it('extractPortFromInUseMessage keeps preferring the bound address', () => {
+        expect(extractPortFromInUseMessage('Error: listen EADDRINUSE: address already in use 127.0.0.1:3001')).to.equal(3001);
+        expect(extractPortFromInUseMessage('Local: http://localhost:5173/')).to.equal(5173);
+        expect(terminalOutputPortInUse('Port 5173 is free')).to.equal(false);
     });
 
     it('extractTerminalFailureLine surfaces generic Error lines', () => {
