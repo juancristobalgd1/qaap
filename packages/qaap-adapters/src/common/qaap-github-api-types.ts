@@ -104,6 +104,54 @@ export interface QaapGithubOpenRepositoryRequest {
     repository: string;
 }
 
+/**
+ * Background repository import (clone-by-URL or open-my-repository) on the server. Started with
+ * `POST {QAAP_GITHUB_API_PATH}/workspace-jobs`, polled with `GET .../workspace-jobs/:id` and
+ * cancelled with `POST .../workspace-jobs/:id/cancel`. Jobs outlive the HTTP request, so closing
+ * the dialog or the proxy's request budget never kills a long clone.
+ */
+export type QaapGithubWorkspaceJobRequest =
+    | { readonly kind: 'clone'; readonly repository: string }
+    | { readonly kind: 'open'; readonly owner: string; readonly name: string };
+
+export type QaapGithubWorkspaceJobState = 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/** Ordered phases; `percent` is the overall progress across all of them. */
+export type QaapGithubWorkspaceJobPhase =
+    | 'queued'
+    | 'resolving'
+    | 'preparing'
+    | 'cloning'
+    | 'fetching'
+    | 'checking-out'
+    | 'finalizing'
+    | 'registering'
+    | 'ready';
+
+export interface QaapGithubWorkspaceJob {
+    readonly id: string;
+    readonly kind: QaapGithubWorkspaceJobRequest['kind'];
+    /** `owner/name` (or the raw input until the repository is resolved). */
+    readonly label: string;
+    readonly state: QaapGithubWorkspaceJobState;
+    readonly phase: QaapGithubWorkspaceJobPhase;
+    /** Overall 0-100 progress when known; absent means indeterminate. */
+    readonly percent?: number;
+    /** Human readable git progress, e.g. `Receiving objects: 45% (450/1000)`. */
+    readonly detail?: string;
+    /** Readable failure message (never contains credentials). */
+    readonly error?: string;
+    /** Machine readable failure code, e.g. `plan_repo_limit`. */
+    readonly errorCode?: string;
+    readonly result?: QaapGithubOpenRepositoryResponse;
+    readonly startedAt: number;
+    readonly updatedAt: number;
+}
+
+export interface QaapGithubWorkspaceJobsResponse {
+    jobs: QaapGithubWorkspaceJob[];
+}
+
 export type QaapGithubPullRequestLineType = 'add' | 'del' | 'ctx';
 
 export interface QaapGithubPullRequestLine {

@@ -21,6 +21,9 @@ import {
     type QaapGithubOpenRepositoryRequest,
     type QaapGithubPullRequestsResponse,
     type QaapGithubRepositoriesResponse,
+    type QaapGithubWorkspaceJob,
+    type QaapGithubWorkspaceJobRequest,
+    type QaapGithubWorkspaceJobsResponse,
     type QaapProjectSessionsResponse,
     type QaapProjectSessionUpsertRequest,
     type QaapProjectSessionSummary,
@@ -57,6 +60,11 @@ const QAAP_API_REQUEST_TIMEOUT_MS = 15_000;
 /** Checkout creation round-trips to Stripe. */
 const QAAP_BILLING_CHECKOUT_TIMEOUT_MS = 30_000;
 const QAAP_AUTH_REQUEST_TIMEOUT_MS = 6000;
+/**
+ * Starting a background import only validates the request and registers the job, but the tenant
+ * backend may need a cold start first (the proxy's ensure step), so this leaves room for that.
+ */
+const QAAP_GITHUB_WORKSPACE_JOB_START_TIMEOUT_MS = 60_000;
 
 /** Statuses whose `Response` must be constructed without a body. */
 const QAAP_NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
@@ -353,6 +361,84 @@ export async function cloneQaapGithubRepository(repository: string): Promise<Qaa
         throw new Error(body.message || body.error || `Failed to clone GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
+}
+
+/** A failed Qaap API call that keeps the HTTP status (e.g. 404 from an older backend). */
+export class QaapApiRequestError extends Error {
+    constructor(message: string, readonly status: number, readonly code?: string) {
+        super(message);
+        this.name = 'QaapApiRequestError';
+    }
+}
+
+async function readQaapApiError(response: Response, fallback: string): Promise<QaapApiRequestError> {
+    const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
+    const code = typeof body.error === 'string' && /^[a-z_]+$/.test(body.error) ? body.error : undefined;
+    return new QaapApiRequestError(body.message || body.error || fallback, response.status, code);
+}
+
+const workspaceJobTimedOut = (): string => nls.localize(
+    'qaap/githubWorkspaceJob/timedOut',
+    'The server did not answer in time. Check your connection and try again.'
+);
+
+/** Start (or join, when the same repository is already importing) a background clone/open job. */
+export async function startQaapGithubWorkspaceJob(request: QaapGithubWorkspaceJobRequest): Promise<QaapGithubWorkspaceJob> {
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/workspace-jobs`,
+        qaapAuthenticatedFetchInit({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request),
+        }),
+        QAAP_GITHUB_WORKSPACE_JOB_START_TIMEOUT_MS,
+        workspaceJobTimedOut,
+    );
+    if (!response.ok) {
+        throw await readQaapApiError(response, `Failed to start the repository import (${response.status})`);
+    }
+    return response.json() as Promise<QaapGithubWorkspaceJob>;
+}
+
+export async function fetchQaapGithubWorkspaceJob(id: string): Promise<QaapGithubWorkspaceJob> {
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/workspace-jobs/${encodeURIComponent(id)}`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        workspaceJobTimedOut,
+    );
+    if (!response.ok) {
+        throw await readQaapApiError(response, `Failed to read the repository import (${response.status})`);
+    }
+    return response.json() as Promise<QaapGithubWorkspaceJob>;
+}
+
+/** Running (and recently finished) imports of the signed-in user, to resume progress after a reload. */
+export async function listQaapGithubWorkspaceJobs(): Promise<QaapGithubWorkspaceJob[]> {
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/workspace-jobs`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        workspaceJobTimedOut,
+    );
+    if (!response.ok) {
+        throw await readQaapApiError(response, `Failed to list repository imports (${response.status})`);
+    }
+    const body = await response.json() as QaapGithubWorkspaceJobsResponse;
+    return Array.isArray(body.jobs) ? body.jobs : [];
+}
+
+export async function cancelQaapGithubWorkspaceJob(id: string): Promise<QaapGithubWorkspaceJob> {
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/workspace-jobs/${encodeURIComponent(id)}/cancel`,
+        qaapAuthenticatedFetchInit({ method: 'POST' }),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        workspaceJobTimedOut,
+    );
+    if (!response.ok) {
+        throw await readQaapApiError(response, `Failed to cancel the repository import (${response.status})`);
+    }
+    return response.json() as Promise<QaapGithubWorkspaceJob>;
 }
 
 export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>> {

@@ -9,6 +9,13 @@ import { syncQaapAuthSessionFromServer } from '@theia/qaap-adapters/lib/browser/
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { Disposable } from '@theia/core/lib/common/disposable';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import type { QaapGithubOpenRepositoryResponse, QaapGithubWorkspaceJobRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import {
+    describeRepositoryImportPhase,
+    QaapRepositoryImport,
+} from '@theia/qaap-shared-core/lib/browser/qaap-repository-import-tracker';
 
 export interface MobileOpenRepositoryDialogDelegate {
     /** Refresh the projects panel after a successful open / create. */
@@ -42,6 +49,26 @@ export class MobileOpenRepositoryDialog {
     protected publicInput!: HTMLInputElement;
     protected publicSubmit!: HTMLButtonElement;
     protected publicError!: HTMLElement;
+    protected readonly panels: HTMLElement;
+    protected readonly tabs: HTMLElement;
+    protected progressView!: HTMLElement;
+    protected progressTitle!: HTMLElement;
+    protected progressPhase!: HTMLElement;
+    protected progressPercent!: HTMLElement;
+    protected progressBar!: HTMLElement;
+    protected progressFill!: HTMLElement;
+    protected progressDetail!: HTMLElement;
+    protected progressError!: HTMLElement;
+    protected progressHint!: HTMLElement;
+    protected progressCancel!: HTMLButtonElement;
+    protected progressRetry!: HTMLButtonElement;
+    protected progressBack!: HTMLButtonElement;
+
+    /** Import shown by the progress view; it keeps running when the dialog is closed. */
+    protected activeImport: QaapRepositoryImport | undefined;
+    protected activeImportListener: Disposable | undefined;
+    /** Element focused before the dialog opened, restored on close. */
+    protected previousFocus: HTMLElement | undefined;
 
     protected visible = false;
     protected loading = false;
@@ -52,6 +79,10 @@ export class MobileOpenRepositoryDialog {
     protected activeTab: 'repositories' | 'clone' = 'repositories';
     protected readonly onKeyDown = (ev: KeyboardEvent): void => {
         if (ev.key === 'Escape' && this.visible) {
+            // Leave Escape to the nested dialog (e.g. "Create repository") while it is on top.
+            if (this.busy) {
+                return;
+            }
             ev.stopPropagation();
             this.hide();
         }
@@ -78,7 +109,7 @@ export class MobileOpenRepositoryDialog {
         sheet.append(this.createHeader());
         sheet.append(this.createDescription());
 
-        const tabs = document.createElement('div');
+        const tabs = this.tabs = document.createElement('div');
         tabs.className = 'theia-mobile-open-repo-tabs';
         tabs.setAttribute('role', 'tablist');
         tabs.setAttribute('aria-label', nls.localize('qaap/mobileOpenRepo/tabsLabel', 'Repository source'));
@@ -170,10 +201,11 @@ export class MobileOpenRepositoryDialog {
 
         this.clonePanel = this.createClonePanel();
 
-        const panels = document.createElement('div');
+        const panels = this.panels = document.createElement('div');
         panels.className = 'theia-mobile-open-repo-panels';
         panels.append(this.repositoriesPanel, this.clonePanel);
         sheet.append(panels);
+        sheet.append(this.createProgressView());
         this.setActiveTab('repositories');
 
         this.root.append(backdrop, sheet);
@@ -192,13 +224,26 @@ export class MobileOpenRepositoryDialog {
             return;
         }
         this.visible = true;
+        const focused = typeof document !== 'undefined' ? document.activeElement : undefined;
+        this.previousFocus = focused instanceof HTMLElement && !this.root.contains(focused) ? focused : undefined;
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
         // Reflow before adding the visible class so the open transition runs.
         void this.root.offsetWidth;
         this.root.classList.add('theia-mod-visible');
         document.addEventListener('keydown', this.onKeyDown, true);
-        this.setActiveTab('repositories');
+        if (this.activeImport && !this.activeImport.running) {
+            // Its outcome was already reported in the background.
+            this.detachImport();
+        }
+        if (this.activeImport) {
+            // Reopened while the import keeps running: take it back from the snackbar.
+            this.activeImport.presenter = 'foreground';
+            MobileSnackbar.dismiss();
+            this.attachImport(this.activeImport);
+        } else {
+            this.setActiveTab('repositories');
+        }
         this.renderConnectedStatus();
         await this.reloadRepositories();
     }
@@ -217,6 +262,20 @@ export class MobileOpenRepositoryDialog {
             }
         }, 280);
         this.clearPublicError();
+        const repositoryImport = this.activeImport;
+        if (repositoryImport?.running) {
+            // Closing never stops the import: the snackbar keeps showing progress and the project
+            // appears in the list when it is done (without switching the workspace under the user).
+            this.service.watchGithubRepositoryImportInBackground(repositoryImport, next => this.delegate.onProjectsChanged?.(next));
+        } else if (repositoryImport) {
+            // A failed or cancelled import is not shown again on the next open.
+            this.detachImport();
+        }
+        const previousFocus = this.previousFocus;
+        this.previousFocus = undefined;
+        if (previousFocus && previousFocus.isConnected) {
+            previousFocus.focus();
+        }
     }
 
     protected createHeader(): HTMLElement {
@@ -278,6 +337,205 @@ export class MobileOpenRepositoryDialog {
         if (!repositoriesActive) {
             window.setTimeout(() => this.publicInput.focus(), 0);
         }
+    }
+
+    protected createProgressView(): HTMLElement {
+        const view = this.progressView = document.createElement('section');
+        view.className = 'theia-mobile-open-repo-progress';
+        view.hidden = true;
+        view.setAttribute('aria-live', 'polite');
+
+        this.progressTitle = document.createElement('div');
+        this.progressTitle.className = 'theia-mobile-open-repo-progress-title';
+
+        const phaseRow = document.createElement('div');
+        phaseRow.className = 'theia-mobile-open-repo-progress-phase-row';
+        this.progressPhase = document.createElement('span');
+        this.progressPhase.className = 'theia-mobile-open-repo-progress-phase';
+        this.progressPercent = document.createElement('span');
+        this.progressPercent.className = 'theia-mobile-open-repo-progress-percent';
+        phaseRow.append(this.progressPhase, this.progressPercent);
+
+        this.progressBar = document.createElement('div');
+        this.progressBar.className = 'theia-mobile-open-repo-progress-bar';
+        this.progressBar.setAttribute('role', 'progressbar');
+        this.progressBar.setAttribute('aria-valuemin', '0');
+        this.progressBar.setAttribute('aria-valuemax', '100');
+        this.progressFill = document.createElement('div');
+        this.progressFill.className = 'theia-mobile-open-repo-progress-fill';
+        this.progressBar.append(this.progressFill);
+
+        this.progressDetail = document.createElement('div');
+        this.progressDetail.className = 'theia-mobile-open-repo-progress-detail';
+
+        this.progressError = document.createElement('p');
+        this.progressError.className = 'theia-mobile-open-repo-progress-error';
+        this.progressError.setAttribute('role', 'alert');
+        this.progressError.hidden = true;
+
+        this.progressHint = document.createElement('p');
+        this.progressHint.className = 'theia-mobile-open-repo-progress-hint';
+        this.progressHint.textContent = nls.localize(
+            'qaap/mobileOpenRepo/progressHint',
+            'You can close this window: the import keeps running and the project will appear in your list.'
+        );
+
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-open-repo-progress-actions';
+        this.progressBack = this.createProgressButton(
+            nls.localize('qaap/mobileOpenRepo/progressBack', 'Back'), 'theia-mod-secondary', () => this.onProgressBack());
+        this.progressCancel = this.createProgressButton(
+            nls.localize('qaap/mobileOpenRepo/progressCancel', 'Cancel import'), 'theia-mod-secondary', () => { void this.onProgressCancel(); });
+        this.progressRetry = this.createProgressButton(
+            nls.localize('qaap/mobileOpenRepo/progressRetry', 'Retry'), 'theia-mod-primary', () => this.onProgressRetry());
+        actions.append(this.progressBack, this.progressCancel, this.progressRetry);
+
+        view.append(this.progressTitle, phaseRow, this.progressBar, this.progressDetail, this.progressError, this.progressHint, actions);
+        return view;
+    }
+
+    protected createProgressButton(label: string, modifier: string, onClick: () => void): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `theia-mobile-open-repo-progress-action ${modifier}`;
+        button.textContent = label;
+        button.addEventListener('click', onClick);
+        return button;
+    }
+
+    /** Start (or join) an import and show its progress instead of the tabs. */
+    protected startImport(request: QaapGithubWorkspaceJobRequest, label: string): QaapRepositoryImport {
+        const repositoryImport = this.service.startGithubRepositoryImport(request, label);
+        repositoryImport.presenter = 'foreground';
+        this.attachImport(repositoryImport);
+        return repositoryImport;
+    }
+
+    protected attachImport(repositoryImport: QaapRepositoryImport): void {
+        if (this.activeImport !== repositoryImport) {
+            this.detachImport();
+            this.activeImport = repositoryImport;
+            repositoryImport.result.then(
+                result => this.onImportSucceeded(repositoryImport, result),
+                () => undefined,
+            );
+        }
+        this.activeImportListener?.dispose();
+        this.activeImportListener = repositoryImport.onDidChange(() => this.renderProgress());
+        this.root.classList.add('theia-mod-importing');
+        this.tabs.hidden = true;
+        this.panels.hidden = true;
+        this.progressView.hidden = false;
+        this.renderProgress();
+        window.setTimeout(() => {
+            if (this.visible && this.activeImport === repositoryImport) {
+                (repositoryImport.running ? this.progressCancel : this.progressRetry).focus();
+            }
+        }, 0);
+    }
+
+    protected detachImport(): void {
+        this.activeImportListener?.dispose();
+        this.activeImportListener = undefined;
+        this.activeImport = undefined;
+        this.root.classList.remove('theia-mod-importing');
+        this.tabs.hidden = false;
+        this.panels.hidden = false;
+        this.progressView.hidden = true;
+    }
+
+    protected renderProgress(): void {
+        const repositoryImport = this.activeImport;
+        if (!repositoryImport) {
+            return;
+        }
+        const job = repositoryImport.job;
+        const running = job.state === 'running';
+        const failed = job.state === 'failed' || job.state === 'cancelled';
+        this.progressView.classList.toggle('theia-mod-failed', failed);
+        this.progressTitle.textContent = job.kind === 'open'
+            ? nls.localize('qaap/mobileOpenRepo/progressTitleOpen', 'Opening {0}', job.label)
+            : nls.localize('qaap/mobileOpenRepo/progressTitleClone', 'Cloning {0}', job.label);
+        this.progressPhase.textContent = failed
+            ? (job.state === 'cancelled'
+                ? nls.localize('qaap/mobileOpenRepo/progressCancelled', 'Import cancelled')
+                : nls.localize('qaap/mobileOpenRepo/progressFailed', 'Import failed'))
+            : describeRepositoryImportPhase(job.phase, job.kind);
+        const percent = typeof job.percent === 'number' ? Math.max(0, Math.min(100, job.percent)) : undefined;
+        this.progressPercent.textContent = running && percent !== undefined ? `${percent}%` : '';
+        this.progressBar.hidden = failed;
+        this.progressBar.classList.toggle('theia-mod-indeterminate', running && percent === undefined);
+        if (percent !== undefined) {
+            this.progressBar.setAttribute('aria-valuenow', String(percent));
+            this.progressFill.style.width = `${percent}%`;
+        } else {
+            this.progressBar.removeAttribute('aria-valuenow');
+            this.progressFill.style.width = '';
+        }
+        this.progressDetail.textContent = running ? job.detail ?? '' : '';
+        this.progressDetail.hidden = !this.progressDetail.textContent;
+        this.progressError.textContent = job.state === 'failed' ? job.error ?? '' : '';
+        this.progressError.hidden = !this.progressError.textContent;
+        this.progressHint.hidden = !running;
+        this.progressCancel.hidden = !running;
+        this.progressRetry.hidden = !failed;
+        this.progressBack.hidden = running;
+    }
+
+    protected async onImportSucceeded(repositoryImport: QaapRepositoryImport, result: QaapGithubOpenRepositoryResponse): Promise<void> {
+        // Closed dialog: the background watcher lists the project without switching workspaces.
+        if (this.activeImport !== repositoryImport || repositoryImport.presenter !== 'foreground' || !this.visible) {
+            return;
+        }
+        let next: MobileProjectEntry[] | undefined;
+        try {
+            next = await this.service.finishGithubRepositoryImport(result, true);
+        } catch (err) {
+            this.progressError.textContent = err instanceof Error ? err.message : String(err);
+            this.progressError.hidden = false;
+            return;
+        }
+        if (this.activeImport === repositoryImport) {
+            this.detachImport();
+        }
+        if (next) {
+            this.repositories = next;
+            this.renderList();
+            this.delegate.onProjectsChanged?.(next);
+            this.delegate.onWorkspaceOpened?.();
+        }
+        this.hide();
+    }
+
+    protected async onProgressCancel(): Promise<void> {
+        const repositoryImport = this.activeImport;
+        if (!repositoryImport?.running) {
+            return;
+        }
+        this.progressCancel.disabled = true;
+        try {
+            await repositoryImport.cancel();
+        } finally {
+            this.progressCancel.disabled = false;
+        }
+    }
+
+    protected onProgressRetry(): void {
+        const repositoryImport = this.activeImport;
+        if (!repositoryImport || repositoryImport.running) {
+            return;
+        }
+        this.startImport(repositoryImport.request, repositoryImport.job.label);
+    }
+
+    protected onProgressBack(): void {
+        const repositoryImport = this.activeImport;
+        if (repositoryImport?.running) {
+            return;
+        }
+        const tab = repositoryImport?.request.kind === 'clone' ? 'clone' : 'repositories';
+        this.detachImport();
+        this.setActiveTab(tab);
     }
 
     protected createDescription(): HTMLElement {
@@ -496,23 +754,17 @@ export class MobileOpenRepositoryDialog {
             ));
             return;
         }
-        await this.runWithBusy(
-            () => this.service.cloneGithubProjectByRepository(value),
-            nls.localize('qaap/mobileOpenRepo/busyCloning', 'Cloning repository…')
-        );
+        this.clearPublicError();
+        this.startImport({ kind: 'clone', repository: value }, this.service.formatRepositoryLabel(value));
     }
 
     protected async onSelectRepository(project: MobileProjectEntry): Promise<void> {
         if (!project.github) {
             return;
         }
-        await this.runWithBusy(
-            () => this.service.importGithubProject(project),
-            nls.localize(
-                'qaap/mobileOpenRepo/busyImporting',
-                'Importing {0}…',
-                project.github.fullName
-            )
+        this.startImport(
+            { kind: 'open', owner: project.github.owner, name: project.github.name },
+            project.github.fullName,
         );
     }
 
