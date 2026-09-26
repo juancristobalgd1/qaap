@@ -35,7 +35,8 @@ import ciConfig from './playwright.ci.config';
 const qaapUpstreamCiConfig: PlaywrightTestConfig = {
     ...ciConfig,
     webServer: {
-        command: 'node ./configs/qaap-upstream-ci-theia-start.js',
+        // Playwright runs webServer commands from this config's directory.
+        command: 'node ./qaap-upstream-ci-theia-start.js',
         port: 3000,
         reuseExistingServer: true
     },
