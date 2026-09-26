@@ -306,6 +306,15 @@ if [[ -n "$IMAGE_REF" ]]; then
         echo "Image revision $IMAGE_REVISION does not match checked-out commit $SOURCE_SHA" >&2
         exit 1
     fi
+    # Tenant backends run in the rootless daemon, which receives this image through `docker save |
+    # docker load`. A digest reference (`name:tag@sha256:…`) is saved without its tag and a loaded
+    # image has no RepoDigests, so the rootless daemon could resolve neither form and every tenant
+    # backend failed to start. Hand tenants the tag alone and make sure the host carries that tag.
+    if [[ "$IMAGE_REF" == *@* && -z "${QAAP_TENANT_DOCKER_IMAGE:-}" ]]; then
+        export QAAP_TENANT_DOCKER_IMAGE="${IMAGE_REF%@*}"
+        docker tag "$IMAGE_REF" "$QAAP_TENANT_DOCKER_IMAGE"
+        echo "[qaap-vps-update] tenant image: $QAAP_TENANT_DOCKER_IMAGE"
+    fi
     docker compose up -d --no-build
 else
     # Pin source builds to the exact upstream QAIQ commit. CI-built GHCR images already receive
