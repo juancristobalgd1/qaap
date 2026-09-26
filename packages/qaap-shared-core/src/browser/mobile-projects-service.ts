@@ -11,11 +11,14 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import type {
+    QaapGithubOpenRepositoryResponse,
+    QaapGithubRepositorySummary,
+    QaapGithubWorkspaceJobRequest,
     QaapProjectSessionSummary,
     QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { readQaapAuthUser, type QaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { QaapRepositoryImport, QaapRepositoryImportTracker } from './qaap-repository-import-tracker';
 import {
     MobileProjectEntry,
     MobileProjectFilter,
@@ -31,7 +34,7 @@ import {
     MOBILE_PROJECTS_HIDDEN_IDS_BASE,
     MOBILE_PROJECTS_PINNED_IDS_BASE,
 } from './mobile-projects-user-storage';
-import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
+import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
 import { cachedGithubSessionToEntryExtracted, cachedSessionToEntryExtracted, cachedWorkspaceSessionToEntryExtracted, collapseCurrentWorkspaceDuplicatesExtracted, duplicateProjectExtracted, getCurrentWorkspaceBranchExtracted, getCurrentWorkspaceDisplayNameExtracted, getProjectCwdExtracted, isBrowsableHubProjectExtracted, loadProjectsExtracted, overlayActiveTasksExtracted, peekCachedProjectsExtracted, removeProjectExtracted, renameProjectExtracted } from './mobile-projects-service-streaming';
 import { applySessionToEntryExtracted, buildEphemeralCurrentWorkspaceEntryExtracted, currentGithubRepositoryFullNameExtracted, currentRepoKeyExtracted, cwdFromFileUriExtracted, getCurrentWorkspaceMatchKeyExtracted, getProjectWorkspaceMatchKeyExtracted, githubRepositoryToProjectExtracted, isProjectContainerWorkspaceExtracted, latestTimestampExtracted, loadGithubProjectsExtracted, loadSessionMapExtracted, prepareProjectCwdExtracted, projectActivityTimeExtracted, projectMatchesCurrentWorkspaceExtracted, projectSessionKeyExtracted, recordProjectPreviewUrlExtracted, recordProjectSessionExtracted, relativeUpdatedAtExtracted, resolveCurrentWorkspaceProjectExtracted, resolveProjectPreviewUrlExtracted, touchProjectActivityExtracted, touchProjectSessionExtracted } from './mobile-projects-service-timeline';
 
@@ -136,6 +139,27 @@ export class MobileProjectsService {
 
     async cloneGithubProjectByRepository(repository: string): Promise<MobileProjectEntry[] | undefined> {
         return cloneGithubProjectByRepositoryExtracted(this, repository);
+    }
+
+    /** Background clone/open jobs of this window; progress survives closing the dialog. */
+    readonly repositoryImports = new QaapRepositoryImportTracker();
+
+    /** Start (or join) a background repository import with live progress. */
+    startGithubRepositoryImport(request: QaapGithubWorkspaceJobRequest, label: string): QaapRepositoryImport {
+        return this.repositoryImports.start(request, label);
+    }
+
+    /** Register a finished import as a project; `open` also switches the workspace (page reload). */
+    finishGithubRepositoryImport(result: QaapGithubOpenRepositoryResponse, open: boolean): Promise<MobileProjectEntry[] | undefined> {
+        return finishGithubRepositoryImportExtracted(this, result, open);
+    }
+
+    /** Keep showing progress of an import whose dialog was closed, and list the project when done. */
+    watchGithubRepositoryImportInBackground(
+        repositoryImport: QaapRepositoryImport,
+        onProjectsChanged?: (next: MobileProjectEntry[]) => void,
+    ): void {
+        watchGithubRepositoryImportInBackgroundExtracted(this, repositoryImport, onProjectsChanged);
     }
 
     /** Profile of the currently signed-in GitHub user, when known. */

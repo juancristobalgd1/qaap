@@ -5,11 +5,15 @@ import URI from '@theia/core/lib/common/uri';
 import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
 import {
-    cloneQaapGithubRepository,
     createQaapGithubRepository,
     openQaapGithubRepository,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import type { QaapGithubOpenRepositoryResponse, QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import {
+    formatRepositoryImportStatus,
+    QaapRepositoryImport,
+    QaapRepositoryImportError,
+} from './qaap-repository-import-tracker';
 import {
     MobileProjectEntry,
     mobileProjectColorForName,
@@ -360,28 +364,128 @@ export async function cloneGithubProjectByRepositoryExtracted(ctx: MobileProject
         if (!trimmed) {
             return undefined;
         }
-        const label = ctx.formatRepositoryLabel(trimmed);
-        MobileSnackbar.show(
-            nls.localize('qaap/mobileProjects/cloningRepo', 'Cloning {0}…', label),
-            { kind: 'loading' }
-        );
+        const repositoryImport = ctx.repositoryImports.start({ kind: 'clone', repository: trimmed }, ctx.formatRepositoryLabel(trimmed));
+        return runRepositoryImportWithSnackbarExtracted(ctx, repositoryImport);
+}
+
+/**
+ * Follow an import in the snackbar (phase + percent) and open the workspace when it succeeds.
+ * Used by flows without their own progress UI (text-input clone dialog, project list import).
+ */
+export async function runRepositoryImportWithSnackbarExtracted(
+    ctx: MobileProjectsServiceContext,
+    repositoryImport: QaapRepositoryImport,
+): Promise<MobileProjectEntry[] | undefined> {
+        const render = (): void => {
+            if (repositoryImport.running) {
+                MobileSnackbar.show(`${repositoryImport.job.label}: ${formatRepositoryImportStatus(repositoryImport.job)}`, { kind: 'loading' });
+            }
+        };
+        render();
+        const listener = repositoryImport.onDidChange(render);
         try {
-            const result = await cloneQaapGithubRepository(trimmed);
-            const workspaceUri = new URI(result.workspaceUri);
-            ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
+            const result = await repositoryImport.result;
+            listener.dispose();
+            return await ctx.finishGithubRepositoryImport(result, true);
+        } catch (err) {
+            listener.dispose();
+            MobileSnackbar.dismiss();
+            if (err instanceof QaapRepositoryImportError && err.cancelled) {
+                return undefined;
+            }
+            await ctx.messageService.error(err instanceof Error ? err.message : String(err));
+            return undefined;
+        }
+}
+
+/**
+ * Register a finished import as a Work Hub project. With `open`, switch the IDE to it (this reloads
+ * the page); otherwise the project only appears in the list so a closed dialog never yanks the user
+ * out of what they are doing.
+ */
+export async function finishGithubRepositoryImportExtracted(
+    ctx: MobileProjectsServiceContext,
+    result: QaapGithubOpenRepositoryResponse,
+    open: boolean,
+): Promise<MobileProjectEntry[] | undefined> {
+        const workspaceUri = new URI(result.workspaceUri);
+        ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
+        if (open) {
             if (!await ctx.openWorkspaceUri(workspaceUri)) {
                 return ctx.loadProjects();
             }
             MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/repoCloned', 'Cloned {0}', result.repository.fullName),
+                nls.localize('qaap/mobileProjects/repoReady', 'Opening {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }
             );
-            return ctx.loadProjects();
-        } catch (err) {
-            MobileSnackbar.dismiss();
-            await ctx.messageService.error(err instanceof Error ? err.message : String(err));
-            return undefined;
         }
+        return ctx.loadProjects();
+}
+
+/**
+ * Keep reporting an import whose dialog was closed: progress in the snackbar (with Cancel), then
+ * the project appears in the list and the user may open it from the success toast.
+ */
+export function watchGithubRepositoryImportInBackgroundExtracted(
+    ctx: MobileProjectsServiceContext,
+    repositoryImport: QaapRepositoryImport,
+    onProjectsChanged?: (next: MobileProjectEntry[]) => void,
+): void {
+        repositoryImport.presenter = 'background';
+        if (repositoryImport.backgroundWatched) {
+            return;
+        }
+        repositoryImport.backgroundWatched = true;
+        const render = (): void => {
+            // The dialog was reopened and took the import back.
+            if (!repositoryImport.running || repositoryImport.presenter !== 'background') {
+                return;
+            }
+            MobileSnackbar.show(`${repositoryImport.job.label}: ${formatRepositoryImportStatus(repositoryImport.job)}`, {
+                kind: 'loading',
+                actionLabel: nls.localize('qaap/repositoryImport/cancelAction', 'Cancel'),
+                onAction: () => { void repositoryImport.cancel(); },
+            });
+        };
+        render();
+        const listener = repositoryImport.onDidChange(render);
+        repositoryImport.result.then(async result => {
+            listener.dispose();
+            repositoryImport.backgroundWatched = false;
+            if (repositoryImport.presenter !== 'background') {
+                return;
+            }
+            const next = await ctx.finishGithubRepositoryImport(result, false);
+            if (next) {
+                onProjectsChanged?.(next);
+            }
+            MobileSnackbar.show(
+                nls.localize('qaap/repositoryImport/readyInBackground', '{0} is ready', result.repository.fullName),
+                {
+                    kind: 'success',
+                    duration: 8000,
+                    actionLabel: nls.localize('qaap/repositoryImport/openAction', 'Open'),
+                    onAction: () => { void ctx.openWorkspaceUri(new URI(result.workspaceUri)); },
+                }
+            );
+        }, (err: unknown) => {
+            listener.dispose();
+            repositoryImport.backgroundWatched = false;
+            if (repositoryImport.presenter !== 'background') {
+                return;
+            }
+            if (err instanceof QaapRepositoryImportError && err.cancelled) {
+                MobileSnackbar.show(nls.localize('qaap/repositoryImport/cancelled', 'Import cancelled.'), { duration: 2400 });
+                return;
+            }
+            MobileSnackbar.dismiss();
+            void ctx.messageService.error(nls.localize(
+                'qaap/repositoryImport/failedNamed',
+                'Could not import {0}: {1}',
+                repositoryImport.job.label,
+                err instanceof Error ? err.message : String(err),
+            ));
+        });
 }
 
 export function readDisplayNamesExtracted(ctx: MobileProjectsServiceContext): Record<string, string> {
@@ -437,27 +541,11 @@ export async function importGithubProjectExtracted(ctx: MobileProjectsServiceCon
         if (!project.github) {
             return undefined;
         }
-        MobileSnackbar.show(
-            nls.localize('qaap/mobileProjects/importingRepo', 'Importing {0}…', project.github.fullName),
-            { kind: 'loading' }
+        const repositoryImport = ctx.repositoryImports.start(
+            { kind: 'open', owner: project.github.owner, name: project.github.name },
+            project.github.fullName,
         );
-        try {
-            const result = await openQaapGithubRepository(project.github.owner, project.github.name);
-            const workspaceUri = new URI(result.workspaceUri);
-            ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
-            if (!await ctx.openWorkspaceUri(workspaceUri)) {
-                return ctx.loadProjects();
-            }
-            MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/repoImported', 'Imported {0}', result.repository.fullName),
-                { kind: 'success', duration: 2400 }
-            );
-            return ctx.loadProjects();
-        } catch (err) {
-            MobileSnackbar.dismiss();
-            await ctx.messageService.error(err instanceof Error ? err.message : String(err));
-            return undefined;
-        }
+        return runRepositoryImportWithSnackbarExtracted(ctx, repositoryImport);
 }
 
 export function registerGithubWorkspaceProjectExtracted(ctx: MobileProjectsServiceContext, repository: QaapGithubRepositorySummary, uri: URI): void {

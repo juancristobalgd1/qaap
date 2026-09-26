@@ -585,3 +585,129 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   opacity: var(--theia-mod-disabled-opacity, 0.45);
   cursor: default;
 }
+
+/* Repository import progress (clone / open), shown in place of the tabs while a job runs. */
+.theia-mobile-open-repo-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  min-height: 0;
+}
+
+.theia-mobile-open-repo-progress[hidden],
+.theia-mobile-open-repo-tabs[hidden],
+.theia-mobile-open-repo-panels[hidden],
+.theia-mobile-open-repo-progress [hidden] {
+  display: none !important;
+}
+
+.theia-mobile-open-repo-progress-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-open-repo-progress-phase-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.theia-mobile-open-repo-progress-percent {
+  font-variant-numeric: tabular-nums;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-open-repo-progress-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+}
+
+.theia-mobile-open-repo-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--theia-progressBar-background, var(--theia-focusBorder));
+  transition: width 0.3s ease;
+}
+
+.theia-mobile-open-repo-progress-bar.theia-mod-indeterminate .theia-mobile-open-repo-progress-fill {
+  width: 35%;
+  animation: theia-mobile-open-repo-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes theia-mobile-open-repo-progress-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-open-repo-progress-fill {
+    transition: none;
+  }
+  .theia-mobile-open-repo-progress-bar.theia-mod-indeterminate .theia-mobile-open-repo-progress-fill {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+.theia-mobile-open-repo-progress-detail {
+  font-size: 12px;
+  color: var(--theia-descriptionForeground);
+  font-family: var(--theia-code-font-family, monospace);
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-open-repo-progress-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--theia-errorForeground);
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-open-repo-progress-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-open-repo-progress-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.theia-mobile-open-repo-progress-action {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.theia-mobile-open-repo-progress-action.theia-mod-secondary {
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 24%, transparent);
+  background: transparent;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-open-repo-progress-action.theia-mod-primary {
+  border: 1px solid var(--theia-foreground);
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+}
+
+.theia-mobile-open-repo-progress-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
