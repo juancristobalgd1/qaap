@@ -61,6 +61,7 @@ export function initExtracted(ctx: QaapProjectBootstrapServiceContext): void {
                     scaffoldRelativePath: ctx._descriptor?.scaffoldRelativePath,
                     previewUrl: ctx._previewUrl,
                     forwardedPorts: ctx._forwardedPorts,
+                    lastPort: ctx._lastPort,
                     nodeModulesPresent: ctx._descriptor?.nodeModulesPresent,
                     needsInstall: ctx._needsInstall,
                 }),

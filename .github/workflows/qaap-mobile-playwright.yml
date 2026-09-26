@@ -107,3 +107,13 @@ jobs:
           # channel opens with "transport close", taking down the test server.
           # 45 minutes covers the full suite while preserving eventual cleanup.
           FRONTEND_CONNECTION_TIMEOUT: '2700000'
+
+      - name: Archive test results
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ failure() }}
+        with:
+          name: qaap-mobile-playwright-results
+          path: |
+            examples/playwright/test-results/
+            examples/playwright/playwright-report/
+          retention-days: 7
