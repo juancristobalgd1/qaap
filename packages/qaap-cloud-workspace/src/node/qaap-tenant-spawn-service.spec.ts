@@ -27,8 +27,15 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     /** Pinned so results do not depend on whether the test runner itself runs as root. */
     backendRoot = false;
 
+    /** Storage roots the service tried to create (never touches the real filesystem in tests). */
+    storagePrepared: string[] = [];
+
     override isContainerIsolationEnabled(): boolean {
         return this.container;
+    }
+
+    protected override ensureTenantAgentStorage(root: string): void {
+        this.storagePrepared.push(root);
     }
 
     protected override isBackendRoot(): boolean {
@@ -131,7 +138,19 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
     const originalCpuLimit = process.env.QAAP_AGENT_CPU_LIMIT;
     const originalNodeEnv = process.env.NODE_ENV;
     const originalTenantBackendMode = process.env.QAAP_TENANT_BACKEND_MODE;
+    const originalStorageRoot = process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+    const originalConfigRoot = process.env.QAAP_TENANT_CONFIG_ROOT;
     afterEach(() => {
+        for (const [key, value] of [
+            ['QAAP_TENANT_AGENT_STORAGE_ROOT', originalStorageRoot],
+            ['QAAP_TENANT_CONFIG_ROOT', originalConfigRoot],
+        ] as const) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
         if (originalMemoryLimit === undefined) {
             delete process.env.QAAP_AGENT_MEMORY_LIMIT;
         } else {
@@ -436,5 +455,67 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         expect(env.HOME).to.equal('/tmp/qaap-home');
         expect(env.USER).to.equal('qaap-tenant');
         expect(env.LOGNAME).to.equal('qaap-tenant');
+    });
+
+    it('moves package caches and agent data of a tenant backend to its disk-backed config mount', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_CONFIG_ROOT = '/home/theia/.qaap';
+        delete process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+        const svc = new TestTenantSpawnService();
+        const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin' });
+        const root = '/home/theia/.qaap/.qaap-agent-storage';
+        // HOME (agent config/credentials) intentionally stays on the tmpfs.
+        expect(env.HOME).to.equal('/tmp/qaap-home');
+        expect(env.XDG_CACHE_HOME).to.equal(`${root}/cache`);
+        expect(env.XDG_DATA_HOME).to.equal(`${root}/data`);
+        expect(env.npm_config_cache).to.equal(`${root}/cache/npm`);
+        expect(env.npm_config_store_dir).to.equal(`${root}/cache/pnpm-store`);
+        expect(env.PNPM_STORE_DIR).to.equal(`${root}/cache/pnpm-store`);
+        expect(env.BUN_INSTALL_CACHE_DIR).to.equal(`${root}/cache/bun`);
+        expect(env.YARN_GLOBAL_FOLDER).to.equal(`${root}/data/yarn-berry`);
+        expect(env).not.to.have.property('YARN_CACHE_FOLDER');
+        expect(svc.storagePrepared).to.deep.equal([root]);
+    });
+
+    it('honours an explicit agent storage root and an explicit opt-out', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = '/srv/cache/';
+        const svc = new TestTenantSpawnService();
+        expect(svc.resolveProcessEnv(tenantCwd, {}).XDG_CACHE_HOME).to.equal('/srv/cache/cache');
+
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = 'off';
+        const disabled = svc.resolveProcessEnv(tenantCwd, {});
+        expect(disabled.HOME).to.equal('/tmp/qaap-home');
+        expect(disabled).not.to.have.property('XDG_CACHE_HOME');
+        expect(disabled).not.to.have.property('npm_config_cache');
+
+        // Relative paths would resolve against each child's cwd (the user's repo): ignore them.
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = 'relative/cache';
+        expect(svc.resolveProcessEnv(tenantCwd, {})).not.to.have.property('XDG_DATA_HOME');
+    });
+
+    it('does not relocate caches of host-routed worker commands without an in-container root', () => {
+        delete process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+        const svc = new TestTenantSpawnService();
+        svc.container = true;
+        const env = svc.resolveProcessEnv(tenantCwd, {});
+        expect(env.HOME).to.equal('/tmp/qaap-home');
+        expect(env).not.to.have.property('XDG_CACHE_HOME');
+
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = '/workspace/.qaap-agent-storage';
+        const configured = svc.resolveProcessEnv(tenantCwd, {});
+        expect(configured.npm_config_cache).to.equal('/workspace/.qaap-agent-storage/cache/npm');
+        // The control plane cannot create in-container paths; the worker's tools create them.
+        expect(svc.storagePrepared).to.deep.equal([]);
+    });
+
+    it('never adds cache relocation to host uid-drop processes (their HOME is already on disk)', () => {
+        process.env.QAAP_AGENT_UID_PER_USER = '1';
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = '/srv/cache';
+        const svc = new TestTenantSpawnService();
+        svc.identity = { uid: 20005, gid: 20005 };
+        const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin' });
+        expect(env.HOME).to.equal(resolveTenantHome('alice'));
+        expect(env).not.to.have.property('XDG_CACHE_HOME');
     });
 });

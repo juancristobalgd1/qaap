@@ -39,6 +39,8 @@ interface QaapDockerOrchestratorTestAccess {
     getTenantMemoryLimit(): number;
     getTenantCpuLimit(): number;
     getTenantPidsLimit(): number;
+    getTenantTmpfsOptions(): string;
+    getTenantBackendAgentStorageRoot(): string;
     normalizeHostPath(hostPath: string): string;
     runsCurrentTenantImage(docker: Dockerode, inspect: Dockerode.ContainerInspectInfo): Promise<boolean>;
 }
@@ -86,6 +88,8 @@ const ENV_KEYS = [
     'QAAP_TENANT_MEMORY_LIMIT',
     'QAAP_TENANT_CPU_LIMIT',
     'QAAP_TENANT_PIDS_LIMIT',
+    'QAAP_TENANT_TMPFS_SIZE',
+    'QAAP_TENANT_AGENT_STORAGE_ROOT',
     'QAAP_TENANT_CONTAINER_UID',
     'QAAP_TENANT_CONTAINER_GID',
     'QAAP_DOCKER_ROOTLESS',
@@ -613,6 +617,78 @@ describe('QaapDockerOrchestrator', () => {
             const args = orchestrator.buildTenantEnvironmentArgs({ SET_VAR: 'x', UNSET_VAR: undefined });
 
             expect(args).to.deep.equal(['-e', 'SET_VAR=x']);
+        });
+    });
+
+    describe('getTenantTmpfsOptions', () => {
+
+        it('defaults to a 512m executable, nosuid, nodev tmpfs', () => {
+            delete process.env.QAAP_TENANT_TMPFS_SIZE;
+            expect(access(new QaapDockerOrchestrator()).getTenantTmpfsOptions()).to.equal('rw,exec,nosuid,nodev,size=512m');
+        });
+
+        it('accepts a configured size within the memory budget', () => {
+            process.env.QAAP_TENANT_MEMORY_LIMIT = String(4 * 1024 ** 3);
+            process.env.QAAP_TENANT_TMPFS_SIZE = '1G';
+            expect(access(new QaapDockerOrchestrator()).getTenantTmpfsOptions()).to.equal('rw,exec,nosuid,nodev,size=1g');
+        });
+
+        it('falls back to the default for malformed sizes or sizes above half the memory limit', () => {
+            process.env.QAAP_TENANT_MEMORY_LIMIT = String(2 * 1024 ** 3);
+            for (const invalid of ['2g', '1.5g', '-1m', '0', '512mb', 'size=1g,exec']) {
+                process.env.QAAP_TENANT_TMPFS_SIZE = invalid;
+                expect(access(new QaapDockerOrchestrator()).getTenantTmpfsOptions(), invalid).to.equal('rw,exec,nosuid,nodev,size=512m');
+            }
+            process.env.QAAP_TENANT_TMPFS_SIZE = '1024m';
+            expect(access(new QaapDockerOrchestrator()).getTenantTmpfsOptions()).to.equal('rw,exec,nosuid,nodev,size=1024m');
+        });
+
+        it('treats a container with a different tmpfs size as stale', () => {
+            process.env.QAAP_TENANT_DOCKER_IMAGE = 'qaap-tenant-test-image:latest';
+            process.env.QAAP_TENANT_NETWORK_MODE = 'none';
+            process.env.QAAP_TENANT_MEMORY_LIMIT = String(4 * 1024 ** 3);
+            process.env.QAAP_TENANT_TMPFS_SIZE = '1g';
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const mounts: QaapTenantMountSet = {
+                reposRoot: '/data/tenants/alice/repos',
+                worktreesRoot: '/data/tenants/alice/worktrees',
+                parallelRoot: '/data/tenants/alice/parallel',
+            };
+            const inspect = {
+                Config: { User: orchestrator.getTenantContainerUser(), Image: orchestrator.getTenantImage(), Labels: {} },
+                HostConfig: {
+                    Memory: orchestrator.getTenantMemoryLimit(),
+                    NanoCpus: orchestrator.getTenantCpuLimit(),
+                    PidsLimit: orchestrator.getTenantPidsLimit(),
+                    SecurityOpt: ['no-new-privileges:true'],
+                    CapDrop: ['ALL'],
+                    ReadonlyRootfs: true,
+                    Tmpfs: { '/tmp': 'rw,exec,nosuid,nodev,size=512m' },
+                    NetworkMode: 'none',
+                    Privileged: false,
+                },
+                Mounts: [
+                    { Source: orchestrator.dockerMountSource(mounts.reposRoot, 'repos'), Destination: WORKSPACE_MOUNT, RW: true },
+                    { Source: orchestrator.dockerMountSource(mounts.worktreesRoot, 'worktrees'), Destination: WORKTREES_MOUNT, RW: true },
+                    { Source: orchestrator.dockerMountSource(mounts.parallelRoot, 'parallel'), Destination: PARALLEL_MOUNT, RW: true },
+                ],
+            } as unknown as Dockerode.ContainerInspectInfo;
+            expect(orchestrator.tenantContainerMatches(inspect, mounts, 'none')).to.equal(false);
+        });
+    });
+
+    describe('getTenantBackendAgentStorageRoot', () => {
+
+        it('points tenant backends at their disk-backed config mount', () => {
+            delete process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+            expect(access(new QaapDockerOrchestrator()).getTenantBackendAgentStorageRoot()).to.equal('/home/theia/.qaap/.qaap-agent-storage');
+        });
+
+        it('propagates an operator opt-out but never a control-plane path', () => {
+            process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = 'off';
+            expect(access(new QaapDockerOrchestrator()).getTenantBackendAgentStorageRoot()).to.equal('off');
+            process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = '/srv/control-plane/cache';
+            expect(access(new QaapDockerOrchestrator()).getTenantBackendAgentStorageRoot()).to.equal('/home/theia/.qaap/.qaap-agent-storage');
         });
     });
 

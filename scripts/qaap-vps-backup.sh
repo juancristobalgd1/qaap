@@ -9,6 +9,8 @@
 #   /home/qaap-tenants  private tenant agent homes
 #
 # node_modules are excluded (reinstallable, and they dominate the size otherwise).
+# Tenant package-manager caches (users/<login>/.qaap-agent-storage/cache: pnpm store, npm, bun…)
+# are excluded for the same reason; agent data under .qaap-agent-storage/data is kept.
 #
 # Install (as root on the VPS):
 #   echo '17 3 * * * root /opt/qaap/scripts/qaap-vps-backup.sh >> /var/log/qaap-backup.log 2>&1' \
@@ -58,7 +60,7 @@ docker run --rm \
     --volumes-from "$THEIA_CONTAINER:ro" \
     -v "$BACKUP_DIR:/backup" \
     busybox:1.37.0 sh -c "umask 077; tar czf '/backup/qaap-$STAMP.tar.gz.partial' \
-        --exclude 'node_modules' \
+        --exclude 'node_modules'         --exclude '.qaap-agent-storage/cache' \
         /workspace /home/theia/.qaap /home/theia/.theia /tmp/qaap-worktrees /tmp/qaap-parallel /home/qaap-tenants"
 
 if [[ ! -s "$PARTIAL" ]]; then
