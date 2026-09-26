@@ -8,7 +8,15 @@ import * as http from 'http';
 import type { AddressInfo } from 'net';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapGithubOAuthConfig } from './qaap-github-oauth-config';
-import { exchangeGithubCode, fetchGithubPullRequests, mergeGithubPullRequest, fetchGithubRepositoryRequest, resolveGithubApiTimeoutMs } from './qaap-github-api';
+import {
+    GithubApiError,
+    exchangeGithubCode,
+    fetchGithubPullRequests,
+    mergeGithubPullRequest,
+    fetchGithubRepositoryRequest,
+    resolveGithubApiTimeoutMs,
+    searchGithubPullRequests,
+} from './qaap-github-api';
 
 describe('fetchGithubRepositoryRequest', () => {
     let server: http.Server;
@@ -275,5 +283,69 @@ describe('GitHub API wrappers with a stubbed fetch', () => {
         expect(resolveGithubApiTimeoutMs({})).to.equal(30_000);
         expect(resolveGithubApiTimeoutMs({ QAAP_GITHUB_API_TIMEOUT_MS: '5000' })).to.equal(5_000);
         expect(resolveGithubApiTimeoutMs({ QAAP_GITHUB_API_TIMEOUT_MS: 'nope' })).to.equal(30_000);
+    });
+});
+
+describe('searchGithubPullRequests', () => {
+    const originalFetch = globalThis.fetch;
+    let handler: (url: string) => Promise<Response>;
+    let lastUrl = '';
+
+    beforeEach(() => {
+        globalThis.fetch = ((input: RequestInfo | URL) => {
+            lastUrl = String(input);
+            return handler(lastUrl);
+        }) as typeof fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    it('sends a sorted, paged search and maps items to partial summaries with merged state', async () => {
+        handler = async () => new Response(JSON.stringify({
+            total_count: 5000,
+            incomplete_results: false,
+            items: [
+                {
+                    number: 7, title: 'Merged one', html_url: 'https://github.com/octo/app/pull/7', updated_at: '2026-09-01T00:00:00Z',
+                    state: 'closed', user: { login: 'octo' }, repository_url: 'https://api.github.com/repos/octo/app',
+                    pull_request: { merged_at: '2026-09-01T00:00:00Z', html_url: 'https://github.com/octo/app/pull/7' },
+                },
+                {
+                    number: 8, title: 'Closed one', html_url: 'https://github.com/acme/web/pull/8', updated_at: '2026-08-01T00:00:00Z',
+                    state: 'closed', draft: false, user: { login: 'dev' }, repository_url: 'https://api.github.com/repos/acme/web',
+                    pull_request: { merged_at: null },
+                },
+                { number: 9, title: 'An issue', state: 'open', updated_at: '2026-08-01T00:00:00Z', repository_url: 'https://api.github.com/repos/acme/web' },
+            ],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const page = await searchGithubPullRequests('token', 'is:pr involves:octo', 2, 30);
+        const url = new URL(lastUrl);
+        expect(url.pathname).to.equal('/search/issues');
+        expect(url.searchParams.get('q')).to.equal('is:pr involves:octo');
+        expect(url.searchParams.get('sort')).to.equal('updated');
+        expect(url.searchParams.get('order')).to.equal('desc');
+        expect(url.searchParams.get('page')).to.equal('2');
+        expect(page.totalCount).to.equal(1000);
+        expect(page.pullRequests.map(pr => [pr.owner, pr.repo, pr.number, pr.state, pr.partial])).to.deep.equal([
+            ['octo', 'app', 7, 'merged', true],
+            ['acme', 'web', 8, 'closed', true],
+        ]);
+    });
+
+    it('flags rate limits and treats pages past the search window as empty', async () => {
+        handler = async () => new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0' } });
+        let error: unknown;
+        try {
+            await searchGithubPullRequests('token', 'is:pr involves:octo', 1, 30);
+        } catch (err) {
+            error = err;
+        }
+        expect(error).to.be.instanceOf(GithubApiError);
+        expect((error as GithubApiError).rateLimited).to.equal(true);
+
+        handler = async () => new Response('{}', { status: 422 });
+        expect((await searchGithubPullRequests('token', 'is:pr involves:octo', 40, 30)).pullRequests).to.deep.equal([]);
     });
 });

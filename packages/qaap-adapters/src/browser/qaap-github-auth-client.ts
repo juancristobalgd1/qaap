@@ -19,6 +19,10 @@ import {
     type QaapGithubMergePullRequestResponse,
     type QaapGithubOpenRepositoryResponse,
     type QaapGithubOpenRepositoryRequest,
+    type QaapGithubPullRequestDetailResponse,
+    type QaapGithubPullRequestSearchResponse,
+    type QaapGithubPullRequestStateFilter,
+    type QaapGithubPullRequestSummary,
     type QaapGithubPullRequestsResponse,
     type QaapGithubRepositoriesResponse,
     type QaapProjectSessionsResponse,
@@ -247,6 +251,70 @@ export async function fetchQaapGithubPullRequests(
         currentRepository: body.currentRepository,
         signedIn: body.signedIn !== false,
     };
+}
+
+export interface QaapGithubPullRequestSearchRequest {
+    readonly state: QaapGithubPullRequestStateFilter;
+    readonly page?: number;
+    /** Work Hub project repositories (`owner/name`) to include next to the user's own scope. */
+    readonly repositories?: readonly string[];
+    /** Bypass the backend's short-lived cache (explicit refresh). */
+    readonly force?: boolean;
+}
+
+/** All pull requests (open, merged, closed) the signed-in user can see, one search page at a time. */
+export async function searchQaapGithubPullRequests(request: QaapGithubPullRequestSearchRequest): Promise<QaapGithubPullRequestSearchResponse> {
+    const params = new URLSearchParams({ state: request.state, page: String(request.page ?? 1) });
+    if (request.repositories?.length) {
+        params.set('repos', request.repositories.join(','));
+    }
+    if (request.force) {
+        params.set('force', '1');
+    }
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/pull-requests/search?${params.toString()}`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS,
+        () => nls.localize(
+            'qaap/githubPullRequests/timedOut',
+            'Loading GitHub pull requests took too long. Please try again.'
+        ),
+    );
+    if (response.status === 401) {
+        return { pullRequests: [], page: request.page ?? 1, hasMore: false, signedIn: false };
+    }
+    const body = await response.json().catch(() => ({})) as Partial<QaapGithubPullRequestSearchResponse> & { error?: string };
+    if (!response.ok) {
+        throw new Error(body.error || `Failed to search GitHub pull requests (${response.status})`);
+    }
+    return {
+        pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],
+        page: typeof body.page === 'number' ? body.page : request.page ?? 1,
+        hasMore: body.hasMore === true,
+        signedIn: body.signedIn !== false,
+        rateLimited: body.rateLimited,
+        incompleteResults: body.incompleteResults,
+    };
+}
+
+/** Full detail (branches, diff stats, mergeability, files preview) of one pull request. */
+export async function fetchQaapGithubPullRequestDetail(
+    owner: string,
+    repo: string,
+    number: number,
+): Promise<QaapGithubPullRequestSummary | undefined> {
+    const params = new URLSearchParams({ owner, repo, number: String(number) });
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/pull-requests/detail?${params.toString()}`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_GITHUB_LIST_TIMEOUT_MS,
+        () => nls.localize('qaap/githubPullRequests/detailTimedOut', 'Loading the pull request took too long.'),
+    );
+    if (!response.ok) {
+        return undefined;
+    }
+    const body = await response.json().catch(() => ({})) as QaapGithubPullRequestDetailResponse;
+    return body.pullRequest;
 }
 
 export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullRequestRequest): Promise<QaapGithubMergePullRequestResponse> {

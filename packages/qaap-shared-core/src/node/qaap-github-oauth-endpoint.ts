@@ -48,6 +48,7 @@ import {
 import {
     createGithubRepository,
     exchangeGithubCode,
+    fetchGithubPullRequestDetail,
     fetchGithubPullRequests,
     fetchGithubRepositories,
     fetchGithubRepository,
@@ -55,6 +56,8 @@ import {
     mergeGithubPullRequest,
 } from './qaap-github-api';
 import { seedEmptyRepository } from './qaap-github-seed-empty-repository';
+import { QaapGithubPullRequestSearchService } from './qaap-github-pull-request-search-service';
+import { parseGithubPullRequestStateFilter } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -119,6 +122,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     protected readonly workspacePrepareTimeoutMs = WORKSPACE_PREPARE_TIMEOUT_MS;
 
+    /** Cached GitHub search behind the Work Hub "all pull requests" navigator. */
+    protected readonly pullRequestSearch = new QaapGithubPullRequestSearchService();
+
     configure(app: Application): void {
         app.use(json());
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
@@ -137,6 +143,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             void this.handleDeleteGithubRepository(req, res);
         });
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, (req, res) => this.handleGithubPullRequests(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, (req, res) => this.handleSearchGithubPullRequests(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, (req, res) => this.handleGithubPullRequestDetail(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, (req, res) => this.handleMergeGithubPullRequest(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleUpsertProjectSession(req, res));
@@ -457,6 +465,78 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
     }
 
+    /**
+     * All pull requests (open, merged, closed) across the user's repositories, organizations and
+     * involvement, paged via GitHub search. `state=all|open|merged|closed`, `page` is 1-based,
+     * `repos=owner/name,...` adds Work Hub project repositories, `force=1` skips the fresh cache.
+     */
+    protected async handleSearchGithubPullRequests(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in', signedIn: false, pullRequests: [], page: 1, hasMore: false });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            // Local dev without GitHub auth: nothing to search, but not a sign-in prompt either.
+            res.json({ pullRequests: [], page: 1, hasMore: false, signedIn: true });
+            return;
+        }
+        const stored = auth.session;
+        const page = Number.parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10);
+        try {
+            const response = await this.pullRequestSearch.search({
+                accessToken: stored.accessToken,
+                login: stored.user.login,
+                state: parseGithubPullRequestStateFilter(req.query.state),
+                page: Number.isInteger(page) && page > 0 ? page : 1,
+                repositories: this.parseGithubReposQuery(req.query.repos).map(repo => repo.fullName),
+                force: req.query.force === '1',
+            });
+            if (response.rateLimited && response.pullRequests.length === 0) {
+                res.status(429).json({ ...response, error: 'GitHub search rate limit reached. Try again in a minute.' });
+                return;
+            }
+            res.json(response);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to search pull requests';
+            res.status(502).json({ error: message, signedIn: true, pullRequests: [], page: 1, hasMore: false });
+        }
+    }
+
+    /** Full detail (branches, stats, files) for a pull request surfaced by the search listing. */
+    protected async handleGithubPullRequestDetail(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            res.status(503).json({ error: 'GitHub sign-in required' });
+            return;
+        }
+        const segment = (value: unknown): string | undefined => {
+            try {
+                return this.cleanGithubPathSegment(typeof value === 'string' ? value : undefined);
+            } catch {
+                return undefined;
+            }
+        };
+        const owner = segment(req.query.owner);
+        const repo = segment(req.query.repo);
+        const number = Number(req.query.number);
+        if (!owner || !repo || !Number.isInteger(number) || number <= 0) {
+            res.status(400).json({ error: 'Invalid pull request' });
+            return;
+        }
+        try {
+            const pullRequest = await fetchGithubPullRequestDetail(auth.session.accessToken, owner, repo, number);
+            res.json({ pullRequest });
+        } catch (err) {
+            const status = (err as { status?: number }).status;
+            res.status(status === 404 ? 404 : 502).json({ error: err instanceof Error ? err.message : 'Failed to load pull request' });
+        }
+    }
+
     /** `repos=owner/name,owner2/name2` — Work Hub inbox scans multiple GitHub repositories. */
     protected parseGithubReposQuery(raw: unknown): QaapGithubRepositorySummary[] {
         if (typeof raw !== 'string' || !raw.trim()) {
@@ -524,6 +604,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 return;
             }
             const result = await mergeGithubPullRequest(stored.accessToken, { owner, repo, number });
+            // The merged PR must not keep showing as open in the cached all-PRs listing.
+            this.pullRequestSearch.invalidateUser(stored.user.login);
             res.json(result);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to merge pull request';
