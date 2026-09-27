@@ -4,7 +4,11 @@ import type { TranscriptAgentFailureDialogOptions } from './mobile-projects-tran
 
 import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
-import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
+import {
+    enhanceTranscriptCaptureDirectives,
+    isTranscriptCaptureClosed,
+    syncTranscriptCaptureClosedRow,
+} from './qaap-transcript-capture-pending-ui';
 import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import {
@@ -287,6 +291,7 @@ export function createTranscriptMessageRowExtracted(ctx: MobileProjectsTranscrip
             // the same padded flex column, see .theia-mobile-agent-transcript-msg).
             const provenance = ctx.artifactsUi.resolveTurnProvenance(options?.conv, options?.message);
             syncTranscriptStandaloneTurnProvenance(row, provenance.turnAgentId, provenance.turnAgentModel);
+            syncTranscriptCaptureClosedRow(row, isTranscriptCaptureClosed(options?.conv, options?.message, !!options?.streaming));
         }
         // Ownership is conveyed by alignment and the bubble surface, so no redundant "You" label.
         const contentEl = document.createElement('div');
