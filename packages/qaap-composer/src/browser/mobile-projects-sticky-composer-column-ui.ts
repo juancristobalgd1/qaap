@@ -286,6 +286,8 @@ export class MobileProjectsStickyComposerColumnUi {
             placeholderAgent,
             options.project.name,
         );
+        // Placeholder is only a last-resort accessible name and disappears once a draft exists.
+        input.setAttribute('aria-label', input.placeholder);
         input.value = options.getDraft();
         input.disabled = !options.canSubmit;
         bindApprovalPolicyClick?.();

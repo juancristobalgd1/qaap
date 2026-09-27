@@ -293,6 +293,22 @@ async function waitForDevServerOnPort(port: number, timeoutMs: number = 120_000)
     throw new Error(`Timed out waiting for dev server on port ${port}`);
 }
 
+function stopWorkspaceViteDevServer(viteDevServer: ChildProcess | undefined): void {
+    if (!viteDevServer?.pid) {
+        return;
+    }
+    if (process.platform === 'win32') {
+        // With shell: true the direct child is cmd.exe; kill the whole tree so Vite frees its port.
+        try {
+            execSync(`taskkill /pid ${viteDevServer.pid} /T /F`, { stdio: 'ignore' });
+        } catch {
+            // Already exited.
+        }
+        return;
+    }
+    viteDevServer.kill('SIGTERM');
+}
+
 async function startWorkspaceViteDevServer(workspacePath: string): Promise<ChildProcess> {
     try {
         execSync('lsof -ti tcp:5173 -sTCP:LISTEN | xargs kill -9', { stdio: 'ignore' });
@@ -306,6 +322,8 @@ async function startWorkspaceViteDevServer(workspacePath: string): Promise<Child
         {
             cwd: workspacePath,
             stdio: ['ignore', 'pipe', 'pipe'],
+            // npm is npm.cmd on Windows, which Node only launches through a shell.
+            shell: process.platform === 'win32',
             env: { ...process.env, NODE_ENV: 'development' },
         },
     );
@@ -576,7 +594,7 @@ test.describe('@qaap-mobile Qaap time to preview', () => {
 
             await app.page.close();
         } finally {
-            viteDevServer?.kill('SIGTERM');
+            stopWorkspaceViteDevServer(viteDevServer);
         }
     });
 });
