@@ -434,7 +434,8 @@ function loadBaseline() {
     if (!fs.existsSync(baselinePath)) {
         return new Set();
     }
-    const lines = fs.readFileSync(baselinePath, 'utf8').split('\n');
+    // Split on CRLF too: with autocrlf the trailing `\r` defeats the `#.*$` comment strip.
+    const lines = fs.readFileSync(baselinePath, 'utf8').split(/\r?\n/);
     /** @type {Set<string>} */
     const set = new Set();
     for (const line of lines) {
