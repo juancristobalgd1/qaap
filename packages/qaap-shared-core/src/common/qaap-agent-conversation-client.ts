@@ -68,6 +68,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly messageCount: number;
     readonly lastMessagePreview?: string;
     readonly lastMessageRole?: 'user' | 'agent';
+    /** Excerpt of the most recent message's persisted failure reason, when it failed. */
+    readonly lastMessageError?: string;
     readonly workspacePath?: string;
     readonly sessionId?: string;
     /** User-flagged "high priority" — sorts at the top of the project list. */
@@ -372,6 +374,12 @@ export function normalizeAgentConversationFailures(conv: QaapAgentConversationDT
     return { ...conv, messages };
 }
 
+/** Bounded, whitespace-collapsed copy of a message's failure reason for summary rows. */
+export function excerptConversationMessageError(error: string): string {
+    const clean = error.replace(/\s+/g, ' ').trim();
+    return clean.length > 400 ? `${clean.slice(0, 399)}…` : clean;
+}
+
 export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
@@ -397,6 +405,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         messageCount: conv.messages.length,
         lastMessagePreview: preview,
         lastMessageRole: last?.role,
+        ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         priority: conv.priority,
         paused: conv.paused,
         archived: conv.archived,

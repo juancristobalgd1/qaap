@@ -3,6 +3,7 @@ import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qa
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { localizeAgentFailureShortReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageSegmentDTO, conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { hasTranscriptActivityStats, resolveTranscriptActivityStats, resolveTranscriptThinkingContent } from '../common/qaap-agent-transcript-segments';
 import { resolveLastUserPromptChars, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
@@ -64,6 +65,7 @@ export function syncRowProcessAccordionExtracted(ctx: MobileProjectsTranscriptMe
             isCancelled: ctx.isAgentMessageCancelled(message),
             elapsedMs,
             turnStartMs,
+            failureReason: localizeAgentFailureShortReason(message?.error),
             activityVerb,
             onStopRun: ctx.resolveRunStopHandler(conv, message, isWorking),
             // Only the finalize path calls with streaming=false, and it does so

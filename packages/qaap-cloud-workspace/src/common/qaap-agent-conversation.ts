@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
+import { excerptConversationMessageError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import {
     agentMessageHasVisualVerificationMarker,
@@ -280,6 +281,8 @@ export interface QaapAgentConversationSummary {
     readonly messageCount: number;
     /** Excerpt of the most recent message — handy for list-view previews. */
     readonly lastMessagePreview?: string;
+    /** Excerpt of the most recent message's persisted failure reason, when it failed. */
+    readonly lastMessageError?: string;
     /** Role of the most recent message, so the UI can render "you said…" vs. "agent replied…". */
     readonly lastMessageRole?: QaapAgentMessageRole;
     readonly priority?: boolean;
@@ -542,6 +545,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         messageCount: conv.messages.length,
         lastMessagePreview: last ? excerpt(resolveMessagePreviewText(last)) : undefined,
         lastMessageRole: last?.role,
+        ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         priority: conv.priority || undefined,
         paused: conv.paused || undefined,
         archived: conv.archived || undefined,

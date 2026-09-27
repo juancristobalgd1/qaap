@@ -3,6 +3,7 @@ import type { MobileProjectsConversationsContext } from './mobile-projects-conve
 
 import URI from '@theia/core/lib/common/uri';
 import {
+    excerptConversationMessageError,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import {
@@ -213,6 +214,9 @@ export function refreshSummaryFromLiveMessageExtracted(ctx: MobileProjectsConver
                 : existing.messageCount + 1,
             lastMessagePreview: excerpt(resolveMessagePreviewText(payload.message)),
             lastMessageRole: payload.message.role,
+            lastMessageError: payload.message.error?.trim()
+                ? excerptConversationMessageError(payload.message.error)
+                : undefined,
         };
         const result = ctx.upsert(updated);
         ctx.emitConversationChange({
