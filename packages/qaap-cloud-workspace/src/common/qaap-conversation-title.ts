@@ -77,13 +77,58 @@ const CLAUSE_CONNECTORS: readonly string[] = [' and ', ' then '];
  * own localized fallback (e.g. 'New conversation').
  */
 export function deriveConversationTitle(firstUserMessage: string): string {
-    const cleaned = cleanPromptText(firstUserMessage);
+    const cleaned = cleanPromptText(resolveConversationTitleSeed(firstUserMessage));
     if (!cleaned) {
         return '';
     }
     const base = stripLeadingBoilerplate(cleaned);
     const clipped = clipToTitle(base);
     return capitalizeFirst(clipped);
+}
+
+/**
+ * Composer attachments (preview feedback, images, files) are sent as a machine preamble followed by
+ * the user's draft — see `qaap-composer-attachment-prompt.ts` in `@theia/qaap-shared-core`. The
+ * markers are mirrored here (not imported) because that module pulls in `@theia/ai-core`, which the
+ * backend title path must not load.
+ */
+const ATTACHMENT_PREAMBLE_PREFIX = 'The user attached the following context';
+const ATTACHMENT_CONTEXT_HEADER = /^### (?:previewFeedback|imageContext):/m;
+const ATTACHMENT_SECTION_SEPARATOR = '\n\n---\n\n';
+const PREVIEW_FEEDBACK_COMMENT = /^- Comment:\s*(.+)$/gm;
+/** Drafts the composer fills in on the user's behalf; they say nothing about the task. */
+const GENERIC_ATTACHMENT_DRAFTS: readonly RegExp[] = [
+    /^please address the attached preview feedback\.?$/i,
+];
+
+function hasComposerAttachmentPreamble(message: string): boolean {
+    return message.startsWith(ATTACHMENT_PREAMBLE_PREFIX) || ATTACHMENT_CONTEXT_HEADER.test(message);
+}
+
+/**
+ * The part of a first user message worth titling: the typed draft after any attachment preamble,
+ * or — when the draft is empty or composer boilerplate — the preview-feedback annotation comments.
+ */
+export function resolveConversationTitleSeed(message: string): string {
+    if (!message || !hasComposerAttachmentPreamble(message)) {
+        return message;
+    }
+    const separatorIndex = message.lastIndexOf(ATTACHMENT_SECTION_SEPARATOR);
+    const draft = separatorIndex >= 0
+        ? message.slice(separatorIndex + ATTACHMENT_SECTION_SEPARATOR.length).trim()
+        : '';
+    if (draft && !GENERIC_ATTACHMENT_DRAFTS.some(pattern => pattern.test(draft))) {
+        return draft;
+    }
+    const comments = [...message.matchAll(PREVIEW_FEEDBACK_COMMENT)]
+        .map(match => match[1].trim())
+        .filter(Boolean);
+    return comments.length > 0 ? comments.join('; ') : draft;
+}
+
+/** True for titles persisted before {@link resolveConversationTitleSeed} existed (the raw preamble). */
+export function isComposerAttachmentPreambleTitle(title: string | undefined): boolean {
+    return !!title && title.startsWith(ATTACHMENT_PREAMBLE_PREFIX);
 }
 
 /** Strip markdown noise and collapse whitespace to a single readable line. */
