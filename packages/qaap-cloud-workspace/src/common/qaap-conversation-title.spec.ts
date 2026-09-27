@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { deriveConversationTitle } from './qaap-conversation-title';
+import { deriveConversationTitle, isComposerAttachmentPreambleTitle, resolveConversationTitleSeed } from './qaap-conversation-title';
 
 describe('deriveConversationTitle', () => {
 
@@ -82,5 +82,38 @@ describe('deriveConversationTitle', () => {
         expect(title).to.not.match(/\s$/);
         // Ends on a whole word, no dangling connective.
         expect(title.endsWith('the')).to.equal(false);
+    });
+});
+
+describe('attachment-aware conversation titles', () => {
+    const preamble = 'The user attached the following context with this message. Use it to answer; do not claim nothing was provided.';
+    const feedback = [
+        preamble,
+        '',
+        '### previewFeedback: Preview feedback · 1 annotations · /qaap-preview/x/ · Mobile',
+        '```',
+        'Annotation 1:',
+        '- Comment: mejora la ui',
+        '- Selector: html > body > main',
+        '```',
+    ].join('\n');
+
+    it('titles preview feedback from the annotation comment, not the preamble or generic draft', () => {
+        const message = `${feedback}\n\n---\n\nPlease address the attached preview feedback.`;
+        expect(deriveConversationTitle(message)).to.equal('Mejora la ui');
+    });
+
+    it('prefers the typed draft over annotation comments', () => {
+        const message = `${feedback}\n\n---\n\nFix the header spacing on mobile`;
+        expect(resolveConversationTitleSeed(message)).to.equal('Fix the header spacing on mobile');
+    });
+
+    it('leaves ordinary prompts untouched', () => {
+        expect(resolveConversationTitleSeed('Add a dark mode toggle')).to.equal('Add a dark mode toggle');
+    });
+
+    it('recognizes titles persisted from the raw preamble', () => {
+        expect(isComposerAttachmentPreambleTitle('The user attached the following context')).to.equal(true);
+        expect(isComposerAttachmentPreambleTitle('Mejora la ui')).to.equal(false);
     });
 });

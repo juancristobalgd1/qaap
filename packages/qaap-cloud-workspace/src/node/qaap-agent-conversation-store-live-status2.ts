@@ -12,6 +12,7 @@ import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia
 import { autoContinueAllowedForInteraction } from '@theia/qaap-transcript/lib/common/qaap-agent-turn-completion';
 
 import { buildConversationAgentPrompt } from '../common/qaap-agent-conversation-prompt';
+import { deriveConversationTitle, isComposerAttachmentPreambleTitle } from '../common/qaap-conversation-title';
 
 import { isTeamSynthesisUserMessage } from '../common/qaap-team-mailbox';
 
@@ -280,9 +281,10 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreCo
             // See the identical cast/comment in qaap-agent-conversation-store-render2.ts#getExtracted:
             // trace-backfill helpers are typed against the client QaapAgentConversationDTO but only
             // read/spread fields structurally shared with the server QaapAgentConversation.
-            const { conversation, changed } = backfillConversationTraceEvents(conv as unknown as QaapAgentConversationDTO);
-            ctx.conversations.set(conversation.id, conversation as unknown as QaapAgentConversation);
-            if (changed) {
+            const { conversation: backfilled, changed } = backfillConversationTraceEvents(conv as unknown as QaapAgentConversationDTO);
+            const conversation = repairAttachmentPreambleTitle(backfilled as unknown as QaapAgentConversation);
+            ctx.conversations.set(conversation.id, conversation);
+            if (changed || conversation !== (backfilled as unknown as QaapAgentConversation)) {
                 anyChanged = true;
             }
         }
@@ -456,4 +458,18 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
         + `(attempt ${nextResumeCount}/${MAX_RESTART_RESUMES}).`,
     );
     return true;
+}
+
+/**
+ * Titles derived before attachment-aware titling were the raw composer preamble ("The user attached
+ * the following context…"). Re-derive them once from the first user message; returns the same object
+ * when nothing needs repair.
+ */
+function repairAttachmentPreambleTitle(conv: QaapAgentConversation): QaapAgentConversation {
+    if (!isComposerAttachmentPreambleTitle(conv.title)) {
+        return conv;
+    }
+    const firstUser = conv.messages.find(message => message.role === 'user');
+    const title = firstUser ? deriveConversationTitle(firstUser.content) : '';
+    return title && title !== conv.title ? { ...conv, title } : conv;
 }
