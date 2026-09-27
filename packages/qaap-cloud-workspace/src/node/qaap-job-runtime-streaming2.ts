@@ -1,39 +1,20 @@
-// @ts-nocheck
 // Extracted from qaap-job-runtime.ts
+import type { QaapJobRuntimeContext } from './qaap-job-runtime-context';
 
-import { Emitter, Event, nls } from '@theia/core';
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { nls } from '@theia/core';
 import { ChildProcess } from 'child_process';
-import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import {
     didQaapJobSucceed,
     isQaapJobFinished,
-    isQaapJobResourceClass,
-    QaapCreateJobGraphRequest,
-    QaapCreateJobGraphResult,
-    QaapCreateJobRequest,
-    QaapCreateJobResult,
     QaapJob,
-    QaapJobDetail,
-    QaapJobEvent,
-    QaapJobFunctionDescriptor,
     QaapJobGraph,
-    QaapJobResourceClass,
-    QaapJobRetryPolicy,
     QaapJobState,
-    QaapJobWorkspaceAccess,
 } from '../common/qaap-job';
-import { QaapJobFunctionRegistry } from './qaap-job-function-registry';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { MAX_FUNCTION_RESULT_CHARS } from './qaap-job-runtime';
 import { QaapJobRequestError } from './qaap-job-runtime';
 
-export function assertAcyclicGraphExtracted(ctx: any, dependenciesByKey: ReadonlyMap<string, readonly string[]>): void {
+export function assertAcyclicGraphExtracted(ctx: QaapJobRuntimeContext, dependenciesByKey: ReadonlyMap<string, readonly string[]>): void {
         const visiting = new Set<string>();
         const visited = new Set<string>();
         const visit = (key: string): void => {
@@ -55,7 +36,7 @@ export function assertAcyclicGraphExtracted(ctx: any, dependenciesByKey: Readonl
         }
 }
 
-export function jobsForGraphExtracted(ctx: any, graph: QaapJobGraph): Record<string, QaapJob> {
+export function jobsForGraphExtracted(ctx: QaapJobRuntimeContext, graph: QaapJobGraph): Record<string, QaapJob> {
         const result: Record<string, QaapJob> = {};
         for (const [key, id] of Object.entries(graph.jobsByKey)) {
             const job = ctx.jobs.get(id);
@@ -66,7 +47,7 @@ export function jobsForGraphExtracted(ctx: any, graph: QaapJobGraph): Record<str
         return result;
 }
 
-export function drainQueueExtracted(ctx: any): void {
+export function drainQueueExtracted(ctx: QaapJobRuntimeContext): void {
         if (ctx.draining || ctx.stopping) {
             return;
         }
@@ -147,7 +128,7 @@ export function drainQueueExtracted(ctx: any): void {
         }
 }
 
-export function canStartExtracted(ctx: any, candidate: QaapJob): boolean {
+export function canStartExtracted(ctx: QaapJobRuntimeContext, candidate: QaapJob): boolean {
         const running = [...ctx.jobs.values()].filter(job => job.state === 'running');
         if (running.length >= ctx.maxConcurrentJobs()) {
             return false;
@@ -167,7 +148,7 @@ export function canStartExtracted(ctx: any, candidate: QaapJob): boolean {
             : sameWorkspace.length === 0;
 }
 
-export function hasEarlierQueuedWriterExtracted(ctx: any, candidate: QaapJob): boolean {
+export function hasEarlierQueuedWriterExtracted(ctx: QaapJobRuntimeContext, candidate: QaapJob): boolean {
         for (const job of ctx.jobs.values()) {
             if (job.id === candidate.id) {
                 return false;
@@ -183,7 +164,7 @@ export function hasEarlierQueuedWriterExtracted(ctx: any, candidate: QaapJob): b
         return false;
 }
 
-export function runJobExtracted(ctx: any, job: QaapJob): void {
+export function runJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): void {
         if (job.kind === 'function') {
             ctx.runFunctionJob(job);
         } else {
@@ -191,7 +172,7 @@ export function runJobExtracted(ctx: any, job: QaapJob): void {
         }
 }
 
-export function runCommandJobExtracted(ctx: any, job: QaapJob): void {
+export function runCommandJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): void {
         try {
             if (!job.command) {
                 throw new Error('Command job has no command.');
@@ -223,7 +204,7 @@ export function runCommandJobExtracted(ctx: any, job: QaapJob): void {
         }
 }
 
-export function runFunctionJobExtracted(ctx: any, job: QaapJob): void {
+export function runFunctionJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): void {
         const definition = job.functionId ? ctx.functionRegistry.get(job.functionId) : undefined;
         if (!definition) {
             ctx.appendOutput(job.id, `${nls.localize('qaap/jobs/functionNotFound', 'Job function was not found.')}\n`);
@@ -270,7 +251,7 @@ export function runFunctionJobExtracted(ctx: any, job: QaapJob): void {
             });
 }
 
-export function startAttemptTimeoutExtracted(ctx: any, job: QaapJob, onTimeout: () => void): void {
+export function startAttemptTimeoutExtracted(ctx: QaapJobRuntimeContext, job: QaapJob, onTimeout: () => void): void {
         const timer = setTimeout(() => {
             if (ctx.jobs.get(job.id)?.state === 'running') {
                 onTimeout();
@@ -280,7 +261,7 @@ export function startAttemptTimeoutExtracted(ctx: any, job: QaapJob, onTimeout: 
         ctx.timeoutTimers.set(job.id, timer);
 }
 
-export function handleProcessCloseExtracted(ctx: any, id: string, child: ChildProcess, code: number | null): void {
+export function handleProcessCloseExtracted(ctx: QaapJobRuntimeContext, id: string, child: ChildProcess, code: number | null): void {
         ctx.reapProcessGroupAfterExit(child);
         const terminationTimer = ctx.terminationTimers.get(id);
         if (terminationTimer) {
@@ -300,7 +281,7 @@ export function handleProcessCloseExtracted(ctx: any, id: string, child: ChildPr
         }
 }
 
-export function handleAttemptFailureExtracted(ctx: any, id: string, finalState: 'failed' | 'timed_out', exitCode?: number): void {
+export function handleAttemptFailureExtracted(ctx: QaapJobRuntimeContext, id: string, finalState: 'failed' | 'timed_out', exitCode?: number): void {
         const current = ctx.jobs.get(id);
         if (current?.state !== 'running') {
             return;
@@ -335,7 +316,7 @@ export function handleAttemptFailureExtracted(ctx: any, id: string, finalState: 
         ctx.drainQueue();
 }
 
-export function scheduleRetryWakeExtracted(ctx: any, job: QaapJob): void {
+export function scheduleRetryWakeExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): void {
         if (ctx.retryTimers.has(job.id) || job.state !== 'retry_wait') {
             return;
         }
@@ -351,7 +332,7 @@ export function scheduleRetryWakeExtracted(ctx: any, job: QaapJob): void {
         ctx.retryTimers.set(job.id, timer);
 }
 
-export function appendOutputExtracted(ctx: any, id: string, chunk: string): void {
+export function appendOutputExtracted(ctx: QaapJobRuntimeContext, id: string, chunk: string): void {
         const job = ctx.jobs.get(id);
         if (!job || !chunk) {
             return;
@@ -370,7 +351,7 @@ export function appendOutputExtracted(ctx: any, id: string, chunk: string): void
         ctx.onDidChangeJobEmitter.fire({ type: 'output', job, chunk });
 }
 
-export function clearActiveAttemptExtracted(ctx: any, id: string): void {
+export function clearActiveAttemptExtracted(ctx: QaapJobRuntimeContext, id: string): void {
         const timeoutTimer = ctx.timeoutTimers.get(id);
         if (timeoutTimer) {
             clearTimeout(timeoutTimer);
@@ -380,7 +361,7 @@ export function clearActiveAttemptExtracted(ctx: any, id: string): void {
         ctx.abortControllers.delete(id);
 }
 
-export function finishJobExtracted(ctx: any, id: string,
+export function finishJobExtracted(ctx: QaapJobRuntimeContext, id: string,
         state: Exclude<QaapJobState, 'waiting' | 'queued' | 'running' | 'retry_wait'>,
         exitCode?: number,): QaapJob | undefined {
         const current = ctx.jobs.get(id);
@@ -404,7 +385,7 @@ export function finishJobExtracted(ctx: any, id: string,
         return finished;
 }
 
-export function replaceJobExtracted(ctx: any, id: string, patch: Partial<QaapJob>): QaapJob {
+export function replaceJobExtracted(ctx: QaapJobRuntimeContext, id: string, patch: Partial<QaapJob>): QaapJob {
         const current = ctx.jobs.get(id);
         if (!current) {
             throw new Error(`Unknown job: ${id}`);
@@ -414,7 +395,7 @@ export function replaceJobExtracted(ctx: any, id: string, patch: Partial<QaapJob
         return updated;
 }
 
-export function terminateProcessTreeExtracted(ctx: any, id: string, child: ChildProcess): void {
+export function terminateProcessTreeExtracted(ctx: QaapJobRuntimeContext, id: string, child: ChildProcess): void {
         const pid = child.pid;
         if (!pid || globalThis.process.platform === 'win32') {
             try {
@@ -438,7 +419,7 @@ export function terminateProcessTreeExtracted(ctx: any, id: string, child: Child
         ctx.terminationTimers.set(id, escalation);
 }
 
-export function reapProcessGroupAfterExitExtracted(ctx: any, child: ChildProcess): void {
+export function reapProcessGroupAfterExitExtracted(ctx: QaapJobRuntimeContext, child: ChildProcess): void {
         if (!child.pid || globalThis.process.platform === 'win32') {
             return;
         }

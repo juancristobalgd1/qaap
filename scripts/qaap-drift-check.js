@@ -12,7 +12,7 @@
  *   node scripts/qaap-drift-check.js
  *   QAAP_DIFF_BASE=upstream/master node scripts/qaap-drift-check.js
  *
- * Report only (always exit 0):
+ * Report only (drift exits 0; invalid Git input still exits 2):
  *   QAAP_DRIFT_CHECK_REPORT=1 node scripts/qaap-drift-check.js
  *
  * Known historical drift (outside allowlist) is listed in qaap-drift-baseline.txt.
@@ -22,18 +22,24 @@
 'use strict';
 
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
 const baselinePath = path.join(__dirname, 'qaap-drift-baseline.txt');
 const upstreamBasePath = path.join(__dirname, 'qaap-upstream-base.txt');
 
-function sh(cmd) {
+function git(args) {
+    return execFileSync('git', args, {
+        encoding: 'utf8', cwd: root, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024,
+    });
+}
+
+function resolveCommit(ref) {
     try {
-        return execSync(cmd, { encoding: 'utf8', cwd: root, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
     } catch {
-        return '';
+        return undefined;
     }
 }
 
@@ -46,7 +52,7 @@ function loadPinnedUpstreamBase() {
         return undefined;
     }
     const entries = fs.readFileSync(upstreamBasePath, 'utf8')
-        .split('\n')
+        .split(/\r?\n/)
         .map(line => line.replace(/#.*$/, '').trim())
         .filter(Boolean);
     if (entries.length !== 1 || !/^[0-9a-f]{40}$/i.test(entries[0])) {
@@ -71,7 +77,7 @@ function resolveDiffBase() {
         'upstream/master',
     ];
     for (const candidate of candidates) {
-        if (sh(`git rev-parse --verify ${candidate}`)) {
+        if (resolveCommit(candidate)) {
             return candidate;
         }
     }
@@ -84,6 +90,11 @@ const base = resolveDiffBase();
 const ALLOWED = [
     /^packages\/qaap-/,
     /^scripts\/qaap-/,
+    // Existing Qaap Gemini startup policy: optional models.get probing is opt-in
+    // (QAAP_GOOGLE_MODEL_METADATA); normalize configured ids and handle rejected
+    // model synchronization. Keep these exact seams until extracted into qaap-ai-config.
+    /^packages\/ai-google\/src\/browser\/google-frontend-application-contribution\.ts$/,
+    /^packages\/ai-google\/src\/node\/google-language-models-manager-impl(?:\.spec)?\.ts$/,
     // ESLint 8 compatibility: @typescript-eslint 8 removed formatting rules that
     // were still referenced by the shared config and inline suppressions in these
     // upstream files. Keep the migration allowlisted until upstream adopts the same
@@ -186,6 +197,17 @@ const ALLOWED = [
     // QAAP Playwright harness seams (test-only; no upstream product code).
     /^examples\/playwright\/src\/tests\/qaap-mobile\.test\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-transcript-preview-flow\.ui-spec\.ts$/,
+    /^examples\/playwright\/src\/tests\/qaap-recovery-preview-resilience\.ui-spec\.ts$/,
+    // Opt-in classic-IDE surface (QAAP_PLAYWRIGHT_SURFACE=ide) so the upstream suite in
+    // playwright.yml drives the IDE instead of the default Work Hub; unset = upstream behaviour.
+    /^examples\/playwright\/src\/theia-app-loader\.ts$/,
+    // Qaap page-object adapters (e.g. menus via the "Open menu" button) that the loader swaps in
+    // on the IDE surface, so the upstream specs and page objects stay byte-identical.
+    /^examples\/playwright\/src\/qaap-menu-bar\.ts$/,
+    // Qaap-only Playwright config for the upstream suite in playwright.yml (documented exclusions).
+    /^examples\/playwright\/configs\/playwright\.qaap-upstream-ci\.config\.ts$/,
+    // Its webServer command: upstream `theia:start` plus seeded user settings (startupEditor=welcomePage).
+    /^examples\/playwright\/configs\/qaap-upstream-ci-theia-start\.js$/,
     // Upstream sample plugins removed in this fork — we ship our own plugin set.
     /^sample-plugins\//,
     // Fork-specific build tooling and dev scripts (not user-facing product code).
@@ -255,7 +277,7 @@ const ALLOWED = [
     /^packages\/ai-chat-ui\/src\/browser\/style\/index\.css$/,
     /^packages\/ai-chat-ui\/src\/browser\/chat-response-renderer\/toolcall-part-renderer\.tsx$/,
     // Token-usage indicator: fork keeps CHAT_CONTEXT_WINDOW_SIZE_FALLBACK shape
-    // consumed by qaap-mobile-shell context-usage indicator/panel.
+    // consumed by the qaap-transcript context-usage indicator/panel.
     /^packages\/ai-chat-ui\/src\/browser\/chat-token-usage-indicator-util(\.spec)?\.ts$/,
     // ai-chat: fork carries configurable tool-confirmation timeout (chat-model,
     // response-model/tool-call specs, tool-request-service) and is ahead of
@@ -313,6 +335,8 @@ const ALLOWED = [
     // Fork-local agent guidance and post-task preview workflow (not upstream product code).
     /^AGENTS\.md$/,
     /^\.cursor\/rules\/post-task-build-preview\.mdc$/,
+    // Fork-local CI/CD invariants rule (pairs with doc/qaap-ci-invariants.md).
+    /^\.cursor\/rules\/ci-invariants\.mdc$/,
     // ---- Misc product seams in upstream Theia packages ---------------------
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-product-chrome\.ts$/,
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-widget\.tsx$/,
@@ -410,7 +434,8 @@ function loadBaseline() {
     if (!fs.existsSync(baselinePath)) {
         return new Set();
     }
-    const lines = fs.readFileSync(baselinePath, 'utf8').split('\n');
+    // Split on CRLF too: with autocrlf the trailing `\r` defeats the `#.*$` comment strip.
+    const lines = fs.readFileSync(baselinePath, 'utf8').split(/\r?\n/);
     /** @type {Set<string>} */
     const set = new Set();
     for (const line of lines) {
@@ -422,13 +447,25 @@ function loadBaseline() {
     return set;
 }
 
-if (!sh(`git rev-parse --verify ${base}`)) {
+const baseCommit = resolveCommit(base);
+if (!baseCommit) {
     console.error(`[qaap-drift-check] Base ref "${base}" not found. Fetch upstream or set QAAP_DIFF_BASE.`);
+    if (/^[0-9a-f]{7,40}$/i.test(base)) {
+        // Fresh/shallow clones (cloud sessions, CI) lack the upstream commit; one shallow fetch is enough.
+        console.error(`[qaap-drift-check] e.g. git fetch --depth=1 https://github.com/eclipse-theia/theia.git ${base}`);
+    }
     process.exit(2);
 }
 
 /** @type {string[]} */
-const files = sh(`git diff --name-only ${base} --`).split('\n').filter(Boolean);
+let files;
+try {
+    files = git(['diff', '--name-only', '-z', '--no-ext-diff', baseCommit, '--']).split('\0').filter(Boolean);
+} catch (error) {
+    console.error(`[qaap-drift-check] Git diff failed against "${base}". No drift result is available.`);
+    console.error(String(error.stderr || error.message).trim());
+    process.exit(2);
+}
 
 /** @type {string[]} */
 const violations = files.filter(f => !isAllowed(f));
@@ -477,6 +514,9 @@ if (newDrift.length) {
 } else if (!reportOnly) {
     console.log('[qaap-drift-check] OK — no new upstream drift outside allowlist.');
     if (resolvedBaseline.length) {
-        console.log(`[qaap-drift-check] ${resolvedBaseline.length} baseline path(s) no longer differ — consider trimming qaap-drift-baseline.txt`);
+        console.log(`[qaap-drift-check] ${resolvedBaseline.length} baseline path(s) no longer differ — consider trimming qaap-drift-baseline.txt:`);
+        for (const p of resolvedBaseline) {
+            console.log(`  ${p}`);
+        }
     }
 }

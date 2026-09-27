@@ -10,76 +10,10 @@
   ],
   "references": [
     {
-      "path": "../ai-chat"
-    },
-    {
-      "path": "../ai-chat-ui"
-    },
-    {
-      "path": "../ai-claude-code"
-    },
-    {
-      "path": "../ai-core"
-    },
-    {
-      "path": "../ai-ide"
-    },
-    {
-      "path": "../ai-mcp"
-    },
-    {
       "path": "../core"
     },
     {
-      "path": "../filesystem"
-    },
-    {
-      "path": "../memory-inspector"
-    },
-    {
-      "path": "../mini-browser"
-    },
-    {
-      "path": "../monaco"
-    },
-    {
-      "path": "../navigator"
-    },
-    {
-      "path": "../outline-view"
-    },
-    {
-      "path": "../preferences"
-    },
-    {
-      "path": "../preview"
-    },
-    {
-      "path": "../qaap-adapters"
-    },
-    {
-      "path": "../qaap-ai-openrouter"
-    },
-    {
-      "path": "../qaap-element-inspector"
-    },
-    {
-      "path": "../qaap-shell"
-    },
-    {
-      "path": "../qaap-transcript-overlay"
-    },
-    {
       "path": "../scm"
-    },
-    {
-      "path": "../terminal"
-    },
-    {
-      "path": "../vsx-registry"
-    },
-    {
-      "path": "../workspace"
     }
   ]
 }

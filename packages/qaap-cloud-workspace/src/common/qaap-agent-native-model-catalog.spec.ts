@@ -28,20 +28,41 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(agentUsesNativeModelCatalog('qaiq')).to.equal(false);
         expect(agentUsesNativeModelCatalog('openclaude')).to.equal(true);
         expect(agentUsesNativeModelCatalog('shell')).to.equal(false);
-        expect(agentUsesNativeModelCatalog('cursor')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('cursor')).to.equal(true);
         expect(agentUsesNativeModelCatalog('goose')).to.equal(false);
-        expect(agentUsesNativeModelCatalog('hermes')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('hermes')).to.equal(true);
     });
 
     it('parses CLI model lines', () => {
-        const models = parseNativeModelLines('opencode', ['  opencode/foo  ', '# comment', 'opencode/foo', 'bar']);
-        expect(models.map(m => m.modelId)).to.deep.equal(['opencode/foo', 'bar']);
+        const models = parseNativeModelLines('opencode', ['  opencode/foo  ', '# comment', 'opencode/foo']);
+        expect(models.map(m => m.modelId)).to.deep.equal(['opencode/foo']);
         expect(models.every(m => m.vendor === 'opencode')).to.equal(true);
+    });
+
+    it('ignores OpenCode diagnostics when they are printed as model lines', () => {
+        const models = parseNativeModelLines('opencode', [
+            "EROFS: read-only file system, mkdir '/home/theia/.local'",
+            'path: "/home/theia/.local",',
+            'opencode/big-pickle',
+            'syscall: "mkdir",',
+            'code: "EROFS"',
+        ]);
+
+        expect(models.map(m => m.modelId)).to.deep.equal(['opencode/big-pickle']);
     });
 
     it('lists static fallbacks per agent', () => {
         expect(listStaticNativeAgentModels('codex').length).to.be.greaterThan(0);
         expect(listStaticNativeAgentModels('qwen').map(m => m.modelId)).to.include('qwen3-coder-plus');
+        expect(listStaticNativeAgentModels('opencode').map(m => m.modelId)).to.deep.equal([
+            'opencode/big-pickle',
+            'opencode/ling-3.0-flash-fin-free',
+            'opencode/mimo-v2.5-free',
+            'opencode/muse-spark-1.2-contributor-free',
+            'opencode/muse-spark-1.3-contributor-free',
+            'opencode/nemotron-3-ultra-free',
+            'opencode/nemotron-3.5-lightning-free',
+        ]);
         expect(listStaticNativeAgentModels('openclaude').map(m => m.modelId)).to.deep.equal([
             'claude-sonnet-4-6',
             'claude-opus-4-7',
@@ -52,6 +73,7 @@ describe('qaap-agent-native-model-catalog', () => {
             'mistral-large-latest',
             'qwen2.5-coder:7b',
         ]);
+        expect(listStaticNativeAgentModels('hermes').map(m => m.modelId)).to.include('anthropic/claude-fable-5');
         expect(listStaticNativeAgentModels('unknown-agent')).to.deep.equal([]);
     });
 

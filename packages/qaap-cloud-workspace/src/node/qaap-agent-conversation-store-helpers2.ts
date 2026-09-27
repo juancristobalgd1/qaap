@@ -16,11 +16,11 @@ import {
     type QaapCreateAgentConversationRequest,
 } from '../common/qaap-agent-conversation';
 import type { QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
-import { agentSupportsModelPicker } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     createComposerGitActionDisplayMarker,
     type ComposerGitActionDisplayMetadata,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 
 // ─── Pure: markTurnFailed (0 this. refs) ─────────────────────────────────────
 

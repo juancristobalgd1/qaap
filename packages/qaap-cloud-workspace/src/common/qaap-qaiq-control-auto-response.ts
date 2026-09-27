@@ -65,10 +65,13 @@ export function resolveQaiqControlRequestAutoAction(
         return 'queue';
     }
     // Destructive shell commands (force push, hard reset, rm -rf outside the workspace) are never
-    // AUTO-approved. In request-approval mode they queue above — an explicit human approval in the
-    // UI is exactly the "user explicitly asks" consent the policy requires.
+    // AUTO-approved. Queue them for the Allow/Deny card (ChatGPT / Claude-style) so the user can
+    // explicitly consent. Full-access / bypassPermissions still hard-denies them.
     if (findQaiqDestructiveCommandGuardDenial(request)) {
-        return 'deny';
+        if (/(?:^|\s)--permission-mode\s+bypassPermissions(?:\s|$)/.test(command)) {
+            return 'deny';
+        }
+        return 'queue';
     }
     const toolName = request.toolName?.trim() ?? '';
     // Headless-blocked tools bypass useful stdio control once running — deny even in bypassPermissions.

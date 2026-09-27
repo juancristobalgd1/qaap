@@ -6,7 +6,7 @@
 
 const markdownit = require('../packages/core/shared/markdown-it');
 const { parseHTML } = require('linkedom');
-const { computeTranscriptStreamingMarkdownPatch } = require('../packages/qaap-mobile-shell/lib/browser/qaap-transcript-markdown-worker-stream');
+const { computeTranscriptStreamingMarkdownPatch } = require('../packages/qaap-transcript/lib/browser/qaap-transcript-markdown-worker-stream');
 const {
     patchStreamingMarkdownContent,
     applyStreamingMarkdownHtmlPatch,

@@ -74,7 +74,7 @@ describe('mobile-panel-resize-drag', () => {
             pointerId: 7,
             pointerType: 'mouse',
         }));
-        handle.dispatchEvent(new PointerEvent('pointermove', {
+        document.dispatchEvent(new PointerEvent('pointermove', {
             bubbles: true,
             clientX: 150,
             clientY: 40,
@@ -82,7 +82,7 @@ describe('mobile-panel-resize-drag', () => {
             pointerId: 7,
             pointerType: 'mouse',
         }));
-        handle.dispatchEvent(new PointerEvent('pointerup', {
+        document.dispatchEvent(new PointerEvent('pointerup', {
             bubbles: true,
             clientX: 150,
             clientY: 40,
@@ -95,6 +95,49 @@ describe('mobile-panel-resize-drag', () => {
         expect(ended).to.equal(1);
         expect(moves).to.deep.equal([{ clientX: 150, startClientX: 120 }]);
 
+        dispose.dispose();
+        handle.remove();
+    });
+
+    it('continues the drag when the pointer leaves the handle', () => {
+        const handle = document.createElement('div');
+        document.body.append(handle);
+        const moves: number[] = [];
+        let ended = 0;
+
+        const dispose = installMobilePanelResizeDrag({
+            handle,
+            onMove: event => moves.push(event.clientX),
+            onEnd: () => ended += 1,
+        });
+
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            clientX: 20,
+            clientY: 10,
+            button: 0,
+            pointerId: 11,
+            pointerType: 'mouse',
+        }));
+        document.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true,
+            clientX: 260,
+            clientY: 10,
+            button: 0,
+            pointerId: 11,
+            pointerType: 'mouse',
+        }));
+        document.dispatchEvent(new PointerEvent('pointerup', {
+            bubbles: true,
+            clientX: 260,
+            clientY: 10,
+            button: 0,
+            pointerId: 11,
+            pointerType: 'mouse',
+        }));
+
+        expect(moves).to.deep.equal([260]);
+        expect(ended).to.equal(1);
         dispose.dispose();
         handle.remove();
     });
@@ -125,5 +168,51 @@ describe('mobile-panel-resize-drag', () => {
         expect(started).to.equal(0);
         dispose.dispose();
         handle.remove();
+    });
+
+    it('falls back to document-level mouse events without Pointer Events', () => {
+        const handle = document.createElement('div');
+        document.body.append(handle);
+        const originalPointerEvent = (window as unknown as { PointerEvent?: unknown }).PointerEvent;
+        const globalWithOptionalPointerEvent = globalThis as unknown as { PointerEvent?: unknown };
+        const originalGlobalPointerEvent = globalWithOptionalPointerEvent.PointerEvent;
+        const moves: number[] = [];
+        let ended = 0;
+
+        (window as unknown as { PointerEvent?: unknown }).PointerEvent = undefined;
+        globalWithOptionalPointerEvent.PointerEvent = undefined;
+        try {
+            const dispose = installMobilePanelResizeDrag({
+                handle,
+                onMove: event => moves.push(event.clientX),
+                onEnd: () => ended += 1,
+            });
+
+            handle.dispatchEvent(new MouseEvent('mousedown', {
+                bubbles: true,
+                clientX: 30,
+                clientY: 10,
+                button: 0,
+            }));
+            document.dispatchEvent(new MouseEvent('mousemove', {
+                bubbles: true,
+                clientX: 190,
+                clientY: 10,
+            }));
+            document.dispatchEvent(new MouseEvent('mouseup', {
+                bubbles: true,
+                clientX: 190,
+                clientY: 10,
+                button: 0,
+            }));
+
+            expect(moves).to.deep.equal([190]);
+            expect(ended).to.equal(1);
+            dispose.dispose();
+        } finally {
+            (window as unknown as { PointerEvent?: unknown }).PointerEvent = originalPointerEvent;
+            globalWithOptionalPointerEvent.PointerEvent = originalGlobalPointerEvent;
+            handle.remove();
+        }
     });
 });

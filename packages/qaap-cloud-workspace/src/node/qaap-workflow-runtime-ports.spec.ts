@@ -37,6 +37,9 @@ interface Harness {
     requests: CapturedRequest[];
     noted: string[];
     cancelled: string[];
+    /** Owner argument of every runner.listAgents / runner.create call. */
+    listAgentsOwners: (string | undefined)[];
+    createOwners: (string | undefined)[];
 }
 
 interface HarnessOptions {
@@ -54,6 +57,8 @@ interface HarnessOptions {
     readonly failCompleteClaim?: boolean;
     /** Begin with a claim left behind by a dead creator. */
     readonly staleClaim?: boolean;
+    /** Per-owner installed backends (the owner's disabled harnesses / CLI logins); overrides `installed`. */
+    readonly installedFor?: (ownerLogin: string | undefined) => readonly string[];
 }
 
 /** Real routing policy + registry; runner/store stubbed. codex and qaiq both installed. */
@@ -63,6 +68,8 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
     const requests: CapturedRequest[] = [];
     const noted: string[] = [];
     const cancelled: string[] = [];
+    const listAgentsOwners: (string | undefined)[] = [];
+    const createOwners: (string | undefined)[] = [];
     // Mutated by noteRoutedAgent exactly as the real store does, so dispatching several judge nodes
     // in a row through one adapter reproduces what the dispatcher's serial loop actually sees.
     const routedAgents: Record<string, string> = { ...(options.routedAgents ?? {}) };
@@ -87,6 +94,7 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
             get: () => ({
                 run: { id: 'r1', bindings: {}, active: Object.keys(visits), visits: { ...visits } },
                 def: { name: 'Wf', nodes: [...(options.nodes ?? [])], edges: [...(options.edges ?? [])] },
+                ownerLogin: context.ownerLogin,
                 inputs: { task: 'do it' },
                 cwd: '/repo',
                 artifacts: {},
@@ -138,9 +146,13 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
             },
         },
         runner: {
-            listAgents: () => (options.installed ?? ['codex', 'qaiq'])
-                .map(id => ({ id, label: id, available: true })),
-            create: (request: CapturedRequest) => {
+            listAgents: (ownerLogin?: string) => {
+                listAgentsOwners.push(ownerLogin);
+                return (options.installedFor?.(ownerLogin) ?? options.installed ?? ['codex', 'qaiq'])
+                    .map(id => ({ id, label: id, available: true }));
+            },
+            create: (request: CapturedRequest, ownerLogin?: string) => {
+                createOwners.push(ownerLogin);
                 createdWith.push(request.agent);
                 taskKinds.push(request.taskKind);
                 requests.push(request);
@@ -149,7 +161,7 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
             cancel: (taskId: string) => cancelled.push(taskId),
         },
     });
-    return { adapter, createdWith, taskKinds, requests, noted, cancelled };
+    return { adapter, createdWith, taskKinds, requests, noted, cancelled, listAgentsOwners, createOwners };
 }
 
 describe('QaapWorkflowAgentTurnAdapter durable visit claims', () => {
@@ -192,6 +204,20 @@ describe('QaapWorkflowAgentTurnAdapter durable visit claims', () => {
 
         expect(taskId).to.equal('task-1');
         expect(requests).to.have.length(1);
+    });
+});
+
+describe('QaapWorkflowAgentTurnAdapter run owner', () => {
+    it('routes by the run owner\'s available agents and creates the task as that owner', async () => {
+        // codex is installed on the host but disabled (or not logged in) for this owner.
+        const { adapter, createdWith, listAgentsOwners, createOwners } = buildAdapter({
+            installedFor: owner => owner === 'ada' ? ['qaiq'] : ['codex', 'qaiq'],
+        });
+        await adapter.startAgentTurn(judgeNode, context);
+        expect(createdWith).to.deep.equal(['qaiq']);
+        expect(listAgentsOwners.length).to.be.greaterThan(0);
+        expect(listAgentsOwners.every(owner => owner === 'ada')).to.equal(true);
+        expect(createOwners).to.deep.equal(['ada']);
     });
 });
 

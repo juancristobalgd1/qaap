@@ -1,0 +1,28 @@
+# Copy to docker-compose.override.yml after preparing the shared runtime folders.
+# Keep the original Docker volumes as the pre-migration rollback copy.
+services:
+  theia:
+    image: qaap-theia:rootless-control
+    build:
+      dockerfile: deploy/rootless/Dockerfile.control-plane
+      args:
+        QAAP_BASE_IMAGE: ${QAAP_THEIA_IMAGE:-qaap-theia:local}
+        QAAP_CONTROL_UID: ${QAAP_CONTROL_UID:-100999}
+        QAAP_CONTROL_GID: ${QAAP_CONTROL_GID:-100999}
+    group_add:
+      - "${QAAP_ROOTLESS_SOCKET_GID:-100987}"
+    environment:
+      # Only publish tenant ports on the private bridge of the rootful control
+      # plane. Its 127.0.0.1 is NOT the host's loopback interface.
+      QAAP_DOCKER_NODES: '[{"id":"default","dockerHost":"unix:///run/user/1000/docker.sock","advertiseHost":"172.18.0.1","publishHostIp":"172.18.0.1"}]'
+      QAAP_DOCKER_REMOTE_REPOS_ROOT: /opt/qaap-runtime/workspace/repos
+      QAAP_DOCKER_REMOTE_WORKTREES_ROOT: /opt/qaap-runtime/worktrees
+      QAAP_DOCKER_REMOTE_PARALLEL_ROOT: /opt/qaap-runtime/parallel
+      QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT: /opt/qaap-runtime/auth/users
+    volumes:
+      - /opt/qaap-runtime/workspace:/workspace
+      - /opt/qaap-runtime/worktrees:/tmp/qaap-worktrees
+      - /opt/qaap-runtime/parallel:/tmp/qaap-parallel
+      - /opt/qaap-runtime/auth:/home/theia/.qaap
+      - /opt/qaap-runtime/theia-user:/home/theia/.theia
+      - /opt/qaap-runtime/tenant-homes:/home/qaap-tenants

@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     buildQaapPreviewBridgeLoader,
+    buildQaapPreviewBridgeLoaderScript,
     injectQaapPreviewBridgeLoader,
     QAAP_PREVIEW_BRIDGE_INIT_TYPE,
     QAAP_PREVIEW_BRIDGE_READY_TYPE,
@@ -18,7 +19,7 @@ describe('qaap-preview-bridge-protocol', () => {
         expect(script).to.contain(QAAP_PREVIEW_BRIDGE_INIT_TYPE);
         expect(script).to.contain('event.source!==window.parent');
         expect(script).to.contain('event.origin!==parentOrigin');
-        expect(script).not.to.contain("postMessage({type:" + JSON.stringify(QAAP_PREVIEW_BRIDGE_READY_TYPE) + "},'*')");
+        expect(script).not.to.contain('postMessage({type:' + JSON.stringify(QAAP_PREVIEW_BRIDGE_READY_TYPE) + "},'*')");
     });
 
     it('injects once before head closes', () => {
@@ -26,5 +27,21 @@ describe('qaap-preview-bridge-protocol', () => {
         const injected = injectQaapPreviewBridgeLoader(html, 'https://app.qaap.example');
         expect(injected.indexOf('data-qaap-preview-bridge-loader')).to.be.lessThan(injected.indexOf('</head>'));
         expect(injectQaapPreviewBridgeLoader(injected, 'https://app.qaap.example')).to.equal(injected);
+    });
+
+    it('can inject after the body content for frameworks that hydrate the document head', () => {
+        const html = '<html><head><title>App</title></head><body><main>SSR</main></body></html>';
+        const injected = injectQaapPreviewBridgeLoader(html, 'https://app.qaap.example', 'body-end');
+        expect(injected.indexOf('</head>')).to.be.lessThan(injected.indexOf('<body>'));
+        expect(injected.indexOf('<main>')).to.be.lessThan(injected.indexOf('data-qaap-preview-bridge-loader'));
+        expect(injected.indexOf('data-qaap-preview-bridge-loader')).to.be.lessThan(injected.indexOf('</body>'));
+        expect(injectQaapPreviewBridgeLoader(injected, 'https://app.qaap.example', 'body-end')).to.equal(injected);
+    });
+
+    it('buildQaapPreviewBridgeLoaderScript returns the loader once per document', () => {
+        const loader = buildQaapPreviewBridgeLoader('https://app.qaap.example');
+        expect(buildQaapPreviewBridgeLoaderScript('<html></html>', 'https://app.qaap.example')).to.equal(loader);
+        expect(buildQaapPreviewBridgeLoaderScript(`<html>${loader}</html>`, 'https://app.qaap.example')).to.equal('');
+        expect(buildQaapPreviewBridgeLoaderScript('', 'https://app.qaap.example')).to.equal('');
     });
 });

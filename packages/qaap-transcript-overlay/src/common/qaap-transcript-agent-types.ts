@@ -6,7 +6,7 @@
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 
-/** Structural copies of mobile-shell agent DTOs — keeps overlay independent of qaap-mobile-shell at compile time. */
+/** Structural copies of mobile-shell agent DTOs — keeps overlay independent of qaap-shared-core at compile time. */
 export type QaapAgentApprovalKind = 'tool' | 'prompt';
 
 export interface QaapAgentApprovalRequestDTO {
@@ -132,6 +132,8 @@ export type QaapTranscriptTraceEventDTO =
     | { readonly type: 'checkpoint'; readonly id: string; readonly label: string; readonly commit: string; readonly capturedAt: number; readonly added?: number; readonly removed?: number };
 
 export interface QaapAgentMessageDTO {
+    readonly runActive?: boolean;
+    readonly runFinishedAt?: number;
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;

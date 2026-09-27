@@ -8,12 +8,12 @@ import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-a
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 
 class TestableQaapAgentConversationStore extends QaapAgentConversationStore {
-    protected override isDirectory(): boolean {
+    override isDirectory(): boolean {
         return true;
     }
 
-    protected override async persist(): Promise<void> { /* no-op */ }
-    protected override fire(): void { /* no-op */ }
+    override async persist(): Promise<void> { /* no-op */ }
+    override fire(): void { /* no-op */ }
 }
 
 describe('QaapAgentConversationStore task ownership', () => {

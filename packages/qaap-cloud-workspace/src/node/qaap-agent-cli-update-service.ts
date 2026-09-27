@@ -12,10 +12,11 @@ import {
     type QaapAgentCliUpdateInfo,
     type QaapAgentCliUpdateResult,
     type QaapAgentCliUpdatesResponse,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-cli-update';
+} from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import { isOnPath } from './qaap-agent-task-runner-utils';
 
-/** Operator opt-in for in-place `npm install -g` on hosted/production backends. */
+/** Retained for compatibility with older configuration; hosted installs are now never permitted. */
 export const QAAP_ALLOW_IN_PLACE_CLI_UPDATE = 'QAAP_ALLOW_IN_PLACE_CLI_UPDATE';
 
 /**
@@ -26,8 +27,10 @@ export function isInPlaceCliUpdateAllowed(env: NodeJS.ProcessEnv = process.env):
     if (!isQaapProductionRuntime(env)) {
         return true;
     }
-    const raw = env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE]?.trim().toLowerCase();
-    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+    // `npm install -g` executes package lifecycle scripts with backend privileges. An environment
+    // override is not an acceptable tenant boundary, even when an operator accidentally exposes
+    // the update endpoint to a hosted tenant. Rebuild the immutable worker/backend image instead.
+    return false;
 }
 
 /** npm registry GET timeout — boot toast must never block the backend event loop long. */
@@ -36,6 +39,8 @@ const NPM_FETCH_TIMEOUT_MS = 4_000;
 const NPM_CACHE_TTL_MS = 30 * 60_000;
 /** Cap in-place `npm install -g` so a hung registry cannot wedge the UI action. */
 const NPM_INSTALL_TIMEOUT_MS = 120_000;
+/** Windows exposes npm through a `.cmd` shim when spawned without a shell. */
+const NPM_EXECUTABLE = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 interface TrackedAgentCli {
     readonly id: string;
@@ -144,7 +149,7 @@ export class QaapAgentCliUpdateService {
     /**
      * Best-effort in-place update for a whitelisted npm package.
      * QAIQ and unknown agents return a clear non-ok message (no shell injection — id is mapped).
-     * Hosted/production denies unless `QAAP_ALLOW_IN_PLACE_CLI_UPDATE` is set.
+     * Hosted/production always denies; rebuild the immutable image to update a CLI.
      */
     async installUpdate(agentId: string): Promise<QaapAgentCliUpdateResult> {
         const id = agentId.trim().toLowerCase();
@@ -160,7 +165,7 @@ export class QaapAgentCliUpdateService {
                 ok: false,
                 id,
                 message: 'In-place CLI updates are disabled on hosted/production deployments. '
-                    + 'Rebuild the Qaap image with updated CLI pins (or set QAAP_ALLOW_IN_PLACE_CLI_UPDATE=1).',
+                    + 'Rebuild the Qaap image with updated CLI pins.',
             };
         }
         const tracked = TRACKED_AGENT_CLIS.find(entry => entry.id === id);
@@ -175,9 +180,15 @@ export class QaapAgentCliUpdateService {
             };
         }
         const install = spawnSync(
-            'npm',
+            NPM_EXECUTABLE,
             ['install', '-g', `${tracked.npmPackage}@latest`],
-            { encoding: 'utf8', timeout: NPM_INSTALL_TIMEOUT_MS, env: process.env },
+            {
+                encoding: 'utf8',
+                timeout: NPM_INSTALL_TIMEOUT_MS,
+                env: process.env,
+                // Windows npm is a cmd shim and cannot be spawned directly without a shell.
+                shell: process.platform === 'win32',
+            },
         );
         if (install.error || (install.status !== null && install.status !== 0)) {
             const detail = (install.stderr || install.stdout || install.error?.message || 'npm install failed').trim();
@@ -232,7 +243,7 @@ export class QaapAgentCliUpdateService {
 
     protected probeInstalled(tracked: TrackedAgentCli): { bin?: string; version?: string } {
         for (const bin of tracked.bins) {
-            if (!this.isOnPath(bin)) {
+            if (!isOnPath(bin)) {
                 continue;
             }
             try {
@@ -245,16 +256,6 @@ export class QaapAgentCliUpdateService {
             }
         }
         return {};
-    }
-
-    protected isOnPath(bin: string): boolean {
-        try {
-            const which = process.platform === 'win32' ? 'where' : 'which';
-            const result = spawnSync(which, [bin], { encoding: 'utf8', timeout: 3_000 });
-            return result.status === 0 && !!(result.stdout || '').trim();
-        } catch {
-            return false;
-        }
     }
 
     protected async resolveLatestVersion(tracked: TrackedAgentCli): Promise<string | undefined> {

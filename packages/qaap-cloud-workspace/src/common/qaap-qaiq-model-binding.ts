@@ -9,10 +9,11 @@ import {
     findCustomOpenAiEndpointForModelId,
     QAAP_CUSTOM_OPENAI_VENDOR,
     parseTheiaLanguageModelId as parseRegistryLanguageModelId,
+    providerHasByokCredential,
     QAAP_QAIQ_BYOK_PROVIDERS,
     resolveVendorForModelId,
     type QaapPreferenceReader,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 
 export type QaapQaiqProviderId = 'openai' | 'gemini' | 'ollama' | 'anthropic' | 'mistral';
 
@@ -57,6 +58,11 @@ export function resolveQaapQaiqModelBinding(readPref: QaapPreferenceReader): Qaa
         }
     }
     for (const provider of QAAP_QAIQ_BYOK_PROVIDERS) {
+        // Model lists fall back to schema defaults (e.g. OpenAI/Anthropic), so a list alone does not mean the
+        // user configured that provider: only bind to vendors that actually have a credential.
+        if (!providerHasByokCredential(readPref, provider)) {
+            continue;
+        }
         for (const pref of provider.modelListPrefs) {
             const raw = firstStringInPrefList(readPref(pref));
             const binding = parsePrefListModel(provider.vendor as QaapModelVendor, raw);
@@ -146,7 +152,7 @@ function shellQuote(value: string): string {
     if (/^[a-zA-Z0-9_./:@+-]+$/.test(value)) {
         return value;
     }
-    return `'${value.replace(/'/g, `'\\''`)}'`;
+    return `'${value.replace(/'/g, '\'\\\'\'')}'`;
 }
 
 export function applyQaapQaiqModelEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void {

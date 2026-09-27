@@ -5,13 +5,16 @@
 // *****************************************************************************
 
 import { injectable, inject, optional, postConstruct } from '@theia/core/shared/inversify';
+import * as path from 'path';
 import URI from '@theia/core/lib/common/uri';
 import { DefaultSkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { PreferenceService } from '@theia/core/lib/common';
 import { Skill, SKILL_FILE_NAME } from '@theia/ai-core/lib/common/skill';
 import { PREFERENCE_NAME_SKILL_DIRECTORIES } from '@theia/ai-core/lib/common/ai-core-preferences';
 import { FileChangesEvent, FileChangeType } from '@theia/filesystem/lib/common/files';
 import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-session';
+import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     QaapProjectSkillRoots,
     qaapProjectSkillDirectoryPaths,
@@ -20,12 +23,21 @@ import {
     QAAP_SYSTEM_SKILLS_DIR_ENV,
     qaapPerUserSkillsDirectory,
 } from '../common/qaap-system-skills';
+import {
+    QAAP_DISABLED_SKILLS_PREF,
+    isQaapSkillEnabled,
+    readDisabledSkillNames,
+    withQaapSkillEnabled,
+} from './qaap-skills-preferences';
 
 @injectable()
 export class QaapSkillService extends DefaultSkillService {
 
     @inject(QaapProjectSkillRoots) @optional()
     protected readonly projectSkillRoots?: QaapProjectSkillRoots;
+
+    @inject(PreferenceService)
+    protected readonly preferenceService: PreferenceService;
 
     /**
      * Do not block {@link SkillService.ready} on the first full directory scan — hosted scans can
@@ -88,6 +100,12 @@ export class QaapSkillService extends DefaultSkillService {
                 }
             });
 
+            this.toDispose.push(this.preferenceService.onPreferenceChanged(event => {
+                if (event.preferenceName === QAAP_DISABLED_SKILLS_PREF) {
+                    this.onSkillsChangedEmitter.fire();
+                }
+            }));
+
             this.workspaceService.onWorkspaceChanged(() => {
                 this.scheduleUpdate();
             });
@@ -95,6 +113,36 @@ export class QaapSkillService extends DefaultSkillService {
             void this.update();
         });
         this.projectSkillRoots?.onDidChange(() => this.scheduleUpdate());
+    }
+
+    /** All discovered skills, including ones disabled in the composer. */
+    getDiscoveredSkills(): Skill[] {
+        return Array.from(this.skills.values());
+    }
+
+    override getSkills(): Skill[] {
+        return this.getDiscoveredSkills().filter(skill => this.isSkillEnabled(skill.name));
+    }
+
+    override getSkill(name: string): Skill | undefined {
+        const skill = super.getSkill(name);
+        if (!skill || !this.isSkillEnabled(skill.name)) {
+            return undefined;
+        }
+        return skill;
+    }
+
+    isSkillEnabled(skillName: string): boolean {
+        return isQaapSkillEnabled(skillName, this.getDisabledSkillNames());
+    }
+
+    async setSkillEnabled(skillName: string, enabled: boolean): Promise<void> {
+        const next = withQaapSkillEnabled(this.getDisabledSkillNames(), skillName, enabled);
+        await this.preferenceService.updateValue(QAAP_DISABLED_SKILLS_PREF, next);
+    }
+
+    protected getDisabledSkillNames(): string[] {
+        return readDisabledSkillNames(this.preferenceService.get(QAAP_DISABLED_SKILLS_PREF, []));
     }
 
     protected override getWorkspaceSkillsDirectoryPaths(): string[] {
@@ -121,6 +169,13 @@ export class QaapSkillService extends DefaultSkillService {
         const user = readQaapAuthUser();
         if (!user?.login?.trim()) {
             return [];
+        }
+        const tenantConfigRoot = await this.envVariablesServer.getValue('QAAP_TENANT_CONFIG_ROOT');
+        if (tenantConfigRoot?.value?.trim()) {
+            // The backend advertises the effective root rather than making the browser
+            // guess the host HOME. This remains correct when the root is overridden by
+            // deployment configuration or when the browser and backend run on different OSes.
+            return [path.join(tenantConfigRoot.value, safeUserIdSegment(user.login), 'skills')];
         }
         return [qaapPerUserSkillsDirectory(homePath, user.login)];
     }

@@ -1,0 +1,23 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+/** Splits a repository-relative path into directory and basename for compact diff UI. */
+export function splitRepoRelativePath(path: string): { base: string; dir: string } {
+    const normalized = path.replace(/\\/g, '/');
+    const slash = normalized.lastIndexOf('/');
+    if (slash < 0) {
+        return { base: normalized, dir: '' };
+    }
+    return { base: normalized.slice(slash + 1), dir: normalized.slice(0, slash) };
+}
+
+/** Leading-ellipsis truncation (Cursor Changes): keep the path tail. */
+export function leadingTruncatePath(path: string, maxLength = 52): string {
+    if (path.length <= maxLength) {
+        return path;
+    }
+    const keep = Math.max(12, maxLength - 1);
+    return `…${path.slice(-keep)}`;
+}

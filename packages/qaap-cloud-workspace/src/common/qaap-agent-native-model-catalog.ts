@@ -6,9 +6,10 @@
 import {
     NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS,
     NATIVE_MODEL_PICKER_AGENT_IDS,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import { listOpenClaudeNativeModels } from '@theia/qaap-mobile-shell/lib/common/qaap-openclaude-model-catalog';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { listHermesNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-hermes-model-catalog';
+import { listOpenClaudeNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-openclaude-model-catalog';
 
 /** Keep in sync with {@link SETTINGS_MODEL_CATALOG_AGENT_IDS} in qaap-agent-model-selection. */
 export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq']);
@@ -100,6 +101,9 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
             // OpenClaude is a separate harness. It accepts the QAIQ provider flags, but its
             // picker must not inherit the user's QAIQ Settings catalog.
             return listOpenClaudeNativeModels();
+        case 'hermes':
+            // Hermes uses OpenRouter-style slugs (`org/model`) via top-level `hermes --model`.
+            return listHermesNativeModels();
         case 'copilot':
             // Keep in sync with Copilot CLI model IDs (v1.0.70+ GPT-5.6; Sonnet 5 / Opus 4.8).
             return [
@@ -114,12 +118,27 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
             return listStaticAntigravityModels(id);
         case 'opencode':
             return [
-                nativeOption(id, 'opencode/claude-sonnet-4-6', 'Claude Sonnet 4.6'),
-                nativeOption(id, 'opencode/gpt-5.2-codex', 'GPT-5.2 Codex'),
-                nativeOption(id, 'opencode/gemini-3.1-pro', 'Gemini 3.1 Pro', 'gemini'),
+                nativeOption(id, 'opencode/big-pickle', 'Big Pickle'),
+                nativeOption(id, 'opencode/ling-3.0-flash-fin-free', 'Ling 3.0 Flash Fin Free'),
+                nativeOption(id, 'opencode/mimo-v2.5-free', 'MiMo V2.5 Free'),
+                nativeOption(id, 'opencode/muse-spark-1.2-contributor-free', 'Muse Spark 1.2 Contributor Free'),
+                nativeOption(id, 'opencode/muse-spark-1.3-contributor-free', 'Muse Spark 1.3 Contributor Free'),
+                nativeOption(id, 'opencode/nemotron-3-ultra-free', 'Nemotron 3 Ultra Free'),
+                nativeOption(id, 'opencode/nemotron-3.5-lightning-free', 'Nemotron 3.5 Lightning Free'),
             ];
         case 'grok':
             return [
+                nativeOption(id, 'grok-4.5', 'Grok 4.5'),
+            ];
+        case 'cursor':
+            // Cursor replaces this fallback with the account-scoped result of `cursor-agent models`
+            // whenever the CLI is authenticated. These are the stable public IDs documented by
+            // Cursor for a cold picker, so the row remains useful before the first refresh.
+            return [
+                nativeOption(id, 'auto', 'Auto'),
+                nativeOption(id, 'gpt-5', 'GPT-5'),
+                nativeOption(id, 'sonnet-4-thinking', 'Sonnet 4 Thinking'),
+                nativeOption(id, 'composer-2.5', 'Composer 2.5'),
                 nativeOption(id, 'grok-4.5', 'Grok 4.5'),
             ];
         default:
@@ -128,6 +147,7 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
 }
 
 export function parseNativeModelLines(agentId: string, lines: readonly string[]): QaapQaiqModelOption[] {
+    const normalizedAgentId = agentId.trim().toLowerCase();
     const deduped = new Map<string, QaapQaiqModelOption>();
     for (const raw of lines) {
         const line = raw.trim();
@@ -135,6 +155,11 @@ export function parseNativeModelLines(agentId: string, lines: readonly string[])
             continue;
         }
         const modelId = line;
+        // OpenCode can print a multiline filesystem error while probing its model
+        // catalog. Only its provider-qualified IDs are valid picker entries.
+        if (normalizedAgentId === 'opencode' && !/^opencode\/[a-z0-9][a-z0-9._-]*$/i.test(modelId)) {
+            continue;
+        }
         const key = modelId.toLowerCase();
         if (!deduped.has(key)) {
             deduped.set(key, nativeOption(agentId, modelId));

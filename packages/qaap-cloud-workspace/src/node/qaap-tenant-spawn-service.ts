@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+    normalizeIsolationPath,
     resolveQaapParallelRoot,
     resolveQaapReposRoot,
     resolveQaapWorktreesRoot,
@@ -19,15 +20,21 @@ import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
     buildAgentSpawnInvocation,
     evaluateAgentIsolationPolicy,
+    isContainerIsolationEnabled,
     isQaapProductionRuntime,
     isTenantUidPerUserEnabled,
     resolvePerTenantSpawnIdentity,
     QaapAgentIsolationDecision,
 } from './qaap-agent-spawn-identity';
 import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
+import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
+
+/** HOME/USER/LOGNAME for a tenant child plus, inside tenant containers, cache/data relocation vars. */
+export type QaapTenantHomeEnvOverlay = { HOME?: string; USER?: string; LOGNAME?: string } & Record<string, string>;
 
 /** Options for {@link QaapTenantSpawnService.spawn}. */
 export interface QaapTenantSpawnOptions {
@@ -37,6 +44,21 @@ export interface QaapTenantSpawnOptions {
     /** Process-group leader (default true) so the whole tree can be killed together. */
     readonly detached?: boolean;
 }
+
+interface QaapResourceLimits {
+    readonly memoryBytes: number;
+    readonly cpuCores: number;
+}
+
+interface QaapProcessInvocation {
+    readonly file: string;
+    readonly args: string[];
+    readonly shell: boolean;
+}
+
+const DEFAULT_AGENT_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_AGENT_CPU_LIMIT_CORES = 2;
+const SYSTEMD_RUN_PROBE_TIMEOUT_MS = 3000;
 
 /**
  * Single source of truth for spawning a workspace-scoped child process under the correct OS identity
@@ -54,6 +76,10 @@ export interface QaapTenantSpawnOptions {
 @injectable()
 export class QaapTenantSpawnService {
 
+    @inject(QaapDockerOrchestrator)
+    @optional()
+    protected readonly dockerOrchestrator?: QaapDockerOrchestrator;
+
     protected tenantUidRegistry: QaapTenantUidRegistry | undefined;
     protected agentSpawnIdentityWarned = false;
     protected agentIsolationDecision: QaapAgentIsolationDecision | undefined;
@@ -61,8 +87,46 @@ export class QaapTenantSpawnService {
     protected tenantParentsHardened = false;
     protected setprivAvailable: boolean | undefined;
     protected setprivExecutable: string | undefined;
+    protected systemdRunAvailable: boolean | undefined;
     /** Repositories whose complete working tree was repaired during this backend lifetime. */
     protected readonly ownershipPreparedRoots = new Set<string>();
+
+    /** Whether container-per-tenant isolation is active (Docker cloud mode). */
+    isContainerIsolationEnabled(): boolean {
+        return isContainerIsolationEnabled(process.env);
+    }
+
+    /**
+     * Whether this backend is already running inside a dedicated tenant worker. Worker containers
+     * are the isolation boundary, so their configured container uid must not be treated as a host
+     * uid to drop to. In particular, rootless Docker maps container uid 0 to the daemon owner and
+     * the worker deliberately drops all capabilities; calling setpriv there cannot change uid and
+     * fails with `setresuid: Operation not permitted`.
+     */
+    protected isTenantBackendMode(): boolean {
+        return /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
+    }
+
+    /** Resolve the tenant segment (sanitized login) from a workspace or repo working directory. */
+    resolveTenantSegment(cwd: string): string | undefined {
+        const canonical = this.canonicalizeCwd(cwd);
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), canonical);
+        return target?.segment;
+    }
+
+    /** Resolve the host-side directory that the tenant worker is allowed to mount. */
+    resolveTenantRoot(cwd: string): string | undefined {
+        const canonical = this.canonicalizeCwd(cwd);
+        return resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), canonical)?.root;
+    }
+
+    /**
+     * Rewrite Windows-client / mixed-separator cwds to a real absolute path on this host before
+     * isolation checks, chown, and child_process/PTY spawn.
+     */
+    canonicalizeCwd(cwd: string): string {
+        return normalizeIsolationPath(cwd);
+    }
 
     protected getTenantUidRegistry(): QaapTenantUidRegistry {
         if (!this.tenantUidRegistry) {
@@ -114,6 +178,148 @@ export class QaapTenantSpawnService {
         return undefined;
     }
 
+    /** Linux is the only host platform where this service can install a cgroup/rlimit boundary. */
+    protected isLinuxResourceLimitPlatform(): boolean {
+        return process.platform === 'linux';
+    }
+
+    /**
+     * Probe the actual systemd manager, not only the systemd-run binary. A binary can be present in
+     * a minimal image while no user/system manager is available to create a transient cgroup.
+     * Docker tenant workers already have their own cgroup and skip this host-side probe.
+     */
+    protected isSystemdRunAvailable(): boolean {
+        if (this.systemdRunAvailable === undefined) {
+            const mode = this.isBackendRoot() ? '--system' : '--user';
+            const probe = spawnSync('systemd-run', [
+                mode,
+                '--scope',
+                '--quiet',
+                '--wait',
+                '--property=MemoryMax=64M',
+                '--property=CPUQuota=100%',
+                '--',
+                '/bin/true',
+            ], { stdio: 'ignore', timeout: SYSTEMD_RUN_PROBE_TIMEOUT_MS });
+            this.systemdRunAvailable = !probe.error && probe.status === 0;
+        }
+        return this.systemdRunAvailable;
+    }
+
+    /** Resolve a positive byte limit from a number of bytes or a human-readable value such as 512MiB. */
+    protected parseMemoryLimit(raw: string | undefined, fallback: number): number {
+        const value = raw?.trim().toLowerCase();
+        if (!value) {
+            return fallback;
+        }
+        const match = /^(\d+(?:\.\d+)?)\s*(b|k|kb|ki|kib|m|mb|mi|mib|g|gb|gi|gib|t|tb|ti|tib)?$/.exec(value);
+        if (!match) {
+            return fallback;
+        }
+        const amount = Number(match[1]);
+        const unit = match[2] ?? 'b';
+        const multiplier = unit.startsWith('k') ? 1024
+            : unit.startsWith('m') ? 1024 ** 2
+                : unit.startsWith('g') ? 1024 ** 3
+                    : unit.startsWith('t') ? 1024 ** 4 : 1;
+        const bytes = amount * multiplier;
+        return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : fallback;
+    }
+
+    /** Resolve CPU capacity as cores; a value ending in % is accepted for operator convenience. */
+    protected parseCpuLimit(raw: string | undefined, fallback: number): number {
+        const value = raw?.trim();
+        if (!value) {
+            return fallback;
+        }
+        const parsed = value.endsWith('%')
+            ? Number.parseFloat(value.slice(0, -1)) / 100
+            : Number.parseFloat(value);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    }
+
+    /**
+     * Host limits are deliberately enabled by default on Linux. The tenant container path already
+     * has Docker cgroups (`Memory`/`NanoCpus`) and must not be wrapped in a second manager.
+     * `QAAP_AGENT_*` takes precedence; the tenant names remain compatible with Docker deployments.
+     */
+    protected resolveResourceLimits(): QaapResourceLimits {
+        return {
+            memoryBytes: this.parseMemoryLimit(
+                process.env.QAAP_AGENT_MEMORY_LIMIT ?? process.env.QAAP_TENANT_MEMORY_LIMIT,
+                DEFAULT_AGENT_MEMORY_LIMIT_BYTES,
+            ),
+            cpuCores: this.parseCpuLimit(
+                process.env.QAAP_AGENT_CPU_LIMIT ?? process.env.QAAP_TENANT_CPU_LIMIT,
+                DEFAULT_AGENT_CPU_LIMIT_CORES,
+            ),
+        };
+    }
+
+    protected shouldApplyResourceLimits(): boolean {
+        // Backend-per-tenant runs inside its own Docker cgroup even though the backend itself uses
+        // local spawning. Wrapping its setpriv invocation in the host's portable ulimit shell would
+        // split the argv at `--reuid` and fail with "exec: --reuid: not found". The container's
+        // Memory/NanoCpus/PidsLimit boundary is the resource boundary for this mode.
+        const tenantBackendMode = /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
+        return this.isLinuxResourceLimitPlatform() && !this.isContainerIsolationEnabled() && !tenantBackendMode;
+    }
+
+    /**
+     * Put an invocation in a cgroup. systemd-run is preferred because MemoryMax and CPUQuota cover
+     * the complete descendant tree. On a non-systemd development host, rlimits are still applied so
+     * a runaway process cannot grow without bounds. Production host mode fails closed rather than
+     * silently launching an unbounded agent.
+     */
+    protected applyResourceLimits(invocation: QaapProcessInvocation, cwd: string): QaapProcessInvocation {
+        if (!this.shouldApplyResourceLimits()) {
+            return invocation;
+        }
+
+        const limits = this.resolveResourceLimits();
+        const command = invocation.shell
+            ? ['/bin/sh', '-c', invocation.file]
+            : [invocation.file, ...invocation.args];
+        if (this.isSystemdRunAvailable()) {
+            const cpuQuota = `${Math.max(1, Math.round(limits.cpuCores * 100))}%`;
+            return {
+                file: 'systemd-run',
+                args: [
+                    this.isBackendRoot() ? '--system' : '--user',
+                    '--scope',
+                    '--quiet',
+                    '--collect',
+                    '--wait',
+                    `--working-directory=${cwd}`,
+                    `--property=MemoryMax=${limits.memoryBytes}`,
+                    `--property=CPUQuota=${cpuQuota}`,
+                    '--',
+                    ...command,
+                ],
+                shell: false,
+            };
+        }
+
+        if (isQaapProductionRuntime(process.env)) {
+            throw new Error('Refusing to spawn an unbounded Linux process: systemd-run with cgroups '
+                + 'is required in production host mode. Install systemd or enable Docker tenant isolation.');
+        }
+
+        const memoryKilobytes = Math.max(1, Math.floor(limits.memoryBytes / 1024));
+        // POSIX /bin/sh has no ${@:3}; use a small argv-preserving script instead. The command is
+        // passed as positional arguments, never interpolated into shell source. `$0` is the
+        // `qaap-resource-limited` label, `$1`/`$2` are the limits and `$3…` is the command, so shift
+        // exactly the two limits: `shift 3` also dropped the executable and made every wrapped
+        // spawn (including every terminal shell) exec its first argument, e.g. `-l`.
+        const portableFallbackScript = 'ulimit -v "$1" && ulimit -t "$2" && shift 2 && exec "$@"';
+        const fallbackArgs = invocation.shell
+            ? ['-c', 'ulimit -v "$1" && ulimit -t "$2" && exec /bin/sh -c "$3"',
+                'qaap-resource-limited', String(memoryKilobytes), String(Math.max(1, Math.ceil(limits.cpuCores * 3600))), invocation.file]
+            : ['-c', portableFallbackScript, 'qaap-resource-limited', String(memoryKilobytes),
+                String(Math.max(1, Math.ceil(limits.cpuCores * 3600))), ...command];
+        return { file: '/bin/sh', args: fallbackArgs, shell: false };
+    }
+
     /**
      * Fail-closed guard against the shared-container risk: throws (refusing the spawn) when the agent
      * would run as root, or under a uid shared across tenants, in a production runtime without an
@@ -142,6 +348,10 @@ export class QaapTenantSpawnService {
      * and still never root while 1001 is set.
      */
     resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
+        cwd = this.canonicalizeCwd(cwd);
+        if (this.isTenantBackendMode()) {
+            return {};
+        }
         const isRoot = this.isBackendRoot();
         const tenant = resolvePerTenantSpawnIdentity({
             enabled: isTenantUidPerUserEnabled(process.env),
@@ -170,6 +380,7 @@ export class QaapTenantSpawnService {
 
     /** The writable HOME for a dropped process: a per-tenant home in uid-per-user mode, else the shared one. */
     resolveTenantHome(cwd: string): string {
+        cwd = this.canonicalizeCwd(cwd);
         if (isTenantUidPerUserEnabled(process.env)) {
             const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
             if (target) {
@@ -191,7 +402,22 @@ export class QaapTenantSpawnService {
      * out and fails the spawn.
      */
     prepareTenantIsolation(cwd: string): void {
+        cwd = this.canonicalizeCwd(cwd);
         this.assertTenantCwdInProduction(cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot) {
+                throw new Error(`Refusing to run a container-isolated process outside a tenant tree: "${cwd}".`);
+            }
+            if (!this.dockerOrchestrator || !this.dockerOrchestrator.isEnabled()) {
+                throw new Error('Container isolation is enabled but the Docker orchestrator is unavailable.');
+            }
+            if (!this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Tenant container is not ready. Await prepareTenantIsolationAsync() before spawning.');
+            }
+            return;
+        }
         this.ensureTenantRootIsolated(cwd);
         this.ensureTenantIdentityProvisioned(cwd);
         if (!this.isBackendRoot()) {
@@ -209,6 +435,29 @@ export class QaapTenantSpawnService {
         if (this.applyTenantWorkingTreeOwnership(ownershipRoot, identity.uid, gid)) {
             this.ownershipPreparedRoots.add(ownershipRoot);
         }
+    }
+
+    /**
+     * Async lifecycle gate for Docker mode. Every asynchronous process owner must await this before
+     * calling the synchronous child-process APIs. A rejected Docker create/inspect is propagated;
+     * there is intentionally no best-effort prewarm and no fallback to the backend host.
+     */
+    async prepareTenantIsolationAsync(cwd: string): Promise<void> {
+        cwd = this.canonicalizeCwd(cwd);
+        this.assertTenantCwdInProduction(cwd);
+        if (!this.isContainerIsolationEnabled()) {
+            this.prepareTenantIsolation(cwd);
+            return;
+        }
+        const segment = this.resolveTenantSegment(cwd);
+        const tenantRoot = this.resolveTenantRoot(cwd);
+        if (!segment || !tenantRoot) {
+            throw new Error(`Refusing to run a container-isolated process outside a tenant tree: "${cwd}".`);
+        }
+        if (!this.dockerOrchestrator || !this.dockerOrchestrator.isEnabled()) {
+            throw new Error('Container isolation is enabled but the Docker orchestrator is unavailable.');
+        }
+        await this.dockerOrchestrator.ensureTenantContainer(segment, tenantRoot);
     }
 
     /** Recursive ownership repair seam, kept separate so the once-per-backend behavior is testable. */
@@ -232,19 +481,44 @@ export class QaapTenantSpawnService {
      * drop never calls `setgroups`). Otherwise falls back to a plain `shell: true` spawn with the
      * Node-level drop — byte-identical to a non-isolated spawn.
      *
+     * In container isolation mode (QAAP_CLOUD_MODE=docker), delegates execution to `docker exec`
+     * inside the tenant's dedicated worker container.
+     *
      * NOTE: callers should invoke {@link enforceIsolationPolicy} and {@link prepareTenantIsolation}
      * first (see {@link spawnPrepared}).
      */
     spawn(command: string, options: QaapTenantSpawnOptions): ChildProcess {
-        const identity = this.resolveSpawnIdentity(options.cwd);
+        const cwd = this.canonicalizeCwd(options.cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Refusing to spawn: the validated tenant container has not been prepared.');
+            }
+            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, '/bin/bash', ['-c', command], tenantRoot, options.env);
+            return this.launchProcess(wrapped.file, wrapped.args, {
+                cwd,
+                detached: options.detached ?? process.platform !== 'win32',
+                env: options.env,
+                stdio: options.stdio,
+            });
+        }
+        const identity = this.resolveSpawnIdentity(cwd);
         this.assertDropIsComplete(identity);
         const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
-        return this.launchProcess(invocation.file, invocation.args ? [...invocation.args] : [], {
-            cwd: options.cwd,
-            detached: options.detached ?? true,
+        const limitedInvocation = this.applyResourceLimits({
+            file: invocation.file,
+            args: invocation.args ? [...invocation.args] : [],
+            shell: invocation.options.shell,
+        }, cwd);
+        return this.launchProcess(limitedInvocation.file, limitedInvocation.args, {
+            cwd,
+            // Detached cmd.exe can exit successfully without delivering npm output on Windows.
+            // Unix still needs a process group for cancellation and descendant cleanup.
+            detached: options.detached ?? process.platform !== 'win32',
             env: options.env,
             stdio: options.stdio,
-            ...invocation.options,
+            shell: limitedInvocation.shell,
         });
     }
 
@@ -295,9 +569,18 @@ export class QaapTenantSpawnService {
      * interleave latency marks and its own env/HOME wiring.
      */
     spawnPrepared(command: string, options: QaapTenantSpawnOptions): ChildProcess {
+        const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
-        this.prepareTenantIsolation(options.cwd);
-        return this.spawn(command, options);
+        this.prepareTenantIsolation(cwd);
+        return this.spawn(command, { ...options, cwd });
+    }
+
+    /** Async variant used by request/task lifecycles that can wait for Docker provisioning. */
+    async spawnPreparedAsync(command: string, options: QaapTenantSpawnOptions): Promise<ChildProcess> {
+        const cwd = this.canonicalizeCwd(options.cwd);
+        this.enforceIsolationPolicy();
+        await this.prepareTenantIsolationAsync(cwd);
+        return this.spawn(command, { ...options, cwd });
     }
 
     /**
@@ -311,38 +594,106 @@ export class QaapTenantSpawnService {
     spawnArgvPrepared(
         file: string,
         args: readonly string[],
-        options: { cwd: string; env: NodeJS.ProcessEnv; detached?: boolean },
+        options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean },
     ): ChildProcess {
+        const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
-        this.prepareTenantIsolation(options.cwd);
-        const identity = this.resolveSpawnIdentity(options.cwd);
-        this.assertDropIsComplete(identity);
-        const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean } = {
-            cwd: options.cwd,
+        this.prepareTenantIsolation(cwd);
+        const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; stdio: QaapSpawnStdio; detached: boolean } = {
+            cwd,
             env: options.env,
+            stdio: options.stdio ?? ['pipe', 'pipe', 'pipe'],
             detached: options.detached ?? false,
         };
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Refusing to spawn: the validated tenant container has not been prepared.');
+            }
+            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot, options.env);
+            return this.launchProcess(wrapped.file, wrapped.args, spawnOptions);
+        }
+        const identity = this.resolveSpawnIdentity(cwd);
+        this.assertDropIsComplete(identity);
+        const invocation = identity.uid === undefined
+            ? { file, args: [...args], shell: false }
+            : {
+                file: 'setpriv',
+                args: ['--reuid', String(identity.uid), '--regid', String(identity.gid ?? identity.uid), '--clear-groups', '--', file, ...args],
+                shell: false,
+            };
+        const limitedInvocation = this.applyResourceLimits(invocation, cwd);
+        return this.launchProcess(limitedInvocation.file, limitedInvocation.args, {
+            ...spawnOptions,
+            shell: limitedInvocation.shell,
+        });
+    }
+
+    /** Async variant that makes Docker create/inspect part of the spawn lifecycle. */
+    async spawnArgvPreparedAsync(
+        file: string,
+        args: readonly string[],
+        options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean },
+    ): Promise<ChildProcess> {
+        const cwd = this.canonicalizeCwd(options.cwd);
+        this.enforceIsolationPolicy();
+        await this.prepareTenantIsolationAsync(cwd);
+        return this.spawnArgvPrepared(file, args, { ...options, cwd });
+    }
+
+    /**
+     * Return the validated argv wrapper without launching it. Synchronous read-only helpers such as
+     * repository search/fingerprinting use this seam so they cannot accidentally execute against the
+     * host filesystem in Docker mode. The caller must still collect output with strict bounds.
+     */
+    wrapArgvForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+        cwd = this.canonicalizeCwd(cwd);
+        this.enforceIsolationPolicy();
+        this.prepareTenantIsolation(cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Refusing to wrap a process without a validated tenant container.');
+            }
+            return this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot);
+        }
+        const identity = this.resolveSpawnIdentity(cwd);
+        this.assertDropIsComplete(identity);
         if (identity.uid === undefined) {
-            return this.launchProcess(file, [...args], spawnOptions);
+            const limitedInvocation = this.applyResourceLimits({ file, args: [...args], shell: false }, cwd);
+            return { file: limitedInvocation.file, args: limitedInvocation.args };
         }
         const gid = identity.gid ?? identity.uid;
-        // assertDropIsComplete guarantees setpriv is present when uid is defined.
-        return this.launchProcess(
-            'setpriv',
-            ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
-            spawnOptions,
-        );
+        const limitedInvocation = this.applyResourceLimits({
+            file: 'setpriv',
+            args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
+            shell: false,
+        }, cwd);
+        return { file: limitedInvocation.file, args: limitedInvocation.args };
     }
 
     /**
      * The tenant HOME/USER/LOGNAME overlay for a dropped process, or `{}` when no uid drop applies.
      * Without a writable HOME a dropped process inherits root's `/root`, which it cannot write.
      */
-    tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
+    tenantHomeEnvOverlay(cwd: string): QaapTenantHomeEnvOverlay {
+        cwd = this.canonicalizeCwd(cwd);
+        if (this.isContainerIsolationEnabled() || this.isTenantBackendMode()) {
+            // The host-side per-uid HOME is not mounted into a tenant worker. Passing it through
+            // docker exec would make the child point at a nonexistent/shared host path and could
+            // accidentally bypass the worker's private HOME. The orchestrator seeds this HOME
+            // when it creates the container; exec must keep using the same worker-local value. A
+            // backend running inside that worker uses the same rule even though its own
+            // QAAP_CLOUD_MODE is local and it therefore does not enable host-side Docker routing.
+            const home = process.env.QAAP_TENANT_CONTAINER_HOME?.trim() || '/tmp/qaap-home';
+            return { HOME: home, USER: 'qaap-tenant', LOGNAME: 'qaap-tenant', ...this.tenantAgentStorageEnv() };
+        }
         if (this.resolveSpawnIdentity(cwd).uid === undefined) {
             return {};
         }
-        const overlay: { HOME?: string; USER?: string; LOGNAME?: string } = { HOME: this.resolveTenantHome(cwd) };
+        const overlay: QaapTenantHomeEnvOverlay = { HOME: this.resolveTenantHome(cwd) };
         const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
         if (target) {
             overlay.USER = `qaap-t-${target.segment}`;
@@ -352,11 +703,53 @@ export class QaapTenantSpawnService {
     }
 
     /**
+     * Cache/data locations for processes inside a tenant container, whose HOME is on the
+     * memory-backed `/tmp` tmpfs (read-only rootfs). A backend running inside the tenant container
+     * relocates them to its disk-backed, tenant-private config mount by default; host-side worker
+     * routing (`docker exec` into a `qaap-ws-*` worker) has no such mount and only relocates when
+     * `QAAP_TENANT_AGENT_STORAGE_ROOT` names an in-container path. HOME (agent config/credentials)
+     * deliberately stays on the tmpfs.
+     */
+    protected tenantAgentStorageEnv(): Record<string, string> {
+        const fallback = this.isTenantBackendMode() ? QaapTenantAgentStorageEnv.defaultTenantBackendRoot(process.env) : undefined;
+        const root = QaapTenantAgentStorageEnv.resolveRoot(process.env, fallback);
+        if (!root) {
+            return {};
+        }
+        if (this.isTenantBackendMode()) {
+            this.ensureTenantAgentStorage(root);
+        }
+        return QaapTenantAgentStorageEnv.build(root);
+    }
+
+    protected readonly preparedAgentStorageRoots = new Set<string>();
+
+    /**
+     * Create the storage directories (0700) in this container so the first tool that uses them does
+     * not race another one creating the parent. Best effort: tools create missing dirs themselves.
+     */
+    protected ensureTenantAgentStorage(root: string): void {
+        if (this.preparedAgentStorageRoots.has(root)) {
+            return;
+        }
+        try {
+            for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]) {
+                fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+            }
+            fs.chmodSync(root, 0o700);
+            this.preparedAgentStorageRoots.add(root);
+        } catch (error) {
+            console.warn(`[qaap-security] could not prepare tenant agent storage ${root}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
      * Augment a child env with the tenant's writable HOME (and matching USER/LOGNAME) when a uid drop
      * applies for `cwd`. No-op when no drop applies.
      */
     resolveProcessEnv(cwd: string, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-        return { ...base, ...this.tenantHomeEnvOverlay(cwd) };
+        return { ...base, ...this.tenantHomeEnvOverlay(this.canonicalizeCwd(cwd)) };
     }
 
     /**
@@ -366,6 +759,7 @@ export class QaapTenantSpawnService {
      * No-op unless uid-per-user is on, the backend is root, and `cwd` resolves to a tenant tree.
      */
     provisionTenantDir(cwd: string, dir: string): void {
+        cwd = this.canonicalizeCwd(cwd);
         if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
             return;
         }
@@ -397,6 +791,26 @@ export class QaapTenantSpawnService {
      * `-c core.hooksPath=/dev/null` stays as belt-and-suspenders.
      */
     wrapGitForTenant(cwd: string, gitArgs: readonly string[]): { file: string; args: string[] } {
+        cwd = this.canonicalizeCwd(cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            this.prepareTenantIsolation(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator) {
+                throw new Error('Refusing to run git without a validated tenant container.');
+            }
+            // `cwd` is a host path. Translate the explicit -C path as well; otherwise git inside the
+            // worker receives `/workspace/repos/users/<login>/...`, which is outside its `/workspace`
+            // mount and breaks worktree/parallel operations. The mounted path is tenant-local.
+            const containerCwd = this.dockerOrchestrator.toContainerPath(cwd, tenantRoot);
+            return this.dockerOrchestrator.wrapShellForTenantContainer(
+                segment,
+                cwd,
+                'git',
+                ['-c', 'core.hooksPath=/dev/null', '-C', containerCwd, ...gitArgs],
+                tenantRoot,
+            );
+        }
         return this.wrapShellForTenant(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]);
     }
 
@@ -407,12 +821,26 @@ export class QaapTenantSpawnService {
      * the pair unchanged when no uid drop applies (local dev). THROWS when a drop is required but
      * `setpriv` is missing — it never silently returns a root/shared shell (the shipped Linux image
      * provisions util-linux; a missing setpriv is a misconfiguration, not a reason to leak root).
+     *
+     * In container isolation mode (QAAP_CLOUD_MODE=docker), delegates interactive PTY to
+     * `docker exec -it` inside the tenant's dedicated worker container.
      */
-    wrapShellForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+    wrapShellForTenant(cwd: string, file: string, args: readonly string[], environment?: NodeJS.ProcessEnv): { file: string; args: string[] } {
+        cwd = this.canonicalizeCwd(cwd);
         this.enforceIsolationPolicy();
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            this.prepareTenantIsolation(cwd);
+            if (this.dockerOrchestrator && segment && tenantRoot) {
+                return this.dockerOrchestrator.wrapInteractiveTerminalForTenant(segment, cwd, file, args, tenantRoot, environment);
+            }
+            throw new Error('Refusing to open a terminal without a validated tenant container.');
+        }
         const identity = this.resolveSpawnIdentity(cwd);
         if (identity.uid === undefined) {
-            return { file, args: [...args] };
+            const limitedInvocation = this.applyResourceLimits({ file, args: [...args], shell: false }, cwd);
+            return { file: limitedInvocation.file, args: limitedInvocation.args };
         }
         this.prepareTenantIsolation(cwd);
         const gid = identity.gid ?? identity.uid;
@@ -422,10 +850,12 @@ export class QaapTenantSpawnService {
                 + 'required to drop privileges for the interactive shell but was not found on PATH. '
                 + 'Install util-linux in the backend image.');
         }
-        return {
+        const limitedInvocation = this.applyResourceLimits({
             file: setprivExecutable,
             args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
-        };
+            shell: false,
+        }, cwd);
+        return { file: limitedInvocation.file, args: limitedInvocation.args };
     }
 
     // ─── Provisioning primitives (overridable in tests) ───────────────────────────────────────────

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentReadOnlyEnforcement } from './qaap-agent-readonly-workspace';
 
 /** HTTP base path for the background agent-task endpoints. */
@@ -51,7 +51,14 @@ export interface QaapAgentTask {
     readonly exitCode?: number;
     /** Epoch milliseconds. */
     readonly createdAt: number;
+    /** Epoch milliseconds when the agent process actually started; absent while queued. */
+    readonly startedAt?: number;
     readonly finishedAt?: number;
+    /**
+     * Stable ordering key for queued tasks. Lower values run first; it is persisted so a restart
+     * does not silently undo a user's queue arrangement. Only queued tasks expose this field.
+     */
+    readonly queuePosition?: number;
     /**
      * Id of the task that spawned this one — set when an agent calls the `qaap-task` helper.
      * Lets the UI render sub-tasks under their parent.
@@ -79,6 +86,10 @@ export interface QaapAgentTask {
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
     /** Login of the user who owns this task — used for multi-tenant isolation. */
     readonly ownerLogin?: string;
+    /** Client-generated idempotency key for the create request that produced this task. */
+    readonly clientRequestId?: string;
+    /** Id of the interrupted task this execution is continuing, when applicable. */
+    readonly resumedFromTaskId?: string;
     /** Opt-in latency marks for submit → first output diagnostics. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /**
@@ -87,6 +98,8 @@ export interface QaapAgentTask {
      * Absent on legacy tasks and when the working directory is not a readable Git repository.
      */
     readonly worktreeBaselineFingerprint?: string;
+    /** Snapshot at command completion; absent when the workspace cannot be fingerprinted. */
+    readonly worktreeFinishedFingerprint?: string;
     /**
      * Normalized `git status --porcelain` captured with {@link worktreeBaselineFingerprint}. Used as
      * a fail-closed fallback when the content fingerprint cannot be re-computed (budget exceeded,
@@ -168,6 +181,10 @@ export namespace QaapAgentTaskKind {
 }
 
 export interface QaapCreateAgentTaskRequest {
+    /** Reused by a client retry so a slow POST cannot start the same task twice. */
+    readonly clientRequestId?: string;
+    /** Internal durable marker used to make Continue idempotent across backend restarts. */
+    readonly resumedFromTaskId?: string;
     readonly title?: string;
     /** A raw shell command to run. Provide this OR {@link prompt}. */
     readonly command?: string;
@@ -241,6 +258,8 @@ export interface QaapCreateAgentTaskRequest {
 }
 
 /** A coding agent the runner knows how to invoke. */
+export type QaapAgentConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
+
 export interface QaapAgentDescriptor {
     /** Stable identifier sent back in {@link QaapCreateAgentTaskRequest.agent}. */
     readonly id: string;
@@ -248,6 +267,8 @@ export interface QaapAgentDescriptor {
     readonly label: string;
     /** True when the agent's CLI was detected on the server's PATH (or env template is set). */
     readonly available: boolean;
+    /** Authentication state is reported separately from CLI installation. */
+    readonly connectionState?: QaapAgentConnectionState;
 }
 
 /** Selectable QAIQ model option exposed to the frontend picker. */
@@ -256,6 +277,10 @@ export interface QaapQaiqModelOption {
     readonly vendor: string;
     readonly modelId: string;
     readonly label: string;
+    /** Present for native catalogs when a model is visible but gated by the account plan. */
+    readonly available?: boolean;
+    /** Why a visible model cannot currently be selected, when it is unavailable. */
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
 }
 
 /** QAIQ model binding selected by the user in the agent picker submenu. */
@@ -285,6 +310,8 @@ export interface QaapAgentTaskListResponse {
     readonly agents: QaapAgentDescriptor[];
     /** Id of the agent used when the request omits one (first available, else `'shell'`). */
     readonly defaultAgent: string;
+    /** True only when the QAIQ executable was detected on the backend PATH at startup. */
+    readonly qaiqInstalled?: boolean;
     /** QAIQ model options available from configured provider settings grouped client-side by provider. */
     readonly qaiqModels?: QaapQaiqModelOption[];
 }
@@ -311,12 +338,14 @@ export interface QaapAgentTaskAllResponse {
     readonly agentConfigured: boolean;
     readonly agents: QaapAgentDescriptor[];
     readonly defaultAgent: string;
+    /** True only when the QAIQ executable was detected on the backend PATH at startup. */
+    readonly qaiqInstalled?: boolean;
     readonly qaiqModels?: QaapQaiqModelOption[];
 }
 
 /** Payload pushed over SSE when a task changes state. */
 export type QaapAgentTaskEvent =
-    | { readonly type: 'created' | 'completed' | 'cancelled'; readonly task: QaapAgentTask }
+    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered'; readonly task: QaapAgentTask }
     | { readonly type: 'output'; readonly task: QaapAgentTask; readonly chunk: string };
 
 /** True once the task has stopped and will not change state again. */

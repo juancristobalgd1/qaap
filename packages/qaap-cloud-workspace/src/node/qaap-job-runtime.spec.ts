@@ -70,35 +70,35 @@ class TestableQaapJobRuntime extends QaapJobRuntime {
         return this.resolveFunctionWorkspacePath(cwd, relativePath);
     }
 
-    protected override isDirectory(_candidate: string): boolean {
+    public override isDirectory(_candidate: string): boolean {
         return true;
     }
 
-    protected override storeDirectory(): string {
+    public override storeDirectory(): string {
         return this.testDirectory;
     }
 
-    protected override maxConcurrentJobs(): number {
+    public override maxConcurrentJobs(): number {
         return this.globalLimit;
     }
 
-    protected override maxConcurrentJobsPerUser(): number {
+    public override maxConcurrentJobsPerUser(): number {
         return this.perUserLimit;
     }
 
-    protected override resourceLimit(resourceClass: QaapJobResourceClass): number {
+    public override resourceLimit(resourceClass: QaapJobResourceClass): number {
         return this.limits[resourceClass];
     }
 
-    protected override retentionDays(): number {
+    public override retentionDays(): number {
         return this.retentionDaysValue;
     }
 
-    protected override maxJobsPerUser(): number {
+    public override maxJobsPerUser(): number {
         return this.maxJobsPerUserValue;
     }
 
-    protected override scheduleRetentionPrune(): void {
+    public override scheduleRetentionPrune(): void {
         // Tests call pruneRetainedJobs explicitly.
     }
 }
@@ -154,6 +154,20 @@ describe('QaapJobRuntime', () => {
         expect(runtime.get(first.id)?.state).to.equal('succeeded');
         expect(runtime.get(second.id)?.state).to.equal('running');
         expect(children).to.have.length(2);
+    });
+
+    it('scopes get, getGraph and cancel to the requesting owner', () => {
+        const { runtime } = buildHarness();
+        const job = runtime.create(request('owned'), ' alice ').job;
+        const { graph } = runtime.createGraph({ nodes: [{ key: 'only', request: request('graph node') }] }, 'alice');
+
+        expect(runtime.get(job.id, 'alice')?.id).to.equal(job.id);
+        expect(runtime.get(job.id, ' alice ')?.id).to.equal(job.id);
+        expect(runtime.get(job.id, 'bob')).to.equal(undefined);
+        expect(runtime.getGraph(graph.id, 'alice')?.graph.id).to.equal(graph.id);
+        expect(runtime.getGraph(graph.id, 'bob')).to.equal(undefined);
+        expect(runtime.cancel(job.id, 'bob')).to.equal(undefined);
+        expect(runtime.cancel(job.id, 'alice')?.state).to.equal('cancelled');
     });
 
     it('allows concurrent readers but gives a writer an exclusive workspace lease', () => {

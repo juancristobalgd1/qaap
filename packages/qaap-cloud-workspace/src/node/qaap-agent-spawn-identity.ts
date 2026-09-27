@@ -48,13 +48,16 @@ export function resolveAgentSpawnIdentity(
     return identity;
 }
 
-/** Env var to explicitly accept the risk of running the agent as root in a production runtime. */
+/**
+ * Legacy environment variable retained as a compatibility constant only.
+ * Production policy ignores it; hosted deployments must use tenant containers.
+ */
 export const QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION = 'QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION';
 
 /**
  * Env var to explicitly accept running every tenant's agent under one SHARED uid in a production
- * runtime (i.e. with `QAAP_AGENT_UID_PER_USER` off). Secrets stay isolated, but one tenant's agent
- * can read/write another tenant's code. Only acceptable on a single-user box.
+ * runtime (i.e. with `QAAP_AGENT_UID_PER_USER` off). Production policy ignores it; use explicit
+ * development/local mode for a single-user box.
  */
 export const QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION = 'QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION';
 
@@ -94,7 +97,7 @@ export interface QaapAgentIsolationDecision {
 
 /**
  * Whether this is a hosted/production runtime. Mirrors `QaapGithubAuthGuard.isProductionRuntime`
- * (`packages/qaap-mobile-shell/src/node/qaap-github-auth-guard.ts`) deliberately: a run is production
+ * (`packages/qaap-shared-core/src/node/qaap-github-auth-guard.ts`) deliberately: a run is production
  * when `NODE_ENV=production` or `QAAP_CLOUD_MODE` is set to anything other than `local`. Keep in sync.
  */
 export function isQaapProductionRuntime(env: NodeJS.ProcessEnv): boolean {
@@ -102,60 +105,59 @@ export function isQaapProductionRuntime(env: NodeJS.ProcessEnv): boolean {
     return env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
 }
 
+/** Whether container-per-tenant isolation is enabled (QAAP_CLOUD_MODE=docker or QAAP_TENANT_CONTAINER_ISOLATION=1). */
+export function isContainerIsolationEnabled(env: NodeJS.ProcessEnv): boolean {
+    const cloudMode = env.QAAP_CLOUD_MODE?.trim().toLowerCase();
+    return cloudMode === 'docker' || /^(1|true)$/i.test(env.QAAP_TENANT_CONTAINER_ISOLATION?.trim() ?? '');
+}
+
 /**
  * Fail-closed guard for the shared-container isolation risk. In a production runtime:
  *
  * 1. The agent must NOT run as root: as root with `--dangerously-skip-permissions` it can read every
  *    tenant's secrets, tokens and code on the shared filesystem. Refuse the spawn unless privileges
- *    are dropped (`QAAP_AGENT_UID`, which the shipped image defaults to `1001`) or an operator
- *    explicitly accepts the risk via `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION`.
+ *    are dropped (`QAAP_AGENT_UID`, which the shipped image defaults to `1001`).
  * 2. The agent must NOT run under a uid SHARED across tenants: with `QAAP_AGENT_UID_PER_USER` off,
  *    every tenant's code is sibling paths owned by the same uid, so a prompt-injected agent can
  *    read/write another tenant's repository (SEC-1). Refuse the spawn unless uid-per-user isolation
- *    is on or an operator explicitly accepts the risk via `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION`
- *    (single-user boxes).
+ *    is on. Legacy override variables are intentionally ignored in production.
+ *
+ * Container-per-tenant isolation (Opción A): when QAAP_CLOUD_MODE=docker or
+ * QAAP_TENANT_CONTAINER_ISOLATION=1, processes execute inside isolated tenant worker containers,
+ * so the host uid-per-user policy is satisfied by container boundary.
  *
  * Local/single-user dev is unaffected: nothing is refused when the backend is not root or the runtime
  * is not production.
  */
 export function evaluateAgentIsolationPolicy(env: NodeJS.ProcessEnv, isRoot: boolean): QaapAgentIsolationDecision {
+    if (isContainerIsolationEnabled(env)) {
+        return { refuse: false };
+    }
     if (!isRoot || !isQaapProductionRuntime(env)) {
         return { refuse: false };
     }
     const identity = resolveAgentSpawnIdentity(env, isRoot);
     if (identity.uid === undefined) {
-        if (isOverrideAccepted(env[QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION])) {
-            return { refuse: false };
-        }
         return {
             refuse: true,
             reason: 'Refusing to spawn the agent as root in a production runtime — as root it can read every '
                 + 'tenant\'s secrets, tokens and code on the shared filesystem. Fix: set QAAP_AGENT_UID=1001 '
                 + '(the shipped image provisions that user and owns the workspace). Do NOT run multi-tenant as '
-                + 'root; QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true is a last resort only for a trusted '
-                + 'single-user box behind your own auth. See SECURITY.md.',
+                + 'root. Production has no root escape hatch; use development/local mode for single-user '
+                + 'testing. See SECURITY.md.',
         };
     }
     if (!isTenantUidPerUserEnabled(env)) {
-        if (isOverrideAccepted(env[QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION])) {
-            return { refuse: false };
-        }
         return {
             refuse: true,
             reason: 'Refusing to spawn the agent under a shared uid in a production runtime — with '
                 + 'QAAP_AGENT_UID_PER_USER off, every tenant\'s code is owned by the same uid, so one tenant\'s '
                 + 'agent can read/write another tenant\'s repository. Fix: set QAAP_AGENT_UID_PER_USER=1 '
                 + '(read doc/qaap-uid-per-user.md first — enabling rewrites on-disk ownership). '
-                + 'QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true is acceptable only on a single-user box. '
-                + 'See SECURITY.md.',
+                + 'Production has no shared-uid escape hatch. See SECURITY.md.',
         };
     }
     return { refuse: false };
-}
-
-function isOverrideAccepted(raw: string | undefined): boolean {
-    const value = raw?.trim().toLowerCase();
-    return value === 'true' || value === '1';
 }
 
 /**

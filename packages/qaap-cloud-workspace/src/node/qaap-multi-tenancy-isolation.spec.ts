@@ -5,8 +5,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import {
     isPathUnderUserWorkspace,
     isUserWorkspaceContainerPath,
@@ -16,7 +18,9 @@ import {
     resolveTenantHome,
     resolveTenantIsolationRoot,
     resolveUserReposRoot,
+    resolveUserSettingsFilePath,
     safeUserIdSegment,
+    usesSharedAiSettingsFallback,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type {
     QaapCloudWorkspaceSummary,
@@ -27,6 +31,11 @@ import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import {
+    preferenceReaderForOwner as preferenceReaderForOwnerHelper,
+    readUserSettingsFromDisk,
+    writeUserSettingsToDisk,
+} from './qaap-agent-task-runner-utils2';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
@@ -864,7 +873,7 @@ describe('Multi-tenancy isolation', () => {
                 QAAP_VAPID_PUBLIC_KEY: 'vapid-public',
                 PATH: '/usr/bin:/bin',
             };
-            (runner as unknown as { stripSharedProviderEnv(e: NodeJS.ProcessEnv): void }).stripSharedProviderEnv(env);
+            runner.stripSharedProviderEnv(env, undefined);
             // The two real secrets (OAuth app impersonation, forged Web Push) must be gone.
             expect(env.QAAP_GITHUB_CLIENT_SECRET).to.be.undefined;
             expect(env.QAAP_VAPID_PRIVATE_KEY).to.be.undefined;
@@ -872,6 +881,56 @@ describe('Multi-tenancy isolation', () => {
             // Non-secret / needed vars survive so the agent still runs.
             expect(env.PATH).to.equal('/usr/bin:/bin');
             expect(env.QAAP_VAPID_PUBLIC_KEY).to.equal('vapid-public');
+        });
+
+        it('authenticated ownerLogin never reads another tenant or shared Theia settings', () => {
+            const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-ai-iso-'));
+            try {
+                const sharedDir = path.join(home, '.theia');
+                fs.mkdirSync(sharedDir, { recursive: true });
+                fs.writeFileSync(path.join(sharedDir, 'settings.json'), JSON.stringify({
+                    'ai-features.openrouter.openrouterApiKey': 'shared-leak',
+                }));
+                writeUserSettingsToDisk(userA, {
+                    'ai-features.openrouter.openrouterApiKey': 'alice-secret',
+                    'ai-features.openrouter.openrouterModels': ['openai/gpt-4o-mini'],
+                }, home);
+                expect(readUserSettingsFromDisk(userA, home)['ai-features.openrouter.openrouterApiKey']).to.equal('alice-secret');
+                expect(readUserSettingsFromDisk(userB, home)).to.deep.equal({});
+                expect(usesSharedAiSettingsFallback(userA)).to.equal(false);
+                const bobReader = preferenceReaderForOwnerHelper({
+                    readUserSettingsFromDisk: (login?: string) => readUserSettingsFromDisk(login, home),
+                    preferenceService: { get: () => 'preference-service-leak' },
+                }, userB);
+                expect(bobReader('ai-features.openrouter.openrouterApiKey')).to.equal(undefined);
+                const aliceReader = preferenceReaderForOwnerHelper({
+                    readUserSettingsFromDisk: (login?: string) => readUserSettingsFromDisk(login, home),
+                    preferenceService: { get: () => 'preference-service-leak' },
+                }, userA);
+                expect(aliceReader('ai-features.openrouter.openrouterApiKey')).to.equal('alice-secret');
+                expect(resolveUserSettingsFilePath(userA, home)).to.contain(path.join('users', userA, 'settings.json'));
+            } finally {
+                fs.rmSync(home, { recursive: true, force: true });
+            }
+        });
+
+        it('applyProviderPreferenceEnv does not copy shared PreferenceService keys to another user', () => {
+            const env: NodeJS.ProcessEnv = {};
+            const ctx = {
+                readUserSettingsFromDisk: (login?: string) => login === userA
+                    ? { 'ai-features.openrouter.openrouterApiKey': 'alice-secret' }
+                    : {},
+                preferenceService: { get: () => 'shared-leak' },
+                applyOpenRouterOpenAiCompatEnv: () => undefined,
+                preferenceReaderForOwner(login?: string) {
+                    return preferenceReaderForOwnerHelper(this, login);
+                },
+            };
+            const { applyProviderPreferenceEnvExtracted } = require('./qaap-agent-task-runner-tool-pills2') as typeof import('./qaap-agent-task-runner-tool-pills2');
+            applyProviderPreferenceEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, env, userB);
+            expect(env.OPENROUTER_API_KEY).to.equal(undefined);
+            applyProviderPreferenceEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, env, userA);
+            expect(env.OPENROUTER_API_KEY).to.equal('alice-secret');
         });
     });
 });

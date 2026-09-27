@@ -10,16 +10,40 @@
   ],
   "references": [
     {
+      "path": "../ai-anthropic"
+    },
+    {
       "path": "../ai-chat"
     },
     {
       "path": "../ai-chat-ui"
     },
     {
+      "path": "../ai-claude-code"
+    },
+    {
       "path": "../ai-core"
     },
     {
+      "path": "../ai-google"
+    },
+    {
+      "path": "../ai-hugging-face"
+    },
+    {
       "path": "../ai-ide"
+    },
+    {
+      "path": "../ai-mcp"
+    },
+    {
+      "path": "../ai-ollama"
+    },
+    {
+      "path": "../ai-openai"
+    },
+    {
+      "path": "../ai-vercel-ai"
     },
     {
       "path": "../core"
@@ -37,7 +61,22 @@
       "path": "../qaap-adapters"
     },
     {
-      "path": "../qaap-mobile-shell"
+      "path": "../qaap-agents-ui"
+    },
+    {
+      "path": "../qaap-composer"
+    },
+    {
+      "path": "../qaap-persistence"
+    },
+    {
+      "path": "../qaap-shared-core"
+    },
+    {
+      "path": "../qaap-transcript"
+    },
+    {
+      "path": "../qaap-work-hub"
     },
     {
       "path": "../terminal"

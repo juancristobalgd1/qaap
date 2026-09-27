@@ -1,0 +1,112 @@
+/* Mic toggle injected into every AI chat input toolbar. */
+
+.qaap-chat-mic-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.qaap-chat-mic-btn.qaap-chat-mic-btn-recording {
+    color: var(--theia-notificationsErrorIcon-foreground, #e53935);
+}
+
+.qaap-chat-mic-btn.qaap-chat-mic-btn-recording .codicon {
+    animation: qaap-chat-mic-pulse 1.2s ease-in-out infinite;
+}
+
+.qaap-chat-mic-btn:disabled,
+.qaap-chat-mic-btn-unavailable {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.qaap-chat-mic-btn-inline:disabled:hover,
+.qaap-chat-mic-btn-sticky:disabled:hover {
+    color: var(--theia-descriptionForeground);
+    opacity: 0.45;
+}
+
+@keyframes qaap-chat-mic-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.55; transform: scale(1.1); }
+}
+
+/* Mic injected into the inline composer of mobile project cards. */
+
+.qaap-chat-mic-btn-inline {
+    position: absolute;
+    right: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    z-index: 1;
+    color: var(--theia-descriptionForeground);
+    opacity: 0.85;
+}
+
+.qaap-chat-mic-btn-inline:hover {
+    color: var(--theia-foreground);
+    opacity: 1;
+}
+
+.qaap-chat-mic-btn-inline:focus-visible {
+    color: var(--theia-foreground);
+    opacity: 1;
+    outline: 2px solid var(--theia-focusBorder, #4c9aff);
+    outline-offset: 2px;
+}
+
+.qaap-chat-mic-btn-inline.qaap-chat-mic-btn-recording {
+    opacity: 1;
+}
+
+/* Make room for the mic so the dictated text never slips under the icon. */
+.theia-mobile-projects-inline-input-wrap.qaap-has-mic
+.theia-mobile-projects-inline-input {
+    padding-right: 64px;
+}
+
+/* Mic in the Work Hub sticky composer (between text field and send). */
+.qaap-chat-mic-btn-sticky {
+    flex: 0 0 30px;
+    width: 30px;
+    min-width: 30px;
+    max-width: 30px;
+    height: 30px;
+    color: var(--theia-descriptionForeground);
+    opacity: 0.85;
+}
+
+.qaap-chat-mic-btn-sticky:hover {
+    color: var(--theia-foreground);
+    opacity: 1;
+}
+
+.qaap-chat-mic-btn-sticky:focus-visible {
+    color: var(--theia-foreground);
+    opacity: 1;
+    outline: 2px solid var(--theia-focusBorder, #4c9aff);
+    outline-offset: 2px;
+}
+
+.qaap-chat-mic-btn-sticky.qaap-chat-mic-btn-recording {
+    opacity: 1;
+}
+
+/* Reduced-motion (WCAG 2.3.3): drop the recording pulse; the red icon color
+ * still signals that recording is active. */
+@media (prefers-reduced-motion: reduce) {
+    .qaap-chat-mic-btn.qaap-chat-mic-btn-recording .codicon {
+        animation: none;
+    }
+}

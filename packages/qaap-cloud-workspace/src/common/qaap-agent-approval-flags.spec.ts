@@ -127,6 +127,20 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--dangerously-bypass-approvals-and-sandbox');
     });
 
+    it('uses the modern Codex approve-for-me flag when the CLI advertises it', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "codex exec --json 'hi'",
+            {
+                agentId: 'codex',
+                approvalPolicyId: 'approve-for-me',
+                autoApprove: true,
+                codexSupportsApproveForMe: true,
+            },
+        );
+        expect(command).to.include('--approve-for-me');
+        expect(command).not.to.include('--ask-for-approval untrusted');
+    });
+
     it('approve-for-me uses full-auto for Codex when shell is explicitly disabled', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "codex exec --json 'hi'",
@@ -149,7 +163,10 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--full-auto');
     });
 
-    it('default approve-for-me uses QAIQ stdio so Qaap can enforce hard denials', () => {
+    it('default approve-for-me uses QAIQ stdio without stripping CLI approval flags', () => {
+        // CLI "interactive" (stripNonInteractiveApprovalFlags) is only for request-approval.
+        // Approve-for-me keeps stdio control flags; the Allow/Deny card is mounted by the
+        // mobile-shell usesInteractiveAgentApprovals helper when control requests are queued.
         expect(shouldUseQaiqStdioApprovals({
             agentId: 'qaiq',
             approvalPolicyId: 'approve-for-me',
@@ -165,6 +182,21 @@ describe('qaap-agent-approval-flags', () => {
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
         })).to.equal(false);
+        expect(shouldUseInteractiveAgentApprovals({
+            agentId: 'qaiq',
+            approvalPolicyId: 'request-approval',
+            autoApprove: false,
+        })).to.equal(true);
+    });
+
+    it('request-approval strips OpenCode YOLO so the policy is not silently full-access', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "opencode run --format json --dangerously-skip-permissions 'hi'",
+            { agentId: 'opencode', approvalPolicyId: 'request-approval', autoApprove: false },
+        );
+        expect(command).not.to.include('--dangerously-skip-permissions');
+        expect(command).not.to.include('--auto');
+        expect(command).to.include('opencode run');
     });
 
     it('approve-for-me with shell disabled omits Bash from the QAIQ tool allowlist', () => {

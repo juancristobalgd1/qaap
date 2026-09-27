@@ -4,6 +4,18 @@
 // *****************************************************************************
 
 export const QAAP_CLOUD_API_PATH = '/qaap/api/cloud';
+/** Tenant runtime lifecycle, activity and FinOps control-plane API. */
+export const QAAP_TENANT_RUNTIME_API_PATH = `${QAAP_CLOUD_API_PATH}/runtime`;
+/** Signed-in billing entitlements + Codex hosted credit wallet. */
+export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
+/** Create a Stripe Checkout session for Pro / Team monthly subscription. */
+export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
+/** Confirm a completed Checkout session after Stripe redirects back (idempotent with webhook). */
+export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
+/** Stripe webhook (raw body) for subscription lifecycle. */
+export const QAAP_BILLING_WEBHOOK_API_PATH = '/qaap/api/billing/webhook';
+/** Dev-only plan activate when Stripe keys are not configured. */
+export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
 
 /**
  * Default CDP endpoint AppTester's `chrome-devtools-mcp` MCP server connects to. Must point at a
@@ -18,6 +30,50 @@ export interface QaapCdpStatusResponse {
 }
 
 export type QaapCloudWorkspaceStatus = 'provisioning' | 'ready' | 'stopped' | 'error';
+
+export type QaapTenantRuntimeState =
+    | 'active'
+    | 'idle'
+    | 'starting'
+    | 'stopped'
+    | 'destroyed'
+    | 'error';
+
+export type QaapTenantActivityReason =
+    | 'agent'
+    | 'terminal'
+    | 'websocket'
+    | 'workspace'
+    | 'preview'
+    | 'job'
+    | 'deploy'
+    | 'user';
+
+export interface QaapTenantRuntimeStatus {
+    readonly tenantLogin: string;
+    readonly state: QaapTenantRuntimeState;
+    readonly lastActivityAt?: string;
+    readonly idleSince?: string;
+    readonly stoppedAt?: string;
+    readonly destroyAfter?: string;
+    readonly protectedUntil?: string;
+    readonly workerContainerId?: string;
+    readonly backendContainerId?: string;
+    readonly lastError?: string;
+    readonly reaperEnabled: boolean;
+}
+
+export interface QaapTenantRuntimeMetrics {
+    readonly scans: number;
+    readonly candidates: number;
+    readonly stops: number;
+    readonly destroys: number;
+    readonly stopFailures: number;
+    readonly destroyFailures: number;
+    readonly coldStarts: number;
+    readonly coldStartTotalMs: number;
+    readonly lastScanAt?: string;
+}
 
 export interface QaapCloudWorkspaceSummary {
     readonly id: string;

@@ -3,21 +3,22 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { buildConversationListMetrics } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-list-metrics';
-import { resolveMessagePreviewText } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-content';
+import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
+import { excerptConversationMessageError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import {
     agentMessageHasVisualVerificationMarker,
     conversationLikelyNeedsVisualVerification,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+} from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     estimateConversationContextBreakdown,
     type QaapAgentContextUsage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import type { QaapAgentMessageWireDelta } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
+import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapParallelRunVariantStats } from './qaap-parallel-run';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
@@ -99,7 +100,7 @@ export interface QaapAgentMessage {
     /** Correlates this persisted user row with the client-only optimistic row it confirms. */
     readonly clientMessageId?: string;
     /** Structured execution trace for AG-UI style providers. */
-    readonly traceEvents?: import('@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model').QaapTranscriptTraceEventDTO[];
+    readonly traceEvents?: import('@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model').QaapTranscriptTraceEventDTO[];
     /** Present for agent turns driven by QAIQ stream-json. */
     readonly segments?: QaapAgentMessageSegment[];
     /** Epoch milliseconds. */
@@ -155,6 +156,8 @@ export interface QaapAgentMessage {
      * anything else that must address one run) keys off this instead.
      */
     readonly runActive?: boolean;
+    /** Immutable end time for this agent turn, independent of later conversation updates. */
+    readonly runFinishedAt?: number;
     /**
      * When this user message was produced by batching multiple queued messages into a single
      * agent turn (delivery mode `'queue'` + optimization B), this holds the IDs of the original
@@ -232,6 +235,12 @@ export interface QaapAgentConversation {
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
+    /**
+     * Per-source-project worktree number (1-based), allocated once by the server when the
+     * conversation is created in a worktree of {@link parallelBaseCwd}. The UI labels the worktree
+     * `<projectName>_<n>`; the on-disk hash directory stays the internal key.
+     */
+    readonly worktreeOrdinal?: number;
     /** Working-tree snapshots captured per turn — the Timeline / rollback feature. */
     readonly checkpoints?: QaapConversationCheckpoint[];
     /**
@@ -272,6 +281,8 @@ export interface QaapAgentConversationSummary {
     readonly messageCount: number;
     /** Excerpt of the most recent message — handy for list-view previews. */
     readonly lastMessagePreview?: string;
+    /** Excerpt of the most recent message's persisted failure reason, when it failed. */
+    readonly lastMessageError?: string;
     /** Role of the most recent message, so the UI can render "you said…" vs. "agent replied…". */
     readonly lastMessageRole?: QaapAgentMessageRole;
     readonly priority?: boolean;
@@ -284,6 +295,10 @@ export interface QaapAgentConversationSummary {
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     /** @deprecated Use {@link agentModel}. */
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
+    /** Agent sealed onto the most recently started user turn. Unlike {@link agentId}, this is turn-specific. */
+    readonly lastTurnAgentId?: string;
+    /** Model sealed onto the most recently started user turn. Unlike {@link agentModel}, this is execution provenance. */
+    readonly lastTurnAgentModel?: QaapCreateAgentTaskQaiqModel;
     /** Last composer interaction mode (`agent`, `plan`, `ask`). */
     readonly interactionModeId?: string;
     /** Last composer approval preset id. */
@@ -295,6 +310,12 @@ export interface QaapAgentConversationSummary {
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
+    /**
+     * Per-source-project worktree number (1-based), allocated once by the server when the
+     * conversation is created in a worktree of {@link parallelBaseCwd}. The UI labels the worktree
+     * `<projectName>_<n>`; the on-disk hash directory stays the internal key.
+     */
+    readonly worktreeOrdinal?: number;
     /** In-flight tool/status label while {@link status} is `'streaming'`. */
     readonly activityLabel?: string;
     readonly linesAdded?: number;
@@ -511,6 +532,7 @@ export function conversationNeedsVisualVerificationEvidence(conv: QaapAgentConve
 
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
     const last = conv.messages[conv.messages.length - 1];
+    const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
     const status = resolveEffectiveConversationStatus(conv);
     const base: QaapAgentConversationSummary = {
         id: conv.id,
@@ -523,6 +545,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         messageCount: conv.messages.length,
         lastMessagePreview: last ? excerpt(resolveMessagePreviewText(last)) : undefined,
         lastMessageRole: last?.role,
+        ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         priority: conv.priority || undefined,
         paused: conv.paused || undefined,
         archived: conv.archived || undefined,
@@ -530,12 +553,15 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.agentModel ?? conv.qaiqModel
             ? { agentModel: conv.agentModel ?? conv.qaiqModel }
             : {}),
+        ...(lastTurn?.turnAgentId ? { lastTurnAgentId: lastTurn.turnAgentId } : {}),
+        ...(lastTurn?.turnAgentModel ? { lastTurnAgentModel: lastTurn.turnAgentModel } : {}),
         ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
         ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
         forkedFromId: conv.forkedFromId,
         parallelRunId: conv.parallelRunId,
         parallelBaseCwd: conv.parallelBaseCwd,
         worktreeBranch: conv.worktreeBranch,
+        ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),
         linkedPullRequest: conv.linkedPullRequest,
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,

@@ -63,7 +63,6 @@ const FUNCTION_BY_OP: Readonly<Partial<Record<QaapWorkflowDeterministicNode['op'
     verify: QAAP_WORKFLOW_VERIFY_FUNCTION,
 };
 
-
 @injectable()
 export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
 
@@ -226,7 +225,7 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             node.costTier,
             agentRef => !blocked.has(agentRef)
                 && (!restrictable || canEnforceReadOnlyWorkspace(agentRef))
-                && this.isAgentAvailable(agentRef),
+                && this.isAgentAvailable(agentRef, record.ownerLogin || undefined),
             node.agentRef,
         );
         const readOnly = node.isolation === 'cwd-readonly';
@@ -422,11 +421,12 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
         }
     }
 
-    protected isAgentAvailable(agentRef: string): boolean {
+    /** Installed, enabled and connected for the run's owner (their disabled harnesses / CLI logins), and not cooling down. */
+    protected isAgentAvailable(agentRef: string, ownerLogin: string | undefined): boolean {
         if (this.agentHealth.isCoolingDown(agentRef)) {
             return false;
         }
-        return this.runner.listAgents().some(agent => agent.id === agentRef && agent.available);
+        return this.runner.listAgents(ownerLogin).some(agent => agent.id === agentRef && agent.available);
     }
 
     async lookupAgentTurn(externalId: string): Promise<{ readonly state: QaapAgentTaskState; readonly log?: string } | undefined> {

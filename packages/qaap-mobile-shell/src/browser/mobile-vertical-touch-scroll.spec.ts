@@ -39,6 +39,43 @@ const OVERLAY_SCROLL_HOSTS = [
  */
 const QAAP_LOBEHUB_TOOL_DETAIL_SEMI = '.qaap-lh-tool-detail[data-expand-level="semi"]';
 
+/**
+ * The handful of sheet/menu overlays whose mobile-touch-accessibility regression is the
+ * most visible (see .cursor/rules/mobile-touch-accessibility.mdc reference patterns) —
+ * a fingers-can't-scroll-it bug on any of these breaks a primary composer or navigation flow.
+ */
+const CRITICAL_SHEETS = [
+    '.theia-mobile-work-hub-sessions-sidebar-scroll',
+    '.theia-mobile-sticky-composer-sheet-list',
+    '.theia-qaap-approval-policy-sheet-list',
+    '.theia-mobile-sticky-composer-tools-host',
+    '.theia-mobile-parallel-model-menu-list',
+] as const;
+
+/** Checklist entries added to close a TS/CSS registration gap. */
+const NEWLY_REGISTERED_HOSTS = [
+    '.theia-mobile-onboarding-body',
+    '.theia-mobile-bottom-actionsheet',
+    '.theia-mobile-routine-sheet-panel',
+    '.theia-mobile-pr-quick-row',
+] as const;
+
+/**
+ * Parses the selector list inside the "Vertical scroll hosts" CSS rule (from the comment
+ * through the opening `{`) into individual class/id tokens. Used only as a secondary
+ * documentation cross-check: compound selectors (`:not(...)`, descendant combinators,
+ * attribute-only selectors) do not round-trip 1:1 through this kind of naive tokenizer, so
+ * the authoritative assertion is the simpler "every TS selector is a substring of the CSS
+ * file" check further down.
+ */
+function extractCssVerticalHostSelectors(css: string): string[] {
+    const start = css.indexOf('Vertical scroll hosts');
+    const slice = css.slice(start, start + 8000);
+    const brace = slice.indexOf('{');
+    const list = slice.slice(0, brace);
+    return [...list.matchAll(/(\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*(?:\[[^\]]+\])?|#theia-[A-Za-z0-9_-]+)/g)].map(m => m[1]);
+}
+
 describe('mobile-vertical-touch-scroll', () => {
 
     it('registers overlay scroll hosts for MutationObserver patching', () => {
@@ -104,5 +141,41 @@ describe('mobile-vertical-touch-scroll', () => {
         const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css');
         const css = fs.readFileSync(cssPath, 'utf8');
         expect(css, 'semi detail panel missing from touch-scroll CSS').to.include(QAAP_LOBEHUB_TOOL_DETAIL_SEMI);
+    });
+
+    describe('touch scroll checklist', () => {
+        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+
+        it('registers every critical sheet/menu overlay in both the JS fallback and the CSS', () => {
+            for (const selector of CRITICAL_SHEETS) {
+                expect(MOBILE_VERTICAL_SCROLL_SELECTORS, `${selector} missing from TS`).to.include(selector);
+                expect(css, `${selector} missing from CSS`).to.include(selector);
+            }
+        });
+
+        it('registers the newly added checklist hosts (onboarding, actionsheet, routine panel, PR quick row)', () => {
+            for (const selector of NEWLY_REGISTERED_HOSTS) {
+                expect(MOBILE_VERTICAL_SCROLL_SELECTORS, `${selector} missing from TS`).to.include(selector);
+                expect(css, `${selector} missing from CSS`).to.include(selector);
+            }
+        });
+
+        it('keeps every JS vertical-scroll selector registered as a substring of the CSS host list', () => {
+            for (const selector of MOBILE_VERTICAL_SCROLL_SELECTORS) {
+                expect(css, `${selector} (TS) missing from qaap-mobile-touch-scroll.css`).to.include(selector);
+            }
+        });
+
+        it('finds every simple TS class selector tokenized out of the CSS "Vertical scroll hosts" rule', () => {
+            const cssTokens = new Set(extractCssVerticalHostSelectors(css));
+            const simpleSelectors = MOBILE_VERTICAL_SCROLL_SELECTORS.filter(selector =>
+                /^\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*(?:\[[^\]]+\])?$/.test(selector));
+            // Sanity: most of the list is made of simple (non-compound, non-descendant) selectors.
+            expect(simpleSelectors.length).to.be.greaterThan(MOBILE_VERTICAL_SCROLL_SELECTORS.length / 2);
+            for (const selector of simpleSelectors) {
+                expect(cssTokens.has(selector), `${selector} not tokenized from the CSS Vertical scroll hosts block`).to.equal(true);
+            }
+        });
     });
 });

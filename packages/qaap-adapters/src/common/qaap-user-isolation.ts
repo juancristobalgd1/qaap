@@ -5,6 +5,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
+import { isQaapHostedEnvironment } from './qaap-hosted-runtime';
 
 /** Well-known segment under {@link resolveQaapReposRoot} for per-user clones. */
 export const QAAP_USER_REPOS_SEGMENT = 'users';
@@ -54,6 +55,20 @@ export function resolveQaapTenantHomeRoot(): string {
     return process.env.QAAP_TENANT_HOME_ROOT?.trim() || '/home/qaap-tenants';
 }
 
+/** Root for persisted browser-visible data owned by one tenant. */
+export function resolveQaapTenantConfigRoot(): string {
+    return process.env.QAAP_TENANT_CONFIG_ROOT?.trim() || path.join(os.homedir(), '.qaap', 'users');
+}
+
+/** Tenant-owned data root shared by user storage, custom skills and future per-user state. */
+export function resolveQaapTenantUserRoot(ownerLogin: string): string {
+    const owner = ownerLogin.trim();
+    if (!owner) {
+        throw new Error('Cannot resolve a tenant data directory without an owner login.');
+    }
+    return path.join(resolveQaapTenantConfigRoot(), safeUserIdSegment(owner));
+}
+
 /** A single tenant's agent HOME: `{tenantHomeRoot}/{segment}`. `segment` is a {@link safeUserIdSegment}. */
 export function resolveTenantHome(segment: string): string {
     return path.join(resolveQaapTenantHomeRoot(), segment);
@@ -67,6 +82,51 @@ export function safeUserIdSegment(login: string): string {
     }
     const safe = trimmed.replace(/[^A-Za-z0-9_.-]/g, '_');
     return safe || '_unknown';
+}
+
+/**
+ * Local skip-auth / anonymous buckets may still read the shared `~/.theia/settings.json`.
+ * Authenticated GitHub/GitLab logins must never fall back to that file — it is one backend
+ * process and would leak User A's API keys into User B's agent spawn.
+ */
+export function usesSharedAiSettingsFallback(ownerLogin: string | undefined): boolean {
+    const login = ownerLogin?.trim();
+    if (!login) {
+        return true;
+    }
+    return login === QAAP_SKIP_AUTH_USER_LOGIN || login === QAAP_ANONYMOUS_USER_LOGIN;
+}
+
+/**
+ * Whether this backend process may serve more than one person: a hosted runtime (where skip-auth is refused,
+ * so callers are signed-in logins or the unauthenticated `_anonymous` bucket) that is not a dedicated
+ * per-tenant backend (`QAAP_TENANT_BACKEND_MODE=1` serves exactly one login and receives no operator
+ * provider credentials). Local / dev runs are single-user.
+ */
+export function isQaapMultiUserBackend(env: NodeJS.ProcessEnv = process.env): boolean {
+    // Literal on purpose: `QAAP_TENANT_BACKEND_MODE_ENV` lives in a crypto-importing module this browser-shared file avoids.
+    if (/^(1|true)$/i.test(env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '')) {
+        return false;
+    }
+    return isQaapHostedEnvironment(env);
+}
+
+/**
+ * Whether the operator's provider credentials (backend env such as `OPENAI_API_KEY`) must be withheld from
+ * work done for `ownerLogin`: always for signed-in tenants, and for every caller (no login, skip-auth,
+ * anonymous) on a multi-user backend — mirroring the fail-closed generic keystore RPC. Single-user /
+ * local runs keep them.
+ */
+export function mustWithholdOperatorProviderCredentials(
+    ownerLogin: string | undefined,
+    env: NodeJS.ProcessEnv = process.env,
+): boolean {
+    return !usesSharedAiSettingsFallback(ownerLogin) || isQaapMultiUserBackend(env);
+}
+
+/** Per-user AI/BYOK settings: `{home}/.qaap/users/{login}/settings.json`. */
+export function resolveUserSettingsFilePath(userLogin: string, homeDir: string = os.homedir()): string {
+    return path.join(homeDir, '.qaap', 'users', safeUserIdSegment(userLogin), 'settings.json');
 }
 
 /** Per-user workspace root: `{reposRoot}/users/{login}/`. */
@@ -86,16 +146,158 @@ export function resolveRepositoryWorkspacePath(
     return path.join(resolveUserReposRoot(reposRoot, userLogin), ownerDir, repoDir);
 }
 
+/**
+ * Which path semantics to use when normalizing workspace/cwd strings.
+ * Always the **backend/host** OS — never the browser navigator — so a Windows laptop
+ * talking to a Linux VPS still produces `/workspace/...`, and a Windows Electron host
+ * still produces `C:\...`.
+ */
+export type IsolationPathHost = 'win32' | 'posix';
+
+/** Host for the current Node/browserify process (`darwin`/`linux` → posix). */
+export function resolveIsolationPathHost(): IsolationPathHost {
+    return process.platform === 'win32' ? 'win32' : 'posix';
+}
+
+/**
+ * Minimal path helpers when webpack/browserify leaves `path.posix` / `path.win32` as null
+ * (common in the browser bundle — calling `.resolve` then throws and empties Files/Terminal).
+ */
+function createIsolationPathApi(host: IsolationPathHost): path.PlatformPath {
+    const sep = host === 'win32' ? '\\' : '/';
+    const toForward = (value: string): string => value.replace(/\\/g, '/');
+    const isAbsolute = (value: string): boolean => {
+        const forward = toForward(value);
+        if (host === 'win32') {
+            return /^[A-Za-z]:\//.test(forward) || forward.startsWith('//') || forward.startsWith('/');
+        }
+        return forward.startsWith('/');
+    };
+    const collapse = (segments: string[], absolute: boolean): string[] => {
+        const out: string[] = [];
+        for (const segment of segments) {
+            if (!segment || segment === '.') {
+                continue;
+            }
+            if (segment === '..') {
+                if (out.length > 0 && out[out.length - 1] !== '..') {
+                    out.pop();
+                } else if (!absolute) {
+                    out.push('..');
+                }
+                continue;
+            }
+            out.push(segment);
+        }
+        return out;
+    };
+    const resolve = (...parts: string[]): string => {
+        let resolved = '';
+        for (const part of parts) {
+            if (!part) {
+                continue;
+            }
+            const forward = toForward(part);
+            if (isAbsolute(forward)) {
+                resolved = forward;
+            } else {
+                resolved = resolved ? `${resolved.replace(/\/+$/, '')}/${forward}` : forward;
+            }
+        }
+        if (!resolved) {
+            return host === 'win32' ? `.${sep}` : '.';
+        }
+        const drive = host === 'win32' ? resolved.match(/^([A-Za-z]:)(\/.*)?$/) : undefined;
+        const unc = host === 'win32' && resolved.startsWith('//');
+        const body = drive ? (drive[2] || '/') : resolved;
+        const absolute = host === 'posix'
+            ? body.startsWith('/')
+            : !!(drive || unc || body.startsWith('/'));
+        const segments = collapse(body.split('/'), absolute);
+        if (host === 'win32') {
+            if (drive) {
+                return `${drive[1]}${sep}${segments.join(sep)}`;
+            }
+            if (unc) {
+                return `${sep}${sep}${segments.join(sep)}`;
+            }
+            return segments.join(sep) || '.';
+        }
+        return absolute ? `/${segments.join('/')}` : (segments.join('/') || '.');
+    };
+    const join = (...parts: string[]): string => {
+        const filtered = parts.filter(part => !!part);
+        if (filtered.length === 0) {
+            return '.';
+        }
+        return resolve(filtered.map(toForward).join('/'));
+    };
+    const relative = (from: string, to: string): string => {
+        const fromResolved = toForward(resolve(from)).replace(/\/+$/, '') || '/';
+        const toResolved = toForward(resolve(to)).replace(/\/+$/, '') || '/';
+        if (host === 'win32') {
+            const fromDrive = fromResolved.slice(0, 2).toLowerCase();
+            const toDrive = toResolved.slice(0, 2).toLowerCase();
+            if (/^[a-z]:$/i.test(fromDrive) && /^[a-z]:$/i.test(toDrive) && fromDrive !== toDrive) {
+                return resolve(to);
+            }
+        }
+        const fromParts = fromResolved.split('/').filter(Boolean);
+        const toParts = toResolved.split('/').filter(Boolean);
+        let common = 0;
+        while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+            common += 1;
+        }
+        const ups = fromParts.length - common;
+        const downs = toParts.slice(common);
+        const rel = [...Array(ups).fill('..'), ...downs].join('/');
+        return rel || '.';
+    };
+    return {
+        resolve,
+        join,
+        relative,
+        isAbsolute,
+        normalize: (value: string) => resolve(value),
+        sep,
+        delimiter: host === 'win32' ? ';' : ':',
+        basename: path.basename,
+        dirname: path.dirname,
+        extname: path.extname,
+        parse: path.parse,
+        format: path.format,
+        toNamespacedPath: (value: string) => value,
+        posix: path.posix ?? (undefined as unknown as path.PlatformPath),
+        win32: path.win32 ?? (undefined as unknown as path.PlatformPath),
+    } as path.PlatformPath;
+}
+
+function pathApiForHost(host: IsolationPathHost): path.PlatformPath {
+    const preferred = host === 'win32' ? path.win32 : path.posix;
+    // Browser webpack builds often set path.posix / path.win32 to null.
+    if (preferred && typeof preferred.resolve === 'function') {
+        return preferred;
+    }
+    if (typeof path.resolve === 'function'
+        && ((host === 'win32' && process.platform === 'win32')
+            || (host === 'posix' && process.platform !== 'win32'))) {
+        return path;
+    }
+    return createIsolationPathApi(host);
+}
+
 /** True when `targetPath` is inside the authenticated user's workspace tree. */
 export function isPathUnderUserWorkspace(
     targetPath: string,
     reposRoot: string,
     userLogin: string,
+    host: IsolationPathHost = resolveIsolationPathHost(),
 ): boolean {
-    const resolved = path.resolve(targetPath);
-    const userRoot = path.resolve(resolveUserReposRoot(reposRoot, userLogin));
-    const relative = path.relative(userRoot, resolved);
-    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+    const api = pathApiForHost(host);
+    const resolved = normalizeIsolationPath(targetPath, host);
+    const userRoot = normalizeIsolationPath(resolveUserReposRoot(reposRoot, userLogin), host);
+    const relative = api.relative(userRoot, resolved);
+    return relative === '' || (!relative.startsWith('..') && !api.isAbsolute(relative));
 }
 
 /**
@@ -104,17 +306,90 @@ export function isPathUnderUserWorkspace(
  * tree. Used to derive which tenant a spawned process belongs to from its cwd, so it can run under
  * that tenant's uid (uid-per-user isolation).
  */
-export function resolveTenantSegmentFromWorkspacePath(reposRoot: string, targetPath: string): string | undefined {
-    return firstPathSegmentUnder(path.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT), targetPath);
+export function resolveTenantSegmentFromWorkspacePath(
+    reposRoot: string,
+    targetPath: string,
+    host: IsolationPathHost = resolveIsolationPathHost(),
+): string | undefined {
+    const api = pathApiForHost(host);
+    return firstPathSegmentUnder(api.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT), targetPath, host);
+}
+
+/**
+ * Canonical absolute filesystem path for tenant isolation and workspace-scoped spawns.
+ *
+ * Cross-OS contract:
+ * - Linux / macOS host (`posix`): `/workspace\\repos\\...` and `"/\workspace\repos\..."`
+ *   (Windows-browser `FileUri.fsPath` of a POSIX URI) become `/workspace/repos/...`.
+ * - Windows host (`win32`): `C:\Users\...`, `C:/Users/...`, and `file:///C:/Users/...`
+ *   become a resolved absolute Windows path; separators are unified safely.
+ *
+ * Pass {@link IsolationPathHost} explicitly from the browser using `OS.backend` so the
+ * client never resolves with the laptop's OS when the workspace lives on another OS.
+ */
+export function normalizeIsolationPath(
+    input: string,
+    host: IsolationPathHost = resolveIsolationPathHost(),
+): string {
+    const api = pathApiForHost(host);
+    const trimmed = input.trim();
+    if (!trimmed) {
+        return api.resolve('.');
+    }
+    let candidate = trimmed;
+    if (/^file:/i.test(candidate)) {
+        try {
+            if (typeof URL !== 'undefined') {
+                const parsed = new URL(candidate);
+                if (parsed.protocol === 'file:') {
+                    candidate = decodeURIComponent(parsed.pathname);
+                }
+            } else {
+                const withoutScheme = candidate.replace(/^file:\/\//i, '');
+                if (withoutScheme.startsWith('/')) {
+                    candidate = decodeURIComponent(withoutScheme);
+                } else {
+                    const slash = withoutScheme.indexOf('/');
+                    candidate = slash >= 0 ? decodeURIComponent(withoutScheme.slice(slash)) : withoutScheme;
+                }
+            }
+        } catch {
+            // keep candidate as trimmed input
+        }
+    }
+    // Unify separators. Collapse runs so "/\workspace" → "//workspace" → "/workspace".
+    // Preserve real Windows UNC only when the input already looked like \\server\share or //server/share —
+    // never when it was the Windows-browser mangling of a POSIX absolute ("/\workspace\...").
+    const preserveUnc = host === 'win32' && (
+        candidate.startsWith('\\\\')
+        || (candidate.startsWith('//') && !candidate.startsWith('///'))
+    );
+    let unified = candidate.replace(/\\/g, '/');
+    if (preserveUnc && /^\/\/[^/]/.test(unified)) {
+        unified = `//${unified.slice(2).replace(/\/+/g, '/')}`;
+    } else {
+        unified = unified.replace(/\/+/g, '/');
+    }
+    // file:///C:/Users/... → pathname `/C:/Users/...` → `C:/Users/...` for win32.resolve
+    const drivePrefixed = unified.match(/^\/([A-Za-z]:)(\/.*)?$/);
+    if (drivePrefixed) {
+        unified = drivePrefixed[1] + (drivePrefixed[2] || '/');
+    }
+    return api.resolve(unified);
 }
 
 /** The first path segment of `targetPath` directly under `base`, or `undefined` when not under it. */
-export function firstPathSegmentUnder(base: string, targetPath: string): string | undefined {
-    const relative = path.relative(path.resolve(base), path.resolve(targetPath));
-    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+export function firstPathSegmentUnder(
+    base: string,
+    targetPath: string,
+    host: IsolationPathHost = resolveIsolationPathHost(),
+): string | undefined {
+    const api = pathApiForHost(host);
+    const relative = api.relative(normalizeIsolationPath(base, host), normalizeIsolationPath(targetPath, host));
+    if (!relative || relative.startsWith('..') || api.isAbsolute(relative)) {
         return undefined;
     }
-    const [segment] = relative.split(path.sep);
+    const [segment] = relative.split(api.sep);
     return segment || undefined;
 }
 
@@ -128,22 +403,24 @@ export function resolveTenantIsolationRoot(
     reposRoot: string,
     worktreesRoot: string,
     cwd: string,
+    host: IsolationPathHost = resolveIsolationPathHost(),
 ): { readonly root: string; readonly segment: string } | undefined {
-    const usersRoot = path.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT);
-    const reposSegment = firstPathSegmentUnder(usersRoot, cwd);
+    const api = pathApiForHost(host);
+    const usersRoot = api.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT);
+    const reposSegment = firstPathSegmentUnder(usersRoot, cwd, host);
     if (reposSegment) {
-        return { root: path.join(usersRoot, reposSegment), segment: reposSegment };
+        return { root: api.join(usersRoot, reposSegment), segment: reposSegment };
     }
-    const worktreeSegment = firstPathSegmentUnder(worktreesRoot, cwd);
+    const worktreeSegment = firstPathSegmentUnder(worktreesRoot, cwd, host);
     if (worktreeSegment) {
-        return { root: path.join(path.resolve(worktreesRoot), worktreeSegment), segment: worktreeSegment };
+        return { root: api.join(api.resolve(worktreesRoot), worktreeSegment), segment: worktreeSegment };
     }
     // Parallel-run variant worktrees ({tmpdir}/qaap-parallel/{segment}/{slug}/{variant}) are tenant
     // trees too — recognize them so the fail-closed cwd guard and the uid drop apply there as well.
     const parallelRoot = resolveQaapParallelRoot();
-    const parallelSegment = firstPathSegmentUnder(parallelRoot, cwd);
+    const parallelSegment = firstPathSegmentUnder(parallelRoot, cwd, host);
     if (parallelSegment) {
-        return { root: path.join(parallelRoot, parallelSegment), segment: parallelSegment };
+        return { root: api.join(parallelRoot, parallelSegment), segment: parallelSegment };
     }
     return undefined;
 }
@@ -160,14 +437,16 @@ export function isUserWorkspaceContainerPath(
     targetPath: string,
     reposRoot: string,
     userLogin: string,
+    host: IsolationPathHost = resolveIsolationPathHost(),
 ): boolean {
-    if (!isPathUnderUserWorkspace(targetPath, reposRoot, userLogin)) {
+    if (!isPathUnderUserWorkspace(targetPath, reposRoot, userLogin, host)) {
         return false;
     }
-    const resolved = path.resolve(targetPath);
-    const userRoot = path.resolve(resolveUserReposRoot(reposRoot, userLogin));
-    const relative = path.relative(userRoot, resolved);
-    const depth = relative === '' ? 0 : relative.split(path.sep).length;
+    const api = pathApiForHost(host);
+    const resolved = normalizeIsolationPath(targetPath, host);
+    const userRoot = normalizeIsolationPath(resolveUserReposRoot(reposRoot, userLogin), host);
+    const relative = api.relative(userRoot, resolved);
+    const depth = relative === '' ? 0 : relative.split(api.sep).length;
     return depth < 2;
 }
 
@@ -176,7 +455,8 @@ export function isUserWorkspaceContainerPath(
  * Supports `.../repos/users/{login}/{owner}/{repo}` and legacy `.../repos/{owner}/{repo}`.
  */
 export function parseGithubFullNameFromWorkspacePath(workspacePath: string): string | undefined {
-    const normalized = workspacePath.replace(/\\/g, '/');
+    // Separator-only normalize — do not host-resolve (Windows drive letters must stay parseable on any OS).
+    const normalized = workspacePath.trim().replace(/\\/g, '/').replace(/\/+/g, '/');
     const segments = normalized.split('/').filter(Boolean);
     const reposIndex = segments.lastIndexOf('repos');
     if (reposIndex < 0) {

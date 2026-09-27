@@ -7,6 +7,9 @@
 /** Provider id used to namespace NVIDIA language model ids (`nvidia/<model>`). */
 export const NVIDIA_PROVIDER_ID = 'nvidia';
 
+/** Default NVIDIA NIM endpoint. It is OpenAI Chat-Completions compatible. */
+export const NVIDIA_DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+
 /**
  * NVIDIA NIM models that are available on the free tier — usable with the free credits
  * granted by a build.nvidia.com account. These get a "free" badge in the UI so users can

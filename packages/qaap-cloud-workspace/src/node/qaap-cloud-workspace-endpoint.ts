@@ -26,25 +26,27 @@ import {
     buildQaapIdentityPreviewUrl,
     isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
+} from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import {
     isQaapPreviewIdentity,
     resolveQaapPreviewIdentity,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-identity';
-import { QaapDevPreviewPortRegistry } from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-port-registry';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
+import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
 import { QAAP_PREVIEW_RESTART_PATH, type QaapPreviewRestartRequest } from '../common/qaap-preview-supervisor-types';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
+import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes } from '@theia/qaap-shared-core/lib/common/qaap-preview-route';
+import { isQaapTenantBackendRuntime } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-endpoint-render';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 import { QaapWebPushService } from './qaap-web-push-service';
-import { normalizeQaapPublicUrl } from '@theia/qaap-mobile-shell/lib/node/qaap-github-oauth-config';
-import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { resolveQaapPublicOrigin } from '@theia/qaap-shared-core/lib/node/qaap-github-oauth-config';
+import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 
 @injectable()
 export class QaapCloudWorkspaceEndpoint implements BackendApplicationContribution {
@@ -264,6 +266,10 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             }
         }
         const summary = await this.shares.create(port, body.repoKey, origin, ownerLogin);
+        if (isQaapTenantBackendRuntime()) {
+            // Lets the control plane route this public link (no session) back to this backend.
+            res.setHeader(QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes([{ kind: 'share', id: summary.token }]));
+        }
         res.json({ share: summary });
     }
 
@@ -324,7 +330,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
                 return;
             }
             try {
-                const status = this.previewSupervisor.start(cwd, port, { ...identity, ownerLogin });
+                const status = await this.previewSupervisor.start(cwd, port, { ...identity, ownerLogin });
                 const processId = this.previewSupervisor.describe(identity.previewId)?.processId;
                 this.previewRegistry.attachProcess(identity.previewId, ownerLogin, processId);
                 res.json({
@@ -345,7 +351,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             const record = this.previewRegistry.getByPort(port);
             if (record && record.ownerLogin === ownerLogin && this.sameWorkspacePath(record.root, cwd)) {
                 try {
-                    const status = this.previewSupervisor.start(cwd, port, { ...record, ownerLogin });
+                    const status = await this.previewSupervisor.start(cwd, port, { ...record, ownerLogin });
                     const processId = this.previewSupervisor.describe(record.previewId)?.processId;
                     this.previewRegistry.attachProcess(record.previewId, ownerLogin, processId);
                     res.json({
@@ -360,7 +366,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
                 return;
             }
         }
-        const status = this.previewSupervisor.start(cwd, port);
+        const status = await this.previewSupervisor.start(cwd, port);
         res.json({ status, port });
     }
 
@@ -462,19 +468,6 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     }
 
     protected resolvePublicOrigin(req: Request): string {
-        const envUrl = process.env.QAAP_OAUTH_PUBLIC_URL?.trim();
-        if (envUrl) {
-            return normalizeQaapPublicUrl(envUrl);
-        }
-        const proto = this.firstHeader(req.headers['x-forwarded-proto']) ?? req.protocol ?? 'http';
-        const host = this.firstHeader(req.headers['x-forwarded-host']) ?? req.get('host') ?? 'localhost';
-        return normalizeQaapPublicUrl(`${proto}://${host}`);
-    }
-
-    protected firstHeader(value: string | string[] | undefined): string | undefined {
-        if (Array.isArray(value)) {
-            return value[0]?.split(',')[0]?.trim();
-        }
-        return value?.split(',')[0]?.trim();
+        return resolveQaapPublicOrigin(req);
     }
 }

@@ -1,42 +1,24 @@
-// @ts-nocheck
 // Extracted from qaap-research-runner.ts
+import type { QaapResearchRoundCommit, QaapResearchRunnerContext } from './qaap-research-runner-context';
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { spawnSync } from 'child_process';
-import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import { Worker } from 'worker_threads';
 import {
     DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
-    type ResearchAgentModel,
     type ResearchGoal,
-    type ResearchGoalStatus,
-    type ResearchMetricSpec,
-    type TerminationReason,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
 import {
-    configFingerprint,
     evaluateVerdict,
-    parseExperimentProposal,
-    parseMetricFromStdout,
-    resolveTerminationReason,
     type ResearchExperimentRecord,
     type ResearchMetricValue,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
-import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
-import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
-import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
-import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
-import { QaapResearchStore } from './qaap-research-store';
+import { type QaapGenericCommandResult } from './qaap-agent-task-runner';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { COMMAND_FAILURE_OUTPUT_TAIL_CHARS, GIT_COMMAND_TIMEOUT_MS, LEDGER_PATHSPEC_EXCLUDE, MAX_RUN_RESUME_ATTEMPTS, RESEARCH_COMMAND_CAPTURE_MAX_CHARS } from './qaap-research-runner';
 import { resolveResearchMeasureTimeoutMs } from './qaap-research-runner';
 import { parseResearchMetricFromStdout } from './qaap-research-runner';
 
-export async function finishAsNoopExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+export async function finishAsNoopExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         const finished: ResearchExperimentRecord = {
             ...record,
             phase: 'done',
@@ -58,7 +40,7 @@ export async function finishAsNoopExtracted(ctx: any, goal: ResearchGoal, record
         }
 }
 
-export async function commitRoundExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+export async function commitRoundExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         const { sha, baselineSha, adoptedAgentCommits } = ctx.commitRoundChanges(goal, record);
         const committed: ResearchExperimentRecord = {
             ...record,
@@ -81,11 +63,7 @@ export async function commitRoundExtracted(ctx: any, goal: ResearchGoal, record:
         }
 }
 
-export function commitRoundChangesExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord): {
-        sha?: string;
-        baselineSha?: string;
-        adoptedAgentCommits?: number;
-    } {
+export function commitRoundChangesExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): QaapResearchRoundCommit {
         const branch = `qaap/research/${goal.id}`;
         const baselineSha = record.baselineSha ?? (ctx.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined);
         if (baselineSha) {
@@ -114,7 +92,7 @@ export function commitRoundChangesExtracted(ctx: any, goal: ResearchGoal, record
         return { sha, baselineSha };
 }
 
-export async function discardBrokenRoundExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord, reason: string): Promise<void> {
+export async function discardBrokenRoundExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord, reason: string): Promise<void> {
         const { sha, baselineSha, adoptedAgentCommits } = ctx.commitRoundChanges(goal, record);
         const failed: ResearchExperimentRecord = {
             ...record,
@@ -138,7 +116,7 @@ export async function discardBrokenRoundExtracted(ctx: any, goal: ResearchGoal, 
         await ctx.revertRound(goal, failed);
 }
 
-export function describeGateFailureExtracted(ctx: any, task: QaapAgentTask): string {
+export function describeGateFailureExtracted(ctx: QaapResearchRunnerContext, task: QaapAgentTask): string {
         if (task.verification?.status === 'failed') {
             return `verification stayed red after the fix-turn budget (${task.verification.command}): ${task.verification.summary}`;
         }
@@ -148,7 +126,7 @@ export function describeGateFailureExtracted(ctx: any, task: QaapAgentTask): str
         return 'the task closed with warnings.';
 }
 
-export async function runRunPhaseExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord, isResume: boolean): Promise<void> {
+export async function runRunPhaseExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord, isResume: boolean): Promise<void> {
         if (!goal.runCommand) {
             await ctx.runMeasurePhase(goal, record);
             return;
@@ -165,13 +143,14 @@ export async function runRunPhaseExtracted(ctx: any, goal: ResearchGoal, record:
         const result = await ctx.taskRunner.runGenericCommand(
             goal.runCommand,
             goal.cwd,
-            ctx.buildResearchCommandEnv(),
+            ctx.buildResearchCommandEnv(ctx.store.ownerOf(goal.id)),
             taskId,
             goal.runTimeoutMs || DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
             {
                 header: `\n[qaap-research] round ${record.round}: running ${goal.runCommand}\n`,
                 tailOutput: true,
                 maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+                ownerLogin: ctx.store.ownerOf(goal.id),
             },
         );
         ctx.activeExecutionId.delete(goal.id);
@@ -195,7 +174,7 @@ export async function runRunPhaseExtracted(ctx: any, goal: ResearchGoal, record:
         await ctx.runMeasurePhase(goal, advanced);
 }
 
-export async function runMeasurePhaseExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+export async function runMeasurePhaseExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         const primary = goal.metrics.find(metric => metric.primary) ?? goal.metrics[0];
         const metrics: ResearchMetricValue[] = [];
         for (const spec of goal.metrics) {
@@ -204,13 +183,14 @@ export async function runMeasurePhaseExtracted(ctx: any, goal: ResearchGoal, rec
             const result = await ctx.taskRunner.runGenericCommand(
                 spec.metricCommand,
                 goal.cwd,
-                ctx.buildResearchCommandEnv(),
+                ctx.buildResearchCommandEnv(ctx.store.ownerOf(goal.id)),
                 taskId,
                 resolveResearchMeasureTimeoutMs(goal),
                 {
                     header: `\n[qaap-research] round ${record.round}: measuring ${spec.name}\n`,
                     tailOutput: true,
                     maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+                    ownerLogin: ctx.store.ownerOf(goal.id),
                 },
             );
             ctx.activeExecutionId.delete(goal.id);
@@ -252,7 +232,7 @@ export async function runMeasurePhaseExtracted(ctx: any, goal: ResearchGoal, rec
         }
 }
 
-export async function finishAsInfraFailureExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord, reason: string, runAttempts: number | undefined): Promise<void> {
+export async function finishAsInfraFailureExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord, reason: string, runAttempts: number | undefined): Promise<void> {
         const failed: ResearchExperimentRecord = {
             ...record,
             phase: 'done',
@@ -267,7 +247,7 @@ export async function finishAsInfraFailureExtracted(ctx: any, goal: ResearchGoal
         }
 }
 
-export async function revertRoundExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+export async function revertRoundExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         if (!record.sha) {
             return;
         }
@@ -275,13 +255,14 @@ export async function revertRoundExtracted(ctx: any, goal: ResearchGoal, record:
         const result = await ctx.taskRunner.runGenericCommand(
             `git revert --no-edit ${ctx.shellQuote(record.sha)}`,
             goal.cwd,
-            ctx.buildResearchCommandEnv(),
+            ctx.buildResearchCommandEnv(ctx.store.ownerOf(goal.id)),
             taskId,
             GIT_COMMAND_TIMEOUT_MS,
             {
                 header: `\n[qaap-research] round ${record.round}: reverting regression\n`,
                 tailOutput: true,
                 maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+                ownerLogin: ctx.store.ownerOf(goal.id),
             },
         );
         if (result.exitCode === 0) {
@@ -300,7 +281,7 @@ export async function revertRoundExtracted(ctx: any, goal: ResearchGoal, record:
         }
 }
 
-export function waitForTaskFinishExtracted(ctx: any, taskId: string): Promise<QaapAgentTask> {
+export function waitForTaskFinishExtracted(ctx: QaapResearchRunnerContext, taskId: string): Promise<QaapAgentTask> {
         return new Promise(resolve => {
             const disposable = ctx.taskRunner.onDidChangeTask((event: QaapAgentTaskEvent) => {
                 if (event.task.id !== taskId || !isQaapAgentTaskFinished(event.task.state)) {
@@ -312,7 +293,7 @@ export function waitForTaskFinishExtracted(ctx: any, taskId: string): Promise<Qa
         });
 }
 
-export function waitForTaskFinishOrTimeoutExtracted(ctx: any, taskId: string, timeoutMs: number): Promise<QaapAgentTask | undefined> {
+export function waitForTaskFinishOrTimeoutExtracted(ctx: QaapResearchRunnerContext, taskId: string, timeoutMs: number): Promise<QaapAgentTask | undefined> {
         return new Promise(resolve => {
             let settled = false;
             const timer = setTimeout(() => {
@@ -333,7 +314,7 @@ export function waitForTaskFinishOrTimeoutExtracted(ctx: any, taskId: string, ti
         });
 }
 
-export function appendCommandOutputExtracted(ctx: any, reason: string, result: QaapGenericCommandResult): string {
+export function appendCommandOutputExtracted(ctx: QaapResearchRunnerContext, reason: string, result: QaapGenericCommandResult): string {
         const output = `${result.stdout}\n${result.stderr}`
             // Normalize terminal progress updates and remove ANSI control sequences before the
             // excerpt is persisted in JSONL and later embedded in an agent prompt.
@@ -349,15 +330,44 @@ export function appendCommandOutputExtracted(ctx: any, reason: string, result: Q
         return `${reason}\nCaptured output tail:\n${tail}`;
 }
 
-export function buildResearchCommandEnvExtracted(ctx: any): NodeJS.ProcessEnv {
+export function buildResearchCommandEnvExtracted(ctx: QaapResearchRunnerContext, ownerLogin?: string): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
-        ctx.taskRunner.applyHelperEnv(env);
+        // Research commands are autonomous tenant work too. Never fall back to the
+        // backend-wide helper token: the owner is resolved from the goal at every phase.
+        ctx.taskRunner.applyHelperEnv(env, ownerLogin);
         return env;
 }
 
-export function runGitExtracted(ctx: any, cwd: string, args: readonly string[]): { readonly stdout: string; readonly ok: boolean } {
+export function runGitExtracted(ctx: QaapResearchRunnerContext, cwd: string, args: readonly string[]): { readonly stdout: string; readonly ok: boolean } {
         try {
-            const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: GIT_COMMAND_TIMEOUT_MS });
+            if (isQaapHostedEnvironment()) {
+                if (!ctx.tenantSpawn) {
+                    return { stdout: '', ok: false };
+                }
+                const wrapped = ctx.tenantSpawn.wrapGitForTenant(cwd, args);
+                const baseEnv: NodeJS.ProcessEnv = {
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_TERMINAL_PROMPT: '0',
+                };
+                for (const key of ['PATH', 'DOCKER_HOST', 'LANG', 'LC_ALL']) {
+                    const value = process.env[key];
+                    if (value) {
+                        baseEnv[key] = value;
+                    }
+                }
+                const result = spawnSync(wrapped.file, wrapped.args, {
+                    cwd,
+                    env: ctx.tenantSpawn.resolveProcessEnv(cwd, baseEnv),
+                    encoding: 'utf8',
+                    timeout: GIT_COMMAND_TIMEOUT_MS,
+                });
+                return { stdout: (result.stdout ?? '').trim(), ok: result.status === 0 };
+            }
+            const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], {
+                cwd,
+                encoding: 'utf8',
+                timeout: GIT_COMMAND_TIMEOUT_MS,
+            });
             return { stdout: (result.stdout ?? '').trim(), ok: result.status === 0 };
         } catch {
             return { stdout: '', ok: false };

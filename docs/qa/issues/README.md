@@ -6,6 +6,11 @@ Generados tras la evaluación QA del 2026-06-23. El repositorio `juancristobalgd
 
 - **QA-001** — `resolveCurrentWorkspaceProject()` + composer cwd guard (`packages/qaap-mobile-shell`, 2026-06-23)
 - **QA-002** — default shell auto-approve + `toolApprovalRules` en createConversation (`qaap-mobile-shell` + `qaap-cloud-workspace`, 2026-06-23)
+- **QA-003** — replay de `traceEvents`/`segments` cuando el turno solo tenía placeholder `…` (`qaap-cloud-workspace`, 2026-08-17)
+- **QA-004** — retry de bootstrap preview si el primer kickoff corrió antes de que existieran archivos (`qaap-mobile-shell`, 2026-08-17)
+- **QA-005** — el diálogo Task failed usa `resolveAgentTurnFailureMessage` + herramienta fallida; `status: failed` ya no muestra chrome «working» (`qaap-mobile-shell`, 2026-08-17)
+- **QA-006** — el tutorial no se abre encima de un transcript visible; el watch de dismiss pasa a 400 ms (`qaap-mobile-shell`, 2026-08-17)
+- **QA-007** — `pointer-events` en el título del transcript + z-index del top bar en IDE desktop (`qaap-mobile-shell`, 2026-08-17)
 
 ## Cómo abrirlos en GitHub
 

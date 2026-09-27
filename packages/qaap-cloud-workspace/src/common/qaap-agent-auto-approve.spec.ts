@@ -62,6 +62,9 @@ describe('qaap-agent-auto-approve', () => {
         const already = "claude --dangerously-skip-permissions -p 'hi'";
         expect(applyAutoApproveToCommand(already, 'claude')).to.equal(already);
         expect(commandHasAutoApproveFlags(already)).to.equal(true);
+        expect(commandHasAutoApproveFlags("hermes --yolo --ignore-user-config chat -Q -q 'hi'")).to.equal(true);
+        expect(commandHasAutoApproveFlags('agent -p --force')).to.equal(true);
+        expect(commandHasAutoApproveFlags("cursor-agent -p --force 'hi'")).to.equal(true);
     });
 
     it('applyAutoApproveToCommand leaves grok --always-approve unchanged', () => {
@@ -77,7 +80,11 @@ describe('qaap-agent-auto-approve', () => {
         expect(applyAutoApproveToCommand("opencode run 'hi'", 'opencode'))
             .to.equal("opencode run --dangerously-skip-permissions 'hi'");
         expect(applyAutoApproveToCommand("cursor-agent 'hi'", 'cursor'))
-            .to.equal("cursor-agent -p --force 'hi'");
+            .to.equal("cursor-agent --approve-mcps --trust -p --force 'hi'");
+        expect(applyAutoApproveToCommand('agent -p --force', 'cursor'))
+            .to.equal('agent --approve-mcps --trust -p --force');
+        expect(applyAutoApproveToCommand("agent 'hi'", 'cursor'))
+            .to.equal("agent --approve-mcps --trust -p --force 'hi'");
         expect(applyAutoApproveToCommand("antigravity 'hi'", 'antigravity'))
             .to.equal("antigravity --dangerously-skip-permissions -p 'hi'");
         expect(applyAutoApproveToCommand("gemini 'hi'", 'antigravity'))
@@ -90,5 +97,9 @@ describe('qaap-agent-auto-approve', () => {
             .to.equal("copilot --autopilot --yolo --max-autopilot-continues 20 -p 'hi'");
         expect(applyAutoApproveToCommand("qwen -p 'hi'", 'qwen'))
             .to.equal("qwen -p --approval-mode yolo 'hi'");
+        expect(applyAutoApproveToCommand("hermes chat -q 'hi'", 'hermes'))
+            .to.equal("hermes --yolo chat -q 'hi'");
+        expect(applyAutoApproveToCommand("hermes --yolo --ignore-user-config chat -Q -q 'hi'", 'hermes'))
+            .to.equal("hermes --yolo --ignore-user-config chat -Q -q 'hi'");
     });
 });

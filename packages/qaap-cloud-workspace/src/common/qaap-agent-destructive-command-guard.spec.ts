@@ -107,7 +107,7 @@ describe('qaap-agent-destructive-command-guard', () => {
             'bash -lc "rm -rf ~/other"',
             "zsh -c 'git reset --hard HEAD~5'",
             'nohup sh -c "git clean -fd" &',
-            `sh -c "bash -c 'git push --force'"`,
+            'sh -c "bash -c \'git push --force\'"',
         ];
         for (const command of blocked) {
             expect(isDestructiveShellCommand(command), command).to.equal(true);

@@ -9,7 +9,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QAAP_AGENT_APPROVAL_API_PATH } from '../common/qaap-agent-approval';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
 

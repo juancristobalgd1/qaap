@@ -35,13 +35,13 @@ import { QaapWorkflowDeterministicAdapter } from './qaap-workflow-runtime-ports'
 class TestStore extends QaapWorkflowRunStore {
     constructor(protected readonly testDirectory: string) { super(); }
     initialize(): void { this.init(); }
-    protected override storeDirectory(): string { return this.testDirectory; }
+    public override storeDirectory(): string { return this.testDirectory; }
 }
 
 /** Real scheduler with persistence disabled; every lifecycle transition remains QaapJobRuntime's. */
 class TestJobRuntime extends QaapJobRuntime {
-    protected override persist(): Promise<void> { return Promise.resolve(); }
-    protected override scheduleRetentionPrune(): void { /* no background timers in a spec */ }
+    public override persist(): Promise<void> { return Promise.resolve(); }
+    public override scheduleRetentionPrune(): void { /* no background timers in a spec */ }
 }
 
 function buildFunctions(): Map<string, QaapJobFunctionDefinition> {

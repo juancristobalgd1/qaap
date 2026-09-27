@@ -60,7 +60,15 @@ describe('qaap-qaiq-control-auto-response', () => {
             requestId: 'req-controlled-kill',
             toolName: 'Bash',
             toolInput: { command: 'pkill -f vite' },
-        })).to.equal('deny');
+        })).to.equal('queue');
+    });
+
+    it('queues destructive shell under approve-for-me for explicit Allow/Deny', () => {
+        expect(resolveQaiqControlRequestAutoAction(controlledApproveForMeCommand, true, {
+            requestId: 'req-destructive',
+            toolName: 'Bash',
+            toolInput: { command: 'git reset --hard HEAD~1' },
+        })).to.equal('queue');
     });
 
     it('queues Bash when shell scope is disabled in approve-for-me allowed-tools', () => {
@@ -91,17 +99,20 @@ describe('qaap-qaiq-control-auto-response', () => {
         })).to.equal('allow');
     });
 
-    it('denies destructive shell commands even in bypassPermissions mode', () => {
+    it('denies destructive shell commands in bypassPermissions / full-access mode', () => {
         expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
             requestId: 'req-1',
             toolName: 'Bash',
             toolInput: { command: 'git push --force origin main' },
         })).to.equal('deny');
+    });
+
+    it('queues destructive shell under approve-for-me allowed-tools for Allow/Deny', () => {
         expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, true, {
             requestId: 'req-2',
             toolName: 'Bash',
             toolInput: { command: 'rm -rf ~/other-project' },
-        })).to.equal('deny');
+        })).to.equal('queue');
     });
 
     it('does not deny safe shell commands via the destructive guard', () => {

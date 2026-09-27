@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import type { ChildProcess } from 'child_process';
+import * as path from 'path';
 import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import {
     AGENT_STOP_GRACE_TIMEOUT_MS,
@@ -37,8 +38,16 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
         return this.runningTaskCountForOwner(ownerLogin);
     }
 
+    public exposeDeleteForCwd(cwd: string): number {
+        return this.deleteForCwd(cwd);
+    }
+
     public exposeSpawnProcessWhenReady(task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         return this.spawnProcessWhenReady(task, request);
+    }
+
+    public exposeLogPath(id: string, ownerLogin?: string): string {
+        return this.logPath(id, ownerLogin);
     }
 }
 
@@ -54,6 +63,19 @@ const runningTask = (id: string, ownerLogin = 'alice'): QaapAgentTask => ({
 });
 
 describe('QaapAgentTaskRunner cancellation', () => {
+
+    it('physically segments authenticated task logs by owner', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const aliceTask: QaapAgentTask = { ...runningTask('11111111-1111-4111-8111-111111111111'), ownerLogin: 'alice' };
+        const bobTask: QaapAgentTask = { ...runningTask('22222222-2222-4222-8222-222222222222', 'bob'), ownerLogin: 'bob' };
+        Object.assign(runner, { tasks: new Map([[aliceTask.id, aliceTask], [bobTask.id, bobTask]]) });
+
+        const aliceLog = runner.exposeLogPath(aliceTask.id);
+        const bobLog = runner.exposeLogPath(bobTask.id);
+        expect(aliceLog).to.contain(path.join('owners', 'alice'));
+        expect(bobLog).to.contain(path.join('owners', 'bob'));
+        expect(aliceLog).not.to.equal(bobLog);
+    });
 
     it('uses a bounded configurable graceful-stop timeout', () => {
         expect(resolveAgentStopGraceTimeoutMs(undefined)).to.equal(DEFAULT_AGENT_STOP_GRACE_TIMEOUT_MS);
@@ -133,6 +155,55 @@ describe('QaapAgentTaskRunner cancellation', () => {
 
         expect(runner.cancel(task.id)?.state).to.equal('cancelled');
         expect(drains).to.equal(1);
+    });
+
+    it('removes persisted task history and caches for a deleted project', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const projectTask: QaapAgentTask = {
+            ...runningTask('project-task'),
+            cwd: '/repo/project',
+            state: 'completed',
+        };
+        const nestedTask: QaapAgentTask = {
+            ...runningTask('nested-task'),
+            cwd: '/repo/project/nested',
+            state: 'failed',
+        };
+        const otherTask: QaapAgentTask = {
+            ...runningTask('other-task'),
+            cwd: '/repo/project-two',
+            state: 'completed',
+        };
+        const tasks = new Map([
+            [projectTask.id, projectTask],
+            [nestedTask.id, nestedTask],
+            [otherTask.id, otherTask],
+        ]);
+        const deletedEvents: string[] = [];
+        Object.assign(runner, {
+            tasks,
+            processes: new Map(),
+            deletedTaskIds: new Set<string>(),
+            queuedCreateRequests: new Map(),
+            stdinInteractiveTasks: new Set(),
+            stdinPrompts: new Map(),
+            pendingQaiqControlRequests: new Map(),
+            qaiqStdioTasks: new Set(),
+            clearQueuedApprovalTimers: () => undefined,
+            logPath: (id: string) => `/tmp/qaap-delete-${id}.log`,
+            onDidChangeTaskEmitter: { fire: (event: { type: string; task: QaapAgentTask }) => deletedEvents.push(event.task.id) },
+            persist: async () => undefined,
+            projectNameCache: new Map([['/repo/project', 'project'], ['/repo/project-two', 'other']]),
+            projectInfoCache: new Map([['/repo/project/nested', 'info'], ['/repo/project-two', 'other']]),
+            agentInstructionsCache: new Map(),
+            repoMapCache: new Map(),
+        });
+
+        expect(runner.exposeDeleteForCwd('/repo/project/')).to.equal(2);
+        expect([...tasks.keys()]).to.deep.equal(['other-task']);
+        expect(deletedEvents).to.have.members(['project-task', 'nested-task']);
+        expect(runner['projectNameCache'].has('/repo/project')).to.equal(false);
+        expect(runner['projectNameCache'].has('/repo/project-two')).to.equal(true);
     });
 
     it('does not spawn a task cancelled while preference initialization is pending', async () => {

@@ -1,0 +1,341 @@
+/*
+ * Qaap AI Configuration shell.
+ *
+ * The navigation is shared by the classic IDE and the Work Hub embed. The
+ * page widgets remain Theia widgets; this stylesheet only owns the shell so
+ * upstream widget behavior and commands stay intact.
+ */
+
+.qaap-ai-configuration-container {
+    --qaap-ai-config-nav-width: 236px;
+    display: flex;
+    flex-direction: row;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--theia-editor-background);
+    color: var(--theia-foreground);
+}
+
+.qaap-ai-configuration-container > .qaap-ai-configuration-navigation {
+    flex: 0 0 var(--qaap-ai-config-nav-width);
+    min-width: var(--qaap-ai-config-nav-width);
+    max-width: var(--qaap-ai-config-nav-width);
+    min-height: 0;
+    overflow: hidden;
+    border-right: 1px solid color-mix(in srgb, var(--theia-foreground) 11%, transparent);
+    background: color-mix(in srgb, var(--theia-sideBar-background, var(--theia-editor-background)) 92%, #000000);
+}
+
+.qaap-ai-configuration-navigation-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: 16px 12px 12px;
+}
+
+.qaap-ai-configuration-navigation-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 0 6px 16px;
+}
+
+.qaap-ai-configuration-navigation-brand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid color-mix(in srgb, var(--theia-button-background, #0e639c) 40%, transparent);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--theia-button-background, #0e639c) 18%, transparent);
+    color: var(--theia-button-background, #0e639c);
+    font-size: 16px;
+}
+
+.qaap-ai-configuration-navigation-brand strong,
+.qaap-ai-configuration-navigation-brand span {
+    display: block;
+}
+
+.qaap-ai-configuration-navigation-brand strong {
+    color: var(--theia-foreground);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+}
+
+.qaap-ai-configuration-navigation-brand div span {
+    margin-top: 2px;
+    color: var(--theia-descriptionForeground);
+    font-size: 11px;
+}
+
+.qaap-ai-configuration-search {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 32px;
+    margin: 0 0 18px;
+    padding: 0 9px;
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--theia-editor-background) 85%, var(--theia-foreground));
+    color: var(--theia-descriptionForeground);
+    box-sizing: border-box;
+}
+
+.qaap-ai-configuration-search:focus-within {
+    border-color: var(--theia-focusBorder, var(--theia-button-background, #0e639c));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #3794ff) 30%, transparent);
+}
+
+.qaap-ai-configuration-search > span {
+    flex: 0 0 auto;
+    font-size: 14px;
+}
+
+.qaap-ai-configuration-search input {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--theia-foreground);
+    font: inherit;
+    font-size: 12px;
+}
+
+.qaap-ai-configuration-search input::placeholder {
+    color: var(--theia-descriptionForeground);
+    opacity: 0.9;
+}
+
+.qaap-ai-configuration-navigation-section-label {
+    padding: 0 8px 7px;
+    color: var(--theia-descriptionForeground);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.qaap-ai-configuration-navigation nav {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.qaap-ai-configuration-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 34px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.qaap-ai-configuration-nav-item:hover {
+    border-color: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+    background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+    color: var(--theia-foreground);
+}
+
+.qaap-ai-configuration-nav-item:focus-visible {
+    outline: 2px solid var(--theia-focusBorder, var(--theia-button-background, #0e639c));
+    outline-offset: -1px;
+}
+
+.qaap-ai-configuration-nav-item-active {
+    border-color: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+    background: color-mix(in srgb, var(--theia-foreground) 13%, transparent);
+    color: var(--theia-foreground);
+    font-weight: 600;
+}
+
+.qaap-ai-configuration-nav-item-active::after {
+    width: 3px;
+    height: 18px;
+    margin-left: auto;
+    border-radius: 99px;
+    background: var(--theia-button-background, #0e639c);
+    content: '';
+}
+
+.qaap-ai-configuration-nav-item-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    color: inherit;
+    font-size: 14px;
+}
+
+.qaap-ai-configuration-nav-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qaap-ai-configuration-navigation-empty {
+    padding: 10px 8px;
+    color: var(--theia-descriptionForeground);
+    font-size: 12px;
+}
+
+.qaap-ai-configuration-container > .qaap-ai-configuration-dock {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--theia-editor-background);
+}
+
+/* The DockPanel remains the page host, but its old tab strip is replaced by
+ * the shared settings navigation. Hiding the actual TabBar through Lumino's
+ * Widget API keeps its layout sizer at zero and avoids geometry hacks. */
+.qaap-ai-configuration-container .qaap-ai-configuration-dock .lm-DockPanel-tabBar {
+    display: none !important;
+}
+
+.qaap-ai-configuration-container .qaap-ai-configuration-dock .lm-DockPanel-widget {
+    min-width: 0;
+    min-height: 0;
+    background: var(--theia-editor-background);
+}
+
+.qaap-ai-configuration-container .ai-configuration-widget-content {
+    min-height: 0;
+    box-sizing: border-box;
+}
+
+/* Keep the existing page widgets readable inside the Cursor-style shell. */
+.qaap-ai-configuration-container .ai-card-grid-configuration-main,
+.qaap-ai-configuration-container .mcp-configuration-container,
+.qaap-ai-configuration-container .ai-skills-configuration-container {
+    width: min(100%, 1040px);
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.qaap-ai-configuration-container .ai-card-grid-configuration-main,
+.qaap-ai-configuration-container .mcp-configuration-container {
+    padding: 28px 32px 36px;
+}
+
+.qaap-ai-configuration-container .ai-configuration-card,
+.qaap-ai-configuration-container .mcp-server-card,
+.qaap-ai-configuration-container .qaap-ai-skill-card,
+.qaap-ai-configuration-container .qaap-harness-card {
+    border-color: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--theia-editor-background) 91%, var(--theia-foreground));
+    box-shadow: none;
+}
+
+.qaap-ai-configuration-container .mcp-server-card {
+    margin-bottom: 12px;
+}
+
+.qaap-ai-configuration-container .mcp-server-header {
+    padding: 13px 16px;
+    background: color-mix(in srgb, var(--theia-editor-background) 94%, var(--theia-foreground));
+    border-bottom-color: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-ai-configuration-container .mcp-server-content,
+.qaap-ai-configuration-container .mcp-tools-section {
+    padding: 16px;
+}
+
+.qaap-ai-configuration-container .ai-list-detail-configuration-main {
+    background: var(--theia-editor-background);
+}
+
+.qaap-ai-configuration-container .ai-configuration-list {
+    padding: 12px 10px;
+    border-right-color: color-mix(in srgb, var(--theia-foreground) 11%, transparent);
+    background: color-mix(in srgb, var(--theia-editor-background) 96%, var(--theia-foreground));
+    box-sizing: border-box;
+}
+
+.qaap-ai-configuration-container .ai-configuration-list li {
+    margin: 2px 0;
+    border-radius: 7px;
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-ai-configuration-container .ai-configuration-list li.theia-mod-selected {
+    background: color-mix(in srgb, var(--theia-foreground) 13%, transparent);
+    color: var(--theia-foreground);
+}
+
+.qaap-ai-configuration-container .ai-configuration-detail {
+    background: var(--theia-editor-background);
+}
+
+@media (max-width: 680px) {
+    .qaap-ai-configuration-container {
+        --qaap-ai-config-nav-width: 178px;
+    }
+
+    .qaap-ai-configuration-navigation-content {
+        padding: 12px 8px 10px;
+    }
+
+    .qaap-ai-configuration-navigation-brand {
+        gap: 8px;
+        padding: 0 5px 12px;
+    }
+
+    .qaap-ai-configuration-navigation-brand-icon {
+        width: 26px;
+        height: 26px;
+        font-size: 14px;
+    }
+
+    .qaap-ai-configuration-navigation-brand strong {
+        font-size: 13px;
+    }
+
+    .qaap-ai-configuration-search {
+        margin-bottom: 14px;
+    }
+
+    .qaap-ai-configuration-nav-item {
+        gap: 7px;
+        min-height: 32px;
+        padding: 0 7px;
+        font-size: 11px;
+    }
+
+    .qaap-ai-configuration-container .ai-card-grid-configuration-main,
+    .qaap-ai-configuration-container .mcp-configuration-container {
+        padding: 18px 16px 24px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qaap-ai-configuration-nav-item,
+    .qaap-ai-configuration-search {
+        transition: none;
+    }
+}

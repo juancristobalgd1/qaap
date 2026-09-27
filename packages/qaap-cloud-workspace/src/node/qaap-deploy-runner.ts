@@ -77,25 +77,22 @@ export class QaapDeployRunner {
         }
     }
 
-    protected exec(
+    protected async exec(
         command: string,
         args: string[],
         options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
     ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+        let child;
+        try {
+            // SEC-1: a deploy runs the tenant's own build (e.g. `vercel deploy`) with cwd = the tenant
+            // repo — tenant-controlled code. The async gate makes Docker provisioning part of the
+            // lifecycle and fails closed instead of falling back to the backend host.
+            const env = this.tenantSpawn.resolveProcessEnv(options.cwd, options.env);
+            child = await this.tenantSpawn.spawnArgvPreparedAsync(command, args, { cwd: options.cwd, env });
+        } catch (error) {
+            return { stdout: '', stderr: error instanceof Error ? error.message : String(error), exitCode: 1 };
+        }
         return new Promise(resolve => {
-            let child;
-            try {
-                // SEC-1: a deploy runs the tenant's own build (e.g. `vercel deploy` executes the repo's
-                // build script) with cwd = the tenant repo — tenant-controlled code. Drop it to the
-                // tenant uid (setpriv --clear-groups) and point HOME/USER at the tenant home, exactly
-                // like the agent and preview. Fail-closed: a refused policy rejects the deploy instead
-                // of running the build as root.
-                const env = this.tenantSpawn.resolveProcessEnv(options.cwd, options.env);
-                child = this.tenantSpawn.spawnArgvPrepared(command, args, { cwd: options.cwd, env });
-            } catch (error) {
-                resolve({ stdout: '', stderr: error instanceof Error ? error.message : String(error), exitCode: 1 });
-                return;
-            }
             let stdout = '';
             let stderr = '';
             child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Privacy Notice — Qaap</title>
+    <link rel="stylesheet" href="/legal/legal.css"/>
+</head>
+<body>
+    <main class="wrap">
+        <a class="brand" href="/">
+            <img src="/media/qaap-logo.svg" alt=""/>
+            Qaap
+        </a>
+        <nav class="nav" aria-label="Legal">
+            <a href="/legal/terms.html">Terms of Use</a>
+            <a href="/legal/privacy.html" aria-current="page">Privacy Notice</a>
+        </nav>
+        <h1>Privacy Notice</h1>
+        <p class="meta">Effective 18 August 2026. Applies to this Qaap instance.</p>
+        <p class="notice">
+            The <strong>operator of this server</strong> is the data controller for this deployment.
+            Qaap is typically self-hosted: your files stay on this machine unless the operator or an
+            AI provider integration sends them elsewhere. This notice describes the product’s default
+            data flows. The operator may keep additional logs or backups.
+        </p>
+
+        <h2>1. What this instance stores</h2>
+        <ul>
+            <li><strong>GitHub identity</strong> — login, display name, and OAuth tokens needed to
+                sign you in and clone repositories you authorize.</li>
+            <li><strong>Workspace files</strong> — git clones, worktrees, agent edits, and preview
+                artifacts under this instance’s volumes.</li>
+            <li><strong>Session data</strong> — conversations, agent job logs, UI preferences, and
+                API keys you save in Settings → AI.</li>
+        </ul>
+
+        <h2>2. What we do not do by default</h2>
+        <p>
+            This product does not sell personal data, run advertising, or require a Qaap cloud
+            account. There is no central Qaap SaaS receiving your repos when you use a self-hosted
+            instance.
+        </p>
+
+        <h2>3. Sign-in</h2>
+        <p>
+            Sign-in uses GitHub OAuth. GitHub’s own privacy policy applies to that login. This
+            instance receives the profile and token GitHub returns for the OAuth app the operator
+            registered.
+        </p>
+
+        <h2>4. AI providers</h2>
+        <p>
+            If the operator (or you) configure a model provider, prompts and relevant code context
+            are sent to that provider to generate agent replies. Retention, training, and subprocessors
+            then follow that provider’s policy. Do not paste secrets you cannot share with that
+            provider.
+        </p>
+
+        <h2>5. Cookies and local storage</h2>
+        <p>
+            The browser stores a session cookie or equivalent so you stay signed in, plus
+            interface preferences (for example display language, which this product keeps in English).
+            Clearing site data signs you out of this instance.
+        </p>
+
+        <h2>6. Retention and backups</h2>
+        <p>
+            Data remains until you or the operator delete the workspace, or until the instance is
+            destroyed. Operators may keep encrypted backups of volumes (OAuth sessions and API keys
+            can be in those archives). Ask the operator how long backups are kept.
+        </p>
+
+        <h2>7. Your choices</h2>
+        <p>
+            You can disconnect GitHub access from your GitHub account settings, delete files in the
+            workspace, and ask the operator to delete your tenant data on this instance. Rights under
+            GDPR or similar laws are exercised against the operator, because they control the server.
+        </p>
+
+        <h2>8. Security</h2>
+        <p>
+            Production instances require GitHub OAuth (anonymous skip-auth is refused). Agents drop
+            to a non-root user. Isolation between two users on the same box is an operator
+            responsibility; this product does not treat a shared instance as a public multi-tenant
+            service by default.
+        </p>
+
+        <h2>9. Contact</h2>
+        <p>
+            Privacy requests for <em>this</em> deployment go to the operator of the server. Do not
+            open a public issue for a suspected vulnerability; use a private GitHub security advisory
+            on the Qaap repository.
+        </p>
+
+        <footer>
+            Related: <a href="/legal/terms.html">Terms of Use</a>
+        </footer>
+    </main>
+</body>
+</html>

@@ -18,9 +18,9 @@ import {
     QAAP_BOOTSTRAP_OPEN_PREVIEW_TOOL_ID,
     QAAP_BOOTSTRAP_RUN_DEV_TOOL_ID,
     QAAP_BOOTSTRAP_STATUS_TOOL_ID,
-} from '@theia/qaap-mobile-shell/lib/browser/qaap-bootstrap-tools-common';
+} from '@theia/qaap-shared-core/lib/browser/qaap-bootstrap-tools-common';
 import { QAAP_PICK_ELEMENT_TOOL_ID } from '@theia/qaap-adapters/lib/browser/qaap-element-picker-tools-common';
-import { QAAP_BOOTSTRAP_VARIABLE } from '@theia/qaap-mobile-shell/lib/browser/qaap-bootstrap-variable-contribution';
+import { QAAP_BOOTSTRAP_VARIABLE } from '@theia/qaap-shared-core/lib/browser/qaap-bootstrap-variable-contribution';
 import { QAAP_CODER_ANALYZE_THINK_FRAGMENT_ID, QAAP_CODER_DEV_WORKFLOW_FRAGMENT_ID } from '../common/qaap-coder-prompt-ids';
 import { QAAP_CODER_PLAN_MODE_FRAGMENT_ID } from '../common/qaap-plan-prompt-ids';
 

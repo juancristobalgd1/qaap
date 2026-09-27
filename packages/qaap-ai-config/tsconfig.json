@@ -28,6 +28,9 @@
       "path": "../ai-ide"
     },
     {
+      "path": "../ai-mcp"
+    },
+    {
       "path": "../ai-mcp-server"
     },
     {
@@ -37,7 +40,13 @@
       "path": "../core"
     },
     {
+      "path": "../filesystem"
+    },
+    {
       "path": "../qaap-adapters"
+    },
+    {
+      "path": "../qaap-agents-ui"
     },
     {
       "path": "../qaap-ai-nvidia"
@@ -46,7 +55,16 @@
       "path": "../qaap-ai-openrouter"
     },
     {
-      "path": "../qaap-mobile-shell"
+      "path": "../qaap-cloud-workspace"
+    },
+    {
+      "path": "../qaap-shared-core"
+    },
+    {
+      "path": "../qaap-work-hub"
+    },
+    {
+      "path": "../workspace"
     }
   ]
 }

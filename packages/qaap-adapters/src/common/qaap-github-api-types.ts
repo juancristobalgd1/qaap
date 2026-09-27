@@ -5,6 +5,18 @@
 
 export const QAAP_AUTH_API_PATH = '/qaap/api/auth';
 export const QAAP_GITHUB_API_PATH = '/qaap/api/github';
+/** Per-user AI/BYOK settings (`~/.qaap/users/{login}/settings.json`). */
+export const QAAP_USER_SETTINGS_API_PATH = '/qaap/api/user-settings';
+/** Signed-in billing entitlements + Codex hosted credit wallet. */
+export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
+/** Create a Stripe Checkout session for Pro / Team monthly subscription. */
+export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
+/** Confirm a completed Checkout session after Stripe redirects back (idempotent with webhook). */
+export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
+/** Dev-only plan activate when Stripe keys are not configured. */
+export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
+/** Unauthenticated liveness/readiness probe for monitors and VPS deploy gates. */
+export const QAAP_HEALTH_API_PATH = '/qaap/api/health';
 export const QAAP_GITHUB_OAUTH_START_PATH = '/qaap/oauth/github/start';
 /** Must match GitHub OAuth App «Authorization callback URL». */
 export const QAAP_GITHUB_OAUTH_CALLBACK_PATH = '/qaap/oauth/github/callback';
@@ -28,6 +40,23 @@ export interface QaapAuthConfigResponse {
      * actually serving — a redeploy is only "live" once this matches the pushed commit.
      * Absent in local dev.
      */
+    build?: string;
+    /**
+     * True when the backend is a hosted/production runtime (`NODE_ENV=production` or
+     * `QAAP_CLOUD_MODE` other than `local`). Work Hub uses this to hide localhost-OAuth
+     * agent logins such as Cursor Agent.
+     */
+    productionRuntime?: boolean;
+}
+
+/** Public process liveness. Secrets never belong here — keep in sync with `/auth/config`. */
+export interface QaapLaunchHealthResponse {
+    ok: true;
+    ready: boolean;
+    productionRuntime: boolean;
+    skipAuth: boolean;
+    oauthConfigured: boolean;
+    agentUidPerUser: boolean;
     build?: string;
 }
 
@@ -75,6 +104,54 @@ export interface QaapGithubOpenRepositoryRequest {
     repository: string;
 }
 
+/**
+ * Background repository import (clone-by-URL or open-my-repository) on the server. Started with
+ * `POST {QAAP_GITHUB_API_PATH}/workspace-jobs`, polled with `GET .../workspace-jobs/:id` and
+ * cancelled with `POST .../workspace-jobs/:id/cancel`. Jobs outlive the HTTP request, so closing
+ * the dialog or the proxy's request budget never kills a long clone.
+ */
+export type QaapGithubWorkspaceJobRequest =
+    | { readonly kind: 'clone'; readonly repository: string }
+    | { readonly kind: 'open'; readonly owner: string; readonly name: string };
+
+export type QaapGithubWorkspaceJobState = 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/** Ordered phases; `percent` is the overall progress across all of them. */
+export type QaapGithubWorkspaceJobPhase =
+    | 'queued'
+    | 'resolving'
+    | 'preparing'
+    | 'cloning'
+    | 'fetching'
+    | 'checking-out'
+    | 'finalizing'
+    | 'registering'
+    | 'ready';
+
+export interface QaapGithubWorkspaceJob {
+    readonly id: string;
+    readonly kind: QaapGithubWorkspaceJobRequest['kind'];
+    /** `owner/name` (or the raw input until the repository is resolved). */
+    readonly label: string;
+    readonly state: QaapGithubWorkspaceJobState;
+    readonly phase: QaapGithubWorkspaceJobPhase;
+    /** Overall 0-100 progress when known; absent means indeterminate. */
+    readonly percent?: number;
+    /** Human readable git progress, e.g. `Receiving objects: 45% (450/1000)`. */
+    readonly detail?: string;
+    /** Readable failure message (never contains credentials). */
+    readonly error?: string;
+    /** Machine readable failure code, e.g. `plan_repo_limit`. */
+    readonly errorCode?: string;
+    readonly result?: QaapGithubOpenRepositoryResponse;
+    readonly startedAt: number;
+    readonly updatedAt: number;
+}
+
+export interface QaapGithubWorkspaceJobsResponse {
+    jobs: QaapGithubWorkspaceJob[];
+}
+
 export type QaapGithubPullRequestLineType = 'add' | 'del' | 'ctx';
 
 export interface QaapGithubPullRequestLine {
@@ -96,6 +173,8 @@ export interface QaapGithubPullRequestSummary {
     repo: string;
     number: number;
     title: string;
+    /** Markdown body supplied by GitHub, when the pull request includes one. */
+    description?: string;
     branch: string;
     base: string;
     author: string;
@@ -103,7 +182,7 @@ export interface QaapGithubPullRequestSummary {
     adds: number;
     dels: number;
     tests: 'passing' | 'failing' | 'pending' | 'unknown';
-    /** GitHub lifecycle state. Inbox polling currently returns open PRs; webhooks may also report closed/merged. */
+    /** GitHub lifecycle state. Inbox polling returns open PRs; the all-PRs search and webhooks also report closed/merged. */
     state?: 'open' | 'closed' | 'merged';
     /** Open PR is still a draft and is not ready for review. */
     draft?: boolean;
@@ -112,6 +191,32 @@ export interface QaapGithubPullRequestSummary {
     filesPreview: QaapGithubPullRequestFile[];
     /** ISO-8601 — used for inbox ordering (GitHub `updated_at`). */
     updatedAt: string;
+    /**
+     * True when the summary comes from the GitHub search API, which omits branches, diff stats,
+     * mergeability and files. Fetch the detail endpoint before relying on those fields.
+     */
+    partial?: boolean;
+}
+
+/** State chip of the all-pull-requests navigator; `closed` means closed without merging. */
+export type QaapGithubPullRequestStateFilter = 'all' | 'open' | 'merged' | 'closed';
+
+export interface QaapGithubPullRequestSearchResponse {
+    pullRequests: QaapGithubPullRequestSummary[];
+    /** 1-based page that was served. */
+    page: number;
+    /** True when at least one underlying GitHub search has further pages. */
+    hasMore: boolean;
+    /** False when the request was rejected because the session is missing/expired. */
+    signedIn: boolean;
+    /** GitHub search rate limit was hit; results (if any) are the last cached copy. */
+    rateLimited?: boolean;
+    /** GitHub reported `incomplete_results` (search timed out on its side) or a sub-query failed. */
+    incompleteResults?: boolean;
+}
+
+export interface QaapGithubPullRequestDetailResponse {
+    pullRequest?: QaapGithubPullRequestSummary;
 }
 
 export interface QaapGithubPullRequestsResponse {

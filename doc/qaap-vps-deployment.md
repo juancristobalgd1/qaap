@@ -7,6 +7,8 @@ single Docker host (Hetzner CX/CPX, Contabo, etc.).
 
 - Ubuntu 22.04+ (or Debian bookworm) on the VPS
 - Docker Engine + Docker Compose v2
+- Node.js is not required on the VPS host; the update script uses the Node.js runtime bundled in
+  the Theia image for its persistence preflight
 - At least **4 GB RAM** for the container (`docker-compose.yml` limit); **8 GB** recommended if
   you run heavy `@qaiq` jobs on large repos
 - One **provider API key** (OpenRouter, Gemini, NVIDIA NIM, OpenAI, Anthropic, or Ollama on
@@ -25,12 +27,20 @@ cd /opt/qaap
 cp .env.docker.example .env
 ```
 
+The repository must be checked out with Unix line endings. If this checkout was copied from a
+Windows machine and Bash reports `bash\r`, repair the deployment scripts once before running them:
+
+```bash
+find scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+```
+
 Edit `.env`:
 
 | Variable | Example | Purpose |
 |----------|---------|---------|
-| `THEIA_PORT` | `4873` | Port published to the internet |
-| `QAAP_OAUTH_PUBLIC_URL` | `http://203.0.113.10:4873` | Public URL (OAuth + dev preview) |
+| `THEIA_PORT` | `4873` | Internal Theia port; keep it on VPS loopback behind Caddy |
+| `QAAP_PUBLIC_HOST` | `161.97.69.219.sslip.io` | Public hostname served by Caddy |
+| `QAAP_OAUTH_PUBLIC_URL` | `https://161.97.69.219.sslip.io` | Public HTTPS origin (OAuth + dev preview) |
 | `QAAP_GITHUB_CLIENT_ID` / `SECRET` | from GitHub OAuth app | Login (or `QAAP_SKIP_AUTH=true` for private labs) |
 | `OPENROUTER_API_KEY` | `sk-or-…` | Powers `@qaiq` when no model is set in Settings |
 | `QAAP_DEFAULT_AGENT` | `qaiq` | Default agent (already the image default) |
@@ -38,23 +48,24 @@ Edit `.env`:
 | `CLAUDE_CODE_VERSION` | `latest` | Claude Code CLI version for a source build |
 | `ANTIGRAVITY_CLI_VERSION` | `latest` | Antigravity CLI version for a source build |
 | `OPENCODE_CLI_VERSION` | `latest` | OpenCode CLI (`opencode-ai`) version for a source build |
-| `COPILOT_CLI_VERSION` | `latest` | GitHub Copilot CLI (`@github/copilot`) installed during Docker build |
 
 Open the firewall port (example with UFW):
 
 ```bash
-sudo ufw allow 4873/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw delete allow 4873/tcp || true  # Theia is loopback-only behind Caddy
 sudo ufw enable
 ```
 
 Build and run:
 
 ```bash
-docker compose up --build -d
-docker compose logs -f theia   # wait for "Configuration directory URI"
+docker compose up --build -d caddy theia
+docker compose logs -f caddy theia   # wait for Caddy + "Configuration directory URI"
 ```
 
-Open `http://<your-vps-ip>:4873`.
+Open `https://<your-public-host>`; do not expose `:4873` directly.
 
 ## Updating an existing VPS
 
@@ -64,6 +75,11 @@ After new commits land on GitHub:
 cd /opt/qaap
 ./scripts/qaap-vps-update.sh
 ```
+
+Existing installations created with the legacy `/opt/qaap-runtime` bind mounts are detected and
+kept automatically, including workspace, authentication, settings and task state. Deployments
+that kept state only in the old container writable layer must still follow the runtime-state
+migration procedure before recreating the container.
 
 Deploy a feature branch (e.g. before merge to `master`):
 
@@ -101,12 +117,12 @@ Follow the printed steps:
 
 | Secret | Example |
 |--------|---------|
-| `QAAP_VPS_HOST` | `178.105.136.93` |
+| `QAAP_VPS_HOST` | `161.97.69.219` |
 | `QAAP_VPS_USER` | `root` |
 | `QAAP_VPS_SSH_KEY` | contents of `~/.ssh/qaap-vps-deploy` (private key) |
 | `QAAP_VPS_SSH_PORT` | `22` (optional) |
 | `QAAP_VPS_REPO_DIR` | `/opt/qaap` (optional) |
-| `QAAP_VPS_PUBLIC_URL` | `https://178.105.136.93.sslip.io` (health check / monitor — Caddy HTTPS, not `:4873`) |
+| `QAAP_VPS_PUBLIC_URL` | `https://161.97.69.219.sslip.io` (health check / monitor — Caddy HTTPS, not `:4873`) |
 
 3. **Cursor Cloud Agent** (optional) — same `QAAP_VPS_HOST` + `QAAP_VPS_SSH_KEY` as agent secrets so chat can run `./scripts/qaap-vps-remote-update.sh`.
 
@@ -132,10 +148,41 @@ application and source tree. GitHub links the package to this repository through
 Remote update from your machine:
 
 ```bash
-export QAAP_VPS_HOST=178.105.136.93
+export QAAP_VPS_HOST=161.97.69.219
 export QAAP_VPS_SSH_KEY_FILE=~/.ssh/qaap-vps-deploy
 ./scripts/qaap-vps-remote-update.sh
 ```
+
+### Lost the laptop SSH key (Hetzner Console)
+
+The Cloud Agent cannot SSH to the VPS. If you are not on the machine that holds
+`~/.ssh/qaap-vps-deploy` (for example a Windows laptop with only `known_hosts`),
+do **not** try password SSH — the box is `publickey` only. Use the provider console:
+
+1. Hetzner Cloud → the server → **Console**.
+2. On the guest, as root, append a **new** public key (do not replace GitHub Actions'
+   deploy key):
+
+```bash
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+# paste the single line from the laptop public key file
+echo 'ssh-ed25519 AAAA… comment' >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+```
+
+3. On Windows (PowerShell), generate a key if none exists, then connect:
+
+```powershell
+if (-not (Test-Path "$env:USERPROFILE\.ssh\id_ed25519")) {
+  ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\id_ed25519" -N ""
+}
+Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" root@161.97.69.219
+```
+
+Offsite backup (`/opt/qaap/.env.backup`) still has to run **on the VPS** after that
+shell is open. Local tars in `/var/backups/qaap` do not survive disk loss.
 
 ## What the image includes
 
@@ -146,14 +193,18 @@ The runtime stage of `Dockerfile` installs:
 - **Claude Code** → `claude` (`@anthropic-ai/claude-code`)
 - **Antigravity CLI** → `antigravity` (installed from `@sanchaymittal/antigravity-cli` with `antigravity` alias)
 - **OpenCode** → `opencode` (`opencode-ai`)
-- **GitHub Copilot CLI** → `copilot` (`@github/copilot`)
-- **Grok Build** → `/opt/grok/bin/grok` (`curl -fsSL https://x.ai/cli/install.sh | bash`)
 - `git`, `curl`, `bun`, `pnpm`, `yarn`, `build-essential`, `ripgrep` for agent shell work
+
+These harnesses are runtime dependencies of the task runner, not optional frontend npm
+dependencies. The Dockerfile fails the build if one of the required harnesses is absent, and
+`QAAP_TENANT_DOCKER_IMAGE` defaults to the same image as `QAAP_THEIA_IMAGE` so isolated tenant
+workers receive them too. Do not point `QAAP_TENANT_DOCKER_IMAGE` at a bare `node:20-bookworm`
+image.
 
 At container start, the backend logs detected agents, for example:
 
 ```text
-[qaap-agent-tasks] detected agents: qaiq, grok
+[qaap-agent-tasks] detected agents: qaiq, codex, claude, opencode, antigravity
 [qaap-agent-tasks] qaiq: 0.15.0-qaap.1 (QAIQ)
 ```
 
@@ -162,7 +213,7 @@ At container start, the backend logs detected agents, for example:
 Background jobs read credentials in this order:
 
 1. **Environment variables** in `.env` / `docker-compose` (recommended on VPS)
-2. **Theia user preferences** under `/root/.theia` (persisted via volume `qaap-theia-user`)
+2. **Theia user preferences** under `/home/theia/.theia` (persisted via volume `qaap-theia-user`)
 
 Set at least one key in `.env` before relying on `@qaiq`. Without a key, task creation fails
 with a clear error instead of hanging on Anthropic OAuth.
@@ -179,6 +230,10 @@ Gemini:
 ```bash
 GEMINI_API_KEY=...
 ```
+
+Gemini model metadata probing is disabled by default. Generation and reasoning selection do not
+depend on the optional `models.get` endpoint. Set `QAAP_GOOGLE_MODEL_METADATA=1` only when you need
+server-reported token limits and have verified that the configured Google API supports that endpoint.
 
 ## Using `@qaiq` on the VPS
 
@@ -217,10 +272,17 @@ docker compose exec theia codex --version
 docker compose exec theia claude --version
 docker compose exec theia antigravity --version
 docker compose exec theia opencode --version
-docker compose exec theia copilot --version
-docker compose exec theia which qaiq grok codex claude antigravity opencode copilot
-docker compose exec theia grok version
+docker compose exec theia which qaiq openclaude codex claude antigravity opencode
 docker compose logs theia 2>&1 | grep 'qaap-agent-tasks'
+```
+
+After changing the Dockerfile or pulling a new release, recreate the service so the VPS does not
+keep an old image:
+
+```bash
+docker compose build --pull theia
+docker compose up -d --force-recreate theia
+docker compose exec theia sh -c 'for h in qaiq openclaude codex claude opencode antigravity; do command -v "$h" || exit 1; done'
 ```
 
 ## Build args (optional)
@@ -257,8 +319,8 @@ Without a custom domain, use [sslip.io](https://sslip.io) for the VPS IP:
 
 ```bash
 # /opt/qaap/.env
-QAAP_PUBLIC_HOST=178.105.136.93.sslip.io
-QAAP_OAUTH_PUBLIC_URL=https://178.105.136.93.sslip.io
+QAAP_PUBLIC_HOST=161.97.69.219.sslip.io
+QAAP_OAUTH_PUBLIC_URL=https://161.97.69.219.sslip.io
 ```
 
 Then:
@@ -277,7 +339,7 @@ Caddy obtains a Let’s Encrypt certificate for the sslip.io hostname automatica
 If you later buy a real domain, point DNS at the VPS and change `QAAP_PUBLIC_HOST`.
 
 Set the GitHub Actions secret `QAAP_VPS_PUBLIC_URL` to that same HTTPS origin
-(`https://178.105.136.93.sslip.io`). Do **not** use `:4873` — that port is loopback-only
+(`https://161.97.69.219.sslip.io`). Do **not** use `:4873` — that port is loopback-only
 behind Caddy, so deploy health checks and the VPS monitor will fail. Workflows rewrite a
 stale `:4873` secret as a safety net (`scripts/qaap-vps-normalize-public-url.sh`), but the
 secret itself should still be rotated.
@@ -311,7 +373,7 @@ explicitly single-user box, and verify it before opting out:
    # the agent process should run as uid 1001, not 0
    docker compose exec theia sh -c 'ps -o uid,cmd -C qaiq'
    # the agent user must NOT be able to read tenant secrets
-   docker compose exec -u 1001 theia sh -c 'cat /root/.qaap/* 2>&1 | head'   # expect: Permission denied
+   docker compose exec -u 1001 theia sh -c 'cat /home/theia/.qaap/* 2>&1 | head'   # expect: Permission denied
    # the agent user MUST be able to write its workspace
    docker compose exec -u 1001 theia sh -c 'touch /workspace/.__perm_test && rm /workspace/.__perm_test && echo OK'
    ```
@@ -323,20 +385,30 @@ explicitly single-user box, and verify it before opting out:
 
 ## Backups
 
-The deployment's state lives in three docker volumes; **without backups a bad deploy, a destructive
+The deployment's state lives in six docker volumes; **without backups a bad deploy, a destructive
 agent run, or an operator mistake loses every user's repositories and sessions**:
 
 | Volume | Mounted at | Holds |
 |---|---|---|
 | `theia-workspace` | `/workspace` | user repositories, `.qaap/uid-registry.json`, project sessions |
-| `qaap-auth-data` | `/root/.qaap` | OAuth sessions, agent-task index/logs, conversations, helper tokens |
-| `qaap-theia-user` | `/root/.theia` | per-user settings, incl. Settings → AI API keys |
+| `qaap-auth-data` | `/home/theia/.qaap` | OAuth sessions, agent-task index/logs, conversations, helper tokens |
+| `qaap-theia-user` | `/home/theia/.theia` | per-user settings, incl. Settings → AI API keys |
+| `theia-worktrees` | `/tmp/qaap-worktrees` | conversation worktrees, including uncommitted changes |
+| `theia-parallel` | `/tmp/qaap-parallel` | parallel task worktrees |
+| `qaap-tenant-homes` | `/home/qaap-tenants` | private agent configuration and state |
 
-**Install the nightly backup (one-time, as root on the VPS):**
+Persistent Node stores are SQLite databases inside the first two volumes and
+inside each repository's `.qaap` directory for research ledgers. The database
+files use WAL mode, so a consistent backup must include each `.sqlite` file
+together with any adjacent `-wal` and `-shm` files. Stop `theia` before a manual
+file-level copy, or use a filesystem/storage snapshot. The migration keeps the
+old JSON/JSONL sources beside the new databases for rollback; see
+[SQLite persistence](qaap-sqlite-persistence.md) for the complete inventory.
+
+**Install the nightly backup** (the VPS launch gate does this on every deploy; one-time manual equivalent):
 
 ```bash
-echo '17 3 * * * root /opt/qaap/scripts/qaap-vps-backup.sh >> /var/log/qaap-backup.log 2>&1' \
-  > /etc/cron.d/qaap-backup
+/opt/qaap/scripts/qaap-vps-ensure-backup-cron.sh
 /opt/qaap/scripts/qaap-vps-backup.sh   # run once now and check the output
 ```
 
@@ -346,20 +418,103 @@ dominate the size otherwise.
 
 **Restore** (container stopped or fresh):
 
+Before restoring live volumes, rehearse the archive in a disposable volume:
+
 ```bash
-cd /opt/qaap && docker compose stop theia
-docker run --rm --volumes-from "$(docker compose ps -aq theia)" \
-  -v /var/backups/qaap:/backup busybox \
-  tar xzf /backup/qaap-<STAMP>.tar.gz -C /
-docker compose start theia
+bash scripts/qaap-backup-restore-check.sh /var/backups/qaap/qaap-<STAMP>.tar.gz 'ghcr.io/juancristobalgd1/qaap@sha256:<digest>'
 ```
 
-To restore a single user's repo or one JSON store, extract selectively with
-`tar xzf … -C / workspace/repos/users/<login>` etc.
+New backups include a `.tar.gz.sha256` sidecar. Preserve that sidecar alongside
+the encrypted offsite archive and verify the decrypted archive against it.
+The digest detects corruption; it is not a signature or proof of authenticity.
+The rehearsal mounts only that archive read-only, disables networking and extracts
+into a new anonymous volume which Docker removes afterward. It checks content,
+archive paths, the six state roots and uid/gid/modes when running as root on Linux.
+It does **not** start the restored app. The default decompressed limit is 20 GiB.
+
+**Existing deployments:** preserve runtime contents before activating the three new
+mounts. Follow [runtime state migration](qaap-runtime-state-migration.md) before
+container recreation. Old three-root backups require `--legacy-three-roots` for
+rehearsal and do not cover runtime worktrees. Archives written before the control plane moved its
+state from `/root` to `/home/theia` (`root/.qaap`, `root/.theia`) are still accepted; restore them to
+the current mount paths. A successful archive rehearsal does
+not by itself prove that an interrupted task can resume.
+
+Backup creation now fails on any tar error (including changing source files), writes
+a partial file first and only publishes a validated archive. It does not pause the
+application; a live archive is not an atomic snapshot across all stores. If writes
+prevent successful backups, arrange a quiet window or filesystem snapshots.
+
+Do not extract an archive over existing application volumes: stale files would
+remain, and partial extraction could mix two incompatible states. First run the
+isolated restore check above. A production recovery must use new, empty volumes
+on a clean instance, preserve numeric ownership and the six original mount paths,
+and pass application startup and two-account checks before switching traffic.
+Keep the previous volumes and image available for rollback. The automated check
+currently validates the archive only; application recovery and traffic switching
+still require a rehearsed operator procedure.
 
 > **Local tars do not survive disk loss.** Pair them with the provider's snapshot feature (Hetzner
-> backups ≈ 20% of the server price) or sync `/var/backups/qaap` offsite (rclone/restic to any
-> object storage).
+> backups ≈ 20% of the server price) **or** configure an encrypted offsite copy. After each nightly
+> backup the host runs `scripts/qaap-vps-backup-offsite.sh`, which no-ops until you create
+> `/opt/qaap/.env.backup` with `QAAP_BACKUP_OFFSITE_CMD`. Encrypt the archive (`gpg` / `age`) and
+> copy **only** the ciphertext (rclone/restic). Never upload the plaintext `.tar.gz` — it contains
+> OAuth sessions and API keys. If you cannot SSH from your usual laptop, use
+> [Lost the laptop SSH key (Hetzner Console)](#lost-the-laptop-ssh-key-hetzner-console).
+>
+> Example `/opt/qaap/.env.backup` (chmod 600):
+>
+> ```bash
+> QAAP_BACKUP_OFFSITE_CMD='gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file /root/.qaap-backup-passphrase --output "${QAAP_BACKUP_ARCHIVE}.gpg" "$QAAP_BACKUP_ARCHIVE" && rclone copy "${QAAP_BACKUP_ARCHIVE}.gpg" remote:qaap-backups && rm -f "${QAAP_BACKUP_ARCHIVE}.gpg"'
+> ```
+
+## Stripe billing
+
+Work Hub → Billing upgrades Pro / Team via Stripe Checkout. The backend needs these in
+`/opt/qaap/.env` (and a `docker compose up -d` so theia picks them up — they are mapped in
+`docker-compose.yml`):
+
+| Variable | Where to get it |
+|----------|-----------------|
+| `QAAP_PUBLIC_URL` | Same HTTPS origin as the IDE, e.g. `https://161.97.69.219.sslip.io` |
+| `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys (`sk_live_…` or `sk_test_…`) |
+| `STRIPE_PRICE_PRO_MONTHLY` | Price id for Pro (€29 / month recurring) |
+| `STRIPE_PRICE_TEAM_MONTHLY` | Price id for Team (€79 / month recurring) |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret (`whsec_…`) |
+
+### One-time Stripe Dashboard setup
+
+1. Create two **Products** (or one product with two prices):
+   - **Qaap Pro** — recurring monthly **€29** → copy `price_…` → `STRIPE_PRICE_PRO_MONTHLY`
+   - **Qaap Team** — recurring monthly **€79** → copy `price_…` → `STRIPE_PRICE_TEAM_MONTHLY`
+2. Developers → Webhooks → **Add endpoint**:
+   - URL: `https://<QAAP_PUBLIC_HOST>/qaap/api/billing/webhook`
+   - Events: `checkout.session.completed`, `customer.subscription.deleted`
+   - Copy the endpoint signing secret → `STRIPE_WEBHOOK_SECRET`
+3. On the VPS:
+
+```bash
+cd /opt/qaap
+# append the five vars to .env (chmod 600), then:
+docker compose up -d theia
+```
+
+4. Verify while logged in: `GET /qaap/api/billing` JSON has `checkout.stripeEnabled: true`.
+   Work Hub avatar / Billing → Upgrade Pro should redirect to Stripe Checkout.
+
+Use **test** keys (`sk_test_…`) first; switch to live when ready to charge real cards.
+`QAAP_BILLING_DEV_CHECKOUT` must stay unset on the public VPS.
+
+### Paid beta smoke (single user)
+
+After Stripe env is live and `docker compose up -d theia`:
+
+1. `QAAP_BASE_URL=https://<host> QAAP_ENV_FILE=/opt/qaap/.env ./scripts/qaap-verify-launch-readiness.sh`
+2. On the VPS: `./scripts/qaap-vps-launch-gate.sh` (Stripe incomplete → WARN; `QAAP_BILLING_DEV_CHECKOUT` → FAIL)
+3. Incognito → GitHub login → Work Hub avatar → **Billing**
+4. Upgrade **Pro** (test card `4242…`) → return URL `?qaapBilling=success` → sheet shows **CURRENT** Pro
+5. Stripe Dashboard → cancel subscription → reload Billing → Starter (needs webhook)
+6. Confirm `GET /qaap/api/billing` (while logged in) has `checkout.stripeEnabled: true`
 
 ## Related docs
 

@@ -6,6 +6,7 @@
 import { qaapAuthenticatedFetchInit } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import {
     QAAP_CLOUD_API_PATH,
+    QAAP_TENANT_RUNTIME_API_PATH,
     type QaapCdpStatusResponse,
     type QaapCloudWorkspaceEnsureRequest,
     type QaapCloudWorkspaceSummary,
@@ -20,6 +21,9 @@ import {
     type QaapPushSubscribeRequest,
     type QaapPushVapidResponse,
     type QaapTerminalSessionsUpsertRequest,
+    type QaapTenantActivityReason,
+    type QaapTenantRuntimeMetrics,
+    type QaapTenantRuntimeStatus,
 } from '../common/qaap-cloud-api-types';
 
 export async function ensureQaapCloudWorkspace(
@@ -35,6 +39,44 @@ export async function ensureQaapCloudWorkspace(
     }
     const body = await response.json() as { workspace?: QaapCloudWorkspaceSummary };
     return body.workspace;
+}
+
+export async function touchQaapTenantRuntime(reason: QaapTenantActivityReason = 'user'): Promise<void> {
+    try {
+        await fetch(`${QAAP_TENANT_RUNTIME_API_PATH}/activity`, qaapAuthenticatedFetchInit({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason }),
+            keepalive: true,
+        }));
+    } catch {
+        // Activity telemetry must never interfere with the editor or terminal.
+    }
+}
+
+export async function fetchQaapTenantRuntimeStatus(): Promise<QaapTenantRuntimeStatus | undefined> {
+    try {
+        const response = await fetch(`${QAAP_TENANT_RUNTIME_API_PATH}/status`, qaapAuthenticatedFetchInit());
+        if (!response.ok) {
+            return undefined;
+        }
+        const body = await response.json() as { runtime?: QaapTenantRuntimeStatus };
+        return body.runtime;
+    } catch {
+        return undefined;
+    }
+}
+
+export async function fetchQaapTenantRuntimeMetrics(): Promise<QaapTenantRuntimeMetrics | undefined> {
+    try {
+        const response = await fetch(`${QAAP_TENANT_RUNTIME_API_PATH}/metrics`, qaapAuthenticatedFetchInit());
+        if (!response.ok) {
+            return undefined;
+        }
+        return await response.json() as QaapTenantRuntimeMetrics;
+    } catch {
+        return undefined;
+    }
 }
 
 export async function createQaapPreviewShare(

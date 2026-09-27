@@ -27,6 +27,7 @@ jobs:
         with:
           sparse-checkout: |
             scripts/qaap-vps-normalize-public-url.sh
+            scripts/qaap-verify-auth-api-gate.sh
           sparse-checkout-cone-mode: false
 
       - name: Probe public endpoint
@@ -44,12 +45,18 @@ jobs:
           fi
           # 3 attempts, 20s apart: a single blip must not page anyone.
           for attempt in 1 2 3; do
-            BODY="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" 2>/dev/null || true)"
+            HEALTH="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/health" 2>/dev/null || true)"
+            BODY="$HEALTH"
+            if [ -z "$BODY" ]; then
+              BODY="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" 2>/dev/null || true)"
+            fi
             BUILD="$(printf '%s' "$BODY" | jq -r '.build // empty' 2>/dev/null || true)"
             if [ -n "$BODY" ]; then
               echo "healthy (attempt $attempt) — build=${BUILD:-unknown}"
               echo "status=healthy" >> "$GITHUB_OUTPUT"
               echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+              chmod +x ./scripts/qaap-verify-auth-api-gate.sh
+              QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" ./scripts/qaap-verify-auth-api-gate.sh
               exit 0
             fi
             echo "attempt $attempt failed"

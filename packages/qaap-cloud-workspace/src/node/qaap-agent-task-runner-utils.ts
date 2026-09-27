@@ -8,8 +8,9 @@
 
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { OPENCLAUDE_AGENT_ID } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { OPENCLAUDE_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import { truncateProjectInfo } from '../common/qaap-agent-task-context';
 import {
@@ -26,6 +27,13 @@ export const PROJECT_INFO_MAX_CHARS = 8000;
 export const AGENT_INSTRUCTIONS_MAX_CHARS = 6000;
 export const REPO_MEMORY_MAX_CHARS = 2000;
 export const AGENT_INSTRUCTION_FILES: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.cursorrules'];
+
+export type QaapAgentStdinPromptMode = 'qaiq-stdio' | 'plain';
+
+export interface QaapAgentStdinPrompt {
+    readonly text: string;
+    readonly mode: QaapAgentStdinPromptMode;
+}
 
 // ─── Agent detection ─────────────────────────────────────────────────────────
 
@@ -45,19 +53,72 @@ export function isQaiqRunner(agentId: string | undefined, command: string): bool
     return /\b(qaiq|openclaude)\b/.test(command);
 }
 
+const WINDOWS_PATHEXT_FALLBACK = '.COM;.EXE;.BAT;.CMD;.VBS;.JS;.MSC';
+
+/**
+ * Pick the first real executable from `where`/`which` output.
+ * On Windows, `where foo` often prints `foo` without `.cmd`; PATHEXT fills that gap.
+ */
+export function resolveExistingExecutablePath(
+    candidates: readonly string[],
+    options: {
+        readonly platform?: NodeJS.Platform;
+        readonly pathExt?: string;
+        readonly stat?: (filePath: string) => { isFile(): boolean } | undefined;
+    } = {},
+): string | undefined {
+    const platform = options.platform ?? process.platform;
+    const stat = options.stat ?? ((filePath: string) => {
+        try {
+            return fs.statSync(filePath);
+        } catch {
+            return undefined;
+        }
+    });
+    const extensions = platform === 'win32'
+        ? (options.pathExt ?? process.env.PATHEXT ?? WINDOWS_PATHEXT_FALLBACK)
+            .split(';')
+            .map(ext => ext.trim())
+            .filter(ext => ext.length > 0)
+        : [];
+    for (const raw of candidates) {
+        const candidate = raw.trim().replace(/^"+|"+$/g, '');
+        if (!candidate || /^INFO:/i.test(candidate)) {
+            continue;
+        }
+        if (stat(candidate)?.isFile()) {
+            return candidate;
+        }
+        if (platform === 'win32' && path.extname(candidate) === '') {
+            for (const ext of extensions) {
+                const variants = [ext, ext.toLowerCase(), ext.toUpperCase()];
+                for (const variant of variants) {
+                    const withExt = candidate + variant;
+                    if (stat(withExt)?.isFile()) {
+                        return withExt;
+                    }
+                }
+            }
+        }
+    }
+    return undefined;
+}
+
 export function isOnPath(bin: string): boolean {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     try {
-        const result = spawnSync(cmd, [bin], { encoding: 'utf8' });
+        const result = spawnSync(cmd, [bin], { encoding: 'utf8', windowsHide: true });
         if (result.status !== 0 || result.error) {
             return false;
         }
-        const resolved = result.stdout?.trim().split(/\r?\n/)[0];
+        const resolved = resolveExistingExecutablePath((result.stdout ?? '').split(/\r?\n/));
         if (!resolved) {
             return false;
         }
-        fs.accessSync(resolved, fs.constants.X_OK);
-        return fs.statSync(resolved).isFile();
+        if (process.platform !== 'win32') {
+            fs.accessSync(resolved, fs.constants.X_OK);
+        }
+        return true;
     } catch {
         return false;
     }
@@ -89,6 +150,158 @@ export function applyTemplate(template: string, prompt: string, vars: Record<str
 /** Template expansion for stdio-approval runs: the prompt is delivered over stdin, not argv. */
 export function applyTemplateWithoutPrompt(template: string, vars: Record<string, string> = {}): string {
     return applyTemplateVars(template.split('{prompt}').join(' '), vars);
+}
+
+/** Template expansion for CLIs such as Codex that read a prompt from stdin when given `-`. */
+export function applyTemplateWithStdinPrompt(template: string, vars: Record<string, string> = {}): string {
+    return applyTemplateVars(template.split('{prompt}').join('-'), vars);
+}
+
+/**
+ * Drop `-p {prompt}` / `--prompt {prompt}` so the flag does not sit empty after the
+ * prompt moves off argv. Used when `-p` *is* the prompt flag (Copilot, Gemini, Grok file).
+ */
+export function applyTemplateWithoutPromptFlag(template: string, vars: Record<string, string> = {}): string {
+    const stripped = template
+        .replace(/\s+(?:-p|--prompt|--single)\s+\{prompt\}/g, ' ')
+        .split('{prompt}').join(' ');
+    return applyTemplateVars(stripped, vars);
+}
+
+/** How a harness should receive the (often huge) Qaap task prompt. */
+export type QaapAgentPromptPlaceholder = 'omit' | 'omit-flag' | 'dash';
+
+export type QaapAgentPromptTransport =
+    | { readonly kind: 'argv' }
+    | { readonly kind: 'plain-stdin'; readonly placeholder: QaapAgentPromptPlaceholder }
+    | { readonly kind: 'prompt-file'; readonly flag: '--prompt-file' };
+
+const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen']);
+const STDIN_OMIT_FLAG_IDS = new Set(['copilot']);
+const STDIN_DASH_IDS = new Set(['codex', 'kimi', 'goose', 'hermes', 'openclaw']);
+
+/**
+ * Windows `cmd.exe` dies at ~8191 characters ("La línea de comandos es demasiado larga")
+ * when the full Qaap context is inlined as `{prompt}`. Prefer stdin, or `--prompt-file`
+ * for CLIs that refuse piped input (Grok).
+ */
+export function resolveAgentPromptTransport(
+    agentId: string | undefined,
+    detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
+): QaapAgentPromptTransport {
+    const id = (agentId ?? detected?.id ?? '').trim().toLowerCase();
+    const bin = detected?.bin?.trim().toLowerCase();
+    if (id === 'cursor' || bin === 'cursor-agent' || bin === 'agent') {
+        return { kind: 'plain-stdin', placeholder: 'omit' };
+    }
+    if (id === 'grok' || bin === 'grok') {
+        return { kind: 'prompt-file', flag: '--prompt-file' };
+    }
+    if (id === 'antigravity' || bin === 'gemini' || bin === 'agy' || bin === 'antigravity') {
+        return bin === 'gemini'
+            ? { kind: 'plain-stdin', placeholder: 'omit-flag' }
+            : { kind: 'plain-stdin', placeholder: 'dash' };
+    }
+    if (STDIN_OMIT_IDS.has(id)) {
+        return { kind: 'plain-stdin', placeholder: 'omit' };
+    }
+    if (STDIN_OMIT_FLAG_IDS.has(id) || bin === 'copilot') {
+        return { kind: 'plain-stdin', placeholder: 'omit-flag' };
+    }
+    if (STDIN_DASH_IDS.has(id)) {
+        return { kind: 'plain-stdin', placeholder: 'dash' };
+    }
+    const template = detected?.template ?? '';
+    if (template.includes('{prompt}')) {
+        if (/(?:-p|--prompt|--single|-t|-q|--message|--text)\s+\{prompt\}/.test(template)) {
+            return { kind: 'plain-stdin', placeholder: 'dash' };
+        }
+        return { kind: 'plain-stdin', placeholder: 'omit' };
+    }
+    return { kind: 'argv' };
+}
+
+export function applyTemplateForPromptTransport(
+    template: string,
+    transport: QaapAgentPromptTransport,
+    vars: Record<string, string> = {},
+): string {
+    if (transport.kind === 'argv') {
+        return applyTemplateVars(template, vars);
+    }
+    if (transport.kind === 'plain-stdin' && transport.placeholder === 'dash') {
+        return applyTemplateWithStdinPrompt(template, vars);
+    }
+    if (transport.kind === 'prompt-file'
+        || (transport.kind === 'plain-stdin' && transport.placeholder === 'omit-flag')) {
+        return applyTemplateWithoutPromptFlag(template, vars);
+    }
+    return applyTemplateWithoutPrompt(template, vars);
+}
+
+export interface QaapPromptTransportCommand {
+    readonly command: string;
+    readonly stdinPrompt?: string;
+    readonly promptTempDir?: string;
+}
+
+/** Build a one-shot command without placing a long improvement prompt in argv. */
+export function buildPromptTransportCommand(
+    template: string,
+    prompt: string,
+    agentId: string | undefined,
+    detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
+    vars: Record<string, string> = {},
+): QaapPromptTransportCommand {
+    const transport = resolveAgentPromptTransport(agentId, detected);
+    if (transport.kind === 'argv') {
+        return { command: applyTemplate(template, prompt, vars) };
+    }
+    let command = applyTemplateForPromptTransport(template, transport, vars);
+    if (transport.kind === 'prompt-file') {
+        const written = writeAgentPromptFile(prompt);
+        command = `${command} ${transport.flag} ${quoteShellArg(written.file)}`;
+        return { command, promptTempDir: written.dir };
+    }
+    return { command, stdinPrompt: prompt };
+}
+
+/** Quote a filesystem path for `shell: true` (`cmd.exe` on Windows, POSIX elsewhere). */
+export function quoteShellArg(value: string): string {
+    if (process.platform === 'win32') {
+        return `"${value.replace(/"/g, '""')}"`;
+    }
+    return shellQuote(value);
+}
+
+/** Persist a prompt so CLIs such as Grok can take `--prompt-file` instead of argv. */
+export function writeAgentPromptFile(text: string): { readonly file: string; readonly dir: string } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-prompt-'));
+    const file = path.join(dir, 'prompt.txt');
+    fs.writeFileSync(file, text, 'utf8');
+    return { file, dir };
+}
+
+/** Remove a temp dir created by {@link writeAgentPromptFile}. Safe no-op for other paths. */
+export function removeAgentPromptTempDir(dir: string | undefined): void {
+    if (!dir) {
+        return;
+    }
+    if (!path.basename(dir).startsWith('qaap-agent-prompt-')) {
+        return;
+    }
+    try {
+        fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+        /* already gone */
+    }
+}
+
+export function agentUsesPlainStdinPrompt(
+    agentId: string | undefined,
+    detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
+): boolean {
+    return resolveAgentPromptTransport(agentId, detected).kind === 'plain-stdin';
 }
 
 export function truncateForPrompt(value: string, maxChars: number): string {
@@ -167,19 +380,37 @@ export function isDirectory(target: string): boolean {
 
 // ─── Environment utilities ───────────────────────────────────────────────────
 
-/** Env-only fallback when no model alias or provider list is configured yet. */
-export function resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string {
+export interface QaapQaiqEnvFallbackModel {
+    readonly provider: 'openai' | 'gemini' | 'ollama' | 'anthropic' | 'mistral';
+    readonly vendor: string;
+    readonly modelId: string;
+}
+
+/**
+ * Env-only model when Settings aliases are missing or point at a vendor with no credentials.
+ * Keep in lockstep with {@link resolveQaiqProviderFlagsFromEnv}.
+ */
+export function resolveQaiqEnvFallbackModel(env: NodeJS.ProcessEnv): QaapQaiqEnvFallbackModel | undefined {
     if (env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim()) {
-        return '--provider gemini --model gemini-2.5-flash';
+        return { provider: 'gemini', vendor: 'google', modelId: 'gemini-2.5-flash' };
     }
     if (env.OPENROUTER_API_KEY?.trim()) {
-        return '--provider openai --model nvidia/nemotron-3-super-120b-a12b:free';
+        return { provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/nemotron-3-super-120b-a12b:free' };
     }
     if (env.NVIDIA_API_KEY?.trim()) {
-        return '--provider openai --model meta/llama-3.3-70b-instruct';
+        return { provider: 'openai', vendor: 'nvidia', modelId: 'meta/llama-3.3-70b-instruct' };
     }
     if (env.OLLAMA_HOST?.trim()) {
-        return '--provider ollama --model qwen2.5-coder:7b';
+        return { provider: 'ollama', vendor: 'ollama', modelId: 'qwen2.5-coder:7b' };
+    }
+    return undefined;
+}
+
+/** Env-only fallback when no model alias or provider list is configured yet. */
+export function resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string {
+    const fallback = resolveQaiqEnvFallbackModel(env);
+    if (fallback) {
+        return `--provider ${fallback.provider} --model ${fallback.modelId}`;
     }
     if (env.OPENAI_API_KEY?.trim()) {
         return '--provider openai';
@@ -220,6 +451,18 @@ export function applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
     env.OPENAI_API_KEY = hfKey;
     env.OPENAI_BASE_URL = 'https://router.huggingface.co/v1';
     delete env.NVIDIA_NIM;
+}
+
+/** Prepend a directory without creating a duplicate case-variant PATH on Windows. */
+export function prependPathEntry(env: NodeJS.ProcessEnv, entry: string): void {
+    const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path') ?? 'PATH';
+    const existingPath = env[pathKey]?.trim();
+    env[pathKey] = existingPath ? `${entry}${path.delimiter}${existingPath}` : entry;
+    for (const key of Object.keys(env)) {
+        if (key !== pathKey && key.toLowerCase() === 'path') {
+            delete env[key];
+        }
+    }
 }
 
 // ─── Other pure helpers ──────────────────────────────────────────────────────

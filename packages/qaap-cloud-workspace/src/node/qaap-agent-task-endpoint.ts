@@ -3,12 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
 import * as https from 'https';
 import { WebSocketServer, WebSocket as WsClient } from 'ws';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_AGENT_TASK_API_PATH,
     QaapAgentTaskKind,
@@ -16,13 +17,18 @@ import {
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
-import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
+import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
+import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
+import { QaapBillingStore } from './qaap-billing-store';
+import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 
@@ -64,17 +70,18 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
+    @inject(QaapBillingStore) @optional()
+    protected readonly billingStore: QaapBillingStore | undefined;
+
     configure(app: Application): void {
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/storage-health`, (req, res) => {
+            this.handleStorageHealth(req, res);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/storage-retry`, (req, res) => {
+            void this.handleStorageRetry(req, res);
+        });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
-            if (!this.requireAuth(req, res)) {
-                return;
-            }
-            const agent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
-            if (!agent) {
-                res.status(400).json({ error: '"agent" query parameter is required.' });
-                return;
-            }
-            res.json({ agent, models: this.runner.listModelsForAgent(agent) });
+            void this.handleListAgentModels(req, res);
         });
         // Static `/cli-updates` segments must register before `/:id` below.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, (req, res) => {
@@ -96,9 +103,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.json({
                 tasks: this.filterTasks(ctx, this.runner.listForCwd(cwd)),
                 agentConfigured: this.runner.isAgentConfigured(),
-                agents: this.runner.listAgents(),
-                defaultAgent: this.runner.defaultAgent(),
-                qaiqModels: this.runner.listQaiqModels(),
+                qaiqInstalled: this.runner.isQaiqInstalled(),
+                agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
+                defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
+                qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
             } satisfies QaapAgentTaskListResponse);
         });
         // Cross-project dashboard feed — `/all` and `/stream` are static segments routed before
@@ -108,18 +116,38 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             if (!ctx) {
                 return;
             }
+            if (req.query.refresh === '1' || req.query.refresh === 'true') {
+                this.runner.refreshAgentCatalog();
+            }
             // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
             // full task history (with whole prompts) multiplies into tens of MB per call. Live
             // task groups arrive over the WebSocket snapshot instead.
             res.json({
                 agentConfigured: this.runner.isAgentConfigured(),
-                agents: this.runner.listAgents(),
-                defaultAgent: this.runner.defaultAgent(),
-                qaiqModels: this.runner.listQaiqModels(),
+                qaiqInstalled: this.runner.isQaiqInstalled(),
+                agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
+                defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
+                qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
             } satisfies QaapAgentTaskAllResponse);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
+        });
+        app.delete(`${QAAP_AGENT_TASK_API_PATH}/project`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const cwd = typeof req.query.cwd === 'string' ? req.query.cwd.trim() : '';
+            if (!cwd) {
+                res.status(400).json({ error: '"cwd" is required.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd });
+                return;
+            }
+            res.json({ removed: this.runner.deleteForCwd(cwd) });
         });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/warm`, (req, res) => {
             const ctx = this.requireAuth(req, res);
@@ -155,7 +183,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             void this.handleImprovePrompt(req, res);
         });
         app.post(QAAP_AGENT_TASK_API_PATH, (req, res) => {
-            this.handleCreate(req, res);
+            void this.handleCreate(req, res);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/:id`, (req, res) => {
             void this.handleDetail(req, res);
@@ -180,6 +208,81 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             res.json(task);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/reorder`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const direction = (req.body as { readonly direction?: unknown } | undefined)?.direction;
+            if (direction !== 'up' && direction !== 'down') {
+                res.status(400).json({ error: nls.localize('qaap/agentTasks/reorderDirectionRequired', 'Direction must be "up" or "down".') });
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
+                return;
+            }
+            const ownerLogin = this.auth.resolveUserLogin(ctx);
+            const taskOwner = existing.ownerLogin?.trim().toLowerCase() ?? '';
+            const requester = ownerLogin?.trim().toLowerCase() ?? '';
+            if (taskOwner !== requester) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id, action: 'reorder' });
+                return;
+            }
+            const task = this.runner.reorderQueuedTask(req.params.id, direction, ownerLogin);
+            if (!task) {
+                res.status(409).json({ error: nls.localize('qaap/agentTasks/reorderUnavailable', 'Only queued tasks with a task in that direction can be reordered.') });
+                return;
+            }
+            res.json(task);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/retry`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
+                return;
+            }
+            const task = this.runner.retry(req.params.id, this.auth.resolveUserLogin(ctx));
+            if (!task) {
+                res.status(409).json({ error: nls.localize('qaap/agentTasks/retryUnavailable', 'Only failed or interrupted tasks can be retried.') });
+                return;
+            }
+            res.status(201).json(task);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/resume`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
+                return;
+            }
+            const task = this.runner.resume(req.params.id, this.auth.resolveUserLogin(ctx));
+            if (!task) {
+                res.status(409).json({ error: nls.localize('qaap/agentTasks/resumeUnavailable', 'Only interrupted tasks can be continued.') });
+                return;
+            }
+            res.status(201).json(task);
         });
     }
 
@@ -223,8 +326,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 type: 'snapshot',
                 groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()).map(trimTaskGroupCommandsForWire),
                 agentConfigured: this.runner.isAgentConfigured(),
-                agents: this.runner.listAgents(),
-                defaultAgent: this.runner.defaultAgent(),
+                qaiqInstalled: this.runner.isQaiqInstalled(),
+                agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
+                defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
             };
             client.send(JSON.stringify(snapshot));
 
@@ -248,14 +352,55 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                     clearInterval(ping);
                 }
             }, WS_PING_MS);
+            const heartbeat = setInterval(() => {
+                if (client.readyState === WsClient.OPEN) {
+                    client.send(JSON.stringify({ type: 'heartbeat' }));
+                } else {
+                    clearInterval(heartbeat);
+                }
+            }, WS_PING_MS);
 
             const cleanup = (): void => {
                 clearInterval(ping);
+                clearInterval(heartbeat);
                 subscription.dispose();
             };
             client.on('close', cleanup);
             client.on('error', cleanup);
         });
+    }
+
+    protected async handleListAgentModels(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const requestedAgent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
+        if (!requestedAgent) {
+            res.status(400).json({ error: '"agent" query parameter is required.' });
+            return;
+        }
+        // Keep the endpoint tolerant of the mention form used by some hosted composer paths.
+        // The native catalogs are keyed by canonical ids (`codex`, `claude`, ...), while a
+        // client may send `@codex` or a builtin alias when it drills into the same picker.
+        const normalizedAgent = requestedAgent.replace(/^@/, '').trim().toLowerCase();
+        const agent = resolveQaapBuiltinAgentMentionId(normalizedAgent) ?? normalizedAgent;
+        const login = this.auth.resolveUserLogin(ctx);
+        if (this.billingStore && login) {
+            try {
+                await this.billingStore.getOrCreateAccount(login);
+            } catch {
+                // Fail closed in the picker: cold/missing entitlements hide hosted models.
+            }
+        }
+        // A freshly-created hosted runner can briefly have an empty detected-agent cache even
+        // though the native catalog is already available. Keep the read-only picker endpoint
+        // useful during that window instead of turning a valid native harness into `models: []`.
+        const runnerModels = this.runner.listModelsForAgent(agent, login);
+        const nativeModels = listNativeAgentModels(agent);
+        const models = runnerModels.length > 0 ? runnerModels : nativeModels;
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ agent: requestedAgent, models });
     }
 
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
@@ -291,6 +436,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
         try {
             const result = await this.cliUpdates.installUpdate(agentId);
+            if (result.ok) {
+                this.runner.refreshAgentCatalog();
+            }
             res.status(result.ok ? 200 : 400).json(result);
         } catch (error) {
             res.status(500).json({
@@ -328,6 +476,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 agentId,
                 agentModel: body.agentModel,
                 cwd,
+                ownerLogin: this.auth.resolveUserLogin(ctx),
             });
             res.json({ improved });
         } catch (error) {
@@ -335,7 +484,25 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
     }
 
-    protected handleCreate(req: Request, res: Response): void {
+    protected handleStorageHealth(req: Request, res: Response): void {
+        if (!this.requireAuth(req, res)) {
+            return;
+        }
+        const health = this.runner.storageHealth();
+        res.set('Cache-Control', 'no-store');
+        res.status(health.ready ? 200 : 503).json(health);
+    }
+
+    protected async handleStorageRetry(req: Request, res: Response): Promise<void> {
+        if (!this.requireAuth(req, res)) {
+            return;
+        }
+        const health = await this.runner.retryStorage();
+        res.set('Cache-Control', 'no-store');
+        res.status(health.ready ? 200 : 503).json(health);
+    }
+
+    protected async handleCreate(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as Partial<QaapCreateAgentTaskRequest>;
         if (typeof body.cwd !== 'string' || (typeof body.command !== 'string' && typeof body.prompt !== 'string')) {
             res.status(400).json({ error: '"cwd" and one of "command" or "prompt" are required.' });
@@ -382,7 +549,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             cwd = resolved.cwd;
-            ownerLogin = undefined;
+            ownerLogin = ctx.userLogin;
             parentId = helperOwner ? body.parentId : undefined;
         } else if (helperOwner) {
             // Helper-CLI callback authenticated purely by its per-user token.
@@ -399,7 +566,15 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
+            if (ownerLogin && this.billingStore) {
+                try {
+                    await this.billingStore.getOrCreateAccount(ownerLogin);
+                } catch {
+                    // Peek stays on Starter until the store recovers.
+                }
+            }
             const task = this.runner.create({
+                clientRequestId: typeof body.clientRequestId === 'string' ? body.clientRequestId.trim() : undefined,
                 command: body.command,
                 prompt: body.prompt,
                 agent: body.agent,
@@ -427,7 +602,8 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }, ownerLogin);
             res.status(201).json(task);
         } catch (error) {
-            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+            const status = error instanceof QaapAgentStorageUnavailableError ? 503 : error instanceof QaapAgentQueueFullError ? 429 : 400;
+            res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
         }
     }
 
@@ -445,7 +621,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
             return;
         }
-        res.json(detail);
+        res.set('Cache-Control', 'no-store');
+        res.json(req.query.verifySnapshot === '1'
+            ? { ...detail, workspaceSnapshot: this.runner.checkTaskWorkspaceSnapshot(detail) }
+            : detail);
     }
 
     /**

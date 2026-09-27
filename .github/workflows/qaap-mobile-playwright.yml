@@ -8,6 +8,12 @@ on:
       - 'examples/playwright/**'
       - 'examples/browser/**'
       - 'packages/qaap-mobile-shell/**'
+      - 'packages/qaap-work-hub/**'
+      - 'packages/qaap-composer/**'
+      - 'packages/qaap-transcript/**'
+      - 'packages/qaap-agents-ui/**'
+      - 'packages/qaap-diff-review/**'
+      - 'packages/qaap-shared-core/**'
       - 'packages/qaap-product/**'
       - 'packages/qaap-product-theme/**'
       - 'packages/qaap-adapters/**'
@@ -22,6 +28,12 @@ on:
       - 'examples/playwright/**'
       - 'examples/browser/**'
       - 'packages/qaap-mobile-shell/**'
+      - 'packages/qaap-work-hub/**'
+      - 'packages/qaap-composer/**'
+      - 'packages/qaap-transcript/**'
+      - 'packages/qaap-agents-ui/**'
+      - 'packages/qaap-diff-review/**'
+      - 'packages/qaap-shared-core/**'
       - 'packages/qaap-product/**'
       - 'packages/qaap-product-theme/**'
       - 'packages/qaap-adapters/**'
@@ -85,6 +97,9 @@ jobs:
           npm run ui-tests:qaap-mobile
         env:
           QAAP_SKIP_AUTH: 'true'
+          # The mock QAIQ ignores it, but the runner starts a QAIQ task only with a configured provider
+          # (the Ollama schema default stopped counting as one); without it every agent turn fails before spawn.
+          OPENROUTER_API_KEY: mock-rioja-e2e
           QAAP_CLOUD_MODE: local
           QAAP_MOCK_RIOJA_SUBFOLDER: '0'
           # Keep disconnected Playwright frontends alive for the complete suite.
@@ -92,3 +107,13 @@ jobs:
           # channel opens with "transport close", taking down the test server.
           # 45 minutes covers the full suite while preserving eventual cleanup.
           FRONTEND_CONNECTION_TIMEOUT: '2700000'
+
+      - name: Archive test results
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ failure() }}
+        with:
+          name: qaap-mobile-playwright-results
+          path: |
+            examples/playwright/test-results/
+            examples/playwright/playwright-report/
+          retention-days: 7

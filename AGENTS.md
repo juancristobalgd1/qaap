@@ -20,10 +20,11 @@ This is a Lerna-managed Eclipse Theia monorepo fork for Qaap.
 - Keep the upstream-drift policy green. After changes that could affect drift, run `node scripts/qaap-drift-check.js`.
 - Treat existing uncommitted changes as user-owned. Do not reset, overwrite, or revert unrelated work.
 - User-facing strings must be localized with `nls.localize()` or `nls.localizeByDefault()`.
+- CI/CD invariants are critical: before touching tenant spawning, terminals, preview, `examples/playwright` or `.github/workflows`, read `doc/qaap-ci-invariants.md` (each rule fixed a red workflow; e.g. the rlimit fallback must `shift 2`, never add `grepInvert` to hide an unexplained failure).
 
 ## Required environment
 
-- Node.js `>=22` (`package.json` engines). Node 24 is the recommended default in project docs.
+- Node.js `>=22.13.0` (`package.json` engines; first release with unflagged `node:sqlite`). Node 24 is the recommended default in project docs.
 - npm workspaces with Lerna.
 - Python 3 and native build tooling may be required by `node-gyp` dependencies.
 
@@ -76,9 +77,7 @@ For browser/UI changes:
 
 ## Qaap product constraints
 
-- Work Hub is the default surface on a fresh browser tab.
-- Classic IDE should open only after an explicit in-runtime “Open IDE” action.
-- Be careful with persistence: do not introduce desktop-IDE preference persistence in `localStorage`, URL state, or restored layout unless the current product contract explicitly calls for it.
+- Surface persists across reload (critical): F5 in the same tab keeps the active surface (IDE or Work Hub) via `sessionStorage` only; a fresh tab defaults to Work Hub; never `localStorage`, URL or layout restore. Canonical rule: `.cursor/rules/work-hub-reload-default.mdc`.
 - Example apps should depend on `@theia/qaap-product` once so the Qaap product extensions are pulled transitively.
 - Keep mobile viewport behavior synchronized between TypeScript helpers and CSS breakpoints.
 - For nested scrollable mobile overlays, ensure flex children use `min-height: 0` with native overflow where needed.

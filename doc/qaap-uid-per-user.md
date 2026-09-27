@@ -10,7 +10,7 @@ back off leaves files owned by high uids.
 and the backend is fail-closed: in a production runtime it REFUSES to spawn an agent under a shared
 uid unless the operator explicitly sets `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true` (acceptable
 only on a single-user box). With the flag off, every tenant's background agent runs under the SHARED
-uid `1001`. Secrets are isolated (the agent can't read root-owned `/root/.qaap` or `/root/.theia`),
+uid `1001`. Secrets are isolated (the agent can't read the control-plane mounts `/home/theia/.qaap` or `/home/theia/.theia`),
 but every tenant's CODE lives as sibling paths owned by the same uid `1001`, so a prompt-injected
 agent could read/write another tenant's repository.
 

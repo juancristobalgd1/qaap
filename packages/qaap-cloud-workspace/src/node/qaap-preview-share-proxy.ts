@@ -11,9 +11,9 @@ import * as net from 'net';
 import {
     isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
-import { QaapDevPreviewTargetHostResolver } from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-target-host';
-import { QaapDevPreviewPortRegistry } from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-port-registry';
+} from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
+import { QaapDevPreviewTargetHostResolver } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-target-host';
+import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
 import { FileUri } from '@theia/core/lib/node';
 import { QAAP_DEV_PREVIEW_PUBLIC_PREFIX, parseQaapPublicPreviewSharePath } from '../common/qaap-preview-share';
 import { buildQaapPreviewFailureHtml } from '../common/qaap-preview-supervisor-types';

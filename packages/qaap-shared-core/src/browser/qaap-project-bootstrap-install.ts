@@ -1,0 +1,33 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { QaapPackageManager } from './qaap-project-bootstrap-types';
+
+/**
+ * Install command for project bootstrap. Docker / production hosts often set
+ * `NODE_ENV=production`, which makes npm/yarn/pnpm skip `devDependencies` — but dev
+ * servers (Vite, Next, esbuild, …) live there. We force a development install.
+ */
+export function buildBootstrapInstallCommand(pm: QaapPackageManager): string {
+    const env = 'NODE_ENV=development HUSKY=0 CI=true';
+    switch (pm) {
+        case 'native':
+            // Native/custom preview descriptors are already runnable. This is a portable no-op
+            // because Node is the Qaap host runtime even when the app itself is not JavaScript.
+            return 'node -e ""';
+        case 'pnpm':
+            return `${env} pnpm install`;
+        case 'yarn':
+            return `${env} yarn install`;
+        case 'bun':
+            return `${env} bun install`;
+        default:
+            // `--include=optional` and `--force` repair platform-specific optional packages
+            // when a workspace was prepared on another OS (for example Rollup's Linux binary
+            // missing from a node_modules tree created on Windows). Keep the lockfile untouched:
+            // preview bootstrap must repair the runtime tree, not create review noise in the repo.
+            return `${env} npm install --include=dev --include=optional --force --no-package-lock`;
+    }
+}

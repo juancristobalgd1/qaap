@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapWorkHubRoutine } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-routine';
+import type { QaapWorkHubRoutine } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-routine';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 
 const ROUTINE: QaapWorkHubRoutine = {

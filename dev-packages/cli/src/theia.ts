@@ -614,7 +614,8 @@ async function theiaCli(): Promise<void> {
                         defaultViewport: null, // view port can take available space instead of 800x600 default
                         devtools: testInspect,
                         headless: testInspect ? false : 'shell',
-                        executablePath: executablePath(),
+                        // puppeteer >= 24 resolves the browser path asynchronously.
+                        executablePath: await executablePath(),
                         protocolTimeout: 600000,
                         timeout: 60000
                     },
