@@ -120,6 +120,11 @@ export interface QaapAgentConversationSummaryDTO {
     readonly visualVerificationPending?: boolean;
     /** Number of user messages queued for the next agent turn (delivery mode 'queue'). */
     readonly pendingUserMessageCount?: number;
+    /** Goal loop ("Until done") phase, when the conversation has (or had) one. */
+    readonly goalLoopPhase?: QaapAgentGoalLoopPhaseDTO;
+    readonly goalLoopIteration?: number;
+    readonly goalLoopMaxIterations?: number;
+    readonly goalLoopStopReason?: string;
 }
 
 export type QaapAgentMessageSegmentDTO =
@@ -173,6 +178,8 @@ export interface QaapAgentMessageDTO {
     readonly runFinishedAt?: number;
     /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
     readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
+    /** Set on user messages posted by the goal loop: the 1-based loop iteration. */
+    readonly goalLoopIteration?: number;
 }
 
 export interface QaapContextCompactionDTO {
@@ -234,6 +241,70 @@ export interface QaapAgentConversationDTO {
     readonly contextCompaction?: QaapContextCompactionDTO;
     /** User messages queued for the next agent turn (delivery mode 'queue'). */
     readonly pendingUserMessages?: QaapPendingUserMessageDTO[];
+    /** "Until done" goal loop driving this conversation (kept after it ends). */
+    readonly goalLoop?: QaapAgentGoalLoopStateDTO;
+}
+
+// ─── Goal loop ("Until done") ────────────────────────────────────────────────
+// Mirrors `@theia/qaap-cloud-workspace` `common/qaap-agent-goal-loop.ts` (shared-core cannot
+// import cloud-workspace). Keep both in sync.
+
+export type QaapAgentGoalLoopPhaseDTO = 'executing' | 'verifying' | 'evaluating' | 'completed' | 'blocked' | 'cancelled';
+
+export interface QaapAgentGoalLoopBudgetDTO {
+    readonly maxIterations: number;
+    readonly maxDurationMs: number;
+    readonly maxEvaluatorCalls: number;
+    readonly maxAgentRuntimeMs: number;
+}
+
+export interface QaapAgentGoalLoopVerifyResultDTO {
+    readonly status: 'passed' | 'failed' | 'skipped';
+    readonly command?: string;
+    readonly summary?: string;
+    readonly checkedAt: number;
+}
+
+export interface QaapAgentGoalLoopEvaluationDTO {
+    readonly done: boolean;
+    readonly confidence: 'high' | 'medium' | 'low';
+    readonly reasoning: string;
+    readonly gaps: string[];
+    readonly source: 'evaluator' | 'fallback';
+    readonly evaluatedAt: number;
+}
+
+export interface QaapAgentGoalLoopStateDTO {
+    readonly phase: QaapAgentGoalLoopPhaseDTO;
+    readonly goal: string;
+    readonly startedAt: number;
+    readonly updatedAt: number;
+    readonly iteration: number;
+    readonly anchorUserMessageId: string;
+    readonly currentTurnUserMessageId?: string;
+    readonly budget: QaapAgentGoalLoopBudgetDTO;
+    readonly usage: { readonly evaluatorCalls: number; readonly agentRuntimeMs: number };
+    readonly lastVerify?: QaapAgentGoalLoopVerifyResultDTO;
+    readonly lastEvaluation?: QaapAgentGoalLoopEvaluationDTO;
+    readonly stopReason?: string;
+    readonly finishedAt?: number;
+}
+
+export interface QaapStartGoalLoopBody {
+    readonly goal: string;
+    readonly budget?: Partial<QaapAgentGoalLoopBudgetDTO>;
+    /** First prompt of the loop; the backend posts it (defaults to {@link goal}). */
+    readonly initialPrompt?: string;
+}
+
+export interface QaapGoalLoopResponseDTO {
+    readonly conversationId: string;
+    readonly goalLoop?: QaapAgentGoalLoopStateDTO;
+}
+
+/** Whether a goal loop is still running (not completed / blocked / cancelled). */
+export function isGoalLoopPhaseActive(phase: QaapAgentGoalLoopPhaseDTO | undefined): boolean {
+    return phase === 'executing' || phase === 'verifying' || phase === 'evaluating';
 }
 
 /** A user message waiting in the queue (delivery mode 'queue'), not yet in the transcript. */
@@ -432,6 +503,12 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
             ? { estimatedContextTokens: estimateConversationTokensFromMessages(conv.messages, conv.contextPreamble) }
             : {}),
         ...(conv.contextCompaction ? { contextCompaction: conv.contextCompaction } : {}),
+        ...(conv.goalLoop ? {
+            goalLoopPhase: conv.goalLoop.phase,
+            goalLoopIteration: conv.goalLoop.iteration,
+            goalLoopMaxIterations: conv.goalLoop.budget.maxIterations,
+            ...(conv.goalLoop.stopReason ? { goalLoopStopReason: conv.goalLoop.stopReason } : {}),
+        } : {}),
     };
 }
 
@@ -718,6 +795,49 @@ export async function cancelConversation(id: string): Promise<void> {
         return;
     }
     await cancelConversationHttp(id);
+}
+
+async function readGoalLoopResponse(response: Response): Promise<QaapGoalLoopResponseDTO> {
+    if (!response.ok) {
+        let message = response.statusText;
+        try {
+            const body = await response.json() as { error?: unknown };
+            if (typeof body.error === 'string' && body.error.trim()) {
+                message = body.error;
+            }
+        } catch {
+            // Non-JSON error body — keep the status text.
+        }
+        throw new Error(message);
+    }
+    return response.json() as Promise<QaapGoalLoopResponseDTO>;
+}
+
+/** Starts an "Until done" goal loop; the backend posts {@link QaapStartGoalLoopBody.initialPrompt} as the first turn. */
+export async function startGoalLoop(id: string, body: QaapStartGoalLoopBody): Promise<QaapGoalLoopResponseDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/goal-loop/start`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    return readGoalLoopResponse(response);
+}
+
+/** Stops the goal loop (the current agent turn, if any, keeps running — use {@link cancelConversation} to stop both). */
+export async function cancelGoalLoop(id: string): Promise<QaapGoalLoopResponseDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/goal-loop/cancel`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+    return readGoalLoopResponse(response);
+}
+
+export async function fetchGoalLoopStatus(id: string): Promise<QaapGoalLoopResponseDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/goal-loop`, {
+        credentials: 'include',
+    });
+    return readGoalLoopResponse(response);
 }
 
 /**

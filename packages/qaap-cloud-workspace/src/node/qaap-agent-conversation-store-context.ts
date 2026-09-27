@@ -40,7 +40,7 @@ import type {
     QaapAgUiEvent,
     QaapAgUiTraceReducerState,
 } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
-import type { QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
+import type { QaapConversationTaskRef, QaapGoalLoopTurnSettlement } from './qaap-agent-conversation-store-constants';
 
 /**
  * Members of {@link QaapAgentConversationStore} that the `*Extracted` helper functions access via
@@ -193,6 +193,10 @@ export interface QaapAgentConversationStoreContext {
         parsed: { segments?: QaapAgentMessage['segments']; traceEvents?: QaapAgentMessage['traceEvents'] },
     ): QaapAgentMessage['traceEvents'];
     applyTaskOutcome(ref: QaapConversationTaskRef, task: QaapAgentTask): Promise<QaapWorkflowNodeOutcome>;
+    /** Reports a settled turn to an active goal loop; returns whether the loop is active (it then owns the follow-up). */
+    notifyGoalLoopTurnSettled(settlement: QaapGoalLoopTurnSettlement): boolean;
+    /** Ends an active goal loop as `cancelled` on the given snapshot (composer Stop). */
+    cancelGoalLoopOnConversation(conv: QaapAgentConversation, reason: string): QaapAgentConversation;
 
     // ─── Auto-continue / model-fallback loop budget ─────────────────────────
     hasLoopSpawnBudget(userMessageId: string): boolean;

@@ -21,6 +21,7 @@ import {
     type QaapAgentTaskCwdGroup,
     type QaapAgentTaskDetail,
     type QaapAgentTaskEvent,
+    type QaapAgentTaskKind,
     type QaapAgentTaskReview,
     type QaapAgentTaskState,
     type QaapAgentTaskVerification,
@@ -78,7 +79,7 @@ import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMap
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
 import { buildAgentVerificationFixPromptExtracted, captureWorktreeBaselineExtracted, detectEmptyAgentTurnForTaskExtracted, finishSuccessfulTaskAfterVerificationExtracted, hasEditedFilesForVerificationExtracted, releaseVerificationPassExtracted, resolveReviewerCandidatesExtracted, restoreBaselineSensitiveFilesExtracted, reviewSuccessfulAgentTaskExtracted, runAgentVerificationFixTurnExtracted, runVerificationScriptsExtracted, verifySuccessfulAgentTaskExtracted } from './qaap-agent-task-runner-activity2';
-import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
 import { runOneShotCommandExtracted } from './qaap-agent-task-runner-live-status2';
 import {
     isQaapHarnessEnabled,
@@ -1294,6 +1295,17 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         readonly ownerLogin?: string;
     }): Promise<string> {
         return improveComposerPromptExtracted(this, options);
+    }
+
+    /**
+     * One-shot agent call in a read-only workspace; resolves with the agent's final text. The
+     * goal loop evaluator uses it (task kind `review`, the owner's own keys).
+     */
+    async runReadOnlyOneShotPrompt(options: {
+        readonly prompt: string; readonly agentId: string; readonly cwd: string; readonly agentModel?: QaapCreateAgentTaskQaiqModel;
+        readonly ownerLogin?: string; readonly taskKind?: QaapAgentTaskKind; readonly timeoutMs: number;
+    }): Promise<string> {
+        return runReadOnlyOneShotPromptExtracted(this, options);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

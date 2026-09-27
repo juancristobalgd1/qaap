@@ -18,6 +18,7 @@ import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
     type QaapAgentTask,
+    type QaapAgentTaskKind,
     type QaapAgentTaskState,
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
@@ -550,6 +551,82 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             ctx.buildChildEnv(task),
             agentId,
             45_000,
+            transported.stdinPrompt,
+            transported.promptTempDir,
+        );
+}
+
+/**
+ * One-shot agent CLI call in a read-only workspace (write tools and shell denied where the
+ * backend supports it, QAIQ in plan mode). Used by the goal loop evaluator. The model comes from
+ * the owner's own settings via {@code resolveAgentModelForRequest} with the given task kind.
+ */
+export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunnerContext, options: {
+        readonly prompt: string;
+        readonly agentId: string;
+        readonly cwd: string;
+        readonly agentModel?: QaapCreateAgentTaskQaiqModel;
+        readonly ownerLogin?: string;
+        readonly taskKind?: QaapAgentTaskKind;
+        readonly timeoutMs: number;
+    }): Promise<string> {
+        if (ctx.preferenceService) {
+            await ctx.preferenceService.ready;
+        }
+        const prompt = options.prompt.trim();
+        if (!prompt) {
+            throw new Error('Prompt is empty.');
+        }
+        const agentId = ctx.resolveAgentId(prompt, options.agentId, options.ownerLogin);
+        ctx.assertQaiqConfigured(agentId, options.ownerLogin);
+        const detected = ctx.detectedAgents.get(agentId);
+        if (!detected) {
+            throw new Error(`Agent "${agentId}" is not available.`);
+        }
+        const agentModel = ctx.resolveAgentModelForRequest({
+            prompt,
+            cwd: options.cwd,
+            agent: agentId,
+            ...(options.agentModel ? { agentModel: options.agentModel } : {}),
+            ...(options.taskKind ? { taskKind: options.taskKind } : {}),
+        }, prompt, options.ownerLogin);
+        const vars = ctx.buildTemplateVars(agentId, agentModel, {
+            autoApprove: true,
+            approvalPolicyId: 'approve-for-me',
+            interactionModeId: 'plan',
+        }, options.ownerLogin);
+        const template = detected.template
+            .replace(/--output-format\s+\S+/g, '')
+            .replace(/--include-partial-messages/g, '')
+            .replace(/--verbose/g, '');
+        const transported = buildPromptTransportCommand(template, prompt, agentId, detected, vars);
+        const command = applyAgentApprovalPolicyToCommand(transported.command, {
+            agentId,
+            autoApprove: true,
+            approvalPolicyId: 'approve-for-me',
+            readOnlyWorkspace: true,
+            codexSupportsApproveForMe: detected.codexSupportsApproveForMe,
+        });
+        const createdAt = Date.now();
+        const task: QaapAgentTask = {
+            id: 'goal-loop-evaluator',
+            title: 'Goal loop evaluation',
+            command,
+            cwd: options.cwd,
+            agentId,
+            state: 'running',
+            createdAt,
+            startedAt: createdAt,
+            autoApprove: true,
+            ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
+            ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
+        };
+        return ctx.runOneShotCommand(
+            command,
+            options.cwd,
+            ctx.buildChildEnv(task),
+            agentId,
+            options.timeoutMs,
             transported.stdinPrompt,
             transported.promptTempDir,
         );

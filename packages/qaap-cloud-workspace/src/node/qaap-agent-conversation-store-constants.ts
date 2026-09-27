@@ -8,6 +8,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
+import type { QaapAgentTask } from '../common/qaap-agent-task';
 
 // ─── Store paths ─────────────────────────────────────────────────────────────
 
@@ -137,6 +138,26 @@ export interface PostUserMessageInternalOptions {
      * for traceability.
      */
     readonly batchedFromMessageIds?: ReadonlyArray<string>;
+    /** Set by the goal loop runner: the loop iteration this backend-generated turn is. */
+    readonly goalLoopIteration?: number;
+}
+
+/** How an agent turn settled, as reported to the goal loop runner. */
+export type QaapGoalLoopTurnOutcome = 'success' | 'failed' | 'cancelled' | 'blocked';
+
+/** Reported by `applyTaskOutcome` once a turn is terminally settled (never for a fallback retry). */
+export interface QaapGoalLoopTurnSettlement {
+    readonly conversationId: string;
+    readonly userMessageId: string;
+    readonly task: QaapAgentTask;
+    readonly outcome: QaapGoalLoopTurnOutcome;
+    /** Failure reason (`failed`) or the agent's question (`blocked`). */
+    readonly detail?: string;
+}
+
+/** Registered by the goal loop runner; the store calls it without awaiting. */
+export interface QaapGoalLoopStoreHooks {
+    onTurnSettled(settlement: QaapGoalLoopTurnSettlement): void;
 }
 
 /** Immutable routing/provenance for one task-backed turn inside a multi-run conversation. */

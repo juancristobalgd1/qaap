@@ -151,6 +151,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         if (next.status === 'idle') {
             ctx.drainPendingMessages(conversationId);
         }
+        ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'cancelled' });
         return 'blocked';
     }
     const detail = await ctx.taskRunner.detail(task.id);
@@ -237,6 +238,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         if (finalized.status === 'failed' || finalized.status === 'idle') {
             ctx.drainPendingMessages(conversationId);
         }
+        ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'failed', detail: reason });
         return 'fail';
     }
     let withReply: QaapAgentConversation;
@@ -341,6 +343,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         const finalized = ctx.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
         ctx.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId, turnAgentId);
         ctx.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
+        ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'failed', detail: reason });
         return 'fail';
     }
     const gitStats = ctx.computeGitDiffStats(conv.cwd, startSha);
@@ -385,6 +388,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         // The agent explicitly asked for the user — reclassify the task and never auto-continue
         // on top of a question only the user can answer.
         ctx.taskRunner.markTaskBlocked(task.id);
+        ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'blocked', detail: blockedNeed });
         return 'blocked';
     }
     if (task.state === 'completed_with_warnings') {
@@ -395,6 +399,9 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         if (withReply.status === 'idle') {
             ctx.drainPendingMessages(conversationId);
         }
+        // An active goal loop still gets the turn: its verify phase reads the red verdict and
+        // re-prompts with the failing check instead of a blind "keep going".
+        ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'success' });
         return 'success:warned';
     }
     // Drain any user messages that were queued (delivery mode 'queue') while the agent was
@@ -404,13 +411,17 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     if (withReply.status === 'idle') {
         ctx.drainPendingMessages(conversationId);
     }
-    ctx.maybeAutoContinueIncompleteTurn(
-        conversationId,
-        withReply,
-        userMessageId,
-        finalizedAgentMessageId,
-        turnAgentId,
-    );
+    // An active goal loop takes precedence over the text-heuristic auto-continue: the loop
+    // verifies and evaluates the turn itself and decides the next prompt.
+    if (!ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'success' })) {
+        ctx.maybeAutoContinueIncompleteTurn(
+            conversationId,
+            withReply,
+            userMessageId,
+            finalizedAgentMessageId,
+            turnAgentId,
+        );
+    }
     return 'success';
 }
 
