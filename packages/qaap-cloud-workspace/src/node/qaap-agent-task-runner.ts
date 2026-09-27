@@ -1259,6 +1259,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      */
     conversationIdForTask?: (taskId: string) => string | undefined;
 
+    /**
+     * Optional predicate wired by the conversation store: `true` while a goal loop ("Until done")
+     * drives the conversation — the loop sends one push at its end instead of one per turn.
+     */
+    suppressCompletionPushForConversation?: (conversationId: string) => boolean;
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public async notifyCompletion(task: QaapAgentTask): Promise<void> {
         return notifyCompletionExtracted(this, task);

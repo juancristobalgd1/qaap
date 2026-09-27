@@ -3,8 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common/event';
+import { nls } from '@theia/core/lib/common/nls';
+import type { QaapPushNotifyRequest } from '../common/qaap-cloud-api-types';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import type { QaapAgentConversation, QaapAgentConversationEvent, QaapAgentMessage } from '../common/qaap-agent-conversation';
 import {
@@ -36,6 +38,7 @@ import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import type { QaapGoalLoopTurnSettlement } from './qaap-agent-conversation-store-constants';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QAAP_AGENT_VERIFY_WALL_CLOCK_MS } from './qaap-agent-task-runner-utils3';
+import { QaapWebPushService } from './qaap-web-push-service';
 
 /** Evaluator one-shot wall clock. */
 export const QAAP_AGENT_GOAL_LOOP_EVALUATOR_TIMEOUT_MS = 3 * 60 * 1000;
@@ -58,6 +61,10 @@ export interface QaapAgentGoalLoopTerminalEvent {
     readonly cwd: string;
     readonly title: string;
     readonly ownerLogin?: string;
+    /** Agent of the last loop turn, for the push body. */
+    readonly agentId?: string;
+    readonly diffAdded?: number;
+    readonly diffRemoved?: number;
     readonly goalLoop: QaapAgentGoalLoopState;
 }
 
@@ -79,6 +86,9 @@ export class QaapAgentGoalLoopRunner implements BackendApplicationContribution {
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner: QaapAgentTaskRunner;
 
+    @inject(QaapWebPushService) @optional()
+    protected readonly webPush: QaapWebPushService | undefined;
+
     protected readonly onDidReachTerminalPhaseEmitter = new Emitter<QaapAgentGoalLoopTerminalEvent>();
     /** Terminal-phase hook: phase 2 sends the Web Push from here (none for `cancelled`). */
     readonly onDidReachTerminalPhase: Event<QaapAgentGoalLoopTerminalEvent> = this.onDidReachTerminalPhaseEmitter.event;
@@ -94,6 +104,53 @@ export class QaapAgentGoalLoopRunner implements BackendApplicationContribution {
         this.store.setGoalLoopHooks({ onTurnSettled: settlement => this.onTurnSettled(settlement) });
         // The store ends a loop itself on composer Stop — surface that through the same hook.
         this.store.onDidChange(event => this.handleStoreEvent(event));
+        this.onDidReachTerminalPhase(event => {
+            this.sendTerminalPush(event).catch(() => undefined);
+        });
+    }
+
+    /** One push per loop, at `completed` / `blocked` — none for `cancelled` (the user stopped it). */
+    buildTerminalPush(event: QaapAgentGoalLoopTerminalEvent): QaapPushNotifyRequest | undefined {
+        const phase = event.goalLoop.phase;
+        if (phase !== 'completed' && phase !== 'blocked') {
+            return undefined;
+        }
+        const title = phase === 'completed'
+            ? nls.localize('theia/qaap/goalLoop/pushCompletedTitle', 'Goal completed')
+            : nls.localize('theia/qaap/goalLoop/pushBlockedTitle', 'Goal loop stopped');
+        let body: string;
+        if (phase === 'completed') {
+            const agent = event.agentId?.trim() || nls.localize('theia/qaap/goalLoop/pushAgentFallback', 'Agent');
+            body = event.diffAdded !== undefined || event.diffRemoved !== undefined
+                ? nls.localize('theia/qaap/goalLoop/pushCompletedBodyDiff', '{0}: {1} · +{2} / -{3} lines',
+                    agent, event.title, String(event.diffAdded ?? 0), String(event.diffRemoved ?? 0))
+                : nls.localize('theia/qaap/goalLoop/pushCompletedBody', '{0}: {1}', agent, event.title);
+        } else {
+            body = event.goalLoop.stopReason?.trim()
+                || nls.localize('theia/qaap/goalLoop/pushBlockedBody', '{0} needs your attention.', event.title);
+        }
+        return {
+            title,
+            body,
+            tag: `qaap-goal-loop-${event.conversationId}`,
+            route: 'conversation',
+            conversationId: event.conversationId,
+            cwd: event.cwd,
+            ...(event.ownerLogin ? { userLogin: event.ownerLogin } : {}),
+        };
+    }
+
+    /** @internal Exposed for specs. */
+    async sendTerminalPush(event: QaapAgentGoalLoopTerminalEvent): Promise<void> {
+        const request = this.buildTerminalPush(event);
+        if (!request || !this.webPush) {
+            return;
+        }
+        try {
+            await this.webPush.notify(request);
+        } catch {
+            /* a push failure must not break the loop */
+        }
     }
 
     onStart(): void {
@@ -427,11 +484,15 @@ export class QaapAgentGoalLoopRunner implements BackendApplicationContribution {
             return;
         }
         this.terminalFired.add(key);
+        const agentId = this.latestUserMessage(conv)?.turnAgentId ?? conv.agentId;
         this.onDidReachTerminalPhaseEmitter.fire({
             conversationId,
             cwd: conv.cwd,
             title: conv.title,
             ...(conv.ownerLogin ? { ownerLogin: conv.ownerLogin } : {}),
+            ...(agentId ? { agentId } : {}),
+            ...(conv.gitDiffAdded !== undefined ? { diffAdded: conv.gitDiffAdded } : {}),
+            ...(conv.gitDiffRemoved !== undefined ? { diffRemoved: conv.gitDiffRemoved } : {}),
             goalLoop: loop,
         });
     }
