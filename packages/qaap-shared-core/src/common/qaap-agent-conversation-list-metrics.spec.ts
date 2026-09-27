@@ -13,8 +13,11 @@ import {
     formatReadToolDetailFromArgs,
     formatToolActivityLabel,
     parseDiffStatsFromText,
+    resolveLastSidebarGitActionKind,
+    sidebarGitActionKindFromText,
     textInvokesGit,
 } from './qaap-agent-conversation-list-metrics';
+import { createComposerGitActionDisplayMarker } from './qaap-composer-git-action-display';
 
 describe('textInvokesGit', () => {
     it('detects git commands in shell text and JSON args', () => {
@@ -55,6 +58,78 @@ describe('conversationMessagesHaveGitOperation', () => {
             }],
         });
         expect(metrics.hasGitOperation).to.equal(true);
+    });
+
+    it('records lastGitActionKind from tool git verbs', () => {
+        const metrics = buildConversationListMetrics({
+            status: 'idle',
+            messages: [{
+                role: 'agent',
+                content: '',
+                createdAt: 1,
+                segments: [{
+                    type: 'tool',
+                    toolUseId: 'tu1',
+                    name: 'Bash',
+                    args: '{"command":"git commit -m fix"}',
+                    finished: true,
+                }],
+            }],
+        });
+        expect(metrics.hasGitOperation).to.equal(true);
+        expect(metrics.lastGitActionKind).to.equal('commit');
+    });
+});
+
+describe('resolveLastSidebarGitActionKind', () => {
+    it('classifies git CLI verbs into sidebar kinds', () => {
+        expect(sidebarGitActionKindFromText('git push origin HEAD')).to.equal('push');
+        expect(sidebarGitActionKindFromText('git commit -am fix')).to.equal('commit');
+        expect(sidebarGitActionKindFromText('git checkout -b feat/x')).to.equal('branch');
+        expect(sidebarGitActionKindFromText('git status')).to.equal('changes');
+    });
+
+    it('prefers the newest composer git-action marker', () => {
+        const marker = createComposerGitActionDisplayMarker({
+            action: 'commit-push',
+            label: 'Commit & Push',
+            status: 'completed',
+            branch: 'main',
+        });
+        expect(resolveLastSidebarGitActionKind([
+            {
+                role: 'agent',
+                content: '',
+                createdAt: 1,
+                segments: [{
+                    type: 'tool',
+                    toolUseId: 'tu1',
+                    name: 'Bash',
+                    args: '{"command":"git status"}',
+                    finished: true,
+                }],
+            },
+            { role: 'user', content: marker, createdAt: 2 },
+        ])).to.equal('push');
+    });
+
+    it('ignores git verbs that only appear in prose or tool output', () => {
+        expect(resolveLastSidebarGitActionKind([
+            {
+                role: 'agent',
+                content: 'Done. You can now run `git push` to publish the branch.',
+                createdAt: 1,
+                segments: [{
+                    type: 'tool',
+                    toolUseId: 'tu1',
+                    name: 'Read',
+                    args: '{"file_path":"README.md"}',
+                    result: 'Run git commit -m "msg" && git push when ready.',
+                    finished: true,
+                }],
+            },
+            { role: 'user', content: 'please git push it later', createdAt: 2 },
+        ])).to.equal(undefined);
     });
 });
 

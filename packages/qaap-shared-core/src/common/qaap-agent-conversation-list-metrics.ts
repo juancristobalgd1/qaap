@@ -3,13 +3,26 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { parseComposerGitActionDisplayMarker } from './qaap-composer-git-action-display';
+import type { QaapGitCommitWorkflowAction } from './qaap-git-review';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { traceEventsToSegments, type QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
+
+/**
+ * Coarse git activity kind for Work Hub sidebar glyphs (distinct from PR lifecycle).
+ * Prefer the newest matching signal in the conversation.
+ */
+export type QaapSidebarGitActionKind = 'push' | 'commit' | 'branch' | 'changes';
 
 /** Denormalized list-row metrics derived from conversation messages (Work Hub / SSE). */
 export interface QaapAgentConversationListMetrics {
     /** True when the thread ran a `git` command or is linked to a pull request (Work Hub inbox). */
     readonly hasGitOperation?: boolean;
+    /**
+     * Best-effort last git workflow / CLI kind for sidebar icons
+     * (push / commit / branch / local changes — not PR state).
+     */
+    readonly lastGitActionKind?: QaapSidebarGitActionKind;
     /** Human-readable in-flight status, e.g. "Searching" or "Running bash". */
     readonly activityLabel?: string;
     readonly linesAdded?: number;
@@ -68,12 +81,81 @@ export function conversationMessagesHaveGitOperation(
     return false;
 }
 
+/** Map a composer Commit & Push workflow action onto a sidebar glyph kind. */
+export function sidebarGitActionKindFromWorkflow(
+    action: QaapGitCommitWorkflowAction,
+): QaapSidebarGitActionKind {
+    switch (action) {
+        case 'commit-push':
+        case 'create-branch-commit-push':
+        case 'commit-create-pr':
+            return 'push';
+        case 'create-branch-commit':
+            return 'branch';
+        case 'commit':
+        default:
+            return 'commit';
+    }
+}
+
+/** Classify a free-form shell/tool string that invokes git into a sidebar glyph kind. */
+export function sidebarGitActionKindFromText(text: string): QaapSidebarGitActionKind | undefined {
+    if (!textInvokesGit(text)) {
+        return undefined;
+    }
+    if (/\bgit\s+push\b/i.test(text) || /\bgh\s+pr\s+create\b/i.test(text)) {
+        return 'push';
+    }
+    if (/\bgit\s+commit\b/i.test(text)) {
+        return 'commit';
+    }
+    if (/\bgit\s+(?:checkout\s+-b|switch\s+-c|branch\b)/i.test(text)) {
+        return 'branch';
+    }
+    return 'changes';
+}
+
+/**
+ * Newest composer git-action marker or git CLI invocation in the thread.
+ * Used by the sessions sidebar so rows can show branch/commit/push icons — not only PR.
+ *
+ * Only executed actions count: composer markers and tool-call arguments. Prose, thinking
+ * and tool output are ignored so "you can now `git push`" or a README that mentions
+ * `git commit` never shows the row as pushed / committed.
+ */
+export function resolveLastSidebarGitActionKind(
+    messages: QaapAgentConversationListMetricsInput['messages'],
+): QaapSidebarGitActionKind | undefined {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        const segments = resolveMetricMessageSegments(message);
+        for (let segmentIndex = segments.length - 1; segmentIndex >= 0; segmentIndex -= 1) {
+            const segment = segments[segmentIndex];
+            if (segment.type !== 'tool') {
+                continue;
+            }
+            const fromTool = sidebarGitActionKindFromText(segment.args ?? '');
+            if (fromTool) {
+                return fromTool;
+            }
+        }
+        if (message.role === 'user') {
+            const marker = parseComposerGitActionDisplayMarker(message.content);
+            if (marker && marker.status !== 'failed') {
+                return sidebarGitActionKindFromWorkflow(marker.action);
+            }
+        }
+    }
+    return undefined;
+}
+
 export function buildConversationListMetrics(
     input: QaapAgentConversationListMetricsInput,
 ): QaapAgentConversationListMetrics {
     const turnMessages = sliceLastTurnMessages(input.messages);
     const diff = aggregateDiffStats(input.messages);
-    const hasGitOperation = conversationMessagesHaveGitOperation(input.messages)
+    const lastGitActionKind = resolveLastSidebarGitActionKind(input.messages);
+    const hasGitOperation = conversationMessagesHaveGitOperation(input.messages) || !!lastGitActionKind
         ? true
         : undefined;
     if (input.status === 'streaming') {
@@ -81,6 +163,7 @@ export function buildConversationListMetrics(
         return {
             ...diff,
             hasGitOperation,
+            ...(lastGitActionKind ? { lastGitActionKind } : {}),
             turnStartedAt: findLastUserMessage(input.messages)?.createdAt,
             activityLabel: resolveStreamingActivityLabel(turnMessages),
             ...turnProgress,
@@ -89,6 +172,7 @@ export function buildConversationListMetrics(
     return {
         ...diff,
         hasGitOperation,
+        ...(lastGitActionKind ? { lastGitActionKind } : {}),
         lastTurnDurationMs: resolveLastTurnDurationMs(input.messages),
     };
 }
