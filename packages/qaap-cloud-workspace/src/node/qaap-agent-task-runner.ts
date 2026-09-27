@@ -65,6 +65,7 @@ import {
     changedSensitiveFiles as changedSensitiveFilesHelper,
 } from './qaap-agent-task-runner-utils';
 import { parseCustomAgent as parseCustomAgentHelper, maxConcurrentAgents as maxConcurrentAgentsHelper, maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper, maxConcurrentAgentsPerRepo as maxConcurrentAgentsPerRepoHelper, buildRepoTree as buildRepoTreeHelper, buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper, readGitStatusSnapshot as readGitStatusSnapshotHelper, captureWorktreeStatus as captureWorktreeStatusHelper, captureWorktreeFingerprint as captureWorktreeFingerprintHelper, resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper, appendBoundedCommandOutput as appendBoundedCommandOutputHelper, readUserSettingsFromDisk as readUserSettingsFromDiskHelper, preferenceReaderForOwner as preferenceReaderForOwnerHelper, stripSharedProviderEnv as stripSharedProviderEnvHelper, } from './qaap-agent-task-runner-utils2';
+import { QaapGitExecConfigChecker } from './qaap-git-exec-config-checker';
 import {
     readRelevantFiles as readRelevantFilesHelper,
     reapAgentProcessGroupAfterExit as reapAgentProcessGroupAfterExitHelper,
@@ -1028,6 +1029,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * above the explicit byte budget return undefined so callers can use the porcelain baseline
      * instead of a bare "any dirty path" probe.
      */
+    protected gitExecConfigChecker: QaapGitExecConfigChecker | undefined;
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules (read-only shell auto-approval). */
+    public checkGitExecConfig(cwd: string): string | undefined {
+        this.gitExecConfigChecker ??= new QaapGitExecConfigChecker(this.readGitSync.bind(this));
+        return this.gitExecConfigChecker.check(cwd);
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public captureWorktreeFingerprint(cwd: string): string | undefined {
         return captureWorktreeFingerprintHelper(cwd, this.readGitSync.bind(this));
