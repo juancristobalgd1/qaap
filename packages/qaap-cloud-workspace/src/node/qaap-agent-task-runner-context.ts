@@ -41,6 +41,7 @@ import type { QaapWebPushService } from './qaap-web-push-service';
 import type { QaapBillingStore } from './qaap-billing-store';
 import type { QaapAgentHealthTracker } from './qaap-agent-health';
 import type { QaapObservability } from './qaap-observability';
+import type { QaapAgentHookService } from './qaap-agent-hook-service';
 import type { QaapAgentStdinPrompt } from './qaap-agent-task-runner-utils';
 import type { AgentCandidate, QaapGenericCommandResult } from './qaap-agent-task-runner-constants';
 
@@ -85,6 +86,8 @@ export interface QaapAgentTaskRunnerContext {
     readonly agentHealth: QaapAgentHealthTracker | undefined;
     readonly observability: QaapObservability | undefined;
     readonly tenantSpawn: QaapTenantSpawnService;
+    /** Qaap-level lifecycle hooks; optional so bare test harnesses keep the old behaviour. */
+    readonly agentHooks?: QaapAgentHookService;
 
     // ─── State maps / sets / scalars ────────────────────────────────────────
     readonly tasks: Map<string, QaapAgentTask>;
@@ -255,6 +258,8 @@ export interface QaapAgentTaskRunnerContext {
     restoreBaselineSensitiveFiles(task: QaapAgentTask): string[];
     captureWorktreeStatus(cwd: string): string | undefined;
     captureWorktreeFingerprint(cwd: string): string | undefined;
+    /** Reason when the effective git config in `cwd` could make git run a program; `undefined` when safe. */
+    checkGitExecConfig(cwd: string): string | undefined;
     resolveVerificationScriptsForCwd(cwd: string): Promise<string[]>;
     runVerificationScripts(
         task: QaapAgentTask,

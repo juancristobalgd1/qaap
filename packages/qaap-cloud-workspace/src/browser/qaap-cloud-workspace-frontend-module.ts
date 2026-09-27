@@ -19,6 +19,7 @@ import { QaapHubChatSyncContribution } from './qaap-hub-chat-sync-contribution';
 import { QaapMissionUndoContribution } from './qaap-mission-undo-contribution';
 import { QaapWorkspaceIsolationContribution } from './qaap-workspace-isolation-contribution';
 import { QaapTenantRuntimeUiContribution } from './qaap-tenant-runtime-ui-contribution';
+import { QaapAgentHooksTrustContribution } from './qaap-agent-hooks-trust-contribution';
 import {
     WorkspaceHandlingContribution,
     WorkspaceOpenHandlerContribution,
@@ -58,4 +59,7 @@ export default new ContainerModule(bind => {
 
     bind(QaapTenantRuntimeUiContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapTenantRuntimeUiContribution);
+
+    bind(QaapAgentHooksTrustContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapAgentHooksTrustContribution);
 });

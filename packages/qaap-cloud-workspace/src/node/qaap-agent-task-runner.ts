@@ -32,6 +32,8 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
 import { type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
@@ -65,6 +67,7 @@ import {
     changedSensitiveFiles as changedSensitiveFilesHelper,
 } from './qaap-agent-task-runner-utils';
 import { parseCustomAgent as parseCustomAgentHelper, maxConcurrentAgents as maxConcurrentAgentsHelper, maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper, maxConcurrentAgentsPerRepo as maxConcurrentAgentsPerRepoHelper, buildRepoTree as buildRepoTreeHelper, buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper, readGitStatusSnapshot as readGitStatusSnapshotHelper, captureWorktreeStatus as captureWorktreeStatusHelper, captureWorktreeFingerprint as captureWorktreeFingerprintHelper, resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper, appendBoundedCommandOutput as appendBoundedCommandOutputHelper, readUserSettingsFromDisk as readUserSettingsFromDiskHelper, preferenceReaderForOwner as preferenceReaderForOwnerHelper, stripSharedProviderEnv as stripSharedProviderEnvHelper, } from './qaap-agent-task-runner-utils2';
+import { QaapGitExecConfigChecker } from './qaap-git-exec-config-checker';
 import {
     readRelevantFiles as readRelevantFilesHelper,
     reapAgentProcessGroupAfterExit as reapAgentProcessGroupAfterExitHelper,
@@ -1028,6 +1031,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * above the explicit byte budget return undefined so callers can use the porcelain baseline
      * instead of a bare "any dirty path" probe.
      */
+    protected gitExecConfigChecker: QaapGitExecConfigChecker | undefined;
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules (read-only shell auto-approval). */
+    public checkGitExecConfig(cwd: string): string | undefined {
+        this.gitExecConfigChecker ??= new QaapGitExecConfigChecker(this.readGitSync.bind(this));
+        return this.gitExecConfigChecker.check(cwd);
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public captureWorktreeFingerprint(cwd: string): string | undefined {
         return captureWorktreeFingerprintHelper(cwd, this.readGitSync.bind(this));
@@ -1106,6 +1117,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     @inject(QaapTenantSpawnService)
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly tenantSpawn: QaapTenantSpawnService;
+
+    /** Qaap-level lifecycle hooks (doc/qaap-agent-hooks.md); optional for bare test harnesses. */
+    @inject(QaapAgentHookService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly agentHooks: QaapAgentHookService | undefined;
 
     /** @see QaapTenantSpawnService.enforceIsolationPolicy — throws to fail the spawn when refused. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1239,8 +1255,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
+        const previousState = this.tasks.get(id)?.state;
         const task = finishTaskExtracted(this, id, state, exitCode);
         this.releaseTenantOperation(id);
+        if (task) {
+            fireStopAgentHook(this, task, previousState, state);
+        }
         return task;
     }
 
