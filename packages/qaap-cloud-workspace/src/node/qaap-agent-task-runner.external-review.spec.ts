@@ -20,12 +20,12 @@ class TestableRunner extends QaapAgentTaskRunner {
         return this.reviewSuccessfulAgentTask(task, undefined);
     }
 
-    protected override isTaskStillRunning(): boolean {
+    public override isTaskStillRunning(): boolean {
         return true;
     }
 
     /** First step past the externalReview guard; counting it proves whether the guard fired. */
-    protected override resolveTaskAgentId(task: QaapAgentTask): string {
+    public override resolveTaskAgentId(task: QaapAgentTask): string {
         this.reachedAgentResolution++;
         return super.resolveTaskAgentId(task);
     }
@@ -52,7 +52,7 @@ class RoutingRunner extends QaapAgentTaskRunner {
     override listAgents(): { id: string; label: string; available: boolean }[] {
         return this.installed.map(id => ({ id, label: id, available: true }));
     }
-    protected override resolveTaskAgentId(): string {
+    public override resolveTaskAgentId(): string {
         return 'qaiq';
     }
     candidates(task: QaapAgentTask): string[] {

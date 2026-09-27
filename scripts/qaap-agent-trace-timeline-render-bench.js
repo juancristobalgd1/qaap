@@ -19,15 +19,15 @@ const {
 const {
     fingerprintTranscriptTimelineSync,
     TRANSCRIPT_TIMELINE_SYNC_FP_ATTR,
-} = require('../packages/qaap-mobile-shell/lib/common/qaap-transcript-timeline-sync-fingerprint');
+} = require('../packages/qaap-transcript/lib/common/qaap-transcript-timeline-sync-fingerprint');
 const {
     resolveTranscriptTimelineVisibilityPolicy,
-} = require('../packages/qaap-mobile-shell/lib/common/qaap-transcript-timeline-visibility');
+} = require('../packages/qaap-transcript/lib/common/qaap-transcript-timeline-visibility');
 const {
     readTranscriptTimelineExpandState,
     resolveTranscriptTimelineRenderWindowWithExpand,
-} = require('../packages/qaap-mobile-shell/lib/common/qaap-transcript-timeline-gap-expand');
-const { TRANSCRIPT_TIMELINE_VIRTUALIZE_THRESHOLD } = require('../packages/qaap-mobile-shell/lib/common/qaap-transcript-timeline-window');
+} = require('../packages/qaap-transcript/lib/common/qaap-transcript-timeline-gap-expand');
+const { TRANSCRIPT_TIMELINE_VIRTUALIZE_THRESHOLD } = require('../packages/qaap-transcript/lib/common/qaap-transcript-timeline-window');
 
 const TOOL_COUNT = 55;
 const SSE_TICKS = 600;

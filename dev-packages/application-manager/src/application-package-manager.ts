@@ -133,7 +133,11 @@ export class ApplicationPackageManager {
         await this.copyQaapLoginGateScript();
     }
 
-    /** Copy Qaap pre-bundle auth gate whenever the app depends on @theia/qaap-product. */
+    /**
+     * Copy Qaap pre-bundle auth gate and legal pages whenever the app depends on
+     * `@theia/qaap-product`. The backend webpack bundle cannot resolve `resources/` via
+     * `__dirname`, so these files must live under `lib/frontend`.
+     */
     protected async copyQaapLoginGateScript(): Promise<void> {
         const deps = this.pck.pck.dependencies ?? {};
         if (!('@theia/qaap-product' in deps)) {
@@ -145,6 +149,10 @@ export class ApplicationPackageManager {
             const gateSource = path.join(qaapProductRoot, 'resources', 'qaap-login-gate.js');
             if (await fs.pathExists(gateSource)) {
                 await fs.copy(gateSource, this.pck.lib('frontend', 'qaap-login-gate.js'));
+            }
+            const legalSource = path.join(qaapProductRoot, 'resources', 'legal');
+            if (await fs.pathExists(legalSource)) {
+                await fs.copy(legalSource, this.pck.lib('frontend', 'legal'));
             }
         } catch {
             /* optional product layer */

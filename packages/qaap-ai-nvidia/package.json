@@ -13,7 +13,8 @@
   },
   "theiaExtensions": [
     {
-      "frontend": "lib/browser/nvidia-frontend-module"
+      "frontend": "lib/browser/nvidia-frontend-module",
+      "backend": "lib/node/nvidia-backend-module"
     }
   ],
   "keywords": [

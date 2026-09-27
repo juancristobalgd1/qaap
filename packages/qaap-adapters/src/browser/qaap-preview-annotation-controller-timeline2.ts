@@ -1,57 +1,14 @@
-// @ts-nocheck
+import type { QaapPreviewAnnotationControllerContext } from './qaap-preview-annotation-controller-context';
 // Extracted from qaap-preview-annotation-controller.ts
 
-import { CommandRegistry } from '@theia/core/lib/common/command';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { generateUuid } from '@theia/core/lib/common/uuid';
 import {
-    ELEMENT_ANNOTATION_CANCEL_TYPE,
-    ELEMENT_ANNOTATION_POINT_TYPE,
-    ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE,
-    ELEMENT_ANNOTATION_REANCHOR_TYPE,
-    ELEMENT_SET_MODE_TYPE,
-    type AnnotationPointPayload,
-    type AnnotationReanchorResultItem,
-    type PreviewInteractionMode,
-} from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
-import { guessSourceLocationFromElement } from '@theia/qaap-element-inspector/lib/browser/qaap-element-inspector-source-map';
-import type { PickedElement } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
-import {
-    buildAnnotateChatAttachArgs,
-    QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
-    type PreviewAnnotationChatImageAttachment,
-} from './qaap-preview-annotation-context';
-import { mountPreviewAnnotationMarkers, type AnnotationMarkerPosition, type PreviewAnnotationMarkersHandle } from './qaap-preview-annotation-markers';
-import {
-    mountAnnotationCommentPopover,
-    type AnnotationCommentPopoverHandle,
-    type AnnotationComposerSessionControls,
-    type AnnotationPopoverElementRef,
-    type AnnotationPopoverPendingImage,
-} from './qaap-preview-annotation-popover';
-import {
-    createPreviewAnnotation,
-    isBlankAnnotationComment,
-    PreviewAnnotationStore,
-} from './qaap-preview-annotation-store';
-import {
-    listPreviewAnnotationElements,
-    previewAnnotationElementKey,
-    type PreviewAnnotation,
-    type PreviewAnnotationElementMeta,
     type PreviewAnnotationScope,
 } from './qaap-preview-annotation-types';
-import {
-    blobToBase64,
-    captureSameOriginPreview,
-    previewNotify,
-    writePngBlobToClipboard,
-} from './qaap-preview-overflow-actions';
 import { createHoldToSeeOriginalIcon } from './qaap-preview-annotation-controller';
 
-export function ensureAnnotateToolbarExtracted(ctx: any): void {
+export function ensureAnnotateToolbarExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         if (ctx.annotateToolbar) {
             return;
         }
@@ -252,7 +209,7 @@ export function ensureAnnotateToolbarExtracted(ctx: any): void {
         ctx.syncAnnotateToolbar();
 }
 
-export function syncAnnotateToolbarExtracted(ctx: any): void {
+export function syncAnnotateToolbarExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         const active = ctx.mode === 'annotate';
         if (!active) {
             ctx.setComparingOriginal(false);
@@ -298,7 +255,7 @@ export function syncAnnotateToolbarExtracted(ctx: any): void {
         }
 }
 
-export function countReadyAnnotationsExtracted(ctx: any, scope: PreviewAnnotationScope): number {
+export function countReadyAnnotationsExtracted(ctx: QaapPreviewAnnotationControllerContext, scope: PreviewAnnotationScope): number {
         // Mirror addAnnotationsToChat: Send covers every confirmed annotation of the
         // conversation, so the badge/enabled state must count the same set.
         return ctx.listConfirmedForConversation(scope).length;

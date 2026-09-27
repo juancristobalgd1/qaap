@@ -28,6 +28,10 @@ class TestableGoogleManager extends GoogleLanguageModelsManagerImpl {
         return this.deriveReasoningApi(modelId, info);
     }
 
+    public callShouldFetchModelMetadata(): boolean {
+        return this.shouldFetchModelMetadata();
+    }
+
     public callFetchModelInfo(
         desc: GoogleModelDescription,
         apiKey: string | undefined
@@ -179,5 +183,33 @@ describe('GoogleLanguageModelsManagerImpl - fetchModelInfo cache', () => {
         expect(r1).to.equal(expectedInfo);
         expect(r2).to.equal(expectedInfo);
         expect(manager.retrieveCalls).to.deep.equal(['gemini-3-pro']);
+    });
+});
+
+describe('GoogleLanguageModelsManagerImpl - metadata startup policy', () => {
+    let manager: TestableGoogleManager;
+    let previousSetting: string | undefined;
+
+    beforeEach(() => {
+        manager = new TestableGoogleManager();
+        previousSetting = process.env.QAAP_GOOGLE_MODEL_METADATA;
+        delete process.env.QAAP_GOOGLE_MODEL_METADATA;
+    });
+
+    afterEach(() => {
+        if (previousSetting === undefined) {
+            delete process.env.QAAP_GOOGLE_MODEL_METADATA;
+        } else {
+            process.env.QAAP_GOOGLE_MODEL_METADATA = previousSetting;
+        }
+    });
+
+    it('keeps metadata probing disabled by default', () => {
+        expect(manager.callShouldFetchModelMetadata()).to.equal(false);
+    });
+
+    it('allows metadata probing only through an explicit opt-in', () => {
+        process.env.QAAP_GOOGLE_MODEL_METADATA = 'true';
+        expect(manager.callShouldFetchModelMetadata()).to.equal(true);
     });
 });

@@ -1,0 +1,416 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { nls } from '@theia/core/lib/common/nls';
+import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
+import { ChatMode } from '@theia/ai-chat';
+import type {
+    QaapAgentConversationSummaryDTO,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import {
+    isTheiaCoderAgent,
+    agentUsesSettingsModelCatalog,
+    migrateLegacyBackendAgentId,
+    QAAP_PRIMARY_AGENT_ID,
+    readStoredAgent,
+    readStoredAgentModel,
+    agentSupportsModelPicker,
+    THEIA_CODER_AGENT_ID,
+    writeStoredAgent,
+    writeStoredAgentModel,
+    type QaapAgentTaskAgentOption,
+    type QaapCreateAgentTaskQaiqModel,
+    type QaapQaiqModelOption,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import {
+    reconcileComposerModeId,
+    resolveStickyComposerModes,
+    writeStoredComposerMode,
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
+import {
+    reconcileAgentApprovalPolicyId,
+    writeStoredAgentApprovalPolicy,
+    type QaapAgentApprovalPolicyId,
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import {
+    reconcileAgentToolApprovalRules,
+    writeStoredAgentToolApprovalRules,
+    type QaapAgentToolApprovalRules,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
+import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
+
+export interface ComposerAgentPickerChrome {
+    readonly sheet: HTMLElement;
+    readonly header: HTMLElement;
+    readonly title: HTMLElement;
+    readonly backBtn: HTMLButtonElement;
+    readonly list: HTMLElement;
+}
+
+/** Panel surface for transcript overlay composer sheets and agent resolution. */
+export interface MobileProjectsTranscriptComposerHost {
+    transcriptComposerAgentSheet: HTMLElement | undefined;
+    transcriptComposerQaiqModelSheet: HTMLElement | undefined;
+    transcriptComposerModeSheet: HTMLElement | undefined;
+    transcriptComposerApprovalSheet: HTMLElement | undefined;
+    stickyComposerWorkspaceSheet: HTMLElement | undefined;
+    transcriptComposerPinnedAgentId: string | undefined;
+    transcriptComposerAgentModel: QaapCreateAgentTaskQaiqModel | undefined;
+    transcriptComposerModeId: string | undefined;
+    transcriptComposerPrefsConvId: string | undefined;
+    transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
+    transcriptComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
+    transcriptComposerBackendAgents: QaapAgentTaskAgentOption[];
+    transcriptComposerQaiqModels: QaapQaiqModelOption[];
+    transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
+    transcriptOpenProject: MobileProjectEntry | undefined;
+    transcriptComposerSendRefresh: (() => void) | undefined;
+    preparedCwdByProjectId: ReadonlyMap<string, string>;
+    projectsService: MobileProjectsService;
+    chatAgentService?: ChatAgentService;
+    activeTasks?: MobileProjectsActiveTasks;
+    openAgentSignInTerminal?(agentId?: string, project?: MobileProjectEntry): void | Promise<void>;
+    openPreferencesSheet?(query?: string): Promise<void>;
+    transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
+    stickyComposerSheetsUi: MobileProjectsStickyComposerSheetsUi;
+    stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
+    stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
+
+    loadBackendAgentSnapshot(): Promise<{
+        agents: QaapAgentTaskAgentOption[];
+        qaiqModels: QaapQaiqModelOption[];
+        defaultAgent?: string;
+    }>;
+    resolveConversationAgentLabel(summary: QaapAgentConversationSummaryDTO | undefined): string;
+    projectRowsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
+}
+
+/** Transcript sticky-composer agent/mode/approval sheets and backend agent list refresh. */
+export class MobileProjectsTranscriptComposerUi {
+    constructor(protected readonly host: MobileProjectsTranscriptComposerHost) { }
+
+    async ensureTranscriptComposerAgentsLoaded(
+        project: MobileProjectEntry,
+        options?: { force?: boolean },
+    ): Promise<readonly QaapAgentTaskAgentOption[]> {
+        if (options?.force || this.host.transcriptComposerBackendAgents.length === 0) {
+            const loaded = await this.refreshTranscriptComposerAgents(project);
+            if (!loaded) {
+                throw new Error('Agent catalog unavailable');
+            }
+        }
+        return this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(this.host.transcriptComposerBackendAgents);
+    }
+
+    resolveTranscriptComposerPinnedAgentId(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): string {
+        if (summary.source === 'theia-chat') {
+            return QAAP_PRIMARY_AGENT_ID;
+        }
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+        if (this.host.transcriptComposerPinnedAgentId) {
+            const explicit = this.host.transcriptComposerPinnedAgentId;
+            if (explicit !== 'task' && !isTheiaCoderAgent(explicit)) {
+                return agentUsesSettingsModelCatalog(explicit) ? QAAP_PRIMARY_AGENT_ID : explicit;
+            }
+        }
+        const summaryAgent = isAgentsHubIdleConversationSummary(summary)
+            ? undefined
+            : migrateLegacyBackendAgentId(summary.agentId);
+        const pinned = this.host.transcriptComposerPinnedAgentId
+            ?? summaryAgent
+            ?? readStoredAgent(cwd);
+        if (pinned && pinned !== 'task' && !isTheiaCoderAgent(pinned)) {
+            return agentUsesSettingsModelCatalog(pinned) ? QAAP_PRIMARY_AGENT_ID : pinned;
+        }
+        return this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
+            this.host.transcriptComposerBackendAgents,
+        )[0]?.id ?? '';
+    }
+
+    resolveTranscriptComposerAgentLabel(): string {
+        const pinned = this.host.transcriptComposerPinnedAgentId;
+        if (isTheiaCoderAgent(pinned)) {
+            return this.host.chatAgentService?.getAgent(THEIA_CODER_AGENT_ID)?.name ?? 'Coder';
+        }
+        const fromList = this.host.transcriptComposerBackendAgents.find(a => a.id === pinned)?.label;
+        if (fromList) {
+            return fromList;
+        }
+        return this.host.projectRowsUi.resolveConversationAgentLabel(this.host.transcriptComposerSummary);
+    }
+
+    resolveTranscriptComposerAgentModel(
+        agentId: string,
+        cwd: string | undefined,
+    ): QaapCreateAgentTaskQaiqModel | undefined {
+        if (!agentSupportsModelPicker(agentId)) {
+            return undefined;
+        }
+        const summaryId = this.host.transcriptComposerSummary?.id;
+        if (summaryId && this.host.transcriptComposerPrefsConvId === summaryId) {
+            const fromMemory = this.host.transcriptComposerAgentModel;
+            if (fromMemory?.modelId) {
+                return fromMemory;
+            }
+        }
+        return readStoredAgentModel(cwd, agentId);
+    }
+
+    async refreshTranscriptComposerAgents(project: MobileProjectEntry): Promise<boolean> {
+        this.host.activeTasks?.start();
+        const cwd = this.host.projectsService.getProjectCwd(project)
+            ?? this.host.transcriptComposerSummary?.cwd
+            ?? this.host.preparedCwdByProjectId.get(project.id);
+        try {
+            const snapshot = await this.host.loadBackendAgentSnapshot();
+            let pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(snapshot.agents);
+            let filteredAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(pickerAgents);
+            if (filteredAgents.length === 0) {
+                await this.host.stickyComposerAgentsUi.waitForSelectableActiveTaskAgents(3000);
+                const liveAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
+                    this.host.activeTasks?.getAgents() ?? [],
+                );
+                if (liveAgents.length > 0) {
+                    filteredAgents = liveAgents;
+                    pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents([
+                        ...pickerAgents,
+                        ...liveAgents,
+                    ]);
+                }
+            }
+            this.host.transcriptComposerBackendAgents = pickerAgents;
+            this.host.transcriptComposerQaiqModels = snapshot.qaiqModels;
+            const resolved = this.host.stickyComposerAgentsUi.reconcileStickyComposerPinnedAgent(
+                this.host.transcriptComposerPinnedAgentId ?? readStoredAgent(cwd),
+                filteredAgents,
+                snapshot.defaultAgent,
+                cwd,
+            );
+            const modelBefore = resolved ? this.resolveTranscriptComposerAgentModel(resolved, cwd) : undefined;
+            const selection = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentSelection(
+                resolved,
+                filteredAgents,
+                cwd,
+                snapshot.qaiqModels,
+            );
+            const effectiveResolved = selection?.agentId ?? resolved;
+            const agentChanged = this.host.transcriptComposerPinnedAgentId !== effectiveResolved;
+            const modelAfter = selection?.model
+                ?? (effectiveResolved ? this.resolveTranscriptComposerAgentModel(effectiveResolved, cwd) : undefined);
+            if (selection && selection.agentId !== resolved && cwd) {
+                writeStoredAgent(cwd, selection.agentId);
+            }
+            if (agentChanged || modelBefore?.modelId !== modelAfter?.modelId) {
+                this.host.transcriptComposerPinnedAgentId = effectiveResolved;
+                this.host.transcriptComposerAgentModel = modelAfter;
+                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+            }
+            return true;
+        } catch {
+            await this.host.stickyComposerAgentsUi.waitForSelectableActiveTaskAgents(1500);
+            this.host.transcriptComposerBackendAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(
+                this.host.activeTasks?.getAgents() ?? [],
+            );
+            this.host.transcriptComposerQaiqModels = [];
+            return this.host.transcriptComposerBackendAgents.length > 0;
+        }
+    }
+
+    openTranscriptComposerApprovalPolicySheet(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        agentLabel: string,
+        anchor?: HTMLElement,
+    ): void {
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+        this.host.stickyComposerSheetsUi.openApprovalPolicySheet({
+            agentLabel,
+            cwd,
+            anchor,
+            transcriptOverlay: true,
+            selectedId: reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, cwd),
+            isOpen: () => this.host.transcriptComposerApprovalSheet !== undefined,
+            onSelect: policyId => {
+                this.host.transcriptComposerApprovalPolicyId = policyId;
+                this.host.transcriptComposerToolApprovalRules = reconcileAgentToolApprovalRules(
+                    policyId,
+                    cwd,
+                    this.host.transcriptComposerToolApprovalRules,
+                );
+                if (cwd) {
+                    writeStoredAgentApprovalPolicy(cwd, policyId);
+                    writeStoredAgentToolApprovalRules(cwd, this.host.transcriptComposerToolApprovalRules);
+                }
+                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
+                this.closeAllComposerSheets();
+                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+            },
+            onClose: () => this.closeAllComposerSheets(),
+            assignSheet: sheet => { this.host.transcriptComposerApprovalSheet = sheet; },
+        });
+    }
+
+    openTranscriptComposerAgentSheet(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        anchor?: HTMLElement,
+        options?: { readonly onSelectionApplied?: () => void },
+    ): void {
+        if (summary.source === 'theia-chat') {
+            return;
+        }
+        const usePopover = this.host.stickyComposerSheetsUi.shouldUseAgentPickerPopover(anchor);
+        if (usePopover
+            && this.host.stickyComposerSheetsUi.isAgentPickerPopoverAnchoredTo(anchor)
+            && this.host.transcriptComposerAgentSheet) {
+            this.closeAllComposerSheets();
+            return;
+        }
+        this.closeAllComposerSheets();
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+        const onClose = (): void => { this.closeAllComposerSheets(); };
+        const chrome = this.host.stickyComposerSheetsUi.createComposerAgentPickerChrome({
+            closeTitle: nls.localize('qaap/mobileProjects/closeTranscript', 'Close'),
+            onClose,
+            anchor,
+            transcriptOverlay: true,
+        });
+        document.body.append(chrome.sheet);
+        this.host.transcriptComposerAgentSheet = chrome.sheet;
+        if (this.host.stickyComposerSheetsUi.shouldUseAgentPickerPopover(anchor)) {
+            this.host.stickyComposerSheetsUi.assignAgentPickerPopover(anchor, chrome.popoverCleanup);
+            this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
+        }
+        const loadAgentCatalog = (): void => {
+            this.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
+            this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
+            void this.ensureTranscriptComposerAgentsLoaded(project, { force: true }).then(agents => {
+                if (this.host.transcriptComposerAgentSheet !== chrome.sheet) {
+                    return;
+                }
+                void this.host.stickyComposerSheetsUi.renderComposerAgentPicker(chrome, {
+                view: 'agents',
+                cwd,
+                agents,
+                selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
+                includeCoder: true,
+                project,
+                onSelectAgent: (agentId, model) => {
+                    this.host.transcriptComposerPinnedAgentId = agentId;
+                    this.host.transcriptComposerPrefsConvId = summary.id;
+                    void (async (): Promise<void> => {
+                        let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
+                            ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
+                            : undefined;
+                        if (cwd) {
+                            writeStoredAgent(cwd, agentId);
+                            if (model) {
+                                writeStoredAgentModel(cwd, agentId, model);
+                            } else {
+                                resolvedModel = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+                            }
+                        }
+                        this.host.transcriptComposerAgentModel = resolvedModel;
+                        const modes = resolveStickyComposerModes(agentId, this.host.chatAgentService);
+                        this.host.transcriptComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
+                        if (cwd && this.host.transcriptComposerModeId) {
+                            writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
+                        }
+                        this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
+                        this.closeAllComposerSheets();
+                        this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                        options?.onSelectionApplied?.();
+                    })();
+                },
+                onProactiveLogin: this.host.openAgentSignInTerminal
+                    ? (agentId, pickerProject) => {
+                        this.closeAllComposerSheets();
+                        void this.host.openAgentSignInTerminal?.(agentId, pickerProject);
+                    }
+                    : undefined,
+                onOpenAiFeaturesSettings: this.host.openPreferencesSheet
+                    ? () => {
+                        this.closeAllComposerSheets();
+                        void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
+                    }
+                    : undefined,
+                });
+            }).catch(() => {
+                if (this.host.transcriptComposerAgentSheet === chrome.sheet) {
+                    this.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog);
+                }
+            });
+        };
+        loadAgentCatalog();
+    }
+
+    openTranscriptComposerModeSheet(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        modes: readonly ChatMode[],
+        anchor?: HTMLElement,
+    ): void {
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+        this.host.stickyComposerSheetsUi.openComposerModeSheet({
+            modes,
+            selectedModeId: this.host.transcriptComposerModeId,
+            cwd,
+            anchor,
+            transcriptOverlay: true,
+            closeTitle: nls.localize('qaap/mobileProjects/closeTranscript', 'Close'),
+            onClose: () => this.closeAllComposerSheets(),
+            isOpen: () => this.host.transcriptComposerModeSheet !== undefined,
+            assignSheet: sheet => { this.host.transcriptComposerModeSheet = sheet; },
+            onSelect: id => {
+                this.host.transcriptComposerModeId = id;
+                if (cwd) {
+                    writeStoredComposerMode(cwd, id);
+                }
+                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
+                this.closeAllComposerSheets();
+                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+            },
+        });
+    }
+
+    closeTranscriptComposerSheets(): void {
+        this.host.stickyComposerSheetsUi.teardownAgentPickerPopover();
+        this.host.stickyComposerSheetsUi.teardownModeSheetPopover();
+        this.host.stickyComposerSheetsUi.teardownApprovalPolicySheetPopover();
+        if (this.host.transcriptComposerAgentSheet) {
+            this.host.transcriptComposerAgentSheet.remove();
+            this.host.transcriptComposerAgentSheet = undefined;
+        }
+        if (this.host.transcriptComposerQaiqModelSheet) {
+            this.host.transcriptComposerQaiqModelSheet.remove();
+            this.host.transcriptComposerQaiqModelSheet = undefined;
+        }
+        if (this.host.transcriptComposerModeSheet) {
+            this.host.transcriptComposerModeSheet.remove();
+            this.host.transcriptComposerModeSheet = undefined;
+        }
+        if (this.host.transcriptComposerApprovalSheet) {
+            this.host.transcriptComposerApprovalSheet.remove();
+            this.host.transcriptComposerApprovalSheet = undefined;
+        }
+        if (this.host.stickyComposerWorkspaceSheet) {
+            this.host.stickyComposerWorkspaceUi.closeComposerWorkspaceSheet();
+        }
+    }
+
+    closeAllComposerSheets(): void {
+        this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+        this.closeTranscriptComposerSheets();
+    }
+}

@@ -19,9 +19,9 @@ import {
     guessElementComponentPath,
 } from './qaap-element-inspector-dom-utils';
 
-/** Keep in sync with `@theia/qaap-mobile-shell` {@link QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND}. */
+/** Keep in sync with `@theia/qaap-composer` {@link QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND}. */
 const QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND = 'qaap.workHub.submitComposerPrompt';
-/** Keep in sync with `@theia/qaap-mobile-shell` {@link QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND}. */
+/** Keep in sync with `@theia/qaap-composer` {@link QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND}. */
 const QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND = 'qaap.workHub.openParallelRunsSheet';
 
 export const ELEMENT_INSPECTOR_TOGGLE_COMMAND_ID = 'theia-mini-browser.element-inspector.toggle';

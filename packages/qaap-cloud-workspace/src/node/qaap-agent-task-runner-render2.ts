@@ -1,166 +1,47 @@
-// @ts-nocheck
-import { AGENT_CANDIDATES,CUSTOM_AGENTS_ENV,DEFAULT_AGENT_PREFERENCE,ENV_AGENT_ID,HELPER_BIN_DIR,HELPER_BIN_PATH,HELPER_CLI_SOURCE,INDEX_PATH,QAIQ_AGENT_ID,SHELL_AGENT_ID,TOKEN_PATH,TOKENS_PATH } from './qaap-agent-task-runner';
+import {
+    AGENT_CANDIDATES, CUSTOM_AGENTS_ENV, DEFAULT_AGENT_PREFERENCE, ENV_AGENT_ID, HELPER_BIN_DIR, HELPER_BIN_PATH, HELPER_CLI_SOURCE, INDEX_PATH,
+    QAIQ_AGENT_ID, SHELL_AGENT_ID, TOKEN_PATH, TOKENS_PATH, type AgentCandidate, type PersistedAgentTaskIndex,
+} from './qaap-agent-task-runner-constants';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 // Extracted from qaap-agent-task-runner.ts
 
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
-import { ChildProcess, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
-import { writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
-import * as os from 'os';
+import { writeJsonAtomicSync } from './qaap-write-json-atomic';
 import * as path from 'path';
 import {
-    buildImproveComposerPromptRequest,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
-import {
-    isQaapAgentTaskFinished,
-    type QaapAgentDescriptor,
-    type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTask,
     type QaapAgentTaskCwdGroup,
     type QaapAgentTaskDetail,
-    type QaapAgentTaskEvent,
-    type QaapAgentTaskReview,
-    type QaapAgentTaskState,
-    type QaapAgentTaskVerification,
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
-import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import { rememberQaapHostedRuntime } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
-    QAAP_BUILTIN_AGENT_DEFINITIONS,
-    QAAP_BUILTIN_AGENT_IDS,
     isUiHiddenVpsAgent,
     resolveQaapBuiltinAgentMentionId,
     resolveQaapCodexTemplate,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import {
-    formatQaiqInteractionFlags,
-    type QaapQaiqInteractionFlagOptions,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
-import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { listNativeAgentModels } from './qaap-agent-native-models';
-import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
-import {
-    applyAgentApprovalPolicyToCommand,
-    shouldUseQaiqStdioApprovals,
-} from '../common/qaap-agent-approval-flags';
-import {
-    type QaapAgentReadOnlyEnforcement,
-} from '../common/qaap-agent-readonly-workspace';
-import {
-    QAIQ_STDIO_APPROVAL_FLAGS,
-    buildQaiqControlResponseLine,
-    buildQaiqStdioPromptLine,
-    parseQaiqStdioEvent,
-    type QaapQaiqPendingControlRequest,
-} from '../common/qaap-qaiq-stdio-approvals';
-import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
-import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
-import { detectEmptyAgentTurn, type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
-import {
-    buildQaiqAutoDeniedToolMessage,
-    buildQaiqQueuedApprovalTimeoutMessage,
-    resolveQaiqControlRequestAutoAction,
-} from '../common/qaap-qaiq-control-auto-response';
-import {
-    resolveAgentAutoApprove,
-} from '../common/qaap-agent-auto-approve';
-import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
-import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
-import {
-    applyQaapQaiqCredentialEnv,
-    applyQaapQaiqModelEnv,
-    bindingFromQaiqModelSelection,
-    formatQaiqProviderFlags,
-    normalizeQaiqModelBinding,
-    resolveQaapQaiqModelBinding,
-    type QaapQaiqModelBinding,
-} from '../common/qaap-qaiq-model-binding';
-import { resolveRequestAgentModel, resolveTaskAgentModel } from '../common/qaap-agent-task';
-import { resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
-import {
-    parseQaapNativeModelRoutingTable,
-    QAAP_AGENT_TASK_MODELS_ENV,
-    type QaapNativeModelRoutingTable,
-} from '../common/qaap-agent-native-model-routing';
-import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default-workflow';
-import { prependAgentTaskContextToPrompt, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
-import {
-    applyAntigravityModelSetting,
-    isAntigravityCliCommand,
-} from './qaap-antigravity-settings';
-import { QaapWebPushService } from './qaap-web-push-service';
-import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
-import { QaapAgentHealthTracker } from './qaap-agent-health';
-import { hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
-import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
-import {
-    readCodexHelp as readCodexHelpHelper,
-    isQaiqRunner as isQaiqRunnerHelper,
-    isOnPath as isOnPathHelper,
-    applyTemplateVars as applyTemplateVarsHelper,
-    shellQuote as shellQuoteHelper,
-    applyTemplate as applyTemplateHelper,
-    applyTemplateWithoutPrompt as applyTemplateWithoutPromptHelper,
-    truncateForPrompt as truncateForPromptHelper,
-    truncateHead as truncateHeadHelper,
-    loadProjectInfoFromDisk as loadProjectInfoFromDiskHelper,
-    loadAgentInstructionsFromDisk as loadAgentInstructionsFromDiskHelper,
-    readRepoMemory as readRepoMemoryHelper,
-    readResearchLedger as readResearchLedgerHelper,
-    isDirectory as isDirectoryHelper,
-    resolveQaiqProviderFlagsFromEnv as resolveQaiqProviderFlagsFromEnvHelper,
-    applyOpenRouterOpenAiCompatEnv as applyOpenRouterOpenAiCompatEnvHelper,
-    applyNvidiaOpenAiCompatEnv as applyNvidiaOpenAiCompatEnvHelper,
-    applyHuggingfaceOpenAiCompatEnv as applyHuggingfaceOpenAiCompatEnvHelper,
-    noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
-    changedSensitiveFiles as changedSensitiveFilesHelper,
-    findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
-} from './qaap-agent-task-runner-utils';
-import {
-    parseCustomAgent as parseCustomAgentHelper,
-    maxConcurrentAgents as maxConcurrentAgentsHelper,
-    maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper,
-    buildRepoTree as buildRepoTreeHelper,
-    buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper,
-    readGitStatusSnapshot as readGitStatusSnapshotHelper,
-    captureWorktreeStatus as captureWorktreeStatusHelper,
-    captureWorktreeFingerprint as captureWorktreeFingerprintHelper,
-    resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper,
-    appendBoundedCommandOutput as appendBoundedCommandOutputHelper,
-    readUserSettingsFromDisk as readUserSettingsFromDiskHelper,
-    stripSharedProviderEnv as stripSharedProviderEnvHelper,
-} from './qaap-agent-task-runner-utils2';
-import {
-    readRelevantFiles as readRelevantFilesHelper,
-    reapAgentProcessGroupAfterExit as reapAgentProcessGroupAfterExitHelper,
-    resolveProjectName as resolveProjectNameHelper,
-    listAgents as listAgentsHelper,
-    probeAgentBinOnce as probeAgentBinOnceHelper,
-    recordTaskLatencyMark as recordTaskLatencyMarkHelper,
-    reviewSuccessfulAgentTask as reviewSuccessfulAgentTaskHelper,
-    runOneShotCommand as runOneShotCommandHelper,
-    verifySuccessfulAgentTask as verifySuccessfulAgentTaskHelper,
-    QAAP_AGENT_VERIFY_MAX_ATTEMPTS,
-    QAAP_AGENT_VERIFY_WALL_CLOCK_MS,
-} from './qaap-agent-task-runner-utils3';
+import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 
-export function initExtracted(ctx: any): void {
+export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
+        rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
+        ctx.recoveryState = 'loading';
         ctx.detectAgents();
         ctx.ensureHelperCli();
         void ctx.restoreFromDisk();
 }
 
-export function ensureHelperCliExtracted(ctx: any): void {
+export function ensureHelperCliExtracted(ctx: QaapAgentTaskRunnerContext): void {
         try {
             fs.mkdirSync(path.dirname(TOKEN_PATH), { recursive: true });
             ctx.loadHelperTokens();
@@ -171,7 +52,7 @@ export function ensureHelperCliExtracted(ctx: any): void {
         }
 }
 
-export function loadHelperTokensExtracted(ctx: any): void {
+export function loadHelperTokensExtracted(ctx: QaapAgentTaskRunnerContext): void {
         try {
             const raw = fs.readFileSync(TOKENS_PATH, 'utf8');
             const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -185,7 +66,7 @@ export function loadHelperTokensExtracted(ctx: any): void {
         }
 }
 
-export function persistHelperTokensExtracted(ctx: any): void {
+export function persistHelperTokensExtracted(ctx: QaapAgentTaskRunnerContext): void {
         try {
             const obj: Record<string, string> = {};
             for (const [owner, token] of ctx.helperTokens) {
@@ -197,7 +78,7 @@ export function persistHelperTokensExtracted(ctx: any): void {
         }
 }
 
-export function helperTokenForOwnerExtracted(ctx: any, ownerLogin?: string): string {
+export function helperTokenForOwnerExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): string {
         const key = ownerLogin?.trim() ?? '';
         let token = ctx.helperTokens.get(key);
         if (!token) {
@@ -208,7 +89,7 @@ export function helperTokenForOwnerExtracted(ctx: any, ownerLogin?: string): str
         return token;
 }
 
-export function resolveHelperTokenOwnerExtracted(ctx: any, presented: string | undefined): { ownerLogin: string | undefined } | undefined {
+export function resolveHelperTokenOwnerExtracted(ctx: QaapAgentTaskRunnerContext, presented: string | undefined): { ownerLogin: string | undefined } | undefined {
         if (!presented) {
             return undefined;
         }
@@ -229,13 +110,14 @@ export function resolveHelperTokenOwnerExtracted(ctx: any, presented: string | u
         return undefined;
 }
 
-export function detectAgentsExtracted(ctx: any): void {
+export function detectAgentsExtracted(ctx: QaapAgentTaskRunnerContext): void {
         for (const candidate of AGENT_CANDIDATES) {
             if (ctx.isCandidateAvailable(candidate)) {
                 ctx.detectedAgents.set(candidate.id, candidate);
             }
         }
         ctx.detectAntigravityAgent();
+        ctx.detectCursorAgent();
         ctx.detectCodexAgent();
         ctx.detectQaiqAgent();
         for (const candidate of ctx.readCustomAgents()) {
@@ -246,7 +128,7 @@ export function detectAgentsExtracted(ctx: any): void {
         ctx.logDetectedAgents();
 }
 
-export function logDetectedAgentsExtracted(ctx: any): void {
+export function logDetectedAgentsExtracted(ctx: QaapAgentTaskRunnerContext): void {
         const ids = [...ctx.detectedAgents.keys()];
         console.log(`[qaap-agent-tasks] detected agents: ${ids.length ? ids.join(', ') : '(none — install qaiq/openclaude or set QAAP_AGENT_COMMAND)'}`);
         if (!ctx.detectedAgents.has(QAIQ_AGENT_ID)) {
@@ -263,7 +145,7 @@ export function logDetectedAgentsExtracted(ctx: any): void {
         }
 }
 
-export function resolveAntigravityBinExtracted(ctx: any): string | undefined {
+export function resolveAntigravityBinExtracted(ctx: QaapAgentTaskRunnerContext): string | undefined {
         if (ctx.isOnPath('agy')) {
             return 'agy';
         }
@@ -276,7 +158,7 @@ export function resolveAntigravityBinExtracted(ctx: any): string | undefined {
         return undefined;
 }
 
-export function detectAntigravityAgentExtracted(ctx: any): void {
+export function detectAntigravityAgentExtracted(ctx: QaapAgentTaskRunnerContext): void {
         const bin = ctx.resolveAntigravityBin();
         if (!bin) {
             return;
@@ -292,14 +174,37 @@ export function detectAntigravityAgentExtracted(ctx: any): void {
         });
 }
 
-export function resolveQaiqBinExtracted(ctx: any): string | undefined {
+export function resolveCursorAgentBinExtracted(ctx: QaapAgentTaskRunnerContext): string | undefined {
+        if (ctx.isOnPath('cursor-agent')) {
+            return 'cursor-agent';
+        }
+        if (ctx.isOnPath('agent')) {
+            return 'agent';
+        }
+        return undefined;
+}
+
+export function detectCursorAgentExtracted(ctx: QaapAgentTaskRunnerContext): void {
+        const bin = ctx.resolveCursorAgentBin();
+        if (!bin) {
+            return;
+        }
+        ctx.detectedAgents.set('cursor', {
+            id: 'cursor',
+            label: 'Cursor Agent',
+            bin,
+            template: `${bin} -p --force --trust --approve-mcps {prompt}`,
+        });
+}
+
+export function resolveQaiqBinExtracted(ctx: QaapAgentTaskRunnerContext): string | undefined {
         if (ctx.isOnPath('qaiq')) {
             return 'qaiq';
         }
         return undefined;
 }
 
-export function detectQaiqAgentExtracted(ctx: any): void {
+export function detectQaiqAgentExtracted(ctx: QaapAgentTaskRunnerContext): void {
         const bin = ctx.resolveQaiqBin();
         if (!bin) {
             return;
@@ -312,7 +217,7 @@ export function detectQaiqAgentExtracted(ctx: any): void {
         });
 }
 
-export function detectCodexAgentExtracted(ctx: any): void {
+export function detectCodexAgentExtracted(ctx: QaapAgentTaskRunnerContext): void {
         if (!ctx.isOnPath('codex')) {
             return;
         }
@@ -322,10 +227,11 @@ export function detectCodexAgentExtracted(ctx: any): void {
             label: 'Codex',
             bin: 'codex',
             template: resolveQaapCodexTemplate(help),
+            codexSupportsApproveForMe: /\B--approve-for-me\b/.test(help),
         });
 }
 
-export function resolveTaskAgentIdExtracted(ctx: any, task: QaapAgentTask): string {
+export function resolveTaskAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): string {
         if (task.agentId) {
             return task.agentId;
         }
@@ -335,7 +241,7 @@ export function resolveTaskAgentIdExtracted(ctx: any, task: QaapAgentTask): stri
         return ctx.isQaiqRunner(undefined, task.command) ? QAIQ_AGENT_ID : SHELL_AGENT_ID;
 }
 
-export function readCustomAgentsExtracted(ctx: any): AgentCandidate[] {
+export function readCustomAgentsExtracted(ctx: QaapAgentTaskRunnerContext): AgentCandidate[] {
         const raw = process.env[CUSTOM_AGENTS_ENV]?.trim();
         if (!raw) {
             return [];
@@ -352,21 +258,29 @@ export function readCustomAgentsExtracted(ctx: any): AgentCandidate[] {
         }
 }
 
-export async function restoreFromDiskExtracted(ctx: any): Promise<void> {
+export async function restoreFromDiskExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void> {
+        ctx.recoveryState = 'loading';
         try {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
             ctx.restorePersistedIndex(JSON.parse(raw));
+            ctx.recoveryState = 'ready';
             await ctx.persist();
             ctx.drainQueuedTasks();
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-                console.warn('[qaap-agent-tasks] failed to restore task index:', error);
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                ctx.recoveryState = 'ready';
+            } else {
+                ctx.recoveryState = 'failed';
+                console.warn('[qaap-agent-tasks] recovery failed; task creation and index writes are blocked.');
             }
         }
 }
 
-export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void {
+export function restorePersistedIndexExtracted(ctx: QaapAgentTaskRunnerContext, stored: unknown): void {
         const legacy = Array.isArray(stored);
+        if (!legacy && (stored as Partial<PersistedAgentTaskIndex> | undefined)?.version !== 2) {
+            throw new Error('Unsupported persisted agent task index version.');
+        }
         const tasks = legacy
             ? stored as QaapAgentTask[]
             : (stored as Partial<PersistedAgentTaskIndex> | undefined)?.tasks;
@@ -380,18 +294,40 @@ export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void 
             if (!task?.id) {
                 continue;
             }
-            const queuedRequest = task.state === 'queued' ? queuedRequests[task.id] : undefined;
+            // JSON may be damaged or from an incompatible release. Never use inherited keys
+            // (e.g. __proto__) or execute a request associated with a different workspace.
+            const candidate = task.state === 'queued' && queuedRequests &&
+                Object.prototype.hasOwnProperty.call(queuedRequests, task.id) ? queuedRequests[task.id] : undefined;
+            const queuedRequest = candidate && typeof candidate === 'object' && !Array.isArray(candidate) &&
+                typeof candidate.cwd === 'string' && typeof task.cwd === 'string' &&
+                path.isAbsolute(candidate.cwd) && path.resolve(candidate.cwd) === path.resolve(task.cwd) &&
+                (candidate.prompt === undefined || typeof candidate.prompt === 'string') &&
+                (candidate.command === undefined || typeof candidate.command === 'string') &&
+                (candidate.prompt?.trim() || candidate.command?.trim())
+                ? candidate : undefined;
             const state = task.state === 'running' || (task.state === 'queued' && !queuedRequest)
                 ? 'interrupted' as const
                 : task.state;
-            ctx.tasks.set(task.id, { ...task, state });
+            ctx.tasks.set(task.id, { ...task, state, ...(state === 'interrupted' && task.state !== 'interrupted' ? { finishedAt: Date.now() } : {}) });
+            if (task.clientRequestId) {
+                ctx.clientRequestTaskIds ??= new Map();
+                ctx.clientRequestTaskIds.set(`${task.ownerLogin?.trim() || '_'}:${task.clientRequestId}`, task.id);
+            }
             if (state === 'queued' && queuedRequest) {
                 ctx.queuedCreateRequests.set(task.id, queuedRequest);
             }
         }
+        const queued = [...ctx.tasks.values()]
+                .filter((task: QaapAgentTask) => task.state === 'queued')
+                .sort(compareQueuedTasks);
+        queued.forEach((task: QaapAgentTask, index: number) => {
+                if (task.queuePosition !== index + 1) {
+                        ctx.tasks.set(task.id, { ...task, queuePosition: index + 1 });
+                }
+        });
 }
 
-export function countRunningTasksExtracted(ctx: any): number {
+export function countRunningTasksExtracted(ctx: QaapAgentTaskRunnerContext): number {
         let count = 0;
         for (const task of ctx.tasks.values()) {
             if (task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) {
@@ -401,31 +337,118 @@ export function countRunningTasksExtracted(ctx: any): number {
         return count;
 }
 
-export function runningTaskCountForOwnerExtracted(ctx: any, ownerLogin: string): number {
+export function runningTaskCountForOwnerExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin: string): number {
+        const ownerKey = ownerLogin.trim().toLowerCase();
+        if (!ownerKey) {
+            return 0;
+        }
         let count = 0;
         for (const task of ctx.tasks.values()) {
-            if ((task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) && task.ownerLogin === ownerLogin) {
+            const taskOwner = typeof task.ownerLogin === 'string' ? task.ownerLogin.trim().toLowerCase() : '';
+            if ((task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) && taskOwner === ownerKey) {
                 count++;
             }
         }
         return count;
 }
 
-export function ownerAtConcurrencyCapExtracted(ctx: any, ownerLogin: string | undefined): boolean {
+export function ownerAtConcurrencyCapExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin: string | undefined): boolean {
         const owner = ownerLogin?.trim();
         if (!owner) {
-            return false;
+        return false;
         }
-        return ctx.runningTaskCountForOwner(owner) >= ctx.maxConcurrentAgentsPerUser();
+        const cap = ctx.billingStore?.maxConcurrentAgentsForOwner?.(owner)
+            ?? ctx.maxConcurrentAgentsPerUser();
+        return ctx.runningTaskCountForOwner(owner) >= cap;
 }
 
-export function drainQueuedTasksExtracted(ctx: any): void {
+function queueOwnerKey(ownerLogin: string | undefined): string {
+        return ownerLogin?.trim().toLowerCase() ?? '';
+}
+
+function queuePositionForSort(task: QaapAgentTask): number {
+        return typeof task.queuePosition === 'number' && Number.isFinite(task.queuePosition)
+            ? task.queuePosition
+            : task.createdAt;
+}
+
+function compareQueuedTasks(left: QaapAgentTask, right: QaapAgentTask): number {
+        return queuePositionForSort(left) - queuePositionForSort(right)
+            || left.createdAt - right.createdAt
+            || left.id.localeCompare(right.id);
+}
+
+/**
+ * Reorder only tasks owned by the authenticated user. The complete queue is reindexed after the
+ * move, which keeps the persisted order compact and makes recovery deterministic even for legacy
+ * tasks that predate `queuePosition`.
+ */
+export function reorderQueuedTaskExtracted(
+        ctx: QaapAgentTaskRunnerContext,
+        id: string,
+        direction: 'up' | 'down',
+        ownerLogin?: string,
+): QaapAgentTask | undefined {
+        const task = ctx.tasks.get(id) as QaapAgentTask | undefined;
+        if (!task || task.state !== 'queued' || queueOwnerKey(task.ownerLogin) !== queueOwnerKey(ownerLogin)) {
+                return undefined;
+        }
+        const owned = [...ctx.tasks.values()]
+            .filter((candidate: QaapAgentTask) => candidate.state === 'queued'
+                && queueOwnerKey(candidate.ownerLogin) === queueOwnerKey(ownerLogin))
+            .sort(compareQueuedTasks);
+        const currentIndex = owned.findIndex(candidate => candidate.id === id);
+        const targetIndex = currentIndex + (direction === 'up' ? -1 : 1);
+        if (currentIndex < 0 || targetIndex < 0 || targetIndex >= owned.length) {
+                return undefined;
+        }
+
+        const queue = [...ctx.tasks.values()]
+            .filter((candidate: QaapAgentTask) => candidate.state === 'queued')
+            .sort(compareQueuedTasks);
+        const ownedSlots = queue
+            .map((candidate: QaapAgentTask, index: number) => ({ candidate, index }))
+            .filter(({ candidate }) => queueOwnerKey(candidate.ownerLogin) === queueOwnerKey(ownerLogin));
+        const reorderedOwned = [...owned];
+        [reorderedOwned[currentIndex], reorderedOwned[targetIndex]] = [reorderedOwned[targetIndex], reorderedOwned[currentIndex]];
+        const changed: QaapAgentTask[] = [];
+        ownedSlots.forEach(({ candidate, index }, slotIndex) => {
+                const replacement = reorderedOwned[slotIndex];
+                const updated: QaapAgentTask = { ...replacement, queuePosition: index + 1 };
+                ctx.tasks.set(updated.id, updated);
+                if (updated.id !== candidate.id || updated.queuePosition !== candidate.queuePosition) {
+                        changed.push(updated);
+                }
+        });
+        // Reindex other queued tasks too. Their relative order is unchanged, but emitting the
+        // update keeps every connected client in sync with the persisted position shown in detail.
+        queue.forEach((candidate: QaapAgentTask, index: number) => {
+                if (queueOwnerKey(candidate.ownerLogin) === queueOwnerKey(ownerLogin)) {
+                        return;
+                }
+                const updated: QaapAgentTask = { ...candidate, queuePosition: index + 1 };
+                ctx.tasks.set(updated.id, updated);
+                if (updated.queuePosition !== candidate.queuePosition) {
+                        changed.push(updated);
+                }
+        });
+        void ctx.persist();
+        for (const updated of changed) {
+                ctx.onDidChangeTaskEmitter.fire({ type: 'reordered', task: updated });
+        }
+        return ctx.tasks.get(id);
+}
+
+export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void {
+        if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed) {
+        return;
+        }
         while (ctx.countRunningTasks() < ctx.maxConcurrentAgents()) {
             // Skip queued tasks whose owner is already at their per-user cap so one busy user can't
             // block everyone behind them in the FIFO queue — promote the next eligible tenant instead.
             const next = [...ctx.tasks.values()]
                 .filter(task => task.state === 'queued' && !ctx.ownerAtConcurrencyCap(task.ownerLogin))
-                .sort((left, right) => left.createdAt - right.createdAt)[0];
+                .sort(compareQueuedTasks)[0];
             if (!next) {
                 return;
             }
@@ -434,7 +457,7 @@ export function drainQueuedTasksExtracted(ctx: any): void {
                 ctx.finishTask(next.id, 'failed', undefined);
                 continue;
             }
-            const running: QaapAgentTask = { ...next, state: 'running' };
+            const running: QaapAgentTask = { ...next, state: 'running', startedAt: Date.now(), queuePosition: undefined };
             ctx.tasks.set(next.id, running);
             ctx.queuedCreateRequests.delete(next.id);
             void ctx.spawnProcessWhenReady(running, request);
@@ -443,7 +466,7 @@ export function drainQueuedTasksExtracted(ctx: any): void {
         }
 }
 
-export function listForCwdExtracted(ctx: any, cwd: string | undefined): QaapAgentTask[] {
+export function listForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string | undefined): QaapAgentTask[] {
         const all = ctx.list();
         if (!cwd) {
             return all;
@@ -452,7 +475,7 @@ export function listForCwdExtracted(ctx: any, cwd: string | undefined): QaapAgen
         return all.filter(task => task.cwd === resolved);
 }
 
-export function listAllGroupedByCwdExtracted(ctx: any): QaapAgentTaskCwdGroup[] {
+export function listAllGroupedByCwdExtracted(ctx: QaapAgentTaskRunnerContext): QaapAgentTaskCwdGroup[] {
         const buckets = new Map<string, QaapAgentTask[]>();
         for (const task of ctx.list()) {
             const bucket = buckets.get(task.cwd);
@@ -476,7 +499,7 @@ export function listAllGroupedByCwdExtracted(ctx: any): QaapAgentTaskCwdGroup[] 
         return groups;
 }
 
-export function warmForCwdExtracted(ctx: any, cwd: string): QaapAgentWarmResult {
+export function warmForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): QaapAgentWarmResult {
         const resolved = path.resolve(cwd);
         if (!fs.existsSync(resolved)) {
             throw new Error(`Workspace directory does not exist: ${resolved}`);
@@ -495,31 +518,61 @@ export function warmForCwdExtracted(ctx: any, cwd: string): QaapAgentWarmResult 
         };
 }
 
-export function listQaiqModelsExtracted(ctx: any): QaapQaiqModelOption[] {
-        if (!ctx.preferenceService) {
-            return [];
-        }
+export function listQaiqModelsExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): QaapQaiqModelOption[] {
         return listQaiqModelsFromPreferences(
-            key => ctx.preferenceService!.get(key),
-            key => process.env[key],
+            ctx.preferenceReaderForOwner(ownerLogin),
+            // Operator env credentials count only where the owner's agents would receive them (see stripSharedProviderEnv).
+            mustWithholdOperatorProviderCredentials(ownerLogin) ? () => undefined : (key: string) => process.env[key],
         );
 }
 
-export function listModelsForAgentExtracted(ctx: any, agentId: string | undefined): QaapQaiqModelOption[] {
-        const normalized = ctx.normalizeAgentId(agentId ?? '');
+export function listModelsForAgentExtracted(
+        ctx: QaapAgentTaskRunnerContext,
+        agentId: string | undefined,
+        ownerLogin?: string,
+): QaapQaiqModelOption[] {
+        // Model catalogs are requested after the agent list has already been rendered. Do not
+        // make this read-only endpoint depend on the runner's detected-agent cache being an
+        // exact match for the browser's canonical id: a cold hosted workspace can expose the
+        // harness while that cache is still warming, which used to make the VPS return [] for
+        // Codex even though its native catalog was available.
+        const normalized = agentId?.trim().toLowerCase();
         if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
             return [];
         }
-        return listNativeAgentModels(normalized);
+        const models = listNativeAgentModels(normalized);
+        const owner = ownerLogin?.trim();
+        if (!owner) {
+            return models;
+        }
+        // Cold cache → treat as Starter (no hosted) so the picker never offers Pro-only models by default.
+        const hostedModelsAllowed = ctx.billingStore?.peekEntitlements?.(owner)?.hostedModels === true;
+        // Keep the native catalog visible when Starter cannot use hosted Codex models.
+        // The picker can then explain the lock instead of opening an empty submenu;
+        // task startup still enforces the same hosted-model entitlement.
+        const userSessionConnected = ctx.isAgentConnected?.(normalized, owner) === true;
+        return models.map(model => {
+            if (!isHostedCodexUsage(normalized, model.modelId)) {
+                return model;
+            }
+            // A user's own Codex login is BYOK/user-session usage. It must not be locked merely
+            // because the Qaap account is on Starter; only Qaap-hosted execution is plan-gated.
+            if (userSessionConnected) {
+                return { ...model, available: true };
+            }
+            return hostedModelsAllowed
+                ? model
+                : { ...model, available: false, unavailableReason: 'plan' as const };
+        });
 }
 
-export function defaultAgentExtracted(ctx: any): string {
+export function defaultAgentExtracted(ctx: QaapAgentTaskRunnerContext, isAgentEnabled: (agentId: string) => boolean = () => true): string {
         const configured = ctx.normalizeAgentId(process.env.QAAP_DEFAULT_AGENT);
-        if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured)) {
+        if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured) && isAgentEnabled(configured)) {
             return configured;
         }
         for (const id of DEFAULT_AGENT_PREFERENCE) {
-            if (ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id)) {
+            if (ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id)) {
                 return id;
             }
         }
@@ -527,6 +580,7 @@ export function defaultAgentExtracted(ctx: any): string {
             if (
                 !AGENT_CANDIDATES.some(builtIn => builtIn.id === candidate.id)
                 && !isUiHiddenVpsAgent(candidate.id)
+                && isAgentEnabled(candidate.id)
             ) {
                 return candidate.id;
             }
@@ -537,7 +591,7 @@ export function defaultAgentExtracted(ctx: any): string {
         return SHELL_AGENT_ID;
 }
 
-export function normalizeAgentIdExtracted(ctx: any, token: string | undefined): string | undefined {
+export function normalizeAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, token: string | undefined): string | undefined {
         const normalized = token?.trim().toLowerCase();
         if (!normalized) {
             return undefined;
@@ -559,7 +613,7 @@ export function normalizeAgentIdExtracted(ctx: any, token: string | undefined): 
         return undefined;
 }
 
-export async function detailExtracted(ctx: any, id: string): Promise<QaapAgentTaskDetail | undefined> {
+export async function detailExtracted(ctx: QaapAgentTaskRunnerContext, id: string): Promise<QaapAgentTaskDetail | undefined> {
         const task = ctx.tasks.get(id);
         if (!task) {
             return undefined;

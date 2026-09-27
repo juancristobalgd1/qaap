@@ -1,47 +1,43 @@
-// @ts-nocheck
 // Extracted from qaap-research-runner.ts
+import type { QaapResearchFallbackProposal, QaapResearchProposeOptions, QaapResearchRunnerContext } from './qaap-research-runner-context';
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Worker } from 'worker_threads';
 import {
-    DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
-    type ResearchAgentModel,
     type ResearchGoal,
     type ResearchGoalStatus,
-    type ResearchMetricSpec,
     type TerminationReason,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
 import {
     configFingerprint,
-    evaluateVerdict,
     parseExperimentProposal,
-    parseMetricFromStdout,
     resolveTerminationReason,
     type ResearchExperimentRecord,
-    type ResearchMetricValue,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
-import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
-import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
-import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
+import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-shared-core/lib/common/qaap-research-realchange';
+import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-shared-core/lib/common/qaap-research-agent-log';
+import { buildResearchRoundPrompt } from '@theia/qaap-shared-core/lib/common/qaap-research-prompt';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
-import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
-import { QaapResearchStore } from './qaap-research-store';
 import { LEDGER_PATHSPEC_EXCLUDE, LEDGER_RELATIVE_PATH, PREFLIGHT_PROMPT, PREFLIGHT_TIMEOUT_MS, REMINDER_MISSING_BLOCK, REMINDER_NOOP_ROUND } from './qaap-research-runner';
 import { toAgentTaskModel,reminderRepeatedFingerprint } from './qaap-research-runner';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 
-export async function reconcileOnBootExtracted(ctx: any): Promise<void> {
+export async function reconcileOnBootExtracted(ctx: QaapResearchRunnerContext): Promise<void> {
         for (const goal of ctx.store.listRunning()) {
+            if (isQaapHostedEnvironment()) {
+                try {
+                    await ctx.tenantSpawn.prepareTenantIsolationAsync(goal.cwd);
+                } catch (error) {
+                    console.error('[qaap-security] skipped research goal without a ready tenant worker:', error);
+                    continue;
+                }
+            }
             ctx.ensureLoop(goal.id);
         }
 }
 
-export function cancelExtracted(ctx: any, goalId: string): ResearchGoal | undefined {
+export function cancelExtracted(ctx: QaapResearchRunnerContext, goalId: string): ResearchGoal | undefined {
         const cancelled = ctx.store.cancel(goalId);
         const activeId = ctx.activeExecutionId.get(goalId);
         if (activeId) {
@@ -50,7 +46,7 @@ export function cancelExtracted(ctx: any, goalId: string): ResearchGoal | undefi
         return cancelled;
 }
 
-export function ensureLoopExtracted(ctx: any, goalId: string): void {
+export function ensureLoopExtracted(ctx: QaapResearchRunnerContext, goalId: string): void {
         if (ctx.loopRunning.has(goalId)) {
             return;
         }
@@ -58,7 +54,7 @@ export function ensureLoopExtracted(ctx: any, goalId: string): void {
         void ctx.runLoop(goalId).finally(() => ctx.loopRunning.delete(goalId));
 }
 
-export async function runLoopExtracted(ctx: any, goalId: string): Promise<void> {
+export async function runLoopExtracted(ctx: QaapResearchRunnerContext, goalId: string): Promise<void> {
         if (!(await ctx.ensurePreflightPassed(goalId))) {
             // Either the probe failed (goal already terminated as 'infra-broken') or the goal was
             // cancelled/vanished while the probe was in flight. Either way, round 1 must not start.
@@ -93,7 +89,7 @@ export async function runLoopExtracted(ctx: any, goalId: string): Promise<void> 
         }
 }
 
-export async function ensurePreflightPassedExtracted(ctx: any, goalId: string): Promise<boolean> {
+export async function ensurePreflightPassedExtracted(ctx: QaapResearchRunnerContext, goalId: string): Promise<boolean> {
         const goal = ctx.store.get(goalId);
         if (!goal || goal.status !== 'running') {
             return false;
@@ -153,7 +149,7 @@ export async function ensurePreflightPassedExtracted(ctx: any, goalId: string): 
         return true;
 }
 
-export async function recordPreflightResultExtracted(ctx: any, goal: ResearchGoal, failureNote: string | undefined): Promise<void> {
+export async function recordPreflightResultExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, failureNote: string | undefined): Promise<void> {
         const now = Date.now();
         const record: ResearchExperimentRecord = {
             id: randomUUID(),
@@ -177,14 +173,14 @@ export async function recordPreflightResultExtracted(ctx: any, goal: ResearchGoa
         }
 }
 
-export function terminateExtracted(ctx: any, goal: ResearchGoal, reason: TerminationReason): void {
+export function terminateExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, reason: TerminationReason): void {
         const status: ResearchGoalStatus = reason === 'infra-broken' ? 'failed'
             : reason === 'cancelled' ? 'cancelled'
                 : 'completed';
         ctx.store.updateGoal(goal.id, { status, terminationReason: reason });
 }
 
-export async function startNewRoundExtracted(ctx: any, goal: ResearchGoal, round: number): Promise<void> {
+export async function startNewRoundExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, round: number): Promise<void> {
         const skeleton: ResearchExperimentRecord = {
             id: randomUUID(),
             goalId: goal.id,
@@ -208,7 +204,7 @@ export async function startNewRoundExtracted(ctx: any, goal: ResearchGoal, round
         await ctx.runPropose(goal, skeleton, {});
 }
 
-export async function resumeRoundExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+export async function resumeRoundExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         if (record.phase === 'propose') {
             // The propose task's process died with the backend. Idempotent to just re-run it: the
             // agent re-reads the ledger from scratch, so there is no partial state to reconcile.
@@ -227,9 +223,9 @@ export async function resumeRoundExtracted(ctx: any, goal: ResearchGoal, record:
         }
 }
 
-export async function runProposeExtracted(ctx: any, goal: ResearchGoal,
+export async function runProposeExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal,
         record: ResearchExperimentRecord,
-        options: { readonly reminder?: string; readonly fingerprintRetried?: boolean; readonly noopRetried?: boolean },): Promise<void> {
+        options: QaapResearchProposeOptions,): Promise<void> {
         const priorRecords = ctx.store.readLedgerForGoal(goal).filter(existing => existing.id !== record.id);
         let prompt = buildResearchRoundPrompt(goal, priorRecords);
         if (options.reminder) {
@@ -371,7 +367,7 @@ export async function runProposeExtracted(ctx: any, goal: ResearchGoal,
         await ctx.commitRound(goal, proposed);
 }
 
-export function synthesizeFallbackProposalExtracted(ctx: any, diffStat: string): { readonly hypothesis: string; readonly symptom?: string; readonly lever?: string; readonly config: Record<string, unknown> } {
+export function synthesizeFallbackProposalExtracted(ctx: QaapResearchRunnerContext, diffStat: string): QaapResearchFallbackProposal {
         return {
             hypothesis: '(not declared)',
             // The diff itself — not an empty object — so two different fallback rounds fingerprint
@@ -380,13 +376,13 @@ export function synthesizeFallbackProposalExtracted(ctx: any, diffStat: string):
         };
 }
 
-export function roundDiffStatExtracted(ctx: any, cwd: string): string {
+export function roundDiffStatExtracted(ctx: QaapResearchRunnerContext, cwd: string): string {
         return ctx.runGit(cwd, ['diff', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
             || ctx.runGit(cwd, ['diff', '--cached', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
             || '';
 }
 
-export function collectRealFileChangesExtracted(ctx: any, cwd: string): RealFileChange[] {
+export function collectRealFileChangesExtracted(ctx: QaapResearchRunnerContext, cwd: string): RealFileChange[] {
         const status = ctx.runGit(cwd, ['status', '--porcelain', '--untracked-files=all']).stdout;
         if (!status) {
             return [];
@@ -413,7 +409,7 @@ export function collectRealFileChangesExtracted(ctx: any, cwd: string): RealFile
         return changes;
 }
 
-export function pushRealFileChangeExtracted(ctx: any, changes: RealFileChange[], cwd: string, rawPath: string, deleted: boolean): void {
+export function pushRealFileChangeExtracted(ctx: QaapResearchRunnerContext, changes: RealFileChange[], cwd: string, rawPath: string, deleted: boolean): void {
         const relativePath = ctx.unquoteGitPath(rawPath);
         if (!relativePath || relativePath === LEDGER_RELATIVE_PATH) {
             return;
@@ -432,7 +428,7 @@ export function pushRealFileChangeExtracted(ctx: any, changes: RealFileChange[],
         }
 }
 
-export function unquoteGitPathExtracted(ctx: any, rawPath: string): string {
+export function unquoteGitPathExtracted(ctx: QaapResearchRunnerContext, rawPath: string): string {
         const trimmed = rawPath.trim();
         if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
             return trimmed.slice(1, -1);

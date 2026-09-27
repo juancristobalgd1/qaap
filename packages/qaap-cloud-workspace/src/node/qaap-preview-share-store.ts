@@ -5,10 +5,9 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 import * as crypto from 'crypto';
-import * as fs from 'fs/promises';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { buildQaapPublicPreviewShareUrl } from '../common/qaap-preview-share';
 import type { QaapPreviewShareSummary } from '../common/qaap-cloud-api-types';
 
@@ -23,6 +22,7 @@ export interface QaapPreviewShareEntry {
 }
 
 const STORE_PATH = path.join(os.homedir(), '.qaap', 'preview-shares.json');
+const SQLITE_PATH = resolveQaapSqlitePath(STORE_PATH);
 
 /** Default public-share lifetime; override with QAAP_PREVIEW_SHARE_TTL_HOURS. */
 const DEFAULT_SHARE_TTL_HOURS = 24;
@@ -44,6 +44,8 @@ export function isPreviewShareExpired(entry: QaapPreviewShareEntry, nowMs: numbe
 
 @injectable()
 export class QaapPreviewShareStore {
+
+    protected sqliteStore: QaapSqliteStore | undefined;
 
     async create(port: number, repoKey: string | undefined, publicOrigin: string, ownerLogin?: string): Promise<QaapPreviewShareSummary> {
         const token = crypto.randomBytes(12).toString('base64url');
@@ -107,16 +109,30 @@ export class QaapPreviewShareStore {
 
     protected async readAll(): Promise<Record<string, QaapPreviewShareEntry>> {
         try {
-            const raw = await fs.readFile(STORE_PATH, 'utf8');
-            const parsed = JSON.parse(raw) as Record<string, QaapPreviewShareEntry>;
-            return parsed && typeof parsed === 'object' ? parsed : {};
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<QaapPreviewShareEntry>(raw => {
+                    const parsed = JSON.parse(raw) as Record<string, QaapPreviewShareEntry>;
+                    return Object.entries(parsed && typeof parsed === 'object' ? parsed : {});
+                });
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            return Object.fromEntries(store.list<QaapPreviewShareEntry>());
         } catch {
             return {};
         }
     }
 
     protected async writeAll(data: Record<string, QaapPreviewShareEntry>): Promise<void> {
-        await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-        await writeJsonAtomic(STORE_PATH, data);
+        this.getSqliteStore().replace(Object.entries(data));
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: SQLITE_PATH,
+            namespace: 'preview-shares',
+            legacyPath: STORE_PATH,
+        });
     }
 }

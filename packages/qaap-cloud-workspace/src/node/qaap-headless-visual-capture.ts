@@ -15,24 +15,24 @@ import {
     agentMessageHasVisualVerificationMarker,
     parseQaapCaptureDirective,
     type QaapPreviewVisualValidationResult,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
-import { buildQaapIdentityPreviewUrl } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
+} from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
+import { buildQaapIdentityPreviewUrl } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import {
     isQaapProcessPreviewIdentity,
     resolveQaapPreviewIdentity,
     type QaapProcessPreviewIdentity,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-identity';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
 import {
     QaapDevPreviewPortRegistry,
     type QaapDevPreviewRecord,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-port-registry';
-import { deriveVisualFlowSteps } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-flow-plan';
+} from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
+import { deriveVisualFlowSteps } from '@theia/qaap-shared-core/lib/common/qaap-visual-flow-plan';
 import {
     QAAP_PREVIEW_CONFIG_PATH,
     QaapPreviewLaunchPlan,
     materializeQaapPreviewLaunchPlan,
     parseQaapPreviewLaunchConfigJson,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-launch-plan';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-launch-plan';
 import { conversationNeedsVisualVerificationEvidence, type QaapAgentConversation } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
@@ -492,7 +492,7 @@ export async function inspectQaapHeadlessPage(
         await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
         await page.waitForTimeout(settleMs);
         const result = await page.evaluate(PAGE_SMOKE_CHECK) as QaapPreviewVisualValidationResult;
-        const rejections = await page.evaluate(`globalThis.__qaapHeadlessUnhandledRejections || []`)
+        const rejections = await page.evaluate('globalThis.__qaapHeadlessUnhandledRejections || []')
             .catch(() => []) as string[];
         for (const rejection of rejections) {
             add('unhandledrejection', rejection);
@@ -824,7 +824,7 @@ export class QaapHeadlessVisualCaptureService {
         // capture servers must not collide with — or be mistaken for — user preview processes.
         const startedPreviewId = publicIdentity?.previewId ?? `qaap-headless-capture:${app.root}`;
         const launch = app.launch ? materializeQaapPreviewLaunchPlan(app.launch, port) : undefined;
-        this.supervisor.start(app.root, port, {
+        await this.supervisor.start(app.root, port, {
             previewId: startedPreviewId,
             projectId: publicIdentity?.projectId ?? app.root,
             ...(publicIdentity ? {

@@ -10,7 +10,7 @@ import type {
     QaapAgentConversation,
     QaapAgentMessage,
 } from '../common/qaap-agent-conversation';
-import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
+import { mergeSegmentTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { deriveConversationTitle } from '../common/qaap-conversation-title';
 import { QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT } from '../common/qaap-chat-turn-workflow';

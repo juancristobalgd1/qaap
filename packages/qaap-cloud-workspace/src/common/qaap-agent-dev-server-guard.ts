@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { isShellToolName } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
+import { isShellToolName } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 /**

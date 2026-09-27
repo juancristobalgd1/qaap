@@ -79,9 +79,8 @@ ensure_docker_pull_space() {
         return
     fi
 
-    echo "[qaap-vps-update] low Docker disk space; pruning unused build cache and images"
+    echo "[qaap-vps-update] low Docker disk space; pruning build cache only (retain rollback/migration images)"
     docker builder prune --all --force | tail -n 1
-    docker image prune --all --force | tail -n 1
 
     available_kb="$(df -Pk "$docker_root" | awk 'NR == 2 { print $4 }')"
     echo "[qaap-vps-update] Docker free space after prune: $((available_kb / 1024 / 1024)) GiB"
@@ -89,6 +88,177 @@ ensure_docker_pull_space() {
         echo "Insufficient Docker disk space after pruning: need ${minimum_free_gb} GiB under $docker_root" >&2
         exit 1
     fi
+}
+
+refresh_caddy() {
+    # Git replaces a checked-out bind-mounted file by inode. A running Caddy container can keep
+    # the old inode, so `docker compose up -d` may leave the previous Caddyfile active even though
+    # the repository contains the new one. Validate the fresh bind mount first, then recreate only
+    # Caddy. `--no-deps` is deliberate: a config refresh must never rebuild the Theia image.
+    if ! docker compose config --services | grep -Fxq caddy; then
+        return 0
+    fi
+
+    echo "[qaap-vps-update] validating Caddy configuration"
+    docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+    echo "[qaap-vps-update] recreating Caddy to refresh the bind-mounted configuration"
+    docker compose up -d --no-deps --force-recreate caddy
+}
+
+preload_tenant_image() {
+    local container_id tenant_image rootless
+    container_id="$(docker compose ps -q theia | tr -d '\r' | sed -n '1p')"
+    if [[ -z "$container_id" ]]; then
+        echo '[qaap-vps-update] no Theia container available to preload the tenant image' >&2
+        return 1
+    fi
+
+    rootless="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        | sed -n 's/^QAAP_DOCKER_ROOTLESS=//p')"
+    if [[ ! "$rootless" =~ ^(1|true)$ ]]; then
+        return 0
+    fi
+
+    tenant_image="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        | sed -n 's/^QAAP_TENANT_DOCKER_IMAGE=//p')"
+    if [[ -z "$tenant_image" ]]; then
+        echo '[qaap-vps-update] QAAP_DOCKER_ROOTLESS is enabled but QAAP_TENANT_DOCKER_IMAGE is empty' >&2
+        return 1
+    fi
+
+    # The serving image is pulled by the host Docker daemon, while tenant backends use the
+    # separate rootless daemon mounted inside Theia. Wait for that daemon before seeding it;
+    # otherwise a freshly recreated Theia container can accept HTTP traffic before its Docker
+    # socket is ready and the first tenant request reports "No such image".
+    echo '[qaap-vps-update] waiting for rootless Docker before preloading tenant image'
+    for _ in $(seq 1 60); do
+        if docker exec "$container_id" docker info >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+    if ! docker exec "$container_id" docker info >/dev/null 2>&1; then
+        echo '[qaap-vps-update] rootless Docker did not become ready' >&2
+        return 1
+    fi
+
+    local host_image_id tenant_image_id
+    host_image_id="$(docker image inspect "$tenant_image" --format '{{.Id}}' 2>/dev/null || true)"
+    tenant_image_id="$(docker exec "$container_id" docker image inspect "$tenant_image" --format '{{.Id}}' 2>/dev/null || true)"
+    if [[ -n "$tenant_image_id" && ( -z "$host_image_id" || "$tenant_image_id" == "$host_image_id" ) ]]; then
+        echo "[qaap-vps-update] tenant image already present in rootless Docker: $tenant_image"
+        return 0
+    fi
+
+    # A locally built serving image (e.g. qaap-theia:local) keeps its tag across deploys, so the tag
+    # alone says nothing about freshness: copy the host build into the rootless daemon whenever the
+    # ids differ. Existing tenant containers notice the new id and are recreated on their next use.
+    if [[ -n "$host_image_id" ]]; then
+        echo "[qaap-vps-update] loading host build of $tenant_image into rootless Docker (${tenant_image_id:-absent} -> $host_image_id)"
+        docker save "$tenant_image" | docker exec -i "$container_id" docker load
+        return 0
+    fi
+
+    echo "[qaap-vps-update] preloading tenant image into rootless Docker: $tenant_image"
+    docker exec "$container_id" docker pull "$tenant_image"
+}
+
+# Post-deploy image cleanup (prune_old_qaap_images); sourced so it can be tested with a fake docker.
+# shellcheck source=scripts/qaap-vps-image-prune.sh
+source "$REPO_DIR/scripts/qaap-vps-image-prune.sh"
+
+preserve_legacy_bind_mounts() {
+    local container_id="$1"
+    local legacy_root='/opt/qaap-runtime'
+    local workspace_mount auth_mount theia_user_mount worktrees_mount parallel_mount tenant_homes_mount
+    workspace_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    auth_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/home/theia/.qaap"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    theia_user_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/home/theia/.theia"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    worktrees_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/tmp/qaap-worktrees"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    parallel_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/tmp/qaap-parallel"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    tenant_homes_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/home/qaap-tenants"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+
+    if [[ "$workspace_mount" == "bind|$legacy_root/workspace|true" &&
+        "$auth_mount" == "bind|$legacy_root/auth|true" &&
+        "$theia_user_mount" == "bind|$legacy_root/theia-user|true" &&
+        "$worktrees_mount" == "bind|$legacy_root/worktrees|true" &&
+        "$parallel_mount" == "bind|$legacy_root/parallel|true" &&
+        "$tenant_homes_mount" == "bind|$legacy_root/tenant-homes|true" ]]; then
+        # These directories are already persistent. Keep the old sources so an update does not
+        # replace populated auth, settings, workspace or task state with empty named volumes.
+        export QAAP_WORKSPACE_SOURCE="$legacy_root/workspace"
+        export QAAP_AUTH_DATA_SOURCE="$legacy_root/auth"
+        export QAAP_THEIA_USER_SOURCE="$legacy_root/theia-user"
+        export QAAP_WORKTREES_SOURCE="$legacy_root/worktrees"
+        export QAAP_PARALLEL_SOURCE="$legacy_root/parallel"
+        export QAAP_TENANT_HOMES_SOURCE="$legacy_root/tenant-homes"
+        echo "[qaap-vps-update] preserving legacy bind-mounted runtime at $legacy_root"
+    fi
+}
+
+run_runtime_state_check() {
+    local container_ids
+    mapfile -t container_ids < <(docker compose ps -aq theia | tr -d '\r' | sed '/^$/d')
+    if (( ${#container_ids[@]} > 1 )); then
+        echo '[qaap-vps-update] expected exactly one existing Theia container for runtime-state migration' >&2
+        exit 1
+    fi
+    if (( ${#container_ids[@]} == 1 )); then
+        preserve_legacy_bind_mounts "${container_ids[0]}"
+    fi
+
+    if command -v node >/dev/null 2>&1; then
+        node scripts/qaap-persist-runtime-state.mjs --check
+        return
+    fi
+
+    # Node.js is a runtime dependency of the image, not of the VPS host. Run the exact migration
+    # check from the current checkout in a temporary Theia container when the host has no Node.
+    # This also works before the new image is built because the scripts directory is bind-mounted.
+    if (( ${#container_ids[@]} == 0 )); then
+        echo '[qaap-vps-update] host Node.js not found; no existing Theia container, skipping runtime-state migration check'
+        return
+    fi
+
+    local container_id compose_config docker_host docker_socket docker_socket_target docker_socket_owner=''
+    container_id="${container_ids[0]}"
+    preserve_legacy_bind_mounts "$container_id"
+    compose_config="$(docker compose config --format json)"
+    docker_host="${DOCKER_HOST:-}"
+    if [[ -z "$docker_host" ]]; then
+        docker_host="$(docker context inspect --format '{{ .Endpoints.docker.Host }}' 2>/dev/null | sed -n '1p' || true)"
+    fi
+    if [[ -z "$docker_host" ]]; then
+        docker_host='unix:///var/run/docker.sock'
+    fi
+    if [[ "$docker_host" == unix://* ]]; then
+        docker_socket="${docker_host#unix://}"
+        if [[ ! -S "$docker_socket" ]]; then
+            echo "Docker endpoint is not a local socket accessible to the temporary container: $docker_host" >&2
+            exit 1
+        fi
+        docker_socket_owner="$(stat -c '%u' "$docker_socket")"
+    fi
+    echo '[qaap-vps-update] host Node.js not found; running runtime-state check in a temporary Theia container'
+    local -a docker_socket_args=(-e "DOCKER_HOST=$docker_host")
+    # Rootful Docker sockets are normally owned by uid 0, while the supported rootless socket is
+    # owned by uid 1000 (theia). Match the temporary container user to the socket owner so either
+    # daemon can be queried without weakening the permanent service's isolation policy.
+    if [[ "$docker_host" == unix://* && "$docker_socket_owner" == 0 ]]; then
+        docker_socket_args+=(--user 0)
+    else
+        docker_socket_args+=(--user 1000)
+    fi
+    if [[ "$docker_host" == unix://* ]]; then
+        docker_socket_target="${QAAP_DOCKER_SOCKET_TARGET:-/run/user/1000/docker.sock}"
+        if [[ "$docker_socket" != "$docker_socket_target" ]]; then
+            docker_socket_args+=(-v "$docker_socket:$docker_socket")
+        fi
+    fi
+    printf '%s' "$compose_config" | docker compose run --rm --no-deps -T "${docker_socket_args[@]}" \
+        -v "$REPO_DIR/scripts:/tmp/qaap-migration-scripts:ro" \
+        theia node /tmp/qaap-migration-scripts/qaap-persist-runtime-state.mjs \
+        --check --container-id "$container_id" --compose-config-stdin
 }
 
 echo "[qaap-vps-update] repo: $REPO_DIR"
@@ -114,10 +284,20 @@ if [[ -n "$REVISION" && "$(git rev-parse "${REVISION}^{commit}")" != "$SOURCE_SH
 fi
 echo "[qaap-vps-update] commit: $BEFORE"
 
+# Image serving before this deploy: retained by the post-deploy cleanup for rollback.
+PRE_DEPLOY_IMAGE_ID=''
+PRE_DEPLOY_CONTAINER_ID="$(docker compose ps -aq theia 2>/dev/null | tr -d '\r' | sed -n '1p' || true)"
+if [[ -n "$PRE_DEPLOY_CONTAINER_ID" ]]; then
+    PRE_DEPLOY_IMAGE_ID="$(docker inspect -f '{{.Image}}' "$PRE_DEPLOY_CONTAINER_ID" 2>/dev/null || true)"
+fi
+
 # Bake the deployed commit into the image (served via /qaap/api/auth/config and shown in the
 # Work Hub footer) so "which build is serving?" is answerable at a glance. docker compose reads
 # this from the environment for the QAAP_BUILD_SHA build arg.
 export QAAP_BUILD_SHA="$BEFORE"
+
+# Fail before replacing the old container if runtime state is still in its writable layer.
+run_runtime_state_check
 
 # Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
 # same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
@@ -137,23 +317,39 @@ if [[ -n "$IMAGE_REF" ]]; then
         echo "Image revision $IMAGE_REVISION does not match checked-out commit $SOURCE_SHA" >&2
         exit 1
     fi
+    # Tenant backends run in the rootless daemon, which receives this image through `docker save |
+    # docker load`. A digest reference (`name:tag@sha256:…`) is saved without its tag and a loaded
+    # image has no RepoDigests, so the rootless daemon could resolve neither form and every tenant
+    # backend failed to start. Hand tenants the tag alone and make sure the host carries that tag.
+    if [[ "$IMAGE_REF" == *@* && -z "${QAAP_TENANT_DOCKER_IMAGE:-}" ]]; then
+        export QAAP_TENANT_DOCKER_IMAGE="${IMAGE_REF%@*}"
+        docker tag "$IMAGE_REF" "$QAAP_TENANT_DOCKER_IMAGE"
+        echo "[qaap-vps-update] tenant image: $QAAP_TENANT_DOCKER_IMAGE"
+    fi
     docker compose up -d --no-build
 else
     # Pin source builds to the exact upstream QAIQ commit. CI-built GHCR images already receive
     # this build arg in the publish job, so the pull path skips all build work on the VPS.
     QAIQ_REPO_URL="${QAIQ_REPO:-https://github.com/juancristobalgd1/qaiq.git}"
-    QAIQ_REF="${QAIQ_REF:-main}"
-    CACHE_BUST="$(git ls-remote "$QAIQ_REPO_URL" "$QAIQ_REF" 2>/dev/null | cut -f1)"
-    CACHE_BUST="${CACHE_BUST:-$(date +%s)}"
-    echo "[qaap-vps-update] qaiq: $QAIQ_REF @ ${CACHE_BUST:0:12}"
+    CACHE_BUST="${QAIQ_COMMIT:-$(sed -n 's/^ARG QAIQ_COMMIT=//p' Dockerfile | tr -d '\r')}"
+    if [[ -n "${QAIQ_REF:-}" ]]; then
+        CACHE_BUST="$(git ls-remote "$QAIQ_REPO_URL" "$QAIQ_REF" | cut -f1)"
+    fi
+    if [[ ! "$CACHE_BUST" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "[qaap-vps-update] cannot resolve an exact QAIQ commit; refusing an unpinned build" >&2
+        exit 1
+    fi
+    echo "[qaap-vps-update] qaiq pinned at ${CACHE_BUST:0:12}"
 
     if [[ "$NO_CACHE" -eq 1 ]]; then
-        docker compose build --no-cache --build-arg "CACHE_BUST=$CACHE_BUST" theia
+        docker compose build --no-cache --build-arg "QAIQ_COMMIT=$CACHE_BUST" --build-arg "CACHE_BUST=$CACHE_BUST" theia
     else
-        docker compose build --build-arg "CACHE_BUST=$CACHE_BUST" theia
+        docker compose build --build-arg "QAIQ_COMMIT=$CACHE_BUST" --build-arg "CACHE_BUST=$CACHE_BUST" theia
     fi
     docker compose up -d
 fi
+preload_tenant_image
+refresh_caddy
 docker compose ps
 
 # Loopback :4873 only. Public HTTPS health is asserted by Actions against
@@ -196,6 +392,12 @@ for _ in $(seq 1 60); do
         if [[ "$SX_HEALTH" == "unhealthy" ]]; then
             echo "[qaap-vps-update] WARNING: searxng is unhealthy — @qaiq web search will fail (docker compose logs searxng)" >&2
         fi
+        # Only after a healthy deploy, and never fatal: a cleanup problem must not fail the release.
+        prune_old_qaap_images "$THEIA_CONTAINER_ID" \
+            || echo '[qaap-vps-update] WARNING: post-deploy image cleanup failed (ignored)' >&2
+        echo "[qaap-vps-update] running launch gate (backup cron + isolation snapshot)..."
+        chmod +x "$REPO_DIR/scripts/qaap-vps-launch-gate.sh" "$REPO_DIR/scripts/qaap-vps-ensure-backup-cron.sh" || true
+        "$REPO_DIR/scripts/qaap-vps-launch-gate.sh"
         exit 0
     fi
     sleep 5

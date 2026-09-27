@@ -5,14 +5,13 @@
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
-import { execFile, spawnSync } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import { sweepOrphanedTempFiles, writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { resolveQaapParallelRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
@@ -29,6 +28,7 @@ const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const STORE_DIR = path.join(os.homedir(), '.qaap', 'parallel-runs');
 const INDEX_PATH = path.join(STORE_DIR, 'index.json');
+const SQLITE_PATH = resolveQaapSqlitePath(INDEX_PATH);
 const LIVE_STATS_DEBOUNCE_MS = 1500;
 const DEFAULT_MAX_PARALLEL_VARIANTS = 4;
 const MAX_PARALLEL_VARIANTS_ENV = 'QAAP_MAX_PARALLEL_VARIANTS';
@@ -50,6 +50,7 @@ export class QaapParallelRunStore {
 
     protected readonly runs = new Map<string, QaapParallelRun>();
     protected readonly liveStatsTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    protected sqliteStore: QaapSqliteStore | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -101,6 +102,7 @@ export class QaapParallelRunStore {
         const root = path.join(resolveQaapParallelRoot(), tenant, slug);
         // Make the run's worktree parent tenant-owned so the dropped `git worktree add` (below) can
         // create the variant dirs under it. No-op in dev / when uid-per-user is off.
+        await this.ensureTenantContainerReady(cwd);
         this.tenantSpawn.provisionTenantDir(cwd, root);
         const variants: QaapParallelRunVariant[] = [];
         try {
@@ -250,7 +252,7 @@ export class QaapParallelRunStore {
         // SEC-1: the winner's commit writes objects to the SHARED base-repo .git, and the merge below
         // checks out into the base repo — both must run as the tenant uid over a tenant-owned base repo.
         // Provision the base repo first so its .git is tenant-owned before the commit writes to it.
-        this.tenantSpawn.prepareTenantIsolation(run.cwd);
+        await this.ensureTenantContainerReady(run.cwd);
         // Commit the winner's working-tree changes so the branch carries them once its worktree is removed.
         await this.commitWorktree(winner.worktreePath, `qaap: parallel variant ${winner.agentId}`);
 
@@ -308,23 +310,27 @@ export class QaapParallelRunStore {
 
     protected async load(): Promise<void> {
         await this.conversationStore.whenReady();
-        await sweepOrphanedTempFiles(INDEX_PATH).catch(() => undefined);
         try {
-            const raw = await fsp.readFile(INDEX_PATH, 'utf8');
-            const stored = JSON.parse(raw) as QaapParallelRun[];
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<QaapParallelRun[]>(raw => [['runs', JSON.parse(raw) as QaapParallelRun[]]]);
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            const stored = store.get<QaapParallelRun[]>('runs') ?? [];
             for (const run of stored) {
                 this.runs.set(run.id, run);
             }
         } catch {
             /* no prior parallel runs */
         }
-        if (this.reconcileFromConversations()) {
+        if (await this.reconcileFromConversations()) {
             await this.persist();
         }
     }
 
     /** Rebuild run records lost from disk but still referenced by persisted variant conversations. */
-    protected reconcileFromConversations(): boolean {
+    protected async reconcileFromConversations(): Promise<boolean> {
         const variantsByRunId = new Map<string, Array<{
             conversationId: string;
             agentId: string;
@@ -356,18 +362,21 @@ export class QaapParallelRunStore {
             added = true;
             const baseCwd = path.resolve(items[0].baseCwd);
             const slug = runId.slice(0, 8);
-            const variants: QaapParallelRunVariant[] = items.map(item => ({
-                id: randomUUID(),
-                agentId: item.agentId,
-                worktreePath: item.worktreePath,
-                branch: this.resolveBranchName(item.worktreePath)
-                    ?? `qaap/parallel/${slug}/${item.agentId.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
-                conversationId: item.conversationId,
-                state: 'idle',
-                adds: 0,
-                dels: 0,
-                fileCount: 0,
-            }));
+            const variants: QaapParallelRunVariant[] = [];
+            for (const item of items) {
+                variants.push({
+                    id: randomUUID(),
+                    agentId: item.agentId,
+                    worktreePath: item.worktreePath,
+                    branch: await this.resolveBranchName(item.worktreePath)
+                        ?? `qaap/parallel/${slug}/${item.agentId.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+                    conversationId: item.conversationId,
+                    state: 'idle',
+                    adds: 0,
+                    dels: 0,
+                    fileCount: 0,
+                });
+            }
             this.runs.set(runId, {
                 id: runId,
                 cwd: baseCwd,
@@ -381,20 +390,25 @@ export class QaapParallelRunStore {
 
     protected async persist(): Promise<void> {
         try {
-            await fsp.mkdir(STORE_DIR, { recursive: true });
-            await writeJsonAtomic(INDEX_PATH, [...this.runs.values()]);
+            this.getSqliteStore().replace([['runs', [...this.runs.values()]]]);
         } catch {
             /* persistence is best-effort */
         }
     }
 
-    protected resolveBranchName(worktreePath: string): string | undefined {
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: SQLITE_PATH,
+            namespace: 'parallel-runs',
+            legacyPath: INDEX_PATH,
+        });
+    }
+
+    protected async resolveBranchName(worktreePath: string): Promise<string | undefined> {
         try {
-            const result = spawnSync('git', ['-C', worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' });
-            if (result.status === 0) {
-                const branch = result.stdout.trim();
-                return branch && branch !== 'HEAD' ? branch : undefined;
-            }
+            await this.ensureTenantContainerReady(worktreePath);
+            const branch = (await this.git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+            return branch && branch !== 'HEAD' ? branch : undefined;
         } catch { /* worktree may be gone */ }
         return undefined;
     }
@@ -412,11 +426,11 @@ export class QaapParallelRunStore {
     }
 
     protected async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
-        await this.git(cwd, ['worktree', 'remove', '--force', worktreePath]);
+        await this.mutatingGit(cwd, ['worktree', 'remove', '--force', worktreePath]);
     }
 
     protected async deleteBranch(cwd: string, branch: string): Promise<void> {
-        await this.git(cwd, ['branch', '-D', branch]);
+        await this.mutatingGit(cwd, ['branch', '-D', branch]);
     }
 
     protected async diffStats(worktreePath: string): Promise<{ adds: number; dels: number; fileCount: number }> {
@@ -455,7 +469,8 @@ export class QaapParallelRunStore {
      * (worktree add, merge, add, commit) must go through {@link mutatingGit} instead.
      */
     protected async git(cwd: string, args: string[]): Promise<string> {
-        const { stdout } = await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+        const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
     }
 
@@ -468,6 +483,17 @@ export class QaapParallelRunStore {
         const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
         const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
+    }
+
+    protected async ensureTenantContainerReady(cwd: string): Promise<void> {
+        const spawn = this.tenantSpawn as QaapTenantSpawnService & {
+            prepareTenantIsolationAsync?: (target: string) => Promise<void>;
+        };
+        if (typeof spawn.prepareTenantIsolationAsync === 'function') {
+            await spawn.prepareTenantIsolationAsync(cwd);
+        } else {
+            spawn.prepareTenantIsolation?.(cwd);
+        }
     }
 
     protected isDirectory(p: string): boolean {

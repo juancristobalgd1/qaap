@@ -1,0 +1,794 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+/**
+ * Shared HTTP + persistence helpers for background agent tasks.
+ * Keep {@link QAAP_AGENT_TASK_API_PATH} in sync with `@theia/qaap-cloud-workspace`.
+ */
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import {
+    QAAP_HARNESS_DEFINITIONS,
+    isUiHiddenVpsAgent,
+    resolveQaapBuiltinAgentMentionId,
+} from './qaap-builtin-agents';
+import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
+import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
+
+export {
+    agentSupportsModelPicker,
+    agentUsesNativeModelCatalog,
+    agentUsesSettingsModelCatalog,
+    ensureStoredAgentModel,
+    isSameAgentModel,
+    pickDefaultAgentModel,
+    readStoredAgentModel,
+    resolveAgentModelForSubmit,
+    resolveStoredAgentModelForSubmit,
+    writeStoredAgentModel,
+} from './qaap-agent-model-selection';
+
+export const QAAP_AGENT_TASK_API_PATH = '/qaap/api/agent-tasks';
+
+export const SHELL_AGENT_ID = 'shell';
+export const THEIA_CODER_AGENT_ID = 'Coder';
+export const QAIQ_AGENT_ID = 'qaiq';
+export const OPENCLAUDE_AGENT_ID = 'openclaude';
+export const OPENCODE_AGENT_ID = 'opencode';
+
+/** Legacy product default — still used for QAIQ-specific parsing and explicit QAIQ pins. */
+export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
+
+/** Composer / Work Hub default when no per-project agent is stored. */
+export const QAAP_COMPOSER_DEFAULT_AGENT_ID = QAIQ_AGENT_ID;
+
+/** @deprecated Kept for QAIQ-family protocol and transcript compatibility. */
+export const LEGACY_OPENCLAUDE_AGENT_ID = OPENCLAUDE_AGENT_ID;
+
+const QAAP_RETIRED_DEFAULT_AGENT_IDS = new Set([
+    THEIA_CODER_AGENT_ID.toLowerCase(),
+    'coder',
+]);
+
+/** Normalize a mention token (lowercase); does not validate availability. */
+export function resolveQaapAgentMentionToken(token: string): string {
+    return token.trim().toLowerCase();
+}
+
+/** Legacy global fallback for users that picked an agent before selections became cwd-scoped. */
+export const SELECTED_AGENT_STORAGE_KEY = 'qaap.agentTasks.selectedAgent';
+export const SELECTED_QAIQ_MODEL_STORAGE_KEY = 'qaap.agentTasks.selectedQaiqModel';
+
+export type QaapAgentConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
+
+export interface QaapAgentTaskAgentOption {
+    readonly id: string;
+    readonly label: string;
+    readonly available: boolean;
+    /** Installation and authentication are separate: an installed CLI may still need Connect. */
+    readonly connectionState?: QaapAgentConnectionState;
+}
+
+export interface QaapAgentTaskListSnapshot {
+    readonly agents: QaapAgentTaskAgentOption[];
+    readonly agentConfigured: boolean;
+    readonly defaultAgent?: string;
+    /** Backend startup preflight for the QAIQ executable. */
+    readonly qaiqInstalled: boolean;
+    readonly qaiqModels: QaapQaiqModelOption[];
+}
+
+export interface QaapQaiqModelOption {
+    readonly provider: 'openai' | 'gemini' | 'ollama' | 'anthropic' | 'mistral';
+    readonly vendor: string;
+    readonly modelId: string;
+    readonly label: string;
+    /** Present for native catalogs when a model is visible but gated by the account plan. */
+    readonly available?: boolean;
+    /** Why a visible model cannot currently be selected, when it is unavailable. */
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
+}
+
+/**
+ * Stable OpenCode rows for the composer picker. OpenCode can fail to list models when
+ * its user-data directory is read-only, so the picker must still have a useful catalog
+ * instead of exposing the CLI diagnostic or rendering an empty submenu.
+ */
+export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/big-pickle', label: 'Big Pickle' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/ling-3.0-flash-fin-free', label: 'Ling 3.0 Flash Fin Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/mimo-v2.5-free', label: 'MiMo V2.5 Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/muse-spark-1.2-contributor-free', label: 'Muse Spark 1.2 Contributor Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/muse-spark-1.3-contributor-free', label: 'Muse Spark 1.3 Contributor Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/nemotron-3-ultra-free', label: 'Nemotron 3 Ultra Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/nemotron-3.5-lightning-free', label: 'Nemotron 3.5 Lightning Free' },
+];
+
+/**
+ * Keep Codex's native rows visible if a hosted API responds before its runner catalog is warm.
+ * The backend returns the same rows, including plan availability, once its catalog is ready.
+ */
+export const CODEX_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legado' },
+];
+
+export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {
+    const knownModels = new Map(OPENCODE_FALLBACK_MODELS.map(model => [model.modelId, model]));
+    const validModels = models
+        .filter(model => /^opencode\/[a-z0-9][a-z0-9._-]*$/i.test(model.modelId))
+        .map(model => {
+            const known = knownModels.get(model.modelId.toLowerCase());
+            if (!known) {
+                return { ...model, vendor: OPENCODE_AGENT_ID };
+            }
+            return model.available === undefined ? known : { ...known, available: model.available };
+        });
+    return validModels.length > 0 ? validModels : [...OPENCODE_FALLBACK_MODELS];
+}
+
+export interface QaapCreateAgentTaskQaiqModel {
+    readonly provider: 'openai' | 'gemini' | 'ollama' | 'anthropic' | 'mistral';
+    readonly vendor: string;
+    readonly modelId: string;
+}
+
+export interface QaapAgentTaskCreated {
+    readonly id: string;
+    readonly cwd: string;
+    readonly state: string;
+    readonly agentId?: string;
+    readonly title?: string;
+    readonly command?: string;
+    readonly createdAt?: number;
+    readonly startedAt?: number;
+    readonly queuePosition?: number;
+}
+
+/** A task plus its captured stdout/stderr log — returned by `GET /qaap/api/agent-tasks/:id`. */
+export interface QaapAgentTaskDetailDTO {
+    readonly id: string;
+    readonly cwd: string;
+    readonly title?: string;
+    readonly agentId?: string;
+    readonly command?: string;
+    readonly state: string;
+    readonly createdAt?: number;
+    readonly startedAt?: number;
+    readonly queuePosition?: number;
+    readonly exitCode?: number;
+    readonly finishedAt?: number;
+    readonly parentId?: string;
+    readonly log: string;
+    readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
+}
+
+/** True once a task has stopped and will not change state again. */
+export function isAgentTaskFinished(state: string): boolean {
+    return ['completed', 'completed_with_warnings', 'failed', 'cancelled', 'interrupted', 'blocked'].includes(state);
+}
+
+export type QaapCreateAgentTaskBody =
+    | { readonly command: string; readonly cwd: string; readonly clientRequestId?: string }
+    | {
+        readonly prompt: string;
+        readonly agent: string;
+        readonly cwd: string;
+        /** Reused by a client retry so a slow POST cannot start the same task twice. */
+        readonly clientRequestId?: string;
+        readonly agentModel?: QaapCreateAgentTaskQaiqModel;
+        /** @deprecated Use {@link agentModel}. */
+        readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
+        /** Resolved cross-project context, prepended to the agent prompt by the backend runner. */
+        readonly contextPreamble?: string;
+    };
+
+export function scopedAgentStorageKey(cwd: string): string {
+    return `${SELECTED_AGENT_STORAGE_KEY}.${hashString(cwd)}`;
+}
+
+export function migrateLegacyBackendAgentId(agentId: string | undefined): string | undefined {
+    if (!agentId) {
+        return undefined;
+    }
+    return agentId;
+}
+
+/**
+ * Upgrade legacy composer storage picks when QAIQ is available on the server.
+ * OpenCode was the previous product default — migrate silently so existing users land on QAIQ.
+ */
+export function migrateStoredComposerAgentId(
+    stored: string | undefined,
+    availableIds: ReadonlySet<string>,
+    cwd?: string,
+): string | undefined {
+    const migrated = migrateLegacyBackendAgentId(stored);
+    if (!migrated) {
+        return undefined;
+    }
+    const normalized = migrated.trim().toLowerCase();
+    if (normalized === OPENCODE_AGENT_ID && availableIds.has(QAIQ_AGENT_ID)) {
+        writeStoredAgent(cwd, QAIQ_AGENT_ID);
+        return QAIQ_AGENT_ID;
+    }
+    return migrated;
+}
+
+/** Map retired defaults (Coder, Codex, …) to {@link QAAP_PRIMARY_AGENT_ID} for Qaap product UI. */
+export function migrateQaapProductAgentId(agentId: string | undefined): string | undefined {
+    const migrated = migrateLegacyBackendAgentId(agentId);
+    if (!migrated) {
+        return undefined;
+    }
+    if (isTheiaCoderAgent(migrated) || QAAP_RETIRED_DEFAULT_AGENT_IDS.has(migrated.trim().toLowerCase())) {
+        return QAAP_PRIMARY_AGENT_ID;
+    }
+    return migrated;
+}
+
+export function readStoredAgent(cwd: string | undefined): string | undefined {
+    try {
+        const raw = cwd
+            ? window.localStorage.getItem(scopedAgentStorageKey(cwd)) ?? window.localStorage.getItem(SELECTED_AGENT_STORAGE_KEY) ?? undefined
+            : window.localStorage.getItem(SELECTED_AGENT_STORAGE_KEY) ?? undefined;
+        return migrateQaapProductAgentId(raw ?? undefined);
+    } catch {
+        return undefined;
+    }
+}
+
+export function writeStoredAgent(cwd: string | undefined, agentId: string): void {
+    try {
+        if (cwd) {
+            window.localStorage.setItem(scopedAgentStorageKey(cwd), agentId);
+        }
+        window.localStorage.setItem(SELECTED_AGENT_STORAGE_KEY, agentId);
+    } catch {
+        /* localStorage unavailable — selection is session-only */
+    }
+}
+
+export function toQaapCreateAgentTaskQaiqModel(model: {
+    readonly provider: QaapCreateAgentTaskQaiqModel['provider'];
+    readonly vendor: string;
+    readonly modelId: string;
+}): QaapCreateAgentTaskQaiqModel {
+    return {
+        provider: model.provider,
+        vendor: model.vendor,
+        modelId: model.modelId,
+    };
+}
+
+/**
+ * Pick a valid coding-agent id: honor the current choice, then per-cwd storage, then server default.
+ * Returns undefined when no VPS coding CLI is installed — never invents Shell.
+ */
+export function reconcileSelectedAgent(
+    current: string | undefined,
+    agents: readonly QaapAgentTaskAgentOption[],
+    defaultAgent: string | undefined,
+    cwd: string | undefined,
+): string | undefined {
+    const selectable = filterUiSelectableVpsAgents(agents);
+    const ids = new Set(selectable.map(agent => agent.id));
+    const normalizedCurrent = migrateQaapProductAgentId(current);
+    if (normalizedCurrent && ids.has(normalizedCurrent)) {
+        return normalizedCurrent;
+    }
+    const stored = migrateStoredComposerAgentId(readStoredAgent(cwd), ids, cwd);
+    if (stored && ids.has(stored)) {
+        return stored;
+    }
+    if (!normalizedCurrent && !stored && ids.has(QAAP_COMPOSER_DEFAULT_AGENT_ID)) {
+        return QAAP_COMPOSER_DEFAULT_AGENT_ID;
+    }
+    const normalizedDefault = migrateQaapProductAgentId(defaultAgent);
+    if (normalizedDefault && ids.has(normalizedDefault)) {
+        return normalizedDefault;
+    }
+    if (ids.has(QAAP_COMPOSER_DEFAULT_AGENT_ID)) {
+        return QAAP_COMPOSER_DEFAULT_AGENT_ID;
+    }
+    if (ids.has(QAAP_PRIMARY_AGENT_ID)) {
+        return QAAP_PRIMARY_AGENT_ID;
+    }
+    return selectable[0]?.id;
+}
+
+/**
+ * Composer pickers list only the VPS-backed agents the server detected as installed
+ * (CLI found on PATH or env-configured); undetected built-ins are not padded in.
+ */
+export function mergeComposerAgentPickerOptions(
+    agents: readonly QaapAgentTaskAgentOption[],
+): QaapAgentTaskAgentOption[] {
+    const merged = new Map<string, QaapAgentTaskAgentOption>();
+    for (const agent of filterUiSelectableVpsAgents(agents)) {
+        if (agent.available === false) {
+            continue;
+        }
+        merged.set(agent.id.toLowerCase(), agent);
+    }
+    return Array.from(merged.values()).sort(compareComposerAgentPickerOrder);
+}
+
+function compareComposerAgentPickerOrder(
+    left: QaapAgentTaskAgentOption,
+    right: QaapAgentTaskAgentOption,
+): number {
+    const leftPrimary = left.id.toLowerCase() === QAIQ_AGENT_ID;
+    const rightPrimary = right.id.toLowerCase() === QAIQ_AGENT_ID;
+    if (leftPrimary !== rightPrimary) {
+        return leftPrimary ? -1 : 1;
+    }
+    return left.label.localeCompare(right.label);
+}
+
+/** Merge HTTP `/all` and WebSocket snapshot agent lists (WebSocket may arrive after the first fetch). */
+export function mergeAgentTaskAgentOptions(
+    ...lists: readonly (readonly QaapAgentTaskAgentOption[])[]
+): QaapAgentTaskAgentOption[] {
+    const merged = new Map<string, QaapAgentTaskAgentOption>();
+    for (const list of lists) {
+        for (const agent of list) {
+            if (!agent.id?.trim()) {
+                continue;
+            }
+            const key = agent.id.toLowerCase();
+            const existing = merged.get(key);
+            if (!existing || agent.available && !existing.available) {
+                merged.set(key, agent);
+            }
+        }
+    }
+    return Array.from(merged.values()).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+/** Composer pickers expose VPS-backed agents (QAIQ, Codex, …) but hide shell and UI-hidden runners. */
+export function filterQaapComposerAgents(
+    agents: readonly QaapAgentTaskAgentOption[],
+): QaapAgentTaskAgentOption[] {
+    return mergeComposerAgentPickerOptions(agents);
+}
+
+/**
+ * Sticky/transcript composer agent picker — honors the current/stored choice, then defaults to
+ * {@link QAAP_COMPOSER_DEFAULT_AGENT_ID} when available. Returns undefined when no coding CLI is installed
+ * (never invents Shell).
+ */
+export function reconcileStickyComposerAgent(
+    current: string | undefined,
+    agents: readonly QaapAgentTaskAgentOption[],
+    defaultAgent: string | undefined,
+    cwd: string | undefined,
+    coderAgentAvailable = false,
+): string | undefined {
+    const composerAgents = filterQaapComposerAgents(agents);
+    const normalizedCurrent = migrateQaapProductAgentId(current);
+    if (isTheiaCoderAgent(normalizedCurrent)) {
+        return coderAgentAvailable
+            ? THEIA_CODER_AGENT_ID
+            : reconcileSelectedAgent(undefined, composerAgents, defaultAgent, cwd);
+    }
+    return reconcileSelectedAgent(normalizedCurrent, composerAgents, defaultAgent, cwd);
+}
+
+export function isStickyComposerAgentSelected(
+    agentId: string,
+    selectedAgentId: string | undefined,
+    cwd: string | undefined,
+): boolean {
+    const effective = migrateLegacyBackendAgentId(selectedAgentId)
+        ?? migrateLegacyBackendAgentId(readStoredAgent(cwd));
+    if (!effective) {
+        return false;
+    }
+    if (isTheiaCoderAgent(agentId)) {
+        return isTheiaCoderAgent(effective);
+    }
+    return effective === agentId;
+}
+
+export function buildCreateAgentTaskBody(draft: string, agent: string, cwd: string, contextPreamble?: string): QaapCreateAgentTaskBody {
+    if (agent === SHELL_AGENT_ID) {
+        return { command: draft, cwd };
+    }
+    const base = { prompt: draft, agent, cwd, ...(contextPreamble ? { contextPreamble } : {}) };
+    const agentModel = resolveStoredAgentModelForSubmit(agent, cwd);
+    return agentModel ? { ...base, agentModel, qaiqModel: agentModel } : base;
+}
+
+/** Agents offered in mobile/desktop pickers (excludes shell and UI-hidden VPS agents). */
+export function filterUiSelectableVpsAgents(
+    agents: readonly QaapAgentTaskAgentOption[],
+): QaapAgentTaskAgentOption[] {
+    return agents.filter(agent => agent.id !== SHELL_AGENT_ID && !isUiHiddenVpsAgent(agent.id));
+}
+
+/** Map UI / mention tokens to a built-in backend runner agent id, when recognized. */
+export function normalizeBackendAgentId(agentId: string | undefined): string | undefined {
+    const normalized = agentId?.trim().toLowerCase();
+    if (!normalized) {
+        return undefined;
+    }
+    const id = resolveQaapAgentMentionToken(normalized);
+    const builtin = resolveQaapBuiltinAgentMentionId(id);
+    if (builtin) {
+        return builtin;
+    }
+    if (id === QAIQ_AGENT_ID) {
+        return QAIQ_AGENT_ID;
+    }
+    return id === SHELL_AGENT_ID ? SHELL_AGENT_ID : undefined;
+}
+
+export function isTheiaCoderAgent(agentId: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === THEIA_CODER_AGENT_ID.toLowerCase();
+}
+
+export function isTheiaCoderMention(content: string): boolean {
+    return /^@coder\b/i.test(content.trim());
+}
+
+/** Chat composer always routes to Coder — strip a leading VPS @mention from the draft. */
+export function stripNonCoderAgentMention(content: string): string {
+    const trimmed = content.trim();
+    const mentioned = extractBackendAgentMention(trimmed);
+    if (!mentioned || isTheiaCoderAgent(mentioned)) {
+        return trimmed;
+    }
+    const escaped = mentioned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return trimmed.replace(new RegExp(`^@${escaped}\\b\\s*`, 'i'), '').trim();
+}
+
+export function isQaiqAgent(agentId: string | undefined): boolean {
+    const normalized = agentId?.trim().toLowerCase();
+    return normalized === QAIQ_AGENT_ID || normalized === OPENCLAUDE_AGENT_ID;
+}
+
+/** OpenCode conversations use {@code --format json} NDJSON parsed into transcript segments. */
+export function isOpencodeAgent(agentId: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === 'opencode';
+}
+
+export function isClaudeCodeAgent(agentId: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === 'claude';
+}
+
+export function isCodexAgent(agentId: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === 'codex';
+}
+
+export function isAntigravityAgent(agentId: string | undefined): boolean {
+    const normalized = agentId?.trim().toLowerCase();
+    return normalized === 'antigravity' || normalized === 'gemini';
+}
+
+/** VPS agents whose stdout is parsed into thinking / tool / text transcript segments. */
+export function usesStructuredAgentTranscript(agentId: string | undefined): boolean {
+    return isQaiqAgent(agentId)
+        || isOpencodeAgent(agentId)
+        || isClaudeCodeAgent(agentId)
+        || isCodexAgent(agentId)
+        || isAntigravityAgent(agentId);
+}
+
+/** CLI agents whose live stdout is mapped to native AG-UI events (structured NDJSON). */
+export function usesAgUiCliTranscriptStream(agentId: string | undefined): boolean {
+    return isQaiqAgent(agentId)
+        || isClaudeCodeAgent(agentId)
+        || isCodexAgent(agentId)
+        || isOpencodeAgent(agentId)
+        || isAntigravityAgent(agentId);
+}
+
+/**
+ * Agent for a mobile/background submit: `@mention` in the draft wins, then the pinned chat agent.
+ */
+export function resolveExplicitAgentForSubmit(
+    draft: string,
+    options: { readonly pinnedChatAgentId?: string },
+): string | undefined {
+    const mentioned = extractBackendAgentMention(draft);
+    if (mentioned) {
+        return mentioned;
+    }
+    const pinned = options.pinnedChatAgentId?.trim();
+    if (!pinned) {
+        return undefined;
+    }
+    return migrateLegacyBackendAgentId(pinned) ?? pinned;
+}
+
+/**
+ * Last recognized `@agent` mention in `text` (e.g. `@Codex` near the end of a message wins over
+ * an older `@Claude` in the same string).
+ */
+export function extractBackendAgentMention(text: string): string | undefined {
+    const regex = /@([a-z][\w-]*)/gi;
+    let last: string | undefined;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(text)) !== null) {
+        const resolved = normalizeBackendAgentId(match[1]);
+        if (resolved) {
+            last = resolved;
+        }
+    }
+    return last;
+}
+
+/**
+ * Pick the agent for a new turn: `@mention` in this message beats the picker, then stored/default.
+ * Returns undefined when no coding CLI is installed — never invents Shell. `@shell` / explicit
+ * `agent: 'shell'` still resolve to Shell.
+ */
+export function resolveBackendAgentForTurn(
+    userContent: string,
+    agents: readonly QaapAgentTaskAgentOption[],
+    options: {
+        readonly explicitAgentId?: string;
+        readonly storedAgentId?: string;
+        readonly defaultAgentId?: string;
+        readonly conversationAgentId?: string;
+    },
+): string | undefined {
+    const ids = new Set(agents.map(agent => agent.id));
+    const mentioned = extractBackendAgentMention(userContent);
+    if (mentioned) {
+        return mentioned;
+    }
+    const explicit = resolveAgentOptionId(options.explicitAgentId, agents);
+    if (explicit && (ids.has(explicit) || normalizeBackendAgentId(explicit))) {
+        return explicit;
+    }
+    const fromConversation = resolveAgentOptionId(options.conversationAgentId, agents);
+    if (fromConversation && (ids.has(fromConversation) || normalizeBackendAgentId(fromConversation))) {
+        return fromConversation;
+    }
+    return reconcileSelectedAgent(
+        migrateQaapProductAgentId(options.storedAgentId),
+        agents,
+        options.defaultAgentId,
+        undefined,
+    );
+}
+
+/** Accept built-ins by alias and custom server agents by exact id. */
+export function resolveAgentOptionId(agentId: string | undefined, agents: readonly QaapAgentTaskAgentOption[]): string | undefined {
+    const trimmed = agentId?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const exact = agents.find(agent => agent.id.toLowerCase() === trimmed.toLowerCase());
+    if (exact) {
+        return exact.id;
+    }
+    return normalizeBackendAgentId(trimmed) ?? migrateLegacyBackendAgentId(trimmed);
+}
+
+export async function fetchAgentTaskListAll(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
+    const endpoint = options?.forceRefresh ? `${QAAP_AGENT_TASK_API_PATH}/all?refresh=1` : `${QAAP_AGENT_TASK_API_PATH}/all`;
+    const response = await fetch(endpoint, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+    return parseAgentTaskListBody(await response.json());
+}
+
+export interface QaapAgentWarmResult {
+    readonly cwd: string;
+    readonly agentsReady: boolean;
+    readonly projectInfoCached: boolean;
+    readonly projectNameCached: boolean;
+    readonly qaiqProbed: boolean;
+}
+
+export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult | undefined> {
+    const trimmed = cwd.trim();
+    // The container root (`/workspace`, `.../repos/users/{login}`, …) is "no project selected",
+    // never a warmable cwd — warming it just spams the backend's ownership_denied security log
+    // (the hosted IDE workspace IS the container, so this fired on every workspace open).
+    if (!trimmed || isQaapWorkspaceContainerPath(trimmed)) {
+        return undefined;
+    }
+    try {
+        const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/warm`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cwd: trimmed }),
+        });
+        if (!response.ok) {
+            return undefined;
+        }
+        return await response.json() as QaapAgentWarmResult;
+    } catch {
+        return undefined;
+    }
+}
+
+export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
+    const response = await fetch(
+        `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}`,
+        { credentials: 'include', cache: 'no-store' },
+    );
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+    const body = await response.json() as { models?: QaapQaiqModelOption[] };
+    const models = body.models ?? [];
+    // Do not let a CLI diagnostic become a selectable model if an older backend or a
+    // proxy still returns OpenCode stderr as line-oriented catalog data.
+    if (agentId.trim().toLowerCase() === 'opencode') {
+        return normalizeOpenCodeModelOptions(models);
+    }
+    if (agentId.trim().toLowerCase() === 'codex' && models.length === 0) {
+        return [...CODEX_FALLBACK_MODELS];
+    }
+    return models;
+}
+
+function parseAgentTaskListBody(body: {
+    agents?: QaapAgentTaskAgentOption[];
+    agentConfigured?: boolean;
+    defaultAgent?: string;
+    qaiqInstalled?: boolean;
+    qaiqModels?: QaapQaiqModelOption[];
+}): QaapAgentTaskListSnapshot {
+    const agents = [...(body.agents ?? [])];
+    return {
+        agents,
+        agentConfigured: body.agentConfigured === true,
+        defaultAgent: body.defaultAgent,
+        qaiqInstalled: body.qaiqInstalled === true,
+        qaiqModels: body.qaiqModels ?? [],
+    };
+}
+
+export async function createAgentTask(body: QaapCreateAgentTaskBody): Promise<QaapAgentTaskCreated> {
+    const clientRequestId = body.clientRequestId?.trim() || createAgentTaskRequestId();
+    const response = await fetch(QAAP_AGENT_TASK_API_PATH, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, clientRequestId }),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskCreated>;
+}
+
+export async function fetchAgentTaskDetail(id: string, verifySnapshot = false): Promise<QaapAgentTaskDetailDTO> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}${verifySnapshot ? '?verifySnapshot=1' : ''}`, { credentials: 'include' });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskDetailDTO>;
+}
+
+export async function cancelAgentTask(id: string): Promise<void> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}/cancel`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+}
+
+/**
+ * Catalog for the Work Hub picker. Keep enabled harnesses that are not detected as well so the
+ * composer can offer a connection action instead of silently hiding the runtime.
+ */
+export function listQaapComposerPickerAgents(
+    agents: readonly QaapAgentTaskAgentOption[],
+    disabledIds: readonly string[] = [],
+): QaapAgentTaskAgentOption[] {
+    const disabled = readDisabledHarnessIds(disabledIds);
+    const merged = new Map<string, QaapAgentTaskAgentOption>();
+    for (const agent of filterUiSelectableVpsAgents(agents)) {
+        const id = agent.id.trim();
+        if (!id || !isQaapHarnessEnabled(id, disabled)) {
+            continue;
+        }
+        const key = id.toLowerCase();
+        const existing = merged.get(key);
+        if (!existing || agent.available && !existing.available) {
+            merged.set(key, { ...agent, id });
+        }
+    }
+    for (const definition of QAAP_HARNESS_DEFINITIONS) {
+        if (!isQaapHarnessEnabled(definition.id, disabled) || isUiHiddenVpsAgent(definition.id)) {
+            continue;
+        }
+        if (!merged.has(definition.id)) {
+            merged.set(definition.id, {
+                id: definition.id,
+                label: definition.label,
+                available: false,
+            });
+        }
+    }
+    return Array.from(merged.values()).sort(compareComposerAgentPickerOrder);
+}
+
+/** Move a queued task up or down in its owner's durable queue. */
+export async function reorderAgentTask(id: string, direction: 'up' | 'down'): Promise<QaapAgentTaskCreated> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}/reorder`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskCreated>;
+}
+
+/** Recreate a failed/interrupted standalone task from the server's durable request data. */
+export async function retryAgentTask(id: string): Promise<QaapAgentTaskCreated> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}/retry`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskCreated>;
+}
+
+/** Continue an interrupted task from the server's durable original request. */
+export async function resumeAgentTask(id: string): Promise<QaapAgentTaskCreated> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}/resume`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskCreated>;
+}
+
+function createAgentTaskRequestId(): string {
+    const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+    if (typeof crypto?.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `qaap-task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export async function deleteAgentTasksForCwd(cwd: string): Promise<number> {
+    const trimmed = cwd.trim();
+    if (!trimmed || isQaapWorkspaceContainerPath(trimmed)) {
+        return 0;
+    }
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/project?cwd=${encodeURIComponent(trimmed)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+    const body = await response.json() as { removed?: number };
+    return typeof body.removed === 'number' ? body.removed : 0;
+}
+
+export function hashString(value: string): string {
+    let hash = 0;
+    for (let i = 0; i < value.length; i++) {
+        hash = ((hash << 5) - hash) + value.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+}

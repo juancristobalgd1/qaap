@@ -1,0 +1,189 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
+import type { MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { MobileProjectsCardMenuUi } = require('./mobile-projects-card-menu-ui') as typeof import('./mobile-projects-card-menu-ui');
+
+disableImportJSDOM();
+
+const project = (overrides: Partial<MobileProjectEntry> = {}): MobileProjectEntry => ({
+    id: 'proj-1',
+    name: 'proj-1',
+    color: '#000',
+    branch: 'main',
+    status: 'idle',
+    task: '',
+    progress: 0,
+    agents: [],
+    lastActive: '—',
+    tokens: '—',
+    cost: '—',
+    pinned: false,
+    isCurrent: false,
+    ...overrides,
+});
+
+describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
+
+    useSuiteJSDOM();
+
+    it('lists Pin first (New agent is now a standalone row button)', () => {
+        const target = project({ id: 'alpha' });
+        const host = {
+            projectsService: { canRemove: () => true },
+            conversationIndexUi: {
+                conversationsForProject: () => [],
+                countFailedTasks: () => 0,
+            },
+            onTogglePin: async () => undefined,
+            onRemoveProject: async () => undefined,
+            onClearProjectChats: async () => undefined,
+            onClearFailedTasks: async () => undefined,
+            closeCurrentWorkspace: async () => undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+
+        const ui = new MobileProjectsCardMenuUi(host);
+        const menu = ui.buildProjectOptionsMenu(target);
+        const items = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')];
+        expect(items.map(item => item.textContent?.trim())).to.deep.equal([
+            'Pin',
+            'Remove',
+            'Clear all tasks',
+        ]);
+        expect(items[0]?.querySelector('.codicon-add')).to.equal(null);
+    });
+});
+
+describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
+
+    useSuiteJSDOM();
+
+    it('offers Retry for self-reported stop failures even when status is idle', () => {
+        const target = project({ id: 'alpha' });
+        let retried = false;
+        const host = {
+            chatService: undefined,
+            conversations: undefined,
+            conversationIndexUi: {
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            conversationFlags: undefined,
+            ensureOverlayUi: () => ({ parallel: { openParallelRunsSheet: () => undefined } }),
+            onRetryConversation: async () => { retried = true; },
+            onForkConversation: async () => undefined,
+            onRunVariants: async () => undefined,
+            onRenameConversation: async () => undefined,
+            onSetConversationPriority: async () => undefined,
+            onSetConversationPaused: async () => undefined,
+            onCancelConversation: async () => undefined,
+            onArchiveConversation: async () => undefined,
+            onDeleteConversation: async () => undefined,
+            openConversationSummary: async () => undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+
+        const ui = new MobileProjectsCardMenuUi(host);
+        const menu = ui.buildConversationMenu(target, {
+            id: 'c1',
+            title: 'Find and fix a bug',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+            agentId: 'qaiq',
+            cwd: '/repo',
+            source: 'vps',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Stopped: tool failed',
+        } as never);
+        const retry = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .find(item => item.textContent?.includes('Retry'));
+        expect(retry).to.not.equal(undefined);
+        (retry as HTMLElement).click();
+        expect(retried).to.equal(true);
+    });
+
+    it('uses pin icons for the high-priority (pin) action', () => {
+        const target = project({ id: 'alpha' });
+        const host = {
+            chatService: undefined,
+            conversations: undefined,
+            conversationIndexUi: {
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            conversationFlags: { /* present so flag actions stay enabled */ },
+            ensureOverlayUi: () => ({ parallel: { openParallelRunsSheet: () => undefined } }),
+            onRetryConversation: async () => undefined,
+            onForkConversation: async () => undefined,
+            onRunVariants: async () => undefined,
+            onRenameConversation: async () => undefined,
+            onSetConversationPriority: async () => undefined,
+            onSetConversationPaused: async () => undefined,
+            onCancelConversation: async () => undefined,
+            onArchiveConversation: async () => undefined,
+            onDeleteConversation: async () => undefined,
+            openConversationSummary: async () => undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+
+        const ui = new MobileProjectsCardMenuUi(host);
+        const menu = ui.buildConversationMenu(target, {
+            id: 'c1',
+            title: 'Find and fix a bug',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+            agentId: 'qaiq',
+            cwd: '/repo',
+            source: 'vps',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Hello',
+        } as never);
+        const priority = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .find(item => item.textContent?.trim() === 'Pin');
+        expect(priority).to.not.equal(undefined);
+        expect(priority?.querySelector('.codicon-pin')).to.not.equal(null);
+        expect(priority?.querySelector('.codicon-star-empty')).to.equal(null);
+    });
+});
+
+describe('MobileProjectsCardMenuUi.toggleCardMenu', () => {
+
+    useSuiteJSDOM();
+
+    it('closes when the same anchor is clicked with a new menu instance', () => {
+        window.requestAnimationFrame = ((callback: FrameRequestCallback): number => {
+            callback(0);
+            return 1;
+        }) as typeof window.requestAnimationFrame;
+        const root = document.createElement('div');
+        document.body.appendChild(root);
+        const host = {
+            root,
+            scroll: root,
+            sessionsSidebar: undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+        const ui = new MobileProjectsCardMenuUi(host);
+        const card = document.createElement('div');
+        const btn = document.createElement('button');
+        root.append(card, btn);
+        const menu1 = document.createElement('div');
+        ui.toggleCardMenu(card, menu1, btn);
+        expect(menu1.classList.contains('theia-mod-open')).to.equal(true);
+        const menu2 = document.createElement('div');
+        ui.toggleCardMenu(card, menu2, btn);
+        expect(menu1.classList.contains('theia-mod-open')).to.equal(false);
+        expect(menu2.classList.contains('theia-mod-open')).to.equal(false);
+    });
+});

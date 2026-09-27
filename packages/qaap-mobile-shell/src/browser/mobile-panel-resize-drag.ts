@@ -20,31 +20,26 @@ export interface MobilePanelResizeDragOptions {
     readonly onEnd?: () => void;
 }
 
-const COARSE_POINTER_MEDIA = '(pointer: coarse)';
-
-function hasCoarsePointer(): boolean {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-        return false;
-    }
-    return window.matchMedia(COARSE_POINTER_MEDIA).matches;
-}
-
 /**
- * Pointer-first resize drag for panel split handles. Uses `setPointerCapture` on the
- * handle and listens for `pointermove` on the same element (Lumino / VS Code sash pattern).
- * On legacy environments without Pointer Events, falls back to touch listeners.
+ * Cross-platform resize drag for panel split handles.
+ *
+ * Pointer capture is used when available, but the move/end listeners also live on the
+ * document. This is important for WebKit and older browsers where capture can be
+ * unavailable or can be lost while the pointer leaves a narrow handle. Environments
+ * without Pointer Events use document-level mouse/touch listeners instead.
  */
 export function installMobilePanelResizeDrag(options: MobilePanelResizeDragOptions): Disposable {
     const { handle, onMove, onStart, onEnd, enabled = () => true } = options;
-    const supportsPointerEvents = typeof window !== 'undefined' && 'PointerEvent' in window;
-    const useTouchFallback = !supportsPointerEvents || hasCoarsePointer();
+    const supportsPointerEvents = typeof window !== 'undefined'
+        && (typeof window.PointerEvent === 'function' || typeof globalThis.PointerEvent === 'function');
 
     let activePointerId: number | undefined;
     let activeTouchId: number | undefined;
+    let activeMouse = false;
     let startClientX = 0;
     let startClientY = 0;
 
-    const isActive = (): boolean => activePointerId !== undefined || activeTouchId !== undefined;
+    const isActive = (): boolean => activePointerId !== undefined || activeTouchId !== undefined || activeMouse;
 
     const finish = (): void => {
         if (!isActive()) {
@@ -53,6 +48,7 @@ export function installMobilePanelResizeDrag(options: MobilePanelResizeDragOptio
         const pointerId = activePointerId;
         activePointerId = undefined;
         activeTouchId = undefined;
+        activeMouse = false;
         if (pointerId !== undefined) {
             try {
                 handle.releasePointerCapture(pointerId);
@@ -72,26 +68,34 @@ export function installMobilePanelResizeDrag(options: MobilePanelResizeDragOptio
         });
     };
 
-    const begin = (clientX: number, clientY: number, pointerId?: number, touchId?: number): void => {
+    const begin = (
+        clientX: number,
+        clientY: number,
+        pointerId?: number,
+        touchId?: number,
+        mouse = false,
+    ): boolean => {
         if (!enabled() || isActive()) {
-            return;
+            return false;
         }
         startClientX = clientX;
         startClientY = clientY;
         activePointerId = pointerId;
         activeTouchId = touchId;
+        activeMouse = mouse;
         onStart?.();
         if (pointerId !== undefined) {
             try {
                 handle.setPointerCapture(pointerId);
             } catch {
-                /* capture is best-effort; handle-bound listeners still receive moves */
+                /* capture is best-effort; document listeners still receive moves */
             }
         }
+        return true;
     };
 
     const onPointerDown = (event: PointerEvent): void => {
-        if (!enabled()) {
+        if (!enabled() || event.isPrimary === false) {
             return;
         }
         if (event.pointerType === 'mouse' && event.button !== 0) {
@@ -117,15 +121,32 @@ export function installMobilePanelResizeDrag(options: MobilePanelResizeDragOptio
         finish();
     };
 
-    const onLostPointerCapture = (): void => {
-        if (activePointerId === undefined) {
+    const onMouseDown = (event: MouseEvent): void => {
+        if (!enabled() || event.button !== 0 || isActive()) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        begin(event.clientX, event.clientY, undefined, undefined, true);
+    };
+
+    const onMouseMove = (event: MouseEvent): void => {
+        if (!activeMouse) {
+            return;
+        }
+        event.preventDefault();
+        emitMove(event.clientX, event.clientY);
+    };
+
+    const onMouseUp = (event: MouseEvent): void => {
+        if (!activeMouse || event.button !== 0) {
             return;
         }
         finish();
     };
 
     const onTouchStart = (event: TouchEvent): void => {
-        if (!useTouchFallback || !enabled() || isActive() || event.touches.length !== 1) {
+        if (!enabled() || isActive() || event.touches.length !== 1) {
             return;
         }
         const touch = event.touches[0];
@@ -161,29 +182,34 @@ export function installMobilePanelResizeDrag(options: MobilePanelResizeDragOptio
     };
 
     handle.addEventListener('pointerdown', onPointerDown);
-    handle.addEventListener('pointermove', onPointerMove);
-    handle.addEventListener('pointerup', onPointerEnd);
-    handle.addEventListener('pointercancel', onPointerEnd);
-    handle.addEventListener('lostpointercapture', onLostPointerCapture);
-
-    if (useTouchFallback) {
+    if (supportsPointerEvents) {
+        document.addEventListener('pointermove', onPointerMove, true);
+        document.addEventListener('pointerup', onPointerEnd, true);
+        document.addEventListener('pointercancel', onPointerEnd, true);
+    } else {
+        handle.addEventListener('mousedown', onMouseDown);
+        document.addEventListener('mousemove', onMouseMove, true);
+        document.addEventListener('mouseup', onMouseUp, true);
         handle.addEventListener('touchstart', onTouchStart, { passive: false });
-        handle.addEventListener('touchmove', onTouchMove, { passive: false });
-        handle.addEventListener('touchend', onTouchEnd, { passive: true });
-        handle.addEventListener('touchcancel', onTouchEnd, { passive: true });
+        document.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+        document.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
+        document.addEventListener('touchcancel', onTouchEnd, { capture: true, passive: true });
     }
 
     return Disposable.create(() => {
         handle.removeEventListener('pointerdown', onPointerDown);
-        handle.removeEventListener('pointermove', onPointerMove);
-        handle.removeEventListener('pointerup', onPointerEnd);
-        handle.removeEventListener('pointercancel', onPointerEnd);
-        handle.removeEventListener('lostpointercapture', onLostPointerCapture);
-        if (useTouchFallback) {
+        if (supportsPointerEvents) {
+            document.removeEventListener('pointermove', onPointerMove, true);
+            document.removeEventListener('pointerup', onPointerEnd, true);
+            document.removeEventListener('pointercancel', onPointerEnd, true);
+        } else {
+            handle.removeEventListener('mousedown', onMouseDown);
+            document.removeEventListener('mousemove', onMouseMove, true);
+            document.removeEventListener('mouseup', onMouseUp, true);
             handle.removeEventListener('touchstart', onTouchStart);
-            handle.removeEventListener('touchmove', onTouchMove);
-            handle.removeEventListener('touchend', onTouchEnd);
-            handle.removeEventListener('touchcancel', onTouchEnd);
+            document.removeEventListener('touchmove', onTouchMove, true);
+            document.removeEventListener('touchend', onTouchEnd, true);
+            document.removeEventListener('touchcancel', onTouchEnd, true);
         }
         finish();
     });

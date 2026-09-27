@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
     type QaapAgentApprovalActionResponse,
     type QaapAgentApprovalRequest,

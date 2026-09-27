@@ -5,7 +5,7 @@
 
 // Pure + DI helpers extracted from QaapAgentTaskRunner (batch 3).
 
-import { spawnSync, type ChildProcess } from 'child_process';
+import { spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -15,9 +15,9 @@ import {
 import {
     QAAP_BUILTIN_AGENT_DEFINITIONS,
     isUiHiddenVpsAgent,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
-import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentTaskReview, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentConnectionState, QaapAgentTaskReview, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {
     buildAgentReviewPrompt,
@@ -28,7 +28,11 @@ import {
 } from '../common/qaap-agent-review';
 import type { QaapGenericCommandResult } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
-import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
+import {
+    removeAgentPromptTempDir,
+    type QaapAgentStdinPromptMode,
+} from './qaap-agent-task-runner-utils';
+import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 
 const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIONS;
 const QAAP_AGENT_RETRIEVAL_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
@@ -42,9 +46,12 @@ const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
 const SHELL_AGENT_ID = 'shell';
 const ENV_AGENT_ID = 'env';
 
+/** Bounded read-only process seam; hosted callers execute the search inside the tenant worker. */
+export type QaapReadProcessSync = (cwd: string, file: string, args: readonly string[], maxBuffer: number) => SpawnSyncReturns<string>;
+
 // ─── Pure: readRelevantFiles ─────────────────────────────────────────────────
 
-export function readRelevantFiles(cwd: string, userQuery: string | undefined): string | undefined {
+export function readRelevantFiles(cwd: string, userQuery: string | undefined, readProcess: QaapReadProcessSync = (root, file, args, maxBuffer) => spawnSync(file, args, { cwd: root, encoding: 'utf8', timeout: 4000, maxBuffer })): string | undefined {
     if (!QAAP_AGENT_RETRIEVAL_ENABLED) {
         return undefined;
     }
@@ -61,7 +68,7 @@ export function readRelevantFiles(cwd: string, userQuery: string | undefined): s
             args.push('-g', `!${dir}/**`);
         }
         args.push('--', '.');
-        const out = spawnSync('rg', args, { cwd, encoding: 'utf8', timeout: 4000, maxBuffer: 4 * 1024 * 1024 });
+        const out = readProcess(cwd, 'rg', args, 4 * 1024 * 1024);
         if (out.status !== 0 && out.status !== 1 || !out.stdout) {
             return undefined; // status 1 = no matches; other non-zero = rg missing/error
         }
@@ -88,7 +95,15 @@ export function readRelevantFiles(cwd: string, userQuery: string | undefined): s
 
 export function reapAgentProcessGroupAfterExit(child: ChildProcess): void {
     const pid = child.pid;
-    if (!pid || globalThis.process.platform === 'win32') {
+    if (!pid) {
+        return;
+    }
+    if (globalThis.process.platform === 'win32') {
+        try {
+            spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+        } catch {
+            /* already gone */
+        }
         return;
     }
     try {
@@ -162,6 +177,48 @@ export function probeAgentBinOnce(
     }
 }
 
+/**
+ * Probe the authentication state that belongs to the current tenant user. Installation is not
+ * enough for a hosted picker: Codex can be present on PATH while its per-user login is absent.
+ * Keep this intentionally small and read-only; the Connect action remains responsible for login.
+ */
+export interface QaapAgentConnectionProbeOptions {
+    readonly file?: string;
+    readonly args?: readonly string[];
+    readonly cwd?: string;
+    readonly env?: NodeJS.ProcessEnv;
+}
+
+export function probeAgentConnectionState(
+    agentId: string,
+    bin = agentId,
+    options?: QaapAgentConnectionProbeOptions,
+): QaapAgentConnectionState {
+    const normalized = agentId.trim().toLowerCase();
+    if (normalized !== 'codex') {
+        return 'unknown';
+    }
+    try {
+        const probe = spawnSync(options?.file ?? bin, options?.args ?? ['login', 'status'], {
+            cwd: options?.cwd,
+            env: options?.env,
+            encoding: 'utf8',
+            timeout: 4000,
+            windowsHide: true,
+        });
+        const output = `${probe.stdout ?? ''}\n${probe.stderr ?? ''}`.toLowerCase();
+        if (/not logged in|not authenticated|logged out|no active login/.test(output)) {
+            return 'disconnected';
+        }
+        if (probe.error || probe.status === null) {
+            return 'unknown';
+        }
+        return probe.status === 0 ? 'connected' : 'disconnected';
+    } catch {
+        return 'unknown';
+    }
+}
+
 // ─── DI: recordTaskLatencyMark ───────────────────────────────────────────────
 
 export function recordTaskLatencyMark(
@@ -193,10 +250,10 @@ export interface ReviewSuccessfulAgentTaskDeps {
     resolveTaskAgentId(task: QaapAgentTask): string;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean>;
-    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number }): Promise<QaapGenericCommandResult>;
+    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; readonly ownerLogin?: string }): Promise<QaapGenericCommandResult>;
     changedSensitiveFiles(task: QaapAgentTask): string[];
     resolveReviewerCandidates(task: QaapAgentTask): string[];
-    buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string): { command: string; stdinPrompt?: string; agentId: string };
+    buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string): { command: string; stdinPrompt?: string; stdinPromptMode?: QaapAgentStdinPromptMode; agentId: string };
     appendAndFireOutput(taskId: string, text: string): void;
     agentHealth?: { noteSuccess(agentId: string): void; noteFailure(agentId: string): void };
 }
@@ -261,8 +318,10 @@ export async function reviewSuccessfulAgentTask(
         }
         lastReviewer = reviewerId;
         let command: string;
+        let stdinPrompt: string | undefined;
+        let stdinPromptMode: QaapAgentStdinPromptMode | undefined;
         try {
-            ({ command } = deps.buildAgentCommand(
+            ({ command, stdinPrompt, stdinPromptMode } = deps.buildAgentCommand(
                 prompt,
                 reviewerId,
                 true,
@@ -282,6 +341,7 @@ export async function reviewSuccessfulAgentTask(
         const result = await deps.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
             header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
             streamOutput: true,
+            ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),
         });
         const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
         if (verdict) {
@@ -319,37 +379,48 @@ export async function reviewSuccessfulAgentTask(
 
 export interface RunOneShotCommandDeps {
     enforceAgentIsolationPolicy(): void;
-    ensureAgentCwdOwnership(cwd: string): void;
-    spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('ignore' | 'pipe')[] }): ChildProcess;
+    ensureAgentCwdOwnership(cwd: string): void | Promise<void>;
+    spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('ignore' | 'pipe')[]; detached?: boolean }): ChildProcess;
     killAgentProcessTree(child: ChildProcess): void;
     reapAgentProcessGroupAfterExit(child: ChildProcess): void;
 }
 
-export function runOneShotCommand(
+export async function runOneShotCommand(
     command: string,
     cwd: string,
     env: NodeJS.ProcessEnv,
     agentId: string | undefined,
     timeoutMs: number,
     deps: RunOneShotCommandDeps,
+    stdinPrompt?: string,
+    promptTempDir?: string,
 ): Promise<string> {
+    deps.enforceAgentIsolationPolicy();
+    await deps.ensureAgentCwdOwnership(cwd);
     return new Promise((resolve, reject) => {
         let stdout = '';
         let stderr = '';
         let child: ChildProcess;
+        const cleanupPromptTempDir = (): void => {
+            removeAgentPromptTempDir(promptTempDir);
+        };
         try {
-            deps.enforceAgentIsolationPolicy();
-            deps.ensureAgentCwdOwnership(cwd);
             child = deps.spawnAgentCommand(command, {
                 cwd,
                 env,
-                stdio: ['ignore', 'pipe', 'pipe'],
+                stdio: stdinPrompt === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+                ...(stdinPrompt === undefined ? {} : { detached: false }),
             });
+            if (stdinPrompt !== undefined) {
+                child.stdin?.end(stdinPrompt);
+            }
         } catch (error) {
+            cleanupPromptTempDir();
             reject(error instanceof Error ? error : new Error(String(error)));
             return;
         }
         const timer = setTimeout(() => {
+            cleanupPromptTempDir();
             deps.killAgentProcessTree(child);
             reject(new Error('Prompt improvement timed out.'));
         }, timeoutMs);
@@ -361,6 +432,7 @@ export function runOneShotCommand(
         });
         child.on('error', error => {
             clearTimeout(timer);
+            cleanupPromptTempDir();
             reject(error);
         });
         child.once('exit', () => {
@@ -368,6 +440,7 @@ export function runOneShotCommand(
         });
         child.on('close', code => {
             clearTimeout(timer);
+            cleanupPromptTempDir();
             if (code !== 0) {
                 reject(new Error(stderr.trim() || stdout.trim() || `Agent exited with code ${code ?? 'unknown'}.`));
                 return;

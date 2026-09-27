@@ -38,26 +38,31 @@ WORKDIR /app/examples/browser
 RUN npm run build:production && node scripts/copy-frontend-static.mjs
 
 # --- Runtime -----------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS python-runtime
+
 FROM node:22-bookworm-slim AS runtime
+
+# Debian Bookworm's system Python is 3.11, but Qaap's backup restore guard uses
+# tarfile.data_filter, which was introduced in Python 3.12. Copy the official
+# Python runtime into the Node image so `python3` has the same safety contract
+# in the deployed image and in the CI smoke verifier.
+COPY --from=python-runtime /usr/local /usr/local
 
 # Connect the GHCR package to this repository and make the image provenance discoverable.
 LABEL org.opencontainers.image.source="https://github.com/juancristobalgd1/qaap"
 
-# QAIQ source. Default tracks `main`; the deploy script pins each build to the current main SHA via
-# CACHE_BUST (below) so builds are reproducible AND never frozen. Override the ref with
-# `--build-arg QAIQ_REF=<tag-or-branch>`.
+# Agent upgrades are explicit release changes. QAIQ_COMMIT below is also read by CI.
 ARG QAIQ_REPO=https://github.com/juancristobalgd1/qaiq.git
-ARG QAIQ_REF=main
 ARG CODEX_CLI_VERSION=0.144.5
-ARG CLAUDE_CODE_VERSION=latest
-ARG ANTIGRAVITY_CLI_VERSION=latest
-ARG OPENCODE_CLI_VERSION=latest
-ARG COPILOT_CLI_VERSION=latest
+ARG CLAUDE_CODE_VERSION=2.1.261
+ARG ANTIGRAVITY_CLI_VERSION=0.1.1
+ARG OPENCODE_CLI_VERSION=1.18.28
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     curl \
+    docker.io \
     python3 \
     build-essential \
     ripgrep \
@@ -73,71 +78,88 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @anthropic-ai/claude-code@"${CLAUDE_CODE_VERSION}" \
         @sanchaymittal/antigravity-cli@"${ANTIGRAVITY_CLI_VERSION}" \
         opencode-ai@"${OPENCODE_CLI_VERSION}" \
-        @github/copilot@"${COPILOT_CLI_VERSION}" \
     && npm install -g bun \
     && codex --version \
     && claude --version \
     && opencode --version \
-    && copilot --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \
-    && mkdir -p /opt/grok \
-    && HOME=/opt/grok GROK_BIN_DIR=/opt/grok/bin bash -c 'curl -fsSL https://x.ai/cli/install.sh | bash' \
-    && /opt/grok/bin/grok version
+    && python3 -c "import tarfile; assert hasattr(tarfile, 'data_filter')"
 
-# QAIQ builds in its OWN layer so a deploy can pull a fresh `main` (or a pinned ref) without
-# rebuilding the whole toolchain above, and so it is never silently frozen at the first build's
-# commit (the RUN above stays cached; only this layer re-runs). Cached by (QAIQ_REF, CACHE_BUST) —
-# the deploy script passes the current `main` SHA as CACHE_BUST, so it re-clones exactly when
-# upstream advances. Manual force: --build-arg CACHE_BUST=$(date +%s).
+# Fetch and verify the reviewed commit itself, rather than using its SHA only as a cache key.
 ARG CACHE_BUST=unpinned
-RUN git clone --depth 1 --branch "${QAIQ_REF}" "${QAIQ_REPO}" /opt/qaiq \
-    && cd /opt/qaiq && bun install && bun run build \
+ARG QAIQ_COMMIT=1668998491d7265c754d94935b932cd9042f9b92
+RUN test -n "${QAIQ_COMMIT}" \
+    && echo "${QAIQ_COMMIT}" | grep -Eq '^[0-9a-f]{40}$' \
+    && git init /opt/qaiq \
+    && cd /opt/qaiq \
+    && git remote add origin "${QAIQ_REPO}" \
+    && git fetch --depth 1 origin "${QAIQ_COMMIT}" \
+    && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${QAIQ_COMMIT}" \
+    && bun install --frozen-lockfile && bun run build \
     && ln -sf /opt/qaiq/bin/qaiq /usr/local/bin/qaiq \
     && ln -sf /opt/qaiq/bin/openclaude /usr/local/bin/openclaude \
     && qaiq --version \
     && openclaude --version
 
-ENV PATH="/opt/grok/bin:/root/.local/bin:${PATH}" \
+ENV PATH="/root/.local/bin:${PATH}" \
     QAAP_DEFAULT_AGENT=qaiq
+
+# These executables are runtime dependencies of Jobs / Background tasks. Keep the image build
+# fail-fast: a worker based on a partially built image must never reach a VPS and silently accept
+# tasks without a coding harness.
+RUN for harness in qaiq openclaude codex claude opencode antigravity; do \
+        command -v "$harness" >/dev/null 2>&1 \
+            || { echo "Required Qaap harness is missing: $harness" >&2; exit 1; }; \
+    done
 
 WORKDIR /app/examples/browser
 
 COPY --from=build /app /app
 
-# Bundled slash skills (global for every tenant). User-specific skills live under
-# /root/.qaap/users/{login}/skills on the qaap-auth-data volume.
+# Bundled slash skills (global for every tenant, read-only at runtime). User-specific skills live
+# under /home/theia/.qaap/users/{login}/skills on the qaap-auth-data volume.
 COPY packages/qaap-product/resources/qaap-system-skills /opt/qaap/system-skills
 
 # --- Agent privilege-drop (on by default via QAAP_AGENT_UID below) -------------
-# The backend runs as root so it can spawn the agent under a non-root uid. A non-root agent cannot
-# traverse the root-owned /root/{.qaap,.theia} trees where every tenant's API keys, OAuth tokens and
-# helper tokens live — bounding the agent's --dangerously-skip-permissions to OS permissions.
-# The image provisions the qaap-agent user (uid 1001) and owns /workspace + /home/qaap-agent by it, so
-# the drop is safe to enable by default (see the QAAP_AGENT_UID ENV below). The backend additionally
-# refuses to spawn the agent as root in a production runtime unless the drop is applied — see
-# evaluateAgentIsolationPolicy in packages/qaap-cloud-workspace.
+# The backend intentionally runs as non-root. In hosted Docker mode, tenant worker containers are
+# the execution boundary and start the agent as their configured non-root uid. The image still
+# provisions qaap-agent (uid 1001) for local compatibility; hosted startup refuses the host
+# fallback and refuses a root agent — see evaluateAgentIsolationPolicy.
 RUN groupadd --gid 1001 qaap-agent \
     && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/qaap-agent --shell /usr/sbin/nologin qaap-agent \
     && chmod 700 /root \
-    && chmod -R a+rX /opt/qaiq /opt/grok \
+    && chmod a+rX /opt/qaiq \
     && mkdir -p /workspace \
     && chown -R 1001:1001 /workspace /home/qaap-agent \
     # uid-per-user mode (QAAP_AGENT_UID_PER_USER=1): each tenant gets a private agent HOME under here.
     # 0711 root-owned lets a tenant uid enter its own 0700 subdir by name but not list sibling logins;
-    # the root backend creates the per-tenant subdirs at spawn. No-op when the flag is off.
+    # the privileged host-fallback backend creates the per-tenant subdirs at spawn. No-op in worker
+    # container mode, where the container boundary provides the primary isolation.
     && mkdir -p /home/qaap-tenants \
     && chmod 0711 /home/qaap-tenants \
-    # The root backend runs git (status/stage/discard/commit/diff) on per-user repos that the agent
-    # (uid 1001, or a per-tenant uid) owns after chown-on-spawn. Without this, git aborts every such
-    # command with "detected dubious ownership", breaking the composer Accept/Discard/Commit and the
-    # diff review. Root deliberately manages these repos, so trust them all.
+    && mkdir -p /tmp/qaap-worktrees /tmp/qaap-parallel \
+    && chmod 0711 /tmp/qaap-worktrees /tmp/qaap-parallel \
+    # The legacy host-fallback backend may run git (status/stage/discard/commit/diff) on per-user
+    # repos that the agent owns after chown-on-spawn. Without this, git aborts with "detected dubious
+    # ownership", breaking the composer Accept/Discard/Commit and the diff review. Worker mode routes
+    # tenant git through docker exec instead.
     && git config --system --add safe.directory '*' \
     # Belt-and-suspenders identity so a tenant uid (even before its /etc/passwd record is written) can
     # `git commit` without "unable to look up current user in the passwd file". The backend writes a
     # real passwd record per tenant at spawn; this is the fallback.
     && git config --system user.name 'Qaap Agent' \
-    && git config --system user.email 'agent@qaap.local'
+    && git config --system user.email 'agent@qaap.local' \
+    && (id -u node >/dev/null 2>&1 && usermod -l theia -d /home/theia -m node || useradd -u 1000 -m -s /bin/bash theia) \
+    && (getent group node >/dev/null 2>&1 && groupmod -n theia node || true) \
+    && mkdir -p /home/theia/.theia /home/theia/.qaap \
+    && chown -R 1000:1000 /home/theia /workspace 2>/dev/null || true \
+    # Files copied into the runtime image already have the standard 0644/0755
+    # permissions needed by the non-root Theia user. Avoid recursively touching
+    # the dependency trees here: on large deployments that turns image export
+    # into a multi-minute metadata-only operation.
+    && chmod a+rX /opt/qaiq /app
 
 ARG QAAP_IDE_PORT=4873
 # Deployed-build identity: the short git SHA the image was built from. Surfaced via
@@ -145,6 +167,9 @@ ARG QAAP_IDE_PORT=4873
 # at a glance; the deploy pipeline asserts it matches the pushed commit post-deploy.
 ARG QAAP_BUILD_SHA=dev
 ENV NODE_ENV=production \
+    HOME=/home/theia \
+    USER=theia \
+    LOGNAME=theia \
     HOST=0.0.0.0 \
     PORT=${QAAP_IDE_PORT} \
     SHELL=/bin/bash \
@@ -154,15 +179,17 @@ ENV NODE_ENV=production \
     QAAP_AGENT_HOME=/home/qaap-agent \
     QAAP_AGENT_UID=1001 \
     QAAP_AGENT_GID=1001 \
+    QAAP_TENANT_CONTAINER_UID=1000 \
+    QAAP_TENANT_CONTAINER_GID=1000 \
     QAAP_HEADLESS_CHROMIUM=/usr/bin/chromium \
     QAAP_BUILD_SHA=${QAAP_BUILD_SHA}
 
 EXPOSE ${QAAP_IDE_PORT}
 
-VOLUME ["/workspace"]
-
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-    CMD node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
+    CMD node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/qaap/api/health',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
+
+USER theia
 
 CMD ["sh", "-c", "exec node src-gen/backend/main.js \
     --hostname=${HOST} \

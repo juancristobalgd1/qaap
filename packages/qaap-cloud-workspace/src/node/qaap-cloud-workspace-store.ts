@@ -5,16 +5,16 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 import * as crypto from 'crypto';
-import * as fs from 'fs/promises';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type {
     QaapCloudWorkspaceEnsureRequest,
     QaapCloudWorkspaceSummary,
 } from '../common/qaap-cloud-api-types';
 
 const STORE_PATH = path.join(os.homedir(), '.qaap', 'cloud-workspaces.json');
+const SQLITE_PATH = resolveQaapSqlitePath(STORE_PATH);
 
 export function qaapCloudProviderMode(): QaapCloudWorkspaceSummary['provider'] {
     const mode = process.env.QAAP_CLOUD_MODE?.trim() || 'local';
@@ -29,6 +29,8 @@ export function qaapCloudProviderMode(): QaapCloudWorkspaceSummary['provider'] {
 
 @injectable()
 export class QaapCloudWorkspaceStore {
+
+    protected sqliteStore: QaapSqliteStore | undefined;
 
     async list(ownerLogin?: string): Promise<QaapCloudWorkspaceSummary[]> {
         const all = await this.readAll();
@@ -109,16 +111,30 @@ export class QaapCloudWorkspaceStore {
 
     protected async readAll(): Promise<Record<string, QaapCloudWorkspaceSummary>> {
         try {
-            const raw = await fs.readFile(STORE_PATH, 'utf8');
-            const parsed = JSON.parse(raw) as Record<string, QaapCloudWorkspaceSummary>;
-            return parsed && typeof parsed === 'object' ? parsed : {};
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<QaapCloudWorkspaceSummary>(raw => {
+                    const parsed = JSON.parse(raw) as Record<string, QaapCloudWorkspaceSummary>;
+                    return Object.entries(parsed && typeof parsed === 'object' ? parsed : {});
+                });
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            return Object.fromEntries(store.list<QaapCloudWorkspaceSummary>());
         } catch {
             return {};
         }
     }
 
     protected async writeAll(data: Record<string, QaapCloudWorkspaceSummary>): Promise<void> {
-        await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-        await writeJsonAtomic(STORE_PATH, data);
+        this.getSqliteStore().replace(Object.entries(data));
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: SQLITE_PATH,
+            namespace: 'cloud-workspaces',
+            legacyPath: STORE_PATH,
+        });
     }
 }

@@ -1,0 +1,18 @@
+---
+description: Invariantes de CI/CD que ya se arreglaron y no se deben romper (CRITICO)
+alwaysApply: true
+---
+
+# Invariantes de CI/CD (critico)
+
+Todos los workflows quedaron en verde en master tras #125 (26/09/2026). Cada regla arregló un job que estuvo en rojo. **Antes de tocar spawn de tenants, terminales, preview, `examples/playwright` o `.github/workflows`, lee `doc/qaap-ci-invariants.md`.**
+
+Lo que más se rompe:
+
+- **Wrapper de rlimits (`qaap-tenant-spawn-service.ts`, `applyResourceLimits`):** el script de fallback hace `shift 2`, no `shift 3`. Con `shift 3` se pierde el ejecutable y en Linux sin `systemd-run` (runners de GitHub) cada terminal y cada dev server muere al arrancar.
+  - Síntoma: textarea de xterm a 0 px, `write()`/`fill` de Playwright hace timeout, "terminal does not exist" en el backend. No es un problema de xterm; no parchees page objects ni añadas esperas.
+- **`playwright.yml`:** usa `configs/playwright.qaap-upstream-ci.config.ts` con `QAAP_SKIP_AUTH=true`, `QAAP_CLOUD_MODE=local` y `QAAP_PLAYWRIGHT_SURFACE=ide`. Los specs `@qaap-mobile` solo corren en `qaap-mobile-playwright.yml`.
+- **Page objects upstream (`examples/playwright/src`):** no se editan. El chrome de Qaap se adapta con `qaap-menu-bar.ts` y `qaap-upstream-ci-theia-start.js`.
+- **Clave del agente mock:** `OPENROUTER_API_KEY: mock-rioja-e2e` en `qaap-mobile-playwright.yml`, `qaap-rioja-agent-e2e.yml` y `qaap-vps-deploy.yml`. Sin ella no arranca ningún turno de agente y **se bloquea el deploy al VPS**.
+- **Excluir tests:** nunca añadas un `grepInvert`/`testIgnore` para tapar un fallo sin explicar. Un test que falla solo en Linux es una señal del producto hasta que se demuestre lo contrario.
+- **Fusionar en verde:** master no tiene checks obligatorios, así que el auto-merge fusiona al instante. Para fusionar "en verde", verifica todos los checks y usa `gh pr merge --match-head-commit <sha>`.

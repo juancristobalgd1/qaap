@@ -5,7 +5,15 @@
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
-import { isQaapPreviewWidgetId, isQaapPreviewWidgetUri, QAAP_PREVIEW_WIDGET_SCHEME, qaapPreviewWidgetUri } from './qaap-preview-widget-uri';
+import {
+    coerceQaapPreviewWidgetKey,
+    isQaapPreviewWidgetId,
+    isQaapPreviewWidgetKey,
+    isQaapPreviewWidgetUri,
+    QAAP_PREVIEW_WIDGET_SCHEME,
+    qaapPreviewWidgetKeyFromCoordinates,
+    qaapPreviewWidgetUri,
+} from './qaap-preview-widget-uri';
 
 /** Mirrors `LEGACY_PREVIEW_URI` without importing DOM-bound modules. */
 const LEGACY_PREVIEW_URI = new URI().withScheme(QAAP_PREVIEW_WIDGET_SCHEME);
@@ -43,5 +51,23 @@ describe('qaap-preview-widget-uri', () => {
         expect(isQaapPreviewWidgetId('mini-browser:__minibrowser__preview__:/abc/def')).to.equal(true);
         expect(isQaapPreviewWidgetId('mini-browser:http://example.com')).to.equal(false);
         expect(isQaapPreviewWidgetId(undefined)).to.equal(false);
+    });
+
+    it('builds a widget key from probe coordinates and ignores blanks', () => {
+        expect(qaapPreviewWidgetKeyFromCoordinates(PROJECT_A.workspaceId, PROJECT_A.projectId)).to.deep.equal(PROJECT_A);
+        expect(qaapPreviewWidgetKeyFromCoordinates('  ', PROJECT_A.projectId)).to.equal(undefined);
+        expect(qaapPreviewWidgetKeyFromCoordinates(PROJECT_A.workspaceId, undefined)).to.equal(undefined);
+        expect(isQaapPreviewWidgetKey(PROJECT_A)).to.equal(true);
+        expect(isQaapPreviewWidgetKey({ workspaceId: PROJECT_A.workspaceId })).to.equal(false);
+    });
+
+    it('picks a widget key out of mini-browser.openUrl command args', () => {
+        const key = coerceQaapPreviewWidgetKey([
+            'https://example.test/qaap-preview/abc/',
+            PROJECT_B,
+        ]);
+        expect(key).to.deep.equal(PROJECT_B);
+        expect(qaapPreviewWidgetUri(key).toString()).to.not.equal(qaapPreviewWidgetUri(PROJECT_A).toString());
+        expect(coerceQaapPreviewWidgetKey(['https://example.test/qaap-preview/abc/'])).to.equal(undefined);
     });
 });

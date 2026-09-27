@@ -1,0 +1,436 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { inject, injectable } from '@theia/core/shared/inversify';
+import type { Request, Response } from '@theia/core/shared/express';
+import {
+    QAAP_AUTH_SESSION_COOKIE,
+} from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import {
+    isPathUnderUserWorkspace,
+    isUserWorkspaceContainerPath,
+    normalizeIsolationPath,
+    QAAP_SKIP_AUTH_USER_LOGIN,
+    QAAP_USER_REPOS_SEGMENT,
+    resolveQaapParallelRoot,
+    resolveQaapReposRoot,
+    resolveQaapWorktreesRoot,
+    resolveRepositoryWorkspacePath,
+    resolveUserReposRoot,
+    safeUserIdSegment,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
+import { isRealPathUnder } from './qaap-realpath-guard';
+import {
+    QAAP_TENANT_BACKEND_ASSERTION_HEADER,
+    QAAP_TENANT_BACKEND_MODE_ENV,
+    QAAP_TENANT_BACKEND_SECRET_ENV,
+    QAAP_TENANT_LOGIN_ENV,
+    verifyQaapTenantBackendAssertion,
+} from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+
+/**
+ * Outcome of normalizing a client-supplied agent `cwd` to the authenticated user's per-user
+ * repository tree. `ok` carries the canonical `/workspace/repos/users/{login}/{owner}/{repo}` path
+ * to actually run in; `needs-project` means the path is a workspace container (no single repo) and
+ * the client must pick a project (HTTP 400); `denied` means the path could not be resolved to an
+ * owned repository (HTTP 403).
+ */
+export type QaapResolvedRepositoryCwd =
+    | { readonly kind: 'ok'; readonly cwd: string }
+    | { readonly kind: 'needs-project' }
+    | { readonly kind: 'denied' };
+
+export type QaapGithubAuthContext =
+    | { readonly kind: 'authenticated'; readonly session: QaapGithubStoredSession; readonly sessionId: string; readonly userLogin: string }
+    | { readonly kind: 'skip'; readonly userLogin: string }
+    | { readonly kind: 'unauthorized' };
+
+export type QaapSecurityEventAction =
+    | 'list_repositories'
+    | 'open_repository'
+    | 'clone_repository'
+    | 'create_repository'
+    | 'delete_repository'
+    | 'merge_pull_request'
+    | 'list_pull_requests'
+    | 'project_session'
+    | 'git_review'
+    | 'agent_conversation'
+    | 'agent_task'
+    | 'workspace_path';
+
+/** Shared GitHub session resolution and multi-tenant ownership checks for Qaap HTTP endpoints. */
+@injectable()
+export class QaapGithubAuthGuard {
+    @inject(QaapGithubSessionStore)
+    protected readonly sessions: QaapGithubSessionStore;
+
+    protected readonly reposRoot = resolveQaapReposRoot();
+
+    // Only `req.headers` is ever read on this path (see `authenticateTenantBackend` and
+    // `resolveGithubSession` → `resolveSessionId` → `readSessionIdFromCookie`), so a plain
+    // `http.IncomingMessage` (no Express-specific members) is accepted here too — the dev-preview
+    // WebSocket-upgrade and legacy-port paths authenticate raw Node requests, not Express ones.
+    authenticate(req: Pick<Request, 'headers'>): QaapGithubAuthContext {
+        const tenantBackend = this.authenticateTenantBackend(req);
+        if (tenantBackend) {
+            return tenantBackend;
+        }
+        const session = this.resolveGithubSession(req);
+        if (session) {
+            return {
+                kind: 'authenticated',
+                session: session.stored,
+                sessionId: session.sessionId,
+                userLogin: session.stored.user.login,
+            };
+        }
+        if (this.isSkipAuthEnabled()) {
+            return { kind: 'skip', userLogin: QAAP_SKIP_AUTH_USER_LOGIN };
+        }
+        return { kind: 'unauthorized' };
+    }
+
+    /**
+     * A tenant backend is reachable only through the control-plane proxy. It does not receive the
+     * shared session store or the browser's authority to choose an owner; the proxy supplies a
+     * short-lived HMAC assertion whose tenant is fixed by the container environment.
+     */
+    protected authenticateTenantBackend(req: Pick<Request, 'headers'>): Extract<QaapGithubAuthContext, { kind: 'authenticated' }> | undefined {
+        if (!/^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '')) {
+            return undefined;
+        }
+        const rawHeader = req.headers[QAAP_TENANT_BACKEND_ASSERTION_HEADER];
+        const token = typeof rawHeader === 'string' ? rawHeader : undefined;
+        const payload = verifyQaapTenantBackendAssertion(
+            token,
+            process.env[QAAP_TENANT_BACKEND_SECRET_ENV],
+            process.env[QAAP_TENANT_LOGIN_ENV],
+        );
+        if (!payload) {
+            return undefined;
+        }
+        return {
+            kind: 'authenticated',
+            sessionId: `tenant-backend:${payload.tenantLogin.toLowerCase()}`,
+            userLogin: payload.tenantLogin,
+            session: {
+                accessToken: payload.githubAccessToken,
+                user: payload.user,
+            },
+        };
+    }
+
+    resolveUserLogin(ctx: QaapGithubAuthContext): string | undefined {
+        if (ctx.kind === 'authenticated' || ctx.kind === 'skip') {
+            return ctx.userLogin;
+        }
+        return undefined;
+    }
+
+    userWorkspaceRoot(ctx: QaapGithubAuthContext): string | undefined {
+        const login = this.resolveUserLogin(ctx);
+        return login ? resolveUserReposRoot(this.reposRoot, login) : undefined;
+    }
+
+    ownsWorkspacePath(ctx: QaapGithubAuthContext, targetPath: string): boolean {
+        if (ctx.kind === 'skip') {
+            return true;
+        }
+        if (ctx.kind === 'unauthorized') {
+            return false;
+        }
+        if (this.pathBelongsToUser(ctx.userLogin, targetPath) || this.pathIsUserWorktree(ctx.userLogin, targetPath)) {
+            return true;
+        }
+        // A legacy/flat (`.../repos/{owner}/{repo}`) or bare-name cwd that maps to an existing clone
+        // inside the caller's own per-user tree is still theirs — accept it so pre-migration
+        // conversations/tasks remain visible and resumable.
+        return this.resolveOwnedRepositoryCwdForLogin(ctx.userLogin, targetPath).kind === 'ok';
+    }
+
+    /**
+     * Normalize a client-supplied agent `cwd` to the authenticated user's canonical per-user
+     * repository path, so agent turns run under `/workspace/repos/users/{login}/{owner}/{repo}` even
+     * when the client sends the container root (`/workspace`), a bare repo name (`laaaaa`), a legacy
+     * flat path (`/workspace/repos/{owner}/{repo}`), or a `github:owner/repo` key.
+     *
+     * SECURITY: the destination is ALWAYS rebuilt from the authenticated `login` — a caller can only
+     * ever influence the `{owner}/{repo}` tail, never the tenant segment. A path pointing at another
+     * user's tree rebuilds under the caller's own root and is rejected when that clone does not exist.
+     * The candidate must exist on disk as a directory and pass the symlink-safe ownership check.
+     */
+    resolveOwnedRepositoryCwd(ctx: QaapGithubAuthContext, rawCwd: string | undefined): QaapResolvedRepositoryCwd {
+        if (ctx.kind === 'skip') {
+            const trimmed = rawCwd?.trim();
+            if (!trimmed) {
+                return { kind: 'denied' };
+            }
+            // Skip-auth (local dev) leaves paths unmanaged, but a managed container must still be
+            // refused: an agent turn there would ingest every repository at once.
+            return isQaapWorkspaceContainerPath(trimmed) ? { kind: 'needs-project' } : { kind: 'ok', cwd: trimmed };
+        }
+        if (ctx.kind === 'unauthorized') {
+            return { kind: 'denied' };
+        }
+        return this.resolveOwnedRepositoryCwdForLogin(ctx.userLogin, rawCwd);
+    }
+
+    /** Login-scoped core of {@link resolveOwnedRepositoryCwd}, usable by token-authenticated callers. */
+    resolveOwnedRepositoryCwdForLogin(userLogin: string | undefined, rawCwd: string | undefined): QaapResolvedRepositoryCwd {
+        const login = userLogin?.trim();
+        const trimmed = rawCwd?.trim();
+        if (!login || !trimmed) {
+            return { kind: 'denied' };
+        }
+        // 1. Already a concrete owned repository path (not a container level) — keep as-is.
+        if (isPathUnderUserWorkspace(trimmed, this.reposRoot, login)
+            && !isUserWorkspaceContainerPath(trimmed, this.reposRoot, login)) {
+            // The lexical checks above normalize separators (a Windows browser sends
+            // `\workspace\repos\users\...` from FileUri.fsPath); stat/return the same normalized
+            // path so the task does not keep, or fail on, the backslash form on a Linux host.
+            return this.acceptOwnedRepositoryCwd(login, normalizeIsolationPath(trimmed));
+        }
+        // 2. Derive {owner, repo} from a `github:` key or a legacy/new repository path.
+        const derived = this.deriveOwnerRepoFromCwd(trimmed);
+        if (derived) {
+            const candidate = resolveRepositoryWorkspacePath(this.reposRoot, login, derived.owner, derived.repo);
+            return this.acceptOwnedRepositoryCwd(login, candidate);
+        }
+        // 3. Bare repo name (no separators) — accept only a unique match under the caller's own root.
+        if (!trimmed.includes('/') && !trimmed.includes('\\')) {
+            const match = this.findUniqueOwnedRepoByName(resolveUserReposRoot(this.reposRoot, login), trimmed);
+            if (match === 'ambiguous') {
+                return { kind: 'needs-project' };
+            }
+            return match ? this.acceptOwnedRepositoryCwd(login, match) : { kind: 'denied' };
+        }
+        // 4. A workspace container (`/workspace`, repos root, user root, owner dir) — no single repo.
+        return { kind: 'needs-project' };
+    }
+
+    /** Extract `{owner, repo}` from a cwd, PRESERVING case (disk lookups are case-sensitive on Linux). */
+    protected deriveOwnerRepoFromCwd(rawCwd: string): { owner: string; repo: string } | undefined {
+        const schemeMatch = /^github:([^/]+)\/(.+)$/.exec(rawCwd);
+        if (schemeMatch) {
+            return { owner: schemeMatch[1], repo: schemeMatch[2] };
+        }
+        const segments = rawCwd.replace(/\\/g, '/').split('/').filter(Boolean);
+        const reposIndex = segments.lastIndexOf('repos');
+        if (reposIndex < 0) {
+            return undefined;
+        }
+        const after = segments.slice(reposIndex + 1);
+        if (after[0] === QAAP_USER_REPOS_SEGMENT) {
+            return after.length >= 4 ? { owner: after[2], repo: after[3] } : undefined;
+        }
+        return after.length >= 2 ? { owner: after[0], repo: after[1] } : undefined;
+    }
+
+    /** Find a single `{userRoot}/{owner}/{repoName}` directory; `'ambiguous'` when more than one owner has it. */
+    protected findUniqueOwnedRepoByName(userRoot: string, repoName: string): string | 'ambiguous' | undefined {
+        let ownerDirs: string[];
+        try {
+            ownerDirs = fs.readdirSync(userRoot, { withFileTypes: true })
+                .filter(entry => entry.isDirectory())
+                .map(entry => entry.name);
+        } catch {
+            return undefined;
+        }
+        const matches: string[] = [];
+        for (const owner of ownerDirs) {
+            const candidate = path.join(userRoot, owner, repoName);
+            try {
+                if (fs.statSync(candidate).isDirectory()) {
+                    matches.push(candidate);
+                }
+            } catch {
+                /* not a directory */
+            }
+        }
+        if (matches.length > 1) {
+            return 'ambiguous';
+        }
+        return matches[0];
+    }
+
+    /** Accept a candidate only when it exists on disk and passes the lexical + realpath ownership check. */
+    protected acceptOwnedRepositoryCwd(userLogin: string, candidate: string): QaapResolvedRepositoryCwd {
+        let isDirectory = false;
+        try {
+            isDirectory = fs.statSync(candidate).isDirectory();
+        } catch {
+            isDirectory = false;
+        }
+        if (!isDirectory) {
+            return { kind: 'denied' };
+        }
+        if (!this.pathBelongsToUser(userLogin, candidate)) {
+            return { kind: 'denied' };
+        }
+        return { kind: 'ok', cwd: path.resolve(candidate) };
+    }
+
+    /**
+     * Ownership check combining the fast lexical prefix test with a symlink-safe realpath test.
+     * The lexical check alone can be defeated by a symlink planted inside the user's own workspace
+     * (e.g. `.../alice/link -> .../bob/secret`): the string still starts with alice's root, but the
+     * real target is bob's tree. Requiring BOTH closes that cross-tenant escape.
+     */
+    /**
+     * "New Worktree" and parallel-run conversations live outside the repos tree, under the caller's own
+     * tenant segment of the worktrees / parallel roots (`/tmp/qaap-worktrees/<login>/<id>`). Without this
+     * their conversations and tasks were treated as foreign: hidden from the owner's list and answered
+     * with "Conversation not found". Symlink-safe like {@link pathBelongsToUser}.
+     */
+    protected pathIsUserWorktree(userLogin: string, targetPath: string): boolean {
+        const tenant = safeUserIdSegment(userLogin);
+        return [resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]
+            .map(root => path.join(root, tenant))
+            .some(root => isRealPathUnder(targetPath, root));
+    }
+
+    protected pathBelongsToUser(userLogin: string, targetPath: string): boolean {
+        if (!isPathUnderUserWorkspace(targetPath, this.reposRoot, userLogin)) {
+            return false;
+        }
+        const userRoot = resolveUserReposRoot(this.reposRoot, userLogin);
+        if (!isRealPathUnder(targetPath, userRoot)) {
+            this.logSecurityEvent('symlink_escape_denied', { userLogin, targetPath });
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Ownership check for a known login without an HTTP session context — used by trusted
+     * server-to-server callers (e.g. the agent helper CLI authenticated by a per-user token).
+     * An undefined/empty login (shared/anonymous bucket) is treated as unscoped and allowed.
+     */
+    loginOwnsWorkspacePath(userLogin: string | undefined, targetPath: string): boolean {
+        if (!userLogin?.trim()) {
+            return true;
+        }
+        return this.pathBelongsToUser(userLogin, targetPath);
+    }
+
+    /** Returns false and sends 403 when the path is outside the user's workspace tree. */
+    assertWorkspacePathOwned(req: Request, res: Response, targetPath: string, action: QaapSecurityEventAction): boolean {
+        const ctx = this.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return false;
+        }
+        if (ctx.kind === 'skip') {
+            return true;
+        }
+        if (!this.pathBelongsToUser(ctx.userLogin, targetPath)) {
+            this.logSecurityEvent('ownership_denied', {
+                action,
+                userLogin: ctx.userLogin,
+                targetPath,
+            });
+            res.status(403).json({ error: 'Forbidden' });
+            return false;
+        }
+        return true;
+    }
+
+    /** Returns false and sends 403 without leaking resource details. */
+    denyForbidden(res: Response, req: Request, action: QaapSecurityEventAction, detail?: Record<string, unknown>): false {
+        const ctx = this.authenticate(req);
+        this.logSecurityEvent('ownership_denied', {
+            action,
+            userLogin: ctx.kind === 'authenticated' ? ctx.userLogin : undefined,
+            ...detail,
+        });
+        res.status(403).json({ error: 'Forbidden' });
+        return false;
+    }
+
+    logSecurityEvent(event: string, detail: Record<string, unknown>): void {
+        console.warn('[qaap-security]', JSON.stringify({
+            event,
+            at: new Date().toISOString(),
+            ...detail,
+        }));
+    }
+
+    protected skipAuthInProductionWarned = false;
+
+    /**
+     * Skip-auth (no login, everyone becomes the shared `_dev` bucket) is a LOCAL-DEV-ONLY switch.
+     * There is deliberately no production override: an environment variable must never be able to
+     * turn a hosted multi-tenant deployment into an unauthenticated shared bucket.
+     */
+    isSkipAuthEnabled(): boolean {
+        const requested = process.env.QAAP_SKIP_AUTH === 'true' || process.env.QAAP_SKIP_AUTH === '1';
+        if (!requested) {
+            return false;
+        }
+        if (this.isProductionRuntime()) {
+            if (!this.skipAuthInProductionWarned) {
+                this.skipAuthInProductionWarned = true;
+                console.error('[qaap-security] REFUSING QAAP_SKIP_AUTH in a production runtime — authentication stays ON. '
+                    + 'Skip-auth is local-dev only and has no production override.');
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /** True when this looks like a hosted/production deployment rather than local dev. */
+    protected isProductionRuntime(): boolean {
+        const cloudMode = process.env.QAAP_CLOUD_MODE?.trim().toLowerCase();
+        return process.env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
+    }
+
+    /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */
+    resolveGithubSession(req: Pick<Request, 'headers'>): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+        const sessionId = this.resolveSessionId(req);
+        if (!sessionId) {
+            return undefined;
+        }
+        const stored = this.sessions.getSession(sessionId);
+        return stored ? { stored, sessionId } : undefined;
+    }
+
+    resolveSessionId(req: Pick<Request, 'headers'>): string | undefined {
+        // Cookie-only: the legacy x-qaap-session-id header fallback was removed (July 2026)
+        // so a session id exfiltrated from an old localStorage copy is no longer usable.
+        const cookieId = this.readSessionIdFromCookie(req);
+        if (cookieId && this.sessions.getSession(cookieId)) {
+            return cookieId;
+        }
+        return undefined;
+    }
+
+    protected readSessionIdFromCookie(req: Pick<Request, 'headers'>): string | undefined {
+        const cookieHeader = req.headers.cookie;
+        if (!cookieHeader || typeof cookieHeader !== 'string') {
+            return undefined;
+        }
+        for (const part of cookieHeader.split(';')) {
+            const trimmed = part.trim();
+            const eq = trimmed.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            const name = trimmed.slice(0, eq);
+            if (name === QAAP_AUTH_SESSION_COOKIE) {
+                const value = trimmed.slice(eq + 1);
+                if (value) {
+                    return decodeURIComponent(value);
+                }
+            }
+        }
+        return undefined;
+    }
+
+}

@@ -71,6 +71,9 @@ conversation_history/
 # Generated Playwright screenshots.
 /output/
 
+# Runtime data produced by local tenant/Docker integration tests.
+/.qaap-it-data/
+
 # Ad-hoc test scratch repos (nested git repos — never track as submodules).
 .tmp-branch-delete-test/
 .tmp.cfg

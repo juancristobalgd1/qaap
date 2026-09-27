@@ -1,0 +1,61 @@
+{
+  "extends": "../../configs/base.tsconfig",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "lib"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../ai-chat"
+    },
+    {
+      "path": "../ai-chat-ui"
+    },
+    {
+      "path": "../ai-core"
+    },
+    {
+      "path": "../ai-mcp"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../editor"
+    },
+    {
+      "path": "../filesystem"
+    },
+    {
+      "path": "../monaco"
+    },
+    {
+      "path": "../qaap-adapters"
+    },
+    {
+      "path": "../qaap-agents-ui"
+    },
+    {
+      "path": "../qaap-diff-review"
+    },
+    {
+      "path": "../qaap-mobile-shell"
+    },
+    {
+      "path": "../qaap-shared-core"
+    },
+    {
+      "path": "../qaap-transcript"
+    },
+    {
+      "path": "../qaap-transcript-overlay"
+    },
+    {
+      "path": "../workspace"
+    }
+  ]
+}

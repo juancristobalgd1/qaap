@@ -65,7 +65,7 @@ describe('QaapAgentCliUpdateService', () => {
         expect(result.message).to.match(/Unknown agent CLI/i);
     });
 
-    it('denies in-place updates in production unless the operator opts in', async () => {
+    it('denies in-place updates in production without an escape hatch', async () => {
         process.env.NODE_ENV = 'production';
         delete process.env.QAAP_CLOUD_MODE;
         delete process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE];
@@ -76,10 +76,10 @@ describe('QaapAgentCliUpdateService', () => {
         expect(result.message).to.match(/hosted\/production|Rebuild the Qaap image/i);
     });
 
-    it('allows in-place updates in production when QAAP_ALLOW_IN_PLACE_CLI_UPDATE is set', () => {
+    it('still denies in-place updates in production when the legacy override is set', () => {
         process.env.NODE_ENV = 'production';
         process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE] = '1';
-        expect(isInPlaceCliUpdateAllowed()).to.equal(true);
+        expect(isInPlaceCliUpdateAllowed()).to.equal(false);
     });
 
     it('rejects install when update checks are disabled', async () => {

@@ -7,7 +7,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { expect } from 'chai';
 
-const PANEL_SOURCE = readFileSync(join(__dirname, '../../../qaap-mobile-shell/src/browser/mobile-projects-panel.ts'), 'utf8');
+const PANEL_SOURCE = readFileSync(join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'mobile-projects-panel.ts'), 'utf8');
 
 const WORK_HUB_TRANSCRIPT_BRIDGE_METHODS = [
     'isAgentsHubLanding',

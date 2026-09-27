@@ -27,7 +27,23 @@ export const OPENROUTER_EXCLUDED_MODEL_SLUGS: ReadonlySet<string> = new Set([
     // Hunyuan free endpoint accepts `tools` but emits tool-call args as plain text — unusable for Agent.
     'tencent/hy3:free',
     'tencent/hy3',
+    // Hermes catalog copies that 404 on OpenRouter (`No endpoints found`) as of 2026-08-17.
+    'poolside/laguna-m.1:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'inclusionai/ring-2.6-1t:free',
+    'openrouter/elephant-alpha',
+    'openrouter/pareto-code',
+    // Delisted from the OpenRouter catalog (only paid variants remain) as of 2026-09-24; QAIQ fails
+    // with "model may not exist" when a saved pick still points at them.
+    'moonshotai/kimi-k2.6:free',
+    'nvidia/nemotron-3-nano-30b-a3b:free',
+    'openai/gpt-oss-120b:free',
+    'z-ai/glm-4.5-air:free',
+    'nousresearch/hermes-3-llama-3.1-405b:free',
 ]);
+
+/** Default OpenRouter endpoint. It is OpenAI Chat-Completions compatible. */
+export const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 
 export const OPENROUTER_DEFAULT_FREE_MODELS: readonly string[] = [
     // The OpenRouter free catalog (https://openrouter.ai/models?max_price=0) churns frequently —
@@ -39,19 +55,16 @@ export const OPENROUTER_DEFAULT_FREE_MODELS: readonly string[] = [
     // When a default below starts 404'ing, replace it via the `ai-features.openrouter.openrouterModels`
     // preference. Any `:free` slug keeps the 🆓 badge automatically (the detector is structural).
 
+    // Verified live (free endpoint status 0, tool calling supported) on 2026-09-24.
     // 1M context — best fit for the Coder agent's large system prompt.
     'nvidia/nemotron-3-super-120b-a12b:free',
     // 262k context — modern, strong general model.
     'google/gemma-4-31b-it:free',
-    // Moonshot Kimi K2.6 — strong agentic / reasoning on a free endpoint.
-    'moonshotai/kimi-k2.6:free',
-    // 256k context — NVIDIA Nemotron Nano (Nemo, but smaller / faster).
-    'nvidia/nemotron-3-nano-30b-a3b:free',
-    // 131k context — well-tested, strong tool calling.
-    'openai/gpt-oss-120b:free',
-    'z-ai/glm-4.5-air:free',
-    // Massive 405B model on a free endpoint — slow but capable.
-    'nousresearch/hermes-3-llama-3.1-405b:free'
+    'qwen/qwen3.8-27b:free',
+    'google/gemma-4-26b-a4b-it:free',
+    // Coding-focused free endpoints.
+    'poolside/laguna-s-2.1:free',
+    'cohere/north-mini-code:free',
 ];
 
 export function normalizeOpenRouterModelSlug(raw: string): string {
@@ -61,8 +74,14 @@ export function normalizeOpenRouterModelSlug(raw: string): string {
 }
 
 export function isExcludedOpenRouterModelSlug(raw: string): boolean {
-    const slug = normalizeOpenRouterModelSlug(raw);
-    return !!slug && OPENROUTER_EXCLUDED_MODEL_SLUGS.has(slug);
+    const trimmed = raw.trim();
+    if (!trimmed) {
+        return false;
+    }
+    const slug = normalizeOpenRouterModelSlug(trimmed);
+    // `openrouter/elephant-alpha` is a model slug whose org is `openrouter`. Normalizing
+    // Theia ids (`openrouter/org/model`) would strip that to `elephant-alpha`, so match both.
+    return OPENROUTER_EXCLUDED_MODEL_SLUGS.has(trimmed) || OPENROUTER_EXCLUDED_MODEL_SLUGS.has(slug);
 }
 
 /** Drops excluded slugs from preference lists and curated fallbacks. */

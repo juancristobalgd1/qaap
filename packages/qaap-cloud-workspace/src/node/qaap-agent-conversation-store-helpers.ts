@@ -23,43 +23,43 @@ import {
     appendTraceReviewEvent,
     appendTraceRunCancelledEvent,
     appendTraceVerificationWarningEvent,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+} from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import {
     detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
     isUnauthenticatedCliDeclaration,
     localizeAgentAuthFailureMessage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-auth-login';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
     detectAgentFailureKind,
     resolveAgentTurnFailureMessage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
-import { extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { extractAgentTurnError } from '@theia/qaap-shared-core/lib/common/qaap-research-agent-log';
 import {
     parseAgentLogForTranscript,
     createAgentStreamAccumulator,
     type QaapAgentStreamAccumulator,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
+} from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import {
     createAgUiCliStreamEmitter,
     type QaapCliAgUiStreamEmitter,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
+} from '@theia/qaap-shared-core/lib/common/qaap-cli-ag-ui-stream';
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     estimateConversationTokensFromMessages,
     totalTokensFromContextUsage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
 import type { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
-import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import { preferTraceFirstAgentMessageStorage, materializeAgentMessageForApi } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import { mergeAccumulatorTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import { preferTraceFirstAgentMessageStorage, materializeAgentMessageForApi } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
 import {
     computeAgentMessageWireDelta,
     toAgentMessageWirePayload,
     toAgentMessageWireSnapshot,
     type QaapAgentMessageWireSnapshot,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import {
     compressAgentMessageForWire,
     compressAgentMessageWireDeltaForWire,
@@ -74,8 +74,8 @@ import {
     buildAgentAutoContinuePrompt,
     buildDevPreviewAutoContinueExhaustedReason,
     isIncompleteAgentTurn,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
-import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
+} from '@theia/qaap-transcript/lib/common/qaap-agent-turn-completion';
+import { messageRequestsDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { QAAP_AGENT_AUTO_CONTINUE_ENABLED } from './qaap-agent-conversation-store-constants';
 import {
     partitionConversationHistory,
@@ -101,8 +101,8 @@ export function clearRunActive(
     }
     return {
         ...conv,
-        messages: conv.messages.map(message => message.id === agentMessageId && message.runActive
-            ? { ...message, runActive: undefined }
+        messages: conv.messages.map(message => message.id === agentMessageId && message.role === 'agent'
+            ? { ...message, runActive: undefined, runFinishedAt: message.runFinishedAt ?? Date.now() }
             : message),
     };
 }
@@ -752,14 +752,14 @@ export function applyAccumulatorStructuredOutput(
     }
     const segments = [...stream.getSegments()];
     const content = stream.getDisplayText();
-    if (!content && segments.length === 0) {
-        return;
-    }
     const now = Date.now();
     const existingAgentMessage = ref.agentMessageId
         ? conv.messages.find(message => message.id === ref.agentMessageId)
         : undefined;
     const traceEvents = mergeAccumulatorTraceEvents(existingAgentMessage?.traceEvents, stream);
+    if (!content && segments.length === 0 && traceEvents.length === 0) {
+        return;
+    }
     let agentMessageId = ref.agentMessageId;
     let messages: QaapAgentMessage[];
     if (!agentMessageId) {

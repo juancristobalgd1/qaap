@@ -7,12 +7,14 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { Command, CommandContribution, CommandRegistry } from '@theia/core/lib/common/command';
 import { nls } from '@theia/core/lib/common/nls';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
-import { MobileProjectEntry } from '@theia/qaap-mobile-shell/lib/browser/mobile-projects-types';
-import { MobileProjectsService } from '@theia/qaap-mobile-shell/lib/browser/mobile-projects-service';
-import { QaapProjectBootstrapService } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-service';
-import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from '@theia/qaap-mobile-shell/lib/browser/qaap-transcript-preview-bootstrap';
-import { probeQaapDevPreviewPort } from '@theia/qaap-mobile-shell/lib/browser/qaap-dev-preview-client';
-import { QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-composer-prompt';
+import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import { probeQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND } from '@theia/qaap-composer/lib/common/qaap-work-hub-composer-prompt';
+import type { QaapPreviewWidgetKey } from '@theia/qaap-adapters/lib/browser/qaap-preview-widget-uri';
+import { qaapHubPreviewWidgetKeyFromProject } from './qaap-hub-resume-preview';
 
 export const QAAP_HUB_RESUME_PREVIEW_COMMAND_ID = 'qaap.hub.resumePreview';
 
@@ -24,6 +26,8 @@ interface QaapHubPendingAction {
     readonly kind: QaapHubPendingActionKind;
     readonly targetKey?: string;
     readonly previewUrl?: string;
+    readonly workspaceId?: string;
+    readonly projectId?: string;
     readonly task?: string;
 }
 
@@ -61,16 +65,20 @@ export class QaapHubActionsContribution implements CommandContribution, Frontend
         if (!this.ensureProjectReady('resumePreview', project)) {
             return;
         }
-        await this.doResumePreview(project?.previewUrl);
+        await this.doResumePreview(project?.previewUrl, qaapHubPreviewWidgetKeyFromProject(project ?? {}));
     }
 
-    protected async doResumePreview(previewUrl?: string): Promise<void> {
+    protected async doResumePreview(previewUrl?: string, key?: QaapPreviewWidgetKey): Promise<void> {
         const port = extractDevPreviewPortFromUrl(previewUrl);
         if (port !== undefined) {
             const probe = await probeQaapDevPreviewPort(port);
             if (probe.ready) {
                 try {
-                    await this.commands.executeCommand('mini-browser.openUrl', probe.previewUrl);
+                    await this.openResumedPreview(probe.previewUrl, key
+                        ?? qaapHubPreviewWidgetKeyFromProject({
+                            workspaceId: probe.workspaceId,
+                            projectId: probe.projectId,
+                        }));
                     return;
                 } catch {
                     /* fall through to bootstrap */
@@ -80,13 +88,25 @@ export class QaapHubActionsContribution implements CommandContribution, Frontend
         const readyUrl = await ensureTranscriptDevPreview(this.bootstrap, { previewUrlHint: previewUrl, portHint: port });
         if (readyUrl) {
             try {
-                await this.commands.executeCommand('mini-browser.openUrl', readyUrl);
+                await this.openResumedPreview(readyUrl, key);
                 return;
             } catch {
                 /* fall through */
             }
         }
         await this.bootstrap.focusPreview();
+    }
+
+    /**
+     * Opens the resumed URL in the **project** preview tab. Never use bare `mini-browser.openUrl`:
+     * that command still maps to the legacy singleton widget and two projects would share one iframe.
+     */
+    protected async openResumedPreview(url: string, key?: QaapPreviewWidgetKey): Promise<void> {
+        if (key) {
+            await this.commands.executeCommand('mini-browser.openUrl', url, key);
+            return;
+        }
+        await this.bootstrap.openPreview(url);
     }
 
     protected ensureProjectReady(kind: QaapHubPendingActionKind, project?: MobileProjectEntry): boolean {
@@ -99,6 +119,8 @@ export class QaapHubActionsContribution implements CommandContribution, Frontend
                 kind,
                 targetKey,
                 previewUrl: project.previewUrl,
+                workspaceId: project.uri?.toString(),
+                projectId: project.uri?.toString() ?? project.id,
                 task: project.task?.trim(),
             });
             this.projects.openInCurrentWindow(project);
@@ -119,7 +141,10 @@ export class QaapHubActionsContribution implements CommandContribution, Frontend
         }
         this.clearPendingAction();
         if (pending.kind === 'resumePreview') {
-            await this.doResumePreview(pending.previewUrl);
+            await this.doResumePreview(
+                pending.previewUrl,
+                qaapHubPreviewWidgetKeyFromProject(pending),
+            );
             return;
         }
         await this.doOpenAgentOnTask(pending.task);

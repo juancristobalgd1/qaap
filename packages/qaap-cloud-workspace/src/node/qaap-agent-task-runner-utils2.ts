@@ -7,15 +7,39 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import { createHash } from 'crypto';
-import { spawnSync } from 'child_process';
+import { spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import {
+    isQaapMultiUserBackend,
+    mustWithholdOperatorProviderCredentials,
+    resolveUserSettingsFilePath,
+    usesSharedAiSettingsFallback,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { isQaapAiSettingsPrefKey } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
+import { AGENT_ENV_PREFS } from './qaap-agent-task-runner-constants';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
+
+const safeGitReadArgs = (args: readonly string[]): string[] => [
+    '-c', 'core.hooksPath=/dev/null',
+    '-c', 'core.fsmonitor=false',
+    ...args,
+];
+
+/** Synchronous, read-only Git seam. The runner supplies a tenant-worker implementation in hosted mode. */
+export type QaapGitReadSync = (cwd: string, args: readonly string[], maxBuffer?: number) => SpawnSyncReturns<string>;
+
+const localGitReadSync: QaapGitReadSync = (cwd, args, maxBuffer = WORKTREE_FINGERPRINT_MAX_BUFFER) => spawnSync(
+    'git',
+    safeGitReadArgs(args),
+    { cwd, encoding: 'utf8', timeout: 4000, maxBuffer },
+);
 
 // ─── Constants (shared with the main class) ──────────────────────────────────
 
@@ -26,17 +50,10 @@ export const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
     'coverage', '.nyc_output', '.turbo', '.vscode', '.idea',
 ]);
 export const REPO_MAP_SOURCE_DIRS = new Set<string>(['src', 'app', 'components', 'pages', 'packages', 'server', 'api']);
-export const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: string }[] = [
-    { env: 'ANTHROPIC_API_KEY', pref: 'anthropic-api-key' },
-    { env: 'OPENAI_API_KEY', pref: 'openai-api-key' },
-    { env: 'GEMINI_API_KEY', pref: 'gemini-api-key' },
-    { env: 'GOOGLE_API_KEY', pref: 'google-api-key' },
-    { env: 'OPENROUTER_API_KEY', pref: 'openrouter-api-key' },
-    { env: 'NVIDIA_API_KEY', pref: 'nvidia-api-key' },
-];
-export const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
+export const DEFAULT_MAX_CONCURRENT_AGENTS = 16;
 export const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
-export const DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER = 2;
+/** Ceiling for one user; plan entitlements (Starter 2 / Pro 4 / Team 8) are the real limiter. */
+export const DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER = 8;
 export const MAX_CONCURRENT_AGENTS_PER_USER_ENV = 'QAAP_MAX_CONCURRENT_AGENTS_PER_USER';
 
 // ─── Fingerprint constants ───────────────────────────────────────────────────
@@ -147,14 +164,14 @@ export function buildRepoTree(cwd: string): string | undefined {
 }
 
 /** Recently-changed files via git, so the agent knows where work is already in flight. */
-export function buildRecentlyChangedFiles(cwd: string): string | undefined {
+export function buildRecentlyChangedFiles(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     if (!fs.existsSync(path.join(cwd, '.git'))) {
         return undefined;
     }
     const names = new Set<string>();
     for (const args of [['diff', '--name-only', 'HEAD~5', '--'], ['status', '--porcelain', '--untracked-files=all']]) {
         try {
-            const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
+            const out = gitRead(cwd, args);
             if (out.status !== 0 || !out.stdout) {
                 continue;
             }
@@ -182,13 +199,13 @@ export function buildRecentlyChangedFiles(cwd: string): string | undefined {
  * where it stands instead of spending its first tool call on `git status`. Never cached — the
  * working tree drifts as the agent edits between turns.
  */
-export function readGitStatusSnapshot(cwd: string): string | undefined {
+export function readGitStatusSnapshot(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     if (!fs.existsSync(path.join(cwd, '.git'))) {
         return undefined;
     }
     const run = (args: string[]): string | undefined => {
         try {
-            const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
+            const out = gitRead(cwd, args);
             return out.status === 0 && out.stdout.trim() ? out.stdout.trim() : undefined;
         } catch {
             return undefined;
@@ -223,13 +240,11 @@ export function readGitStatusSnapshot(cwd: string): string | undefined {
 
 // ─── Worktree fingerprinting ─────────────────────────────────────────────────
 
-export function captureWorktreeStatus(cwd: string): string | undefined {
-    const result = spawnSync('git', ['-C', cwd, 'status', '--porcelain', '--untracked-files=all'], {
-        cwd,
-        encoding: 'utf8',
-        maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
-        stdio: ['ignore', 'pipe', 'pipe'],
-    });
+export function captureWorktreeStatus(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
+    if (!fs.existsSync(path.join(cwd, '.git'))) {
+        return undefined;
+    }
+    const result = gitRead(cwd, ['status', '--porcelain', '--untracked-files=all'], WORKTREE_FINGERPRINT_MAX_BUFFER);
     if (result.status !== 0 || result.error || typeof result.stdout !== 'string') {
         return undefined;
     }
@@ -247,14 +262,12 @@ export function captureWorktreeStatus(cwd: string): string | undefined {
  * above the explicit byte budget return undefined so callers can use the porcelain baseline
  * instead of a bare "any dirty path" probe.
  */
-export function captureWorktreeFingerprint(cwd: string): string | undefined {
+export function captureWorktreeFingerprint(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
+    if (!fs.existsSync(path.join(cwd, '.git'))) {
+        return undefined;
+    }
     const runGit = (args: readonly string[]): string | undefined => {
-        const result = spawnSync('git', ['-C', cwd, ...args], {
-            cwd,
-            encoding: 'utf8',
-            maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
+        const result = gitRead(cwd, args, WORKTREE_FINGERPRINT_MAX_BUFFER);
         return result.status === 0 && !result.error && typeof result.stdout === 'string'
             ? result.stdout
             : undefined;
@@ -351,41 +364,177 @@ export function appendBoundedCommandOutput(current: string, chunk: string, maxCh
 // ─── User settings ───────────────────────────────────────────────────────────
 
 /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
- *  When ownerLogin is provided, prefers the per-user settings file; falls back to the shared
- *  ~/.theia/settings.json so single-user VPS deployments keep working with Settings → AI. */
-export function readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
+ *  Authenticated `ownerLogin` reads ONLY `~/.qaap/users/{login}/settings.json` — never the shared
+ *  `~/.theia/settings.json`, which would leak User A's BYOK keys into User B's spawn.
+ *  Skip-auth / anonymous still fall back to the shared file for local single-user VPS. */
+export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = os.homedir()): Record<string, unknown> {
     try {
+        const sharedSettingsPath = path.join(homeDir, '.theia', 'settings.json');
         const userSettingsPath = ownerLogin?.trim()
-            ? path.join(os.homedir(), '.qaap', 'users', safeUserIdSegment(ownerLogin), 'settings.json')
+            ? resolveUserSettingsFilePath(ownerLogin, homeDir)
             : undefined;
-        const sharedSettingsPath = path.join(os.homedir(), '.theia', 'settings.json');
-        const settingsPath = userSettingsPath && fs.existsSync(userSettingsPath)
-            ? userSettingsPath
-            : sharedSettingsPath;
+        let settingsPath = sharedSettingsPath;
+        if (userSettingsPath) {
+            if (fs.existsSync(userSettingsPath)) {
+                settingsPath = userSettingsPath;
+            } else if (!usesSharedAiSettingsFallback(ownerLogin)) {
+                return {};
+            }
+        }
         if (!fs.existsSync(settingsPath)) {
             return {};
         }
-        const raw = fs.readFileSync(settingsPath, 'utf8');
-        if (!raw.trim()) {
-            return {};
-        }
-        return JSON.parse(raw) as Record<string, unknown>;
+        return parseSettingsJsonFile(settingsPath);
     } catch (error) {
         console.warn('[qaap-agent-tasks] failed to read user settings from disk:', error instanceof Error ? error.message : String(error));
         return {};
     }
 }
 
+export function parseSettingsJsonFile(settingsPath: string): Record<string, unknown> {
+    const raw = fs.readFileSync(settingsPath, 'utf8');
+    if (!raw.trim()) {
+        return {};
+    }
+    return JSON.parse(raw) as Record<string, unknown>;
+}
+
+/** Keeps only AI settings (`ai-features.*`, see {@link isQaapAiSettingsPrefKey}): the per-user file never stores other keys. */
+export function filterAiSettings(settings: Record<string, unknown>): Record<string, unknown> {
+    const filtered: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(settings)) {
+        if (isQaapAiSettingsPrefKey(key) && value !== undefined) {
+            filtered[key] = value;
+        }
+    }
+    return filtered;
+}
+
+/** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. */
+export function writeUserSettingsToDisk(
+    ownerLogin: string,
+    patch: Record<string, unknown>,
+    homeDir: string = os.homedir(),
+): Record<string, unknown> {
+    const filePath = resolveUserSettingsFilePath(ownerLogin, homeDir);
+    const current = fs.existsSync(filePath) ? parseSettingsJsonFile(filePath) : {};
+    const next = { ...current, ...filterAiSettings(patch) };
+    // `null` (JSON's only way to say `undefined`) removes an AI key, so the reader falls back to the schema default.
+    for (const [key, value] of Object.entries(patch)) {
+        // eslint-disable-next-line no-null/no-null
+        if ((value === undefined || value === null) && isQaapAiSettingsPrefKey(key) && key in next) {
+            delete next[key];
+        }
+    }
+    const dir = path.dirname(filePath);
+    const tmpPath = `${filePath}.${process.pid}.tmp`;
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tmpPath, `${JSON.stringify(next, undefined, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(tmpPath, filePath);
+    try { fs.chmodSync(filePath, 0o600); } catch { /* best-effort */ }
+    return filterAiSettings(next);
+}
+
+/** Minimal preference seam: the runner passes the backend `PreferenceService`; tests may pass a stub. */
+export interface QaapOwnerPreferenceSource {
+    get?(key: string): unknown;
+    inspectInScope?(key: string, scope: PreferenceScope): unknown;
+}
+
+/** What {@link preferenceReaderForOwner} needs from the runner (tests pass plain objects). */
+export interface QaapOwnerSettingsSource {
+    readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown>;
+    readonly preferenceService?: QaapOwnerPreferenceSource;
+}
+
+/**
+ * Registered schema default (plus product default overrides) for a per-user AI settings key.
+ * Only the Default scope is consulted, so no shared User-scope value can leak into a tenant.
+ */
+function schemaDefaultForAiSetting(preferenceService: QaapOwnerPreferenceSource | undefined, key: string): unknown {
+    if (!isQaapAiSettingsPrefKey(key) || typeof preferenceService?.inspectInScope !== 'function') {
+        return undefined;
+    }
+    return preferenceService.inspectInScope(key, PreferenceScope.Default);
+}
+
+/**
+ * AI settings reader for work done on behalf of `ownerLogin`:
+ * - authenticated tenant: their own `~/.qaap/users/{login}/settings.json`, else the schema default;
+ * - no login / anonymous on a multi-user backend: schema defaults only (the shared User settings belong to
+ *   nobody there, mirroring the operator-credential policy of {@link isQaapMultiUserBackend});
+ * - local single user: the shared PreferenceService (User scope + defaults), then the shared settings file.
+ */
+export function preferenceReaderForOwner(ctx: QaapOwnerSettingsSource, ownerLogin?: string): QaapPreferenceReader {
+    const preferenceService = ctx.preferenceService;
+    if (usesSharedAiSettingsFallback(ownerLogin) && isQaapMultiUserBackend()) {
+        return (key: string): unknown => schemaDefaultForAiSetting(preferenceService, key);
+    }
+    const diskSettings = ctx.readUserSettingsFromDisk(ownerLogin);
+    if (!usesSharedAiSettingsFallback(ownerLogin)) {
+        // Authenticated tenants: their own settings.json, else the schema default — never shared/User-scope values.
+        return (key: string): unknown => {
+            const value = diskSettings[key];
+            // eslint-disable-next-line no-null/no-null
+            return value !== undefined && value !== null ? value : schemaDefaultForAiSetting(preferenceService, key);
+        };
+    }
+    return (key: string): unknown => {
+        const fromPref = preferenceService?.get?.(key);
+        // eslint-disable-next-line no-null/no-null
+        if (fromPref !== undefined && fromPref !== null && fromPref !== '') {
+            return fromPref;
+        }
+        return diskSettings[key];
+    };
+}
+
 // ─── Provider env stripping ──────────────────────────────────────────────────
 
-export function stripSharedProviderEnv(env: NodeJS.ProcessEnv): void {
-    for (const mapping of AGENT_ENV_PREFS) {
-        delete env[mapping.env];
+/**
+ * Operator-level credentials read by the built-in agent CLIs (see QAAP_BUILTIN_AGENT_DEFINITIONS) that have
+ * no Settings mapping in AGENT_ENV_PREFS. None is re-applied per user after stripping, except HF_TOKEN,
+ * which is re-derived from the user's own Hugging Face key.
+ */
+export const SHARED_PROVIDER_ONLY_ENV: readonly string[] = [
+    // Hugging Face / Mistral / Groq / DeepSeek (QAIQ, OpenCode, Hermes providers)
+    'HF_TOKEN', 'MISTRAL_API_KEY', 'GROQ_API_KEY', 'DEEPSEEK_API_KEY',
+    // Grok Build
+    'XAI_API_KEY', 'GROK_API_KEY',
+    // Codex
+    'CODEX_API_KEY',
+    // Claude Code / OpenClaude (subscription token, gateway, Bedrock credentials)
+    'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL',
+    'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_BEARER_TOKEN_BEDROCK',
+    // Gemini / Antigravity service account
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    // Cursor Agent
+    'CURSOR_API_KEY',
+    // Copilot CLI (the product never sets a per-user GitHub token for agents)
+    'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN',
+    // Qwen Code / Kimi CLI / Hermes (Nous)
+    'DASHSCOPE_API_KEY', 'MOONSHOT_API_KEY', 'KIMI_API_KEY', 'NOUS_API_KEY',
+];
+
+/**
+ * Removes inherited backend env the agent must not see. Backend-only secrets are always removed. Operator
+ * provider credentials are removed for authenticated tenants and for every owner on a multi-user backend
+ * ({@link mustWithholdOperatorProviderCredentials}): per-user Settings are then their sole source. Local
+ * single-user runs keep the operator's keys (they are the operator).
+ */
+export function stripSharedProviderEnv(env: NodeJS.ProcessEnv, ownerLogin?: string): void {
+    if (mustWithholdOperatorProviderCredentials(ownerLogin)) {
+        for (const mapping of AGENT_ENV_PREFS) {
+            delete env[mapping.env];
+        }
+        for (const name of SHARED_PROVIDER_ONLY_ENV) {
+            delete env[name];
+        }
+        // Also strip compat-derived keys that would short-circuit per-user resolution.
+        delete env.OPENAI_BASE_URL;
+        delete env.CLAUDE_CODE_USE_OPENAI;
+        delete env.NVIDIA_NIM;
     }
-    // Also strip compat-derived keys that would short-circuit per-user resolution.
-    delete env.OPENAI_BASE_URL;
-    delete env.CLAUDE_CODE_USE_OPENAI;
-    delete env.NVIDIA_NIM;
     // Backend-only secrets the agent never needs. Without this the child inherits them via
     // {...process.env}, so any user could exfiltrate them with `env | grep -i secret`: the OAuth
     // client secret enables app impersonation, and the VAPID private key lets it forge Web Push

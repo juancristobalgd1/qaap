@@ -18,7 +18,8 @@ the diff, run verification, and keep moving from desktop or mobile.
 - **BYOK/provider support** through QAIQ, OpenRouter, NVIDIA, Ollama, Gemini,
   OpenAI-compatible endpoints, and other CLI-backed agents.
 - **Cloud workspace tooling** for Docker/VPS deployment, persistent Theia user
-  state, preview sharing, terminal persistence, and push notifications.
+  state, SQLite/WAL-backed Qaap stores, preview sharing, terminal persistence,
+  and push notifications.
 - **Controlled Theia fork drift**: product code lives under `packages/qaap-*`;
   intentional upstream seams are guarded by `npm run qaap:drift-check`.
 
@@ -49,7 +50,14 @@ templates, environment variables, and custom agent configuration.
 packages/
   qaap-product/            product umbrella, branding, preload, Electron hooks
   qaap-cloud-workspace/    background agents, conversations, tasks, deploy APIs
-  qaap-mobile-shell/       Work Hub, mobile shell, execution surfaces
+  qaap-work-hub/           Work Hub UI and frontend composition root
+  qaap-composer/           sticky composer, agent/model sheets, attachments
+  qaap-transcript/         transcript rendering, execution timeline, markdown worker
+  qaap-agents-ui/          agent picker, sign-in dialogs, CLI update notices
+  qaap-diff-review/        diff review, pull-request panel, git-review endpoint
+  qaap-shared-core/        agent/conversation DTOs, project services, GitHub/dev-preview backends
+  qaap-mobile-shell/       mobile mechanics: gestures, touch scroll, keyboard, narrow layout
+  qaap-persistence/        embedded SQLite/WAL persistence for Node stores
   qaap-adapters/           Theia seams and browser/preview adapters
   qaap-ai-config/          AI defaults, prompts, model wiring
   qaap-ai-openrouter/      OpenRouter preferences and model catalog
@@ -65,7 +73,7 @@ doc/                       architecture, deployment, and agent docs
 
 Prerequisites:
 
-- Node.js 22 or newer
+- Node.js 22.13.0 or newer (`node:sqlite` without flags; Node.js 24 recommended)
 - npm
 - native build tools for Theia dependencies
 
@@ -87,7 +95,7 @@ Useful checks:
 ```bash
 npm run qaap:drift-check
 npm --prefix packages/qaap-cloud-workspace test
-npm --prefix packages/qaap-mobile-shell test
+npm --prefix packages/qaap-work-hub test
 ```
 
 ## Docker / VPS
@@ -113,6 +121,9 @@ upstream Theia packages. The target architecture is:
 
 See [doc/qaap-architecture-audit.md](doc/qaap-architecture-audit.md) for the
 current seam inventory and migration history.
+
+For the Node store persistence model, legacy-file migration, WAL behavior, and
+backup guidance, see [doc/qaap-sqlite-persistence.md](doc/qaap-sqlite-persistence.md).
 
 ## License
 

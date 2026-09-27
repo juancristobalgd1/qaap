@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import * as path from 'path';
+import * as fs from 'fs';
 import { injectable } from '@theia/core/shared/inversify';
 import * as express from '@theia/core/shared/express';
 import { BackendApplicationServer, BackendApplicationPath } from '@theia/core/lib/node';
@@ -21,8 +22,24 @@ export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
     return HASHED_CHUNK_FILE_PATTERN.test(path.posix.basename(filePath.replace(/\\/g, '/')));
 }
 
+/** Directory of standalone Terms / Privacy HTML served at `/legal/*`. */
+export function resolveQaapLegalPagesDir(): string {
+    const candidates = [
+        // Copied next to the frontend bundle (the backend webpack bundle's `__dirname` is not the package).
+        path.join(BackendApplicationPath, 'lib', 'frontend', 'legal'),
+        path.resolve(__dirname, '../../resources/legal'),
+    ];
+    for (const candidate of candidates) {
+        if (fs.existsSync(path.join(candidate, 'terms.html'))) {
+            return candidate;
+        }
+    }
+    return candidates[candidates.length - 1];
+}
+
 /**
- * Serves `lib/frontend` with long-term caching for hashed, content-addressed chunks.
+ * Serves `lib/frontend` with long-term caching for hashed, content-addressed chunks,
+ * and the packaged `/legal/*` Terms of Use and Privacy Notice (no bundle required).
  *
  * The generated `src-gen/backend/server.js` only binds its default static server when no
  * {@link BackendApplicationServer} is bound yet (`if (!container.isBound(...))`), so this binding
@@ -35,6 +52,14 @@ export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
 export class QaapFrontendStaticServer implements BackendApplicationServer {
 
     configure(app: express.Application): void {
+        const legalDir = resolveQaapLegalPagesDir();
+        app.use('/legal', express.static(legalDir, {
+            index: false,
+            setHeaders: res => {
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+            },
+        }));
         const frontendDir = path.join(BackendApplicationPath, 'lib', 'frontend');
         app.use(express.static(frontendDir, {
             setHeaders: (res, filePath) => this.setStaticHeaders(res, filePath, frontendDir),

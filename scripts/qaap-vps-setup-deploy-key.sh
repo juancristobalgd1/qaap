@@ -29,33 +29,33 @@ ssh root@YOUR_VPS_IP 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "$PUB" >> ~/.s
 
 === 2) GitHub repository secrets (Settings → Secrets and variables → Actions) ===
 
-QAAP_VPS_HOST=178.105.136.93
+QAAP_VPS_HOST=161.97.69.219
 QAAP_VPS_USER=root
 QAAP_VPS_SSH_PORT=22
 QAAP_VPS_REPO_DIR=/opt/qaap
 # Public Caddy HTTPS origin (NOT host:4873 — that port is loopback-only).
-QAAP_VPS_PUBLIC_URL=https://178.105.136.93.sslip.io
+QAAP_VPS_PUBLIC_URL=https://161.97.69.219.sslip.io
 QAAP_VPS_SSH_KEY=<paste contents of $KEY_PATH>
 
 CLI (repo owner only):
 
-  gh secret set QAAP_VPS_HOST --body '178.105.136.93'
+  gh secret set QAAP_VPS_HOST --body '161.97.69.219'
   gh secret set QAAP_VPS_USER --body 'root'
   gh secret set QAAP_VPS_SSH_PORT --body '22'
   gh secret set QAAP_VPS_REPO_DIR --body '/opt/qaap'
-  gh secret set QAAP_VPS_PUBLIC_URL --body 'https://178.105.136.93.sslip.io'
+  gh secret set QAAP_VPS_PUBLIC_URL --body 'https://161.97.69.219.sslip.io'
   gh secret set QAAP_VPS_SSH_KEY < "$KEY_PATH"
 
 === 3) Cursor Cloud Agent secrets (optional — remote updates from chat) ===
 
-QAAP_VPS_HOST=178.105.136.93
+QAAP_VPS_HOST=161.97.69.219
 QAAP_VPS_SSH_KEY=<same private key PEM>
 
 Then run: ./scripts/qaap-vps-remote-update.sh
 
 === 4) Test SSH ===
 
-ssh -i "$KEY_PATH" root@178.105.136.93 'hostname && cd /opt/qaap && git rev-parse --short HEAD'
+ssh -i "$KEY_PATH" root@161.97.69.219 'hostname && cd /opt/qaap && git rev-parse --short HEAD'
 
 === 5) Manual deploy trigger ===
 

@@ -179,22 +179,28 @@ export function applyConversationMessageDelta(
     conv: QaapAgentConversationDTO,
     message: QaapAgentMessageDTO,
 ): QaapAgentConversationDTO {
-    const index = conv.messages.findIndex(entry => entry.id === message.id);
-    const matchingPendingIndexes = message.role === 'user'
-        ? conv.messages.reduce<number[]>((indexes, entry, entryIndex) => {
-            if (
-                entry.role === 'user'
-                && entry.id.startsWith('pending-user-')
-                && (
-                    entry.id === message.clientMessageId
-                    || (!message.clientMessageId && (entry.content ?? '') === (message.content ?? ''))
-                )
-            ) {
-                indexes.push(entryIndex);
-            }
-            return indexes;
-        }, [])
-        : [];
+    // Gather both matches in one pass. This is on the SSE hot path, where the old
+    // findIndex + reduce pair scanned the complete transcript before constructing
+    // the replacement array.
+    let index = -1;
+    const matchingPendingIndexes: number[] = [];
+    for (let entryIndex = 0; entryIndex < conv.messages.length; entryIndex++) {
+        const entry = conv.messages[entryIndex];
+        if (entry?.id === message.id && index < 0) {
+            index = entryIndex;
+        }
+        if (
+            message.role === 'user'
+            && entry?.role === 'user'
+            && entry.id.startsWith('pending-user-')
+            && (
+                entry.id === message.clientMessageId
+                || (!message.clientMessageId && (entry.content ?? '') === (message.content ?? ''))
+            )
+        ) {
+            matchingPendingIndexes.push(entryIndex);
+        }
+    }
     if (index >= 0) {
         const previous = conv.messages[index];
         if (previous && !agentMessageDeltaChanged(previous, message) && matchingPendingIndexes.length === 0) {

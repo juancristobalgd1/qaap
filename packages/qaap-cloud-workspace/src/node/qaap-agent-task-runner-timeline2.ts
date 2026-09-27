@@ -1,63 +1,17 @@
-// @ts-nocheck
-import { STORE_DIR, IDLE_TASK_TIMEOUT_MS,QAAP_AGENT_VERIFY_ENABLED,QUEUED_APPROVAL_GRACE_TIMEOUT_MS } from './qaap-agent-task-runner';
+import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS } from './qaap-agent-task-runner-constants';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 // Extracted from qaap-agent-task-runner.ts
 
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { ChildProcess, spawnSync } from 'child_process';
-import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import { writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
-import * as os from 'os';
 import * as path from 'path';
 import {
-    buildImproveComposerPromptRequest,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
-import {
-    isQaapAgentTaskFinished,
-    type QaapAgentDescriptor,
-    type QaapCreateAgentTaskQaiqModel,
-    type QaapQaiqModelOption,
     type QaapAgentTask,
-    type QaapAgentTaskCwdGroup,
-    type QaapAgentTaskDetail,
-    type QaapAgentTaskEvent,
-    type QaapAgentTaskReview,
-    type QaapAgentTaskState,
-    type QaapAgentTaskVerification,
     type QaapCreateAgentTaskRequest,
-    type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
-import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+import { canStartNewAgentJob, hostedModelDenialReason, isHostedCodexUsage } from '../common/qaap-billing-plans';
 import {
-    QAAP_BUILTIN_AGENT_DEFINITIONS,
-    QAAP_BUILTIN_AGENT_IDS,
-    isUiHiddenVpsAgent,
-    resolveQaapBuiltinAgentMentionId,
-    resolveQaapCodexTemplate,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import { LEGACY_OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import {
-    formatQaiqInteractionFlags,
-    type QaapQaiqInteractionFlagOptions,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
-import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
-import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { listNativeAgentModels } from './qaap-agent-native-models';
-import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
-import {
-    applyAgentApprovalPolicyToCommand,
-    shouldUseQaiqStdioApprovals,
-} from '../common/qaap-agent-approval-flags';
-import {
-    type QaapAgentReadOnlyEnforcement,
-} from '../common/qaap-agent-readonly-workspace';
-import {
-    QAIQ_STDIO_APPROVAL_FLAGS,
     buildQaiqControlResponseLine,
     buildQaiqStdioPromptLine,
     parseQaiqStdioEvent,
@@ -65,96 +19,23 @@ import {
 } from '../common/qaap-qaiq-stdio-approvals';
 import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
-import { detectEmptyAgentTurn, type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import {
     buildQaiqAutoDeniedToolMessage,
     buildQaiqQueuedApprovalTimeoutMessage,
     resolveQaiqControlRequestAutoAction,
 } from '../common/qaap-qaiq-control-auto-response';
-import {
-    resolveAgentAutoApprove,
-} from '../common/qaap-agent-auto-approve';
-import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
-import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
-import {
-    applyQaapQaiqCredentialEnv,
-    applyQaapQaiqModelEnv,
-    bindingFromQaiqModelSelection,
-    formatQaiqProviderFlags,
-    normalizeQaiqModelBinding,
-    resolveQaapQaiqModelBinding,
-    type QaapQaiqModelBinding,
-} from '../common/qaap-qaiq-model-binding';
-import { resolveRequestAgentModel, resolveTaskAgentModel } from '../common/qaap-agent-task';
-import { resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
-import {
-    parseQaapNativeModelRoutingTable,
-    QAAP_AGENT_TASK_MODELS_ENV,
-    type QaapNativeModelRoutingTable,
-} from '../common/qaap-agent-native-model-routing';
-import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default-workflow';
-import { prependAgentTaskContextToPrompt, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
+import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {
     applyAntigravityModelSetting,
     isAntigravityCliCommand,
 } from './qaap-antigravity-settings';
-import { QaapWebPushService } from './qaap-web-push-service';
-import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
-import { QaapAgentHealthTracker } from './qaap-agent-health';
-import { hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
-import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
+import { snapshotSensitiveFiles } from './qaap-sensitive-files';
 import {
-    readCodexHelp as readCodexHelpHelper,
-    isQaiqRunner as isQaiqRunnerHelper,
-    isOnPath as isOnPathHelper,
-    applyTemplateVars as applyTemplateVarsHelper,
-    shellQuote as shellQuoteHelper,
-    applyTemplate as applyTemplateHelper,
-    applyTemplateWithoutPrompt as applyTemplateWithoutPromptHelper,
-    truncateForPrompt as truncateForPromptHelper,
-    truncateHead as truncateHeadHelper,
-    loadProjectInfoFromDisk as loadProjectInfoFromDiskHelper,
-    loadAgentInstructionsFromDisk as loadAgentInstructionsFromDiskHelper,
-    readRepoMemory as readRepoMemoryHelper,
-    readResearchLedger as readResearchLedgerHelper,
-    isDirectory as isDirectoryHelper,
-    resolveQaiqProviderFlagsFromEnv as resolveQaiqProviderFlagsFromEnvHelper,
-    applyOpenRouterOpenAiCompatEnv as applyOpenRouterOpenAiCompatEnvHelper,
-    applyNvidiaOpenAiCompatEnv as applyNvidiaOpenAiCompatEnvHelper,
-    applyHuggingfaceOpenAiCompatEnv as applyHuggingfaceOpenAiCompatEnvHelper,
-    noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
-    changedSensitiveFiles as changedSensitiveFilesHelper,
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
+    removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
 } from './qaap-agent-task-runner-utils';
-import {
-    parseCustomAgent as parseCustomAgentHelper,
-    maxConcurrentAgents as maxConcurrentAgentsHelper,
-    maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper,
-    buildRepoTree as buildRepoTreeHelper,
-    buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper,
-    readGitStatusSnapshot as readGitStatusSnapshotHelper,
-    captureWorktreeStatus as captureWorktreeStatusHelper,
-    captureWorktreeFingerprint as captureWorktreeFingerprintHelper,
-    resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper,
-    appendBoundedCommandOutput as appendBoundedCommandOutputHelper,
-    readUserSettingsFromDisk as readUserSettingsFromDiskHelper,
-    stripSharedProviderEnv as stripSharedProviderEnvHelper,
-} from './qaap-agent-task-runner-utils2';
-import {
-    readRelevantFiles as readRelevantFilesHelper,
-    reapAgentProcessGroupAfterExit as reapAgentProcessGroupAfterExitHelper,
-    resolveProjectName as resolveProjectNameHelper,
-    listAgents as listAgentsHelper,
-    probeAgentBinOnce as probeAgentBinOnceHelper,
-    recordTaskLatencyMark as recordTaskLatencyMarkHelper,
-    reviewSuccessfulAgentTask as reviewSuccessfulAgentTaskHelper,
-    runOneShotCommand as runOneShotCommandHelper,
-    verifySuccessfulAgentTask as verifySuccessfulAgentTaskHelper,
-    QAAP_AGENT_VERIFY_MAX_ATTEMPTS,
-    QAAP_AGENT_VERIFY_WALL_CLOCK_MS,
-} from './qaap-agent-task-runner-utils3';
 
-export function killAgentProcessTreeExtracted(ctx: any, child: ChildProcess,
+export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
         options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
         if (!pid) {
@@ -162,12 +43,14 @@ export function killAgentProcessTreeExtracted(ctx: any, child: ChildProcess,
             return undefined;
         }
         const sendSignal = (signal: NodeJS.Signals): void => {
-            if (globalThis.process.platform !== 'win32') {
-                try {
-                    globalThis.process.kill(-pid, signal);
-                    return;
-                } catch { /* process group already gone; try the leader below */ }
+            if (globalThis.process.platform === 'win32') {
+                spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+                return;
             }
+            try {
+                globalThis.process.kill(-pid, signal);
+                return;
+            } catch { /* process group already gone; try the leader below */ }
             try {
                 child.kill(signal);
             } catch { /* already gone */ }
@@ -190,7 +73,7 @@ export function killAgentProcessTreeExtracted(ctx: any, child: ChildProcess,
         return escalation;
 }
 
-export function getApprovalChannelExtracted(ctx: any, taskId: string): 'qaiq-stdio' | 'stdin' | 'none' {
+export function getApprovalChannelExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string): 'qaiq-stdio' | 'stdin' | 'none' {
         if (!ctx.processes.get(taskId)?.stdin) {
             return 'none';
         }
@@ -203,7 +86,7 @@ export function getApprovalChannelExtracted(ctx: any, taskId: string): 'qaiq-std
         return 'none';
 }
 
-export function respondToApprovalPromptExtracted(ctx: any, taskId: string, action: 'approve' | 'reject', toolUseId?: string): boolean {
+export function respondToApprovalPromptExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string, action: 'approve' | 'reject', toolUseId?: string): boolean {
         const child = ctx.processes.get(taskId);
         if (!child?.stdin) {
             return false;
@@ -219,6 +102,18 @@ export function respondToApprovalPromptExtracted(ctx: any, taskId: string, actio
             } catch {
                 return false;
             }
+            const task = ctx.tasks.get(taskId);
+            const command = typeof entry.toolInput?.command === 'string' ? entry.toolInput.command : undefined;
+            ctx.observability?.recordAgentToolCommand({
+                taskId,
+                tenantLogin: task?.ownerLogin,
+                agentId: task?.agentId,
+                requestId: entry.requestId,
+                toolUseId: entry.toolUseId,
+                toolName: entry.toolName,
+                command,
+                decision: action,
+            });
             pending.splice(pending.indexOf(entry), 1);
             ctx.clearQueuedApprovalTimer(taskId, entry.requestId);
             return true;
@@ -238,12 +133,12 @@ export function respondToApprovalPromptExtracted(ctx: any, taskId: string, actio
         }
 }
 
-export function findPendingControlRequestEntryExtracted(ctx: any, pending: QaapQaiqPendingControlRequest[],
+export function findPendingControlRequestEntryExtracted(ctx: QaapAgentTaskRunnerContext, pending: QaapQaiqPendingControlRequest[],
         idFromApproval?: string,): QaapQaiqPendingControlRequest | undefined {
         return findPendingControlRequestEntryHelper(pending, idFromApproval);
 }
 
-export function scheduleQueuedApprovalTimeoutExtracted(ctx: any, taskId: string,
+export function scheduleQueuedApprovalTimeoutExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string,
         request: QaapQaiqPendingControlRequest,
         logStream: fs.WriteStream,): void {
         const timers = ctx.queuedApprovalTimers.get(taskId) ?? new Map<string, NodeJS.Timeout>();
@@ -259,6 +154,18 @@ export function scheduleQueuedApprovalTimeoutExtracted(ctx: any, taskId: string,
             const toolName = request.toolName ?? 'Tool';
             logStream.write(`\n[qaap] approval for ${toolName} not granted within `
                 + `${Math.round(QUEUED_APPROVAL_GRACE_TIMEOUT_MS / 1000)}s — auto-denied.\n`);
+            const task = ctx.tasks.get(taskId);
+            const command = typeof request.toolInput?.command === 'string' ? request.toolInput.command : undefined;
+            ctx.observability?.recordAgentToolCommand({
+                taskId,
+                tenantLogin: task?.ownerLogin,
+                agentId: task?.agentId,
+                requestId: request.requestId,
+                toolUseId: request.toolUseId,
+                toolName: request.toolName,
+                command,
+                decision: 'reject',
+            });
             try {
                 ctx.processes.get(taskId)?.stdin?.write(buildQaiqControlResponseLine(
                     request,
@@ -272,7 +179,7 @@ export function scheduleQueuedApprovalTimeoutExtracted(ctx: any, taskId: string,
         timers.set(request.requestId, timer);
 }
 
-export function clearQueuedApprovalTimerExtracted(ctx: any, taskId: string, requestId: string): void {
+export function clearQueuedApprovalTimerExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string, requestId: string): void {
         const timers = ctx.queuedApprovalTimers.get(taskId);
         const timer = timers?.get(requestId);
         if (timers && timer) {
@@ -284,7 +191,7 @@ export function clearQueuedApprovalTimerExtracted(ctx: any, taskId: string, requ
         }
 }
 
-export function clearQueuedApprovalTimersExtracted(ctx: any, taskId: string): void {
+export function clearQueuedApprovalTimersExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string): void {
         const timers = ctx.queuedApprovalTimers.get(taskId);
         if (timers) {
             for (const timer of timers.values()) {
@@ -294,7 +201,7 @@ export function clearQueuedApprovalTimersExtracted(ctx: any, taskId: string): vo
         }
 }
 
-export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
+export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
         }
@@ -303,10 +210,49 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
         if (ctx.tasks.get(task.id)?.state !== 'running') {
             return;
         }
+        if (task.ownerLogin && ctx.billingStore) {
+            try {
+                const account = await ctx.billingStore.getOrCreateAccount(task.ownerLogin);
+                if (!canStartNewAgentJob(account)) {
+                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
+                    fs.writeFileSync(
+                        ctx.logPath(task.id),
+                        'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.\n',
+                        'utf8',
+                    );
+                    ctx.finishTask(task.id, 'failed', 1);
+                    return;
+                }
+                const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim(), task.ownerLogin);
+                const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
+                const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent, task.ownerLogin) ?? request.agent ?? task.agentId;
+                const usesUserCodexSession = ctx.isAgentConnected?.(agentId) === true;
+                const hostedDenial = isHostedCodexUsage(agentId, modelId) && !usesUserCodexSession
+                    ? hostedModelDenialReason(account, modelId)
+                    : undefined;
+                if (hostedDenial) {
+                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
+                    fs.writeFileSync(ctx.logPath(task.id), `${hostedDenial}\n`, 'utf8');
+                    ctx.finishTask(task.id, 'failed', 1);
+                    return;
+                }
+            } catch (error) {
+                // Fail closed for authenticated owners: a billing outage must not silently grant Pro quotas.
+                fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
+                const message = error instanceof Error ? error.message : 'Billing check failed';
+                fs.writeFileSync(
+                    ctx.logPath(task.id),
+                    `Could not verify billing entitlements for this turn. ${message}\n`,
+                    'utf8',
+                );
+                ctx.finishTask(task.id, 'failed', 1);
+                return;
+            }
+        }
         const markedTask = ctx.tasks.get(task.id) ?? task;
         const baseline = ctx.captureWorktreeBaseline(task.cwd);
         // Private disk copy of secrets — hashes alone cannot restore a destroyed `.env`.
-        const sensitiveSnapshotDir = path.join(STORE_DIR, task.id, 'sensitive-snapshot');
+        const sensitiveSnapshotDir = path.join(path.dirname(ctx.logPath(task.id)), task.id, 'sensitive-snapshot');
         const snapshotted = snapshotSensitiveFiles(task.cwd, sensitiveSnapshotDir);
         task = {
             ...markedTask,
@@ -320,8 +266,8 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
             try {
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
-                const agentModel = ctx.resolveAgentModelForRequest(request, prompt);
-                const { command, stdinPrompt, agentId } = ctx.buildAgentCommand(
+                const agentModel = ctx.resolveAgentModelForRequest(request, prompt, task.ownerLogin);
+                const { command, stdinPrompt, stdinPromptMode, agentId, promptTempDir } = ctx.buildAgentCommand(
                     prompt,
                     request.agent,
                     autoApprove,
@@ -333,10 +279,17 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                     request.toolApprovalRules,
                     request.userQuery,
                     task.readOnlyWorkspace,
+                    task.ownerLogin,
                 );
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {
-                    ctx.stdinPrompts.set(task.id, stdinPrompt);
+                    ctx.stdinPrompts.set(task.id, {
+                        text: stdinPrompt,
+                        mode: stdinPromptMode ?? 'qaiq-stdio',
+                    });
+                }
+                if (promptTempDir) {
+                    ctx.promptTempDirs.set(task.id, promptTempDir);
                 }
                 const commandTask = ctx.tasks.get(task.id) ?? task;
                 const next: QaapAgentTask = {
@@ -352,26 +305,33 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 };
                 ctx.tasks.set(task.id, next);
                 void ctx.persist();
-                ctx.spawnProcess(next);
+                await ctx.spawnProcess(next);
                 return;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                fs.mkdirSync(STORE_DIR, { recursive: true });
+                fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                 fs.writeFileSync(ctx.logPath(task.id), `${message}\n`, 'utf8');
                 ctx.finishTask(task.id, 'failed', 1);
                 return;
             }
         }
-        ctx.spawnProcess(task);
+        await ctx.spawnProcess(task);
 }
 
-export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
-        fs.mkdirSync(STORE_DIR, { recursive: true });
+export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): Promise<void> {
+        fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
         const logStream = fs.createWriteStream(ctx.logPath(task.id), { flags: 'w' });
-        const stdioPrompt = ctx.stdinPrompts.get(task.id);
-        const stdinInteractive = task.autoApprove === false || stdioPrompt !== undefined;
+        const stdinPromptEntry = ctx.stdinPrompts.get(task.id);
+        const stdinPrompt = typeof stdinPromptEntry === 'string'
+            ? { text: stdinPromptEntry, mode: 'qaiq-stdio' }
+            : stdinPromptEntry;
+        const stdinInteractive = task.autoApprove === false || stdinPrompt !== undefined;
         const agentModel = resolveTaskAgentModel(task);
-        const restoreAntigravitySettings = agentModel?.modelId?.trim()
+        // A shared Theia backend must never rewrite one global CLI settings file while another
+        // tenant is spawning. Hosted workers own their HOME; until the worker itself applies a
+        // model override inside that HOME, skip the unsafe host-side mutation.
+        const restoreAntigravitySettings = !isQaapHostedEnvironment()
+            && agentModel?.modelId?.trim()
             && isAntigravityCliCommand(task.command)
             ? applyAntigravityModelSetting(agentModel.modelId)?.restore
             : undefined;
@@ -381,18 +341,24 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
         let child: ChildProcess;
         try {
             ctx.enforceAgentIsolationPolicy();
-            ctx.ensureAgentCwdOwnership(task.cwd);
+            await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
+            ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(task.command, {
                 cwd: task.cwd,
                 env: ctx.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+                // On Windows, cmd.exe can keep a detached child waiting after its stdin is closed.
+                // Plain Codex stdin prompts therefore need a non-detached shell process.
+                detached: stdinPrompt?.mode === 'plain' ? false : undefined,
             });
             ctx.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
             finishAntigravitySettings();
             ctx.stdinPrompts.delete(task.id);
+            removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
+            ctx.promptTempDirs.delete(task.id);
             logStream.end(`Failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
             ctx.finishTask(task.id, 'failed', undefined);
             return;
@@ -401,13 +367,18 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
         if (stdinInteractive) {
             ctx.stdinInteractiveTasks.add(task.id);
         }
-        if (stdioPrompt !== undefined) {
-            ctx.qaiqStdioTasks.add(task.id);
+        if (stdinPrompt !== undefined) {
             ctx.stdinPrompts.delete(task.id);
-            // stream-json input: the prompt travels over stdin, which stays open
-            // for control_responses until the end-of-turn `result` message.
             try {
-                child.stdin?.write(buildQaiqStdioPromptLine(stdioPrompt));
+                if (stdinPrompt.mode === 'plain') {
+                    // Codex reads the complete instruction from stdin when its prompt argument is `-`.
+                    child.stdin?.end(stdinPrompt.text);
+                } else {
+                    ctx.qaiqStdioTasks.add(task.id);
+                    // stream-json input: the prompt travels over stdin, which stays open
+                    // for control_responses until the end-of-turn `result` message.
+                    child.stdin?.write(buildQaiqStdioPromptLine(stdinPrompt.text));
+                }
             } catch (error) {
                 logStream.write(`\n[qaap] failed to write prompt to agent stdin: ${error instanceof Error ? error.message : String(error)}\n`);
             }
@@ -454,6 +425,19 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
                         task.autoApprove,
                         event.request,
                     );
+                    const command = typeof event.request.toolInput?.command === 'string'
+                        ? event.request.toolInput.command
+                        : undefined;
+                    ctx.observability?.recordAgentToolCommand({
+                        taskId: task.id,
+                        tenantLogin: task.ownerLogin,
+                        agentId: task.agentId,
+                        requestId: event.request.requestId,
+                        toolUseId: event.request.toolUseId,
+                        toolName: event.request.toolName,
+                        command,
+                        decision: autoAction === 'allow' ? 'approve' : autoAction === 'deny' ? 'reject' : 'queue',
+                    });
                     if (autoAction !== 'queue') {
                         const devServerDenial = findQaiqDevServerGuardDenial(event.request);
                         const destructiveDenial = findQaiqDestructiveCommandGuardDenial(event.request);
@@ -508,7 +492,7 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);
-            if (stdioPrompt !== undefined) {
+            if (ctx.qaiqStdioTasks.has(task.id)) {
                 scanStdioApprovalChunk(chunk);
             }
         });
@@ -532,8 +516,11 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
             finishAntigravitySettings();
             logStream.end();
             ctx.processes.delete(task.id);
+            ctx.deletedTaskIds.delete(task.id);
             ctx.stdinInteractiveTasks.delete(task.id);
             ctx.stdinPrompts.delete(task.id);
+            removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
+            ctx.promptTempDirs.delete(task.id);
             ctx.pendingQaiqControlRequests.delete(task.id);
             ctx.clearQueuedApprovalTimers(task.id);
             ctx.qaiqStdioTasks.delete(task.id);
@@ -549,13 +536,13 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
         });
 }
 
-export function maxConcurrentVerificationPassesExtracted(ctx: any): number {
+export function maxConcurrentVerificationPassesExtracted(ctx: QaapAgentTaskRunnerContext): number {
         const raw = process.env.QAAP_AGENT_VERIFY_MAX_CONCURRENT?.trim();
         const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
         return Number.isFinite(parsed) && parsed > 0 ? parsed : ctx.maxConcurrentAgents();
 }
 
-export function acquireVerificationPassExtracted(ctx: any): Promise<void> {
+export function acquireVerificationPassExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void> {
         if (ctx.activeVerificationPasses < ctx.maxConcurrentVerificationPasses()) {
             ctx.activeVerificationPasses++;
             return Promise.resolve();

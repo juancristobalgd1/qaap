@@ -5,12 +5,14 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
-import { execFile } from 'child_process';
+import { ChildProcess, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { resolveQaapWorktreesRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,6 +42,9 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
 
     @inject(QaapAgentTaskRunner)
     protected readonly runner: QaapAgentTaskRunner;
+
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
 
     onStart(): void {
         if (this.maxAgeMs() <= 0) {
@@ -128,7 +133,7 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
 
     protected async lastCommitMs(dir: string): Promise<number> {
         try {
-            const { stdout } = await execFileAsync('git', ['-C', dir, 'log', '-1', '--format=%ct'], { timeout: 15_000 });
+            const stdout = await this.runGitOutput(dir, ['log', '-1', '--format=%ct'], 15_000);
             const seconds = Number(stdout.trim());
             return Number.isFinite(seconds) ? seconds * 1000 : 0;
         } catch {
@@ -138,7 +143,7 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
 
     protected async isDirty(dir: string): Promise<boolean> {
         try {
-            const { stdout } = await execFileAsync('git', ['-C', dir, 'status', '--porcelain'], { timeout: 30_000 });
+            const stdout = await this.runGitOutput(dir, ['status', '--porcelain'], 30_000);
             return stdout.trim().length > 0;
         } catch {
             return true; // cannot tell — never destroy what we cannot inspect
@@ -154,10 +159,7 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
     protected async collect(dir: string): Promise<boolean> {
         let baseRepo: string | undefined;
         try {
-            const { stdout } = await execFileAsync(
-                'git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-                { timeout: 15_000 },
-            );
+            const stdout = await this.runGitOutput(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'], 15_000);
             baseRepo = path.dirname(stdout.trim()); // <repo>/.git → <repo>
         } catch { /* base gone (repo deleted) — still remove the dir */ }
         // Last check before the irreversible delete — after every await in this sweep.
@@ -166,9 +168,68 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
         }
         // Async rm so a large worktree deletion does not block the event loop (freezing HTTP/SSE/WS).
         await fsp.rm(dir, { recursive: true, force: true });
-        if (baseRepo) {
-            await execFileAsync('git', ['-C', baseRepo, 'worktree', 'prune'], { timeout: 30_000 }).catch(() => undefined);
+        // In local development the host path is valid. In hosting the result from the worker is a
+        // container path, so never fall back to host Git after deleting a tenant worktree. The
+        // stale registration is harmless and will be pruned by the tenant worker's next Git
+        // lifecycle; executing host Git here would reopen the boundary this GC closes.
+        if (baseRepo && !isQaapHostedEnvironment()) {
+            await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', baseRepo, 'worktree', 'prune'], { timeout: 30_000 }).catch(() => undefined);
         }
         return true;
+    }
+
+    /** Run Git in the validated tenant worker when the backend is hosted. */
+    protected async runGitOutput(cwd: string, args: readonly string[], timeoutMs: number): Promise<string> {
+        if (!isQaapHostedEnvironment()) {
+            const result = await execFileAsync('git', [
+                '-c', 'core.hooksPath=/dev/null',
+                '-c', 'core.fsmonitor=false',
+                '-C', cwd,
+                ...args,
+            ], { timeout: timeoutMs, maxBuffer: 64 * 1024 });
+            return result.stdout;
+        }
+        const child = await this.tenantSpawn.spawnArgvPreparedAsync('git', [
+            '-c', 'core.hooksPath=/dev/null',
+            '-c', 'core.fsmonitor=false',
+            ...args,
+        ], {
+            cwd,
+            env: { PATH: process.env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', LANG: 'C' },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        return this.collectGitOutput(child, timeoutMs);
+    }
+
+    protected collectGitOutput(child: ChildProcess, timeoutMs: number): Promise<string> {
+        return new Promise((resolve, reject) => {
+            let stdout = '';
+            let settled = false;
+            const finish = (callback: () => void): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timer);
+                callback();
+            };
+            const timer = setTimeout(() => {
+                child.kill('SIGKILL');
+                finish(() => reject(new Error('Git command timed out.')));
+            }, timeoutMs);
+            child.stdout?.on('data', chunk => {
+                if (stdout.length < 64 * 1024) {
+                    stdout += String(chunk).slice(0, 64 * 1024 - stdout.length);
+                }
+            });
+            child.once('error', error => finish(() => reject(error)));
+            child.once('close', code => finish(() => {
+                if (code === 0) {
+                    resolve(stdout);
+                } else {
+                    reject(new Error(`Git exited with code ${code ?? 'unknown'}.`));
+                }
+            }));
+        });
     }
 }

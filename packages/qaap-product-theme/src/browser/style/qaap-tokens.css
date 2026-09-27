@@ -244,6 +244,13 @@ body.qaap-theme-dark {
 
   /* Accent: focus, buttons, badges, progress */
   --theia-focusBorder: var(--qaap-focus-border) !important;
+  /*
+   * Panel sash (Lumino split handle). ColorRegistry derives sash.* from the theme JSON
+   * focusBorder (often VS Code blue) and writes it as an inline --theia-sash-* on <html>.
+   * Remap to graphite accent so hover/drag matches the active Qaap theme instead of blue.
+   */
+  --theia-sash-hoverBorder: color-mix(in srgb, var(--qaap-accent) 78%, transparent) !important;
+  --theia-sash-activeBorder: var(--qaap-accent) !important;
   --theia-button-background: var(--qaap-accent) !important;
   --theia-button-foreground: var(--qaap-bg) !important;
   --theia-button-hoverBackground: var(--qaap-accent-ink) !important;

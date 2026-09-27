@@ -76,7 +76,20 @@ jobs:
 
       - name: Test (playwright)
         shell: bash
-        run: cd examples/playwright && npm run ui-tests-ci
+        # Qaap: playwright.qaap-upstream-ci.config.ts = upstream CI config minus the `@qaap-mobile`
+        # specs (run by qaap-mobile-playwright.yml with their own fixtures/env/timeouts) and minus the
+        # upstream specs whose page objects depend on workbench chrome Qaap replaces (reasons inline).
+        # Including them made every run hit the 60 min job timeout before reporting anything.
+        # The playwright package is already built by the previous step.
+        run: cd examples/playwright && npx playwright test --config=./configs/playwright.qaap-upstream-ci.config.ts
+        env:
+          # Qaap: without these the local backend rejects unauthenticated file-system RPCs
+          # ("Not signed in") and the login gate covers the workbench.
+          QAAP_SKIP_AUTH: 'true'
+          QAAP_CLOUD_MODE: local
+          # Qaap: open the classic IDE surface (per-tab "Open IDE" preference) instead of the
+          # default Work Hub, which the upstream suite does not know about. See theia-app-loader.ts.
+          QAAP_PLAYWRIGHT_SURFACE: ide
 
       - name: Archive test results
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

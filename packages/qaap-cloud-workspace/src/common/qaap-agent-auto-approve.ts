@@ -51,9 +51,11 @@ export function commandHasAutoApproveFlags(command: string): boolean {
         || /--dangerously-auto-approve-everything\b/.test(command)
         || /--yes-always\b/.test(command)
         || /--always-approve\b/.test(command)
-        || /\b--force\b/.test(command)
-        || /\b--yolo\b/.test(command)
-        || /\b-yolo\b/.test(command)
+        // `--force` / `--yolo` cannot use a leading `\b`: `-` is a non-word char,
+        // so `\b--force` never matches `cursor-agent -p --force …`.
+        || /(?:^|\s)--force(?:\s|$)/.test(command)
+        || /(?:^|\s)--yolo(?:\s|$)/.test(command)
+        || /(?:^|\s)-yolo(?:\s|$)/.test(command)
         || /--approval-mode(?:=|\s+)yolo\b/.test(command)
         || /--allow-all\b/.test(command)
         || /--autopilot\b/.test(command);
@@ -69,10 +71,17 @@ export function commandHasAutoApproveFlags(command: string): boolean {
  * up later in a quoted prompt argument.
  */
 export function applyAutoApproveToCommand(command: string, agentId: string | undefined): string {
+    const id = agentId?.trim().toLowerCase();
+    const leading = command.trimStart();
+    const isCursor = id === 'cursor'
+        || /^cursor-agent\b/.test(leading)
+        || (/^agent\b/.test(leading) && /(?:^|\s)(?:-p|--print|--force|--yolo|--trust)\b/.test(leading));
     if (commandHasAutoApproveFlags(command)) {
+        if (isCursor) {
+            return applyCursorUnattendedFlags(command, /^\s*agent\b/.test(command) ? 'agent' : 'cursor-agent');
+        }
         return command;
     }
-    const id = agentId?.trim().toLowerCase();
     if (id === 'claude') {
         return injectAfterExecutable(command, 'claude', '--dangerously-skip-permissions');
     }
@@ -88,8 +97,12 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
     if (id === 'opencode') {
         return injectAfterPattern(command, /\bopencode(?:\s+run)?\b/, '--dangerously-skip-permissions');
     }
+    if (id === 'hermes') {
+        return injectAfterExecutable(command, 'hermes', '--yolo');
+    }
     if (id === 'cursor') {
-        return injectAfterExecutable(command, 'cursor-agent', '-p --force');
+        const exe = /^\s*agent\b/.test(command) ? 'agent' : 'cursor-agent';
+        return applyCursorUnattendedFlags(command, exe);
     }
     if (id === 'antigravity') {
         return applyAntigravityAutoApprove(command);
@@ -106,7 +119,6 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
         }
         return injectAfterExecutable(command, 'qwen', '-p --approval-mode yolo');
     }
-    const leading = command.trimStart();
     if (/^claude\b/.test(leading)) {
         return injectAfterExecutable(command, 'claude', '--dangerously-skip-permissions');
     }
@@ -119,8 +131,11 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
     if (/^opencode(?:\s+run)?\b/.test(leading)) {
         return injectAfterPattern(command, /\bopencode(?:\s+run)?\b/, '--dangerously-skip-permissions');
     }
-    if (/^cursor-agent\b/.test(leading)) {
-        return injectAfterExecutable(command, 'cursor-agent', '-p --force');
+    if (/^hermes\b/.test(leading)) {
+        return injectAfterExecutable(command, 'hermes', '--yolo');
+    }
+    if (/^cursor-agent\b/.test(leading) || (/^agent\b/.test(leading) && /(?:^|\s)(?:-p|--print|--force|--yolo|--trust)\b/.test(leading))) {
+        return applyCursorUnattendedFlags(command, /^agent\b/.test(leading) ? 'agent' : 'cursor-agent');
     }
     if (/^(?:agy|antigravity|gemini)\b/.test(leading) && !commandHasAutoApproveFlags(command)) {
         return applyAntigravityAutoApprove(command);
@@ -194,6 +209,20 @@ function injectAfterHeadlessPromptFlag(command: string, flag: string): string {
         return `${command.slice(0, insertAt)} ${flag}${command.slice(insertAt)}`;
     }
     return command;
+}
+
+/** Cursor hangs on workspace-trust and MCP prompts unless these flags are present. */
+function applyCursorUnattendedFlags(command: string, executable: string): string {
+    let next = commandHasAutoApproveFlags(command)
+        ? command
+        : injectAfterExecutable(command, executable, '-p --force');
+    if (!/(?:^|\s)--trust(?:\s|$)/.test(next)) {
+        next = injectAfterExecutable(next, executable, '--trust');
+    }
+    if (!/(?:^|\s)--approve-mcps(?:\s|$)/.test(next)) {
+        next = injectAfterExecutable(next, executable, '--approve-mcps');
+    }
+    return next;
 }
 
 function injectAfterExecutable(command: string, executable: string, flag: string): string {

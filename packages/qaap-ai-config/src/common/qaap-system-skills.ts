@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 import * as path from 'path';
+import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 /** Backend env var pointing at the bundled Qaap system skill tree (same for every tenant). */
 export const QAAP_SYSTEM_SKILLS_DIR_ENV = 'QAAP_SYSTEM_SKILLS_DIR';
@@ -36,5 +37,5 @@ export type QaapSystemSkillName = typeof QAAP_SYSTEM_SKILL_NAMES[number];
 
 /** Per-user custom skills live under the persisted qaap-auth volume, not in shared home dirs. */
 export function qaapPerUserSkillsDirectory(homePath: string, login: string): string {
-    return path.join(homePath, '.qaap', 'users', login.trim().toLowerCase(), 'skills');
+    return path.join(homePath, '.qaap', 'users', safeUserIdSegment(login.trim().toLowerCase()), 'skills');
 }

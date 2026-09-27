@@ -48,6 +48,7 @@ describe('QaapConversationWorktreeService.apply', function (): void {
         baseRepo = path.join(scratch, 'base');
         fs.mkdirSync(baseRepo, { recursive: true });
         git(baseRepo, 'init', '-q', '-b', 'main');
+        git(baseRepo, 'config', 'core.autocrlf', 'false');
         fs.writeFileSync(path.join(baseRepo, 'README.md'), 'hi\n');
         git(baseRepo, 'add', '.');
         git(baseRepo, 'commit', '-qm', 'init');
@@ -73,7 +74,7 @@ describe('QaapConversationWorktreeService.apply', function (): void {
         expect(fs.existsSync(worktreePath)).to.equal(false);
         expect(git(baseRepo, 'branch', '--list', branch)).to.contain('abcd1234');
         expect(git(baseRepo, 'log', '-1', '--pretty=%s', branch)).to.contain('qaap: parallel fork');
-        expect(git(baseRepo, 'show', `${branch}:fork.txt`)).to.equal('from fork\n');
+        expect(git(baseRepo, 'show', `${branch}:fork.txt`).replaceAll('\r\n', '\n')).to.equal('from fork\n');
         expect(fs.existsSync(path.join(baseRepo, 'fork.txt'))).to.equal(false);
     });
 
@@ -87,7 +88,7 @@ describe('QaapConversationWorktreeService.apply', function (): void {
         expect(result).to.deep.equal({ ok: true, branch });
         expect(fs.existsSync(worktreePath)).to.equal(false);
         expect(git(baseRepo, 'branch', '--list', branch).trim()).to.equal('');
-        expect(fs.readFileSync(path.join(baseRepo, 'fork.txt'), 'utf8')).to.equal('from fork\n');
+        expect(fs.readFileSync(path.join(baseRepo, 'fork.txt'), 'utf8').replaceAll('\r\n', '\n')).to.equal('from fork\n');
     });
 
     it('none discards the worktree and branch without touching the base tree', async () => {

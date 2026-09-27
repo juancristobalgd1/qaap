@@ -16,6 +16,51 @@
   display: none;
 }
 
+/* Address-bar recent sites: a compact dropdown below the preview toolbar. */
+.qaap-agent-preview-history.qaap-mod-history-popover {
+  display: block;
+}
+
+.qaap-agent-preview-history.qaap-mod-history-popover .qaap-agent-preview-history-backdrop {
+  background: transparent;
+}
+
+.qaap-agent-preview-history.qaap-mod-history-popover .qaap-agent-preview-history-panel {
+  top: 8px;
+  right: auto;
+  bottom: auto;
+  left: 8px;
+  min-width: 0;
+  max-width: calc(100% - 16px);
+  height: auto;
+  max-height: calc(100% - 16px);
+  flex-direction: column;
+  border: 1px solid var(--theia-sideBar-border, rgba(255, 255, 255, 0.1));
+  border-top: none;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+  background: var(--theia-toolbar-background, var(--theia-editor-background, #1a1a1a));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.qaap-agent-preview-history.qaap-mod-history-popover .qaap-agent-preview-history-panel-body {
+  padding: 8px 8px 12px;
+}
+
+.qaap-agent-preview-history.qaap-mod-history-popover .qaap-agent-preview-history-search-wrapper {
+  display: none;
+}
+
+.qaap-agent-preview-history.qaap-mod-history-popover .qaap-agent-preview-history-section-title {
+  display: none;
+}
+
+.qaap-agent-preview-history.qaap-mod-history-popover .qaap-agent-preview-history-resize-handle {
+  display: none;
+}
+
 .theia-mini-browser-content-area,
 .qaap-agent-preview-embedded-body {
   position: relative;
@@ -191,6 +236,24 @@ body.qaap-mod-history-resizing * {
   background: var(--theia-list-hoverBackground);
 }
 
+.qaap-agent-preview-history-web-search {
+  margin-top: 2px;
+  border-top: 1px solid var(--theia-sideBar-border, rgba(255, 255, 255, 0.08));
+  border-radius: 0;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-agent-preview-history-web-search-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
 .qaap-agent-preview-history-item-icon {
   width: 18px;
   height: 18px;
@@ -225,7 +288,6 @@ body.qaap-mod-history-resizing * {
   pointer-events: none;
 }
 
-.qaap-agent-preview-toolbar-history,
 .qaap-agent-preview-toolbar-back,
 .qaap-agent-preview-toolbar-forward,
 .qaap-agent-preview-toolbar-overflow,
@@ -249,7 +311,6 @@ body.qaap-mod-history-resizing * {
   -webkit-tap-highlight-color: transparent;
 }
 
-.qaap-agent-preview-toolbar-history:hover,
 .qaap-agent-preview-toolbar-back:hover:not(:disabled),
 .qaap-agent-preview-toolbar-forward:hover:not(:disabled),
 .qaap-agent-preview-toolbar-overflow:hover,
@@ -258,7 +319,6 @@ body.qaap-mod-history-resizing * {
   color: var(--theia-foreground);
 }
 
-.qaap-agent-preview-toolbar-history:focus-visible,
 .qaap-agent-preview-toolbar-back:focus-visible,
 .qaap-agent-preview-toolbar-forward:focus-visible,
 .qaap-agent-preview-toolbar-overflow:focus-visible,
@@ -273,7 +333,6 @@ body.qaap-mod-history-resizing * {
   cursor: default;
 }
 
-.qaap-agent-preview-toolbar-history::before,
 .qaap-agent-preview-toolbar-back::before,
 .qaap-agent-preview-toolbar-forward::before,
 .qaap-agent-preview-toolbar-overflow::before,
@@ -628,7 +687,6 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
 }
 
 @media (max-width: 767px), (pointer: coarse) {
-  .qaap-agent-preview-toolbar-history,
   .qaap-agent-preview-toolbar-back,
   .qaap-agent-preview-toolbar-forward,
   .qaap-agent-preview-toolbar-overflow,
@@ -637,7 +695,6 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
     height: 32px;
   }
 
-  .qaap-agent-preview-toolbar-history::before,
   .qaap-agent-preview-toolbar-back::before,
   .qaap-agent-preview-toolbar-forward::before,
   .qaap-agent-preview-toolbar-overflow::before,

@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapAgentConversation, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
-import { parseComposerGitActionDisplayMarker } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
+import { parseComposerGitActionDisplayMarker } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 
 class GitActionStoreHarness extends QaapAgentConversationStore {
@@ -13,9 +13,9 @@ class GitActionStoreHarness extends QaapAgentConversationStore {
         this.conversations.set(conversation.id, conversation);
     }
 
-    protected override async persist(): Promise<void> { }
+    override async persist(): Promise<void> { }
 
-    protected override fire(_event: QaapAgentConversationEvent): void { }
+    override fire(_event: QaapAgentConversationEvent): void { }
 }
 
 describe('QaapAgentConversationStore git actions', () => {

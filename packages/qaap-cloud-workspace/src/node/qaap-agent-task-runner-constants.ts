@@ -1,9 +1,9 @@
-// @ts-nocheck
 // Constants and types extracted from qaap-agent-task-runner.ts
 
 import * as os from 'os';
 import * as path from 'path';
-import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 
 export interface AgentCandidate {
     readonly id: string;
@@ -12,6 +12,8 @@ export interface AgentCandidate {
     readonly bin?: string;
     /** Template applied to the user prompt; `{prompt}` is replaced with a shell-quoted value. */
     readonly template: string;
+    /** Whether this detected Codex CLI supports its current automatic approval flag. */
+    readonly codexSupportsApproveForMe?: boolean;
 }
 
 /** Built-in QAAP coding agent (fork of OpenClaude): https://github.com/juancristobalgd1/qaiq */
@@ -46,7 +48,6 @@ export interface QaapGenericCommandResult {
     readonly timedOut: boolean;
 }
 
-
 /** Cap on the generated repo-map block (shallow tree + recently-changed files). */
 export const REPO_MAP_MAX_CHARS = 4000;
 /**
@@ -59,7 +60,7 @@ export const REPO_MAP_CACHE_TTL_MS = 60_000;
 /** Source-ish top-level directories worth expanding one level deeper in the repo map. */
 
 /** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
-export const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'openclaude', 'grok', 'codex', 'claude'];
+export const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'openclaude', 'grok', 'codex', 'claude', 'cursor'];
 
 export const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: string }[] = [
     { env: 'OPENAI_API_KEY', pref: 'ai-features.openAiOfficial.openAiApiKey' },

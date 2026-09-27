@@ -14,7 +14,7 @@ import {
     WorkspaceService,
 } from '@theia/workspace/lib/browser';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { MobileProjectsService } from '@theia/qaap-mobile-shell/lib/browser/mobile-projects-service';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import {
     filterHostedWorkspaceUris,
     isAllowedHostedRepositoryWorkspaceUri,

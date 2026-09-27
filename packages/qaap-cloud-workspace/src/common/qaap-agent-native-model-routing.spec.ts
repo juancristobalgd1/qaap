@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { listStaticNativeAgentModels } from './qaap-agent-native-model-catalog';
 import {
     DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE,

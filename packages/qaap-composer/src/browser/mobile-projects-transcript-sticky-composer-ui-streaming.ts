@@ -1,0 +1,490 @@
+import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
+// Extracted from mobile-projects-transcript-sticky-composer-ui.ts
+
+import { nls } from '@theia/core/lib/common/nls';
+import { evaluateVerifyCommitReadiness, invalidateVerifyWorkspaceSnapshots } from '@theia/qaap-diff-review/lib/common/qaap-verify-commit-readiness';
+import { confirmVerifyCommitReadiness } from '@theia/qaap-diff-review/lib/browser/qaap-verify-commit-confirm';
+import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import { ConfirmDialog } from '@theia/core/lib/browser';
+import {
+    type QaapAgentConversationDTO,
+    type QaapAgentConversationSummaryDTO,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
+import { formatCommitFeedback } from '@theia/qaap-diff-review/lib/common/qaap-commit-feedback';
+import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import {
+    QAAP_GIT_REVIEW_API_PATH,
+    type QaapGitChangedFile,
+    type QaapGitCommitWorkflowAction,
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
+import {
+    composerConversationInvolvesPreview,
+    resolveComposerPreviewCandidate,
+    resolveVerifiedComposerPreviewUrl,
+} from './qaap-composer-preview-action';
+import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
+
+export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    endpoint: 'stage' | 'discard',
+    files: readonly StickyComposerChangedFileView[],): Promise<void> {
+    const cwd = ctx.resolveComposerWorkspaceRoot(project, summary);
+    if (!cwd || files.length === 0) {
+        return;
+    }
+    for (const file of files) {
+        const response = await fetch(`${QAAP_GIT_REVIEW_API_PATH}/${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ root: cwd, file: file.path }),
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({})) as { error?: string };
+            throw new Error(body.error ?? `${endpoint} failed (${response.status})`);
+        }
+    }
+}
+
+export async function syncComposerGitSnapshotExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,): Promise<StickyComposerChangedFileView[]> {
+    const files = await ctx.fetchWorkspaceChangedFiles(project, summary);
+    ctx.composerActivityGitFilesByConversationId.set(summary.id, files);
+    return files;
+}
+
+export async function undoAllComposerChangedFilesExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    if (ctx.composerChangedFilesBulkBusy) {
+        return;
+    }
+    const confirmed = await new ConfirmDialog({
+        title: nls.localize('qaap/mobileProjects/stickyComposerDiscardAllTitle', 'Discard changes'),
+        msg: nls.localize(
+            'qaap/mobileProjects/stickyComposerDiscardAllMsg',
+            'Discard all pending changes? This cannot be undone.',
+        ),
+        ok: nls.localize('qaap/mobileProjects/stickyComposerDiscardAllConfirm', 'Discard'),
+        cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
+    }).open();
+    if (!confirmed) {
+        return;
+    }
+    ctx.composerChangedFilesBulkBusy = true;
+    ctx.refreshComposerActivityStack();
+    try {
+        const files = await ctx.fetchWorkspaceChangedFiles(project, summary);
+        if (files.length === 0) {
+            return;
+        }
+        await ctx.runComposerGitFileAction(project, summary, 'discard', files);
+        await ctx.syncComposerGitSnapshot(project, summary);
+        ctx.refreshComposerActivityStack();
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/stickyComposerUndoAllDone', 'All changes discarded'),
+            { kind: 'success', duration: 1800 },
+        );
+    } catch {
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/stickyComposerUndoAllFailed', 'Could not discard all changes'),
+            { kind: 'warning', duration: 2800 },
+        );
+    } finally {
+        ctx.composerChangedFilesBulkBusy = false;
+        ctx.refreshComposerActivityStack();
+    }
+}
+
+export async function keepAllComposerChangedFilesExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    if (ctx.composerChangedFilesBulkBusy) {
+        return;
+    }
+    ctx.composerChangedFilesBulkBusy = true;
+    ctx.refreshComposerActivityStack();
+    try {
+        const files = await ctx.fetchWorkspaceChangedFiles(project, summary);
+        if (files.length === 0) {
+            return;
+        }
+        await ctx.runComposerGitFileAction(project, summary, 'stage', files);
+        await ctx.syncComposerGitSnapshot(project, summary);
+        ctx.refreshComposerActivityStack();
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/stickyComposerKeepAllDone', 'All changes kept'),
+            { kind: 'success', duration: 1800 },
+        );
+    } catch {
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/stickyComposerKeepAllFailed', 'Could not keep all changes'),
+            { kind: 'warning', duration: 2800 },
+        );
+    } finally {
+        ctx.composerChangedFilesBulkBusy = false;
+        ctx.refreshComposerActivityStack();
+    }
+}
+
+export async function refreshComposerActivityGitFilesIfNeededExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    conv: QaapAgentConversationDTO | undefined,
+    activityFiles: {
+        readonly files: readonly StickyComposerChangedFileView[];
+        readonly stats?: { readonly added: number; readonly removed: number };
+    },): Promise<void> {
+    if (!ctx.isComposerBackgroundWorkAllowed()) {
+        return;
+    }
+    if (!ctx.shouldRefetchComposerGitSnapshot(summary.id, conv)) {
+        return;
+    }
+    if (ctx.composerActivityGitFilesByConversationId.has(summary.id)) {
+        ctx.composerActivityGitFilesByConversationId.delete(summary.id);
+    }
+    // Skip the repo-wide git snapshot until the agent has actually edited files here.
+    // Tool-call evidence alone must count: some agent CLIs (e.g. opencode/QAIQ) report
+    // Edit/Write tool calls without parseable paths or diff stats, leaving activityFiles
+    // empty even though the agent did change files — same gate as the pill itself.
+    if (!ctx.hasComposerAgentActivity(activityFiles)
+        && !ctx.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv)) {
+        return;
+    }
+    const cwd = ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+    if (!cwd) {
+        return;
+    }
+    try {
+        const response = await fetch(
+            `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(cwd)}`,
+            { credentials: 'include' },
+        );
+        if (!response.ok) {
+            return;
+        }
+        const body = await response.json() as { files?: QaapGitChangedFile[] };
+        const files = (body.files ?? []).map(file => ctx.mapGitChangedFileToComposerView(file));
+        // While the agent is still running, an empty snapshot usually means the edit hasn't
+        // landed on disk yet — don't latch a false "clean tree" for the Changes row.
+        if (files.length === 0 && conv?.status === 'streaming') {
+            return;
+        }
+        ctx.composerActivityGitFilesByConversationId.set(summary.id, files);
+        if (ctx.host.transcriptComposerSummary?.id !== summary.id) {
+            return;
+        }
+        if (buildStickyComposerChangesPillFingerprint(ctx.buildTranscriptComposerActivityOptions(project, summary))
+            === ctx.lastComposerChangesPillFingerprint) {
+            return;
+        }
+        ctx.refreshComposerActivityStack();
+    } catch {
+        // Git review is optional — composer still shows aggregate diff stats.
+    }
+}
+
+export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,): StickyComposerActivityStackOptions {
+    const conv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
+    const activityFiles = ctx.resolveComposerActivityFilesForStack(project, summary, conv);
+    void ctx.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
+    const agentWorking = ctx.isTranscriptStickyComposerAgentWorking();
+    // Everything below is gated on the agent having actually edited files in THIS conversation.
+    // A fresh/idle conversation has no activity and no git snapshot, so the whole row stays gone.
+    const hasFileActivity = ctx.hasComposerFileActivity(conv);
+    const hasCommittableChanges = hasFileActivity && ctx.hasComposerCommittableChangesFromGit(summary);
+    const previewRuntime = ctx.resolveComposerPreviewRuntime(project);
+    const previewCandidate = resolveComposerPreviewCandidate(previewRuntime);
+    ctx.syncComposerPreviewAvailability(project, previewCandidate);
+    const verifiedPreviewUrl = ctx.verifiedComposerPreview?.projectId === project.id
+        ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
+        : undefined;
+    return {
+        queueEntries: ctx.host.transcriptFollowUpQueue.peek(summary.id),
+        queueExpanded: ctx.host.transcriptComposerQueueExpanded,
+        onQueueExpandedChange: expanded => { ctx.host.transcriptComposerQueueExpanded = expanded; },
+        onQueueEdit: (index, entry) => {
+            ctx.host.transcriptComposerDraft = entry.draft;
+            const existingRequests = new Set(ctx.host.transcriptComposerContext.map(item => item.request));
+            const restored = (entry.variables ?? [])
+                .filter(request => !existingRequests.has(request))
+                .map(request => createComposerContextEntry(request));
+            ctx.host.transcriptComposerContext = [...restored, ...ctx.host.transcriptComposerContext];
+            ctx.host.transcriptFollowUpQueue.removeAt(summary.id, index);
+            if (entry.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
+                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, entry.serverPendingId);
+            }
+            ctx.syncTranscriptQueuedFollowUpBubbles(summary);
+            ctx.remountTranscriptStickyComposer();
+        },
+        onQueueSendNow: index => {
+            void ctx.sendQueuedFollowUpNow(project, summary, index);
+        },
+        onQueueInterrupt: index => {
+            void ctx.interruptQueuedFollowUp(project, summary, index);
+        },
+        onQueueRemove: index => {
+            const removed = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
+            if (removed?.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
+                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, removed.serverPendingId);
+            }
+            ctx.refreshComposerActivityStack();
+        },
+        onQueueClose: index => {
+            const removed = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
+            if (removed?.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
+                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, removed.serverPendingId);
+            }
+            ctx.refreshComposerActivityStack();
+        },
+        onQueueReorder: (fromIndex, toIndex) => {
+            // FLIP animation: record first positions before re-render.
+            const wrap = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner');
+            const oldItems = wrap ? Array.from(wrap.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item')) : [];
+            const firstRects = oldItems.map(el => el.getBoundingClientRect());
+            ctx.host.transcriptFollowUpQueue.moveTo(summary.id, fromIndex, toIndex);
+            // Force a full re-render (not a patch) by clearing the fingerprint.
+            ctx.lastComposerActivityStackFingerprint = '';
+            ctx.refreshComposerActivityStack();
+            // FLIP: animate from old position to new position.
+            if (wrap) {
+                requestAnimationFrame(() => {
+                    const newItems = Array.from(wrap.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item'));
+                    newItems.forEach((el, i) => {
+                        if (i >= firstRects.length) { return; }
+                        const newRect = el.getBoundingClientRect();
+                        const deltaY = firstRects[i].top - newRect.top;
+                        if (deltaY === 0) { return; }
+                        el.style.transform = `translateY(${deltaY}px)`;
+                        el.style.transition = 'none';
+                        requestAnimationFrame(() => {
+                            el.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1)';
+                            el.style.transform = '';
+                            el.addEventListener('transitionend', () => {
+                                el.style.transition = '';
+                                el.style.transform = '';
+                            }, { once: true });
+                        });
+                    });
+                });
+            }
+        },
+        changedFiles: activityFiles.files,
+        diffStats: activityFiles.stats,
+        hasFileActivity,
+        previewInConversation: composerConversationInvolvesPreview(conv, window.location.origin),
+        hasCommittableChanges,
+        filesExpanded: ctx.peekTranscriptComposerChangedFilesExpanded(summary.id),
+        onFilesExpandedChange: expanded => { ctx.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
+        agentWorking,
+        onReview: () => {
+            ctx.host.executionSurfaceTabsUi.selectTranscriptTab('review', project, summary);
+        },
+        onRunApp: () => {
+            void ctx.launchComposerDevPreview(project, summary);
+        },
+        previewStarting: !!ctx.host.transcriptPreviewRequestRunning
+            || !!ctx.host.transcriptPreviewRequestPending,
+        onOpenPreview: verifiedPreviewUrl
+            ? () => { void ctx.openComposerPreview(project.id); }
+            : undefined,
+        onKeepAll: () => { void ctx.keepAllComposerChangedFiles(project, summary); },
+        onUndoAll: () => { void ctx.undoAllComposerChangedFiles(project, summary); },
+        changedFilesBulkBusy: ctx.composerChangedFilesBulkBusy,
+        onCommitAction: (ctx.host.commitMessageAi || ctx.host.quickInputService)
+            ? action => { void ctx.runComposerCommitAction(project, summary, action); }
+            : undefined,
+        commitBusy: ctx.composerCommitBusy || ctx.composerChangedFilesBulkBusy,
+    };
+}
+
+export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    if (typeof ctx.host.requestTranscriptPreview === 'function') {
+        // Same launcher as header Play: managed bootstrap, nested identity URL, Stop latch.
+        // Never fall through to an LLM prompt from Run app.
+        await ctx.host.requestTranscriptPreview(project, summary, {
+            revealPreviewTab: true,
+            deferPreviewTabUntilReady: true,
+            allowAgentFallback: false,
+        });
+        return;
+    }
+    const bootstrap = ctx.host.projectBootstrap;
+    if (!bootstrap) {
+        return;
+    }
+    const projectRoot = ctx.host.projectsService.getProjectCwd(project)
+        ?? ctx.host.preparedCwdByProjectId?.get?.(project.id)
+        ?? summary.cwd;
+    if (!projectRoot) {
+        MobileSnackbar.show(nls.localize(
+            'qaap/mobileProjects/previewRootUnresolved',
+            'Could not resolve this project\'s folder — open the project and retry.',
+        ), { kind: 'warning' });
+        return;
+    }
+    ctx.host.transcriptPreviewSuppressedByUser = false;
+    ctx.host.beginTranscriptDevPreviewRequest(project, summary);
+    ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
+    await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
+    const readyUrl = await ensureTranscriptDevPreview(bootstrap, {
+        conversationId: summary.id,
+        projectId: project.id,
+        workspaceRoot: projectRoot,
+        skipConversationPortProbe: true,
+    });
+    if (!readyUrl) {
+        void ctx.host.transcriptSurfacesUi?.discoverAndMountTranscriptPreviewIfReady?.(project, summary);
+        return;
+    }
+    if (typeof ctx.host.transcriptSurfacesUi?.adoptReadyTranscriptPreview === 'function') {
+        ctx.host.transcriptSurfacesUi.adoptReadyTranscriptPreview(project, summary, readyUrl);
+        return;
+    }
+    const refreshed = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
+    const readyProject = { ...refreshed, previewUrl: readyUrl };
+    ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === refreshed.id
+        ? readyProject
+        : candidate);
+    if (ctx.host.transcriptOpenProject?.id === project.id) {
+        ctx.host.transcriptOpenProject = readyProject;
+    }
+    void ctx.host.projectsService.recordProjectPreviewUrl(readyProject, readyUrl);
+    ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', readyProject, summary);
+}
+
+export async function runComposerCommitActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    action: QaapGitCommitWorkflowAction,): Promise<void> {
+    const cwd = ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+    if (!cwd || ctx.composerCommitBusy) {
+        return;
+    }
+    const readiness = evaluateVerifyCommitReadiness({
+        checksLoading: !!ctx.host.verifyChecksLoading,
+        running: !!ctx.host.verifyRunning,
+        results: ctx.host.verifyResults ?? [],
+    });
+    const allowed = await confirmVerifyCommitReadiness(readiness, {
+        onBlocked: message => MobileSnackbar.show(message, { kind: 'warning', duration: 2800 }),
+    });
+    if (!allowed) {
+        return;
+    }
+    ctx.composerCommitBusy = true;
+    ctx.refreshComposerActivityStack();
+    try {
+        // The AI writes the commit message automatically from the diff (Cursor-agents style).
+        const generated = await ctx.host.commitMessageAi?.generate(cwd);
+        let message = generated?.message;
+        if (!message) {
+            message = (await ctx.host.quickInputService?.input({
+                title: nls.localize('qaap/mobileProjects/commitMessageTitle', 'Commit message'),
+                placeHolder: nls.localize('qaap/mobileProjects/commitMessagePlaceholder', 'Describe your changes'),
+                prompt: nls.localize('qaap/mobileProjects/commitMessagePrompt', 'Message for this commit'),
+            }))?.trim();
+        }
+        if (!message) {
+            return;
+        }
+        const needsBranch = action === 'create-branch-commit' || action === 'create-branch-commit-push';
+        let branchName: string | undefined;
+        if (needsBranch) {
+            branchName = ctx.host.quickInputService
+                ? (await ctx.host.quickInputService.input({
+                    title: nls.localize('qaap/mobileProjects/newBranchTitle', 'Create branch'),
+                    value: generated?.branchName,
+                    placeHolder: nls.localize('qaap/mobileProjects/newBranchPlaceholder', 'feature/my-change'),
+                    prompt: nls.localize('qaap/mobileProjects/newBranchPrompt', 'Name for the new branch'),
+                }))?.trim()
+                : generated?.branchName;
+            if (!branchName) {
+                return;
+            }
+        }
+        const pendingGitActionId = ctx.appendRunningGitActionToTranscript(summary, action);
+        const response = await fetch(`${QAAP_GIT_REVIEW_API_PATH}/commit-workflow`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ root: cwd, action, branchName, message }),
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({})) as { error?: string };
+            throw new Error(body.error ?? `commit workflow failed (${response.status})`);
+        }
+        const result = await response.json().catch(() => ({})) as {
+            branch?: string;
+            stat?: { files: number; insertions: number; deletions: number };
+        };
+        if (action === 'commit-create-pr' && ctx.host.commands) {
+            try {
+                await ctx.host.commands.executeCommand('pr.pushAndCreate', { repoPath: cwd });
+            } catch {
+                await ctx.host.commands.executeCommand('pr.create', { repoPath: cwd });
+            }
+        }
+        // `git add -A && git commit` leaves the tree clean — hide the Changes pill and the
+        // commit buttons right away, then re-verify against the real working tree.
+        invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
+        ctx.host.diffReviewWidget?.update();
+        ctx.composerActivityGitFilesByConversationId.set(summary.id, []);
+        void ctx.syncComposerGitSnapshot(project, summary)
+            .then(() => ctx.refreshComposerActivityStack())
+            .catch(() => undefined);
+        MobileSnackbar.show(
+            formatCommitFeedback(
+                nls.localize('qaap/mobileProjects/stickyComposerCommitDone', 'Changes committed'),
+                result.branch,
+                result.stat,
+            ),
+            { kind: 'success', duration: 2400 },
+        );
+        void ctx.recordComposerGitActionInTranscript(summary, action, {
+            branch: result.branch,
+            stat: result.stat,
+            status: 'completed',
+            replaceMessageId: pendingGitActionId,
+        });
+    } catch (error) {
+        ctx.markPendingGitActionFailed(summary, action);
+        void ctx.recordComposerGitActionInTranscript(summary, action, {
+            status: 'failed',
+            replaceMessageId: ctx.pendingGitActionMessageId,
+        });
+        MobileSnackbar.show(
+            error instanceof Error && error.message
+                ? error.message
+                : nls.localize('qaap/mobileProjects/stickyComposerCommitFailed', 'Commit failed'),
+            { kind: 'warning', duration: 3200 },
+        );
+    } finally {
+        ctx.pendingGitActionMessageId = undefined;
+        ctx.composerCommitBusy = false;
+        ctx.refreshComposerActivityStack();
+    }
+}
+
+export function buildGitActionMetadataExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, action: QaapGitCommitWorkflowAction,
+    status: ComposerGitActionDisplayMetadata['status'],
+    options: {
+        readonly branch?: string;
+        readonly stat?: { files: number; insertions: number; deletions: number };
+    } = {},): ComposerGitActionDisplayMetadata {
+    return {
+        action,
+        label: ctx.resolveGitCommitWorkflowLabel(action),
+        status,
+        ...(options.branch ? { branch: options.branch } : {}),
+        ...(options.stat ? {
+            files: options.stat.files,
+            insertions: options.stat.insertions,
+            deletions: options.stat.deletions,
+        } : {}),
+    };
+}
+

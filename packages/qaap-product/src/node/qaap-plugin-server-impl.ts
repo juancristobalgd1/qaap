@@ -29,7 +29,8 @@ export class QaapPluginServerImpl extends PluginServerImpl {
         if (isLocalPluginArchiveInstallBlocked(pluginEntry)) {
             throw new Error(
                 'Installing local plugin archives (VSIX / local-file:) is disabled. '
-                + 'Set QAAP_ALLOW_LOCAL_VSIX=1 to override, or install from the marketplace.',
+                + 'It can only be enabled in local development with QAAP_ALLOW_LOCAL_VSIX=1; '
+                + 'install hosted extensions from the marketplace.',
             );
         }
         return super.install(pluginEntry, arg2, options);

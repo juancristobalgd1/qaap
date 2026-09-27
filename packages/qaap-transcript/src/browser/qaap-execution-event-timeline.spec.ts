@@ -1,0 +1,1055 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { buildMobileExecutionEvents, createMobileClosingErrorCardElement, createMobileDiffSummaryElement, resolveMobileDiffFileLanguageBadge, createMobileExecutionEventTimeline, createMobileLineDiffSummaryElement, findMobileProcessAccordion, formatMobileEventSummary, hasMobileExecutionEventTimeline, hasMobileProcessAccordion, MOBILE_CLOSING_ERROR_CARD_CLASS, MOBILE_EXECUTION_TIMELINE_CLASS, MOBILE_PROCESS_ACCORDION_CLASS, MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS, refreshMobileExecutionEventTimeline, resolveMobileActivityVerb, syncMobileProcessAccordionState, wrapMobileProcessAccordion } from './qaap-execution-event-timeline';
+
+describe('qaap-execution-event-timeline', () => {
+    let disableJSDOM: (() => void) | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
+
+    describe('buildMobileExecutionEvents', () => {
+        it('groups consecutive tool calls of the same kind into one event', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'a.ts' })),
+                toolSegment('Read', 'tool-2', JSON.stringify({ path: 'b.ts' })),
+                toolSegment('Bash', 'tool-3', JSON.stringify({ command: 'ls' })),
+            ]);
+
+            expect(timeline.events).to.have.length(2);
+            expect(timeline.events[0]?.kind).to.equal('read');
+            expect(timeline.events[0]?.tools).to.have.length(2);
+            expect(timeline.events[0]?.id).to.equal('m-event-tool-1');
+            expect(timeline.events[1]?.kind).to.equal('run');
+            expect(timeline.events[1]?.tools).to.have.length(1);
+            expect(timeline.events[1]?.id).to.equal('m-event-tool-3');
+        });
+
+        it('does not merge consecutive run/verification tools (avoids kind-flip rebuilds)', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run build' })),
+                toolSegment('Bash', 'tool-2', JSON.stringify({ command: 'npm run test' })),
+            ]);
+            expect(timeline.events).to.have.length(2);
+            expect(timeline.events[0]?.id).to.equal('m-event-tool-1');
+            expect(timeline.events[1]?.id).to.equal('m-event-tool-2');
+        });
+
+        it('uses agent text as the event narrative', () => {
+            const timeline = buildMobileExecutionEvents([
+                textSegment("I'm inspecting the repository."),
+                toolSegment('Grep', 'tool-1', '{}'),
+            ]);
+
+            expect(timeline.events[0]?.narrative).to.equal("I'm inspecting the repository.");
+            expect(timeline.events[0]?.narrativeSource).to.equal('agent');
+        });
+
+        it('generates synthetic narrative when no text precedes tools', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Grep', 'tool-1', '{}'),
+            ]);
+
+            expect(timeline.events[0]?.narrativeSource).to.equal('synthetic');
+            expect(timeline.events[0]?.narrative).to.not.equal('');
+        });
+
+        it('uses thinking content as narrative when no text is available', () => {
+            const timeline = buildMobileExecutionEvents([
+                thinkingSegment('Planning the approach.'),
+                toolSegment('Read', 'tool-1', '{}'),
+            ]);
+
+            expect(timeline.events[0]?.narrative).to.equal('Planning the approach.');
+            expect(timeline.events[0]?.narrativeSource).to.equal('agent');
+        });
+
+        it('starts a new event when the tool kind changes', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Grep', 'tool-1', '{}'),
+                toolSegment('Bash', 'tool-2', '{}'),
+                toolSegment('Edit', 'tool-3', '{}'),
+            ]);
+
+            expect(timeline.events).to.have.length(3);
+            expect(timeline.events[0]?.kind).to.equal('explore');
+            expect(timeline.events[1]?.kind).to.equal('run');
+            expect(timeline.events[2]?.kind).to.equal('edit');
+        });
+
+        it('classifies verification commands as verification events', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run test' })),
+                toolSegment('Bash', 'tool-2', JSON.stringify({ command: 'pnpm lint' })),
+            ]);
+
+            // Run/verification tools stay one event per tool (stable ids; no kind-flip rebuilds).
+            expect(timeline.events).to.have.length(2);
+            expect(timeline.events[0]?.kind).to.equal('verification');
+            expect(timeline.events[1]?.kind).to.equal('verification');
+            expect(timeline.events[0]?.id).to.equal('m-event-tool-1');
+            expect(timeline.events[1]?.id).to.equal('m-event-tool-2');
+        });
+
+        it('captures trailing text as closing narrative', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Read', 'tool-1', '{}'),
+                textSegment('Done with the task.'),
+            ]);
+
+            expect(timeline.closingNarrative).to.equal('Done with the task.');
+        });
+
+        it('accumulates multiple consecutive text segments into one event narrative without dropping any', () => {
+            const timeline = buildMobileExecutionEvents([
+                textSegment('Let me explain the approach.'),
+                textSegment("I'll start by reading the file."),
+                toolSegment('Read', 'tool-1', '{}'),
+            ]);
+
+            expect(timeline.events).to.have.length(1);
+            expect(timeline.events[0]?.narrativeSource).to.equal('agent');
+            expect(timeline.events[0]?.narrative).to.include('Let me explain the approach.');
+            expect(timeline.events[0]?.narrative).to.include("I'll start by reading the file.");
+        });
+
+        it('accumulates multiple trailing text segments as closing narrative without dropping any', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Read', 'tool-1', '{}'),
+                textSegment('Done with the implementation.'),
+                textSegment("Here's a summary of changes."),
+            ]);
+
+            expect(timeline.closingNarrative).to.include('Done with the implementation.');
+            expect(timeline.closingNarrative).to.include("Here's a summary of changes.");
+        });
+
+        it('accumulates text segments between tool groups as narrative for the next event', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Read', 'tool-1', '{}'),
+                textSegment('I found the rendering pipeline.'),
+                textSegment('Now let me check the tests.'),
+                toolSegment('Read', 'tool-2', '{}'),
+            ]);
+
+            expect(timeline.events).to.have.length(2);
+            expect(timeline.events[1]?.narrativeSource).to.equal('agent');
+            expect(timeline.events[1]?.narrative).to.include('I found the rendering pipeline.');
+            expect(timeline.events[1]?.narrative).to.include('Now let me check the tests.');
+        });
+
+        it('propagates pending and error state to the event level', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Bash', 'tool-1', '{}', false),
+                toolSegment('Read', 'tool-2', '{}', true, true),
+            ]);
+
+            expect(timeline.events[0]?.hasPending).to.equal(true);
+            expect(timeline.events[1]?.hasError).to.equal(true);
+        });
+
+        it('formatMobileEventSummary produces count + noun', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Read', 'tool-1', '{}'),
+                toolSegment('Read', 'tool-2', '{}'),
+            ]);
+            expect(formatMobileEventSummary(timeline.events[0]!)).to.equal('2 files');
+        });
+
+    });
+
+    describe('createMobileExecutionEventTimeline', () => {
+        it('renders a container with execution events', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'a.ts' })),
+            ]);
+
+            expect(el.classList.contains(MOBILE_EXECUTION_TIMELINE_CLASS)).to.equal(true);
+            expect(el.querySelectorAll('.theia-mobile-execution-event').length).to.be.greaterThan(0);
+        });
+
+        it('renders collapsed tool groups by default', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'a.ts' })),
+            ]);
+
+            const group = el.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            expect(group).to.not.equal(null);
+            expect(group?.open).to.equal(false);
+        });
+
+        it('renders terminal tools as collapsible terminal output cards', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'echo hello' }), true, false, 'hello\n'),
+            ]);
+
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            expect(terminal).to.not.equal(null);
+            expect(terminal?.open).to.equal(false);
+        });
+
+        it('does not repeat the group verb in file detail rows', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' })),
+            ]);
+
+            const detailRow = el.querySelector<HTMLElement>('.theia-mobile-tool-detail');
+            expect(detailRow).to.not.equal(null);
+            expect(detailRow?.querySelector('.theia-mobile-tool-detail-label')).to.equal(null);
+            expect(detailRow?.textContent).to.equal('store.tsx');
+        });
+
+        it('shows Read basenames from target_file / filePath / partial streaming args', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ target_file: 'packages/core/src/app.ts' })),
+                toolSegment('Read', 'tool-2', JSON.stringify({ filePath: 'src/auth.ts', offset: 10, limit: 20 })),
+                toolSegment('Read', 'tool-3', 'partial {"file_path":"mobile-projects-panel.ts"'),
+            ]);
+            const details = [...el.querySelectorAll('.theia-mobile-tool-detail-detail')].map(node => node.textContent);
+            expect(details).to.deep.equal(['app.ts', 'auth.ts L10-29', 'mobile-projects-panel.ts']);
+        });
+
+        it('recovers Read file path from <path> in the tool result when args are empty', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment(
+                    'Read',
+                    'tool-1',
+                    '{}',
+                    true,
+                    false,
+                    '<path>/repo/src/store.tsx</path>\n<content>\n1: export {}\n</content>',
+                ),
+            ]);
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-tool-detail-detail');
+            expect(detail?.textContent).to.equal('store.tsx');
+            expect(detail?.dataset.qaapToolFilePath).to.equal('/repo/src/store.tsx');
+        });
+
+        it('never renders the bare tool name as a Read file detail', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', '{}'),
+            ]);
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-tool-detail-detail');
+            expect(detail?.textContent).to.equal('file');
+            expect(detail?.textContent).to.not.equal('Read');
+        });
+
+        it('shows Glob/Grep search patterns instead of repeating the tool name', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Glob', 'tool-1', JSON.stringify({ glob_pattern: '**/*.tsx' })),
+                toolSegment('Grep', 'tool-2', JSON.stringify({ pattern: 'extractToolDetail' })),
+            ]);
+            const details = [...el.querySelectorAll('.theia-mobile-tool-detail-detail')].map(node => node.textContent);
+            expect(details).to.deep.equal(['**/*.tsx', 'extractToolDetail']);
+        });
+
+        it('skips trivial Glob ** patterns and shows the search path instead', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Glob', 'tool-1', JSON.stringify({ pattern: '**', path: 'packages/qaap-mobile-shell/src/browser' })),
+            ]);
+            const detail = el.querySelector('.theia-mobile-tool-detail-detail');
+            expect(detail?.textContent).to.equal('packages/qaap-mobile-shell/src/browser');
+            expect(detail?.textContent).to.not.equal('**');
+        });
+
+        it('shows Task/Agent descriptions instead of the bare tool name', () => {
+            const taskEl = createMobileExecutionEventTimeline([
+                toolSegment('Task', 'tool-1', JSON.stringify({ description: 'Find the auth bug' })),
+            ]);
+            const agentEl = createMobileExecutionEventTimeline([
+                toolSegment('Agent', 'tool-2', JSON.stringify({ prompt: 'Explore the mobile shell package' })),
+            ]);
+            expect(taskEl.querySelector('.theia-mobile-tool-detail-detail')?.textContent).to.equal('Find the auth bug');
+            expect(taskEl.querySelector('.theia-mobile-tool-group-verb')?.textContent).to.equal('Task');
+            expect(agentEl.querySelector('.theia-mobile-tool-detail-detail')?.textContent).to.equal('Explore the mobile shell package');
+            expect(agentEl.querySelector('.theia-mobile-tool-group-verb')?.textContent).to.equal('Agent');
+        });
+
+        it('renders non-deleted file details as links with the full file path', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' })),
+            ]);
+            const link = el.querySelector<HTMLElement>('.theia-mobile-tool-detail-detail');
+            const opened: string[] = [];
+            el.addEventListener('qaap-mobile-tool-file-open', event => {
+                opened.push((event as CustomEvent<{ readonly filePath: string }>).detail.filePath);
+            });
+
+            expect(link?.classList.contains('theia-mod-file-link')).to.equal(true);
+            expect(link?.getAttribute('role')).to.equal('link');
+            expect(link?.dataset.qaapToolFilePath).to.equal('src/store.tsx');
+            link?.click();
+            expect(opened).to.deep.equal(['src/store.tsx']);
+        });
+
+        it('does not make deleted file details clickable', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('rm', 'tool-1', JSON.stringify({ path: 'src/old.ts' })),
+            ]);
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-tool-detail-detail');
+
+            expect(detail?.textContent).to.equal('old.ts');
+            expect(detail?.classList.contains('theia-mod-file-link')).to.equal(false);
+            expect(detail?.getAttribute('role')).to.equal(null);
+        });
+
+        it('does not repeat the group verb in terminal detail cards', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run test' }), true, false, 'ok\n'),
+            ]);
+
+            const terminal = el.querySelector<HTMLElement>('.theia-mobile-terminal-output');
+            expect(terminal).to.not.equal(null);
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-label')).to.equal(null);
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-detail')?.textContent).to.equal('npm run test');
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-detail .theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('npm');
+        });
+
+        it('terminal detail renders full command text without truncation (no ellipsis)', () => {
+            const longCommand = 'ls -F openwiki/projects/some/very/deeply/nested/directory/structure/that/is/quite/long';
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: longCommand }), true, false, 'done\n'),
+            ]);
+
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-detail');
+            expect(detail).to.not.equal(null);
+            // Full text must be present in the DOM — no truncation at the data level
+            expect(detail?.textContent).to.equal(longCommand);
+            // The summary must exist and contain the detail as a child
+            const summary = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-summary');
+            expect(summary?.contains(detail!)).to.equal(true);
+        });
+
+        it('marks active tool group header text for shimmer while running', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' }), false),
+            ]);
+
+            const group = el.querySelector<HTMLElement>('.theia-mobile-tool-group');
+            expect(group?.classList.contains('running')).to.equal(true);
+            expect(group?.querySelector('.theia-mobile-tool-group-verb')?.classList.contains('theia-mod-shimmer')).to.equal(true);
+            expect(group?.querySelector('.theia-mobile-tool-group-meta')?.classList.contains('theia-mod-shimmer')).to.equal(true);
+        });
+
+        it('animates tool group kind icons while running and settles when finished', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const pending = [
+                toolSegment('Edit', 'tool-edit', JSON.stringify({ path: 'a.ts' }), false),
+                toolSegment('Write', 'tool-write', JSON.stringify({ path: 'b.ts' }), false),
+                toolSegment('Grep', 'tool-search', JSON.stringify({ pattern: 'foo' }), false),
+                toolSegment('Read', 'tool-read', JSON.stringify({ path: 'c.ts' }), false),
+            ];
+            segmentsBody.append(createMobileExecutionEventTimeline(pending));
+
+            const icons = Array.from(segmentsBody.querySelectorAll<HTMLElement>('.theia-mobile-tool-group-icon'));
+            expect(icons.length).to.be.at.least(4);
+            for (const icon of icons) {
+                expect(icon.classList.contains('theia-mod-tool-motion')).to.equal(true);
+            }
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-edit'))).to.equal(true);
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-write'))).to.equal(true);
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-search'))).to.equal(true);
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-read'))).to.equal(true);
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Edit', 'tool-edit', JSON.stringify({ path: 'a.ts' }), true),
+                toolSegment('Write', 'tool-write', JSON.stringify({ path: 'b.ts' }), true),
+                toolSegment('Grep', 'tool-search', JSON.stringify({ pattern: 'foo' }), true),
+                toolSegment('Read', 'tool-read', JSON.stringify({ path: 'c.ts' }), true),
+            ]);
+            const settled = segmentsBody.querySelectorAll<HTMLElement>('.theia-mobile-tool-group-icon');
+            for (const icon of Array.from(settled)) {
+                expect(icon.classList.contains('theia-mod-tool-motion')).to.equal(false);
+            }
+        });
+
+        it('expands and renders output when clicking the command summary detail', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment(
+                    'Bash',
+                    'tool-click',
+                    JSON.stringify({ command: '/bin/zsh -lc "sed -n \'1,180p\' tests/proxy-csp.test.ts"' }),
+                    true,
+                    false,
+                    'export const proxy = {}\n',
+                ),
+            ]);
+
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-detail');
+            const group = el.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            expect(terminal).to.not.equal(null);
+            expect(detail).to.not.equal(null);
+            expect(terminal!.open).to.equal(false);
+            expect(terminal!.querySelector('.theia-mobile-terminal-output-code-view')).to.equal(null);
+
+            // Open the parent group so the terminal card is visible (mirrors UI).
+            if (group) {
+                group.open = true;
+            }
+            detail!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(terminal!.open).to.equal(true);
+            expect(group?.open).to.equal(true);
+            const codeView = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-code-view');
+            expect(codeView).to.not.equal(null);
+            expect(codeView?.textContent).to.include('export const proxy');
+        });
+
+        it('shows stored stdout in the body when a complete terminal card is opened', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment(
+                    'Bash',
+                    'item_34',
+                    JSON.stringify({ command: "/bin/zsh -lc 'PORTLESS_STATE_DIR=... pnpm run dev'" }),
+                    true,
+                    false,
+                    'VITE v6 ready\n  ➜  Local: http://localhost:5173/\n',
+                ),
+            ]);
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            expect(terminal?.classList.contains('complete')).to.equal(true);
+            expect(terminal!.open).to.equal(false);
+
+            const summary = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-summary');
+            summary!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(terminal!.open).to.equal(true);
+            const body = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-content');
+            expect(body?.textContent).to.include('Local: http://localhost:5173/');
+            expect(body?.querySelector('.theia-mobile-terminal-output-code-view')).to.not.equal(null);
+            expect(body?.querySelector('.theia-mobile-terminal-output-empty')).to.equal(null);
+        });
+
+        it('streams stdout into an open running terminal card in place', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            segmentsBody.append(createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-stream', JSON.stringify({ command: 'npm run compile' }), false, false, ''),
+            ]));
+
+            const group = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            group!.open = true;
+            const terminal = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-pending')?.textContent).to.equal('Running...');
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Bash', 'tool-stream', JSON.stringify({ command: 'npm run compile' }), false, false, '> compile\n'),
+            ]);
+
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-pending')).to.equal(null);
+            expect(terminal?.textContent).to.include('compile');
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-code-view')).to.not.equal(null);
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Bash', 'tool-stream', JSON.stringify({ command: 'npm run compile' }), false, false, '> compile\nDone.\n'),
+            ]);
+
+            expect(terminal?.textContent).to.include('Done.');
+        });
+
+        it('shows an explicit empty state when a complete terminal has no result', () => {
+            const el = createMobileExecutionEventTimeline([
+                {
+                    type: 'tool',
+                    name: 'Bash',
+                    toolUseId: 'item-empty',
+                    args: JSON.stringify({ command: 'true' }),
+                    finished: true,
+                },
+            ]);
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            const summary = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-summary');
+            summary!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(terminal!.open).to.equal(true);
+            const empty = terminal!.querySelector('.theia-mobile-terminal-output-empty');
+            expect(empty?.textContent).to.equal('No output');
+        });
+
+        it('renders log terminal output as highlighted code view and strips ANSI escape sequences', () => {
+            const rawOutput = '\u001b[32mPASS\u001b[0m src/foo.test.ts 12ms';
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'echo' }), true, false, rawOutput),
+            ]);
+
+            // Terminal output code view is built lazily on first open (collapsed
+            // by default) -- expand it before asserting on its content.
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            // Use the jsdom window's Event constructor — Node's own global
+            // `Event` class produces an object jsdom's dispatchEvent rejects.
+            terminal!.dispatchEvent(new window.Event('toggle'));
+
+            const codeView = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-code-view.theia-mod-log');
+            expect(codeView).to.not.equal(null);
+            // ANSI CSI and OSC sequences must be removed
+            expect(codeView?.textContent).to.include('PASS');
+            expect(codeView?.textContent).to.include('src/foo.test.ts');
+            expect(codeView?.textContent).to.not.include('\u001b');
+            expect(codeView?.querySelector('.theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('PASS');
+            expect(codeView?.querySelector('.theia-mobile-agent-token.theia-mod-path')?.textContent).to.equal('src/foo.test.ts');
+        });
+
+        it('renders verification JSON output with highlighted code view when expanded', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment(
+                    'Bash',
+                    'tool-1',
+                    JSON.stringify({ command: 'cat package.json | grep -A 20 "\\"scripts\\""' }),
+                    true,
+                    false,
+                    '"scripts": {\n  "dev": "pnpm dev",\n  "typecheck": "tsc"\n}',
+                ),
+            ]);
+
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            terminal!.dispatchEvent(new window.Event('toggle'));
+
+            const codeView = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-code-view.theia-mod-json');
+            expect(codeView).to.not.equal(null);
+            expect(codeView?.querySelector('.theia-mobile-agent-token.theia-mod-key')?.textContent).to.equal('"scripts"');
+            expect(el.querySelector('.theia-mobile-terminal-output-pre')).to.equal(null);
+        });
+
+        it('does not render closing narrative (caller handles it)', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', '{}'),
+                textSegment('Final answer.'),
+            ]);
+
+            expect(el.querySelector('.theia-mobile-execution-timeline-closing')).to.equal(null);
+        });
+
+    });
+
+    describe('hasMobileExecutionEventTimeline', () => {
+        it('returns true when the row contains an execution event timeline', () => {
+            const row = document.createElement('div');
+            const body = document.createElement('div');
+            body.className = 'theia-mobile-agent-transcript-segments';
+            const timeline = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', '{}'),
+            ]);
+            body.append(timeline);
+            row.append(body);
+
+            expect(hasMobileExecutionEventTimeline(row)).to.equal(true);
+        });
+
+        it('returns false when the row has no execution event timeline', () => {
+            const row = document.createElement('div');
+            expect(hasMobileExecutionEventTimeline(row)).to.equal(false);
+        });
+
+    });
+
+    describe('refreshMobileExecutionEventTimeline', () => {
+        it('replaces the existing timeline and preserves open state', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const timeline = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', '{}'),
+            ]);
+            segmentsBody.append(timeline);
+
+            // Expand the tool group
+            const group = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            group!.open = true;
+
+            // Refresh with updated segments
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Read', 'tool-1', '{}'),
+                toolSegment('Read', 'tool-2', '{}'),
+            ]);
+
+            // The timeline should be replaced, but the open state preserved
+            const newGroup = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            expect(newGroup).to.not.equal(null);
+            expect(newGroup?.open).to.equal(true);
+        });
+
+        it('preserves terminal output open state across refreshes', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const timeline = createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'echo hello' }), true, false, 'hello\n'),
+            ]);
+            segmentsBody.append(timeline);
+
+            // Expand both the tool group and the terminal output
+            const group = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            group!.open = true;
+            const terminal = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+
+            // Refresh with updated segments
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'echo hello' }), true, false, 'hello\n'),
+            ]);
+
+            // Both open states should be preserved
+            const newGroup = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            expect(newGroup?.open).to.equal(true);
+            const newTerminal = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            expect(newTerminal).to.not.equal(null);
+            expect(newTerminal?.open).to.equal(true);
+        });
+
+        it('appends a new timeline when none exists', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Read', 'tool-1', '{}'),
+            ]);
+
+            expect(segmentsBody.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`)).to.not.equal(null);
+        });
+
+        it('removes tool group header shimmer when a running tool finishes', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const pending = [toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' }), false)];
+            const timeline = createMobileExecutionEventTimeline(pending);
+            segmentsBody.append(timeline);
+            const pendingGroup = timeline.querySelector<HTMLElement>('.theia-mobile-tool-group');
+            expect(pendingGroup?.querySelector('.theia-mobile-tool-group-verb')?.classList.contains('theia-mod-shimmer')).to.equal(true);
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' }), true),
+            ]);
+
+            const finishedGroup = segmentsBody.querySelector<HTMLElement>('.theia-mobile-tool-group');
+            expect(finishedGroup?.classList.contains('finished')).to.equal(true);
+            expect(finishedGroup?.querySelector('.theia-mobile-tool-group-verb')?.classList.contains('theia-mod-shimmer')).to.equal(false);
+            expect(finishedGroup?.querySelector('.theia-mobile-tool-group-meta')?.classList.contains('theia-mod-shimmer')).to.equal(false);
+        });
+
+        it('patches run→verification kind flips in place without rebuilding the timeline node', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const pending = [toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run' }), false)];
+            const timeline = createMobileExecutionEventTimeline(pending);
+            segmentsBody.append(timeline);
+            const beforeNode = segmentsBody.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`);
+
+            const after = refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run test' }), false),
+            ]);
+
+            expect(after).to.equal(beforeNode);
+            expect(after.querySelector('.theia-mobile-tool-group')?.classList.contains('running')).to.equal(true);
+        });
+
+        it('preserves web-search group class across streaming patches', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const pending = [toolSegment('WebSearch', 'tool-1', JSON.stringify({ query: 'qaap' }), false)];
+            const timeline = createMobileExecutionEventTimeline(pending);
+            segmentsBody.append(timeline);
+            expect(timeline.querySelector('.theia-mobile-tool-group')?.classList.contains('theia-mod-web-search')).to.equal(true);
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('WebSearch', 'tool-1', JSON.stringify({ query: 'qaap timeline' }), false),
+            ]);
+
+            expect(segmentsBody.querySelector('.theia-mobile-tool-group')?.classList.contains('theia-mod-web-search')).to.equal(true);
+        });
+
+    });
+
+    describe('createMobileDiffSummaryElement', () => {
+        it('renders the localized plural header without aggregate stats', () => {
+            const el = createMobileDiffSummaryElement(3, 1, 1, 1, [
+                { name: 'a.ts', type: 'add', added: 10 },
+                { name: 'b.ts', type: 'modify', added: 4, removed: 2 },
+                { name: 'c.ts', type: 'delete', removed: 8 },
+            ]);
+
+            expect(el.classList.contains('theia-mobile-diff-summary')).to.equal(true);
+            expect(el.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('3 Files Changed');
+            expect(el.querySelector('.theia-mobile-diff-summary-header .theia-mobile-diff-summary-stat')).to.equal(null);
+            expect(el.querySelectorAll('.theia-mobile-diff-summary-file').length).to.equal(3);
+        });
+
+        it('renders the localized singular header', () => {
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: 'only.ts', type: 'modify' },
+            ]);
+            expect(el.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('1 File Changed');
+        });
+
+        it('renders an actionable localized Review control when provided', () => {
+            let reviewed = false;
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: 'only.ts', type: 'modify' },
+            ], () => reviewed = true);
+
+            const review = el.querySelector<HTMLButtonElement>('.theia-mobile-diff-summary-review');
+            expect(review?.textContent).to.equal('Review');
+            expect(review?.type).to.equal('button');
+            review?.click();
+            expect(reviewed).to.equal(true);
+        });
+
+        it('aligns real per-file stats in the tail and omits redundant status', () => {
+            const el = createMobileDiffSummaryElement(2, 1, 1, 0, [
+                { name: 'added.ts', type: 'add', added: 67, removed: 0 },
+                { name: 'edited.ts', type: 'modify', added: 130, removed: 21 },
+            ]);
+            const tails = el.querySelectorAll('.theia-mobile-diff-summary-file-tail');
+
+            expect(tails[0]?.textContent).to.equal('+67');
+            expect(tails[1]?.textContent).to.equal('+130−21');
+            expect(tails[0]?.querySelector('.theia-mobile-diff-summary-file-stat.theia-mod-added')?.textContent)
+                .to.equal('+67');
+            expect(tails[1]?.querySelector('.theia-mobile-diff-summary-file-stat.theia-mod-added')?.textContent)
+                .to.equal('+130');
+            expect(tails[1]?.querySelector('.theia-mobile-diff-summary-file-stat.theia-mod-deleted')?.textContent)
+                .to.equal('−21');
+            expect(el.querySelector('.theia-mobile-diff-summary-file-type')).to.equal(null);
+        });
+
+        it('renders language badges and a right-aligned Review control for the files card', () => {
+            expect(resolveMobileDiffFileLanguageBadge('qaap-execution-event-timeline.ts')).to.equal('TS');
+            expect(resolveMobileDiffFileLanguageBadge('mobile-workbench.css')).to.equal('#');
+
+            const el = createMobileDiffSummaryElement(2, 0, 2, 0, [
+                { name: 'qaap-execution-event-timeline.ts', type: 'modify', added: 36 },
+                { name: 'mobile-workbench.css', type: 'modify', added: 10, removed: 1 },
+            ], () => undefined);
+
+            expect(el.classList.contains('theia-mod-files')).to.equal(true);
+            const badges = [...el.querySelectorAll('.theia-mobile-diff-summary-file-badge')]
+                .map(node => node.textContent);
+            expect(badges).to.deep.equal(['TS', '#']);
+            expect(el.querySelector('.theia-mobile-diff-summary-header .theia-mobile-diff-summary-review')?.textContent)
+                .to.equal('Review');
+            expect(el.querySelector('.theia-mobile-diff-summary-file-icon')).to.equal(null);
+        });
+
+        it('uses a discreet file status only when stats are unavailable', () => {
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: 'unknown.ts', type: 'modify' },
+            ]);
+
+            expect(el.querySelector('.theia-mobile-diff-summary-file-stat')).to.equal(null);
+            expect(el.querySelector('.theia-mobile-diff-summary-file-type')?.textContent).to.equal('modified');
+        });
+
+        it('preserves a long filename for tooltip while allowing CSS ellipsis', () => {
+            const longName = 'an-extremely-long-filename-that-must-not-expand-the-summary-card.ts';
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: longName, type: 'modify', added: 2 },
+            ]);
+            const name = el.querySelector<HTMLElement>('.theia-mobile-diff-summary-file-name');
+
+            expect(name?.textContent).to.equal(longName);
+            expect(name?.title).to.equal(longName);
+        });
+
+        it('limits file list to 6 entries with a more indicator', () => {
+            const files = Array.from({ length: 8 }, (_, i) => ({ name: `file-${i}.ts`, type: 'modify' as const }));
+            const el = createMobileDiffSummaryElement(8, 0, 8, 0, files);
+
+            expect(el.querySelectorAll('.theia-mobile-diff-summary-file').length).to.equal(6);
+            expect(el.querySelector('.theia-mobile-diff-summary-more')?.textContent).to.equal('+2 more');
+        });
+
+    });
+
+    describe('createMobileLineDiffSummaryElement', () => {
+        it('renders line-level stats without claiming a file count', () => {
+            const el = createMobileLineDiffSummaryElement(50, 12);
+
+            expect(el.classList.contains('theia-mobile-diff-summary')).to.equal(true);
+            // Title must NOT say "N files changed" — it's a line-level summary
+            const title = el.querySelector('.theia-mobile-diff-summary-title');
+            expect(title?.textContent).to.not.match(/file/i);
+            // Stats show the actual line counts
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-added')?.textContent).to.equal('+50');
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-deleted')?.textContent).to.equal('−12');
+        });
+
+        it('omits the added stat when linesAdded is zero', () => {
+            const el = createMobileLineDiffSummaryElement(0, 5);
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-added')).to.equal(null);
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-deleted')?.textContent).to.equal('−5');
+        });
+
+        it('omits the removed stat when linesRemoved is zero', () => {
+            const el = createMobileLineDiffSummaryElement(7, 0);
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-added')?.textContent).to.equal('+7');
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-deleted')).to.equal(null);
+        });
+
+        it('does not render a file list', () => {
+            const el = createMobileLineDiffSummaryElement(10, 2);
+            expect(el.querySelector('.theia-mobile-diff-summary-files')).to.equal(null);
+        });
+
+    });
+
+    // ─── Process Accordion ───────────────────────────────────────────────────
+
+    describe('resolveMobileActivityVerb', () => {
+        it('returns the verb of the last event that still has pending tools', () => {
+            const segments = [
+                toolSegment('read', 't1', '{}', true),
+                textSegment('Now building the project.'),
+                toolSegment('bash', 't2', '{"command":"npm run build"}', false),
+            ];
+            const { events } = buildMobileExecutionEvents(segments);
+            expect(resolveMobileActivityVerb(events)).to.equal('Run');
+        });
+
+        it('returns undefined when nothing is pending', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const { events } = buildMobileExecutionEvents(segments);
+            expect(resolveMobileActivityVerb(events)).to.be.undefined;
+        });
+
+        it('returns undefined for an empty event list', () => {
+            expect(resolveMobileActivityVerb([])).to.be.undefined;
+        });
+
+    });
+
+    describe('createMobileClosingErrorCardElement', () => {
+        it('renders the icon and message without a retry button by default', () => {
+            const card = createMobileClosingErrorCardElement('Something went wrong');
+            expect(card.classList.contains(MOBILE_CLOSING_ERROR_CARD_CLASS)).to.be.true;
+            expect(card.querySelector('.theia-mobile-closing-error-card-message')?.textContent).to.equal('Something went wrong');
+            expect(card.querySelector('.theia-mobile-closing-error-card-retry')).to.equal(null);
+        });
+
+        it('renders a Retry button when onRetry is provided', () => {
+            const card = createMobileClosingErrorCardElement('Boom', () => { /* noop */ });
+            const retryBtn = card.querySelector<HTMLButtonElement>('.theia-mobile-closing-error-card-retry');
+            expect(retryBtn).to.not.equal(null);
+            expect(retryBtn?.textContent).to.equal('Retry');
+        });
+
+        it('calls onRetry exactly once and disables the button after click', () => {
+            let calls = 0;
+            const card = createMobileClosingErrorCardElement('Boom', () => { calls++; });
+            const retryBtn = card.querySelector<HTMLButtonElement>('.theia-mobile-closing-error-card-retry')!;
+            retryBtn.click();
+            retryBtn.click();
+            expect(calls).to.equal(1);
+            expect(retryBtn.disabled).to.be.true;
+        });
+
+    });
+
+    describe('hasMobileProcessAccordion', () => {
+        it('returns false when a row has no process accordion', () => {
+            const row = document.createElement('div');
+            expect(hasMobileProcessAccordion(row)).to.be.false;
+        });
+
+    });
+
+    describe('findMobileProcessAccordion', () => {
+        it('returns undefined when no accordion is present', () => {
+            const body = document.createElement('div');
+            expect(findMobileProcessAccordion(body)).to.equal(undefined);
+        });
+
+    });
+
+    describe('wrapMobileProcessAccordion', () => {
+        it('wraps an existing timeline element', () => {
+            const timeline = createMobileExecutionEventTimeline([toolSegment('read', 't1', '{}', true)]);
+            const accordion = wrapMobileProcessAccordion(timeline, { isWorking: true, isError: false });
+            expect(accordion.classList.contains(MOBILE_PROCESS_ACCORDION_CLASS)).to.be.true;
+            expect(accordion.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`)).to.not.equal(null);
+        });
+
+        it('renders a per-run stop while working and fires it without toggling the accordion', () => {
+            const timeline = createMobileExecutionEventTimeline([toolSegment('read', 't1', '{}', true)]);
+            let stopped = 0;
+            const accordion = wrapMobileProcessAccordion(timeline, {
+                isWorking: true,
+                isError: false,
+                onStopRun: () => { stopped++; },
+            }) as HTMLDetailsElement;
+            const stop = accordion.querySelector<HTMLButtonElement>(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`);
+            expect(stop).to.not.equal(null);
+
+            const openBefore = accordion.open;
+            stop!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            expect(stopped).to.equal(1);
+            // The button lives inside <summary>: stopping must not collapse the turn being watched.
+            expect(accordion.open).to.equal(openBefore);
+        });
+
+        it('has no per-run stop without a handler, or once the run settles', () => {
+            const timeline = createMobileExecutionEventTimeline([toolSegment('read', 't1', '{}', true)]);
+            const noHandler = wrapMobileProcessAccordion(timeline, { isWorking: true, isError: false });
+            expect(noHandler.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`)).to.equal(null);
+
+            const working = wrapMobileProcessAccordion(
+                createMobileExecutionEventTimeline([toolSegment('read', 't2', '{}', true)]),
+                { isWorking: true, isError: false, onStopRun: () => { } },
+            );
+            expect(working.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`)).to.not.equal(null);
+            syncMobileProcessAccordionState(working, { isWorking: false, isError: false, onStopRun: () => { } });
+            expect(working.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`)).to.equal(null);
+        });
+
+    });
+
+    // ─── File icons in tool details and diff summary ──────────────────────────
+
+    describe('file icons', () => {
+        it('renders a file icon in tool details for read tools with a file path', () => {
+            const segments = [toolSegment('read', 't1', JSON.stringify({ file_path: 'src/Canvas.tsx' }), true)];
+            const timeline = createMobileExecutionEventTimeline(segments);
+            const fileIcon = timeline.querySelector('.theia-mobile-tool-detail-file-icon');
+            expect(fileIcon).to.not.equal(null);
+            expect(fileIcon?.classList.contains('codicon-file-code')).to.be.true;
+        });
+
+        it('renders a file icon in tool details for write tools with a file path', () => {
+            const segments = [toolSegment('write', 't1', JSON.stringify({ path: 'config.json' }), true)];
+            const timeline = createMobileExecutionEventTimeline(segments);
+            const fileIcon = timeline.querySelector('.theia-mobile-tool-detail-file-icon');
+            expect(fileIcon).to.not.equal(null);
+            expect(fileIcon?.classList.contains('codicon-json')).to.be.true;
+        });
+
+        it('does not render a file icon for run/terminal tools', () => {
+            const segments = [toolSegment('bash', 't1', JSON.stringify({ command: 'npm test' }), true)];
+            const timeline = createMobileExecutionEventTimeline(segments);
+            const fileIcon = timeline.querySelector('.theia-mobile-tool-detail-file-icon');
+            expect(fileIcon).to.equal(null);
+        });
+
+        // The files-changed card prefers a short language badge (TS, MD, #, …)
+        // over a codicon; the codicon is only the fallback for extensions with
+        // no badge. See `resolveMobileDiffFileLanguageBadge`.
+        it('prefers a language badge over a file icon in the diff summary file list', () => {
+            const summary = createMobileDiffSummaryElement(2, 1, 1, 0, [
+                { name: 'Canvas.tsx', type: 'add' },
+                { name: 'README.md', type: 'modified' },
+            ]);
+            const badges = [...summary.querySelectorAll('.theia-mobile-diff-summary-file-badge')]
+                .map(node => node.textContent);
+            expect(badges).to.deep.equal(['TS', 'MD']);
+            expect(summary.querySelector('.theia-mobile-diff-summary-file-icon')).to.equal(null);
+        });
+
+        it('falls back to a file icon in the diff summary for extensions without a badge', () => {
+            const summary = createMobileDiffSummaryElement(2, 1, 1, 0, [
+                { name: 'logo.svg', type: 'add' },
+                { name: 'ci.yml', type: 'modified' },
+            ]);
+            expect(summary.querySelector('.theia-mobile-diff-summary-file-badge')).to.equal(null);
+            const icons = summary.querySelectorAll('.theia-mobile-diff-summary-file-icon');
+            expect(icons.length).to.equal(2);
+            expect(icons[0].classList.contains('codicon-file-media')).to.be.true;
+            expect(icons[1].classList.contains('codicon-settings-gear')).to.be.true;
+        });
+
+    });
+
+    // ─── Open-state persistence across virtual-list rematerialization ────────
+    // Long transcripts virtualize: a row scrolled out of view is fully
+    // removed (`row.remove()`), and scrolling back builds a brand-new row
+    // from scratch — a fresh `createMobileExecutionEventTimeline` call with
+    // no relationship to the previous DOM. These tests simulate that by
+    // creating a second, independent timeline from the same segments and
+    // checking that a manually-opened terminal card / tool group is still
+    // open (and, for the terminal, that its content is already rendered).
+
+    describe('global open-state persistence across virtual-list rematerialization', () => {
+        it('restores a user-opened terminal card, with its output already rendered, in a freshly created timeline', () => {
+            const segments = [
+                toolSegment('Bash', 'persist-terminal-1', JSON.stringify({ command: 'echo hi' }), true, false, 'hello output'),
+            ];
+
+            // First mount: user expands the terminal card.
+            const first = createMobileExecutionEventTimeline(segments);
+            const terminal = first.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            // Use the jsdom window's Event constructor — see the note in the
+            // ANSI-stripping test above.
+            terminal!.dispatchEvent(new window.Event('toggle'));
+
+            // Simulate the virtual list dropping the row entirely (scrolled
+            // out of view) and rebuilding it from scratch on scroll-back: a
+            // brand new element tree, unrelated to `first`.
+            const second = createMobileExecutionEventTimeline(segments);
+            const restoredTerminal = second.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            expect(restoredTerminal).to.not.equal(null);
+            expect(restoredTerminal?.open).to.equal(true);
+            // The lazy code view must be rendered eagerly at creation time, since
+            // a programmatic `open = true` never fires the lazy first-open
+            // 'toggle' handler.
+            const output = restoredTerminal?.querySelector('.theia-mobile-terminal-output-code-view');
+            expect(output).to.not.equal(null);
+            expect(output?.textContent).to.include('hello output');
+        });
+
+        it('restores a user-opened tool group in a freshly created timeline', () => {
+            const segments = [
+                toolSegment('Read', 'persist-group-1', JSON.stringify({ path: 'a.ts' })),
+            ];
+
+            const first = createMobileExecutionEventTimeline(segments);
+            const group = first.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            group!.open = true;
+            group!.dispatchEvent(new window.Event('toggle'));
+
+            const second = createMobileExecutionEventTimeline(segments);
+            const restoredGroup = second.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            expect(restoredGroup).to.not.equal(null);
+            expect(restoredGroup?.open).to.equal(true);
+        });
+
+    });
+
+});
+
+function toolSegment(
+    name: string,
+    toolUseId: string,
+    args: string,
+    finished = true,
+    isError = false,
+    result = 'ok',
+): Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> {
+    return {
+        type: 'tool',
+        name,
+        toolUseId,
+        args,
+        finished,
+        result: isError ? `<tool_use_error>${result}</tool_use_error>` : result,
+    };
+}
+
+function textSegment(content: string): Extract<QaapAgentMessageSegmentDTO, { type: 'text' }> {
+    return { type: 'text', content };
+}
+
+function thinkingSegment(content: string): Extract<QaapAgentMessageSegmentDTO, { type: 'thinking' }> {
+    return { type: 'thinking', content };
+}

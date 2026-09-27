@@ -1,0 +1,248 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
+import { CommandRegistry } from '@theia/core/lib/common/command';
+import {
+    buildQaapAccountMenuEntries,
+    createQaapViewModeSwitch,
+    dismissQaapAccountMenu,
+    openQaapAccountMenu,
+    QAAP_WORK_HUB_OVERVIEW_COMMAND,
+    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
+} from './qaap-workbench-account-menu';
+import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
+
+disableImportJSDOM();
+
+describe('buildQaapAccountMenuEntries', () => {
+    describe('signed-in menu', () => {
+        let entries: ReturnType<typeof buildQaapAccountMenuEntries>;
+
+        before(() => {
+            entries = buildQaapAccountMenuEntries(true);
+        });
+
+        it('does not include Work Hub overview', () => {
+            const found = entries.some(e => e.commandId === QAAP_WORK_HUB_OVERVIEW_COMMAND);
+            expect(found).to.equal(false);
+        });
+
+        it('does not include Open IDE', () => {
+            const found = entries.some(e => e.commandId === QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+            expect(found).to.equal(false);
+        });
+
+        it('includes Command Palette as first action', () => {
+            const actions = entries.filter(e => e.kind === 'action');
+            expect(actions[0].commandId).to.equal('workbench.action.showCommands');
+        });
+
+        it('includes Settings on the IDE menu', () => {
+            const found = entries.some(e => e.kind === 'action' && e.label === 'Settings');
+            expect(found).to.equal(true);
+        });
+
+        it('includes Billing when openBilling is provided', () => {
+            const withBilling = buildQaapAccountMenuEntries(true, {
+                workHub: true,
+                openBilling: () => undefined,
+            });
+            const found = withBilling.some(e => e.kind === 'action' && e.label === 'Billing');
+            expect(found).to.equal(true);
+        });
+
+        it('omits Settings on the Work Hub menu', () => {
+            const hub = buildQaapAccountMenuEntries(true, {
+                workHub: true,
+                openBilling: () => undefined,
+            });
+            const settings = hub.find(e => e.kind === 'action' && e.label === 'Settings');
+            expect(settings).to.equal(undefined);
+        });
+
+        it('separators only appear between non-empty groups', () => {
+            // No consecutive separators
+            for (let i = 0; i < entries.length - 1; i++) {
+                if (entries[i].kind === 'separator') {
+                    expect(entries[i + 1].kind).to.not.equal('separator',
+                        'Found two consecutive separators');
+                }
+            }
+            // First entry is not a separator
+            expect(entries[0].kind).to.not.equal('separator', 'First entry should not be a separator');
+            // Last entry is not a separator
+            expect(entries[entries.length - 1].kind).to.not.equal('separator', 'Last entry should not be a separator');
+        });
+
+        it('preserves order: Command Palette → Settings → Extensions → Keyboard Shortcuts → Sign Out', () => {
+            const actions = entries.filter(e => e.kind === 'action').map(e => e.label);
+            expect(actions).to.deep.equal([
+                'Command Palette…',
+                'Settings',
+                'Extensions',
+                'Keyboard Shortcuts',
+                'Sign Out',
+            ]);
+        });
+
+        it('places Billing after Command Palette on Work Hub', () => {
+            const withBilling = buildQaapAccountMenuEntries(true, {
+                workHub: true,
+                openBilling: () => undefined,
+            });
+            const actions = withBilling.filter(e => e.kind === 'action').map(e => e.label);
+            expect(actions).to.deep.equal([
+                'Command Palette…',
+                'Billing',
+                'Sign Out',
+            ]);
+        });
+
+        it('omits Extensions and Keybindings on the Work Hub menu', () => {
+            const hub = buildQaapAccountMenuEntries(true, {
+                workHub: true,
+            });
+            const labels = hub.filter(e => e.kind === 'action').map(e => e.label);
+            expect(labels).to.not.include('Extensions');
+            expect(labels).to.not.include('Keyboard Shortcuts');
+            expect(labels).to.not.include('Settings');
+            expect(labels).to.deep.equal([
+                'Command Palette…',
+                'Sign Out',
+            ]);
+        });
+    });
+
+    describe('signed-out menu', () => {
+        let entries: ReturnType<typeof buildQaapAccountMenuEntries>;
+
+        before(() => {
+            entries = buildQaapAccountMenuEntries(false);
+        });
+
+        it('does not include Work Hub overview', () => {
+            const found = entries.some(e => e.commandId === QAAP_WORK_HUB_OVERVIEW_COMMAND);
+            expect(found).to.equal(false);
+        });
+
+        it('does not include Open IDE in signed-out menu', () => {
+            const found = entries.some(e => e.commandId === QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+            expect(found).to.equal(false);
+        });
+    });
+});
+
+describe('account menu controls', () => {
+
+    let disableJSDOM: (() => void) | undefined;
+    let previousRequestAnimationFrame: typeof requestAnimationFrame | undefined;
+    let previousCancelAnimationFrame: typeof cancelAnimationFrame | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+        previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+        previousCancelAnimationFrame = globalThis.cancelAnimationFrame;
+        const raf = (callback: FrameRequestCallback): number => {
+            callback(0);
+            return 1;
+        };
+        (globalThis as unknown as { requestAnimationFrame: typeof requestAnimationFrame }).requestAnimationFrame = raf;
+        window.requestAnimationFrame = raf;
+        const caf = (): void => undefined;
+        (globalThis as unknown as { cancelAnimationFrame: typeof cancelAnimationFrame }).cancelAnimationFrame = caf;
+        window.cancelAnimationFrame = caf;
+    });
+
+    after(() => {
+        dismissQaapAccountMenu();
+        if (previousRequestAnimationFrame) {
+            globalThis.requestAnimationFrame = previousRequestAnimationFrame;
+            window.requestAnimationFrame = previousRequestAnimationFrame;
+        } else {
+            delete (globalThis as Partial<typeof globalThis>).requestAnimationFrame;
+        }
+        if (previousCancelAnimationFrame) {
+            globalThis.cancelAnimationFrame = previousCancelAnimationFrame;
+            window.cancelAnimationFrame = previousCancelAnimationFrame;
+        } else {
+            delete (globalThis as Partial<typeof globalThis>).cancelAnimationFrame;
+        }
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
+
+    afterEach(() => {
+        dismissQaapAccountMenu();
+        document.body.innerHTML = '';
+    });
+
+    it('does not duplicate the theme selector in the avatar menu', () => {
+        const anchor = document.createElement('button');
+        document.body.append(anchor);
+        const commands = {
+            getCommand: (id: string) => ({ id }),
+            isEnabled: () => true,
+            executeCommand: async () => undefined,
+        } as unknown as CommandRegistry;
+
+        openQaapAccountMenu(anchor, commands, buildQaapAccountMenuEntries(true));
+
+        const menu = document.querySelector('.theia-qaap-account-menu');
+        const switchRoot = menu?.querySelector('.theia-qaap-appearance-mode-switch');
+        expect(menu).to.not.equal(null);
+        expect(switchRoot).to.equal(null);
+        expect(document.querySelector('.theia-qaap-account-menu')).to.not.equal(null);
+    });
+
+    it('keeps the account menu flat and renders Configuration without a description', () => {
+        const anchor = document.createElement('button');
+        document.body.append(anchor);
+        const commands = {
+            getCommand: (id: string) => ({ id }),
+            isEnabled: () => true,
+            executeCommand: async () => undefined,
+        } as unknown as CommandRegistry;
+
+        openQaapAccountMenu(anchor, commands, buildQaapAccountMenuEntries(true), {
+            section: QAAP_WORK_HUB_GETTING_STARTED,
+            onCatalogAction: () => undefined,
+        });
+
+        const menu = document.querySelector('.theia-qaap-account-menu');
+        const configuration = menu?.querySelector('.theia-qaap-account-menu-catalog-card');
+        expect(menu?.querySelectorAll('.theia-qaap-account-menu-separator')).to.have.lengthOf(0);
+        expect(configuration?.textContent).to.equal('Configuration');
+        expect(configuration?.querySelector('.codicon-settings-gear')).to.not.equal(null);
+        expect(configuration?.querySelector('.theia-qaap-account-menu-catalog-card-subtitle')).to.equal(null);
+    });
+
+    it('renders the shared IDE/Agents switch with icons while preserving accessible labels and selection', () => {
+        let selected: string | undefined;
+        const field = createQaapViewModeSwitch({
+            activeId: 'editor',
+            onSelect: id => { selected = id; },
+        });
+        document.body.append(field.root);
+
+        const bar = field.root.querySelector('.theia-qaap-segmented-bar');
+        const buttons = [...field.root.querySelectorAll<HTMLButtonElement>('.theia-qaap-segmented-option')];
+        expect(bar?.classList.contains('theia-mod-icon-only')).to.equal(true);
+        expect(buttons).to.have.length(2);
+        expect(buttons[0].querySelector('.theia-qaap-segmented-option-label')).to.equal(null);
+        expect(buttons[0].getAttribute('aria-label')).to.equal('IDE');
+        expect(buttons[1].getAttribute('aria-label')).to.equal('Agents');
+
+        buttons[1].click();
+        expect(field.getValue()).to.equal('agent');
+        expect(selected).to.equal('agent');
+    });
+});

@@ -1,0 +1,497 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { Disposable } from '@theia/core/lib/common/disposable';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
+import { QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE } from '../common/qaap-sessions-sidebar-conversation-limit';
+import { beginSessionsSidebarConversationActivationExtracted, bindSessionsSidebarInteractionGuardExtracted, buildSessionsSidebarStructureFingerprintExtracted, buildSidebarRowFingerprintExtracted, collectParentIdsExtracted, collectSessionsSidebarConversationEntriesExtracted, ensureWorkHubSessionsSidebarExtracted, mergeSessionsSidebarProjectsExtracted, openWorkHubSessionsSidebarExtracted, prepareSessionsSidebarDataExtracted, refreshWorkHubSessionsSidebarListExtracted, rememberSessionsSidebarListFingerprintExtracted, resolveWorkHubSessionsSidebarProjectExtracted, seedSessionsSidebarProjectsForPaintExtracted, shouldDeferSessionsSidebarListRefreshExtracted, shouldSkipSessionsSidebarListRenderExtracted, stampSessionsSidebarRowFingerprintsExtracted, toggleWorkHubSessionsSidebarExtracted, tryPatchSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-render';
+import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarClearFailedModeFooterExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming';
+import { createSessionsSidebarIdeOpenControlExtracted, createSessionsSidebarNewAgentControlExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, onSessionsSidebarAccountClickExtracted, onSessionsSidebarViewModeChangeExtracted, onWorkHubSessionsSidebarNewChatExtracted, openEmptyMobileChatSheetExtracted, openSessionsSidebarSearchExtracted } from './mobile-projects-sessions-sidebar-ui-timeline';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+
+export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE;
+/** Pause live sidebar sync while the user taps a row (prevents click loss). */
+export const SESSIONS_SIDEBAR_INTERACTION_GUARD_MS = 900;
+/** Min interval between live sidebar refreshes during SSE (~4 fps). */
+export const SESSIONS_SIDEBAR_STREAM_REFRESH_MS = 250;
+
+export interface MobileProjectsSessionsSidebarHost {
+    openBillingSheet?: () => Promise<void>;
+    sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
+    sessionsSidebarExpandedProjectIds: Set<string>;
+    sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;
+    sessionsSidebarAccordionDefaultsApplied: boolean;
+    sessionsSidebarContainer?: () => HTMLElement | undefined;
+    projects: MobileProjectEntry[];
+    query: string;
+    transcriptOpenSummaryId: string | undefined;
+    activeTasks?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks;
+    conversations?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversations').MobileProjectsConversations;
+    projectsService: import('@theia/qaap-shared-core/lib/browser/mobile-projects-service').MobileProjectsService;
+    commands: import('@theia/core/lib/common/command').CommandRegistry;
+    quickInputService?: import('@theia/core/lib/browser').QuickInputService;
+    delegate: {
+        onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
+        cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+        projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    };
+
+    ensureOverlayUi?(): {
+        parallel: {
+            createVariantRunSection(
+                project: MobileProjectEntry,
+                runId: string,
+                summaries: QaapAgentConversationSummaryDTO[],
+                activeInfo: ReturnType<import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
+                parentIds: ReadonlySet<string>,
+                options?: {
+                    compact?: boolean;
+                    mode?: 'parallel-run' | 'isolated-forks';
+                    onActivate?: (summary: QaapAgentConversationSummaryDTO) => void;
+                },
+            ): HTMLElement;
+        };
+    };
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
+    cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+    projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    compareChatInboxProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number;
+    createTaskItem(
+        project: MobileProjectEntry,
+        task: import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectTaskView,
+        activeInfo: ReturnType<import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
+        summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined,
+        parentIds: ReadonlySet<string>,
+        options?: {
+            onActivate?: () => void;
+            compact?: boolean;
+            failedDuplicateCount?: number;
+            selection?: { selected: boolean; onToggle: () => void };
+        },
+    ): HTMLElement;
+    buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
+    toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
+    buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
+    toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
+    onClearFailedTasks(project: MobileProjectEntry, ids?: readonly string[]): Promise<boolean>;
+    resolveHomePinnedProject(): MobileProjectEntry | undefined;
+    shouldUseAgentsHubLanding(): boolean;
+    isProjectDetailView(): boolean;
+    transcriptSheet: HTMLElement | undefined;
+    agentsHubInlineActive: boolean;
+    agentsHubSelectedProjectId: string | undefined;
+    visible: boolean;
+    transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
+    transcriptStickyComposerUi: import('@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
+    executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
+    closeAgentsHubSession(): void;
+    resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void;
+    /** Select a project and land on its Agents idle shell (scoped; not the ambiguous workspace default). */
+    activateAgentsHubProject(project: MobileProjectEntry): Promise<void>;
+    /** Switch the Work Hub transcript/composer to this sidebar project. */
+    selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void>;
+    renderSessionsSidebarPullRequestList(host: HTMLElement): void;
+    togglePullRequestSearch(anchor: HTMLElement): void;
+    closePullRequestSearch(): void;
+    openSessionsSidebarPullRequests(): Promise<void>;
+    closePullRequestDetail(): void;
+    renderHeader(): void;
+    renderSubtitle(): void;
+    stickyComposerRenderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    closeCurrentWorkspace(): Promise<void>;
+    openConversationSummary(project: MobileProjectEntry, summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
+    runCatalogAction(action: import('@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
+    onNewClick(): Promise<void>;
+    onStartNewProject(): Promise<void>;
+}
+
+export interface SessionsSidebarConversationEntry {
+    readonly project: MobileProjectEntry;
+    readonly summary: QaapAgentConversationSummaryDTO;
+    readonly pinned: boolean;
+    readonly parentIds: ReadonlySet<string>;
+    readonly onActivate?: () => void;
+}
+
+export type SessionsSidebarProjectSortMode = 'default' | 'lastMessage' | 'createdAt' | 'alphabetical';
+
+export const SESSIONS_SIDEBAR_PROJECT_SORT_MODE_STORAGE_KEY = 'qaap.sessionsSidebar.projectSortMode';
+
+export const SESSIONS_SIDEBAR_PROJECT_SORT_MODES: ReadonlyArray<{ id: SessionsSidebarProjectSortMode; labelKey: string; defaultLabel: string }> = [
+    { id: 'default', labelKey: 'qaap/sessionsSidebar/sort/default', defaultLabel: 'Default' },
+    { id: 'lastMessage', labelKey: 'qaap/sessionsSidebar/sort/lastMessage', defaultLabel: 'Last user message' },
+    { id: 'createdAt', labelKey: 'qaap/sessionsSidebar/sort/createdAt', defaultLabel: 'Created' },
+    { id: 'alphabetical', labelKey: 'qaap/sessionsSidebar/sort/alphabetical', defaultLabel: 'Alphabetical' },
+];
+
+export class MobileProjectsSessionsSidebarUi {
+    constructor(
+        /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+        public readonly host: MobileProjectsSessionsSidebarHost,
+    ) { }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarListFingerprint = '';
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarOpeningConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarOpeningTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarInteractionUntil = 0;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarLastStreamRefreshAt = 0;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarInteractionBound = false;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarThreadStoreDispose: Disposable = Disposable.NULL;
+    protected sessionsSidebarProjectSortModeValue: SessionsSidebarProjectSortMode = this.readPersistedProjectSortMode();
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarSortPopover: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarAddProjectPopover: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarStatusLegendPopover: HTMLElement | undefined;
+    /** Project id currently in failed-run multi-select clear mode (session-only; not persisted). */
+    clearFailedModeProjectId: string | undefined;
+    /** Conversation ids selected while {@link clearFailedModeProjectId} is set. */
+    selectedFailedConversationIds: Set<string> = new Set();
+
+    openWorkHubSessionsSidebar(): void {
+        openWorkHubSessionsSidebarExtracted(this);
+    }
+    toggleWorkHubSessionsSidebar(): void {
+        toggleWorkHubSessionsSidebarExtracted(this);
+    }
+    async prepareSessionsSidebarData(): Promise<void> {
+        return prepareSessionsSidebarDataExtracted(this);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public mergeSessionsSidebarProjects(projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
+        return mergeSessionsSidebarProjectsExtracted(this, projects);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public seedSessionsSidebarProjectsForPaint(): void {
+        seedSessionsSidebarProjectsForPaintExtracted(this);
+    }
+    isWorkHubSessionsSidebarVisible(): boolean {
+        return this.host.sessionsSidebar?.isVisible() === true;
+    }
+    ensureWorkHubSessionsSidebar(): MobileWorkHubSessionsSidebar {
+        return ensureWorkHubSessionsSidebarExtracted(this);
+    }
+
+    /** Reconcile the sidebar mount point after a responsive layout transition. */
+    syncWorkHubSessionsSidebarLayout(): void {
+        const sidebar = this.host.sessionsSidebar;
+        if (!sidebar?.isVisible()) {
+            return;
+        }
+        ensureWorkHubSessionsSidebarExtracted(this);
+        sidebar.syncDesktopLayout();
+    }
+
+    shouldSkipSessionsSidebarListRender(): boolean {
+        return shouldSkipSessionsSidebarListRenderExtracted(this);
+    }
+
+    shouldDeferSessionsSidebarListRefresh(): boolean {
+        return shouldDeferSessionsSidebarListRefreshExtracted(this);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public isSessionsSidebarInteractionGuardActive(): boolean {
+        return Date.now() < this.sessionsSidebarInteractionUntil;
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public bindSessionsSidebarInteractionGuard(listHost: HTMLElement): void {
+        bindSessionsSidebarInteractionGuardExtracted(this, listHost);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public buildSessionsSidebarStructureFingerprint(): string {
+        return buildSessionsSidebarStructureFingerprintExtracted(this);
+    }
+
+    rememberSessionsSidebarListFingerprint(listHost: HTMLElement): void {
+        rememberSessionsSidebarListFingerprintExtracted(this, listHost);
+    }
+
+    tryPatchSessionsSidebarList(listHost: HTMLElement): boolean {
+        return tryPatchSessionsSidebarListExtracted(this, listHost);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public stampSessionsSidebarRowFingerprints(listHost: HTMLElement): void {
+        stampSessionsSidebarRowFingerprintsExtracted(this, listHost);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public buildSidebarRowFingerprint(entry: SessionsSidebarConversationEntry,): string {
+        return buildSidebarRowFingerprintExtracted(this, entry);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public collectSessionsSidebarConversationEntries(): SessionsSidebarConversationEntry[] {
+        return collectSessionsSidebarConversationEntriesExtracted(this);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public collectParentIds(conversations: readonly QaapAgentConversationSummaryDTO[],): ReadonlySet<string> {
+        return collectParentIdsExtracted(this, conversations);
+    }
+
+    resetSessionsSidebarListFingerprint(): void {
+        this.sessionsSidebarListFingerprint = '';
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public beginSessionsSidebarConversationActivation(conversationId: string): void {
+        beginSessionsSidebarConversationActivationExtracted(this, conversationId);
+    }
+
+    scheduleWorkHubSessionsSidebarRefresh(): void {
+        this.host.sessionsSidebar?.scheduleRefreshList();
+    }
+
+    refreshWorkHubSessionsSidebarList(force = false): void {
+        refreshWorkHubSessionsSidebarListExtracted(this, force);
+    }
+    resolveWorkHubSessionsSidebarProject(): MobileProjectEntry | undefined {
+        return resolveWorkHubSessionsSidebarProjectExtracted(this);
+    }
+    renderWorkHubSessionsSidebarList(host: HTMLElement): void {
+        renderWorkHubSessionsSidebarListExtracted(this, host);
+    }
+
+    renderSessionsSidebarPullRequestList(host: HTMLElement): void {
+        this.host.renderSessionsSidebarPullRequestList(host);
+    }
+
+    togglePullRequestSearch(anchor: HTMLElement): void {
+        this.host.togglePullRequestSearch(anchor);
+    }
+
+    closePullRequestSearch(): void {
+        this.host.closePullRequestSearch();
+    }
+
+    async openSessionsSidebarPullRequests(): Promise<void> {
+        await this.host.openSessionsSidebarPullRequests();
+    }
+
+    closePullRequestDetail(): void {
+        this.host.closePullRequestDetail();
+    }
+
+    readQaapSignedIn(): boolean {
+        return readQaapSignedIn();
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public bindSessionsSidebarThreadStoreSubscriptions(): void {
+        bindSessionsSidebarThreadStoreSubscriptionsExtracted(this);
+    }
+
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public prefetchVisibleSidebarDocuments(limit = 8): void {
+        prefetchVisibleSidebarDocumentsExtracted(this, limit);
+    }
+    syncSessionsSidebarAnimatedListHeights(host: HTMLElement): void {
+        syncSessionsSidebarAnimatedListHeightsExtracted(this, host);
+    }
+    isSessionsSidebarPinnedConversation(summary: QaapAgentConversationSummaryDTO): boolean {
+        const flags = this.host.conversationIndexUi.resolveConversationFlags(summary);
+        return flags.priority && !flags.paused;
+    }
+    collectSessionsSidebarPinnedGroups(projects: MobileProjectEntry[], query: string,): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
+        return collectSessionsSidebarPinnedGroupsExtracted(this, projects, query);
+    }
+    createSessionsSidebarPinnedSection(groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>, onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
+        return createSessionsSidebarPinnedSectionExtracted(this, groups, onActivate, bypassConversationLimit);
+    }
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public resolveSessionsSidebarCollapsedLimit(totalConversations: number): number {
+        return resolveSessionsSidebarCollapsedLimitExtracted(this, totalConversations);
+    }
+    getSessionsSidebarConversationDisplayLimit(project: MobileProjectEntry, totalCount: number, bypassLimit: boolean,): number {
+        return getSessionsSidebarConversationDisplayLimitExtracted(this, project, totalCount, bypassLimit);
+    }
+    resolveSessionsSidebarVisibleConversations(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], bypassLimit: boolean,): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
+        return resolveSessionsSidebarVisibleConversationsExtracted(this, project, conversations, bypassLimit);
+    }
+    appendSessionsSidebarConversationItems(listHost: HTMLElement, project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassLimit: boolean,): void {
+        appendSessionsSidebarConversationItemsExtracted(this, listHost, project, conversations, onActivate, bypassLimit);
+    }
+
+    createSessionsSidebarClearFailedModeFooter(project: MobileProjectEntry): HTMLElement {
+        return createSessionsSidebarClearFailedModeFooterExtracted(this, project);
+    }
+
+    isClearFailedModeForProject(projectId: string): boolean {
+        return this.clearFailedModeProjectId === projectId;
+    }
+
+    enterClearFailedMode(project: MobileProjectEntry, failedIds: readonly string[]): void {
+        this.clearFailedModeProjectId = project.id;
+        this.selectedFailedConversationIds = new Set(failedIds);
+        this.resetSessionsSidebarListFingerprint();
+        this.host.sessionsSidebar?.refreshList({ force: true });
+    }
+
+    exitClearFailedMode(options?: { refresh?: boolean }): void {
+        if (this.clearFailedModeProjectId === undefined && this.selectedFailedConversationIds.size === 0) {
+            return;
+        }
+        this.clearFailedModeProjectId = undefined;
+        this.selectedFailedConversationIds = new Set();
+        this.resetSessionsSidebarListFingerprint();
+        if (options?.refresh !== false) {
+            this.host.sessionsSidebar?.refreshList({ force: true });
+        }
+    }
+
+    toggleClearFailedSelection(conversationId: string): void {
+        if (!this.clearFailedModeProjectId) {
+            return;
+        }
+        if (this.selectedFailedConversationIds.has(conversationId)) {
+            this.selectedFailedConversationIds.delete(conversationId);
+        } else {
+            this.selectedFailedConversationIds.add(conversationId);
+        }
+        this.resetSessionsSidebarListFingerprint();
+        this.host.sessionsSidebar?.refreshList({ force: true });
+    }
+    createSessionsSidebarShowMoreControl(project: MobileProjectEntry, hiddenCount: number, totalCount: number,): HTMLButtonElement {
+        return createSessionsSidebarShowMoreControlExtracted(this, project, hiddenCount, totalCount);
+    }
+    createSessionsSidebarShowLessControl(project: MobileProjectEntry): HTMLButtonElement {
+        return createSessionsSidebarShowLessControlExtracted(this, project);
+    }
+    createSessionsSidebarPinnedProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
+        return createSessionsSidebarPinnedProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);
+    }
+    seedSessionsSidebarAccordionDefaults(projects: MobileProjectEntry[]): void {
+        seedSessionsSidebarAccordionDefaultsExtracted(this, projects);
+    }
+
+    ensureSessionsSidebarActiveProjectExpanded(projects: MobileProjectEntry[]): void {
+        ensureSessionsSidebarActiveProjectExpandedExtracted(this, projects);
+    }
+
+    compareSessionsSidebarProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number {
+        return compareSessionsSidebarProjectOrderExtracted(this, a, b);
+    }
+    getSessionsSidebarProjectSortMode(): SessionsSidebarProjectSortMode {
+        return this.sessionsSidebarProjectSortModeValue;
+    }
+    setSessionsSidebarProjectSortMode(mode: SessionsSidebarProjectSortMode): void {
+        if (this.sessionsSidebarProjectSortModeValue === mode) {
+            return;
+        }
+        this.sessionsSidebarProjectSortModeValue = mode;
+        try {
+            window.localStorage.setItem(SESSIONS_SIDEBAR_PROJECT_SORT_MODE_STORAGE_KEY, mode);
+        } catch {
+            /* ignore quota / privacy-mode failures */
+        }
+        this.resetSessionsSidebarListFingerprint();
+        this.refreshWorkHubSessionsSidebarList(true);
+    }
+    protected readPersistedProjectSortMode(): SessionsSidebarProjectSortMode {
+        try {
+            const raw = window.localStorage.getItem(SESSIONS_SIDEBAR_PROJECT_SORT_MODE_STORAGE_KEY);
+            if (raw && SESSIONS_SIDEBAR_PROJECT_SORT_MODES.some(entry => entry.id === raw)) {
+                return raw as SessionsSidebarProjectSortMode;
+            }
+        } catch {
+            /* ignore */
+        }
+        return 'default';
+    }
+    /** Earliest conversation createdAt for a project (falls back to lastActiveAt / 0). */
+    resolveSessionsSidebarProjectCreatedAt(project: MobileProjectEntry): number {
+        const conversations = this.host.conversationIndexUi.conversationsForProject(project);
+        let earliest = Number.POSITIVE_INFINITY;
+        for (const summary of conversations) {
+            if (Number.isFinite(summary.createdAt) && summary.createdAt < earliest) {
+                earliest = summary.createdAt;
+            }
+        }
+        if (Number.isFinite(earliest)) {
+            return earliest;
+        }
+        return project.lastActiveAt ? Date.parse(project.lastActiveAt) || 0 : 0;
+    }
+    /** Most recent conversation updatedAt for a project (falls back to lastActiveAt / 0). */
+    resolveSessionsSidebarProjectLastMessageAt(project: MobileProjectEntry): number {
+        const conversations = this.host.conversationIndexUi.conversationsForProject(project);
+        let latest = 0;
+        for (const summary of conversations) {
+            if (Number.isFinite(summary.updatedAt) && summary.updatedAt > latest) {
+                latest = summary.updatedAt;
+            }
+        }
+        if (latest > 0) {
+            return latest;
+        }
+        return project.lastActiveAt ? Date.parse(project.lastActiveAt) || 0 : 0;
+    }
+    toggleSessionsSidebarProjectSortPopover(anchor: HTMLButtonElement): void {
+        toggleSessionsSidebarProjectSortPopoverExtracted(this, anchor);
+    }
+    toggleSessionsSidebarAddProjectPopover(anchor: HTMLButtonElement): void {
+        toggleSessionsSidebarAddProjectPopoverExtracted(this, anchor);
+    }
+    closeSessionsSidebarHeadPopovers(): void {
+        this.sessionsSidebarSortPopover?.remove();
+        this.sessionsSidebarSortPopover = undefined;
+        this.sessionsSidebarAddProjectPopover?.remove();
+        this.sessionsSidebarAddProjectPopover = undefined;
+        this.sessionsSidebarStatusLegendPopover?.remove();
+        this.sessionsSidebarStatusLegendPopover = undefined;
+    }
+    createSessionsSidebarProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
+        return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);
+    }
+    createSessionsSidebarProjectRowHead(project: MobileProjectEntry, expanded: boolean, onToggleExpand: () => void,): HTMLElement {
+        return createSessionsSidebarProjectRowHeadExtracted(this, project, expanded, onToggleExpand);
+    }
+    async selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void> {
+        await this.host.selectSessionsSidebarProject(project);
+        this.host.sessionsSidebar?.hideForMobileOverlay();
+    }
+    createSessionsSidebarIdeOpenControl(project: MobileProjectEntry): HTMLButtonElement {
+        return createSessionsSidebarIdeOpenControlExtracted(this, project);
+    }
+    createSessionsSidebarNewAgentControl(project: MobileProjectEntry): HTMLButtonElement {
+        return createSessionsSidebarNewAgentControlExtracted(this, project);
+    }
+    async onWorkHubSessionsSidebarNewChat(): Promise<void> {
+        return onWorkHubSessionsSidebarNewChatExtracted(this);
+    }
+    async openEmptyMobileChatSheet(project: MobileProjectEntry): Promise<void> {
+        return openEmptyMobileChatSheetExtracted(this, project);
+    }
+    onSessionsSidebarAccountClick(anchor: HTMLButtonElement): void {
+        onSessionsSidebarAccountClickExtracted(this, anchor);
+    }
+
+    onSessionsSidebarViewModeChange(id: MobileViewToggleId): void {
+        onSessionsSidebarViewModeChangeExtracted(this, id);
+    }
+    async openSessionsSidebarSearch(): Promise<void> {
+        return openSessionsSidebarSearchExtracted(this);
+    }
+}

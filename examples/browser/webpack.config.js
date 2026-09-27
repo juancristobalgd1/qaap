@@ -10,12 +10,11 @@ const configs = require('./gen-webpack.config.js');
 const nodeConfig = require('./gen-webpack.node.config.js');
 
 /** Off-main-thread transcript markdown (markdown-it + DOMPurify). */
-const qaapMobileShellLib = path.join(
-    path.dirname(resolvePackagePath('@theia/qaap-mobile-shell', __dirname)),
+const qaapTranscriptLib = path.join(
+    path.dirname(resolvePackagePath('@theia/qaap-transcript', __dirname)),
     'lib/browser',
 );
-const qaapTranscriptMarkdownWorkerEntry = path.join(qaapMobileShellLib, 'qaap-transcript-markdown-worker.js');
-const qaapCliTranscriptParseWorkerEntry = path.join(qaapMobileShellLib, 'qaap-cli-transcript-parse-worker.js');
+const qaapTranscriptMarkdownWorkerEntry = path.join(qaapTranscriptLib, 'qaap-transcript-markdown-worker.js');
 
 /**
  * Expose bundled modules on window.theia.moduleName namespace, e.g.
@@ -40,7 +39,6 @@ module.exports = [
         devtool: 'source-map',
         entry: {
             'qaap-transcript-markdown-worker': qaapTranscriptMarkdownWorkerEntry,
-            'qaap-cli-transcript-parse-worker': qaapCliTranscriptParseWorkerEntry,
         },
         output: {
             filename: '[name].js',

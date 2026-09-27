@@ -55,6 +55,15 @@
     "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
   },
   "typescript.tsdk": "node_modules/typescript/lib",
+  "remote.autoForwardPorts": true,
+  "remote.autoForwardPortsSource": "hybrid",
+  "remote.portsAttributes": {
+    "3000": {
+      "label": "Qaap Work Hub",
+      "onAutoForward": "openBrowser",
+      "protocol": "http"
+    }
+  },
   "files.insertFinalNewline": true,
   "clang-format.language.typescript.enable": false,
   // ESLint `max-len` rule.

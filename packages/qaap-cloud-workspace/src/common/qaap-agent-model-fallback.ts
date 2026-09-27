@@ -12,13 +12,13 @@ import {
 import {
     findQaiqByokProvider,
     type QaapQaiqByokProviderDescriptor,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
-import { detectAgentFailureKind } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import { detectAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import {
     agentTurnLooksLikeToolCallEmittedAsText,
     looksLikeToolCallJsonText,
     qaiqModelSupportsToolCalls,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 
 /** Max alternate models to try after the first pick fails (inclusive of the original). */
 export const MAX_AGENT_MODEL_FALLBACK_ATTEMPTS = 4;

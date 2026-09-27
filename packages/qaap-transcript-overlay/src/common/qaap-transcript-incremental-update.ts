@@ -106,6 +106,7 @@ export function fingerprintTurnProvenance(
 }
 
 function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapAgentMessageDTO): void {
+    parts.push(`run:${message.runActive ?? false}:${message.runFinishedAt ?? ''}`);
     parts.push(message.id ?? '', hashTranscriptText(message.content), `p:${fingerprintTurnProvenance(message)}`);
     if (message.traceEvents?.length) {
         for (const event of message.traceEvents) {
