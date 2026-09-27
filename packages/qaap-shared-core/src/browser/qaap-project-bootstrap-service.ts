@@ -262,6 +262,18 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public devRunCancelledByUser = false;
     /**
+     * Run whose failure is being handled. Process exit and widget close both report a dying Dev
+     * terminal; the second report must not start another recovery while the first is awaiting.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public failingDevRunId: number | undefined;
+    /**
+     * Preview terminals spawned by this service that `startDevServer` has not adopted as
+     * `devTerminal` yet. Restored-terminal cleanup must never treat them as orphans.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public readonly spawningPreviewTerminals = new Set<TerminalWidget>();
+    /**
      * Invalidates in-flight install when the workspace session is reset.
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */

@@ -37,6 +37,7 @@ import {
 import { peekPreferDesktopIde } from './mobile-projects-open';
 import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
 import {
+    QAAP_PREVIEW_TERMINAL_KIND,
     extractQaapPreviewTerminalPort,
     isQaapBootRestoredPreviewTerminal,
     isQaapRestoredPreviewTerminal,
@@ -55,6 +56,25 @@ export async function failDevRunExtracted(ctx: QaapProjectBootstrapServiceContex
         if (ctx._phase !== 'starting' && ctx._phase !== 'running') {
             return;
         }
+        // A dying Dev terminal reports both process exit and widget close (Theia disposes the widget
+        // on exit). Both pass the guards above while the first report awaits the attach probe, so
+        // without this the second one consumed another auto-retry for the same death.
+        if (ctx.failingDevRunId === runId) {
+            return;
+        }
+        ctx.failingDevRunId = runId;
+        try {
+            await handleDevRunFailure(ctx, message, plan, runId);
+        } finally {
+            if (ctx.failingDevRunId === runId) {
+                ctx.failingDevRunId = undefined;
+            }
+        }
+}
+
+async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, message: string,
+        plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
+        runId: number,): Promise<void> {
         // A previously opened iframe is not proof that its process is still alive. Continue through
         // the ownership-scoped probe and failure path so closed/crashed servers release their
         // durable registration instead of leaving a stale "running" preview behind.
@@ -318,12 +338,30 @@ export async function spawnCommandExtracted(ctx: QaapProjectBootstrapServiceCont
             destroyTermOnClose: true,
             kind: options.kind,
         });
-        await terminal.start();
+        if (options.kind === QAAP_PREVIEW_TERMINAL_KIND) {
+            // Visible in `terminalService.all` from here on, but not `devTerminal` until the caller
+            // adopts it: shield it from restored-terminal cleanup running concurrently.
+            ctx.spawningPreviewTerminals.add(terminal);
+        }
+        try {
+            await terminal.start();
+        } catch (e) {
+            ctx.spawningPreviewTerminals.delete(terminal);
+            throw e;
+        }
         if (options.reveal !== false) {
             // On mobile, revealing the bottom terminal panel can dispose/recreate widgets mid-start.
             ctx.terminalService.open(terminal, { mode: matchesMobileOneColumnLayout() ? 'open' : 'reveal' });
         }
         return terminal;
+}
+
+/**
+ * True for the terminal this service is running or still spawning. Re-checked after every await in
+ * the restored-terminal scans, because `startDevServer` can spawn/adopt one in the meantime.
+ */
+function isLivePreviewTerminal(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget): boolean {
+    return terminal === ctx.devTerminal || terminal.isDisposed || ctx.spawningPreviewTerminals.has(terminal);
 }
 
 export async function reconcileRestoredPreviewTerminalsExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
@@ -334,7 +372,7 @@ export async function reconcileRestoredPreviewTerminalsExtracted(ctx: QaapProjec
         }
         const toDispose: TerminalWidget[] = [];
         for (const terminal of [...ctx.terminalService.all]) {
-            if (terminal === ctx.devTerminal || terminal.isDisposed) {
+            if (isLivePreviewTerminal(ctx, terminal)) {
                 continue;
             }
             let terminalCwd = terminal.lastCwd?.toString() ?? '';
@@ -367,7 +405,9 @@ export async function reconcileRestoredPreviewTerminalsExtracted(ctx: QaapProjec
                 probeReady = probe.ready;
                 probeOwned = isRestoredPreviewProbeOwned(probe);
             }
-            if (shouldDisposeRestoredPreviewTerminal({ hasPortMarker, probeReady, probeOwned })) {
+            // A dev run may have spawned or adopted this terminal while the probes above awaited.
+            if (shouldDisposeRestoredPreviewTerminal({ hasPortMarker, probeReady, probeOwned })
+                && !isLivePreviewTerminal(ctx, terminal)) {
                 toDispose.push(terminal);
             }
         }
@@ -387,7 +427,7 @@ export async function disposeRestoredPreviewTerminalsExtracted(ctx: QaapProjectB
         const matches: TerminalWidget[] = [];
         let retained: TerminalWidget | undefined;
         for (const terminal of [...ctx.terminalService.all]) {
-            if (terminal === ctx.devTerminal || terminal.isDisposed) {
+            if (isLivePreviewTerminal(ctx, terminal)) {
                 continue;
             }
             let terminalCwd = terminal.lastCwd?.toString() ?? '';
@@ -418,6 +458,9 @@ export async function disposeRestoredPreviewTerminalsExtracted(ctx: QaapProjectB
                     } catch {
                         continue;
                     }
+                }
+                if (isLivePreviewTerminal(ctx, terminal)) {
+                    continue;
                 }
                 matches.push(terminal);
             }

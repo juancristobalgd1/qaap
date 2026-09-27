@@ -211,6 +211,9 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             const terminal = matchesMobileOneColumnLayout()
                 ? await ctx.spawnCommandWithRetry(spawnOptions)
                 : await ctx.spawnCommand(spawnOptions);
+            // Adopted below without another await, or abandoned by a superseding run: either way it
+            // is no longer an in-flight spawn (an abandoned one may be reaped as an orphan).
+            ctx.spawningPreviewTerminals.delete(terminal);
             if (runId !== ctx.devRunGeneration) {
                 return;
             }
