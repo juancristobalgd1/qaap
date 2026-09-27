@@ -22,6 +22,7 @@ import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
+import { rebindQaapPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-preferences-contribution';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync, onActivation) => {
@@ -67,6 +68,8 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
 
     // Settings tree keeps the curated QaapPreferenceLayoutProvider order instead of upstream's id sort.
     rebindQaapPreferenceTreeGenerator(bind, rebind);
+    // The Settings editor is built on first open, not while collecting commands behind the splash.
+    rebindQaapPreferencesContribution(bind, rebind);
 
     // Authenticated tenants' AI settings live in a per-user overlay, never in the shared User settings.json.
     decorateQaapTenantAiUserPreferenceProvider(onActivation);

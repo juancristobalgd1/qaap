@@ -24,6 +24,16 @@
   background-position: center;
 }
 
+/*
+ * FrontendApplication.revealShell() waits for the splash's computed transition-duration before it
+ * removes the splash and resolves startup, so upstream's 0.8s fade kept the logo up (and delayed
+ * the 'ready' state) by ~0.8s on every load. `html` raises specificity over the core and the
+ * critical index.html rules.
+ */
+html .theia-preload {
+  transition: opacity 0.15s;
+}
+
 .theia-preload::after {
   content: none;
   display: none;
