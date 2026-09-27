@@ -61,6 +61,11 @@ export interface MobileProcessAccordionOptions {
     /** Elapsed execution time in milliseconds, or undefined if unknown. */
     readonly elapsedMs?: number;
     /**
+     * Short, already-localized cause of a failed turn (e.g. "Sign in required"). Appended to the
+     * "Failed after {0}" header so the reason is visible without scrolling to the failure card.
+     */
+    readonly failureReason?: string;
+    /**
      * Start timestamp (ms epoch) of the current turn, if known. When set and
      * `isWorking` is true, the header label ticks live (updated every 500ms
      * via {@link sharedElapsedTicker}) instead of only updating when a patch
@@ -130,7 +135,7 @@ export function wrapMobileProcessAccordion(
 
     const label = document.createElement('span');
     label.className = 'theia-mobile-process-accordion-label';
-    label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
+    label.textContent = formatMobileProcessLabelWithReason(elapsedMs, resolveMobileProcessOutcome(options), options.failureReason);
     syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
 
     const chevron = document.createElement('span');
@@ -294,7 +299,7 @@ export function syncMobileProcessAccordionState(
         if (!(isWorking && turnStartMs !== undefined)) {
             // While working with a known turn start, registering on the ticker
             // below renders immediately — skip the redundant direct write.
-            label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
+            label.textContent = formatMobileProcessLabelWithReason(elapsedMs, resolveMobileProcessOutcome(options), options.failureReason);
         }
         syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
     }
@@ -423,6 +428,17 @@ function syncMobileProcessAccordionRunStop(
     } else {
         header.append(button);
     }
+}
+
+function formatMobileProcessLabelWithReason(
+    elapsedMs: number | undefined,
+    outcome: MobileProcessOutcome,
+    failureReason: string | undefined,
+): string {
+    const label = formatMobileProcessLabel(elapsedMs, outcome);
+    return outcome === 'failed' && failureReason
+        ? nls.localize('theia/qaap-mobile-shell/processTimeline/failedWithReason', '{0} · {1}', label, failureReason)
+        : label;
 }
 
 function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: MobileProcessOutcome): string {

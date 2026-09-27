@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import {
+    detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
 } from './qaap-agent-auth-login';
@@ -560,4 +561,27 @@ export function resolveAgentTurnFailureMessage(
         return formatStoredAgentFailureMessage(options) || options;
     }
     return localizeGenericAgentFailureMessage('failed', resolvedOptions.exitCode);
+}
+
+/**
+ * Short, user-facing cause for a persisted turn failure (`message.error`) when it falls into a
+ * category the transcript failure card already names — e.g. "Sign in required". Returns
+ * `undefined` for unclassified failures so callers can fall back to the formatted message.
+ */
+export function localizeAgentFailureShortReason(error: string | undefined): string | undefined {
+    const sample = error?.trim();
+    if (!sample) {
+        return undefined;
+    }
+    const kind = detectAgentFailureKind(sample);
+    if (kind === 'auth' || detectAgentAuthFailureMode(sample) || /needs you to sign in|sign in required/i.test(sample)) {
+        return nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required');
+    }
+    if (kind === 'quota' || kind === 'rate_limit') {
+        return nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached');
+    }
+    if (kind === 'cli_missing') {
+        return nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing');
+    }
+    return undefined;
 }

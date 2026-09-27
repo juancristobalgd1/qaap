@@ -9635,6 +9635,21 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   color: var(--theia-button-secondaryForeground, var(--theia-foreground));
 }
 
+/* The buttons carry `codicon codicon-*` for their leading glyph; `.codicon[class*='codicon-']`
+   (0,2,0) would otherwise force the codicon font onto the label and it falls back to a serif. */
+.theia-mobile-agent-auth-login-actions .theia-mobile-agent-auth-login-action.codicon {
+  font-family: var(--theia-ui-font-family);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.theia-mobile-agent-auth-login-actions .theia-mobile-agent-auth-login-action.codicon::before {
+  font-family: codicon;
+  font-size: 14px;
+  font-weight: normal;
+}
+
 .theia-mobile-agent-auth-login-action.theia-mod-primary {
   background: var(--theia-button-background, var(--theia-focusBorder, #3794ff));
   color: var(--theia-button-foreground, #fff);

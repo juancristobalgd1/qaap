@@ -8,6 +8,7 @@ import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgent
 import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     extractLastFailedToolFromMessage,
+    localizeAgentFailureShortReason,
     resolveAgentTurnFailureTechnicalContent,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
@@ -214,6 +215,7 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: MobileProjectsT
             isCancelled,
             elapsedMs,
             turnStartMs,
+            failureReason: localizeAgentFailureShortReason(error ?? effectiveMessage?.error),
             activityVerb,
             onStopRun: ctx.resolveRunStopHandler(conv, message, isWorking),
             settled: !isWorking,

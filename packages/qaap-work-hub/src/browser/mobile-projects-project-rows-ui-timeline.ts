@@ -9,6 +9,10 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import {
+    formatStoredAgentFailureMessage,
+    localizeAgentFailureShortReason,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
 import {
     QAAP_INBOX_ROW_FP_ATTR,
@@ -22,11 +26,20 @@ import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-t
 
 const TASK_FAILURE_HINT_MAX_LENGTH = 120;
 
+/** Plain-text previews interleave `[tool done] Read` / `[thinking]` stream markers with the reply. */
+const TASK_PREVIEW_STREAM_MARKER = /\[(?:tool [^\]]*|thinking)\](?:\s+[\w.:/-]+(?=\s|$))?/g;
+
 function resolveTaskFailureHint(summary: QaapAgentConversationSummaryDTO | undefined): string | undefined {
     if (!summary || summary.lastMessageRole !== 'agent' || !isFailedRunSummary(summary)) {
         return undefined;
     }
-    const preview = summary.lastMessagePreview?.replace(/\s+/g, ' ').trim();
+    const error = summary.lastMessageError?.trim();
+    const shortReason = localizeAgentFailureShortReason(error);
+    if (shortReason) {
+        return shortReason;
+    }
+    const source = error ? formatStoredAgentFailureMessage(error) : summary.lastMessagePreview;
+    const preview = source?.replace(TASK_PREVIEW_STREAM_MARKER, ' ').replace(/\s+/g, ' ').trim();
     if (!preview) {
         return undefined;
     }

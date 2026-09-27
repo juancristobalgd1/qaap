@@ -10,6 +10,7 @@ import {
     extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
     localizeAgentFailureMessage,
+    localizeAgentFailureShortReason,
     localizeGenericAgentFailureMessage,
     localizeMissingCodingAgentMessage,
     resolveAgentTurnFailureMessage,
@@ -285,5 +286,19 @@ describe('qaap-agent-failure-message', () => {
         const hosted = localizeMissingCodingAgentMessage();
         expect(hosted).to.match(/cloud-ready/i);
         expect(hosted).to.match(/not available here/i);
+    });
+});
+
+describe('localizeAgentFailureShortReason', () => {
+    it('names the persisted sign-in failure', () => {
+        expect(localizeAgentFailureShortReason(
+            'This agent needs you to sign in before it can continue. Open the agent terminal to complete login, then retry.',
+        )).to.equal('Sign in required');
+    });
+
+    it('returns undefined for empty or unclassified failures', () => {
+        expect(localizeAgentFailureShortReason(undefined)).to.equal(undefined);
+        expect(localizeAgentFailureShortReason('   ')).to.equal(undefined);
+        expect(localizeAgentFailureShortReason('Process exited with code 1')).to.equal(undefined);
     });
 });
