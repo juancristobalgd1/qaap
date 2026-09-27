@@ -25,6 +25,12 @@ import {
 import { QaapNodeFileUploadService } from './qaap-node-file-upload-service';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
+import { QaapAgentHookConfigLoader } from './qaap-agent-hook-config-loader';
+import { QaapAgentHookEndpoint } from './qaap-agent-hook-endpoint';
+import { QaapAgentHookProcessRunner } from './qaap-agent-hook-process-runner';
+import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { QaapAgentHookTrustStore } from './qaap-agent-hook-trust-store';
+import { QaapAgentPostToolUseHookBridge } from './qaap-agent-post-tool-use-hook-bridge';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
@@ -286,6 +292,15 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentApprovalStore).toSelf().inSingletonScope();
     bind(QaapAgentApprovalEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentApprovalEndpoint);
+    // Qaap-level agent lifecycle hooks + workspace trust review (doc/qaap-agent-hooks.md).
+    bind(QaapAgentHookConfigLoader).toSelf().inSingletonScope();
+    bind(QaapAgentHookTrustStore).toSelf().inSingletonScope();
+    bind(QaapAgentHookProcessRunner).toSelf().inSingletonScope();
+    bind(QaapAgentHookService).toSelf().inSingletonScope();
+    bind(QaapAgentHookEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentHookEndpoint);
+    bind(QaapAgentPostToolUseHookBridge).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentPostToolUseHookBridge);
     bind(QaapParallelRunStore).toSelf().inSingletonScope();
     bind(QaapParallelRunEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapParallelRunEndpoint);
