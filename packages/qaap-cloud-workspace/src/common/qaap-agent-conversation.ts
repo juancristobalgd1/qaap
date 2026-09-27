@@ -192,6 +192,11 @@ export interface QaapConversationCheckpoint {
     readonly capturedAt: number;
     readonly added?: number;
     readonly removed?: number;
+    /**
+     * Set on the undo snapshot taken before a restore/rewind: the checkpoint commit that restore
+     * wrote back. Rewind previews use it as the "last state Qaap produced" baseline.
+     */
+    readonly restoredFrom?: string;
 }
 
 /** A persistent multi-turn thread with an agent, tied to a working directory. */

@@ -1,0 +1,172 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/* Rewind / checkpoint-restore preview dialog (qaap-transcript-rewind-preview-dialog.ts). */
+
+.qaap-rewind-preview-dialog .dialogContent {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--theia-ui-padding) * 1.5);
+  min-height: 0;
+}
+
+.qaap-rewind-preview-intro p {
+  margin: 0 0 calc(var(--theia-ui-padding) * 0.5);
+}
+
+.qaap-rewind-preview-summary {
+  color: var(--theia-descriptionForeground);
+}
+
+/* Scroll host: registered in qaap-mobile-touch-scroll.css + MOBILE_VERTICAL_SCROLL_SELECTORS. */
+.qaap-rewind-preview-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  border: 1px solid var(--theia-widget-border, var(--theia-editorWidget-border));
+  border-radius: 6px;
+}
+
+.qaap-rewind-preview-group-title {
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: calc(var(--theia-ui-padding) * 0.75) var(--theia-ui-padding);
+  font-size: var(--theia-ui-font-size1);
+  background: var(--theia-editorWidget-background);
+  border-bottom: 1px solid var(--theia-widget-border, var(--theia-editorWidget-border));
+}
+
+.qaap-rewind-preview-group.qaap-mod-unsafe .qaap-rewind-preview-group-title {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.qaap-rewind-preview-group.qaap-mod-safe .qaap-rewind-preview-group-title {
+  color: var(--theia-gitDecoration-addedResourceForeground);
+}
+
+.qaap-rewind-preview-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.qaap-rewind-preview-file {
+  padding: calc(var(--theia-ui-padding) * 0.75) var(--theia-ui-padding);
+  border-bottom: 1px solid var(--theia-widget-border, var(--theia-editorWidget-border));
+}
+
+.qaap-rewind-preview-file:last-child {
+  border-bottom: none;
+}
+
+.qaap-rewind-preview-file-top {
+  display: flex;
+  align-items: center;
+  gap: var(--theia-ui-padding);
+  min-width: 0;
+}
+
+.qaap-rewind-preview-action {
+  flex: 0 0 auto;
+  padding: 0 calc(var(--theia-ui-padding) * 0.75);
+  border-radius: 4px;
+  font-size: var(--theia-ui-font-size0);
+  background: var(--theia-badge-background);
+  color: var(--theia-badge-foreground);
+}
+
+.qaap-rewind-preview-action.qaap-mod-delete {
+  background: var(--theia-inputValidation-errorBackground);
+  color: var(--theia-foreground);
+}
+
+.qaap-rewind-preview-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--theia-code-font-family);
+  font-size: var(--theia-code-font-size);
+}
+
+.qaap-rewind-preview-stats {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: calc(var(--theia-ui-padding) * 0.5);
+  font-family: var(--theia-code-font-family);
+  font-size: var(--theia-ui-font-size0);
+}
+
+.qaap-rewind-preview-added {
+  color: var(--theia-gitDecoration-addedResourceForeground);
+}
+
+.qaap-rewind-preview-removed {
+  color: var(--theia-gitDecoration-deletedResourceForeground);
+}
+
+.qaap-rewind-preview-reasons {
+  margin-top: calc(var(--theia-ui-padding) * 0.5);
+  font-size: var(--theia-ui-font-size0);
+  color: var(--theia-editorWarning-foreground);
+}
+
+.qaap-rewind-preview-note {
+  margin: 0;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-rewind-preview-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--theia-ui-padding);
+  cursor: pointer;
+}
+
+.qaap-rewind-preview-confirm input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.qaap-rewind-preview-dialog .dialogControl .theia-button.qaap-rewind-preview-danger:not(:disabled) {
+  background: var(--theia-inputValidation-errorBackground);
+  color: var(--theia-foreground);
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .qaap-rewind-preview-list {
+    max-height: min(55dvh, 480px);
+  }
+
+  .qaap-rewind-preview-file {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  .qaap-rewind-preview-confirm {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .qaap-rewind-preview-confirm input {
+    margin-top: 0;
+    width: 20px;
+    height: 20px;
+  }
+
+  .qaap-rewind-preview-dialog .dialogControl .theia-button {
+    flex: 1 1 100%;
+    min-height: 44px;
+    margin-left: 0;
+  }
+}

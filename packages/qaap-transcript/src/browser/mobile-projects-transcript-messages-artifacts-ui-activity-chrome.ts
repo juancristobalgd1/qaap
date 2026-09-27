@@ -6,6 +6,8 @@ import { TRANSCRIPT_CHECKPOINT_RESTORE_ATTR } from './mobile-projects-transcript
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { conversationToSummary, restoreConversationCheckpoint } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qaap-conversation-rewind-preview';
+import { promptTranscriptRewindPreview } from './qaap-transcript-rewind-preview-dialog';
 import { resolveTranscriptTraceDisplayPhase } from '../common/qaap-transcript-stream-status';
 import { isTranscriptActivityLiveState, shouldApplyTranscriptActivitySettleMotion, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
 import { transcriptActivitySubagentCardClassName } from '../common/qaap-transcript-activity-subagent-card';
@@ -248,18 +250,40 @@ export async function restoreTranscriptCheckpointExtracted(ctx: MobileProjectsTr
         const detail = checkpointLabel?.trim()
             || conv.checkpoints?.find(checkpoint => checkpoint.id === checkpointId)?.label
             || nls.localize('qaap/mobileProjects/transcriptCheckpointRestoreFallback', 'this checkpoint');
-        const confirmed = await new ConfirmDialog({
-            title: nls.localize('qaap/mobileProjects/transcriptCheckpointRestoreTitle', 'Restore checkpoint'),
-            msg: nls.localize(
-                'qaap/mobileProjects/transcriptCheckpointRestoreMsg',
-                'Revert tracked files to "{0}"? Changes made after this point will be lost.',
+        const title = nls.localize('qaap/mobileProjects/transcriptCheckpointRestoreTitle', 'Restore checkpoint');
+        const confirmLabel = nls.localize('qaap/mobileProjects/transcriptCheckpointRestoreConfirm', 'Restore');
+        // Dry run first: show which files change and which carry edits the agent did not make.
+        const decision = await promptTranscriptRewindPreview({
+            conversationId: conv.id,
+            target: { checkpointId },
+            title,
+            intro: nls.localize(
+                'qaap/transcriptRewind/restoreIntro',
+                'Revert the workspace to "{0}".',
                 detail,
             ),
-            ok: nls.localize('qaap/mobileProjects/transcriptCheckpointRestoreConfirm', 'Restore'),
-            cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
-        }).open();
-        if (!confirmed) {
+            confirmLabel,
+        });
+        if (decision.kind === 'cancel') {
             return;
+        }
+        let restoreOptions: QaapRewindRestoreOptions | undefined;
+        if (decision.kind === 'restore') {
+            restoreOptions = decision.options;
+        } else {
+            const confirmed = await new ConfirmDialog({
+                title,
+                msg: nls.localize(
+                    'qaap/mobileProjects/transcriptCheckpointRestoreMsg',
+                    'Revert tracked files to "{0}"? Changes made after this point will be lost.',
+                    detail,
+                ),
+                ok: confirmLabel,
+                cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
+            }).open();
+            if (!confirmed) {
+                return;
+            }
         }
         document.querySelectorAll(`[${TRANSCRIPT_CHECKPOINT_RESTORE_ATTR}="${checkpointId}"]`)
             .forEach(row => {
@@ -268,7 +292,7 @@ export async function restoreTranscriptCheckpointExtracted(ctx: MobileProjectsTr
                     .forEach(button => { button.disabled = true; });
             });
         try {
-            const updated = await restoreConversationCheckpoint(conv.id, checkpointId);
+            const updated = await restoreConversationCheckpoint(conv.id, checkpointId, restoreOptions);
             ctx.host.conversations?.recordSnapshot(conversationToSummary(updated));
             if (ctx.onConversationMutation) {
                 ctx.onConversationMutation(updated);
