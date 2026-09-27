@@ -10,11 +10,13 @@ Al recargar la pagina (F5) dentro de la misma sesion de pestaña, la app debe **
 - **Work Hub / Agents** → recargar y seguir en Work Hub (sin flash del IDE).
 - **IDE clasico** (tras "Open IDE") → recargar y seguir en el IDE.
 
+Mantener el IDE activo tras F5 es **intencional** (contrato de producto confirmado por el owner el 2026-09-05); no resetear IDE a Work Hub/ADE en reload.
+
 Work Hub sigue siendo la superficie **por defecto** en el primer arranque de una pestaña nueva o cuando no hay preferencia persistida.
 
 ## Persistencia permitida (solo sessionStorage, misma pestaña)
 
-- `qaap.mobileProjects.preferDesktopIde` / `qaap.mobileProjects.explicitDesktopIde` — usuario eligio IDE.
+- `qaap.mobileProjects.preferDesktopIde` / `qaap.mobileProjects.explicitDesktopIde` — usuario eligio IDE (`markPreferDesktopIde()` la escribe y persiste durante toda la sesion de la pestaña).
 - `qaap.mobileProjects.preferAgentsSurface` / `qaap.mobileProjects.dismissPanel` — usuario esta en Work Hub.
 
 No persistir en `localStorage`, query/hash, backend, ni layout restore como selector de superficie inicial.
