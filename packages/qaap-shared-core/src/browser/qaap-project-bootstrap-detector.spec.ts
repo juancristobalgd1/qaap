@@ -181,6 +181,36 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(descriptor!.devCommand).to.equal(undefined);
     });
 
+    it('detects a scaffolded Vite app with its own index.html instead of a static site', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/rioja-wines-landing-page');
+        mock.addFile('/ws/rioja-wines-landing-page/package.json', VITE_PKG);
+        mock.addFile('/ws/rioja-wines-landing-page/index.html', '<!doctype html><script type="module" src="/src/main.ts"></script>');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.kind).to.equal('node-vite');
+        expect(descriptor?.scaffoldRelativePath).to.equal('rioja-wines-landing-page');
+        expect(descriptor?.expectedPort).to.equal(5173);
+    });
+
+    it('still serves a child folder with index.html and no dev script as a static site', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/site');
+        mock.addFile('/ws/site/package.json', JSON.stringify({ name: 'site', scripts: { lint: 'eslint .' } }));
+        mock.addFile('/ws/site/index.html', '<!doctype html><h1>Hi</h1>');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.kind).to.equal('static');
+    });
+
     it('detects multiple Vite apps in bounded nested project folders', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');
