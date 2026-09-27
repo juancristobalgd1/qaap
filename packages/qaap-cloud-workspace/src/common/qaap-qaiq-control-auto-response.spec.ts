@@ -4,7 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveQaiqControlRequestAutoAction } from './qaap-qaiq-control-auto-response';
+import { resolveQaiqControlRequestAutoAction, resolveQaiqControlRequestAutoDecision } from './qaap-qaiq-control-auto-response';
+import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 describe('qaap-qaiq-control-auto-response', () => {
     const approveForMeCommand = 'qaiq --permission-mode default --allowed-tools Read,Grep,Glob,LS,Edit,Write,NotebookEdit';
@@ -195,5 +196,91 @@ describe('qaap-qaiq-control-auto-response', () => {
             toolName: 'Bash',
             toolInput: { command: 'pnpm dev' },
         })).to.equal('deny');
+    });
+    describe('read-only shell auto-approval', () => {
+        const bash = (command: string): QaapQaiqPendingControlRequest => ({ requestId: 'req-ro', toolName: 'Bash', toolInput: { command } });
+
+        it('auto-approves a read-only command under request-approval and records the reason', () => {
+            const decision = resolveQaiqControlRequestAutoDecision(approveForMeShellCommand, false, bash('git status && ls -la'), {
+                checkGitExecConfig: () => undefined,
+            });
+            expect(decision.action).to.equal('allow');
+            expect(decision.reason).to.equal('read-only-shell');
+        });
+
+        it('falls back to manual approval when the git config could run a program', () => {
+            const decision = resolveQaiqControlRequestAutoDecision(approveForMeShellCommand, false, bash('git diff'), {
+                checkGitExecConfig: () => 'git config diff.external can run a program',
+            });
+            expect(decision.action).to.equal('queue');
+            expect(decision.reason).to.equal(undefined);
+            expect(decision.readOnlyBlockedReason).to.equal('git config diff.external can run a program');
+        });
+
+        it('does not auto-approve git commands when no git config checker is supplied', () => {
+            const decision = resolveQaiqControlRequestAutoDecision(approveForMeShellCommand, false, bash('git log -1'));
+            expect(decision.action).to.equal('queue');
+            expect(decision.readOnlyBlockedReason).to.equal('git config not verified');
+        });
+
+        it('treats a throwing git config checker as unverified', () => {
+            const decision = resolveQaiqControlRequestAutoDecision(approveForMeShellCommand, false, bash('git status'), {
+                checkGitExecConfig: () => {
+                    throw new Error('spawn failed');
+                },
+            });
+            expect(decision.action).to.equal('queue');
+        });
+
+        it('only consults the git checker for commands that use git', () => {
+            let calls = 0;
+            const decision = resolveQaiqControlRequestAutoDecision(approveForMeShellCommand, false, bash('ls src'), {
+                checkGitExecConfig: () => {
+                    calls++;
+                    return 'risky';
+                },
+            });
+            expect(decision.action).to.equal('allow');
+            expect(calls).to.equal(0);
+        });
+
+        it('allows absolute paths inside the task cwd but queues paths outside it or sensitive files', () => {
+            const cwd = '/home/alice/project';
+            expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, false, bash('cat /home/alice/project/a.txt'), { cwd }))
+                .to.equal('allow');
+            expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, false, bash('cat /etc/passwd'), { cwd }))
+                .to.equal('queue');
+            expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, false, bash('cat .env'), { cwd }))
+                .to.equal('queue');
+        });
+
+        it('still queues non-read-only shell commands under request-approval', () => {
+            const decision = resolveQaiqControlRequestAutoDecision(approveForMeShellCommand, false, bash('echo x > out.txt'));
+            expect(decision.action).to.equal('queue');
+            expect(decision.reason).to.equal(undefined);
+        });
+
+        it('respects the preference when it is turned off', () => {
+            expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, false, bash('ls'), { autoApproveReadOnlyShell: false }))
+                .to.equal('queue');
+        });
+
+        it('auto-approves read-only commands that approve-for-me would otherwise queue', () => {
+            expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, true, bash('cat package.json | head -5'))).to.equal('allow');
+            expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, true, bash('npm install'))).to.equal('queue');
+        });
+
+        it('never overrides a core --tools allowlist that excludes the shell tool', () => {
+            const noShell = 'qaiq --permission-mode default --tools Read,Grep,Glob --allowed-tools Read,Grep,Glob';
+            expect(resolveQaiqControlRequestAutoAction(noShell, true, bash('ls'))).to.equal('deny');
+        });
+
+        it('ignores non-shell tools', () => {
+            const decision = resolveQaiqControlRequestAutoDecision(approveForMeCommand, false, {
+                requestId: 'req-web', toolName: 'WebFetch', toolInput: { command: 'ls' },
+            });
+            expect(decision.action).to.equal('queue');
+            expect(decision.reason).to.equal(undefined);
+        });
     });
 });
