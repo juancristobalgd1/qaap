@@ -10,9 +10,59 @@ import {
     QAAP_CAPTURE_DIRECTIVE_PATTERN,
     textContainsQaapCaptureDirective,
 } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
+import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 export const TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS = 'theia-mobile-agent-transcript-capture-pending';
 export const TRANSCRIPT_CAPTURE_DIRECTIVE_CLASS = 'theia-mobile-agent-transcript-capture-directive';
+/**
+ * Set on an agent message row when no capture can land for it any more, so a `[QAAP capture]`
+ * directive renders as "not available" instead of an endless "Processing screenshot…" skeleton.
+ */
+export const TRANSCRIPT_CAPTURE_CLOSED_ATTR = 'data-qaap-capture-closed';
+
+type CaptureChipState = 'pending' | 'unavailable';
+
+/**
+ * Whether a capture requested in `message` can no longer arrive: the backend only captures a
+ * settled turn without an error (see `conversationNeedsVisualVerificationEvidence`), and a later
+ * agent turn supersedes it. A still-streaming or unknown message stays open.
+ */
+export function isTranscriptCaptureClosed(
+    conv: Pick<QaapAgentConversationDTO, 'messages'> | undefined,
+    message: Pick<QaapAgentMessageDTO, 'id' | 'error'> | undefined,
+    streaming: boolean,
+): boolean {
+    if (streaming || !message) {
+        return false;
+    }
+    if (message.error?.trim()) {
+        return true;
+    }
+    const lastAgent = conv ? [...conv.messages].reverse().find(candidate => candidate.role === 'agent') : undefined;
+    return !!lastAgent && lastAgent.id !== message.id;
+}
+
+export function syncTranscriptCaptureClosedRow(row: HTMLElement, closed: boolean): void {
+    row.toggleAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR, closed);
+}
+
+function localizeCaptureChipLabel(mode: 'image' | 'video', state: CaptureChipState): string {
+    if (state === 'unavailable') {
+        return mode === 'video'
+            ? nls.localize('qaap/mobileProjects/transcriptCaptureUnavailableVideo', 'Video not available')
+            : nls.localize('qaap/mobileProjects/transcriptCaptureUnavailableImage', 'Screenshot not available');
+    }
+    return mode === 'video'
+        ? nls.localize('qaap/mobileProjects/transcriptCaptureProcessingVideo', 'Processing video…')
+        : nls.localize('qaap/mobileProjects/transcriptCaptureProcessingImage', 'Processing screenshot…');
+}
+
+function captureChipIconClass(mode: 'image' | 'video', state: CaptureChipState): string {
+    if (state === 'unavailable') {
+        return 'codicon-circle-slash';
+    }
+    return mode === 'video' ? 'codicon-device-camera-video' : 'codicon-device-camera';
+}
 
 const CAPTURE_DIRECTIVE_REGEX = new RegExp(QAAP_CAPTURE_DIRECTIVE_PATTERN, 'i');
 const VISUAL_EVIDENCE_SELECTOR = [
@@ -81,9 +131,10 @@ export function buildTranscriptCapturePendingChip(
     mode: 'image' | 'video',
     routes: readonly string[],
     ownerDocument: Document = document,
+    state: CaptureChipState = 'pending',
 ): HTMLElement {
     const chip = ownerDocument.createElement('div');
-    chip.className = `${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS} theia-mod-${mode}`;
+    chip.className = `${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS} theia-mod-${mode}${state === 'unavailable' ? ' theia-mod-unavailable' : ''}`;
     chip.setAttribute('role', 'status');
     chip.setAttribute('aria-live', 'polite');
     chip.dataset.qaapCaptureMode = mode;
@@ -96,16 +147,12 @@ export function buildTranscriptCapturePendingChip(
     meta.className = 'theia-mobile-agent-transcript-capture-pending-meta';
 
     const icon = ownerDocument.createElement('span');
-    icon.className = `theia-mobile-agent-transcript-capture-pending-icon codicon ${
-        mode === 'video' ? 'codicon-device-camera-video' : 'codicon-device-camera'
-    }`;
+    icon.className = `theia-mobile-agent-transcript-capture-pending-icon codicon ${captureChipIconClass(mode, state)}`;
     icon.setAttribute('aria-hidden', 'true');
 
     const label = ownerDocument.createElement('span');
     label.className = 'theia-mobile-agent-transcript-capture-pending-label';
-    label.textContent = mode === 'video'
-        ? nls.localize('qaap/mobileProjects/transcriptCaptureProcessingVideo', 'Processing video…')
-        : nls.localize('qaap/mobileProjects/transcriptCaptureProcessingImage', 'Processing screenshot…');
+    label.textContent = localizeCaptureChipLabel(mode, state);
 
     meta.append(icon, label);
 
@@ -124,15 +171,19 @@ function syncExistingCapturePendingChip(
     chip: HTMLElement,
     mode: 'image' | 'video',
     routes: readonly string[],
+    state: CaptureChipState,
 ): void {
     chip.classList.toggle('theia-mod-image', mode === 'image');
     chip.classList.toggle('theia-mod-video', mode === 'video');
+    chip.classList.toggle('theia-mod-unavailable', state === 'unavailable');
     chip.dataset.qaapCaptureMode = mode;
     const label = chip.querySelector<HTMLElement>('.theia-mobile-agent-transcript-capture-pending-label');
     if (label) {
-        label.textContent = mode === 'video'
-            ? nls.localize('qaap/mobileProjects/transcriptCaptureProcessingVideo', 'Processing video…')
-            : nls.localize('qaap/mobileProjects/transcriptCaptureProcessingImage', 'Processing screenshot…');
+        label.textContent = localizeCaptureChipLabel(mode, state);
+    }
+    const icon = chip.querySelector<HTMLElement>('.theia-mobile-agent-transcript-capture-pending-icon');
+    if (icon) {
+        icon.className = `theia-mobile-agent-transcript-capture-pending-icon codicon ${captureChipIconClass(mode, state)}`;
     }
     const routesEl = chip.querySelector<HTMLElement>('.theia-mobile-agent-transcript-capture-pending-routes');
     if (routes.length === 0) {
@@ -173,16 +224,17 @@ export function enhanceTranscriptCaptureDirectives(host: HTMLElement): number {
 
     resolveCaptureDirectiveAnchor(host);
 
+    const state: CaptureChipState = row?.hasAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR) ? 'unavailable' : 'pending';
     const existingChip = host.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)
         ?? host.querySelector<HTMLElement>(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`);
     if (existingChip) {
-        syncExistingCapturePendingChip(existingChip, pending.mode, pending.routes);
+        syncExistingCapturePendingChip(existingChip, pending.mode, pending.routes, state);
         return 1;
     }
 
     insertCapturePendingChip(
         host,
-        buildTranscriptCapturePendingChip(pending.mode, pending.routes, host.ownerDocument ?? document),
+        buildTranscriptCapturePendingChip(pending.mode, pending.routes, host.ownerDocument ?? document, state),
     );
     return 1;
 }

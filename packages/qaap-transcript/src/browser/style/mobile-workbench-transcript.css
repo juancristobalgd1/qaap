@@ -3619,6 +3619,10 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   font-size: 11px;
 }
 
+.theia-mobile-agent-transcript-capture-pending.theia-mod-unavailable .theia-mobile-agent-transcript-capture-pending-preview {
+  display: none;
+}
+
 .theia-mobile-agent-transcript-capture-pending.theia-mod-video .theia-mobile-agent-transcript-capture-pending-preview {
   aspect-ratio: 16 / 9;
 }

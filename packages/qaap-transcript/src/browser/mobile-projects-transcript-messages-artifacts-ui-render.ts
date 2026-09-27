@@ -11,7 +11,11 @@ import {
     localizeAgentFailureShortReason,
     resolveAgentTurnFailureTechnicalContent,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
-import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
+import {
+    enhanceTranscriptCaptureDirectives,
+    isTranscriptCaptureClosed,
+    syncTranscriptCaptureClosedRow,
+} from './qaap-transcript-capture-pending-ui';
 import { TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     destroyThinkingOrbIndicator,
@@ -69,6 +73,11 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
         },): HTMLElement {
         const row = document.createElement('div');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent';
+        syncTranscriptCaptureClosedRow(row, isTranscriptCaptureClosed(
+            conv,
+            options?.message ?? ctx.resolveLastAgentMessage(conv),
+            !!options?.streaming,
+        ));
         const defer = !!options?.deferHeavyContent;
         if (defer) {
             row.setAttribute('data-transcript-row-deferred', '1');

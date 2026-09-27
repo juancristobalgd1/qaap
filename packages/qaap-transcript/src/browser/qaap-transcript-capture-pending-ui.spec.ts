@@ -18,6 +18,8 @@ import {
 import {
     buildTranscriptCapturePendingChip,
     enhanceTranscriptCaptureDirectives,
+    isTranscriptCaptureClosed,
+    syncTranscriptCaptureClosedRow,
     TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS,
 } from './qaap-transcript-capture-pending-ui';
 import {
@@ -85,6 +87,42 @@ describe('qaap-transcript-capture-pending-ui', () => {
             .to.contain('[QAAP capture: /]');
         expect(host.querySelector('p.theia-mobile-agent-transcript-capture-directive')?.nextElementSibling)
             .to.equal(chip);
+    });
+
+    it('shows "not available" instead of a skeleton when the row can no longer receive a capture', () => {
+        const { row, host } = createMessageRow('<p>Listo.</p><p>[QAAP capture]</p>');
+        syncTranscriptCaptureClosedRow(row, true);
+        expect(enhanceTranscriptCaptureDirectives(host)).to.equal(1);
+
+        const chip = host.querySelector(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`);
+        expect(chip?.classList.contains('theia-mod-unavailable')).to.equal(true);
+        expect(chip?.querySelector('.theia-mobile-agent-transcript-capture-pending-label')?.textContent)
+            .to.equal('Screenshot not available');
+    });
+
+    it('flips an existing pending chip to "not available" once the row closes', () => {
+        const { row, host } = createMessageRow('<p>[QAAP capture]</p>');
+        enhanceTranscriptCaptureDirectives(host);
+        syncTranscriptCaptureClosedRow(row, true);
+        enhanceTranscriptCaptureDirectives(host);
+
+        const chips = host.querySelectorAll(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`);
+        expect(chips.length).to.equal(1);
+        expect(chips[0].classList.contains('theia-mod-unavailable')).to.equal(true);
+    });
+
+    it('closes the capture for failed or superseded turns only', () => {
+        const conv = {
+            messages: [
+                { id: 'a1', role: 'agent' as const },
+                { id: 'u2', role: 'user' as const },
+                { id: 'a2', role: 'agent' as const },
+            ],
+        } as unknown as Parameters<typeof isTranscriptCaptureClosed>[0];
+        expect(isTranscriptCaptureClosed(conv, { id: 'a2' }, false)).to.equal(false);
+        expect(isTranscriptCaptureClosed(conv, { id: 'a2', error: 'sign in' }, false)).to.equal(true);
+        expect(isTranscriptCaptureClosed(conv, { id: 'a1' }, false)).to.equal(true);
+        expect(isTranscriptCaptureClosed(conv, { id: 'a2', error: 'sign in' }, true)).to.equal(false);
     });
 
     it('uses the video variant for `[QAAP record]` directives', () => {
