@@ -521,7 +521,11 @@ export class QaapProjectBootstrapDetector {
                     break;
                 }
                 scanned += 1;
-                if (await this.fileService.exists(child.resource.resolve(STATIC_INDEX_FILE))) {
+                // A scaffolded app (`create-vite` puts `index.html` next to `package.json`) is not a
+                // static site: serving its raw `index.html` skips the dev server, and it would shadow
+                // `detectScaffoldedSubfolder`, which runs after this scan.
+                if (await this.fileService.exists(child.resource.resolve(STATIC_INDEX_FILE))
+                    && !await this.toAppCandidate(rootUri, child.resource, 'npm')) {
                     return child.name;
                 }
             }

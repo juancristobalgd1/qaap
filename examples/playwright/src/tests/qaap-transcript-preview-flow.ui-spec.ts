@@ -101,6 +101,21 @@ async function claimDevPreviewPort(page: Page, workspaceRootUrl: string, port: n
     }, { root: workspaceRootUrl, probePort: port });
 }
 
+/**
+ * `runDevServer()` is a no-op until the bootstrap has a descriptor, so wait for detection before
+ * triggering it. `scaffoldRelativePath` pins the detected layout: an orphan scaffold must take the
+ * Vite subfolder path, not the static-site fallback for its `index.html`.
+ */
+async function waitForBootstrapDetected(page: Page, scaffoldRelativePath?: string): Promise<void> {
+    await expect.poll(async () => page.evaluate(() => {
+        const api = (window as unknown as {
+            __qaapBootstrap?: { getState?: () => { descriptor?: string; scaffoldRelativePath?: string } };
+        }).__qaapBootstrap;
+        const state = api?.getState?.();
+        return state?.descriptor ? { scaffoldRelativePath: state.scaffoldRelativePath } : undefined;
+    }), { timeout: 60_000 }).toEqual({ scaffoldRelativePath });
+}
+
 async function triggerBootstrapAttachToRunningDevServer(page: Page): Promise<void> {
     const runPreview = page.locator('.qaap-project-bootstrap-banner').getByRole('button', {
         name: /run & preview|run preview|resume preview/i,
@@ -235,11 +250,13 @@ async function expectDevPreviewMounted(page: Page): Promise<void> {
 async function runWorkHubProxiedPreviewFlow(
     page: Page,
     workspaceRootUrl: string,
+    scaffoldRelativePath?: string,
     port: number = DEV_PREVIEW_PORT,
 ): Promise<void> {
     await waitForWorkHubReady(page);
     await waitForBackendDevProbe(page, port);
     await claimDevPreviewPort(page, workspaceRootUrl, port);
+    await waitForBootstrapDetected(page, scaffoldRelativePath);
     await triggerBootstrapAttachToRunningDevServer(page);
     await waitForPreviewStaged(page);
     await selectPreviewTab(page);
@@ -285,7 +302,7 @@ test.describe('@qaap-mobile transcript dev preview flow', () => {
             const app = await TheiaAppLoader.load({ playwright, browser }, ws);
             await app.waitForShellAndInitialized();
             await dismissMobileTutorial(app.page);
-            await runWorkHubProxiedPreviewFlow(app.page, ws.pathAsUrl(''));
+            await runWorkHubProxiedPreviewFlow(app.page, ws.pathAsUrl(''), path.basename(VITE_SUBFOLDER_APP));
             await app.page.close();
         } finally {
             viteDevServer?.kill('SIGTERM');
