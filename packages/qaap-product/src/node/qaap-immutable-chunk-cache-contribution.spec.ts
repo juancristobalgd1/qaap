@@ -44,6 +44,18 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         }
     });
 
+    it('keeps immutable chunk bytes untouched in the frontend static sync', () => {
+        // A query stamp written into a chunk after esbuild hashed it makes one immutable URL
+        // carry different bytes per build and duplicates the module graph after a rebuild.
+        const sync = fs.readFileSync(
+            path.resolve(__dirname, '../../../../examples/browser/scripts/copy-frontend-static.mjs'),
+            'utf8',
+        );
+        expect(sync).to.include('verifyFrontendChunkGraph();');
+        expect(sync).to.not.match(/\$2\?qaap-build=/);
+        expect(sync).to.not.include('patchFrontendChunkImports');
+    });
+
     it('resolves packaged legal HTML from the qaap-product resources tree', () => {
         const legalDir = resolveQaapLegalPagesDir();
         expect(path.basename(legalDir)).to.equal('legal');
