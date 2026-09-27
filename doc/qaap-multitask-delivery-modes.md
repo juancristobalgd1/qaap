@@ -579,6 +579,7 @@ mid-turn via stdin. Verificar si QAIQ ya lo soporta o si necesita un cambio.
 |---|---|---|
 | `QAAP_MAX_CONCURRENT_AGENTS` | 4 | Agentes concurrentes global |
 | `QAAP_MAX_CONCURRENT_AGENTS_PER_USER` | 2 | Agentes concurrentes por usuario |
+| `QAAP_MAX_CONCURRENT_AGENTS_PER_REPO` | 0 (sin límite) | Agentes concurrentes por repositorio (cwd de la tarea); el exceso queda `queued` hasta que ese repo libere un slot |
 | `QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION` | 3 | Variants paralelos por conversación (modo Parallel) |
 | `QAAP_MAX_BATCH_SIZE` | 5 | Máximo mensajes mergeados por batch (modo Queue) |
 | `QAAP_COALESCE_WINDOW_MS` | 2000 | Ventana de coalescing para batching |

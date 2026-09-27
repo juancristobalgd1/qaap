@@ -164,6 +164,9 @@ export interface QaapAgentTaskRunnerContext {
     maxConcurrentAgentsPerUser(): number;
     runningTaskCountForOwner(ownerLogin: string): number;
     ownerAtConcurrencyCap(ownerLogin: string | undefined): boolean;
+    maxConcurrentAgentsPerRepo(): number;
+    runningTaskCountForRepo(cwd: string): number;
+    repoAtConcurrencyCap(cwd: string | undefined): boolean;
     drainQueuedTasks(): void;
     list(): QaapAgentTask[];
     create(request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask;

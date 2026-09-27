@@ -118,6 +118,7 @@ describe('Qaap standalone task retry', () => {
             countRunningTasks: () => 0,
             maxConcurrentAgents: () => 1,
             ownerAtConcurrencyCap: () => false,
+            repoAtConcurrencyCap: () => false,
             resolveAgentModelForRequest: () => undefined,
             spawnProcessWhenReady: () => undefined,
             persist: () => Promise.resolve(),

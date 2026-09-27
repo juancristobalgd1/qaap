@@ -55,6 +55,8 @@ export const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
 /** Ceiling for one user; plan entitlements (Starter 2 / Pro 4 / Team 8) are the real limiter. */
 export const DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER = 8;
 export const MAX_CONCURRENT_AGENTS_PER_USER_ENV = 'QAAP_MAX_CONCURRENT_AGENTS_PER_USER';
+/** Per-repository cap (keyed by task cwd); unset or `0` means unlimited. */
+export const MAX_CONCURRENT_AGENTS_PER_REPO_ENV = 'QAAP_MAX_CONCURRENT_AGENTS_PER_REPO';
 
 // ─── Fingerprint constants ───────────────────────────────────────────────────
 
@@ -120,6 +122,16 @@ export function maxConcurrentAgentsPerUser(): number {
     }
     const parsed = Number.parseInt(raw, 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER;
+}
+
+/** Returns `0` (unlimited) when the env var is unset, zero or not a positive integer. */
+export function maxConcurrentAgentsPerRepo(): number {
+    const raw = process.env[MAX_CONCURRENT_AGENTS_PER_REPO_ENV]?.trim();
+    if (!raw) {
+        return 0;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 // ─── Repo map builders ───────────────────────────────────────────────────────
