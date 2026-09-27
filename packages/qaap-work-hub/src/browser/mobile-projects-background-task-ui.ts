@@ -11,7 +11,9 @@ import { GenericCapabilitySelections } from '@theia/ai-core';
 import {
     conversationToSummary,
     createConversation,
+    deleteConversation,
     getConversation,
+    startGoalLoop,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -214,6 +216,8 @@ export class MobileProjectsBackgroundTaskUi {
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
+            /** Create without a message, then start an "Until done" goal loop with the draft. */
+            untilDone?: boolean;
         } = {},
     ): Promise<QaapAgentConversationSummaryDTO | undefined> {
         if (this.backgroundSubmitInFlightByProjectId.has(project.id)) {
@@ -245,6 +249,8 @@ export class MobileProjectsBackgroundTaskUi {
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
+            /** Create without a message, then start an "Until done" goal loop with the draft. */
+            untilDone?: boolean;
         } = {},
     ): Promise<QaapAgentConversationSummaryDTO | undefined> {
         try {
@@ -305,6 +311,7 @@ export class MobileProjectsBackgroundTaskUi {
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
+            untilDone?: boolean;
         },
     ): Promise<QaapProjectChatSessionCreated> {
         const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
@@ -351,7 +358,8 @@ export class MobileProjectsBackgroundTaskUi {
             clientRequestId,
             agent,
             title: draft,
-            message: outbound,
+            // "Until done": the goal loop posts the first turn itself (start requires an idle thread).
+            ...(options.untilDone ? {} : { message: outbound }),
             interactionModeId: options.modeId,
             approvalPolicyId,
             toolApprovalRules,
@@ -365,9 +373,38 @@ export class MobileProjectsBackgroundTaskUi {
                     ? { autoApprove: true }
                     : {}),
         }, createController.signal), 60_000, 'creating the conversation', () => createController.abort());
+        if (options.untilDone) {
+            const started = await this.startGoalLoopOnCreatedConversation(conversation.id, draft, outbound);
+            const startedSummary = conversationToSummary(started);
+            this.host.conversations?.recordSnapshot(startedSummary);
+            return { summary: startedSummary, outbound };
+        }
         const summary = conversationToSummary(conversation);
         this.host.conversations?.recordSnapshot(summary);
         return { summary, outbound };
+    }
+
+    /**
+     * Starts the goal loop on a conversation created without a message. On a rejected start the
+     * empty conversation is removed again and the backend's reason is rethrown for the toast.
+     */
+    protected async startGoalLoopOnCreatedConversation(
+        conversationId: string,
+        draft: string,
+        outbound: string,
+    ): Promise<QaapAgentConversationDTO> {
+        try {
+            await this.boundedSubmitStage(
+                startGoalLoop(conversationId, { goal: draft.trim() || outbound, initialPrompt: outbound }),
+                30_000,
+                'starting the goal loop',
+            );
+        } catch (error) {
+            void deleteConversation(conversationId).catch(() => undefined);
+            const detail = error instanceof Error ? error.message : String(error);
+            throw new Error(nls.localize('theia/qaap/goalLoop/startFailed', 'Could not start Until done: {0}', detail));
+        }
+        return getConversation(conversationId);
     }
 
     protected async resolveOutboundMessage(

@@ -2058,6 +2058,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.agentsHubInlineUi.shouldSkipFullRenderListOnConversationTick();
     }
 
+    protected refreshGoalLoopChrome(): void {
+        this.tasksHubUi.updateStepPillChrome();
+    }
+
     protected refreshWorkHubConversationChrome(): void {
         this.agentsHubInlineUi.refreshWorkHubConversationChrome();
     }

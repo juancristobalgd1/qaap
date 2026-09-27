@@ -27,7 +27,7 @@ import {
     parkWorkingControlFromAncestor,
     transferWorkingControlToHost,
 } from './qaap-sticky-composer-working-agents-popover';
-import { transferStepPillToHost } from './qaap-sticky-composer-step-pill';
+import { transferGoalLoopPillToHost, transferStepPillToHost } from './qaap-sticky-composer-step-pill';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 export function appendRunningGitActionToTranscriptExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, summary: QaapAgentConversationSummaryDTO,
@@ -224,6 +224,7 @@ export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscr
             if (changesPill instanceof HTMLElement) {
                 transferWorkingControlToHost(existingActivityPill, changesPill);
                 transferStepPillToHost(existingActivityPill, changesPill);
+                transferGoalLoopPillToHost(existingActivityPill, changesPill);
             } else {
                 parkWorkingControlFromAncestor(existingActivityPill);
             }
@@ -233,6 +234,7 @@ export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscr
     } else if (pillsOnlyHost instanceof HTMLElement && changesPill instanceof HTMLElement) {
         transferWorkingControlToHost(pillsOnlyHost, changesPill);
         transferStepPillToHost(pillsOnlyHost, changesPill);
+        transferGoalLoopPillToHost(pillsOnlyHost, changesPill);
         // Insert the pill AFTER the queue stack (if it exists) — queue goes on top, pill below it.
         const existingStack = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
         if (existingStack) {

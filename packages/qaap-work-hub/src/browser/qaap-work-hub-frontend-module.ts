@@ -24,6 +24,7 @@ import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-toast.css'
 import '@theia/qaap-composer/src/browser/style/qaap-chat-mic.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-prompt-improve.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-select-dropdown.css';
+import '@theia/qaap-composer/src/browser/style/qaap-composer-goal-loop.css';
 import '@theia/qaap-diff-review/src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
@@ -32,6 +33,7 @@ import '@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premiu
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css';
+import '@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';

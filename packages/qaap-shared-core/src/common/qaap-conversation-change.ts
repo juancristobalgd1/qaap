@@ -24,7 +24,8 @@ export type QaapConversationSummaryField =
     | 'autoApprove'
     | 'agentModel'
     | 'approvalPolicyId'
-    | 'visualVerificationPending';
+    | 'visualVerificationPending'
+    | 'goalLoop';
 
 export type QaapConversationChangeKind =
     | 'snapshot'
@@ -66,6 +67,10 @@ const SUMMARY_FIELD_KEYS: readonly (keyof QaapAgentConversationSummaryDTO)[] = [
     'turnProgressCurrent',
     'turnProgressTotal',
     'visualVerificationPending',
+    'goalLoopPhase',
+    'goalLoopIteration',
+    'goalLoopMaxIterations',
+    'goalLoopStopReason',
 ];
 
 function fieldFromSummaryKey(key: keyof QaapAgentConversationSummaryDTO): QaapConversationSummaryField | undefined {
@@ -76,6 +81,11 @@ function fieldFromSummaryKey(key: keyof QaapAgentConversationSummaryDTO): QaapCo
         case 'turnProgressCurrent':
         case 'turnProgressTotal':
             return 'turnProgress';
+        case 'goalLoopPhase':
+        case 'goalLoopIteration':
+        case 'goalLoopMaxIterations':
+        case 'goalLoopStopReason':
+            return 'goalLoop';
         default:
             return key as QaapConversationSummaryField;
     }

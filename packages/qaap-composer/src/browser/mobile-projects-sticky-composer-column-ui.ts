@@ -37,6 +37,10 @@ import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 import {
+    createStickyComposerUntilDoneToggle,
+    type StickyComposerUntilDoneToggleOptions,
+} from './qaap-sticky-composer-until-done-toggle';
+import {
     handleStickyComposerPromptHistoryKeydown,
     recordStickyComposerPromptSubmission,
 } from './qaap-sticky-composer-prompt-history';
@@ -78,6 +82,8 @@ export class MobileProjectsStickyComposerColumnUi {
         onOpenModeSheet?: (anchor: HTMLButtonElement) => void;
         approvalPolicyId?: QaapAgentApprovalPolicyId;
         onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
+        /** "Until done" goal-loop toggle; VPS agent (task) surface only. */
+        untilDone?: StickyComposerUntilDoneToggleOptions;
         canSubmit: boolean;
         isAgentWorking?: () => boolean;
         isAgentBeamIdle?: () => boolean;
@@ -228,6 +234,9 @@ export class MobileProjectsStickyComposerColumnUi {
         }
         if (approvalBtn) {
             toolbarItems.push(approvalBtn);
+        }
+        if (options.untilDone && options.surface !== 'chat') {
+            toolbarItems.push(createStickyComposerUntilDoneToggle(options.untilDone));
         }
 
         toolbar.append(...toolbarItems);

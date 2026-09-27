@@ -78,6 +78,12 @@ import {
 } from '../common/qaap-mcp-plugin-install';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import {
+    readStoredComposerUntilDone,
+    resolveComposerUntilDoneForSubmit,
+    resolveUntilDoneDisabledReason,
+    writeStoredComposerUntilDone,
+} from '../common/qaap-composer-until-done';
+import {
     reconcileModelCapabilityLevel,
 } from '../common/qaap-sticky-composer-model-capability';
 import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
@@ -460,6 +466,19 @@ export class MobileProjectsStickyComposerRenderUi {
                     );
                 }
                 : undefined,
+            untilDone: showApprovalPolicy && !isChatSurface
+                ? {
+                    checked: readStoredComposerUntilDone(cwd),
+                    disabledReason: resolveUntilDoneDisabledReason({
+                        approvalPolicyId: this.host.stickyComposerApprovalPolicyId,
+                        modeId: this.host.stickyComposerModeId,
+                    }),
+                    onToggle: checked => {
+                        writeStoredComposerUntilDone(cwd, checked);
+                        this.renderStickyComposer();
+                    },
+                }
+                : undefined,
             canSubmit,
             onImprovePrompt: this.createImprovePromptHandler(
                 cwd,
@@ -515,6 +534,11 @@ export class MobileProjectsStickyComposerRenderUi {
                         ? this.host.stickyComposerToolApprovalRules
                         : undefined,
                     agentModel: readStoredAgentModel(cwd, selectedAgentId),
+                    untilDone: showApprovalPolicy && resolveComposerUntilDoneForSubmit({
+                        cwd,
+                        approvalPolicyId: this.host.stickyComposerApprovalPolicyId,
+                        modeId,
+                    }),
                 });
                 void done.finally(() => this.renderStickyComposer());
             },

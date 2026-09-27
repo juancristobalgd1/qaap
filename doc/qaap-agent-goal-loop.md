@@ -112,4 +112,20 @@ in `node/qaap-agent-goal-loop-runner.ts` (bound as a `BackendApplicationContribu
 (`setGoalLoop`, `notifyGoalLoopTurnSettled`, `cancelGoalLoopOnConversation`) and the routes in
 `qaap-agent-conversation-endpoint.ts`.
 
+Phase 2 (UI + push):
+
+- Client: `goal_loop` events patch the summary fields (`goalLoopPhase/Iteration/MaxIterations/StopReason`,
+  change field `goalLoop`); labels come from `qaap-shared-core` `qaap-agent-goal-loop-labels.ts`.
+- Toggle: per-project localStorage pref (`qaap.mobile.projects.untilDone.<hash(cwd)>`, same scoping
+  as the composer mode), shown only for agents with an approval policy; disabled with a tooltip under
+  manual approval ("Requires auto-approve") and in Plan mode. A follow-up sent while a turn is busy is
+  queued as a normal message (the loop can only start on an idle thread).
+- Submit: new task → create without `message`, then `startGoalLoop({ goal: draft, initialPrompt:
+  outbound })`; a rejected start deletes the empty conversation and surfaces the 4xx reason as the
+  existing "Could not start task" toast. Existing idle thread → `startGoalLoop` instead of posting.
+- Pill "Iteration N/M · <phase>" shares the Step pill strip; header chip sits before the execution
+  tabs (overlay sheet and Agents Hub inline header). Both refresh on `goalLoop` summary changes.
+- Push: `QaapAgentGoalLoopRunner` sends it from `onDidReachTerminalPhase`; `notifyCompletion` skips
+  the per-turn push while `isGoalLoopActive` holds for the task's conversation.
+
 Out of scope from #21: task queue/limits, GitHub evidence comments, VPS scripts.

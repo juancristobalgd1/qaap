@@ -101,6 +101,8 @@ export interface MobileProjectsPanelLifecycleHost {
     isAgentsHubExecutionSurfaceReady(): boolean;
     ensureAgentsHubExecutionShellRendered(): void;
     refreshWorkHubConversationChrome(): void;
+    /** "Until done" pill + header chip for the open conversation. */
+    refreshGoalLoopChrome?(): void;
     patchWorkHubConversationRowInPlace(conversationId: string): void;
     /** Bumps the project's lastActiveAt to now and re-sorts projects so the most recent is on top. */
     touchProjectActivityByConversationId(conversationId: string): void;
@@ -336,6 +338,11 @@ export class MobileProjectsPanelLifecycleUi {
             const conversationUpdates = new DisposableCollection(
                 this.host.conversations.onDidChangeDetail(change => {
                     this.host.markTasksFirstLoadComplete(false);
+                    if (this.host.visible && change.changedFields?.includes('goalLoop')) {
+                        // Goal loop phase changes arrive without transcript traffic (verify /
+                        // evaluate run between turns) — patch the pill and chip directly.
+                        this.host.refreshGoalLoopChrome?.();
+                    }
                     if (change.kind === 'document_loaded') {
                         if (this.host.transcriptOpenSummaryId === change.conversationId) {
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();

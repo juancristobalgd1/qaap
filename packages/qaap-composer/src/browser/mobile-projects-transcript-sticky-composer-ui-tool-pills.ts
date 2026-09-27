@@ -1,3 +1,4 @@
+import { readStoredComposerUntilDone, resolveUntilDoneDisabledReason, writeStoredComposerUntilDone } from '../common/qaap-composer-until-done';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
@@ -204,6 +205,19 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                     ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
                     anchor,
                 );
+            }
+            : undefined,
+        untilDone: showApprovalPolicy
+            ? {
+                checked: readStoredComposerUntilDone(cwd),
+                disabledReason: resolveUntilDoneDisabledReason({
+                    approvalPolicyId: ctx.host.transcriptComposerApprovalPolicyId,
+                    modeId: ctx.host.transcriptComposerModeId,
+                }),
+                onToggle: checked => {
+                    writeStoredComposerUntilDone(cwd, checked);
+                    ctx.remountTranscriptStickyComposer();
+                },
             }
             : undefined,
         canSubmit: true,
