@@ -285,9 +285,21 @@
         document.head.appendChild(style);
     }
 
+    var resolvedBundleUrl;
+
     function resolveBundleUrl() {
+        // The modulepreload hint and the module script must request the SAME
+        // URL, otherwise the localhost fallback below fetches bundle.js twice.
+        if (!resolvedBundleUrl) {
+            resolvedBundleUrl = computeBundleUrl();
+        }
+        return resolvedBundleUrl;
+    }
+
+    function computeBundleUrl() {
         // copy-frontend-static versions bundle.css in development. Reuse that
-        // version for JS so a reload cannot pair an old bundle with new chunks.
+        // version for JS so a reload always fetches the current entry point;
+        // code-split chunks are content-hashed and are never stamped.
         var stylesheet = document.querySelector('link[href*="bundle.css"]');
         var href = stylesheet && stylesheet.getAttribute('href');
         var match = href && href.match(/[?&]qaap-build=([^&#]+)/);

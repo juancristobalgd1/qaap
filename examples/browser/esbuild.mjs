@@ -45,12 +45,24 @@ const esmDiInteropPlugin = {
     },
 };
 
+/**
+ * Chunk hash epoch. Chunks are served `immutable` and imported by their bare
+ * content-hashed name. Until September 2026 copy-frontend-static.mjs rewrote
+ * chunk imports to `chunk-X.js?qaap-build=<stamp>` AFTER esbuild hashed them,
+ * so a browser may hold a year-long cached copy of a chunk whose bytes carry an
+ * old stamp under a hash that still matches today's content. Folding this epoch
+ * into every chunk's bytes moves all hashes once, so those poisoned cache
+ * entries are never requested again. Bump it only to invalidate every chunk.
+ */
+const CHUNK_HASH_EPOCH = '/* qaap-chunk-epoch: 2 */';
+
 const mainOptions = {
     ...browserOptions,
     entryPoints: mainEntryPoints,
     format: 'esm',
     splitting: true,
     chunkNames: 'chunk-[hash]',
+    banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
     plugins: [esmDiInteropPlugin, ...browserOptions.plugins],
