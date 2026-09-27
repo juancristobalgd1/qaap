@@ -147,6 +147,8 @@ export function forkExtracted(ctx: QaapAgentConversationStoreContext, id: string
             createdAt: now,
             updatedAt: now,
             forkedFromId: conv.id,
+            // A goal loop belongs to the conversation that ran it, never to its fork.
+            goalLoop: undefined,
             messages: conv.messages.map(message => ({
                 ...message,
                 id: randomUUID(),

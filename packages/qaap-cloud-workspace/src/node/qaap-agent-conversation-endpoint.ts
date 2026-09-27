@@ -37,6 +37,8 @@ import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-a
 import { QaapBillingStore } from './qaap-billing-store';
 import { QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION } from './qaap-agent-conversation-store-constants';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
+import { QaapAgentGoalLoopError, QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
+import type { QaapAgentGoalLoopResponse, QaapStartAgentGoalLoopRequest } from '../common/qaap-agent-goal-loop';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -73,6 +75,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapBillingStore) @optional()
     protected readonly billingStore: QaapBillingStore | undefined;
+
+    @inject(QaapAgentGoalLoopRunner) @optional()
+    protected readonly goalLoops: QaapAgentGoalLoopRunner | undefined;
 
     /**
      * Idempotency guard for conversation creation: `${ownerLogin}:${clientRequestId}` → the id of the
@@ -251,6 +256,25 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 return;
             }
             res.json(conv);
+        });
+        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/goal-loop`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handleGoalLoop(res, req.params.id, runner => runner.status(req.params.id));
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/goal-loop/start`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            const body = (req.body ?? {}) as Partial<QaapStartAgentGoalLoopRequest>;
+            this.handleGoalLoop(res, req.params.id, runner => runner.start(req.params.id, body), 201);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/goal-loop/cancel`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handleGoalLoop(res, req.params.id, runner => runner.cancel(req.params.id));
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/retry`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
@@ -1139,6 +1163,28 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return undefined;
         }
         return conv;
+    }
+
+    protected handleGoalLoop(
+        res: Response,
+        conversationId: string,
+        action: (runner: QaapAgentGoalLoopRunner) => QaapAgentConversation['goalLoop'],
+        successStatus = 200,
+    ): void {
+        if (!this.goalLoops) {
+            res.status(503).json({ error: 'The goal loop is not available on this server.' });
+            return;
+        }
+        try {
+            const goalLoop = action(this.goalLoops);
+            res.status(successStatus).json({ conversationId, goalLoop } satisfies QaapAgentGoalLoopResponse);
+        } catch (error) {
+            if (error instanceof QaapAgentGoalLoopError) {
+                res.status(error.status).json({ error: error.message });
+                return;
+            }
+            res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     protected filterGroups(ctx: QaapGithubAuthContext, groups: QaapAgentConversationCwdGroup[]): QaapAgentConversationCwdGroup[] {

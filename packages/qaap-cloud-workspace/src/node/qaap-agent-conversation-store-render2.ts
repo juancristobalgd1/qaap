@@ -718,6 +718,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
             visualRepairSourceAgentMessageId: internal.visualRepair.sourceAgentMessageId,
         } : {}),
         ...(internal?.batchedFromMessageIds ? { batchedFromMessageIds: internal.batchedFromMessageIds } : {}),
+        ...(internal?.goalLoopIteration ? { goalLoopIteration: internal.goalLoopIteration } : {}),
     };
     const messages = [...conv.messages, userMessage];
     let next: QaapAgentConversation = {
@@ -919,9 +920,17 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
         next = ctx.finalizeStreamingAgentMessage(next, messageId, 'Turn cancelled.');
     }
     next = { ...next, status: 'idle', updatedAt: Date.now() };
+    // Composer Stop ends an "Until done" goal loop too, whatever phase it is in (a loop that
+    // is verifying/evaluating has no live task to cancel above).
+    const withLoopCancelled = ctx.cancelGoalLoopOnConversation(next, 'Stopped by the user.');
+    const goalLoopCancelled = withLoopCancelled !== next;
+    next = withLoopCancelled;
     ctx.conversations.set(id, next);
     for (const messageId of agentMessageIds) {
         ctx.publishFinalizedAgentMessage(id, next, messageId);
+    }
+    if (goalLoopCancelled) {
+        ctx.fire({ type: 'goal_loop', conversationId: id, cwd: next.cwd, goalLoop: next.goalLoop });
     }
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
     void ctx.persist();

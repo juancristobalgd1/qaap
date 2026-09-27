@@ -23,7 +23,15 @@ import {
     QaapLinkConversationsByBranchRequest,
     QaapRenameAgentConversationRequest,
     QaapUpdateAgentConversationRequest,
+    toConversationSummary,
 } from '../common/qaap-agent-conversation';
+import {
+    finishGoalLoop,
+    isGoalLoopActive,
+    isGoalLoopPhaseTerminal,
+    isGoalLoopStateActive,
+    type QaapAgentGoalLoopState,
+} from '../common/qaap-agent-goal-loop';
 import { type QaapAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { type QaapCliAgUiStreamEmitter, } from '@theia/qaap-shared-core/lib/common/qaap-cli-ag-ui-stream';
 import {
@@ -84,6 +92,8 @@ import {
     MAX_LOOP_SPAWNS_PER_USER_MESSAGE,
     type PostUserMessageInternalOptions,
     type QaapConversationTaskRef,
+    type QaapGoalLoopStoreHooks,
+    type QaapGoalLoopTurnSettlement,
 } from './qaap-agent-conversation-store-constants';
 // Re-export constants and error class for external consumers
 export {
@@ -512,6 +522,52 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public resolveStructuredParsedTraceEvents(message: QaapAgentMessage, parsed: { segments?: QaapAgentMessage['segments']; traceEvents?: QaapAgentMessage['traceEvents']; }, ): QaapAgentMessage['traceEvents'] {
         return resolveStructuredParsedTraceEventsExtracted(this, message, parsed);
+    }
+
+    /**
+     * Goal loop runner callbacks, registered by `QaapAgentGoalLoopRunner` at startup. Absent in
+     * unit harnesses that construct the store without the runner.
+     */
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public goalLoopHooks: QaapGoalLoopStoreHooks | undefined;
+
+    setGoalLoopHooks(hooks: QaapGoalLoopStoreHooks | undefined): void {
+        this.goalLoopHooks = hooks;
+    }
+
+    /** Replaces the conversation's goal loop state and publishes it (`goal_loop` + `updated`). */
+    setGoalLoop(conversationId: string, goalLoop: QaapAgentGoalLoopState | undefined): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(conversationId);
+        if (!conv) {
+            return undefined;
+        }
+        const next: QaapAgentConversation = { ...conv, goalLoop };
+        this.conversations.set(conversationId, next);
+        this.fire({ type: 'goal_loop', conversationId, cwd: next.cwd, goalLoop });
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        if (!goalLoop || isGoalLoopPhaseTerminal(goalLoop.phase)) {
+            this.flushPersist();
+        } else {
+            this.schedulePersist();
+        }
+        return next;
+    }
+
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public notifyGoalLoopTurnSettled(settlement: QaapGoalLoopTurnSettlement): boolean {
+        if (!isGoalLoopActive(this.conversations.get(settlement.conversationId))) {
+            return false;
+        }
+        this.goalLoopHooks?.onTurnSettled(settlement);
+        return true;
+    }
+
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public cancelGoalLoopOnConversation(conv: QaapAgentConversation, reason: string): QaapAgentConversation {
+        if (!isGoalLoopStateActive(conv.goalLoop)) {
+            return conv;
+        }
+        return { ...conv, goalLoop: finishGoalLoop(conv.goalLoop, 'cancelled', reason, Date.now()) };
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

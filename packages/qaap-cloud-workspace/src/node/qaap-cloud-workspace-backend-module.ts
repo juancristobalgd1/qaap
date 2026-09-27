@@ -27,6 +27,7 @@ import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
+import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
@@ -274,6 +275,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapHeadlessVisualCaptureService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapHeadlessVisualCaptureService);
     bind(QaapConversationWorktreeService).toSelf().inSingletonScope();
+    // "Until done" goal loops: registers its turn hook on the store at construction, and sweeps
+    // budgets from onStart — eager via the contribution provider.
+    bind(QaapAgentGoalLoopRunner).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentGoalLoopRunner);
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);
     bind(QaapAgentApprovalStore).toSelf().inSingletonScope();
