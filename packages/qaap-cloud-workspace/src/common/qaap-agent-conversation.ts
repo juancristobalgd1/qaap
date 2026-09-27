@@ -20,6 +20,7 @@ import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/comm
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapParallelRunVariantStats } from './qaap-parallel-run';
+import type { QaapAgentGoalLoopPhase, QaapAgentGoalLoopState } from './qaap-agent-goal-loop';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
 export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
@@ -165,6 +166,8 @@ export interface QaapAgentMessage {
      * preserves traceability.
      */
     readonly batchedFromMessageIds?: ReadonlyArray<string>;
+    /** Set on user messages posted by the goal loop: the 1-based loop iteration this turn is. */
+    readonly goalLoopIteration?: number;
 }
 
 export interface QaapContextCompaction {
@@ -267,6 +270,8 @@ export interface QaapAgentConversation {
      * a single agent turn to save tokens. See {@link QaapPendingUserMessage}.
      */
     readonly pendingUserMessages?: ReadonlyArray<QaapPendingUserMessage>;
+    /** "Until done" goal loop driving this conversation (kept after it ends for the UI). */
+    readonly goalLoop?: QaapAgentGoalLoopState;
 }
 
 /** Summary row used by list endpoints — omits messages to keep payloads small. */
@@ -344,6 +349,11 @@ export interface QaapAgentConversationSummary {
     readonly visualVerificationPending?: boolean;
     /** Number of user messages queued for the next agent turn (delivery mode `'queue'`). */
     readonly pendingUserMessageCount?: number;
+    /** Goal loop phase, when the conversation has (or had) a goal loop. */
+    readonly goalLoopPhase?: QaapAgentGoalLoopPhase;
+    readonly goalLoopIteration?: number;
+    readonly goalLoopMaxIterations?: number;
+    readonly goalLoopStopReason?: string;
 }
 
 /** Conversations bucketed by project working directory. */
@@ -500,7 +510,8 @@ export type QaapAgentConversationEvent =
     | { readonly type: 'deleted'; readonly conversationId: string; readonly cwd: string }
     | { readonly type: 'parallel-run'; readonly runId: string; readonly cwd: string; readonly variants: readonly QaapParallelRunVariantStats[] }
     | { readonly type: 'pending-queued'; readonly conversationId: string; readonly cwd: string; readonly message: QaapPendingUserMessage }
-    | { readonly type: 'pending-drained'; readonly conversationId: string; readonly cwd: string; readonly drainedCount: number };
+    | { readonly type: 'pending-drained'; readonly conversationId: string; readonly cwd: string; readonly drainedCount: number }
+    | { readonly type: 'goal_loop'; readonly conversationId: string; readonly cwd: string; readonly goalLoop?: QaapAgentGoalLoopState };
 
 /** Status exposed to list rows — keeps `failed` when a user turn still carries an error. */
 export function resolveEffectiveConversationStatus(conv: QaapAgentConversation): QaapAgentConversationStatus {
@@ -565,6 +576,12 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         linkedPullRequest: conv.linkedPullRequest,
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,
+        ...(conv.goalLoop ? {
+            goalLoopPhase: conv.goalLoop.phase,
+            goalLoopIteration: conv.goalLoop.iteration,
+            goalLoopMaxIterations: conv.goalLoop.budget.maxIterations,
+            ...(conv.goalLoop.stopReason ? { goalLoopStopReason: conv.goalLoop.stopReason } : {}),
+        } : {}),
     };
     const metrics = buildConversationListMetrics({ status, messages: conv.messages });
     const hasGitOperation = metrics.hasGitOperation || conv.linkedPullRequest
