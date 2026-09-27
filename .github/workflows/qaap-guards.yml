@@ -1,0 +1,79 @@
+# Cheap, deterministic guards that are REQUIRED status checks on master
+# (branch protection requires the `qaap-guards` check by name — rename with care).
+#
+# No paths-ignore on purpose: a required check that is skipped by a path filter
+# never reports, which would leave docs-only PRs blocked on "Expected".
+#
+# The drift check compares against the reviewed Theia revision pinned in
+# scripts/qaap-upstream-base.txt (not refs/heads/upstream/master), so the job
+# fetches exactly that commit, trees only.
+name: Qaap guards
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: qaap-guards-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qaap-guards:
+    name: qaap-guards
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      NODE_OPTIONS: --max_old_space_size=4096
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Fetch reviewed upstream Theia base
+        shell: bash
+        run: |
+          upstream_base="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' scripts/qaap-upstream-base.txt)"
+          if [[ ! "$upstream_base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid upstream base in scripts/qaap-upstream-base.txt: $upstream_base" >&2
+            exit 2
+          fi
+          git remote add upstream https://github.com/eclipse-theia/theia.git
+          for attempt in 1 2 3; do
+            if git -c http.version=HTTP/1.1 fetch --no-tags --depth=1 --filter=blob:none upstream "$upstream_base"; then
+              break
+            fi
+            if (( attempt == 3 )); then
+              echo "Unable to fetch reviewed upstream base: $upstream_base" >&2
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
+          git cat-file -e "${upstream_base}^{commit}"
+
+      # Before npm ci so a drift/graph failure reports in seconds.
+      - name: Drift check
+        run: node scripts/qaap-drift-check.js
+
+      - name: Install
+        run: npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
+
+      # Needs the `typescript` package from node_modules.
+      - name: Package graph check
+        run: node scripts/qaap-package-graph-check.js
+
+      - name: Compile
+        run: npm run compile
