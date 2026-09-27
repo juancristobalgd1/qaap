@@ -362,6 +362,40 @@ export function ownerAtConcurrencyCapExtracted(ctx: QaapAgentTaskRunnerContext, 
         return ctx.runningTaskCountForOwner(owner) >= cap;
 }
 
+/**
+ * Tasks share a repository slot when they run in the same resolved cwd. Windows paths are
+ * case-insensitive, so the key is lower-cased there to avoid two spellings escaping the cap.
+ */
+function repoConcurrencyKey(cwd: string | undefined): string {
+        if (!cwd?.trim()) {
+            return '';
+        }
+        const resolved = path.resolve(cwd);
+        return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+export function runningTaskCountForRepoExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): number {
+        const repoKey = repoConcurrencyKey(cwd);
+        if (!repoKey) {
+            return 0;
+        }
+        let count = 0;
+        for (const task of ctx.tasks.values()) {
+            if ((task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) && repoConcurrencyKey(task.cwd) === repoKey) {
+                count++;
+            }
+        }
+        return count;
+}
+
+export function repoAtConcurrencyCapExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string | undefined): boolean {
+        const cap = ctx.maxConcurrentAgentsPerRepo();
+        if (cap <= 0 || !cwd?.trim()) {
+            return false;
+        }
+        return ctx.runningTaskCountForRepo(cwd) >= cap;
+}
+
 function queueOwnerKey(ownerLogin: string | undefined): string {
         return ownerLogin?.trim().toLowerCase() ?? '';
 }
@@ -444,10 +478,12 @@ export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void
         return;
         }
         while (ctx.countRunningTasks() < ctx.maxConcurrentAgents()) {
-            // Skip queued tasks whose owner is already at their per-user cap so one busy user can't
-            // block everyone behind them in the FIFO queue — promote the next eligible tenant instead.
+            // Skip queued tasks whose owner or repository is already at its cap so one busy user or
+            // repo can't block everyone behind them in the FIFO queue — promote the next eligible task.
             const next = [...ctx.tasks.values()]
-                .filter(task => task.state === 'queued' && !ctx.ownerAtConcurrencyCap(task.ownerLogin))
+                .filter(task => task.state === 'queued'
+                    && !ctx.ownerAtConcurrencyCap(task.ownerLogin)
+                    && !ctx.repoAtConcurrencyCap(task.cwd))
                 .sort(compareQueuedTasks)[0];
             if (!next) {
                 return;
