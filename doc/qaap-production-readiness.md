@@ -30,16 +30,23 @@ is explicitly supplied. CI always uses the checked-out Dockerfile pin.
 
 ## Remaining launch blockers
 
-No VPS is currently provisioned (operator update). Live migration, OAuth,
-multi-user isolation and recovery exercises below remain pending until a Linux
-environment is available; the historical host address is not a current target.
+Operator update (2026-09-27): a Linux VPS is provisioned and serving the beta.
+The two-account multi-tenant test was run there on 2026-09-26 with the
+operator's own two GitHub accounts, both admitted as operators and beta logins,
+so real GitHub OAuth login works on that host. Items 2 and 3 below are done;
+the remaining items are still open.
 
 1. Review the pending login/approval/agent changes and select a release commit.
-2. Configure server-side invitations and verify two-account isolation on Linux,
-   including HTTP, WebSocket, files, terminals, previews, worktrees and tasks.
-3. Run the mandatory multi-user release gate. Missing tenants or failed isolation
-   now block release; execute it against the real Linux instance.
-4. Run OAuth and an actual provider through repository → task → diff → Git,
+2. ~~Configure server-side invitations and verify two-account isolation on Linux,
+   including HTTP, WebSocket, files, terminals, previews, worktrees and tasks.~~
+   Done on the VPS (2026-09-26).
+3. ~~Run the mandatory multi-user release gate. Missing tenants or failed isolation
+   now block release; execute it against the real Linux instance.~~
+   Done on the VPS (2026-09-26).
+   Before admitting third-party (non-operator) logins, configure
+   `QAAP_PREVIEW_BASE_DOMAIN` (separate registrable domain, wildcard DNS/TLS);
+   without it the production boot guard refuses to start.
+4. Run an actual provider through repository → task → diff → Git,
    including cancel, reconnect and server restart. The existing CI mock is not
    a replacement for this check.
 5. Execute the new image verification job in Linux CI and resolve any runtime
