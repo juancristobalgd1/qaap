@@ -112,39 +112,37 @@ export function sidebarGitActionKindFromText(text: string): QaapSidebarGitAction
     if (/\bgit\s+(?:checkout\s+-b|switch\s+-c|branch\b)/i.test(text)) {
         return 'branch';
     }
-    if (/\bgit\s+(?:add|status|diff|restore|checkout|switch)\b/i.test(text)) {
-        return 'changes';
-    }
     return 'changes';
 }
 
 /**
  * Newest composer git-action marker or git CLI invocation in the thread.
  * Used by the sessions sidebar so rows can show branch/commit/push icons — not only PR.
+ *
+ * Only executed actions count: composer markers and tool-call arguments. Prose, thinking
+ * and tool output are ignored so "you can now `git push`" or a README that mentions
+ * `git commit` never shows the row as pushed / committed.
  */
 export function resolveLastSidebarGitActionKind(
     messages: QaapAgentConversationListMetricsInput['messages'],
 ): QaapSidebarGitActionKind | undefined {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
+        const segments = resolveMetricMessageSegments(message);
+        for (let segmentIndex = segments.length - 1; segmentIndex >= 0; segmentIndex -= 1) {
+            const segment = segments[segmentIndex];
+            if (segment.type !== 'tool') {
+                continue;
+            }
+            const fromTool = sidebarGitActionKindFromText(segment.args ?? '');
+            if (fromTool) {
+                return fromTool;
+            }
+        }
         if (message.role === 'user') {
             const marker = parseComposerGitActionDisplayMarker(message.content);
             if (marker && marker.status !== 'failed') {
                 return sidebarGitActionKindFromWorkflow(marker.action);
-            }
-            const fromUser = sidebarGitActionKindFromText(message.content);
-            if (fromUser) {
-                return fromUser;
-            }
-        }
-        for (const text of collectMessageTexts(message)) {
-            const marker = parseComposerGitActionDisplayMarker(text);
-            if (marker && marker.status !== 'failed') {
-                return sidebarGitActionKindFromWorkflow(marker.action);
-            }
-            const fromText = sidebarGitActionKindFromText(text);
-            if (fromText) {
-                return fromText;
             }
         }
     }

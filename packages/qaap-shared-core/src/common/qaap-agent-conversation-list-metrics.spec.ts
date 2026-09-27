@@ -112,6 +112,25 @@ describe('resolveLastSidebarGitActionKind', () => {
             { role: 'user', content: marker, createdAt: 2 },
         ])).to.equal('push');
     });
+
+    it('ignores git verbs that only appear in prose or tool output', () => {
+        expect(resolveLastSidebarGitActionKind([
+            {
+                role: 'agent',
+                content: 'Done. You can now run `git push` to publish the branch.',
+                createdAt: 1,
+                segments: [{
+                    type: 'tool',
+                    toolUseId: 'tu1',
+                    name: 'Read',
+                    args: '{"file_path":"README.md"}',
+                    result: 'Run git commit -m "msg" && git push when ready.',
+                    finished: true,
+                }],
+            },
+            { role: 'user', content: 'please git push it later', createdAt: 2 },
+        ])).to.equal(undefined);
+    });
 });
 
 describe('parseDiffStatsFromText', () => {
