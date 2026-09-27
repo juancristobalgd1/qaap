@@ -62,6 +62,8 @@ export interface MobileProjectsOverlayFactoryHost {
     readPreference?: (key: string) => unknown;
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
     stickyComposerQaiqModels?: readonly import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapQaiqModelOption[];
+    /** Opens Work Hub preferences (e.g. `ai-features`) when the model menu has no BYOK keys. */
+    openPreferencesSheet?: (query?: string) => Promise<void>;
 }
 
 /** Lazily constructs parallel/team/home overlay UI bundles wired to the panel host. */
@@ -84,6 +86,9 @@ export class MobileProjectsOverlayFactoryUi {
             readPreference: key => this.host.readPreference?.(key),
             getRegisteredLanguageModels: () => this.host.getRegisteredLanguageModels?.() ?? Promise.resolve([]),
             getWorkspaceQaiqModels: () => this.host.stickyComposerQaiqModels ?? [],
+            openPreferencesSheet: async query => {
+                await this.host.openPreferencesSheet?.(query);
+            },
             buildVariantTaskRow: (project, summary, activeInfo, parentIds, options) => {
                 const task = this.host.conversationIndexUi.summaryToTaskView(summary);
                 return this.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {

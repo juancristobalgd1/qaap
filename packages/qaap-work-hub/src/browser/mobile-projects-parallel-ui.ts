@@ -46,6 +46,8 @@ export interface MobileProjectsParallelUiDeps {
     readPreference?: (key: string) => unknown;
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
     getWorkspaceQaiqModels?: () => readonly QaapQaiqModelOption[];
+    /** Opens Work Hub preferences (e.g. `ai-features`) when the model menu has no BYOK keys. */
+    openPreferencesSheet?: (query?: string) => Promise<void>;
     buildVariantTaskRow(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -646,15 +648,32 @@ export class MobileProjectsParallelUi {
             return;
         }
         if (models.length === 0) {
+            const usesSettingsCatalog = agentUsesSettingsModelCatalog(agent.id);
             const empty = document.createElement('div');
             empty.className = 'theia-mobile-parallel-model-menu-note';
-            empty.textContent = agentUsesSettingsModelCatalog(agent.id)
+            empty.textContent = usesSettingsCatalog
                 ? nls.localize(
                     'qaap/mobileProjects/stickyComposerNoQaiqModels',
                     'Add an API key in Settings → AI Features to choose a model.',
                 )
                 : nls.localize('qaap/mobileProjects/parallelModelEmpty', 'No models available.');
             list.append(empty);
+            if (usesSettingsCatalog && this.deps.openPreferencesSheet) {
+                const settingsButton = document.createElement('button');
+                settingsButton.type = 'button';
+                settingsButton.className = 'theia-qaap-agent-sheet-settings-cta';
+                settingsButton.textContent = nls.localize(
+                    'qaap/mobileProjects/openAiFeaturesSettings',
+                    'Open AI Features settings',
+                );
+                settingsButton.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.closeParallelModelMenu();
+                    void this.deps.openPreferencesSheet?.('ai-features');
+                });
+                list.append(settingsButton);
+            }
             return;
         }
         const selectedModel = this.selectedAgentModels.get(agent.id) ?? readStoredAgentModel(cwd, agent.id);
