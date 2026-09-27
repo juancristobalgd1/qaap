@@ -11,6 +11,9 @@ import type { QaapAgentTask, QaapAgentTaskVerification } from '../common/qaap-ag
 import type { QaapGoalLoopTurnOutcome } from './qaap-agent-conversation-store-constants';
 import type { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import type { QaapAgentTaskRunner, QaapGenericCommandResult } from './qaap-agent-task-runner';
+import type { QaapPushNotifyRequest } from '../common/qaap-cloud-api-types';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { notifyCompletionExtracted } from './qaap-agent-task-runner-tool-pills2';
 import {
     QAAP_AGENT_GOAL_LOOP_STALE_EXECUTING_MS,
     QaapAgentGoalLoopError,
@@ -419,6 +422,67 @@ describe('QaapAgentGoalLoopRunner', () => {
         expect(store.posted.map(post => post.content)).to.deep.equal(['Ship it', 'Also add a logout button']);
         await settle();
         expect(loop().phase).to.equal('completed');
+    });
+
+    describe('Web Push', () => {
+        let pushes: QaapPushNotifyRequest[];
+
+        beforeEach(() => {
+            pushes = [];
+            (runner as unknown as Record<string, unknown>).webPush = {
+                notify: async (request: QaapPushNotifyRequest) => {
+                    pushes.push(request);
+                    return { sent: 1, failed: 0 };
+                },
+            };
+        });
+
+        it('sends one push when the loop completes, with the agent and diff counts', async () => {
+            taskRunner.evaluatorReplies.push(DONE);
+            runner.start(CONVERSATION_ID, { goal: 'Ship it' });
+            store.conversations.set(CONVERSATION_ID, { ...store.get(CONVERSATION_ID)!, gitDiffAdded: 12, gitDiffRemoved: 3 });
+            await settle('success', { status: 'passed', command: 'npm run test', attempts: 0 });
+            await runner.sendTerminalPush(terminal[0]);
+            expect(pushes).to.have.length(1);
+            expect(pushes[0]).to.deep.include({
+                title: 'Goal completed',
+                tag: `qaap-goal-loop-${CONVERSATION_ID}`,
+                route: 'conversation',
+                conversationId: CONVERSATION_ID,
+                cwd: '/repo',
+                userLogin: 'octocat',
+            });
+            expect(pushes[0].body).to.equal('claude: Login · +12 / -3 lines');
+        });
+
+        it('pushes the stop reason when blocked, and nothing when cancelled', async () => {
+            runner.start(CONVERSATION_ID, { goal: 'Ship it' });
+            await settle('blocked', undefined, 'Which OAuth provider?');
+            await runner.sendTerminalPush(terminal[0]);
+            expect(pushes[0].title).to.equal('Goal loop stopped');
+            expect(pushes[0].body).to.contain('Which OAuth provider?');
+
+            const cancelled = { ...terminal[0], goalLoop: { ...terminal[0].goalLoop, phase: 'cancelled' as const } };
+            expect(runner.buildTerminalPush(cancelled)).to.equal(undefined);
+            await runner.sendTerminalPush(cancelled);
+            expect(pushes).to.have.length(1);
+        });
+
+        it('suppresses the per-turn completion push while a loop is active', async () => {
+            const sent: QaapPushNotifyRequest[] = [];
+            let loopActive = true;
+            const ctx = {
+                conversationIdForTask: () => CONVERSATION_ID,
+                suppressCompletionPushForConversation: () => loopActive,
+                webPush: { notify: async (request: QaapPushNotifyRequest) => { sent.push(request); return { sent: 1, failed: 0 }; } },
+            } as unknown as QaapAgentTaskRunnerContext;
+            await notifyCompletionExtracted(ctx, task('t-push'));
+            expect(sent).to.have.length(0);
+            loopActive = false;
+            await notifyCompletionExtracted(ctx, task('t-push'));
+            expect(sent).to.have.length(1);
+            expect(sent[0].title).to.equal('Task finished');
+        });
     });
 
     it('sweeps loops past their wall clock and loops whose turn vanished', () => {

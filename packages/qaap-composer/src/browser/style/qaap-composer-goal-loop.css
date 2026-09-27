@@ -1,0 +1,116 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/* "Until done" toolbar toggle (agent goal loop) — sits next to the mode / approval controls. */
+.theia-mobile-projects-sticky-composer-until-done {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  align-self: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--theia-foreground) 78%, transparent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.theia-mobile-projects-sticky-composer-until-done .codicon {
+  font-size: 13px;
+}
+
+.theia-mobile-projects-sticky-composer-until-done:hover,
+.theia-mobile-projects-sticky-composer-until-done:focus-visible {
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-mobile-projects-sticky-composer-until-done.theia-mod-checked {
+  color: var(--theia-textLink-foreground);
+  border-color: color-mix(in srgb, var(--theia-textLink-foreground) 40%, transparent);
+  background: color-mix(in srgb, var(--theia-textLink-foreground) 12%, transparent);
+}
+
+.theia-mobile-projects-sticky-composer-until-done.theia-mod-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.theia-mobile-projects-sticky-composer-until-done.theia-mod-disabled:hover {
+  background: transparent;
+}
+
+/* Narrow viewport (keep in sync with MOBILE_NARROW_VIEWPORT_MEDIA_QUERY): icon-only toggle. */
+@media (max-width: 767px) {
+  .theia-mobile-projects-sticky-composer-until-done {
+    padding: 0 7px;
+  }
+
+  .theia-mobile-projects-sticky-composer-until-done-label {
+    display: none;
+  }
+}
+
+/* Iteration pill on the strip above the composer card — same chip language as the Step pill. */
+.theia-mobile-sticky-composer-goal-loop-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-textLink-foreground) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
+  color: color-mix(in srgb, var(--theia-foreground) 86%, var(--theia-descriptionForeground));
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.theia-mobile-sticky-composer-goal-loop-pill .codicon {
+  font-size: 12px;
+  color: var(--theia-textLink-foreground);
+}
+
+.theia-mobile-sticky-composer-goal-loop-pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+@supports (backdrop-filter: blur(14px)) or (-webkit-backdrop-filter: blur(14px)) {
+  .theia-mobile-sticky-composer-goal-loop-pill {
+    background: color-mix(in srgb, var(--theia-editor-background) 58%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+    backdrop-filter: blur(14px) saturate(150%);
+  }
+}
+
+@media (max-width: 767px) {
+  .theia-mobile-sticky-composer-goal-loop-pill {
+    max-width: 62vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-sticky-composer-goal-loop-pill .codicon-modifier-spin {
+    animation: none;
+  }
+}

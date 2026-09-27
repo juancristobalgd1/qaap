@@ -3,12 +3,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
 import { AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia/ai-core';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import {
     conversationToSummary,
     getConversation,
     postConversationMessage,
+    startGoalLoop,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapMessageDeliveryMode,
@@ -81,6 +83,8 @@ export interface MobileProjectsTranscriptSubmitHost {
             variables?: AIVariableResolutionRequest[];
             agentModel?: QaapCreateAgentTaskQaiqModel;
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
+            /** Create without a message, then start an "Until done" goal loop with the draft. */
+            untilDone?: boolean;
         },
     ): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
@@ -257,6 +261,8 @@ export class MobileProjectsTranscriptSubmitUi {
              * When `parallel` is true, this is set to 'parallel' for backward compatibility.
              */
             deliveryMode?: QaapMessageDeliveryMode;
+            /** Start an "Until done" goal loop (draft = goal + first prompt) instead of one turn. */
+            untilDone?: boolean;
         } = {},
     ): Promise<boolean> {
         // Reports whether the message was actually submitted. A concurrent send that lands while
@@ -309,6 +315,7 @@ export class MobileProjectsTranscriptSubmitUi {
             parallel?: boolean;
             /** Delivery mode: 'queue', 'parallel', or 'interrupt'. */
             deliveryMode?: QaapMessageDeliveryMode;
+            untilDone?: boolean;
         } = {},
         submitAt = Date.now(),
     ): Promise<void> {
@@ -342,6 +349,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 variables: options.variables,
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
                 latencyMarks: this.host.conversations?.getSubmitLatencyMarks(summary.id),
+                ...(options.untilDone ? { untilDone: true } : {}),
             });
             this.host.conversations?.recordSubmitLatencyMark(created.id, 'ui_submit_clicked', submitAt);
             if (optimisticAt !== undefined) {
@@ -456,7 +464,9 @@ export class MobileProjectsTranscriptSubmitUi {
         try {
             const agentModel = options.agentModel ?? this.resolveTranscriptSubmitAgentModel(agent, summary);
             this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_start');
-            const updated = await postConversationMessage(summary.id, outbound, {
+            const updated = options.untilDone
+                ? await this.startGoalLoopFromComposer(summary.id, base, content, outbound)
+                : await postConversationMessage(summary.id, outbound, {
                 agent,
                 agentModel,
                 clientMessageId: pendingUserMessage.id,
@@ -508,6 +518,27 @@ export class MobileProjectsTranscriptSubmitUi {
             }
             throw error;
         }
+    }
+
+    /**
+     * "Until done" on an existing thread: the backend posts the first loop turn itself, so the
+     * draft is the goal and the expanded outbound text the first prompt. Start-guard rejections
+     * (manual approval, Plan mode, busy turn) come back as 4xx messages and surface as a toast.
+     */
+    protected async startGoalLoopFromComposer(
+        conversationId: string,
+        base: QaapAgentConversationDTO,
+        draft: string,
+        outbound: string,
+    ): Promise<QaapAgentConversationDTO> {
+        if (base.status === 'streaming') {
+            throw new Error(nls.localize(
+                'theia/qaap/goalLoop/startWhileStreaming',
+                'Wait for the current turn to finish before starting Until done.',
+            ));
+        }
+        await startGoalLoop(conversationId, { goal: draft.trim() || outbound, initialPrompt: outbound });
+        return getConversation(conversationId);
     }
 
     protected shouldShowOptimisticContextCompaction(

@@ -75,6 +75,13 @@ interface ConversationPendingDrainedEvent {
     readonly cwd: string;
     readonly drainedCount: number;
 }
+/** Goal loop ("Until done") state change; the summary fields are patched from it. */
+export interface ConversationGoalLoopEvent {
+    readonly type: 'goal_loop';
+    readonly conversationId: string;
+    readonly cwd: string;
+    readonly goalLoop?: import('../common/qaap-agent-conversation-client').QaapAgentGoalLoopStateDTO;
+}
 interface ConversationSnapshotEvent {
     readonly type: 'snapshot';
     readonly groups: ReadonlyArray<{
@@ -91,6 +98,7 @@ export type ConversationServerEvent =
     | ConversationParallelRunEvent
     | ConversationPendingQueuedEvent
     | ConversationPendingDrainedEvent
+    | ConversationGoalLoopEvent
     | { readonly type: 'pong' }
     | { readonly type: 'heartbeat' };
 

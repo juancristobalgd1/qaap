@@ -16,6 +16,7 @@ import {
 } from '../common/qaap-agent-message-wire-compress';
 import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
 import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
+import { goalLoopSummaryFields } from '../common/qaap-agent-goal-loop-labels';
 import { normalizeCwd } from './mobile-projects-active-tasks';
 import { SSE_RECONNECT_DELAY_MS, WS_RECONNECT_MAX_MS } from './mobile-projects-conversations';
 import type { ConversationMessageDeltaEvent, ConversationMessageEvent, ConversationServerEvent } from './mobile-projects-conversations';
@@ -76,6 +77,23 @@ export function dispatchServerPayloadExtracted(ctx: MobileProjectsConversationsC
                     cwd: payload.cwd,
                 });
                 return;
+            case 'goal_loop': {
+                // `updated` carries the same fields, but its summary can lose a same-tick merge
+                // against a newer streaming row; patch the loop fields onto the stored summary.
+                const current = ctx.threadStore.getSummary(payload.conversationId);
+                if (!current || ctx.deletedConversationIds.has(payload.conversationId)) {
+                    return;
+                }
+                const result = ctx.upsert({ ...current, ...goalLoopSummaryFields(payload.goalLoop) });
+                ctx.emitConversationChange({
+                    kind: 'updated',
+                    conversationId: payload.conversationId,
+                    cwd: payload.cwd,
+                    changedFields: result.changedFields,
+                    listOrderChanged: result.listOrderChanged,
+                });
+                return;
+            }
             case 'pong':
             case 'heartbeat':
                 // Transport-liveness frames carry no conversation payload — they only prove the

@@ -422,7 +422,7 @@ export async function runOneShotCommand(
         const timer = setTimeout(() => {
             cleanupPromptTempDir();
             deps.killAgentProcessTree(child);
-            reject(new Error('Prompt improvement timed out.'));
+            reject(new Error(`Agent call timed out after ${Math.round(timeoutMs / 1000)}s.`));
         }, timeoutMs);
         child.stdout?.on('data', (chunk: Buffer | string) => {
             stdout += String(chunk);

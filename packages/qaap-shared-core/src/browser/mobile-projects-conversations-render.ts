@@ -402,6 +402,7 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
             source.addEventListener('parallel-run', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('pending-queued', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('pending-drained', ev => ctx.dispatchSseEvent(ev as MessageEvent));
+            source.addEventListener('goal_loop', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('heartbeat', () => ctx.onDidReceiveTransportActivityEmitter.fire());
             source.addEventListener('open', () => {
                 if (ctx.transportWasDisconnected) {

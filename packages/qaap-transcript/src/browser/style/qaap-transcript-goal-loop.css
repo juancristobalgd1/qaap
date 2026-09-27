@@ -1,0 +1,72 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/* Goal loop ("Until done") phase chip in the transcript header, before the execution tabs. */
+.theia-mobile-transcript-goal-loop-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  align-self: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 40vw;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+  color: color-mix(in srgb, var(--theia-foreground) 86%, var(--theia-descriptionForeground));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.theia-mobile-transcript-goal-loop-chip-icon {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.theia-mobile-transcript-goal-loop-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-mobile-transcript-goal-loop-chip.theia-mod-running .theia-mobile-transcript-goal-loop-chip-icon {
+  color: var(--theia-textLink-foreground);
+}
+
+.theia-mobile-transcript-goal-loop-chip.theia-mod-ok {
+  color: var(--theia-testing-iconPassed);
+  border-color: color-mix(in srgb, var(--theia-testing-iconPassed) 40%, transparent);
+  background: color-mix(in srgb, var(--theia-testing-iconPassed) 10%, transparent);
+}
+
+.theia-mobile-transcript-goal-loop-chip.theia-mod-fail {
+  color: var(--theia-editorWarning-foreground);
+  border-color: color-mix(in srgb, var(--theia-editorWarning-foreground) 40%, transparent);
+  background: color-mix(in srgb, var(--theia-editorWarning-foreground) 10%, transparent);
+}
+
+.theia-mobile-transcript-goal-loop-chip.theia-mod-cancelled {
+  color: var(--theia-descriptionForeground);
+}
+
+/* Narrow viewport (767px, see MOBILE_NARROW_VIEWPORT_MEDIA_QUERY): keep the tabs room. */
+@media (max-width: 767px) {
+  .theia-mobile-transcript-goal-loop-chip {
+    max-width: 34vw;
+    padding: 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-transcript-goal-loop-chip .codicon-modifier-spin {
+    animation: none;
+  }
+}

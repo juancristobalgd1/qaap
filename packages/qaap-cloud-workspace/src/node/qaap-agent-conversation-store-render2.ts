@@ -10,6 +10,7 @@ import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap
 
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 
+import { isGoalLoopActive } from '../common/qaap-agent-goal-loop';
 import { QAAP_DEFAULT_DELIVERY_MODE, QaapAgentConversation, QaapAgentConversationStatus, QaapAgentConversationSummary, QaapAgentMessage, QaapCreateAgentConversationRequest, QaapLinkConversationsByBranchRequest, QaapMessageDeliveryMode, QaapPendingUserMessage, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { agentSupportsModelPicker, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
@@ -59,6 +60,9 @@ export function initExtracted(ctx: QaapAgentConversationStoreContext): void {
     ctx.taskRunner.onDidChangeTask(event => ctx.onTaskChanged(event));
     // Let completion pushes deep-link into the conversation session that spawned the task.
     ctx.taskRunner.conversationIdForTask = (taskId: string) => ctx.taskToConversation.get(taskId)?.conversationId;
+    // A goal loop sends one push when it ends; per-turn completion pushes stay quiet meanwhile.
+    ctx.taskRunner.suppressCompletionPushForConversation = (conversationId: string) =>
+        isGoalLoopActive(ctx.conversations.get(conversationId));
     ctx.startTurnWatchdog();
 }
 

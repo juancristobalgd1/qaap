@@ -397,6 +397,9 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
         // Deep-link target: the Work Hub session that spawned this task (when known),
         // so tapping the notification lands on the agent conversation, not a generic surface.
         const conversationId = ctx.conversationIdForTask?.(task.id);
+        if (conversationId && ctx.suppressCompletionPushForConversation?.(conversationId)) {
+            return;
+        }
         const link = { route: 'conversation' as const, conversationId, cwd: task.cwd, userLogin: task.ownerLogin };
         if (task.state === 'completed_with_warnings') {
             try {

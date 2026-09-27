@@ -18,6 +18,8 @@ export const STEP_MENU_LIST_CLASS = 'theia-mobile-sticky-composer-step-menu-list
 /** Same host class as Working-only so both pills share one strip above the card. */
 const PILLS_ONLY_HOST_CLASS = 'theia-mod-working-only';
 const STEP_PILL_LABEL_CLASS = 'theia-mobile-sticky-composer-step-pill-label';
+/** Goal loop pill (`qaap-sticky-composer-goal-loop-pill.ts`) shares this strip; literal to avoid an import cycle. */
+const GOAL_LOOP_PILL_SELECTOR = '.theia-mobile-sticky-composer-goal-loop-pill';
 
 interface StepMenuSession {
     readonly pill: HTMLButtonElement;
@@ -46,11 +48,11 @@ export function syncStickyComposerStepPill(
     if (!progress) {
         closeStickyComposerStepMenu(true);
         removeStepPills(wrap);
-        pruneEmptyPillsOnlyHost(wrap);
+        pruneStickyComposerPillsOnlyHost(wrap);
         return;
     }
 
-    const row = ensurePillRow(wrap, card);
+    const row = ensureStickyComposerPillRow(wrap, card);
     if (!row) {
         return;
     }
@@ -93,7 +95,8 @@ export function closeStickyComposerStepMenu(force = false): void {
     session.pill.classList.remove('theia-mod-active');
 }
 
-function ensurePillRow(wrap: HTMLElement, card: HTMLElement): HTMLElement | undefined {
+/** The pill strip above the composer card (Changes row, or the pills-only host). */
+export function ensureStickyComposerPillRow(wrap: HTMLElement, card: HTMLElement): HTMLElement | undefined {
     const changesHost = Array.from(
         wrap.querySelectorAll(':scope > .theia-mobile-sticky-composer-changes-pill-host'),
     ).find(host => !host.classList.contains(PILLS_ONLY_HOST_CLASS));
@@ -356,6 +359,21 @@ export function transferStepPillToHost(fromHost: HTMLElement, toHost: HTMLElemen
     }
 }
 
+/** Preserve the goal loop pill across Changes-row remounts, like the Step pill. */
+export function transferGoalLoopPillToHost(fromHost: HTMLElement, toHost: HTMLElement): void {
+    const pill = fromHost.querySelector(GOAL_LOOP_PILL_SELECTOR);
+    const toRow = toHost.querySelector('.theia-mobile-sticky-composer-changes-pill-row');
+    if (!(pill instanceof HTMLElement) || !(toRow instanceof HTMLElement)) {
+        return;
+    }
+    const step = toRow.querySelector(`:scope > .${STEP_PILL_CLASS}`);
+    if (step) {
+        step.after(pill);
+    } else {
+        toRow.insertBefore(pill, toRow.firstChild);
+    }
+}
+
 function renderStepMenu(progress: QaapTodoStepProgress): HTMLElement {
     const menu = document.createElement('div');
     menu.className = STEP_MENU_CLASS;
@@ -436,7 +454,8 @@ function removeStepPills(root: ParentNode): void {
     root.querySelectorAll(`.${STEP_PILL_CLASS}`).forEach(node => node.remove());
 }
 
-function pruneEmptyPillsOnlyHost(wrap: HTMLElement): void {
+/** Drops the pills-only strip once neither Working, Step nor the goal loop pill lives in it. */
+export function pruneStickyComposerPillsOnlyHost(wrap: HTMLElement): void {
     const host = wrap.querySelector(
         `:scope > .theia-mobile-sticky-composer-changes-pill-host.${PILLS_ONLY_HOST_CLASS}`,
     );
@@ -445,7 +464,7 @@ function pruneEmptyPillsOnlyHost(wrap: HTMLElement): void {
     }
     const row = host.querySelector('.theia-mobile-sticky-composer-changes-pill-row');
     const hasWorking = !!row?.querySelector(`.${WORKING_CONTROL_CLASS}, .theia-mobile-sticky-composer-working-pill`);
-    const hasStep = !!row?.querySelector(`.${STEP_PILL_CLASS}`);
+    const hasStep = !!row?.querySelector(`.${STEP_PILL_CLASS}, ${GOAL_LOOP_PILL_SELECTOR}`);
     if (!hasWorking && !hasStep) {
         host.remove();
     }
