@@ -34,6 +34,8 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
+import { parseRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qaap-conversation-rewind-preview';
+import { QaapRewindConfirmationRequiredError } from './qaap-agent-conversation-rewind-preview-git';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION } from './qaap-agent-conversation-store-constants';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
@@ -295,14 +297,40 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     return;
                 }
                 try {
-                    const conv = await this.store.restoreCheckpoint(req.params.id, req.params.checkpointId);
+                    const conv = await this.store.restoreCheckpoint(
+                        req.params.id,
+                        req.params.checkpointId,
+                        parseRewindRestoreOptions(req.body),
+                    );
                     if (!conv) {
                         res.status(404).json({ error: 'Conversation not found.' });
                         return;
                     }
                     res.json(conv);
                 } catch (error) {
-                    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+                    const status = error instanceof QaapRewindConfirmationRequiredError ? 409 : 400;
+                    res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+                }
+            })();
+        });
+        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/rewind/preview`, (req, res) => {
+            void (async () => {
+                if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                    return;
+                }
+                const checkpointId = typeof req.query.checkpoint === 'string' ? req.query.checkpoint : undefined;
+                const messageId = typeof req.query.messageId === 'string' ? req.query.messageId : undefined;
+                try {
+                    const preview = await this.store.previewRewind(req.params.id, { checkpointId, messageId });
+                    if (!preview) {
+                        res.status(404).json({ error: 'Conversation not found.' });
+                        return;
+                    }
+                    res.json(preview);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    const status = message === 'Message not found.' || message === 'Checkpoint not found.' ? 404 : 400;
+                    res.status(status).json({ error: message });
                 }
             })();
         });
@@ -312,7 +340,11 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     return;
                 }
                 try {
-                    const conv = await this.store.rewindToMessage(req.params.id, req.params.messageId);
+                    const conv = await this.store.rewindToMessage(
+                        req.params.id,
+                        req.params.messageId,
+                        parseRewindRestoreOptions(req.body),
+                    );
                     if (!conv) {
                         res.status(404).json({ error: 'Conversation not found.' });
                         return;
@@ -320,7 +352,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     res.json(conv);
                 } catch (error) {
                     const message = error instanceof Error ? error.message : String(error);
-                    const status = message === 'Message not found.' ? 404 : 400;
+                    const status = error instanceof QaapRewindConfirmationRequiredError ? 409 : message === 'Message not found.' ? 404 : 400;
                     res.status(status).json({ error: message });
                 }
             })();

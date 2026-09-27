@@ -34,6 +34,7 @@ import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css';
+import '@theia/qaap-transcript/src/browser/style/qaap-transcript-rewind-preview.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';

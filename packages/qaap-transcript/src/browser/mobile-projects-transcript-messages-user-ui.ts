@@ -11,6 +11,7 @@ import { splitPreviewFeedbackSource, type PreviewFeedbackAnnotationDetail } from
 import { isComposerGitActionOnlyMessage } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 import { isSvgImagePreviewFileName, type QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
 import { resolveTranscriptImagePreviewSrc } from './qaap-transcript-user-attachment-preview-ui';
+import { promptTranscriptRewindPreview } from './qaap-transcript-rewind-preview-dialog';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
@@ -464,8 +465,27 @@ export class MobileProjectsTranscriptMessagesUserUi {
             this.focusTranscriptComposerInput();
             return;
         }
+        // Editing rewinds silently when only agent changes would be reverted; otherwise ask.
+        const decision = await promptTranscriptRewindPreview({
+            conversationId: conv.id,
+            target: { messageId: msg.id },
+            title: nls.localize('qaap/transcriptRewind/editTitle', 'Edit message'),
+            intro: nls.localize(
+                'qaap/transcriptRewind/editIntro',
+                'Editing rewinds the conversation to this message and reverts the files changed after it.',
+            ),
+            confirmLabel: nls.localize('qaap/transcriptRewind/editConfirm', 'Rewind and edit'),
+            skipWhenAllSafe: true,
+        });
+        if (decision.kind === 'cancel') {
+            return;
+        }
         try {
-            const updated = await rewindConversationToMessage(conv.id, msg.id);
+            const updated = await rewindConversationToMessage(
+                conv.id,
+                msg.id,
+                decision.kind === 'restore' ? decision.options : undefined,
+            );
             this.host.conversations?.recordSnapshot(conversationToSummary(updated));
             this.host.transcriptLastFingerprint = undefined;
             if (this.host.transcriptChatHost) {
@@ -487,20 +507,41 @@ export class MobileProjectsTranscriptMessagesUserUi {
         if (!summary || this.host.transcriptOpenSummaryId !== conv.id || summary.source === 'theia-chat') {
             return;
         }
-        const confirmed = await new ConfirmDialog({
-            title: nls.localize('qaap/mobileProjects/transcriptUndoTitle', 'Undo message'),
-            msg: nls.localize(
-                'qaap/mobileProjects/transcriptUndoMsg',
-                'Remove this message and everything after it? Tracked files may revert to the previous checkpoint.',
+        const title = nls.localize('qaap/mobileProjects/transcriptUndoTitle', 'Undo message');
+        const confirmLabel = nls.localize('qaap/mobileProjects/transcriptUserUndo', 'Undo');
+        const decision = await promptTranscriptRewindPreview({
+            conversationId: conv.id,
+            target: { messageId: msg.id },
+            title,
+            intro: nls.localize(
+                'qaap/transcriptRewind/undoIntro',
+                'Remove this message and everything after it, and revert the files changed since the previous checkpoint.',
             ),
-            ok: nls.localize('qaap/mobileProjects/transcriptUserUndo', 'Undo'),
-            cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
-        }).open();
-        if (!confirmed) {
+            confirmLabel,
+        });
+        if (decision.kind === 'cancel') {
             return;
         }
+        if (decision.kind === 'fallback') {
+            const confirmed = await new ConfirmDialog({
+                title,
+                msg: nls.localize(
+                    'qaap/mobileProjects/transcriptUndoMsg',
+                    'Remove this message and everything after it? Tracked files may revert to the previous checkpoint.',
+                ),
+                ok: confirmLabel,
+                cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
+            }).open();
+            if (!confirmed) {
+                return;
+            }
+        }
         try {
-            const updated = await rewindConversationToMessage(conv.id, msg.id);
+            const updated = await rewindConversationToMessage(
+                conv.id,
+                msg.id,
+                decision.kind === 'restore' ? decision.options : undefined,
+            );
             this.host.conversations?.recordSnapshot(conversationToSummary(updated));
             this.host.transcriptLastFingerprint = undefined;
             if (this.host.transcriptChatHost) {
