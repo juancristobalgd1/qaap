@@ -122,7 +122,7 @@ export function renderQaapPreviewLaunchCommand(plan: QaapPreviewLaunchPlan, plat
         const payload = encodeBase64(new TextEncoder().encode(JSON.stringify({ command: plan.command, args: plan.args })));
         const script = [
             `$plan = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${payload}')) | ConvertFrom-Json`,
-            "$port = [string]$env:QAAP_PREVIEW_PORT",
+            '$port = [string]$env:QAAP_PREVIEW_PORT',
             "$argv = @($plan.args | ForEach-Object { ([string]$_).Replace('{{PORT}}', $port) })",
             '& $plan.command @argv',
             'if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }',
