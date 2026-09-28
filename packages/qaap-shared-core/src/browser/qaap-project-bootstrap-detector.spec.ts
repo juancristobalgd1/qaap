@@ -14,6 +14,7 @@ if (!browserGlobals.DragEvent) {
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
+import { OS } from '@theia/core/lib/common/os';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { FileStat } from '@theia/filesystem/lib/common/files';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
@@ -103,6 +104,20 @@ function bindMockFileService(detector: QaapProjectBootstrapDetector, mock: MockF
     (detector as unknown as { fileService: MockFileService }).fileService = mock;
 }
 
+/**
+ * Non-JavaScript launch plans render per backend OS (POSIX argv vs. a PowerShell wrapper), so pin
+ * the backend instead of inheriting the host running the tests.
+ */
+async function detectWithBackend(detector: QaapProjectBootstrapDetector, backend: 'posix' | 'win32'): ReturnType<QaapProjectBootstrapDetector['detect']> {
+    const previousBackendWindows = OS.backend.isWindows;
+    OS.backend.isWindows = backend === 'win32';
+    try {
+        return await detector.detect(URI.fromFilePath('/ws'));
+    } finally {
+        OS.backend.isWindows = previousBackendWindows;
+    }
+}
+
 describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
 
     it('uses an explicit non-JavaScript preview plan with a workspace-contained cwd', async () => {
@@ -123,7 +138,7 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         const detector = new QaapProjectBootstrapDetector();
         bindMockFileService(detector, mock);
 
-        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        const descriptor = await detectWithBackend(detector, 'posix');
         expect(descriptor?.kind).to.equal('python-generic');
         expect(descriptor?.packageManager).to.equal('native');
         expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws/services/docs');
@@ -140,7 +155,7 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         const detector = new QaapProjectBootstrapDetector();
         bindMockFileService(detector, mock);
 
-        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        const descriptor = await detectWithBackend(detector, 'posix');
         expect(descriptor?.kind).to.equal('python-django');
         expect(descriptor?.devCommand).to.include('manage.py');
         expect(descriptor?.expectedPort).to.equal(8000);
@@ -155,10 +170,24 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         const detector = new QaapProjectBootstrapDetector();
         bindMockFileService(detector, mock);
 
-        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        const descriptor = await detectWithBackend(detector, 'posix');
         expect(descriptor?.kind).to.equal('go');
         expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws/server');
         expect(descriptor?.devCommand).to.equal("'go' 'run' '.'");
+    });
+
+    it('wraps a non-JavaScript launch plan in PowerShell on a Windows backend', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/server');
+        mock.addFile('/ws/server/go.mod', 'module example.test/server');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detectWithBackend(detector, 'win32');
+        expect(descriptor?.kind).to.equal('go');
+        expect(descriptor?.devCommand).to.match(/^powershell\.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand \S+$/);
     });
 
     it('detects a Vite app scaffolded in a direct child folder', async () => {
