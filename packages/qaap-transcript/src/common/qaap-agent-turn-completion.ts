@@ -202,6 +202,11 @@ export function isIncompleteAgentTurn(
     if (agentMessageDeliversTaskOutcome(userContent, agentMessage)) {
         return false;
     }
+    // The CLI's tool-failure loop guard ended the turn on purpose: re-posting "keep working" only
+    // replays the same failing tool calls and stacks the identical stop message in the transcript.
+    if (agentMessageReportsToolFailureLoop(agentMessage)) {
+        return false;
+    }
     // Actionable message + role agent + did not deliver an outcome: any produced segments (whether a
     // tool was cut off mid-run or the agent stopped after search/read/planning) mean the turn is
     // incomplete. An empty/ellipsis-only content with no segments is incomplete too.
@@ -213,6 +218,17 @@ export function isIncompleteAgentTurn(
     // still an incomplete actionable turn: requiring a tool segment here silently disables the
     // auto-continue path for exactly the search-only stop it is meant to recover.
     return !content || content === '…' || agentTextLooksLikePlanningOnly(content);
+}
+
+const TOOL_FAILURE_LOOP_STOP_RE = /\bStopped:\s*repeated tool failures detected\b/i;
+
+/** True when the agent turn was ended by the CLI's repeated-tool-failure loop guard. */
+export function agentMessageReportsToolFailureLoop(agentMessage: QaapAgentMessageDTO): boolean {
+    if (TOOL_FAILURE_LOOP_STOP_RE.test(agentMessage.content ?? '') || TOOL_FAILURE_LOOP_STOP_RE.test(agentMessage.error ?? '')) {
+        return true;
+    }
+    return resolveAgentMessageSegments(agentMessage).some(segment =>
+        segment.type === 'text' && TOOL_FAILURE_LOOP_STOP_RE.test(segment.content));
 }
 
 export function buildAgentAutoContinuePrompt(userContent?: string): string {

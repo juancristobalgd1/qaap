@@ -152,9 +152,13 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         const id = randomUUID();
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
-        const autoApprove = resolveAgentAutoApprove(
-            request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
-        );
+        // "Request approval" is authoritative: a stale/omitted autoApprove must never turn it into
+        // auto-allowed writes plus shell calls silently auto-denied after the grace timeout.
+        const autoApprove = request.approvalPolicyId === 'request-approval'
+            ? false
+            : resolveAgentAutoApprove(
+                request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
+            );
         const atCapacity = ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
             || ctx.ownerAtConcurrencyCap(ownerLogin)
             || ctx.repoAtConcurrencyCap(cwd);
