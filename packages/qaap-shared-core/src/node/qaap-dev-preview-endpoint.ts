@@ -6,12 +6,13 @@
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import * as fs from 'fs';
 import * as http from 'http';
 import * as net from 'net';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
-import { QAAP_DEV_PREVIEW_PREFIX } from '../common/qaap-dev-preview';
+import { QAAP_DEV_PREVIEW_PREFIX, type QaapDevPreviewMemoryStatus } from '../common/qaap-dev-preview';
 import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-headers';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel';
@@ -159,6 +160,35 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public async handleIdentityProbe(req: Request, res: Response): Promise<void> {
         return handleIdentityProbeExtracted(this, req, res);
+    }
+
+    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
+    public async handleMemoryStatus(_req: Request, res: Response): Promise<void> {
+        const status: QaapDevPreviewMemoryStatus = { oomKills: await this.readOomKillCount() };
+        res.setHeader('Cache-Control', 'no-store');
+        res.json(status);
+    }
+
+    /**
+     * Reads `oom_kill` from this process's memory cgroup: cgroup v2 `memory.events`, then the v1
+     * `memory.oom_control`. Inside a tenant container both paths resolve to the container's own
+     * cgroup, so the counter covers every dev server the tenant spawns.
+     */
+    protected async readOomKillCount(): Promise<number | undefined> {
+        if (process.platform !== 'linux') {
+            return undefined;
+        }
+        for (const file of ['/sys/fs/cgroup/memory.events', '/sys/fs/cgroup/memory/memory.oom_control']) {
+            try {
+                const match = /^oom_kill\s+(\d+)\s*$/m.exec(await fs.promises.readFile(file, 'utf8'));
+                if (match) {
+                    return Number(match[1]);
+                }
+            } catch {
+                // Not this cgroup version (or not exposed in this container); try the next file.
+            }
+        }
+        return undefined;
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

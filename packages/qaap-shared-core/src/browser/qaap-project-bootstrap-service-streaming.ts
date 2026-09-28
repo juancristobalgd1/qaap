@@ -134,6 +134,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
         ctx.devOutputTail = '';
         ctx.activeDevPortHint = undefined;
         const runId = ++ctx.devRunGeneration;
+        ctx.devRunOomKillBaseline = ctx.readOomKillCount();
         ctx.setPhase('starting');
 
         let spawnPlan = ctx.buildDevSpawnPlan(plan);

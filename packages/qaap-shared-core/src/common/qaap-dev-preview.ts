@@ -28,6 +28,18 @@ export const QAAP_IDENTITY_PREVIEW_PROBE_PATH = `${QAAP_IDENTITY_PREVIEW_PREFIX}
  */
 export const QAAP_DEV_PREVIEW_CURRENT_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/current`;
 
+/**
+ * Kernel OOM-kill counter of the backend's memory cgroup (the tenant container on the VPS). A dev
+ * server killed for memory exits without a useful error; comparing the counter across a run lets
+ * Preview fail fast instead of auto-retrying a start that will be killed the same way.
+ */
+export const QAAP_DEV_PREVIEW_MEMORY_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/memory`;
+
+export interface QaapDevPreviewMemoryStatus {
+    /** `oom_kill` from the cgroup memory events; absent where the platform does not expose it. */
+    readonly oomKills?: number;
+}
+
 export interface QaapDevPreviewProbeResponse {
     readonly ready: boolean;
     /**

@@ -7,6 +7,7 @@ import * as path from 'path';
 import {
     QAAP_DEV_PREVIEW_CLAIM_PATH,
     QAAP_DEV_PREVIEW_CURRENT_PATH,
+    QAAP_DEV_PREVIEW_MEMORY_PATH,
     QAAP_DEV_PREVIEW_RELEASE_PATH,
     QAAP_DEV_PREVIEW_PREFIX,
     QAAP_DEV_PREVIEW_PROBE_PATH,
@@ -114,6 +115,12 @@ export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Appl
             return;
         }
         void ctx.handleCurrentProjectPreview(req, res);
+    });
+    app.get(QAAP_DEV_PREVIEW_MEMORY_PATH, (req, res) => {
+        if (!ctx.requireHttpAuth(req, res)) {
+            return;
+        }
+        void ctx.handleMemoryStatus(req, res);
     });
     app.get(`${QAAP_IDENTITY_PREVIEW_PROBE_PATH}/:previewId`, (req, res) => {
         if (!ctx.requireHttpAuth(req, res)) {

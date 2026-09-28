@@ -5,12 +5,14 @@
 
 import {
     QAAP_DEV_PREVIEW_CURRENT_PATH,
+    QAAP_DEV_PREVIEW_MEMORY_PATH,
     QAAP_DEV_PREVIEW_PROBE_PATH,
     QAAP_IDENTITY_PREVIEW_PROBE_PATH,
     buildQaapDevPreviewOpenUrl,
     buildQaapIdentityPreviewUrl,
     isQaapDevPreviewClaimState,
     type QaapDevPreviewClaimState,
+    type QaapDevPreviewMemoryStatus,
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 
@@ -195,6 +197,27 @@ export async function fetchQaapCurrentDevPreview(
             port: typeof body.port === 'number' ? body.port : undefined,
             conversationId: typeof body.conversationId === 'string' ? body.conversationId : undefined,
         };
+    } catch {
+        return undefined;
+    }
+}
+
+/** Kernel OOM kills in the backend's memory cgroup; `undefined` where the backend cannot tell. */
+export async function fetchQaapDevPreviewOomKillCount(signal?: AbortSignal): Promise<number | undefined> {
+    const origin = getQaapPublicOrigin();
+    if (!origin) {
+        return undefined;
+    }
+    try {
+        const response = await fetch(`${origin}${QAAP_DEV_PREVIEW_MEMORY_PATH}`, {
+            cache: 'no-store',
+            signal: probeSignal(signal),
+        });
+        if (!response.ok) {
+            return undefined;
+        }
+        const body = await response.json() as QaapDevPreviewMemoryStatus;
+        return Number.isInteger(body.oomKills) ? body.oomKills : undefined;
     } catch {
         return undefined;
     }
