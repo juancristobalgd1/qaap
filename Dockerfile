@@ -88,7 +88,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Fetch and verify the reviewed commit itself, rather than using its SHA only as a cache key.
 ARG CACHE_BUST=unpinned
-ARG QAIQ_COMMIT=1668998491d7265c754d94935b932cd9042f9b92
+ARG QAIQ_COMMIT=2d62dc34938495010c87b34ce03f47931ab147ab
 RUN test -n "${QAIQ_COMMIT}" \
     && echo "${QAIQ_COMMIT}" | grep -Eq '^[0-9a-f]{40}$' \
     && git init /opt/qaiq \
