@@ -254,6 +254,9 @@ export function buildAgentDevServerVerificationPromptBlock(): string {
         'Never report a dev server as "running", "serving correctly", or "ready" unless you have executed a command that confirms it.',
         'Before reporting a URL, verify the server responds: run `curl -s -o /dev/null -w \'%{http_code}\' http://localhost:PORT/` and check the HTTP status code is 200 or 3xx.',
         'If you cannot verify (command timed out, connection refused, no curl available), say so explicitly — never report a URL you have not confirmed.',
+        'Connection refused on a "run/start the app" request usually means Qaap\'s preview is still installing dependencies or starting — it is not a reason to stop.'
+            + ' Make the project previewable instead: install dependencies with a one-shot command, fix build/config errors, and confirm the expected port.'
+            + ' Never tell the user to run the dev server themselves (npm run dev, pnpm dev, vite, ...) — Qaap starts it and opens the preview.',
         'Partial output from a killed or timed-out process (e.g. "VITE ready in 1606ms" followed by a shell timeout) is NOT evidence the server is still running. The process may have been killed after producing that output.',
         'If no supported entry point or valid .qaap/preview.json launch plan was detected, report that clearly — do not invent a dev server, port, or URL.',
     ].join('\n');

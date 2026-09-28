@@ -169,9 +169,12 @@ function renderShimmerText(
         state.prevCount = letters.length;
     }
 
+    // The container's own document, not the global: a pending phrase timer can outlive the global
+    // `document` (torn-down test DOM) while the detached-but-connected row still has its owner.
+    const ownerDocument = textContainer.ownerDocument;
     textContainer.replaceChildren(
         ...letters.map((letter, index) => {
-            const span = document.createElement('span');
+            const span = ownerDocument.createElement('span');
             span.className = 'qaap-agent-setup-letter';
             span.setAttribute('aria-hidden', 'true');
             const delay = state.delays[index];
