@@ -418,8 +418,13 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
         return sweepUnreferencedVisualEvidenceHelper(this.conversations, conversationId, this.visualEvidenceDirectory(conversationId));
     }
 
-    async recordVisualVerificationFailure(conversationId: string, reason: string, targetAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
-        return recordVisualVerificationFailureExtracted(this, conversationId, reason, targetAgentMessageId);
+    async recordVisualVerificationFailure(
+        conversationId: string,
+        reason: string,
+        targetAgentMessageId: string,
+        retryForCodeChanges: boolean = true,
+    ): Promise<QaapAgentConversation | undefined> {
+        return recordVisualVerificationFailureExtracted(this, conversationId, reason, targetAgentMessageId, retryForCodeChanges);
     }
 
     recordGitAction(conversationId: string, metadata: ComposerGitActionDisplayMetadata, options: { readonly messageId?: string; readonly replaceMessageId?: string; } = {}, ): QaapAgentConversation | undefined {

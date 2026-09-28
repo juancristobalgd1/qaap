@@ -113,6 +113,41 @@ function quotePosixArgument(value: string): string {
 }
 
 /** Shell rendering used only by the frontend terminal; every token remains individually quoted. */
-export function renderQaapPreviewLaunchCommand(plan: QaapPreviewLaunchPlan): string {
+export function renderQaapPreviewLaunchCommand(plan: QaapPreviewLaunchPlan, platform: 'posix' | 'win32' = 'posix'): string {
+    if (platform === 'win32') {
+        // The terminal itself is cmd.exe. POSIX single quotes are ordinary characters there, so
+        // render the argv plan as a PowerShell call instead. The JSON payload and PowerShell
+        // program are base64 encoded, keeping every workspace-controlled argument out of cmd's
+        // parser; PowerShell then invokes the executable with an argv array (no shell evaluation).
+        const payload = encodeBase64(new TextEncoder().encode(JSON.stringify({ command: plan.command, args: plan.args })));
+        const script = [
+            `$plan = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${payload}')) | ConvertFrom-Json`,
+            "$port = [string]$env:QAAP_PREVIEW_PORT",
+            "$argv = @($plan.args | ForEach-Object { ([string]$_).Replace('{{PORT}}', $port) })",
+            '& $plan.command @argv',
+            'if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }',
+            'exit 0',
+        ].join('; ');
+        return `powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ${encodeBase64(encodeUtf16Le(script))}`;
+    }
     return [plan.command, ...plan.args].map(quotePosixArgument).join(' ');
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+    return btoa(binary);
+}
+
+function encodeUtf16Le(value: string): Uint8Array {
+    const bytes = new Uint8Array(value.length * 2);
+    for (let index = 0; index < value.length; index++) {
+        const codeUnit = value.charCodeAt(index);
+        bytes[index * 2] = codeUnit & 0xff;
+        bytes[index * 2 + 1] = codeUnit >>> 8;
+    }
+    return bytes;
 }

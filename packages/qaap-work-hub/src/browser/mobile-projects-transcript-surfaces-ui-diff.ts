@@ -15,7 +15,6 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
         summary: QaapAgentConversationSummaryDTO,
         options?: {
             readonly revealPreviewTab?: boolean;
-            readonly deferPreviewTabUntilReady?: boolean;
             readonly allowAgentFallback?: boolean;
         },): Promise<void> {
         if (ctx.host.transcriptPreviewRequestRunning) {
@@ -24,18 +23,22 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
         ctx.host.transcriptPreviewSuppressedByUser = false;
         const launchGeneration = ++ctx.previewLaunchGeneration;
         const allowAgentFallback = options?.allowAgentFallback !== false;
+        let previewTabRevealed = false;
         const revealPreviewTab = (): void => {
+            if (previewTabRevealed) {
+                return;
+            }
+            previewTabRevealed = true;
             ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
             ctx.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab?.('preview');
             ctx.host.executionSurfaceTabsUi.selectTranscriptTab?.('preview', project, summary);
+            ctx.updateTranscriptPreviewLaunchStatus();
         };
         const refreshPreviewComposer = (): void => {
             ctx.host.transcriptStickyComposerUi?.refreshComposerQuickActions?.();
             ctx.host.transcriptStickyComposerUi?.refreshComposerActivityStack?.();
+            ctx.updateTranscriptPreviewLaunchStatus();
         };
-        if (options?.revealPreviewTab && !options.deferPreviewTabUntilReady) {
-            revealPreviewTab();
-        }
         MobileSnackbar.show(
             nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'),
             { duration: 2200 },
@@ -64,6 +67,9 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
             // A runnable project does not need an agent to decide how to start it. Detect first,
             // ask which app to run when this is a monorepo, and use the managed terminal directly.
             ctx.beginTranscriptDevPreviewRequest(latestProject, summary);
+            if (options?.revealPreviewTab) {
+                revealPreviewTab();
+            }
             ctx.updateTranscriptPreviewRunButtonState();
             await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
             const detected = bootstrap.getStateSnapshot();
@@ -94,7 +100,7 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
                 return;
             }
             if (readyUrl) {
-                if (options?.revealPreviewTab && options.deferPreviewTabUntilReady) {
+                if (options?.revealPreviewTab) {
                     revealPreviewTab();
                 }
                 ctx.adoptReadyTranscriptPreview(project, summary, readyUrl);
@@ -147,9 +153,9 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
         ctx.host.transcriptPreviewRequestRunning = true;
         ctx.host.transcriptPreviewRequestPending = true;
         refreshPreviewComposer();
-        // Header Play keeps its historical immediate reveal. The composer Run app pill can defer
-        // the surface change so the current pill visibly processes until the server is reachable.
-        if (!options?.deferPreviewTabUntilReady) {
+        if (options?.revealPreviewTab) {
+            revealPreviewTab();
+        } else {
             ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
         }
         ctx.updateTranscriptPreviewRunButtonState();
@@ -157,9 +163,7 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
             ctx.host.setAutoVerifyEnabled(summary.cwd, true);
             ctx.host.refreshTranscriptChecksViews(project, summary);
         }
-        if (!options?.deferPreviewTabUntilReady) {
-            ctx.renderPreviewTab(project, summary);
-        }
+        ctx.renderPreviewTab(project, summary);
         ctx.syncHeaderPreviewRunButton(project, summary);
         try {
             await ctx.host.submitTranscriptViaBackendConversation(project, summary, message, {

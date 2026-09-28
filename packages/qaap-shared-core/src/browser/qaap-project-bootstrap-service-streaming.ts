@@ -244,11 +244,16 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
                     // instead of collapsing to the generic exit-code message.
                     const terminalTail = ctx.readTerminalTail(terminal);
                     void ctx.failDevRun(
-                        terminalTail || nls.localize(
-                            'qaap/projectBootstrap/devServerExited',
-                            'Dev server exited with code {0}.',
-                            String(event.code ?? '?'),
-                        ),
+                        terminalTail || (event.code === 0
+                            ? nls.localize(
+                                'qaap/projectBootstrap/devServerExitedBeforeReady',
+                                'The dev command finished before Qaap could confirm the preview was ready.',
+                            )
+                            : nls.localize(
+                                'qaap/projectBootstrap/devServerExited',
+                                'Dev server exited with code {0}.',
+                                String(event.code ?? '?'),
+                            )),
                         plan,
                         runId,
                     );

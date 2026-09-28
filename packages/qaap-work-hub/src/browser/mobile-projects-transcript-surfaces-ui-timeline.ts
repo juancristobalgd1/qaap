@@ -805,6 +805,15 @@ export function renderPreviewTabExtracted(ctx: MobileProjectsTranscriptSurfacesU
             return;
         }
 
+        if (ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending) {
+            const conversationScopeId = ctx.previewScopeId(summary);
+            ctx.setMountedPreviewUrl(conversationScopeId, undefined);
+            ctx.setLastSyncedPreviewUrl(conversationScopeId, undefined);
+            resetTranscriptPreviewToEmptyExtracted(ctx, host, project, summary);
+            ctx.updateTranscriptPreviewLaunchStatus();
+            return;
+        }
+
         void ctx.refreshTranscriptPreviewProject(latestProject, summary).then(refreshed => {
             if (ctx.transcriptPreviewProjectId !== project.id || !host.isConnected) {
                 return;

@@ -39,8 +39,23 @@ export interface QaapAgentStdinPrompt {
 
 export function readCodexHelp(): string {
     try {
-        const probe = spawnSync('codex', ['--help'], { encoding: 'utf8' });
-        return `${probe.stdout || ''}\n${probe.stderr || ''}`;
+        const topLevel = spawnSync('codex', ['--help'], {
+            encoding: 'utf8',
+            timeout: 2_000,
+            killSignal: 'SIGTERM',
+            windowsHide: true,
+        });
+        const topLevelHelp = `${topLevel.stdout || ''}\n${topLevel.stderr || ''}`;
+        if (!/\bcodex\s+exec\b|^\s+exec\b/m.test(topLevelHelp)) {
+            return topLevelHelp;
+        }
+        const execCommand = spawnSync('codex', ['exec', '--help'], {
+            encoding: 'utf8',
+            timeout: 2_000,
+            killSignal: 'SIGTERM',
+            windowsHide: true,
+        });
+        return `${topLevelHelp}\n${execCommand.stdout || ''}\n${execCommand.stderr || ''}`;
     } catch {
         return '';
     }

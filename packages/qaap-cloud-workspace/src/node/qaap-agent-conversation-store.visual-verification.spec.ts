@@ -239,6 +239,21 @@ describe('QaapAgentConversationStore visual verification', () => {
         expect(store.createdTasks).to.have.length(2);
     });
 
+    it('records preview launch failures without spawning code repair tasks', async () => {
+        const failed = await store.recordVisualVerificationFailure(
+            'conversation-1',
+            'The dev server did not become ready: spawn error: spawn pnpm ENOENT',
+            'agent-1',
+            false,
+        );
+        const content = failed?.messages.find(message => message.id === 'agent-1')?.content ?? '';
+        expect(content).to.contain('[QAAP visual verification]');
+        expect(content).to.contain('Screenshot unavailable');
+        expect(content).to.not.contain('[QAAP repair required]');
+        expect(failed?.messages.at(-1)?.visualRepairAttempt).to.equal(undefined);
+        expect(store.createdTasks).to.have.length(0);
+    });
+
     it('attaches a walked flow with one image per captured route', async () => {
         const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 10]);
         const home = await store.saveVisualEvidenceImage('conversation-1', png);

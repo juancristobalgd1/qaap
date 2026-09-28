@@ -62,8 +62,9 @@ describe('qaap-project-bootstrap-port', () => {
 
     it('wrapDevCommandForPort uses cmd.exe SET prefixes on a Windows workspace host', () => {
         const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra', true);
-        expect(command).to.include('set "QAAP_PREVIEW_PORT=3001"');
-        expect(command).to.include('set "PORT=3001"');
+        expect(command).to.include('set QAAP_PREVIEW_PORT=3001');
+        expect(command).to.include('set PORT=3001');
+        expect(command).not.to.include('set "PORT=3001"');
         expect(command).to.include('set "NODE_ENV=development"');
         expect(command).to.not.include('QAAP_PREVIEW_PORT=3001 PORT=3001');
         expect(command).to.match(/npm run dev$/);

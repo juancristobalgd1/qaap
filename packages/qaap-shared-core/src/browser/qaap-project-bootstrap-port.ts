@@ -211,7 +211,12 @@ function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isW
     const isNode = kind.startsWith('node-');
     const forcePortImport = isNode ? forceNodePreviewPortImport(kind) : undefined;
     if (isWindows) {
-        const base = `set "QAAP_PREVIEW_PORT=${port}"&& set "PORT=${port}"&& `;
+        // node-pty joins cmd.exe's /d /s /c arguments. Quoted `set "NAME=value"` assignments
+        // then get folded into cmd's outer quote group, so QAAP_PREVIEW_PORT stays unset and
+        // argv placeholders become empty (Next exits with "--port argument missing"). These
+        // values are validated decimal ports, so unquoted assignments are both safe and parsed
+        // consistently by cmd.exe.
+        const base = `set QAAP_PREVIEW_PORT=${port}&& set PORT=${port}&& `;
         return isNode
             ? `${base}set "NODE_ENV=development"&& set "NODE_OPTIONS=%NODE_OPTIONS% ${forcePortImport}"&& ${command}`
             : `${base}${command}`;

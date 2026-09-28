@@ -22,6 +22,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     let composerModule: typeof import('./mobile-projects-transcript-sticky-composer-ui');
     let liveStatusModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-live-status');
     let timelineModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-timeline');
+    let previewStreamingModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-streaming');
 
     before(() => {
         // @lumino/dragdrop reads DragEvent at module load; jsdom does not provide it.
@@ -32,6 +33,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         composerModule = require('./mobile-projects-transcript-sticky-composer-ui');
         liveStatusModule = require('./mobile-projects-transcript-sticky-composer-ui-live-status');
         timelineModule = require('./mobile-projects-transcript-sticky-composer-ui-timeline');
+        previewStreamingModule = require('./mobile-projects-transcript-sticky-composer-ui-streaming');
     });
 
     it('merges a failed send with text entered while the request was in flight', () => {
@@ -45,6 +47,37 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
 
     const project = { id: 'p1', name: 'demo' } as unknown as MobileProjectEntry;
     const summary = { id: 'c1', cwd: '/tmp/demo' } as unknown as QaapAgentConversationSummaryDTO;
+
+    it('runs the selected project preview from the empty Agents landing without a conversation', async () => {
+        const previewUrl = 'http://localhost:3000/qaap-preview/u-dev-w-demo-p-demo-x-abcdef1234/';
+        let refreshed: { root?: string; projectId?: string } = {};
+        let openedUrl: string | undefined;
+        const bootstrap = {
+            refreshFromProjectRoot: async (root: string, projectId: string) => { refreshed = { root, projectId }; },
+            getStateSnapshot: () => ({
+                phase: 'running',
+                previewUrl,
+                descriptor: { nodeModulesPresent: true },
+            }),
+            runDevServer: async () => undefined,
+            openPreview: async (url: string) => { openedUrl = url; },
+        };
+        const host = {
+            projectsService: { getProjectCwd: () => '/workspace/demo' },
+            preparedCwdByProjectId: new Map(),
+            projectBootstrap: bootstrap,
+            transcriptPreviewSuppressedByUser: true,
+        };
+
+        await previewStreamingModule.launchComposerDevPreviewExtracted(
+            { host } as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+        );
+
+        expect(refreshed).to.deep.equal({ root: '/workspace/demo', projectId: 'p1' });
+        expect(openedUrl).to.contain('/qaap-preview/');
+        expect(host.transcriptPreviewSuppressedByUser).to.equal(false);
+    });
 
     interface ConversationSubmit {
         readonly conversationId: string;

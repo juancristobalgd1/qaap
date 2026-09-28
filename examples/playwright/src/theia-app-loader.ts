@@ -15,6 +15,7 @@
 // *****************************************************************************
 
 import { Page, PlaywrightWorkerArgs, _electron as electron } from '@playwright/test';
+import { spawnSync } from 'child_process';
 import { QaapMenuBar } from './qaap-menu-bar';
 import { TheiaApp } from './theia-app';
 import { TheiaMenuBar } from './theia-main-menu';
@@ -59,7 +60,50 @@ function qaapIdeAppFactory<T extends TheiaApp>(factory?: TheiaAppFactory<T>): Th
 function initializeWorkspace(initialWorkspace?: TheiaWorkspace): TheiaWorkspace {
     const workspace = initialWorkspace ? initialWorkspace : new TheiaWorkspace();
     workspace.initialize();
+    initializeTemporaryWorkspaceGit(workspace);
     return workspace;
+}
+
+/**
+ * Every workspace produced by {@link TheiaWorkspace} is a disposable Qaap Playwright fixture.
+ * Give it a baseline commit so agent runs and checkpoint rewind have a real Git repository;
+ * ordinary local folders never receive this treatment.
+ */
+function initializeTemporaryWorkspaceGit(workspace: TheiaWorkspace): void {
+    const cwd = workspace.path;
+    const git = (args: string[]): void => {
+        const result = spawnSync('git', args, {
+            cwd,
+            encoding: 'utf8',
+            timeout: 10_000,
+            windowsHide: true,
+            env: {
+                ...process.env,
+                GIT_AUTHOR_NAME: 'Qaap Playwright',
+                GIT_AUTHOR_EMAIL: 'qaap-playwright@localhost',
+                GIT_COMMITTER_NAME: 'Qaap Playwright',
+                GIT_COMMITTER_EMAIL: 'qaap-playwright@localhost',
+            },
+        });
+        if (result.error || result.status !== 0) {
+            const detail = result.error?.message || result.stderr || `exit ${result.status}`;
+            throw new Error(`Could not initialize the disposable Qaap Playwright workspace Git baseline: ${detail}`);
+        }
+    };
+
+    const repository = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+        cwd,
+        encoding: 'utf8',
+        timeout: 10_000,
+        windowsHide: true,
+    });
+    if (!repository.error && repository.status === 0) {
+        return;
+    }
+    git(['init', '--quiet', '--initial-branch=main']);
+    git(['add', '--all']);
+    git(['-c', 'user.name=Qaap Playwright', '-c', 'user.email=qaap-playwright@localhost',
+        'commit', '--quiet', '--allow-empty', '-m', 'Initial Qaap workspace snapshot']);
 }
 
 namespace TheiaBrowserAppLoader {

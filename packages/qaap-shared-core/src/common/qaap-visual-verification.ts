@@ -138,21 +138,31 @@ export function agentMessageHasVisualVerificationMarker(message: {
 
 /**
  * Failed evidence attached when every capture attempt failed. The verification marker settles
- * duplicate capture attempts; the repair marker makes the backend re-enter its bounded repair
- * loop instead of treating "no screenshot" as an acceptable terminal result.
+ * duplicate capture attempts. Code-related failures may opt into the bounded repair loop, while
+ * preview infrastructure failures settle visibly without asking an agent to edit project files.
  */
-export function buildQaapVisualVerificationFailureMarkdown(reason: string): string {
-    return [
+export function buildQaapVisualVerificationFailureMarkdown(reason: string, retryForCodeChanges: boolean = true): string {
+    const lines = [
         QAAP_VISUAL_VERIFICATION_MARKER,
         '**Visual verification · Screenshot unavailable**  ',
         reason.trim(),
-        '',
-        QAAP_VISUAL_REPAIR_REQUIRED_MARKER,
-        nls.localize(
-            'qaap/visualVerification/repairAfterCaptureFailure',
-            'The app could not produce verifiable visual evidence. Re-enter the repair loop, make the preview capturable, then validate it again.',
-        ),
-    ].join('\n');
+    ];
+    lines.push('');
+    if (retryForCodeChanges) {
+        lines.push(
+            QAAP_VISUAL_REPAIR_REQUIRED_MARKER,
+            nls.localize(
+                'qaap/visualVerification/repairAfterCaptureFailure',
+                'The app could not produce verifiable visual evidence. Re-enter the repair loop, make the preview capturable, then validate it again.',
+            ),
+        );
+    } else {
+        lines.push(nls.localize(
+            'qaap/visualVerification/retryPreviewInfrastructure',
+            'Qaap could not start the preview environment. Resolve the launch error and retry the preview; this result does not diagnose a problem in the project files.',
+        ));
+    }
+    return lines.join('\n');
 }
 
 /**

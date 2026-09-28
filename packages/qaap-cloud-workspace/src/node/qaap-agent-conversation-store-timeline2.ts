@@ -79,7 +79,8 @@ export async function recordVisualVerificationFlowExtracted(ctx: QaapAgentConver
 
 export async function recordVisualVerificationFailureExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
         reason: string,
-        targetAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
+        targetAgentMessageId: string,
+        retryForCodeChanges: boolean = true, ): Promise<QaapAgentConversation | undefined> {
         const trimmed = reason.trim().slice(0, 500);
         const conv = ctx.conversations.get(conversationId);
         if (!conv || !trimmed) {
@@ -94,8 +95,14 @@ export async function recordVisualVerificationFailureExtracted(ctx: QaapAgentCon
         }
         ctx.visualVerificationInFlight.add(conversationId);
         try {
-            ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationFailureMarkdown(trimmed));
-            return await ctx.continueVisualRepairLoop(conversationId, target.id);
+            const next = ctx.attachVisualVerificationBlock(
+                conv,
+                target,
+                buildQaapVisualVerificationFailureMarkdown(trimmed, retryForCodeChanges),
+            );
+            return retryForCodeChanges
+                ? await ctx.continueVisualRepairLoop(conversationId, target.id)
+                : next;
         } finally {
             ctx.visualVerificationInFlight.delete(conversationId);
         }

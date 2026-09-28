@@ -261,14 +261,19 @@ export function transcriptConversationMetaExtracted(ctx: MobileProjectsTranscrip
 export function updateTranscriptHeaderExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO | undefined,): void {
     const titleEl = ctx.host.transcriptSheet?.querySelector('.theia-mobile-agent-log-header h2');
+    const workspaceContext = ctx.host.transcriptSheet?.querySelector<HTMLElement>('.qaap-transcript-workspace-context');
     const subtitle = ctx.host.transcriptHeaderSubtitle;
-    if (!titleEl || !subtitle) {
-        return;
+    if (titleEl) {
+        titleEl.textContent = summary
+            ? ctx.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(project, summary)
+            : project.name;
     }
-    titleEl.textContent = summary
-        ? ctx.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(project, summary)
-        : project.name;
-    subtitle.hidden = true;
-    subtitle.className = 'theia-mobile-projects-subtitle';
-    subtitle.replaceChildren();
+    if (summary && workspaceContext) {
+        ctx.host.transcriptHeaderUi.renderTranscriptWorkspaceContext(workspaceContext, project, summary);
+    }
+    if (subtitle) {
+        subtitle.hidden = true;
+        subtitle.className = 'theia-mobile-projects-subtitle';
+        subtitle.replaceChildren();
+    }
 }

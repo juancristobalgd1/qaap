@@ -55,7 +55,7 @@ import { bootstrapAppliesToProjectExtracted, bootstrapPreviewUrlForProjectExtrac
 import { claimTranscriptPreviewExecutionExtracted, clearTranscriptEmptyPreviewChromeExtracted, detachTranscriptReviewWidgetExtracted, disposePreviewForConversationExtracted, disposeTranscriptEmbeddedPreviewExtracted, disposeTranscriptTerminalSlidesForConversationExtracted, getOrCreateOffscreenPreviewHostExtracted, getTranscriptEmbeddedPreviewUrlExtracted, mountTranscriptEmbeddedPreviewExtracted, mountTranscriptReviewWidgetExtracted, resolvePreviewAnnotationScopeExtracted, resolveTranscriptPreviewIdentityExtracted, submitTranscriptReviewFeedbackExtracted, suspendTranscriptPreviewIframeExtracted, wireTranscriptPreviewAnnotationScopeExtracted } from './mobile-projects-transcript-surfaces-ui-streaming';
 import { beginTranscriptDevPreviewRequestExtracted, discoverProjectDevPreviewUrlExtracted, disposeTranscriptTerminalSlidesExtracted, prepareTranscriptTerminalsForPageUnloadExtracted, previewUrlMatchesProjectExtracted, refreshTranscriptPreviewProjectExtracted, resolveTranscriptPreviewUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 import { adoptReconciledProjectPreviewUrlExtracted, clearMismatchedProjectPreviewUrlExtracted, discoverAndMountTranscriptPreviewIfReadyExtracted, fetchCurrentProjectClaimUrlExtracted, reconcileSupersededProjectPreviewUrlExtracted, renderPreviewTabExtracted, scheduleTranscriptPreviewIdentityWatchExtracted, shouldKeepTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewIdentityWatchExtracted, tryMountProjectScopedPreviewExtracted, tryMountVerifiedTranscriptPreviewExtracted, verifyMountedTranscriptPreviewIdentityExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
-import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, recoverTranscriptPreviewUrlExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
+import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, recoverTranscriptPreviewUrlExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted, updateTranscriptPreviewLaunchStatusExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 
 export type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -582,6 +582,10 @@ export class MobileProjectsTranscriptSurfacesUi {
         mountTranscriptEmptyPreviewExtracted(this, host, project, summary);
     }
 
+    updateTranscriptPreviewLaunchStatus(): void {
+        updateTranscriptPreviewLaunchStatusExtracted(this);
+    }
+
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public annotateEmptyPreviewWhenNotRunnable(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
         annotateEmptyPreviewWhenNotRunnableExtracted(this, project, summary);
@@ -744,7 +748,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         return resolveTranscriptPreviewUrlExtracted(this, project, conv);
     }
 
-    async requestTranscriptPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, options?: { readonly revealPreviewTab?: boolean; readonly deferPreviewTabUntilReady?: boolean; readonly allowAgentFallback?: boolean; },): Promise<void> {
+    async requestTranscriptPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },): Promise<void> {
         return requestTranscriptPreviewExtracted(this, project, summary, options);
     }
 

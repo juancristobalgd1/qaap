@@ -40,6 +40,7 @@ export interface TranscriptStickyComposerApi {
     peekComposerGitChangedFiles(conversationId: string): readonly StickyComposerChangedFileView[] | undefined;
     refreshComposerActivityStack(): void;
     refreshComposerQuickActions(): void;
+    refreshTranscriptPreviewLaunchStatus?(): void;
     refreshTranscriptComposerActivityIfNeeded(conv: QaapAgentConversationDTO): void;
     flushTranscriptFollowUpQueue(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     applyTranscriptComposerPrefsFromConversation(conv: QaapAgentConversationDTO, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;

@@ -41,6 +41,27 @@ export interface QaapPreviewSupervisorLaunch {
     readonly args: readonly string[];
 }
 
+export type QaapPreviewPackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
+
+/**
+ * Package-manager shims on Windows are usually `.cmd` files. They cannot be started with
+ * child_process.spawn(file, args) directly, so run the known-safe manager/script pair through
+ * cmd.exe. POSIX keeps argv execution without a shell.
+ */
+export function buildQaapPreviewScriptCommand(
+    packageManager: QaapPreviewPackageManager,
+    script: 'dev' | 'start',
+    platform: string = process.platform,
+): { readonly command: string; readonly args: string[] } {
+    if (platform === 'win32') {
+        return {
+            command: process.env.ComSpec || 'cmd.exe',
+            args: ['/d', '/s', '/c', `${packageManager} run ${script}`],
+        };
+    }
+    return { command: packageManager, args: ['run', script] };
+}
+
 /**
  * Supervises dev-server child processes started via the preview restart endpoint. The primary
  * dev server is normally spawned by the frontend bootstrap terminal (which the backend cannot
@@ -250,7 +271,7 @@ export class QaapPreviewSupervisor {
     }
 
     protected resolveDevCommand(cwd: string): { command: string; args: string[] } | undefined {
-        let script = 'dev';
+        let script: 'dev' | 'start' = 'dev';
         try {
             const manifest = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
             const scripts = manifest.scripts ?? {};
@@ -263,10 +284,10 @@ export class QaapPreviewSupervisor {
             return undefined;
         }
         const pm = this.detectPackageManager(cwd);
-        return { command: pm, args: ['run', script] };
+        return buildQaapPreviewScriptCommand(pm, script);
     }
 
-    protected detectPackageManager(cwd: string): string {
+    protected detectPackageManager(cwd: string): QaapPreviewPackageManager {
         if (fs.existsSync(path.join(cwd, 'pnpm-lock.yaml'))) {
             return 'pnpm';
         }

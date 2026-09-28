@@ -83,6 +83,13 @@ export function mountTranscriptExecutionHeaderExtracted(ctx: MobileProjectsExecu
     title.textContent = titleText;
     const back = ctx.host.appendTranscriptHeaderActions(header, title);
     ctx.host.transcriptHeaderSubtitle = undefined;
+    const titleWrap = title.parentElement;
+    if (titleWrap) {
+        const workspaceContext = document.createElement('div');
+        workspaceContext.className = 'theia-mobile-projects-subtitle qaap-transcript-workspace-context';
+        ctx.host.transcriptHeaderUi.renderTranscriptWorkspaceContext(workspaceContext, project, summary);
+        titleWrap.append(workspaceContext);
+    }
     ctx.host.transcriptSurfacesUi.updateTranscriptHeader(project, summary);
     const activeTab = ctx.executionSurfaceTabForProject(project);
     const tabStrip = ctx.buildTranscriptTabStrip(project, summary);

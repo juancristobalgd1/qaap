@@ -136,6 +136,8 @@ export function getOrCreateOffscreenPreviewHostExtracted(ctx: MobileProjectsTran
 
 export function disposeTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, conversationScopeId?: string): void {
         const targetScopeId = conversationScopeId ?? ctx.transcriptPreviewConversationScopeId;
+        const disposesVisiblePreview = conversationScopeId === undefined
+            || conversationScopeId === ctx.transcriptPreviewConversationScopeId;
         ctx.stopTranscriptPreviewIdentityWatch();
         if (targetScopeId) {
             const cached = ctx.embeddedPreviewByConversationScopeId.get(targetScopeId);
@@ -143,8 +145,18 @@ export function disposeTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTra
                 cached.dispose();
                 ctx.embeddedPreviewByConversationScopeId.delete(targetScopeId);
             }
-            if (ctx.host.transcriptEmbeddedPreview === cached) {
+            const visible = ctx.host.transcriptEmbeddedPreview;
+            if (disposesVisiblePreview && visible && visible !== cached) {
+                // Empty preview chrome is not stored in the per-conversation cache. Dispose it
+                // explicitly when a stale scope id remains from the last real preview; otherwise
+                // every superseded-preview retry leaves its inspector listeners attached.
+                visible.dispose();
+            }
+            if (visible === cached || (disposesVisiblePreview && visible)) {
                 ctx.host.transcriptEmbeddedPreview = undefined;
+            }
+            if (disposesVisiblePreview) {
+                ctx.transcriptPreviewConversationScopeId = undefined;
             }
             ctx.setMountedPreviewUrl(targetScopeId, undefined);
         } else if (ctx.host.transcriptEmbeddedPreview) {

@@ -67,6 +67,74 @@ describe('qaap-transcript-preview-bootstrap', () => {
         expect(calls).to.deep.equal(['root:/workspace/repos/users/owner/owner/project-b:github:owner/project-b']);
     });
 
+    it('reuses this conversation\'s current live preview before starting another server', async () => {
+        const previewUrl = 'http://localhost:3000/qaap-preview/preview-current/';
+        const originalFetch = globalThis.fetch;
+        const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+        const calls: string[] = [];
+        Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: { location: { origin: 'http://localhost:3000' } },
+        });
+        globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+            calls.push(String(input));
+            return {
+                ok: true,
+                json: async () => ({
+                    ready: true,
+                    previewUrl,
+                    previewId: 'preview-current',
+                    projectId: 'project-id',
+                    workspaceId: '/workspace/project',
+                    processId: 'process-current',
+                    port: 3001,
+                    conversationId: 'conversation-a',
+                }),
+            } as Response;
+        }) as typeof fetch;
+        const bootstrapCalls: string[] = [];
+        const bootstrap = {
+            refreshFromProjectRoot: async (root: string, projectId: string): Promise<void> => {
+                bootstrapCalls.push(`root:${root}:${projectId}`);
+            },
+            bindPreviewConversation: (conversationId: string): string => {
+                bootstrapCalls.push(`conversation:${conversationId}`);
+                return conversationId;
+            },
+            adoptSupersedingPreviewClaim: (current: { previewId?: string }): boolean => {
+                bootstrapCalls.push(`adopt:${current.previewId}`);
+                return true;
+            },
+        } as unknown as QaapProjectBootstrapService;
+
+        try {
+            const result = await ensureTranscriptDevPreview(bootstrap, {
+                conversationId: 'conversation-a',
+                projectId: 'project-id',
+                workspaceRoot: '/workspace/project',
+                skipConversationPortProbe: true,
+            });
+
+            expect(result).to.equal(previewUrl);
+            expect(bootstrapCalls).to.deep.equal([
+                'root:/workspace/project:project-id',
+                'conversation:conversation-a',
+                'adopt:preview-current',
+            ]);
+            expect(calls).to.have.length(1);
+            const request = new URL(calls[0]);
+            expect(request.searchParams.getAll('projectId')).to.deep.equal(['project-id', '/workspace/project']);
+            expect(request.searchParams.get('conversationId')).to.equal('conversation-a');
+        } finally {
+            globalThis.fetch = originalFetch;
+            if (originalWindow) {
+                Object.defineProperty(globalThis, 'window', originalWindow);
+            } else {
+                Reflect.deleteProperty(globalThis, 'window');
+            }
+        }
+    });
+
     it('deduplicates concurrent bootstrap requests for the same service', async () => {
         let releaseRefresh!: () => void;
         const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
@@ -76,6 +144,7 @@ describe('qaap-transcript-preview-bootstrap', () => {
                 refreshCalls++;
                 await refreshGate;
             },
+            bindPreviewConversation: (conversationId: string): string => conversationId,
             getStateSnapshot: () => ({ descriptor: undefined }),
         } as unknown as QaapProjectBootstrapService;
 
@@ -105,6 +174,7 @@ describe('qaap-transcript-preview-bootstrap', () => {
                 refreshCalls++;
                 await refreshGate;
             },
+            bindPreviewConversation: (conversationId: string): string => conversationId,
             getStateSnapshot: () => ({ descriptor: undefined }),
         } as unknown as QaapProjectBootstrapService;
 
