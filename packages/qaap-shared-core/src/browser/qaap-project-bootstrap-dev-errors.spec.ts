@@ -10,12 +10,26 @@ import {
     extractTerminalFailureLine,
     terminalOutputNeedsInstall,
     terminalOutputNextDevLock,
+    terminalOutputOutOfMemory,
     terminalOutputPortInUse,
 } from './qaap-project-bootstrap-dev-errors';
 import type { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { extractPortFromInUseMessage, readTerminalTail } from './qaap-project-bootstrap-helpers';
 
 describe('qaap-project-bootstrap-dev-errors', () => {
+
+    it('terminalOutputOutOfMemory detects V8 heap exhaustion and kernel OOM kills', () => {
+        expect(terminalOutputOutOfMemory('FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory')).to.equal(true);
+        expect(terminalOutputOutOfMemory('  \u001b[2m▲ Next.js 16.1.3\u001b[0m\nKilled\n')).to.equal(true);
+        expect(terminalOutputOutOfMemory('Dev server exited with code 137.')).to.equal(true);
+        expect(terminalOutputOutOfMemory('Dev server exited with code 1.')).to.equal(false);
+        expect(terminalOutputOutOfMemory('Listening on port 1370 · compiled 137 modules')).to.equal(false);
+    });
+
+    it('diagnoses out-of-memory before any other failure kind', () => {
+        const diagnosis = diagnoseBootstrapFailure('Error: something\n[qaap] The dev server was killed because the workspace ran out of memory.', 'fallback');
+        expect(diagnosis.kind).to.equal('out-of-memory');
+    });
 
     it('terminalOutputNeedsInstall detects missing modules', () => {
         expect(terminalOutputNeedsInstall('Cannot find package \'@foo/bar\'')).to.equal(true);

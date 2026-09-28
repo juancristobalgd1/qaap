@@ -14,6 +14,15 @@ export const DEV_INSTALL_NEEDED_REGEX = /ERR_MODULE_NOT_FOUND|Cannot find (?:mod
  */
 export const PORT_IN_USE_REGEX = /EADDRINUSE|address already in use|\bport \d{2,5} is (?:already )?in use/i;
 
+/**
+ * The dev process died from memory exhaustion: V8's own heap limit, or the kernel OOM killer
+ * (shells print `Killed` / exit status 137). A retry is killed the same way, so it is terminal.
+ */
+export const OUT_OF_MEMORY_REGEX = /JavaScript heap out of memory|Reached heap limit|\bout of memory\b|^\s*Killed\b|(?:code|status) 137\b/im;
+
+/** Appended to the dev output when the backend's cgroup counter shows the run was OOM-killed. */
+export const DEV_OUT_OF_MEMORY_NOTICE = '[qaap] The dev server was killed because the workspace ran out of memory.';
+
 /** Next.js refuses a second `next dev` while `.next/dev/lock` is held. */
 export const NEXT_DEV_LOCK_REGEX = /Unable to acquire lock|another instance of next dev running/i;
 
@@ -31,6 +40,7 @@ const DEV_OUTPUT_HOST_PORT_REGEX = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{
 const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
 export type QaapBootstrapFailureKind =
+    | 'out-of-memory'
     | 'dependencies'
     | 'port-conflict'
     | 'next-lock'
@@ -48,6 +58,10 @@ export interface QaapBootstrapFailureDiagnosis {
 
 export function terminalOutputNeedsInstall(output: string): boolean {
     return DEV_INSTALL_NEEDED_REGEX.test(output);
+}
+
+export function terminalOutputOutOfMemory(output: string): boolean {
+    return OUT_OF_MEMORY_REGEX.test(output.replace(ANSI_REGEX, ''));
 }
 
 export function terminalOutputPortInUse(output: string): boolean {
@@ -94,6 +108,13 @@ function lastUsefulErrorLine(output: string): string | undefined {
 
 /** Classifies a failed preview and returns copy that tells the user what to do next. */
 export function diagnoseBootstrapFailure(output: string, fallback: string): QaapBootstrapFailureDiagnosis {
+    if (terminalOutputOutOfMemory(output)) {
+        return {
+            kind: 'out-of-memory',
+            message: 'The dev server ran out of memory and was stopped. Raise the workspace memory limit or use a lighter '
+                + 'dev mode (for example Next.js with Turbopack instead of --webpack), then retry.',
+        };
+    }
     if (terminalOutputNeedsInstall(output)) {
         return {
             kind: 'dependencies',
