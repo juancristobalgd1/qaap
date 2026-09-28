@@ -50,6 +50,24 @@ describe('qaap-agent-turn-completion', () => {
         expect(isIncompleteAgentTurn('Arregla el bug del login', agent)).to.equal(true);
     });
 
+    it('never auto-continues a turn the CLI tool-failure loop guard stopped', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a-loop',
+            role: 'agent',
+            content: '',
+            createdAt: 2,
+            segments: [
+                { type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: true, result: 'Error: String to replace not found' },
+                {
+                    type: 'text',
+                    content: 'Stopped: repeated tool failures detected.\n\nThe path `/w/GameRule/Multiplayer.js` failed 3 times. '
+                        + 'Please inspect permissions, path, or tool schema before retrying.',
+                },
+            ],
+        };
+        expect(isIncompleteAgentTurn('Arregla el bug del multijugador', agent)).to.equal(false);
+    });
+
     it('accepts Spanish outcome text as a delivered result', () => {
         const agent: QaapAgentMessageDTO = {
             id: 'a-es-2',
