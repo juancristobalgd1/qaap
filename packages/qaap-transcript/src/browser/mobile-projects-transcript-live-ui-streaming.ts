@@ -203,6 +203,7 @@ export function ensureBootstrapPreviewListenerExtracted(ctx: MobileProjectsTrans
         // Composer preview visibility follows the live bootstrap phase/dependency snapshot,
         // even when the active conversation is not currently watching for preview offers.
         ctx.host.transcriptStickyComposerUi.refreshComposerActivityStack();
+        ctx.host.transcriptStickyComposerUi.refreshTranscriptPreviewLaunchStatus?.();
         const conv = ctx.host.transcriptLastConv;
         if (!conv || !ctx.host.transcriptOpenSummaryId || ctx.host.transcriptOpenSummaryId !== conv.id) {
             return;

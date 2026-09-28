@@ -320,11 +320,12 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
+        const gitAvailable = cwd ? isInsideGitCheckout(cwd) : true;
         const workflowPrompt = appendAgentDefaultWorkflowToPrompt(
             runnerPrompt,
             id,
             {
-                gitAvailable: cwd ? fs.existsSync(path.join(path.resolve(cwd), '.git')) : true,
+                gitAvailable,
                 userQuery,
             },
         );
@@ -419,6 +420,20 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             return { command, stdinPrompt: agentPrompt, stdinPromptMode: 'plain', agentId: id, promptTempDir };
         }
         return { command, agentId: id, promptTempDir };
+}
+
+function isInsideGitCheckout(cwd: string): boolean {
+    let directory = path.resolve(cwd);
+    while (true) {
+        if (fs.existsSync(path.join(directory, '.git'))) {
+            return true;
+        }
+        const parent = path.dirname(directory);
+        if (parent === directory) {
+            return false;
+        }
+        directory = parent;
+    }
 }
 
 export function readProjectInfoExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): string | undefined {

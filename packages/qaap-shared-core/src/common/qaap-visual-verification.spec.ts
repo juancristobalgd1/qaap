@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     buildQaapVisualFlowMarkdown,
+    buildQaapVisualVerificationFailureMarkdown,
     buildQaapVisualVerificationMarkdown,
     buildQaapVisualVideoMarkdown,
     normalizeQaapVisualPreviewUrl,
@@ -28,6 +29,19 @@ describe('qaap-visual-verification', () => {
         expect(markdown).to.contain('Needs fixes');
         expect(markdown).to.contain('Missing page heading');
         expect(markdown).to.contain('![QAAP preview evidence](/evidence/1)');
+    });
+
+    it('does not start a code repair loop for preview infrastructure failures', () => {
+        const markdown = buildQaapVisualVerificationFailureMarkdown('spawn error: spawn pnpm ENOENT', false);
+        expect(markdown).to.contain('Screenshot unavailable');
+        expect(markdown).to.contain('spawn pnpm ENOENT');
+        expect(markdown).to.contain('does not diagnose a problem in the project files');
+        expect(markdown).to.not.contain(QAAP_VISUAL_REPAIR_REQUIRED_MARKER);
+    });
+
+    it('keeps the bounded repair loop for failures that need a project fix', () => {
+        const markdown = buildQaapVisualVerificationFailureMarkdown('The app could not be captured.');
+        expect(markdown).to.contain(QAAP_VISUAL_REPAIR_REQUIRED_MARKER);
     });
 
     it('adds an integrated-browser link for a live preview', () => {

@@ -189,6 +189,7 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
                 summary.id,
                 reason ?? 'The dev preview did not become ready, so no screenshot could be captured.',
                 targetAgentMessageId,
+                false,
             ).catch(() => undefined);
         }
     }

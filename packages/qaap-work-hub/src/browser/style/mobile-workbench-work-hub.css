@@ -9240,6 +9240,11 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   --theia-mobile-execution-header-text-block: var(--theia-mobile-execution-header-title-row);
 }
 
+.theia-mobile-projects.theia-mod-agents-hub-inline-active:has(.qaap-transcript-workspace-context:not([hidden])),
+.theia-mobile-agent-transcript-root:has(.qaap-transcript-workspace-context:not([hidden])) {
+  --theia-mobile-execution-header-text-block: calc(var(--theia-mobile-execution-header-title-row) + var(--theia-mobile-execution-header-subtitle-gap) + var(--theia-mobile-execution-header-subtitle-row));
+}
+
 .theia-mobile-projects.theia-mod-home.theia-mod-hub-repos.theia-mod-project-detail .theia-mobile-projects-title,
 .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-inline-active .theia-mobile-projects-title,
 .theia-mobile-agent-transcript-root .theia-mobile-agent-log-title-wrap>h2 {
@@ -9582,6 +9587,38 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.theia-mobile-agent-transcript-root .qaap-transcript-workspace-context,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .qaap-transcript-workspace-context {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.theia-mobile-agent-transcript-root .qaap-transcript-workspace-context-label,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .qaap-transcript-workspace-context-label {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-transcript-root .qaap-transcript-workspace-context.theia-mod-temporary .qaap-transcript-workspace-context-label,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .qaap-transcript-workspace-context.theia-mod-temporary .qaap-transcript-workspace-context-label {
+  color: var(--theia-editorWarning-foreground, #cca700);
+  font-weight: 600;
+}
+
+.theia-mobile-agent-transcript-root .qaap-transcript-workspace-context-path,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .qaap-transcript-workspace-context-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-transcript-workspace-context[hidden] {
+  display: none;
 }
 
 .theia-mobile-projects-subtitle.theia-mod-active-chat-context {

@@ -15,6 +15,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 export interface ComposerTranscriptSurfacesApi {
     discoverAndMountTranscriptPreviewIfReady(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     adoptReadyTranscriptPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, readyUrl: string): MobileProjectEntry;
+    updateTranscriptPreviewLaunchStatus?(): void;
 }
 
 /** Hub project selection; implemented by `MobileProjectsProjectNavigationUi`. */

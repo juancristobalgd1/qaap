@@ -1105,6 +1105,7 @@ export async function reportPreviewVisualVerificationFailure(
     conversationId: string,
     reason: string,
     targetAgentMessageId: string,
+    retryForCodeChanges: boolean = true,
 ): Promise<QaapAgentConversationDTO | undefined> {
     const response = await fetch(
         `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verification-failures`,
@@ -1112,7 +1113,7 @@ export async function reportPreviewVisualVerificationFailure(
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason, targetMessageId: targetAgentMessageId }),
+            body: JSON.stringify({ reason, targetMessageId: targetAgentMessageId, retryForCodeChanges }),
         },
     );
     if (response.status === 404) {

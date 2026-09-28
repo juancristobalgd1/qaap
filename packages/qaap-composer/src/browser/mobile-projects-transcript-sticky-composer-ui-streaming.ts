@@ -302,13 +302,46 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
 }
 
 export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
-    summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    summary?: QaapAgentConversationSummaryDTO,): Promise<void> {
+    if (!summary) {
+        const projectRoot = ctx.host.projectsService.getProjectCwd(project)
+            ?? ctx.host.preparedCwdByProjectId.get(project.id);
+        const bootstrap = ctx.host.projectBootstrap;
+        if (!projectRoot || !bootstrap) {
+            MobileSnackbar.show(nls.localize(
+                'qaap/mobileProjects/previewRootUnresolved',
+                'Could not resolve this project\'s folder — open the project and retry.',
+            ), { kind: 'warning' });
+            return;
+        }
+        ctx.host.transcriptPreviewSuppressedByUser = false;
+        MobileSnackbar.show(nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'), { duration: 2200 });
+        try {
+            await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
+            const readyUrl = await ensureTranscriptDevPreview(bootstrap, {
+                projectId: project.id,
+                workspaceRoot: projectRoot,
+                skipConversationPortProbe: true,
+            });
+            if (!readyUrl) {
+                MobileSnackbar.show(
+                    bootstrap.getStateSnapshot().error
+                        ?? nls.localize('qaap/mobileProjects/previewDidNotStart', 'Preview did not start. Check the Dev terminal and retry.'),
+                    { kind: 'warning' },
+                );
+                return;
+            }
+            await bootstrap.openPreview(readyUrl, true);
+        } catch (error) {
+            MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
+        }
+        return;
+    }
     if (typeof ctx.host.requestTranscriptPreview === 'function') {
         // Same launcher as header Play: managed bootstrap, nested identity URL, Stop latch.
         // Never fall through to an LLM prompt from Run app.
         await ctx.host.requestTranscriptPreview(project, summary, {
             revealPreviewTab: true,
-            deferPreviewTabUntilReady: true,
             allowAgentFallback: false,
         });
         return;

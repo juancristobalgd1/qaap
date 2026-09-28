@@ -314,6 +314,59 @@ function buildIdlePreviewHost(activeTab: ExecutionSurfaceTabId = 'preview'): Mob
     return host;
 }
 
+describe('MobileProjectsTranscriptSurfacesUi — preview disposal', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('disposes visible empty-preview chrome when only a stale conversation scope remains', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        const root = document.createElement('div');
+        let disposeCount = 0;
+        host.transcriptEmbeddedPreview = {
+            root,
+            dispose: () => { disposeCount += 1; },
+        } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        ui.transcriptPreviewConversationScopeId = 'conv-1';
+
+        ui.disposeTranscriptEmbeddedPreview();
+
+        expect(disposeCount).to.equal(1);
+        expect(host.transcriptEmbeddedPreview).to.equal(undefined);
+        expect(ui.transcriptPreviewConversationScopeId).to.equal(undefined);
+    });
+
+    it('does not dispose the visible preview when removing a different conversation cache entry', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        const visibleRoot = document.createElement('div');
+        const cachedRoot = document.createElement('div');
+        let visibleDisposeCount = 0;
+        let cachedDisposeCount = 0;
+        const visible = {
+            root: visibleRoot,
+            dispose: () => { visibleDisposeCount += 1; },
+        };
+        ui.host.transcriptEmbeddedPreview = visible as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        ui.transcriptPreviewConversationScopeId = 'conv-visible';
+        ui.embeddedPreviewByConversationScopeId.set('conv-other', {
+            root: cachedRoot,
+            dispose: () => { cachedDisposeCount += 1; },
+        } as unknown as NonNullable<MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview']>);
+
+        ui.disposeTranscriptEmbeddedPreview('conv-other');
+
+        expect(cachedDisposeCount).to.equal(1);
+        expect(visibleDisposeCount).to.equal(0);
+        expect(ui.host.transcriptEmbeddedPreview).to.equal(visible);
+        expect(ui.transcriptPreviewConversationScopeId).to.equal('conv-visible');
+    });
+});
+
 class ProbeTrackingTranscriptSurfacesUi extends MobileProjectsTranscriptSurfacesUi {
     refreshCalls = 0;
 

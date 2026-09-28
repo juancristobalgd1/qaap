@@ -194,9 +194,14 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: MobileProjectsTas
                     const summary = ctx.host.transcriptOpenSummary
                         ?? ctx.host.transcriptComposerSummary
                         ?? (project ? ctx.host.resolveShellSummary?.(project) : undefined);
-                    if (project && summary) {
+                    if (project) {
                         setAgentsHubQuickActionPreviewStarting(btn);
-                        void ctx.host.transcriptStickyComposerUi.launchComposerDevPreview(project, summary);
+                        void Promise.resolve(ctx.host.transcriptStickyComposerUi.launchComposerDevPreview(project, summary))
+                            .finally(() => {
+                                if (!summary && btn.isConnected) {
+                                    resetAgentsHubQuickActionPreviewStarting(btn);
+                                }
+                            });
                         return;
                     }
                     MobileSnackbar.show(nls.localize(
@@ -232,6 +237,20 @@ function setAgentsHubQuickActionPreviewStarting(btn: HTMLButtonElement): void {
             borderBeamBloom.setAttribute('aria-hidden', 'true');
             btn.append(borderBeamBloom);
         }
+}
+
+function resetAgentsHubQuickActionPreviewStarting(btn: HTMLButtonElement): void {
+        btn.disabled = false;
+        btn.classList.remove('theia-mod-preview-starting');
+        btn.removeAttribute('aria-busy');
+        btn.removeAttribute('aria-label');
+        btn.removeAttribute('title');
+        btn.querySelector('.codicon-loading')?.classList.replace('codicon-loading', 'codicon-rocket');
+        const label = btn.querySelector<HTMLElement>('.theia-mobile-agent-transcript-empty-action-label');
+        if (label) {
+            label.textContent = nls.localize('qaap/agentsHub/quickAction/runApp', 'Run app');
+        }
+        btn.querySelector('.qaap-border-beam-bloom')?.remove();
 }
 
 export function applyComposerQuickActionPromptExtracted(ctx: MobileProjectsTasksHubUiContext, prompt: string): void {

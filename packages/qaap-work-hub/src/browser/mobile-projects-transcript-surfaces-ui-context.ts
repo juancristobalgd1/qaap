@@ -130,6 +130,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'tryMountProjectScopedPreview'
     | 'tryMountVerifiedTranscriptPreview'
     | 'updateTranscriptPreviewReadyOverlay'
+    | 'updateTranscriptPreviewLaunchStatus'
     | 'updateTranscriptPreviewRunButtonState'
     | 'verifyMountedTranscriptPreviewIdentity'
     | 'wireTranscriptPreviewAnnotationScope';

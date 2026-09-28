@@ -327,6 +327,30 @@ export class MobileProjectsHubHeaderUi {
             this.host.headerProjectLabelEl,
             showProject && compact,
         );
+
+        const workspaceContext = this.host.titleBlock.querySelector<HTMLElement>('.qaap-transcript-workspace-context')
+            ?? document.createElement('div');
+        if (!workspaceContext.parentElement) {
+            workspaceContext.className = 'theia-mobile-projects-subtitle qaap-transcript-workspace-context';
+            this.host.titleBlock.insertBefore(
+                workspaceContext,
+                this.host.titleBlock.querySelector('.theia-mobile-projects-subtitle, .theia-mobile-projects-meta'),
+            );
+        }
+        const contextProject = this.host.agentsHubInlineActive ? this.host.transcriptOpenProject : undefined;
+        const contextSummary = this.host.agentsHubInlineActive ? this.host.transcriptOpenSummary : undefined;
+        if (contextProject && contextSummary && this.host.transcriptHeaderUi.renderTranscriptWorkspaceContext) {
+            this.host.transcriptHeaderUi.renderTranscriptWorkspaceContext(workspaceContext, contextProject, contextSummary);
+        } else {
+            workspaceContext.hidden = true;
+            workspaceContext.classList.remove('theia-mod-temporary');
+            workspaceContext.replaceChildren();
+            workspaceContext.removeAttribute('title');
+            workspaceContext.removeAttribute('aria-label');
+            delete workspaceContext.dataset.workspaceCwd;
+            delete workspaceContext.dataset.projectName;
+        }
+
         this.host.headerConversationsBtn.hidden = !showProject || compact;
         this.host.headerConversationsBtn.setAttribute('aria-hidden', (!showProject || compact) ? 'true' : 'false');
         if (!showProject || !project) {

@@ -52,6 +52,40 @@ describe('mobile-projects-tasks-hub-ui-render', () => {
         expect(runApp?.querySelector('.qaap-border-beam-bloom')).to.not.equal(null);
     });
 
+    it('runs from the empty project landing without a task summary, then releases the busy action', async () => {
+        let launched = false;
+        const block = createAgentsHubQuickActionsBlockExtracted({
+            host: {
+                transcriptPreviewRequestRunning: false,
+                transcriptPreviewRequestPending: false,
+                transcriptOpenProject: { id: 'project' },
+                transcriptComposerProject: undefined,
+                transcriptOpenSummary: undefined,
+                transcriptComposerSummary: undefined,
+                transcriptStickyComposerUi: {
+                    launchComposerDevPreview: (_project: unknown, summary: unknown) => {
+                        launched = true;
+                        expect(summary).to.equal(undefined);
+                        return Promise.resolve();
+                    },
+                },
+            },
+            applyComposerQuickActionPrompt: () => undefined,
+        } as unknown as MobileProjectsTasksHubUiContext);
+        const runApp = Array.from(block.querySelectorAll<HTMLButtonElement>('button')).find(button =>
+            button.textContent?.trim() === 'Run app');
+
+        document.body.append(block);
+        runApp?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+        await Promise.resolve();
+
+        expect(launched).to.equal(true);
+        expect(runApp?.disabled).to.equal(false);
+        expect(runApp?.textContent).to.include('Run app');
+        expect(runApp?.classList.contains('theia-mod-preview-starting')).to.equal(false);
+        block.remove();
+    });
+
     it('renders Run app as a busy action while preview startup is pending', () => {
         const block = createAgentsHubQuickActionsBlockExtracted({
             host: {

@@ -947,14 +947,19 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     protected async handlePostVisualVerificationFailure(req: Request, res: Response): Promise<void> {
-        const body = (req.body ?? {}) as { reason?: unknown; targetMessageId?: unknown };
+        const body = (req.body ?? {}) as { reason?: unknown; targetMessageId?: unknown; retryForCodeChanges?: unknown };
         const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
         const targetMessageId = typeof body.targetMessageId === 'string' ? body.targetMessageId.trim() : '';
         if (!reason || !targetMessageId) {
             res.status(400).json({ error: 'reason and targetMessageId are required.' });
             return;
         }
-        const conv = await this.store.recordVisualVerificationFailure(req.params.id, reason, targetMessageId);
+        const conv = await this.store.recordVisualVerificationFailure(
+            req.params.id,
+            reason,
+            targetMessageId,
+            body.retryForCodeChanges !== false,
+        );
         if (!conv) {
             res.status(404).json({ error: 'Conversation or agent response not found.' });
             return;

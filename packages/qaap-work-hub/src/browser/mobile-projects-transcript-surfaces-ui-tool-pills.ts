@@ -223,6 +223,108 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: MobileProjectsTranscri
     ctx.host.transcriptEmbeddedPreview.root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
     ctx.syncHeaderPreviewRunButton(project, summary);
     ctx.annotateEmptyPreviewWhenNotRunnable(project, summary);
+    ctx.updateTranscriptPreviewLaunchStatus();
+}
+
+export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
+    const root = ctx.host.transcriptEmbeddedPreview?.root;
+    const frameSlot = root?.querySelector<HTMLElement>('.qaap-preview-frame-slot');
+    const bootstrapState = ctx.host.projectBootstrap?.getStateSnapshot();
+    const requestActive = ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending;
+    const failed = bootstrapState?.phase === 'install-failed' || bootstrapState?.phase === 'run-failed';
+    let overlay = frameSlot?.querySelector<HTMLElement>('.theia-mobile-transcript-preview-launch-overlay');
+    if (!frameSlot || root?.classList.contains(USER_NAVIGATED_PREVIEW_CLASS)
+        || (!requestActive && !(failed && overlay))) {
+        overlay?.remove();
+        return;
+    }
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'theia-mobile-transcript-preview-launch-overlay';
+        frameSlot.append(overlay);
+    }
+
+    const showFailure = !requestActive && failed;
+    const status = document.createElement('div');
+    status.className = 'theia-mobile-transcript-preview-launch-card';
+    status.setAttribute('role', showFailure ? 'alert' : 'status');
+    status.setAttribute('aria-live', showFailure ? 'assertive' : 'polite');
+    if (!showFailure) {
+        status.setAttribute('aria-busy', 'true');
+        const spinner = document.createElement('span');
+        spinner.className = 'codicon codicon-loading theia-mobile-transcript-preview-launch-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        status.append(spinner);
+    }
+    const title = document.createElement('div');
+    title.className = 'theia-mobile-transcript-preview-launch-title';
+    const detail = document.createElement('p');
+    detail.className = 'theia-mobile-transcript-preview-launch-detail';
+    if (showFailure) {
+        title.textContent = nls.localize('qaap/mobileProjects/previewLaunchFailedTitle', 'Preview could not start');
+        detail.textContent = bootstrapState?.error
+            ?? nls.localize(
+                'qaap/mobileProjects/previewLaunchFailedHint',
+                'The app stopped before it was ready. Check the Dev terminal, then try again.',
+            );
+        status.append(title, detail);
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'theia-mobile-transcript-preview-launch-retry';
+        retry.textContent = nls.localize('qaap/mobileProjects/previewLaunchRetry', 'Try again');
+        retry.addEventListener('click', () => {
+            const project = ctx.host.transcriptOpenProject;
+            const summary = ctx.host.transcriptOpenSummary;
+            if (project && summary) {
+                void ctx.requestTranscriptPreview(project, summary, {
+                    revealPreviewTab: true,
+                    allowAgentFallback: false,
+                });
+            }
+        });
+        status.append(retry);
+    } else {
+        const phase = bootstrapState?.phase;
+        if (phase === 'installing') {
+            title.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchInstalling',
+                'Installing dependencies…',
+            );
+            detail.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchInstallHint',
+                'The first launch can take a little longer. The preview will open automatically when installation finishes.',
+            );
+        } else if (phase === 'starting' && bootstrapState?.previewReadiness === 'waiting-for-server') {
+            title.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchBuilding',
+                'Building your preview…',
+            );
+            detail.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchBuildHint',
+                'Waiting for the app to respond. This view will update automatically.',
+            );
+        } else if (phase === 'running') {
+            title.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchOpening',
+                'Opening your app…',
+            );
+            detail.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchOpenHint',
+                'The server is responding. Loading the preview now.',
+            );
+        } else {
+            title.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchPreparing',
+                'Preparing your preview…',
+            );
+            detail.textContent = nls.localize(
+                'qaap/mobileProjects/previewLaunchPrepareHint',
+                'Detecting the app and starting it. The preview will appear here automatically.',
+            );
+        }
+        status.append(title, detail);
+    }
+    overlay.replaceChildren(status);
 }
 
 export function annotateEmptyPreviewWhenNotRunnableExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
@@ -235,7 +337,8 @@ export function annotateEmptyPreviewWhenNotRunnableExtracted(ctx: MobileProjects
         return;
     }
     void bootstrap.describeRunnableApp(FileUri.create(rootPath)).then(result => {
-        if (result.runnable || !frameSlot.isConnected) {
+        if (result.runnable || !frameSlot.isConnected
+            || ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending) {
             return;
         }
         if (ctx.host.transcriptOpenProject && ctx.host.transcriptOpenProject.id !== project.id) {

@@ -15,7 +15,7 @@ import {
     type TranscriptPreviewPortProbeResult,
 } from '../common/qaap-transcript-preview-offer';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
@@ -122,13 +122,9 @@ function collectBootstrapProbePorts(
 async function probeBootstrapListeningPorts(
     bootstrap: QaapProjectBootstrapService,
 ): Promise<string | undefined> {
-    for (const port of collectBootstrapProbePorts(bootstrap)) {
-        const readyUrl = await probeReadyPreviewUrl(port);
-        if (readyUrl) {
-            return readyUrl;
-        }
-    }
-    return undefined;
+    const ports = collectBootstrapProbePorts(bootstrap);
+    const readyUrls = await Promise.all(ports.map(port => probeReadyPreviewUrl(port)));
+    return readyUrls.find((url): url is string => !!url);
 }
 
 const CLAIM_PROBE_INTERVAL_MS = 1_000;
@@ -184,6 +180,11 @@ function waitForBootstrapPreviewUrl(
         // through the identity proxy, the preview is ready regardless of what the terminal said.
         let claimProbeInFlight = false;
         const claimTimerId = window.setInterval(() => {
+            void probeActiveClaim();
+        }, CLAIM_PROBE_INTERVAL_MS);
+        const timerId = window.setTimeout(() => finish(undefined), timeoutMs);
+
+        function probeActiveClaim(): void {
             const previewId = bootstrap.previewId;
             const claimUrl = bootstrap.previewClaimUrl;
             if (!previewId || !claimUrl || claimProbeInFlight) {
@@ -196,8 +197,9 @@ function waitForBootstrapPreviewUrl(
                     finish(probe.previewUrl || claimUrl);
                 }
             }, () => { claimProbeInFlight = false; });
-        }, CLAIM_PROBE_INTERVAL_MS);
-        const timerId = window.setTimeout(() => finish(undefined), timeoutMs);
+        }
+        // Do not make the user wait an extra polling interval after the managed server starts.
+        probeActiveClaim();
     });
 }
 
@@ -214,6 +216,19 @@ async function ensureTranscriptDevPreviewExtracted(
         ?? options.conversation?.cwd;
     if (projectRoot) {
         await bootstrap.refreshFromProjectRoot(projectRoot, options.projectId ?? projectRoot);
+    }
+
+    const conversationId = options.conversationId ?? options.conversation?.id;
+    if (conversationId && (projectRoot || options.projectId)) {
+        bootstrap.bindPreviewConversation(conversationId);
+        const current = await fetchQaapCurrentDevPreview([options.projectId, projectRoot], conversationId);
+        if (current?.ready && current.previewUrl) {
+            // Transcript text and a previously persisted preview URL can point at a superseded
+            // port after an agent restart. Reuse this section's authoritative live claim before
+            // probing stale transcript hints or spawning another dev server.
+            bootstrap.adoptSupersedingPreviewClaim(current);
+            return normalizePreviewUrlForSameOrigin(current.previewUrl);
+        }
     }
 
     // On a shared VPS a prose-derived bare port has no project identity. It may be another app
@@ -269,21 +284,9 @@ async function ensureTranscriptDevPreviewExtracted(
         return alreadyListening;
     }
 
-    if (snapshot.previewUrl && snapshot.phase === 'running') {
-        const runningPort = extractDevPreviewPortFromUrl(snapshot.previewUrl);
-        if (runningPort !== undefined) {
-            const readyUrl = await probeReadyPreviewUrl(runningPort);
-            if (readyUrl) {
-                return readyUrl;
-            }
-        }
-    }
-
     const needsInstall = snapshot.needsInstall === true
         || !snapshot.descriptor.nodeModulesPresent
         || snapshot.phase === 'install-failed';
-    const conversationId = options.conversationId ?? options.conversation?.id;
-
     if (needsInstall) {
         await bootstrap.runInstall();
     } else {

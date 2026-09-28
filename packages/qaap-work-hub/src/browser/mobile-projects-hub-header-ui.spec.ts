@@ -14,6 +14,7 @@ import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './m
 import { mountHeaderProjectButtonContents } from './mobile-projects-panel-chrome-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 
 disableImportJSDOM();
 
@@ -273,6 +274,36 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
             expect(host.headerConversationsBtn.getAttribute('aria-label')).to.equal('Task options');
             expect(host.headerConversationsBtn.getAttribute('aria-haspopup')).to.equal('menu');
+        });
+
+        it('shows the project workspace and warns when an active task uses a temporary workspace', () => {
+            const p = project('mockup', 'Mockup');
+            const cwd = 'C:\\Users\\Personal\\AppData\\Local\\Temp\\cloud-ws-test';
+            const summary = {
+                id: 'temporary-workspace-task',
+                title: 'Run app',
+                cwd,
+                messageCount: 1,
+                status: 'settled',
+            } as MobileProjectsHubHeaderHost['transcriptOpenSummary'];
+            const host = createRenderableHost({
+                agentsHubInlineActive: true,
+                transcriptOpenProject: p,
+                transcriptOpenSummary: summary,
+            });
+            host.transcriptHeaderUi = new MobileProjectsTranscriptHeaderUi({
+                transcriptComposerSendRefresh: undefined,
+            });
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            const context = host.titleBlock.querySelector<HTMLElement>('.qaap-transcript-workspace-context');
+            expect(context?.hidden).to.equal(false);
+            expect(context?.getAttribute('aria-label')).to.contain('Mockup');
+            expect(context?.getAttribute('aria-label')).to.contain(cwd);
+            expect(context?.classList.contains('theia-mod-temporary')).to.equal(true);
+            expect(context?.querySelector('.qaap-transcript-workspace-context-label')?.textContent)
+                .to.equal('Temporary workspace');
         });
 
         it('shows the active project name in the header project control on Agents landing', () => {

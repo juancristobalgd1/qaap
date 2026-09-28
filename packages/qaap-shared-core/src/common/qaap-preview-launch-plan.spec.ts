@@ -33,6 +33,30 @@ describe('Qaap preview launch plan', () => {
         );
     });
 
+    it('renders Windows custom launches through an encoded argv-safe PowerShell call', () => {
+        const plan = {
+            version: 1 as const,
+            runtime: 'custom' as const,
+            cwd: '.',
+            command: 'node',
+            args: ['node_modules/next/dist/bin/next', 'dev', '--message', 'a & b', '{{PORT}}'],
+            port: 3000,
+        };
+        const rendered = renderQaapPreviewLaunchCommand(plan, 'win32');
+        const encodedCommand = rendered.match(/^powershell\.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ([A-Za-z0-9+/=]+)$/)?.[1];
+        expect(encodedCommand).to.be.a('string');
+        const script = Buffer.from(encodedCommand!, 'base64').toString('utf16le');
+        const encodedPayload = script.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/)?.[1];
+        expect(encodedPayload).to.be.a('string');
+        expect(JSON.parse(Buffer.from(encodedPayload!, 'base64').toString('utf8'))).to.deep.equal({
+            command: 'node',
+            args: ['node_modules/next/dist/bin/next', 'dev', '--message', 'a & b', '{{PORT}}'],
+        });
+        expect(script).to.include(".Replace('{{PORT}}', $port)");
+        expect(script).to.include('& $plan.command @argv');
+        expect(rendered).not.to.include('a & b');
+    });
+
     it('rejects cwd traversal and shell-shaped executable tokens', () => {
         expect(parseQaapPreviewLaunchConfig({
             runtime: 'custom', cwd: '../outside', command: 'python3', args: [], port: 8000,

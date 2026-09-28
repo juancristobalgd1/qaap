@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
+import { OS } from '@theia/core/lib/common/os';
 import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import type { FileStat } from '@theia/filesystem/lib/common/files';
@@ -359,7 +360,7 @@ export class QaapProjectBootstrapDetector {
             kind,
             packageManager: 'native',
             installCommand: NATIVE_INSTALL_COMMAND,
-            devCommand: renderQaapPreviewLaunchCommand(plan),
+            devCommand: renderQaapPreviewLaunchCommand(plan, OS.backend.isWindows ? 'win32' : 'posix'),
             devCommandLabel: [plan.command, ...plan.args].join(' '),
             expectedPort: plan.port,
             nodeModulesPresent: true,

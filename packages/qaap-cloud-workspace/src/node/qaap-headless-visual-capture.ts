@@ -591,6 +591,7 @@ export class QaapHeadlessVisualCaptureService {
             conversationId,
             nls.localize('qaap/headlessCapture/failed', 'Headless capture failed: {0}', message),
             target.id,
+            false,
         );
     }
 
@@ -677,6 +678,7 @@ export class QaapHeadlessVisualCaptureService {
                                 ready.reason,
                             ),
                             target.id,
+                            false,
                         );
                         return;
                     }

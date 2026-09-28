@@ -173,7 +173,6 @@ export interface MobileProjectsTranscriptStickyComposerHost {
         summary: QaapAgentConversationSummaryDTO,
         options?: {
             readonly revealPreviewTab?: boolean;
-            readonly deferPreviewTabUntilReady?: boolean;
             readonly allowAgentFallback?: boolean;
         },
     ): Promise<void>;
@@ -425,7 +424,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return buildTranscriptComposerActivityOptionsExtracted(this, project, summary);
     }
 
-    async launchComposerDevPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    async launchComposerDevPreview(project: MobileProjectEntry, summary?: QaapAgentConversationSummaryDTO,): Promise<void> {
         return launchComposerDevPreviewExtracted(this, project, summary);
     }
 
@@ -487,6 +486,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
             return;
         }
         quickActions.replaceWith(this.workHub.createAgentsHubQuickActionsBlock());
+    }
+
+    refreshTranscriptPreviewLaunchStatus(): void {
+        this.host.transcriptSurfacesUi.updateTranscriptPreviewLaunchStatus?.();
     }
 
     /**
