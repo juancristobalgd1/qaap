@@ -25,6 +25,7 @@ import {
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
 import {
+    fetchQaapDevPreviewOomKillCount,
     waitForQaapDevPreviewPort,
 } from './qaap-dev-preview-client';
 import {
@@ -267,6 +268,12 @@ export class QaapProjectBootstrapService {
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */
     public failingDevRunId: number | undefined;
+    /**
+     * Backend OOM-kill counter sampled when the current dev run started. A higher count when the
+     * run fails means the kernel killed it for memory, which no automatic retry can fix.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devRunOomKillBaseline: Promise<number | undefined> | undefined;
     /**
      * Preview terminals spawned by this service that `startDevServer` has not adopted as
      * `devTerminal` yet. Restored-terminal cleanup must never treat them as orphans.
@@ -665,6 +672,11 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public async failDevRun(message: string, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, runId: number,): Promise<void> {
         return failDevRunExtracted(this, message, plan, runId);
+    }
+
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readOomKillCount(): Promise<number | undefined> {
+        return fetchQaapDevPreviewOomKillCount();
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

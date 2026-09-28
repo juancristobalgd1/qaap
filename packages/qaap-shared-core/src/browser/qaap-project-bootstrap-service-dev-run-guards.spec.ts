@@ -55,7 +55,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
     after(() => disableJSDOM?.());
 
     describe('failDevRun', () => {
-        function failingRunContext(): { ctx: QaapProjectBootstrapServiceContext; attachCalls: () => number } {
+        function failingRunContext(overrides: object = {}): { ctx: QaapProjectBootstrapServiceContext; attachCalls: () => number } {
             let attachCalls = 0;
             const state = {
                 devRunGeneration: 7,
@@ -81,6 +81,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
                 setPhase(phase: string): void {
                     this._phase = phase;
                 },
+                ...overrides,
             };
             return { ctx: state as unknown as QaapProjectBootstrapServiceContext, attachCalls: () => attachCalls };
         }
@@ -97,6 +98,37 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(ctx.previewAutoRetryAttempts).to.equal(1);
             expect(attachCalls()).to.equal(1);
             expect(ctx.failingDevRunId).to.equal(undefined);
+        });
+
+        it('fails an OOM-killed run immediately instead of probing and auto-retrying it', async () => {
+            const { ctx, attachCalls } = failingRunContext({
+                devRunOomKillBaseline: Promise.resolve(3),
+                readOomKillCount: async () => 4,
+                appendDevOutput(this: { devOutputTail: string }, data: string): void {
+                    this.devOutputTail += data;
+                },
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            // Next's parent exits quietly after the kernel kills its server child.
+            await activity.failDevRunExtracted(ctx, 'The dev command finished before Qaap could confirm the preview was ready.', PLAN, 7);
+
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            expect(attachCalls()).to.equal(0);
+            expect(ctx._error).to.contain('ran out of memory');
+        });
+
+        it('keeps auto-retrying a crash when the OOM counter did not move', async () => {
+            const { ctx } = failingRunContext({
+                devRunOomKillBaseline: Promise.resolve(3),
+                readOomKillCount: async () => 3,
+            });
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 1.', PLAN, 7);
+            window.clearTimeout(ctx.previewAutoRetryTimer);
+
+            expect(ctx.previewAutoRetryAttempts).to.equal(1);
         });
 
         it('handles a later failure of the same run once the first one settled', async () => {

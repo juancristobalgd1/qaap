@@ -71,6 +71,8 @@ export interface QaapDevPreviewEndpointContext {
 
     handleIdentityProbe(req: Request, res: Response): Promise<void>;
 
+    handleMemoryStatus(req: Request, res: Response): Promise<void>;
+
     handleProxy(req: Request, res: Response): void;
 
     handleIdentityProxy(req: Request, res: Response): void;

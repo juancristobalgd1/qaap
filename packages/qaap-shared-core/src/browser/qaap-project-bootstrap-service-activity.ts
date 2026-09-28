@@ -29,10 +29,12 @@ import {
 import {
     diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
+    DEV_OUT_OF_MEMORY_NOTICE,
     extractTerminalFailureLine,
     isTerminalDoesNotExistError,
     terminalOutputNeedsInstall,
     terminalOutputNextDevLock,
+    terminalOutputOutOfMemory,
 } from './qaap-project-bootstrap-dev-errors';
 import { peekPreferDesktopIde } from './mobile-projects-open';
 import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
@@ -72,6 +74,25 @@ export async function failDevRunExtracted(ctx: QaapProjectBootstrapServiceContex
         }
 }
 
+/** Whether the failed run died from memory exhaustion, per its output or the backend OOM counter. */
+async function devRunRanOutOfMemory(ctx: QaapProjectBootstrapServiceContext, message: string): Promise<boolean> {
+    if (terminalOutputOutOfMemory(`${ctx.devOutputTail}\n${message}`)) {
+        return true;
+    }
+    const baseline = await ctx.devRunOomKillBaseline;
+    if (baseline === undefined) {
+        return false;
+    }
+    const current = await ctx.readOomKillCount();
+    if (current === undefined || current <= baseline) {
+        return false;
+    }
+    // The killed process usually prints nothing (Next's parent exits quietly when its server
+    // child is OOM-killed). Record the cause where the user and every diagnosis reads it.
+    ctx.appendDevOutput(`\r\n${DEV_OUT_OF_MEMORY_NOTICE}\r\n`);
+    return true;
+}
+
 async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
         runId: number,): Promise<void> {
@@ -85,7 +106,15 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             ?? extractDevOutputProbePorts(ctx.devOutputTail)[0]
             ?? ctx.activeDevPortHint
             ?? plan.expectedPort;
-        if (!portConflict) {
+        const outOfMemory = !portConflict && await devRunRanOutOfMemory(ctx, message);
+        if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+            return;
+        }
+        // An OOM-killed server is gone and every retry is killed the same way (Next.js + Webpack
+        // on a 2 GiB tenant): skip the attach probe and the auto-retries so Preview fails now
+        // instead of after several full compile attempts. The OOM notice in the output makes
+        // the diagnosis below `out-of-memory`, which is never auto-retried.
+        if (!portConflict && !outOfMemory) {
             const attached = await ctx.tryAttachToExistingServer(ctx.collectProbePorts(plan));
             if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
                 return;
