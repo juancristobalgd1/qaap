@@ -43,6 +43,9 @@ interface QaapDockerOrchestratorTestAccess {
     getTenantBackendAgentStorageRoot(): string;
     normalizeHostPath(hostPath: string): string;
     runsCurrentTenantImage(docker: Dockerode, inspect: Dockerode.ContainerInspectInfo): Promise<boolean>;
+    getDocker(ownerLogin?: string): Promise<Dockerode>;
+    createOrValidateTenantContainer(name: string, mounts: QaapTenantMountSet, networkMode: string, ownerLogin?: string): Promise<unknown>;
+    createOrValidateTenantBackend(ownerLogin: string, tenantRootHostPath: string): Promise<unknown>;
 }
 
 function access(instance: QaapDockerOrchestrator): QaapDockerOrchestratorTestAccess {
@@ -74,6 +77,26 @@ class FakeDockerode {
     }
 }
 
+/**
+ * Reports every container as missing, records the `createContainer` options, then stops the
+ * flow at the post-start inspect so no test depends on a real daemon.
+ */
+class CreateCapturingDockerode {
+    readonly created: Array<{ HostConfig?: Record<string, unknown> }> = [];
+
+    getContainer(_name: string): unknown {
+        return { inspect: async () => { throw Object.assign(new Error('no such container'), { statusCode: 404 }); } };
+    }
+
+    async createContainer(options: { HostConfig?: Record<string, unknown> }): Promise<unknown> {
+        this.created.push(options);
+        return {
+            start: async () => undefined,
+            inspect: async () => { throw new Error('CreateCapturingDockerode: stop after create'); },
+        };
+    }
+}
+
 const ENV_KEYS = [
     'NODE_ENV',
     'QAAP_CLOUD_MODE',
@@ -90,6 +113,8 @@ const ENV_KEYS = [
     'QAAP_TENANT_PIDS_LIMIT',
     'QAAP_TENANT_TMPFS_SIZE',
     'QAAP_TENANT_AGENT_STORAGE_ROOT',
+    'QAAP_TENANT_CONFIG_ROOT',
+    'QAAP_TENANT_BACKEND_MASTER_SECRET',
     'QAAP_TENANT_CONTAINER_UID',
     'QAAP_TENANT_CONTAINER_GID',
     'QAAP_DOCKER_ROOTLESS',
@@ -543,6 +568,44 @@ describe('QaapDockerOrchestrator', () => {
             expect(thrown).to.be.instanceOf(Error);
             expect((thrown as Error).message).to.match(/requires QAAP_CLOUD_MODE=docker/);
             expect(fakeDocker.calls.getContainer).to.equal(0);
+        });
+    });
+
+    describe('tenant container create options', () => {
+
+        async function captureCreate(run: (orchestrator: QaapDockerOrchestratorTestAccess) => Promise<unknown>): Promise<CreateCapturingDockerode> {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const fakeDocker = new CreateCapturingDockerode();
+            orchestrator.getDocker = async () => fakeDocker as unknown as Dockerode;
+            let thrown: unknown;
+            try {
+                await run(orchestrator);
+            } catch (error) {
+                thrown = error;
+            }
+            expect((thrown as Error | undefined)?.message).to.equal('CreateCapturingDockerode: stop after create');
+            return fakeDocker;
+        }
+
+        it('runs the tenant worker under Docker init so orphaned processes are reaped', async () => {
+            const root = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init', 'repos', 'users', 'alice');
+            const fakeDocker = await captureCreate(orchestrator =>
+                orchestrator.createOrValidateTenantContainer('qaap-tenant-spec', orchestrator.tenantMountsForRoot(root), 'none', 'alice'));
+
+            expect(fakeDocker.created).to.have.length(1);
+            expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
+        });
+
+        it('runs the tenant backend under Docker init so orphaned dev servers are reaped', async () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init');
+            process.env.QAAP_TENANT_NETWORK_MODE = 'none';
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
+            process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            const fakeDocker = await captureCreate(orchestrator =>
+                orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice')));
+
+            expect(fakeDocker.created).to.have.length(1);
+            expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
         });
     });
 

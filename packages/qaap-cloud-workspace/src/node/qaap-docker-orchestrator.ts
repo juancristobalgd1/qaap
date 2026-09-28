@@ -791,6 +791,9 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-login': (ownerLogin?.trim() || '__anonymous__').toLowerCase(),
                 },
                 HostConfig: {
+                    // Docker's tini as PID 1 reaps orphaned grandchildren (killed dev servers,
+                    // detached shells); zombies otherwise count against PidsLimit.
+                    Init: true,
                     // Mount only this tenant's three storage roots. The worker never receives the
                     // shared parent, another tenant's root, or the backend's host filesystem.
                     Binds: [
@@ -954,6 +957,10 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-login': ownerLogin.toLowerCase(),
                 },
                 HostConfig: {
+                    // The backend (node) would otherwise be PID 1 and never reap orphaned
+                    // grandchildren such as OOM-killed `next-server` processes; each zombie
+                    // counts against PidsLimit. Same contract as `init: true` in docker-compose.yml.
+                    Init: true,
                     Binds: [
                         repoMount,
                         worktreeMount,
