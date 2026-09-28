@@ -129,6 +129,12 @@ describe('buildAgentDevServerVerificationPromptBlock', () => {
         expect(block).to.include('Partial output from a killed or timed-out process');
         expect(block).to.include('.qaap/preview.json');
     });
+
+    it('treats a refused preview port as "Qaap is still starting", never as "run it yourself"', () => {
+        const block = buildAgentDevServerVerificationPromptBlock();
+        expect(block).to.include('Qaap\'s preview is still installing dependencies or starting');
+        expect(block).to.include('Never tell the user to run the dev server themselves');
+    });
 });
 
 describe('buildAgentHonestReportingPromptBlock', () => {
