@@ -27,7 +27,7 @@ export function ensureTranscriptSurfaceCss(): Promise<void> {
 async function loadTranscriptSurfaceCss(): Promise<void> {
     // Same relative order these sheets had when they were eager imports of the Work Hub module
     // (timeline sheets before the conversation / transcript surfaces that refine them).
-    const urls = await Promise.all([
+    await QaapLazyStylesheets.loadModules(
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premium.css?qaap-lazy'),
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css?qaap-lazy'),
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css?qaap-lazy'),
@@ -36,6 +36,5 @@ async function loadTranscriptSurfaceCss(): Promise<void> {
         // Keep the Markdown surface last: it is the single canonical owner of transcript
         // typography, overflow, tables, headings, and rich code block presentation.
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-markdown.css?qaap-lazy'),
-    ]);
-    await QaapLazyStylesheets.load(...urls.map(module => module.default));
+    );
 }

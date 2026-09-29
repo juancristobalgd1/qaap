@@ -30,6 +30,20 @@ export namespace QaapLazyStylesheets {
         return Promise.all(urls.map(loadOne)).then(() => undefined);
     }
 
+    /**
+     * {@link load} over `import('…css?qaap-lazy')` promises, keeping argument order. An import
+     * that does not resolve is skipped: only the esbuild plugin understands `?qaap-lazy` (and the
+     * bundle build fails on a specifier it cannot resolve), so this happens only outside the
+     * bundle — e.g. unit tests under mocha, where Node's `require` rejects the query suffix.
+     */
+    export async function loadModules(...modules: Promise<{ default: string }>[]): Promise<void> {
+        const urls = await Promise.all(modules.map(module => module.then(
+            resolved => resolved.default,
+            () => undefined,
+        )));
+        return load(...urls.filter((url): url is string => typeof url === 'string' && url.length > 0));
+    }
+
     function loadOne(url: string): Promise<void> {
         let loading = pending.get(url);
         if (!loading) {
