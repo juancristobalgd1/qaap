@@ -101,6 +101,18 @@ describe('qaap-agent-task-runner-hooks', () => {
             expect(refed).to.deep.equal(['RM']);
         });
 
+        it('allow never overrides a core --tools allowlist that excludes the tool', async () => {
+            hooks.decision = { decision: 'allow' };
+            const readOnlyTask = { ...task, command: 'qaiq --permission-mode default --tools Read,Grep,Glob' } as QaapAgentTask;
+            const refed: string[] = [];
+            const gate = createQaiqPreToolUseHookGate(ctx, readOnlyTask, logStream, line => refed.push(line));
+            gate.screen({ ...request, requestId: 'r3' }, 'BASH');
+            await flush();
+            // Not approved by the hook: the normal path handles (and denies) it.
+            expect(written).to.deep.equal([]);
+            expect(refed).to.deep.equal(['BASH']);
+        });
+
         it('ask queues for the user', async () => {
             await run({ decision: 'ask' });
             expect(written).to.deep.equal([]);

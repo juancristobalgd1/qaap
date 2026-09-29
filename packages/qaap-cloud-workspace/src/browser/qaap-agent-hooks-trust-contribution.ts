@@ -85,7 +85,7 @@ export class QaapAgentHooksTrustContribution implements FrontendApplicationContr
         if (choice === ignore) {
             decision = 'ignore';
         } else if (choice === review) {
-            decision = await this.openReviewDialog(workspace.hooks) ? 'trust' : undefined;
+            decision = await this.openReviewDialog(workspace.hooks, workspace.coveredFiles ?? []) ? 'trust' : undefined;
         }
         if (!decision) {
             return;
@@ -137,27 +137,34 @@ export class QaapAgentHooksTrustContribution implements FrontendApplicationContr
     }
 
     /** Lists every declared command verbatim (no truncation); resolves `true` only on "Trust". */
-    protected async openReviewDialog(hooks: readonly QaapAgentHookSummaryEntry[]): Promise<boolean> {
+    protected async openReviewDialog(hooks: readonly QaapAgentHookSummaryEntry[], coveredFiles: readonly string[]): Promise<boolean> {
         const dialog = new ConfirmDialog({
             title: nls.localize('qaap/agentHooks/reviewTitle', 'Review agent hooks'),
-            msg: this.renderReview(hooks),
+            msg: this.renderReview(hooks, coveredFiles),
             ok: nls.localize('qaap/agentHooks/trust', 'Trust'),
             cancel: nls.localizeByDefault('Cancel'),
         });
         return await dialog.open() === true;
     }
 
-    protected renderReview(hooks: readonly QaapAgentHookSummaryEntry[]): HTMLElement {
+    protected renderReview(hooks: readonly QaapAgentHookSummaryEntry[], coveredFiles: readonly string[]): HTMLElement {
         const root = document.createElement('div');
         root.className = 'qaap-agent-hooks-review';
         const intro = document.createElement('p');
         intro.textContent = nls.localize(
             'qaap/agentHooks/reviewIntro',
-            'Trusting runs these commands in this project around every agent turn. Any change to {0} asks again, '
-            + 'but scripts or programs these commands call are not part of the review: only trust a project you control.',
+            'Trusting runs these commands in this project around every agent turn. Any change to {0}, to other files in '
+            + '.qaap/ or to project files the commands name asks again. Programs outside the project, and files the commands '
+            + 'reach indirectly, are not covered: only trust a project you control.',
             QAAP_WORKSPACE_HOOKS_RELATIVE_PATH,
         );
         root.appendChild(intro);
+        if (coveredFiles.length) {
+            const covered = document.createElement('p');
+            covered.className = 'qaap-agent-hooks-review-covered';
+            covered.textContent = nls.localize('qaap/agentHooks/coveredFiles', 'Also covered by this review: {0}', coveredFiles.join(', '));
+            root.appendChild(covered);
+        }
         const list = document.createElement('ol');
         list.className = 'qaap-agent-hooks-review-list';
         for (const hook of hooks) {

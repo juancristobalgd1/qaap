@@ -161,6 +161,7 @@ export class QaapAgentHookService {
             ...(workspace ? { root: workspace.root } : {}),
             ...(workspace?.digest ? { digest: workspace.digest } : {}),
             hooks: workspace ? flattenQaapAgentHookDeclaration(workspace.declaration) : [],
+            ...(workspace?.coveredFiles?.length ? { coveredFiles: workspace.coveredFiles } : {}),
             errors: workspace?.errors ?? [],
         };
     }

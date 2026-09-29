@@ -21,9 +21,24 @@ export interface QaapAgentHookTrustRecord {
     readonly decidedAt: string;
 }
 
-/** sha256 (hex) of the normalized declaration — the trust review is bound to exactly this content. */
-export function computeQaapAgentHookDigest(declaration: QaapAgentHookDeclaration): string {
-    return crypto.createHash('sha256').update(normalizeQaapAgentHookDeclaration(declaration), 'utf8').digest('hex');
+/** A repository file whose content the trust review covers (see `coveredFiles` in the status DTO). */
+export interface QaapAgentHookCoveredFile {
+    /** Repository-relative, `/`-separated. */
+    readonly path: string;
+    /** sha256 of the content, or a marker (`link:<target>`, `size:<bytes>`) when it is not hashed. */
+    readonly fingerprint: string;
+}
+
+/**
+ * sha256 (hex) of the normalized declaration plus the covered files' fingerprints — the trust review
+ * is bound to exactly this content. Without covered files it equals the declaration-only digest.
+ */
+export function computeQaapAgentHookDigest(declaration: QaapAgentHookDeclaration, files: readonly QaapAgentHookCoveredFile[] = []): string {
+    const hash = crypto.createHash('sha256').update(normalizeQaapAgentHookDeclaration(declaration), 'utf8');
+    for (const file of [...files].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) {
+        hash.update(`\u0000${file.path}\u0000${file.fingerprint}`, 'utf8');
+    }
+    return hash.digest('hex');
 }
 
 /**

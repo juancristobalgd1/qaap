@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     QAAP_AGENT_HOOK_DEFAULT_TIMEOUT_SEC,
     QAAP_AGENT_HOOK_MAX_TIMEOUT_SEC,
+    extractQaapAgentHookFileCandidates,
     flattenQaapAgentHookDeclaration,
     interpretQaapAgentHookResult,
     isQaapAgentHookDeclarationEmpty,
@@ -17,6 +18,18 @@ import {
 } from './qaap-agent-hooks';
 
 describe('qaap-agent-hooks', () => {
+
+    describe('extractQaapAgentHookFileCandidates', () => {
+        it('returns repository-relative candidates from paths, quotes and project-dir variables', () => {
+            expect(extractQaapAgentHookFileCandidates('bash ./scripts/a.sh && node "$CLAUDE_PROJECT_DIR"/tools/b.js --config=cfg/c.json').sort())
+                .to.deep.equal(['cfg/c.json', 'scripts/a.sh', 'tools/b.js']);
+            expect(extractQaapAgentHookFileCandidates('python ${QAAP_PROJECT_DIR}/.qaap/x.py')).to.deep.equal(['.qaap/x.py']);
+        });
+
+        it('skips absolute, home-relative, parent-relative and bare words', () => {
+            expect(extractQaapAgentHookFileCandidates('/usr/bin/env ~/x.sh ../y.sh echo done $HOME/z')).to.deep.equal([]);
+        });
+    });
 
     describe('parseQaapAgentHooksConfig', () => {
         it('parses the Claude Code settings shape', () => {

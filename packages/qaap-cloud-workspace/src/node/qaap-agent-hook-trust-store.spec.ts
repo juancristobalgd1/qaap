@@ -88,6 +88,41 @@ describe('qaap agent hook trust', function (): void {
         fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
+    it('binds the digest to the scripts the hooks run, not only to the command text', () => {
+        fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+        fs.writeFileSync(path.join(repo, 'scripts', 'check.sh'), 'echo v1\n');
+        fs.writeFileSync(path.join(repo, 'unrelated.txt'), 'x');
+        writeHooks({
+            hooks: {
+                Stop: [{ hooks: [{ command: 'bash ./scripts/check.sh' }, { command: 'bash "$CLAUDE_PROJECT_DIR"/.qaap/stop.sh' }] }],
+            },
+        });
+        fs.writeFileSync(path.join(repo, '.qaap', 'stop.sh'), 'echo stop\n');
+        const first = loader.loadWorkspace(repo);
+        expect([...first?.coveredFiles ?? []].sort()).to.deep.equal(['.qaap/stop.sh', 'scripts/check.sh']);
+
+        fs.writeFileSync(path.join(repo, 'unrelated.txt'), 'y');
+        expect(loader.loadWorkspace(repo)?.digest, 'unrelated file').to.equal(first?.digest);
+
+        fs.writeFileSync(path.join(repo, 'scripts', 'check.sh'), 'echo v2\n');
+        const afterScriptEdit = loader.loadWorkspace(repo);
+        expect(afterScriptEdit?.digest, 'named script').to.not.equal(first?.digest);
+
+        fs.writeFileSync(path.join(repo, '.qaap', 'helper.py'), 'print(1)\n');
+        expect(loader.loadWorkspace(repo)?.digest, 'new file under .qaap/').to.not.equal(afterScriptEdit?.digest);
+    });
+
+    it('a trusted workspace returns to pending when a covered script changes', () => {
+        fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+        fs.writeFileSync(path.join(repo, 'scripts', 'stop.sh'), 'echo ok\n');
+        writeHooks({ hooks: { Stop: [{ hooks: [{ command: 'sh scripts/stop.sh' }] }] } });
+        const digest = service.status(repo, 'alice').workspace.digest!;
+        expect(service.trust(repo, 'alice', digest).ok).to.equal(true);
+        expect(service.status(repo, 'alice').workspace.state).to.equal('trusted');
+        fs.writeFileSync(path.join(repo, 'scripts', 'stop.sh'), 'echo changed\n');
+        expect(service.status(repo, 'alice').workspace.state).to.equal('pending');
+    });
+
     it('locates .qaap/hooks.json from a nested cwd and stops at the git root', () => {
         writeHooks({ hooks: { Stop: [{ hooks: [{ command: 'echo done' }] }] } });
         const loaded = loader.loadWorkspace(path.join(repo, 'src', 'deep'));

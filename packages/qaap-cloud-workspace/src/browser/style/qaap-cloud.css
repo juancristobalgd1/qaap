@@ -115,3 +115,8 @@
   word-break: break-all;
   user-select: text;
 }
+
+.qaap-agent-hooks-review-covered {
+  color: var(--theia-descriptionForeground);
+  word-break: break-all;
+}

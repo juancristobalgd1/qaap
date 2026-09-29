@@ -74,10 +74,45 @@ export interface QaapAgentWorkspaceHooksStatus {
     readonly state: QaapAgentWorkspaceHookTrustState;
     /** Repository root holding `.qaap/hooks.json`. */
     readonly root?: string;
-    /** sha256 of the normalized declaration; trust and ignore requests must echo it. */
+    /**
+     * sha256 of the normalized declaration plus the content of {@link coveredFiles}; trust and ignore
+     * requests must echo it.
+     */
     readonly digest?: string;
     readonly hooks: readonly QaapAgentHookSummaryEntry[];
+    /**
+     * Repository-relative files whose content is part of {@link digest}: everything under `.qaap/`
+     * and project files the commands name (`./scripts/x.sh`, `$CLAUDE_PROJECT_DIR/…`). Editing any of
+     * them returns the workspace to review.
+     */
+    readonly coveredFiles?: readonly string[];
     readonly errors: readonly string[];
+}
+
+/** Project-dir variables hooks receive; a `$VAR/…` argument names a file inside the repository. */
+const QAAP_AGENT_HOOK_PROJECT_DIR_PREFIX_RE = /^(?:\$\{?(?:CLAUDE_PROJECT_DIR|QAAP_PROJECT_DIR)\}?\/)+/;
+
+/**
+ * Words of a hook command that may name a repository file, as repository-relative paths (quotes and
+ * project-dir prefixes removed; absolute, home-relative and `..` paths skipped). Callers keep only the
+ * candidates that exist, so over-matching (a word that is not a path) is harmless.
+ */
+export function extractQaapAgentHookFileCandidates(command: string): string[] {
+    const candidates = new Set<string>();
+    for (const rawWord of command.split(/[\s;&|()<>`]+/)) {
+        let word = rawWord.replace(/["']/g, '');
+        const eq = word.indexOf('=');
+        if (eq >= 0) {
+            word = word.slice(eq + 1);
+        }
+        word = word.replace(QAAP_AGENT_HOOK_PROJECT_DIR_PREFIX_RE, '').replace(/^(?:\.\/)+/, '');
+        if (!word || word.startsWith('/') || word.startsWith('~') || word.startsWith('$') || /^[A-Za-z]:/.test(word)
+            || word.split('/').includes('..') || !/[./]/.test(word)) {
+            continue;
+        }
+        candidates.add(word);
+    }
+    return [...candidates];
 }
 
 export interface QaapAgentHooksStatusResponse {
