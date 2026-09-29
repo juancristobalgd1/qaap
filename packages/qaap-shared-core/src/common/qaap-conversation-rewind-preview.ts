@@ -66,6 +66,12 @@ export interface QaapRewindPreviewDTO {
     readonly unsafeCount: number;
     /** `true` when {@link files} was capped; counts still cover every file. */
     readonly truncated?: boolean;
+    /**
+     * Fingerprint of the unsafe files (path, current content, action) this preview showed. An `all`
+     * restore must echo it, so files that became unsafe (or changed again) after the review are never
+     * overwritten under a stale confirmation. Absent when nothing is unsafe.
+     */
+    readonly unsafeToken?: string;
 }
 
 export type QaapRewindRestoreMode = 'all' | 'safe';
@@ -75,6 +81,8 @@ export interface QaapRewindRestoreOptions {
     readonly mode: QaapRewindRestoreMode;
     /** Required (`true`) when `mode === 'all'` and the restore includes unsafe files. */
     readonly confirmUnsafe?: boolean;
+    /** {@link QaapRewindPreviewDTO.unsafeToken} of the preview the user confirmed (required with `confirmUnsafe`). */
+    readonly unsafeToken?: string;
 }
 
 /** Per-path facts gathered from git; blob ids are `undefined` when the path is absent. */
@@ -208,16 +216,29 @@ export function selectRewindFiles(
     return mode === 'safe' ? files.filter(file => file.safety === 'safe') : [...files];
 }
 
-/** Error message when an `all` restore would drop unsafe changes without explicit confirmation. */
+/**
+ * Error message when an `all` restore would drop unsafe changes without an explicit confirmation of
+ * exactly these files: `currentUnsafeToken` is the fingerprint recomputed at restore time.
+ */
 export function rewindRestoreConfirmationError(
     files: readonly QaapRewindPreviewFileDTO[],
     options: QaapRewindRestoreOptions,
+    currentUnsafeToken?: string,
 ): string | undefined {
-    if (options.mode !== 'all' || options.confirmUnsafe) {
+    if (options.mode !== 'all') {
         return undefined;
     }
     const unsafe = files.filter(file => file.safety === 'unsafe').length;
-    return unsafe ? `Restore would overwrite ${unsafe} file(s) with changes not made by the agent; confirmation required.` : undefined;
+    if (!unsafe) {
+        return undefined;
+    }
+    if (!options.confirmUnsafe) {
+        return `Restore would overwrite ${unsafe} file(s) with changes not made by the agent; confirmation required.`;
+    }
+    if (!options.unsafeToken || options.unsafeToken !== currentUnsafeToken) {
+        return 'Files changed since the preview; review the restore again.';
+    }
+    return undefined;
 }
 
 /** Normalize an untrusted request body into restore options (`undefined` = legacy restore). */
@@ -225,15 +246,19 @@ export function parseRewindRestoreOptions(body: unknown): QaapRewindRestoreOptio
     if (!body || typeof body !== 'object') {
         return undefined;
     }
-    const value = body as { mode?: unknown; confirmUnsafe?: unknown };
+    const value = body as { mode?: unknown; confirmUnsafe?: unknown; unsafeToken?: unknown };
     if (value.mode !== 'all' && value.mode !== 'safe') {
         return undefined;
     }
-    return { mode: value.mode, confirmUnsafe: value.confirmUnsafe === true };
+    return {
+        mode: value.mode,
+        confirmUnsafe: value.confirmUnsafe === true,
+        ...(typeof value.unsafeToken === 'string' && /^[a-f0-9]{64}$/.test(value.unsafeToken) ? { unsafeToken: value.unsafeToken } : {}),
+    };
 }
 
 export function buildRewindPreviewDTO(
-    base: Omit<QaapRewindPreviewDTO, 'files' | 'safeCount' | 'unsafeCount' | 'truncated'>,
+    base: Omit<QaapRewindPreviewDTO, 'files' | 'safeCount' | 'unsafeCount' | 'truncated' | 'unsafeToken'> & { readonly unsafeToken?: string },
     files: readonly QaapRewindPreviewFileDTO[],
     maxFiles: number = QAAP_REWIND_PREVIEW_MAX_FILES,
 ): QaapRewindPreviewDTO {

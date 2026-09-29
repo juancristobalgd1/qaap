@@ -104,7 +104,16 @@ describe('qaap-agent-conversation-rewind-preview-git', function (): void {
         expect(preview.files.find(file => file.path === 'keep.txt')).to.include({ action: 'recreate', safety: 'unsafe' });
         write('notes.txt', 'untracked user file\n');
         write('secret.env', 'ignored\n');
-        await (await planRewindRestore(git, conv, target, { mode: 'all', confirmUnsafe: true }))();
+        // The confirmation only covers what the user reviewed: a later change needs a new preview.
+        const reviewed = (await computeRewindPreview(git, conv, target)).preview.unsafeToken;
+        expect(reviewed).to.match(/^[a-f0-9]{64}$/);
+        write('user.txt', 'user edited again\n');
+        let stale: unknown;
+        await planRewindRestore(git, conv, target, { mode: 'all', confirmUnsafe: true, unsafeToken: reviewed }).catch(error => { stale = error; });
+        expect(stale).to.be.instanceOf(QaapRewindConfirmationRequiredError);
+        expect(fs.readFileSync(path.join(cwd, 'user.txt'), 'utf8')).to.equal('user edited again\n');
+        const fresh = (await computeRewindPreview(git, conv, target)).preview.unsafeToken;
+        await (await planRewindRestore(git, conv, target, { mode: 'all', confirmUnsafe: true, unsafeToken: fresh }))();
         // git clean only ever receives explicit delete paths: unrelated untracked/ignored files survive.
         expect(fs.readFileSync(path.join(cwd, 'notes.txt'), 'utf8')).to.equal('untracked user file\n');
         expect(fs.readFileSync(path.join(cwd, 'secret.env'), 'utf8')).to.equal('ignored\n');

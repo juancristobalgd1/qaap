@@ -125,7 +125,12 @@ describe('qaap-conversation-rewind-preview', () => {
         expect(selectRewindFiles(files, 'safe').map(file => file.path)).to.deep.equal(['safe']);
         expect(selectRewindFiles(files, 'all')).to.have.length(2);
         expect(rewindRestoreConfirmationError(files, { mode: 'all' })).to.be.a('string');
-        expect(rewindRestoreConfirmationError(files, { mode: 'all', confirmUnsafe: true })).to.equal(undefined);
+        const token = 'a'.repeat(64);
+        // Confirmation is bound to the reviewed unsafe set: a missing or stale token is rejected.
+        expect(rewindRestoreConfirmationError(files, { mode: 'all', confirmUnsafe: true }, token)).to.contain('changed since the preview');
+        expect(rewindRestoreConfirmationError(files, { mode: 'all', confirmUnsafe: true, unsafeToken: 'b'.repeat(64) }, token))
+            .to.contain('changed since the preview');
+        expect(rewindRestoreConfirmationError(files, { mode: 'all', confirmUnsafe: true, unsafeToken: token }, token)).to.equal(undefined);
         expect(rewindRestoreConfirmationError(files, { mode: 'safe' })).to.equal(undefined);
     });
 
@@ -135,6 +140,10 @@ describe('qaap-conversation-rewind-preview', () => {
         expect(parseRewindRestoreOptions({ mode: 'safe' })).to.deep.equal({ mode: 'safe', confirmUnsafe: false });
         expect(parseRewindRestoreOptions({ mode: 'all', confirmUnsafe: 'yes' })).to.deep.equal({ mode: 'all', confirmUnsafe: false });
         expect(parseRewindRestoreOptions({ mode: 'all', confirmUnsafe: true })).to.deep.equal({ mode: 'all', confirmUnsafe: true });
+        expect(parseRewindRestoreOptions({ mode: 'all', confirmUnsafe: true, unsafeToken: 'f'.repeat(64) }))
+            .to.deep.equal({ mode: 'all', confirmUnsafe: true, unsafeToken: 'f'.repeat(64) });
+        expect(parseRewindRestoreOptions({ mode: 'all', confirmUnsafe: true, unsafeToken: 'not-a-token' }))
+            .to.deep.equal({ mode: 'all', confirmUnsafe: true });
     });
 
     it('caps the DTO list but keeps unsafe files and full counts', () => {

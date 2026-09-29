@@ -110,7 +110,7 @@ export class QaapTranscriptRewindPreviewDialog extends AbstractDialog<QaapRewind
         const allButton = this.appendChoiceButton(
             nls.localize('qaap/transcriptRewind/restoreAll', 'Restore all'),
             false,
-            { mode: 'all', confirmUnsafe: true },
+            { mode: 'all', confirmUnsafe: true, ...(preview.unsafeToken ? { unsafeToken: preview.unsafeToken } : {}) },
         );
         allButton.disabled = true;
         allButton.classList.add('qaap-rewind-preview-danger');

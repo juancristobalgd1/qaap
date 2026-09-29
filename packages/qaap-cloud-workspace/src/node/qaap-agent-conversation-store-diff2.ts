@@ -20,9 +20,12 @@ function rewindGitRunner(ctx: QaapAgentConversationStoreContext, cwd: string): Q
  * Capture an undo checkpoint and restore the worktree to `checkpoint`, as one job on the
  * per-repository git chain so it never interleaves with a turn-settle checkpoint. With `options`
  * the restore is selective (safe/all) and re-validated against a fresh classification first.
+ * `onValidated` runs once every check passed and before anything changes (e.g. cancel running turns),
+ * so a rejected restore (409) has no side effect.
  */
 function captureUndoAndRestore(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation, messageId: string,
-    undoLabel: string, checkpoint: QaapConversationCheckpoint, options?: QaapRewindRestoreOptions): Promise<QaapConversationCheckpoint | undefined> {
+    undoLabel: string, checkpoint: QaapConversationCheckpoint, options?: QaapRewindRestoreOptions,
+    onValidated?: () => void): Promise<QaapConversationCheckpoint | undefined> {
     const cwd = conv.cwd;
     return ctx.runSerializedGit(cwd, async () => {
         const repositoryCheck = await ctx.mutatingGit(
@@ -36,6 +39,7 @@ function captureUndoAndRestore(ctx: QaapAgentConversationStoreContext, conv: Qaa
         const applySelective = options
             ? await planRewindRestore(rewindGitRunner(ctx, cwd), conv, checkpoint, options)
             : undefined;
+        onValidated?.();
         const undo = await ctx.captureCheckpoint(cwd, conv.id, messageId, undoLabel);
         if (applySelective) {
             await applySelective();
@@ -94,12 +98,14 @@ export async function rewindToMessageExtracted(
             return undefined;
         }
         const plan = planConversationRewind(conv, messageId);
-        for (const taskId of plan.taskIdsToCancel) {
-            ctx.taskRunner.cancel(taskId);
-            ctx.agentStreamByTaskId.delete(taskId);
-            ctx.agUiStreamByTaskId.delete(taskId);
-            ctx.taskToConversation.delete(taskId);
-        }
+        const cancelRewoundTurns = (): void => {
+            for (const taskId of plan.taskIdsToCancel) {
+                ctx.taskRunner.cancel(taskId);
+                ctx.agentStreamByTaskId.delete(taskId);
+                ctx.agUiStreamByTaskId.delete(taskId);
+                ctx.taskToConversation.delete(taskId);
+            }
+        };
         let next: QaapAgentConversation = {
             ...conv,
             status: 'idle',
@@ -110,10 +116,14 @@ export async function rewindToMessageExtracted(
             gitDiffRemoved: undefined,
         };
         if (plan.restoreCheckpoint) {
-            const undo = await captureUndoAndRestore(ctx, conv, messageId, 'Before rewind', plan.restoreCheckpoint, options);
+            // Running turns are cancelled only once the restore is validated: a rejected rewind (409,
+            // not a git repository) leaves the conversation and its agent untouched.
+            const undo = await captureUndoAndRestore(ctx, conv, messageId, 'Before rewind', plan.restoreCheckpoint, options, cancelRewoundTurns);
             if (undo) {
                 next = { ...next, checkpoints: [...(next.checkpoints ?? []), undo] };
             }
+        } else {
+            cancelRewoundTurns();
         }
         ctx.conversations.set(conversationId, next);
         ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });

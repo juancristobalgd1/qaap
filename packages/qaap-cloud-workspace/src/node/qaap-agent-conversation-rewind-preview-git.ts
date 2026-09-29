@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
     buildRewindPreviewDTO,
     classifyRewindFiles,
@@ -205,6 +205,23 @@ export async function collectRewindFileStates(
     }));
 }
 
+/**
+ * sha256 over every unsafe file's path, current blob and action (sorted), or `undefined` when none is
+ * unsafe. Recomputed at restore time and compared with the token the user confirmed.
+ */
+export function computeRewindUnsafeToken(files: readonly QaapRewindPreviewFileDTO[], states: readonly QaapRewindFileState[]): string | undefined {
+    const unsafe = files.filter(file => file.safety === 'unsafe');
+    if (!unsafe.length) {
+        return undefined;
+    }
+    const currentByPath = new Map(states.map(state => [state.path, state.current ?? '']));
+    const hash = createHash('sha256');
+    for (const file of [...unsafe].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)) {
+        hash.update(`${file.path}\u0000${currentByPath.get(file.path) ?? ''}\u0000${file.action}\u0000`, 'utf8');
+    }
+    return hash.digest('hex');
+}
+
 /** Everything needed to preview or apply a restore of one checkpoint. */
 export interface QaapRewindComputation {
     readonly preview: QaapRewindPreviewDTO;
@@ -234,6 +251,7 @@ export async function computeRewindPreview(
     const baselineKnown = !!baselineCommit && (await git(['cat-file', '-e', `${baselineCommit}^{commit}`])).status === 0;
     const files = classifyRewindFiles(states, { baselineKnown });
     const untracked = new Set(states.filter(state => !state.tracked).map(state => state.path));
+    const unsafeToken = computeRewindUnsafeToken(files, states);
     return {
         preview: buildRewindPreviewDTO({
             conversationId: conv.id,
@@ -242,6 +260,7 @@ export async function computeRewindPreview(
             checkpointLabel: checkpoint.label,
             targetCommit: checkpoint.commit,
             baselineCommit: baselineKnown ? baselineCommit : undefined,
+            ...(unsafeToken ? { unsafeToken } : {}),
         }, files),
         files,
         untracked,
@@ -288,7 +307,7 @@ export async function planRewindRestore(
     options: QaapRewindRestoreOptions,
 ): Promise<() => Promise<void>> {
     const computation = await computeRewindPreview(git, conv, checkpoint);
-    const error = rewindRestoreConfirmationError(computation.files, options);
+    const error = rewindRestoreConfirmationError(computation.files, options, computation.preview.unsafeToken);
     if (error) {
         throw new QaapRewindConfirmationRequiredError(error);
     }
