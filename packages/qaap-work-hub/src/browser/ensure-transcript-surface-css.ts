@@ -8,9 +8,11 @@ import { QaapLazyStylesheets } from '@theia/qaap-product-theme/lib/browser/qaap-
 let transcriptSurfaceCss: Promise<void> | undefined;
 
 /**
- * Loads conversation / Files / transcript styles. Files can mount from Agents Hub
+ * Loads transcript timeline / conversation / Files / transcript styles. Files can mount from Agents Hub
  * or project detail without opening a transcript sheet, so every Files entry path
- * must call this (not only `openTranscriptSheet`).
+ * must call this (not only `openTranscriptSheet`). Synchronous renderers (Agents Hub
+ * inline transcript) call it fire-and-forget; `QaapLazySurfaceStylesheetsPreload` also
+ * warms it once the app is ready and idle so those paths find it already applied.
  *
  * The sheets are `?qaap-lazy` imports: they are not part of `bundle.css` and are
  * attached (in this order) the first time a transcript surface opens.
@@ -23,7 +25,12 @@ export function ensureTranscriptSurfaceCss(): Promise<void> {
 }
 
 async function loadTranscriptSurfaceCss(): Promise<void> {
+    // Same relative order these sheets had when they were eager imports of the Work Hub module
+    // (timeline sheets before the conversation / transcript surfaces that refine them).
     const urls = await Promise.all([
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premium.css?qaap-lazy'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css?qaap-lazy'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css?qaap-lazy'),
         import('../../src/browser/style/mobile-workbench-conversation.css?qaap-lazy'),
         import('@theia/qaap-transcript/src/browser/style/mobile-workbench-transcript.css?qaap-lazy'),
         // Keep the Markdown surface last: it is the single canonical owner of transcript

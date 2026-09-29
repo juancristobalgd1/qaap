@@ -9,6 +9,9 @@
 // surface-specific partials lazy-load on activation to reduce initial CSS
 // payload on mobile. Open-repo styles are boot-critical: the drawer opens
 // from landing/FAB and its previous home (pr-review) is not imported.
+// Surface-only sheets are `?qaap-lazy` (own asset, attached when the surface first opens):
+// transcript timeline / conversation / transcript / markdown (ensureTranscriptSurfaceCss),
+// pull requests (ensurePullRequestsSurfaceCss) and diff review (QaapWidgetStylesheetContribution).
 import '../../src/browser/style/mobile-workbench-base.css';
 import '../../src/browser/style/mobile-workbench-projects.css';
 import '../../src/browser/style/mobile-workbench-open-repo.css';
@@ -25,15 +28,10 @@ import '@theia/qaap-composer/src/browser/style/qaap-chat-mic.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-prompt-improve.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-select-dropdown.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-goal-loop.css';
-import '@theia/qaap-diff-review/src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
-import '../../src/browser/style/qaap-work-hub-pull-requests.css';
-import '@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premium.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
-import '@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css';
-import '@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
@@ -42,6 +40,9 @@ import { AgentNotificationService } from '@theia/ai-core/lib/browser/agent-notif
 import { bindToolProvider } from '@theia/ai-core/lib/common';
 import { AIVariableContribution } from '@theia/ai-core/lib/common/variable-service';
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { QaapLazyStylesheets } from '@theia/qaap-product-theme/lib/browser/qaap-lazy-stylesheets';
+import { QaapWidgetStylesheetContribution } from '@theia/qaap-product-theme/lib/browser/qaap-lazy-widget-stylesheets';
+import { QaapLazySurfaceStylesheetsPreload } from './qaap-lazy-surface-stylesheets-preload';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { QaapChatPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-chat-preferences-contribution';
 import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
@@ -320,6 +321,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
         id: QaapDiffReviewWidget.ID,
         createWidget: () => container.get(QaapDiffReviewWidget),
     })).inSingletonScope();
+    bind<QaapWidgetStylesheetContribution>(QaapWidgetStylesheetContribution).toConstantValue({
+        factoryIds: [QaapDiffReviewWidget.ID],
+        loadStylesheets: async () => QaapLazyStylesheets.load(
+            (await import('@theia/qaap-diff-review/src/browser/style/qaap-diff-review.css?qaap-lazy')).default,
+        ),
+    });
+    bind(QaapLazySurfaceStylesheetsPreload).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapLazySurfaceStylesheetsPreload);
     bind(QaapDiffReviewContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapDiffReviewContribution);
 

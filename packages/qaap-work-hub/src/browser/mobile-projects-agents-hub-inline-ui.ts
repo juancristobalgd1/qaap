@@ -32,6 +32,7 @@ import type { MobileProjectsTasksHubUi } from './mobile-projects-tasks-hub-ui';
 import { disposeComposerContextEntries, type StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
 
 /** Panel surface for the Agents Hub inline execution shell (tasks landing). */
 export interface MobileProjectsAgentsHubInlineHost {
@@ -444,6 +445,7 @@ export class MobileProjectsAgentsHubInlineUi {
         _project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): void {
+        void ensureTranscriptSurfaceCss();
         const activeSummary = this.host.agentsHubInlineActive && this.host.transcriptOpenSummary
             ? this.host.transcriptOpenSummary
             : summary;
@@ -505,6 +507,7 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     seedTranscriptOptimisticConversation(conv: QaapAgentConversationDTO): void {
+        void ensureTranscriptSurfaceCss();
         this.host.transcriptConversationCache.set(conv.id, conv);
         this.host.transcriptLastConv = conv;
         this.host.transcriptLastFingerprint = undefined;
@@ -676,6 +679,7 @@ export class MobileProjectsAgentsHubInlineUi {
         if (this.isSameInlineTranscriptOpen(project, summary)) {
             return;
         }
+        await ensureTranscriptSurfaceCss();
         const previousProject = this.host.transcriptOpenProject;
         const previousSummary = this.host.transcriptOpenSummary;
         if (this.host.transcriptLastConv) {

@@ -313,6 +313,7 @@ import {
     onAuthSessionChangedHandler,
 } from './mobile-projects-panel-init';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
 
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** Max conversation rows per repo card before "More" expands the list. */
@@ -1315,6 +1316,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected openPullRequestDetail(pullRequest: QaapGithubPullRequestSummary): void {
+        void ensurePullRequestsSurfaceCss();
         this.pullRequestDetail = pullRequest;
         if (shouldKeepSessionsSidebarOpenAfterNavigation()) {
             this.sessionsSidebar?.refreshList({ force: true });

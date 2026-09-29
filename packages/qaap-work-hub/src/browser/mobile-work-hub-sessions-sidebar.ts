@@ -15,6 +15,7 @@ import { MobileHaptics } from '@theia/qaap-mobile-shell/lib/browser/mobile-hapti
 import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { setQaapClientErrorBuild } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -491,6 +492,7 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     protected showPullRequestsModeWithoutRefresh(): void {
+        void ensurePullRequestsSurfaceCss();
         this.sidebarMode = 'pullRequests';
         this.settingsOptions = undefined;
         this.root.classList.remove('theia-mod-settings');
