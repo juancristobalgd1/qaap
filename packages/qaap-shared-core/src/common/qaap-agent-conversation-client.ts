@@ -20,6 +20,7 @@ import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-imag
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
 import { normalizeQaapVisualPreviewUrl, type QaapPreviewVisualValidationResult } from './qaap-visual-verification';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
+import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from './qaap-conversation-rewind-preview';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -206,6 +207,8 @@ export interface QaapConversationCheckpointDTO {
     readonly capturedAt: number;
     readonly added?: number;
     readonly removed?: number;
+    /** On a restore/rewind undo snapshot: the checkpoint commit the restore wrote back. */
+    readonly restoredFrom?: string;
 }
 
 /**
@@ -570,10 +573,18 @@ export async function getConversation(id: string): Promise<QaapAgentConversation
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
 
-export async function restoreConversationCheckpoint(id: string, checkpointId: string): Promise<QaapAgentConversationDTO> {
+/**
+ * Restore a checkpoint. Pass {@link QaapRewindRestoreOptions} (from the rewind preview) to restore
+ * only safe files or all files; omit for the legacy whole-tree restore.
+ */
+export async function restoreConversationCheckpoint(
+    id: string,
+    checkpointId: string,
+    options?: QaapRewindRestoreOptions,
+): Promise<QaapAgentConversationDTO> {
     const response = await fetch(
         `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(checkpointId)}/restore`,
-        { method: 'POST', credentials: 'include' },
+        rewindRestoreRequestInit(options),
     );
     if (!response.ok) {
         throw new Error((await response.text()) || response.statusText);
@@ -581,15 +592,56 @@ export async function restoreConversationCheckpoint(id: string, checkpointId: st
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
 
-export async function rewindConversationToMessage(id: string, messageId: string): Promise<QaapAgentConversationDTO> {
+export async function rewindConversationToMessage(
+    id: string,
+    messageId: string,
+    options?: QaapRewindRestoreOptions,
+): Promise<QaapAgentConversationDTO> {
     const response = await fetch(
         `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/rewind`,
-        { method: 'POST', credentials: 'include' },
+        rewindRestoreRequestInit(options),
     );
     if (!response.ok) {
         throw new Error((await response.text()) || response.statusText);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+function rewindRestoreRequestInit(options: QaapRewindRestoreOptions | undefined): RequestInit {
+    if (!options) {
+        return { method: 'POST', credentials: 'include' };
+    }
+    return {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options),
+    };
+}
+
+/**
+ * Dry run of a restore: which files it would touch and whether each is safe to revert.
+ * Target either a checkpoint (`checkpointId`) or the rewind of a user message (`messageId`).
+ */
+export async function fetchConversationRewindPreview(
+    id: string,
+    target: { readonly checkpointId?: string; readonly messageId?: string },
+): Promise<QaapRewindPreviewDTO> {
+    const query = new URLSearchParams();
+    if (target.checkpointId) {
+        query.set('checkpoint', target.checkpointId);
+    }
+    if (target.messageId) {
+        query.set('messageId', target.messageId);
+    }
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/rewind/preview?${query.toString()}`,
+        { credentials: 'include' },
+    );
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return response.json() as Promise<QaapRewindPreviewDTO>;
 }
 
 export async function createConversation(
