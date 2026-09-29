@@ -14,8 +14,9 @@ let pullRequestsSurfaceCss: Promise<void> | undefined;
  */
 export function ensurePullRequestsSurfaceCss(): Promise<void> {
     if (!pullRequestsSurfaceCss) {
-        pullRequestsSurfaceCss = import('../../src/browser/style/qaap-work-hub-pull-requests.css?qaap-lazy')
-            .then(module => QaapLazyStylesheets.load(module.default));
+        pullRequestsSurfaceCss = QaapLazyStylesheets.loadModules(
+            import('../../src/browser/style/qaap-work-hub-pull-requests.css?qaap-lazy'),
+        );
     }
     return pullRequestsSurfaceCss;
 }

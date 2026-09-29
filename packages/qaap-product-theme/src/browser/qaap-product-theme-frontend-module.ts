@@ -63,22 +63,22 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind<QaapWidgetStylesheetContribution>(QaapWidgetStylesheetContribution).toConstantValue({
         // VSXExtensionsViewContainer.ID, VSXExtensionsWidget.ID (@theia/vsx-registry is not a dependency).
         factoryIds: ['vsx-extensions-view-container', 'vsx-extensions'],
-        loadStylesheets: async () => QaapLazyStylesheets.load(
-            (await import('../../src/browser/style/qaap-vsx-registry.css?qaap-lazy')).default,
+        loadStylesheets: () => QaapLazyStylesheets.loadModules(
+            import('../../src/browser/style/qaap-vsx-registry.css?qaap-lazy'),
         ),
     });
     bind<QaapWidgetStylesheetContribution>(QaapWidgetStylesheetContribution).toConstantValue({
         // IDE terminals and the Work Hub transcript terminal host both come from this factory.
         factoryIds: [TERMINAL_WIDGET_FACTORY_ID],
-        loadStylesheets: async () => QaapLazyStylesheets.load(
-            (await import('../../src/browser/style/qaap-terminal-mobile.css?qaap-lazy')).default,
+        loadStylesheets: () => QaapLazyStylesheets.loadModules(
+            import('../../src/browser/style/qaap-terminal-mobile.css?qaap-lazy'),
         ),
     });
     bind<QaapWidgetStylesheetContribution>(QaapWidgetStylesheetContribution).toConstantValue({
         // GettingStartedWidget.ID, rebound to QaapGettingStartedWidget by @theia/qaap-product.
         factoryIds: ['getting.started.widget'],
-        loadStylesheets: async () => QaapLazyStylesheets.load(
-            (await import('../../src/browser/style/qaap-getting-started.css?qaap-lazy')).default,
+        loadStylesheets: () => QaapLazyStylesheets.loadModules(
+            import('../../src/browser/style/qaap-getting-started.css?qaap-lazy'),
         ),
     });
 });

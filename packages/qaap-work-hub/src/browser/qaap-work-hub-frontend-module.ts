@@ -323,8 +323,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     })).inSingletonScope();
     bind<QaapWidgetStylesheetContribution>(QaapWidgetStylesheetContribution).toConstantValue({
         factoryIds: [QaapDiffReviewWidget.ID],
-        loadStylesheets: async () => QaapLazyStylesheets.load(
-            (await import('@theia/qaap-diff-review/src/browser/style/qaap-diff-review.css?qaap-lazy')).default,
+        loadStylesheets: () => QaapLazyStylesheets.loadModules(
+            import('@theia/qaap-diff-review/src/browser/style/qaap-diff-review.css?qaap-lazy'),
         ),
     });
     bind(QaapLazySurfaceStylesheetsPreload).toSelf().inSingletonScope();

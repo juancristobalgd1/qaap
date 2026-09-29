@@ -166,6 +166,10 @@ describe('qaap-transcript-preview-bootstrap', () => {
     });
 
     it('keeps concurrent requests for different conversations independent', async () => {
+        // Stub the current-preview lookup: a real fetch to the jsdom origin (localhost) with no
+        // server listening takes ~2s to be refused on Windows and times the test out.
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async (): Promise<Response> => ({ ok: false } as Response)) as typeof fetch;
         let releaseRefresh!: () => void;
         const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
         let refreshCalls = 0;
@@ -178,22 +182,26 @@ describe('qaap-transcript-preview-bootstrap', () => {
             getStateSnapshot: () => ({ descriptor: undefined }),
         } as unknown as QaapProjectBootstrapService;
 
-        const first = ensureTranscriptDevPreview(bootstrap, {
-            conversationId: 'conversation-a',
-            workspaceRoot: '/workspace/repos/project',
-            projectId: 'project',
-            skipConversationPortProbe: true,
-        });
-        const second = ensureTranscriptDevPreview(bootstrap, {
-            conversationId: 'conversation-b',
-            workspaceRoot: '/workspace/repos/project',
-            projectId: 'project',
-            skipConversationPortProbe: true,
-        });
+        try {
+            const first = ensureTranscriptDevPreview(bootstrap, {
+                conversationId: 'conversation-a',
+                workspaceRoot: '/workspace/repos/project',
+                projectId: 'project',
+                skipConversationPortProbe: true,
+            });
+            const second = ensureTranscriptDevPreview(bootstrap, {
+                conversationId: 'conversation-b',
+                workspaceRoot: '/workspace/repos/project',
+                projectId: 'project',
+                skipConversationPortProbe: true,
+            });
 
-        expect(second).not.to.equal(first);
-        releaseRefresh();
-        await Promise.all([first, second]);
-        expect(refreshCalls).to.equal(2);
+            expect(second).not.to.equal(first);
+            releaseRefresh();
+            await Promise.all([first, second]);
+            expect(refreshCalls).to.equal(2);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
     });
 });
