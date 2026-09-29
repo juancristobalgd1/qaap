@@ -199,6 +199,11 @@ const lazyCssPlugin = {
                 logLevel: 'silent',
             });
             const css = result.outputFiles.find(file => file.path.endsWith('.css'));
+            const extra = result.outputFiles.filter(file => file !== css);
+            if (extra.length) {
+                // Only the stylesheet is written: every asset must be inlined (all asset loaders are `dataurl`).
+                return { errors: [{ text: `lazy stylesheet ${args.path} emits separate assets (${extra.map(file => path.basename(file.path)).join(', ')}), which would be lost` }] };
+            }
             const fileName = `chunk-${lazyCssHash(css.contents)}.css`;
             const target = path.join(FRONTEND_OUT_DIR, fileName);
             if (!fs.existsSync(target)) {
