@@ -71,6 +71,8 @@ export class MobileEditorGestureContribution implements FrontendApplicationContr
     protected mobileMq: MediaQueryList | undefined;
     protected coarseMq: MediaQueryList | undefined;
     protected attached = false;
+    /** Editors that already carry the non-passive gesture listeners. */
+    protected readonly patchedEditors = new WeakSet<HTMLElement>();
 
     protected startPointers: PointerSnapshot[] = [];
     protected lastZoomDistance = 0;
@@ -108,11 +110,35 @@ export class MobileEditorGestureContribution implements FrontendApplicationContr
             return;
         }
         this.attached = true;
-        // Non-passive touchstart/move so we can preventDefault and stop iOS browser-level pinch zoom.
-        document.addEventListener('touchstart', this.onTouchStart, { passive: false, capture: true });
-        document.addEventListener('touchmove', this.onTouchMove, { passive: false, capture: true });
-        document.addEventListener('touchend', this.onTouchEnd, { passive: true, capture: true });
-        document.addEventListener('touchcancel', this.onTouchCancel, { passive: true, capture: true });
+        // Only a passive document listener: a non-passive document-level touchstart/touchmove
+        // would make every touch on the page (transcript, lists, sheets) wait on the main
+        // thread. The blocking listeners live on each `.monaco-editor` instead.
+        document.addEventListener('touchstart', this.onDocumentTouchStart, { passive: true, capture: true });
+    }
+
+    /**
+     * Lazily installs the gesture listeners on the touched editor. Listeners added to a node
+     * that the event has not reached yet still fire for the current dispatch, so the first
+     * gesture is handled too; `preventDefault` is guarded by `cancelable` in the handlers.
+     */
+    protected readonly onDocumentTouchStart = (e: TouchEvent): void => {
+        const editor = this.isEditorTarget(e.target);
+        if (editor && !this.patchedEditors.has(editor)) {
+            this.patchEditor(editor);
+        }
+    };
+
+    /**
+     * Non-passive touchstart/move on the editor element so we can preventDefault and stop iOS
+     * browser-level pinch zoom. Listeners stay with the element (and are collected with it);
+     * handlers are inert while the contribution is detached.
+     */
+    protected patchEditor(editor: HTMLElement): void {
+        this.patchedEditors.add(editor);
+        editor.addEventListener('touchstart', this.onTouchStart, { passive: false, capture: true });
+        editor.addEventListener('touchmove', this.onTouchMove, { passive: false, capture: true });
+        editor.addEventListener('touchend', this.onTouchEnd, { passive: true, capture: true });
+        editor.addEventListener('touchcancel', this.onTouchCancel, { passive: true, capture: true });
     }
 
     protected detachListeners(): void {
@@ -120,10 +146,7 @@ export class MobileEditorGestureContribution implements FrontendApplicationContr
             return;
         }
         this.attached = false;
-        document.removeEventListener('touchstart', this.onTouchStart, true);
-        document.removeEventListener('touchmove', this.onTouchMove, true);
-        document.removeEventListener('touchend', this.onTouchEnd, true);
-        document.removeEventListener('touchcancel', this.onTouchCancel, true);
+        document.removeEventListener('touchstart', this.onDocumentTouchStart, true);
         this.resetGesture();
     }
 
@@ -151,7 +174,7 @@ export class MobileEditorGestureContribution implements FrontendApplicationContr
     }
 
     protected readonly onTouchStart = (e: TouchEvent): void => {
-        if (e.touches.length !== 2) {
+        if (!this.attached || e.touches.length !== 2) {
             this.resetGesture();
             return;
         }
@@ -174,7 +197,7 @@ export class MobileEditorGestureContribution implements FrontendApplicationContr
     };
 
     protected readonly onTouchMove = (e: TouchEvent): void => {
-        if (this.startPointers.length !== 2 || e.touches.length < 2) {
+        if (!this.attached || this.startPointers.length !== 2 || e.touches.length < 2) {
             return;
         }
         const p0 = this.snapshotFor(e, this.startPointers[0].id);

@@ -11,7 +11,9 @@ import {
     isMobileScrollCompositorExcluded,
     MOBILE_SCROLL_COMPOSITOR_EXCLUDED_SELECTORS,
     MOBILE_SCROLL_GPU_COMPOSITOR_CLASS,
+    MOBILE_VERTICAL_SCROLL_NATIVE_ONLY_SELECTORS,
     MOBILE_VERTICAL_SCROLL_SELECTORS,
+    needsMobileVerticalTouchScrollFallback,
 } from './mobile-vertical-touch-scroll';
 
 /** Overlay scroll hosts added with product UI — must stay registered in touch-scroll CSS. */
@@ -116,6 +118,20 @@ describe('mobile-vertical-touch-scroll', () => {
         expect(MOBILE_VERTICAL_SCROLL_SELECTORS).to.not.include(
             '.theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat',
         );
+    });
+
+    it('never installs the JS fallback on the agent transcript (native scroll only)', () => {
+        expect(MOBILE_VERTICAL_SCROLL_NATIVE_ONLY_SELECTORS).to.include('.theia-mobile-agent-transcript');
+        const transcript = {
+            matches: (selector: string) => selector === '.theia-mobile-agent-transcript',
+        } as unknown as HTMLElement;
+        expect(needsMobileVerticalTouchScrollFallback(transcript)).to.equal(false);
+    });
+
+    it('keeps the JS fallback for other hosts on engines without native nested touch scroll', () => {
+        // Mocha runs without `CSS.supports`, i.e. like an engine lacking `overscroll-behavior`.
+        const sheetList = { matches: () => false } as unknown as HTMLElement;
+        expect(needsMobileVerticalTouchScrollFallback(sheetList)).to.equal(true);
     });
 
     it('isMobileScrollCompositorExcluded guards Work Hub projects scroll', () => {

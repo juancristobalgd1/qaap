@@ -18,6 +18,7 @@ En viewports estrechos (`max-width: 767px`) y puntero grueso (`pointer: coarse`)
    - `packages/qaap-mobile-shell/src/browser/style/qaap-mobile-touch-scroll.css` (bloque `@media` móvil)
    - `MOBILE_VERTICAL_SCROLL_SELECTOR` en `mobile-vertical-touch-scroll.ts`
    Los overlays se montan fuera de `#theia-app-shell`; `MobileTouchScrollContribution` los parchea vía `MutationObserver` solo si el selector está registrado.
+   El scroll real es **nativo** (el CSS fuerza `overflow-y: auto` + `pan-y` + `overscroll-behavior-y: contain`). El fallback JS (`touchmove` no pasivo + `scrollTop` manual) solo se instala en motores sin `overscroll-behavior` (WebKit/iOS < 16) — ver `supportsNativeNestedTouchScroll()` — y **nunca** en `.theia-mobile-agent-transcript` (`MOBILE_VERTICAL_SCROLL_NATIVE_ONLY_SELECTORS`). No añadir listeners `touchmove` no pasivos a nivel `document` ni en hosts de scroll: bloquean el scroll del compositor y el momentum.
 4. **No poner `touch-action: none`** en contenedores que envuelvan listas scrollables (solo grabbers, edge-swipe, gestos de arrastre explícitos).
 5. **Breakpoint**: alinear con `MOBILE_NARROW_VIEWPORT_MEDIA_QUERY` / `767px` y `qaap-product-theme` narrow CSS.
 

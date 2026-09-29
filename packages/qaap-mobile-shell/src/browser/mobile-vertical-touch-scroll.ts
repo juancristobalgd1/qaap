@@ -32,11 +32,59 @@ const isInsideHorizontalScrollHost = (target: EventTarget | null): boolean =>
     target instanceof Element && !!target.closest(MOBILE_HORIZONTAL_SCROLL_SELECTOR);
 
 /**
- * Touch fallback for vertically scrollable regions on iOS / coarse pointers when
- * nested scroll under `body { overflow: hidden }` does not move natively.
+ * Scroll hosts that must always scroll natively, even on engines that get the JS
+ * fallback. The agent transcript streams content continuously and runs its own
+ * passive scroll controller (`qaap-transcript-scroll-controller.ts`); a
+ * non-passive `touchmove` + manual `scrollTop` writes there stall scrolling
+ * behind streaming work and kill momentum.
+ */
+export const MOBILE_VERTICAL_SCROLL_NATIVE_ONLY_SELECTORS = [
+    '.theia-mobile-agent-transcript',
+] as const;
+
+let nativeNestedTouchScrollSupport: boolean | undefined;
+
+/**
+ * Whether nested `overflow-y: auto` hosts pan natively (with momentum and
+ * compositor scrolling) under `html/body { overflow: hidden }`.
+ *
+ * The JS fallback exists for old WebKit (iOS < 16), where nested scroll under a
+ * locked body could fail to engage once PerfectScrollbar had set
+ * `overflow: hidden` on the host. `qaap-mobile-touch-scroll.css` now forces
+ * native overflow + `touch-action: pan-y` + `overscroll-behavior-y: contain` on
+ * every registered host; every engine that implements `overscroll-behavior`
+ * (Chromium 63+, Firefox 59+, Safari/iOS 16+) scrolls those hosts natively, so
+ * the fallback — which blocks the compositor with a non-passive `touchmove` —
+ * is only installed where that feature is missing.
+ */
+export function supportsNativeNestedTouchScroll(): boolean {
+    if (nativeNestedTouchScrollSupport === undefined) {
+        nativeNestedTouchScrollSupport = typeof CSS !== 'undefined'
+            && typeof CSS.supports === 'function'
+            && CSS.supports('overscroll-behavior-y', 'contain');
+    }
+    return nativeNestedTouchScrollSupport;
+}
+
+/** Whether {@link installMobileVerticalTouchScroll} would attach JS touch handlers to `element`. */
+export function needsMobileVerticalTouchScrollFallback(element: HTMLElement): boolean {
+    if (supportsNativeNestedTouchScroll()) {
+        return false;
+    }
+    return !MOBILE_VERTICAL_SCROLL_NATIVE_ONLY_SELECTORS.some(selector => element.matches(selector));
+}
+
+/**
+ * Touch fallback for vertically scrollable regions on old iOS WebKit when nested
+ * scroll under `body { overflow: hidden }` does not move natively. No-op on
+ * engines with native nested touch scroll (see {@link supportsNativeNestedTouchScroll})
+ * and on {@link MOBILE_VERTICAL_SCROLL_NATIVE_ONLY_SELECTORS}.
  */
 export function installMobileVerticalTouchScroll(element: HTMLElement): Disposable {
     if (typeof window === 'undefined') {
+        return Disposable.NULL;
+    }
+    if (!needsMobileVerticalTouchScrollFallback(element)) {
         return Disposable.NULL;
     }
     if (element.closest(HORIZONTAL_STRIP_SELECTOR)) {
@@ -124,7 +172,9 @@ export function installMobileVerticalTouchScroll(element: HTMLElement): Disposab
 }
 
 /**
- * Scroll hosts that should receive the vertical touch fallback on mobile.
+ * Vertical scroll hosts on mobile. Native overflow is enforced for all of them by
+ * `qaap-mobile-touch-scroll.css`; the JS fallback is only installed on engines
+ * without native nested touch scroll (see {@link supportsNativeNestedTouchScroll}).
  * Keep in sync with `qaap-mobile-touch-scroll.css` (overlay hosts are outside `#theia-app-shell`).
  */
 export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
