@@ -105,9 +105,14 @@ refresh_caddy() {
     docker compose up -d --no-deps --force-recreate caddy
 }
 
+# Seeds the rootless tenant daemon through a Theia container that mounts its socket.
+# Args (both optional): the container to exec into (default: the current theia service
+# container) and the tenant image to seed (default: that container's QAAP_TENANT_DOCKER_IMAGE).
 preload_tenant_image() {
-    local container_id tenant_image rootless
-    container_id="$(docker compose ps -q theia | tr -d '\r' | sed -n '1p')"
+    local container_id="${1:-}" tenant_image="${2:-}" rootless
+    if [[ -z "$container_id" ]]; then
+        container_id="$(docker compose ps -q theia | tr -d '\r' | sed -n '1p')"
+    fi
     if [[ -z "$container_id" ]]; then
         echo '[qaap-vps-update] no Theia container available to preload the tenant image' >&2
         return 1
@@ -119,8 +124,10 @@ preload_tenant_image() {
         return 0
     fi
 
-    tenant_image="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-        | sed -n 's/^QAAP_TENANT_DOCKER_IMAGE=//p')"
+    if [[ -z "$tenant_image" ]]; then
+        tenant_image="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | sed -n 's/^QAAP_TENANT_DOCKER_IMAGE=//p')"
+    fi
     if [[ -z "$tenant_image" ]]; then
         echo '[qaap-vps-update] QAAP_DOCKER_ROOTLESS is enabled but QAAP_TENANT_DOCKER_IMAGE is empty' >&2
         return 1
@@ -161,6 +168,24 @@ preload_tenant_image() {
 
     echo "[qaap-vps-update] preloading tenant image into rootless Docker: $tenant_image"
     docker exec "$container_id" docker pull "$tenant_image"
+}
+
+# The new control plane hands tenants the new image as soon as it serves, and a
+# `docker save | docker load` of this image takes minutes. Seed the rootless daemon through the
+# still-serving container first so tenants never ask for an image it does not have yet
+# ("Tenant backend unavailable ... No such image"). Best effort: a first deploy has no running
+# container, and the post-switch preload still runs either way.
+preload_tenant_image_before_switch() {
+    local running
+    running="$(docker compose ps -q --status running theia 2>/dev/null | tr -d '\r' | sed -n '1p' || true)"
+    if [[ -z "$running" ]]; then
+        echo '[qaap-vps-update] no running Theia container; tenant image will be seeded after the switch'
+        return 0
+    fi
+    echo '[qaap-vps-update] seeding tenant image into rootless Docker before switching the control plane'
+    if ! preload_tenant_image "$running" "${QAAP_TENANT_DOCKER_IMAGE:-}"; then
+        echo '[qaap-vps-update] pre-switch tenant image seed failed; retrying after the switch' >&2
+    fi
 }
 
 # Post-deploy image cleanup (prune_old_qaap_images); sourced so it can be tested with a fake docker.
@@ -326,6 +351,7 @@ if [[ -n "$IMAGE_REF" ]]; then
         docker tag "$IMAGE_REF" "$QAAP_TENANT_DOCKER_IMAGE"
         echo "[qaap-vps-update] tenant image: $QAAP_TENANT_DOCKER_IMAGE"
     fi
+    preload_tenant_image_before_switch
     docker compose up -d --no-build
 else
     # Pin source builds to the exact upstream QAIQ commit. CI-built GHCR images already receive
@@ -346,8 +372,10 @@ else
     else
         docker compose build --build-arg "QAIQ_COMMIT=$CACHE_BUST" --build-arg "CACHE_BUST=$CACHE_BUST" theia
     fi
+    preload_tenant_image_before_switch
     docker compose up -d
 fi
+# Safety net (a no-op when the pre-switch seed succeeded): seed through the new container.
 preload_tenant_image
 refresh_caddy
 docker compose ps
