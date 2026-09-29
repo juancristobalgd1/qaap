@@ -6,6 +6,7 @@ import { browserOptions, watch } from './gen-esbuild.browser.mjs';
 import { nodeOptions } from './gen-esbuild.node.mjs';
 import { exposeModulePlugin } from '@theia/bundle-plugin';
 import esbuild from 'esbuild';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -149,6 +150,71 @@ function pruneStaleFrontendChunks(metafile) {
     }
 }
 
+/**
+ * Truly-lazy stylesheets. A CSS import — static or `import()` — is merged into
+ * the entry's bundle.css by esbuild whatever its import kind (TS compiles
+ * `import()` to `require()` anyway), so a "lazy" CSS import never saved a
+ * byte. A specifier ending in `?qaap-lazy` opts out: the stylesheet is bundled
+ * on its own (its `@import`s and `url()` assets included) into a
+ * content-addressed `chunk-<HASH>.css` next to the chunks — so the backend's
+ * immutable-chunk caching and copy-frontend-static's gzip step apply as-is —
+ * and the import's default export is that file's absolute URL. Frontend code
+ * attaches it with `<link rel="stylesheet">` when its surface first opens
+ * (see `QaapLazyStylesheets` in @theia/qaap-product-theme).
+ */
+const LAZY_CSS_SUFFIX = /\?qaap-lazy$/;
+const LAZY_CSS_NAMESPACE = 'qaap-lazy-css';
+/** Source stylesheet path → emitted file name; survives incremental (watch) rebuilds. */
+const lazyStylesheetOutputs = new Map();
+
+function lazyCssHash(contents) {
+    // Same alphabet as esbuild's `[hash]` so the file matches PRUNABLE_CHUNK and the
+    // backend's HASHED_CHUNK_FILE_PATTERN (immutable caching).
+    return createHash('sha256').update(contents).digest('hex').slice(0, 10).toUpperCase();
+}
+
+const lazyCssPlugin = {
+    name: 'qaap-lazy-css',
+    setup(build) {
+        build.onResolve({ filter: LAZY_CSS_SUFFIX }, async args => {
+            const resolved = await build.resolve(args.path.replace(LAZY_CSS_SUFFIX, ''), {
+                kind: args.kind,
+                resolveDir: args.resolveDir,
+                importer: args.importer,
+            });
+            if (resolved.errors.length) {
+                return { errors: resolved.errors };
+            }
+            return { path: resolved.path, namespace: LAZY_CSS_NAMESPACE };
+        });
+        build.onLoad({ filter: /.*/, namespace: LAZY_CSS_NAMESPACE }, async args => {
+            const result = await esbuild.build({
+                entryPoints: [args.path],
+                bundle: true,
+                write: false,
+                metafile: true,
+                outdir: FRONTEND_OUT_DIR,
+                loader: browserOptions.loader,
+                minify: browserOptions.minify,
+                logLevel: 'silent',
+            });
+            const css = result.outputFiles.find(file => file.path.endsWith('.css'));
+            const fileName = `chunk-${lazyCssHash(css.contents)}.css`;
+            const target = path.join(FRONTEND_OUT_DIR, fileName);
+            if (!fs.existsSync(target)) {
+                fs.mkdirSync(FRONTEND_OUT_DIR, { recursive: true });
+                fs.writeFileSync(target, css.contents);
+            }
+            lazyStylesheetOutputs.set(args.path, fileName);
+            return {
+                contents: `export default new URL(${JSON.stringify(`./${fileName}`)}, import.meta.url).href;\n`,
+                loader: 'js',
+                watchFiles: Object.keys(result.metafile.inputs).map(input => path.resolve(input)),
+            };
+        });
+    },
+};
+
 const pruneStaleChunksPlugin = {
     name: 'qaap-prune-stale-chunks',
     setup(build) {
@@ -157,7 +223,8 @@ const pruneStaleChunksPlugin = {
                 return;
             }
             try {
-                pruneStaleFrontendChunks(result.metafile);
+                const lazyOutputs = Object.fromEntries([...lazyStylesheetOutputs.values()].map(name => [name, {}]));
+                pruneStaleFrontendChunks({ ...result.metafile, outputs: { ...result.metafile.outputs, ...lazyOutputs } });
             } catch (error) {
                 console.warn('[qaap] stale chunk pruning skipped:', error);
             }
@@ -175,7 +242,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, ...browserOptions.plugins, pruneStaleChunksPlugin],
+    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, pruneStaleChunksPlugin],
 };
 const workerOptions = {
     ...browserOptions,
