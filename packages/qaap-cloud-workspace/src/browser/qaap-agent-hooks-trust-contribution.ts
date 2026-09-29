@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { FrontendApplicationContribution } from '@theia/core/lib/browser';
+import { ConfirmDialog, FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
@@ -14,18 +14,18 @@ import {
     QAAP_AGENT_HOOKS_API_PATH,
     QAAP_WORKSPACE_HOOKS_RELATIVE_PATH,
     type QaapAgentHooksStatusResponse,
+    type QaapAgentHookSummaryEntry,
     type QaapAgentHookTrustResponse,
 } from '../common/qaap-agent-hooks';
 import { QaapDeferredStartup } from './qaap-deferred-startup';
 
-const MAX_LISTED_COMMANDS = 5;
-const MAX_COMMAND_CHARS = 120;
 const FOCUS_RECHECK_INTERVAL_MS = 60_000;
 
 /**
  * Workspace hook trust review. When the open project declares `.qaap/hooks.json` hooks that were
- * never reviewed (or changed since), shows a notice listing the commands with Trust / Ignore.
- * Nothing in that file runs until the user trusts that exact declaration.
+ * never reviewed (or changed since), shows a notice with Review / Ignore; Review opens a dialog with
+ * every command in full, where the user can trust them. Nothing in that file runs until the user
+ * trusts that exact declaration.
  */
 @injectable()
 export class QaapAgentHooksTrustContribution implements FrontendApplicationContribution {
@@ -70,33 +70,34 @@ export class QaapAgentHooksTrustContribution implements FrontendApplicationContr
             return;
         }
         this.offeredDigests.add(workspace.digest);
-        const trust = nls.localize('qaap/agentHooks/trust', 'Trust');
+        // The notice only offers a review: trusting happens in a dialog that lists every command in
+        // full, so nothing can hide past a truncated summary.
+        const review = nls.localize('qaap/agentHooks/review', 'Review');
         const ignore = nls.localize('qaap/agentHooks/ignore', 'Ignore');
-        const listed = workspace.hooks.slice(0, MAX_LISTED_COMMANDS)
-            .map(hook => `${hook.event}${hook.matcher ? ` (${hook.matcher})` : ''}: ${this.truncate(hook.command)}`)
-            .join(' · ');
-        const more = workspace.hooks.length > MAX_LISTED_COMMANDS
-            ? ' ' + nls.localize('qaap/agentHooks/moreCommands', '(+{0} more)', workspace.hooks.length - MAX_LISTED_COMMANDS)
-            : '';
-        const message = nls.localize(
-            'qaap/agentHooks/reviewPrompt',
-            'This project declares agent hooks in {0} that run shell commands around agent turns. They will not run until you trust them: {1}{2}',
+        const notice = nls.localize(
+            'qaap/agentHooks/reviewNotice',
+            'This project declares {0} agent hook command(s) in {1} that run shell commands around agent turns. They will not run until you review and trust them.',
+            workspace.hooks.length,
             QAAP_WORKSPACE_HOOKS_RELATIVE_PATH,
-            listed,
-            more,
         );
-        const choice = await this.messageService.warn(message, trust, ignore);
-        if (choice !== trust && choice !== ignore) {
+        const choice = await this.messageService.warn(notice, review, ignore);
+        let decision: 'trust' | 'ignore' | undefined;
+        if (choice === ignore) {
+            decision = 'ignore';
+        } else if (choice === review) {
+            decision = await this.openReviewDialog(workspace.hooks) ? 'trust' : undefined;
+        }
+        if (!decision) {
             return;
         }
-        const result = await this.postDecision(choice === trust ? 'trust' : 'ignore', cwd, workspace.digest);
+        const result = await this.postDecision(decision, cwd, workspace.digest);
         if (!result?.ok) {
             // The file may have changed since the listing; allow a fresh review of the new digest.
             this.offeredDigests.delete(workspace.digest);
             this.messageService.error(result?.error ?? nls.localize('qaap/agentHooks/decisionFailed', 'Could not save the hooks review.'));
             return;
         }
-        if (choice === trust) {
+        if (decision === 'trust') {
             this.messageService.info(nls.localize('qaap/agentHooks/trusted', 'Workspace agent hooks trusted. Any change to {0} requires a new review.', QAAP_WORKSPACE_HOOKS_RELATIVE_PATH));
         }
     }
@@ -135,8 +136,43 @@ export class QaapAgentHooksTrustContribution implements FrontendApplicationContr
         }
     }
 
-    protected truncate(command: string): string {
-        const oneLine = command.replace(/\s+/g, ' ');
-        return oneLine.length > MAX_COMMAND_CHARS ? `${oneLine.slice(0, MAX_COMMAND_CHARS - 1)}…` : oneLine;
+    /** Lists every declared command verbatim (no truncation); resolves `true` only on "Trust". */
+    protected async openReviewDialog(hooks: readonly QaapAgentHookSummaryEntry[]): Promise<boolean> {
+        const dialog = new ConfirmDialog({
+            title: nls.localize('qaap/agentHooks/reviewTitle', 'Review agent hooks'),
+            msg: this.renderReview(hooks),
+            ok: nls.localize('qaap/agentHooks/trust', 'Trust'),
+            cancel: nls.localizeByDefault('Cancel'),
+        });
+        return await dialog.open() === true;
+    }
+
+    protected renderReview(hooks: readonly QaapAgentHookSummaryEntry[]): HTMLElement {
+        const root = document.createElement('div');
+        root.className = 'qaap-agent-hooks-review';
+        const intro = document.createElement('p');
+        intro.textContent = nls.localize(
+            'qaap/agentHooks/reviewIntro',
+            'Trusting runs these commands in this project around every agent turn. Any change to {0} asks again, '
+            + 'but scripts or programs these commands call are not part of the review: only trust a project you control.',
+            QAAP_WORKSPACE_HOOKS_RELATIVE_PATH,
+        );
+        root.appendChild(intro);
+        const list = document.createElement('ol');
+        list.className = 'qaap-agent-hooks-review-list';
+        for (const hook of hooks) {
+            const item = document.createElement('li');
+            const label = document.createElement('div');
+            label.className = 'qaap-agent-hooks-review-event';
+            label.textContent = `${hook.event}${hook.matcher ? ` (${hook.matcher})` : ''} · ${hook.timeoutSec}s`;
+            const command = document.createElement('pre');
+            command.className = 'qaap-agent-hooks-review-command';
+            // textContent: the command is untrusted repository content and must never be parsed as HTML.
+            command.textContent = hook.command;
+            item.append(label, command);
+            list.appendChild(item);
+        }
+        root.appendChild(list);
+        return root;
     }
 }
