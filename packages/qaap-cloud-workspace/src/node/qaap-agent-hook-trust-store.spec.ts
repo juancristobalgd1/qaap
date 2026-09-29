@@ -171,6 +171,21 @@ describe('qaap agent hook trust', function (): void {
         expect(runner.calls[0].options.env?.QAAP_HOOK_SOURCE).to.equal('workspace');
     });
 
+    it('lists workspaces an agent turn found pending, per owner, until they are reviewed', async () => {
+        // Only PreToolUse hooks: a turn still surfaces the workspace (via its UserPromptSubmit pass).
+        writeHooks({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ command: 'ws-pre' }] }] } });
+        const cwd = path.join(repo, 'src');
+        expect(service.listPending('alice')).to.deep.equal([]);
+        await service.runPreTurn({ cwd, ownerLogin: 'alice', sessionId: 's1' }, 'hello');
+        const pending = service.listPending('alice');
+        expect(pending.map(entry => [entry.cwd, entry.root, entry.state])).to.deep.equal([[cwd, fs.realpathSync(repo), 'pending']]);
+        expect(pending[0].hooks.map(hook => hook.command)).to.deep.equal(['ws-pre']);
+        // Another tenant never sees it.
+        expect(service.listPending('bob')).to.deep.equal([]);
+        service.trust(cwd, 'alice', pending[0].digest!);
+        expect(service.listPending('alice')).to.deep.equal([]);
+    });
+
     it('trust is per owner and survives a new store instance', () => {
         writeHooks({ hooks: { Stop: [{ hooks: [{ command: 'ws-stop' }] }] } });
         const digest = service.status(repo, 'alice').workspace.digest!;

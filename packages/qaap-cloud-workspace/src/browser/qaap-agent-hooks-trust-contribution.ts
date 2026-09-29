@@ -13,19 +13,24 @@ import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qa
 import {
     QAAP_AGENT_HOOKS_API_PATH,
     QAAP_WORKSPACE_HOOKS_RELATIVE_PATH,
+    type QaapAgentHooksPendingResponse,
     type QaapAgentHooksStatusResponse,
+    type QaapAgentPendingWorkspaceHooks,
     type QaapAgentHookSummaryEntry,
     type QaapAgentHookTrustResponse,
+    type QaapAgentWorkspaceHooksStatus,
 } from '../common/qaap-agent-hooks';
 import { QaapDeferredStartup } from './qaap-deferred-startup';
 
 const FOCUS_RECHECK_INTERVAL_MS = 60_000;
+/** Background re-check while the page is visible: agents may reach a project with pending hooks at any time. */
+const PERIODIC_RECHECK_INTERVAL_MS = 2 * 60_000;
 
 /**
- * Workspace hook trust review. When the open project declares `.qaap/hooks.json` hooks that were
- * never reviewed (or changed since), shows a notice with Review / Ignore; Review opens a dialog with
- * every command in full, where the user can trust them. Nothing in that file runs until the user
- * trusts that exact declaration.
+ * Workspace hook trust review. When a project declares `.qaap/hooks.json` hooks that were never
+ * reviewed (or changed since) — the IDE root, or any project an agent turn ran in (Work Hub) — shows
+ * a notice with Review / Ignore; Review opens a dialog with every command in full, where the user can
+ * trust them. Nothing in that file runs until the user trusts that exact declaration.
  */
 @injectable()
 export class QaapAgentHooksTrustContribution implements FrontendApplicationContribution {
@@ -42,31 +47,56 @@ export class QaapAgentHooksTrustContribution implements FrontendApplicationContr
     /** Digests already offered in this window, so a dismissed notice does not nag on every focus. */
     protected readonly offeredDigests = new Set<string>();
     protected lastCheckAt = 0;
+    /** One check at a time: each offer waits for the user, and checks are triggered from several places. */
+    protected checking = false;
 
     onStart(): void {
         // Non-critical: the trust notice must not compete with first paint / Work Hub restore.
         this.deferredStartup.whenReadyAndIdle(() => {
-            void this.workspace.ready.then(() => this.checkCurrentWorkspace());
+            void this.workspace.ready.then(() => this.checkForPendingHooks());
+            window.setInterval(() => {
+                if (document.visibilityState === 'visible') {
+                    void this.checkForPendingHooks();
+                }
+            }, PERIODIC_RECHECK_INTERVAL_MS);
         });
         this.workspace.onWorkspaceLocationChanged(() => {
-            void this.checkCurrentWorkspace();
+            void this.checkForPendingHooks();
         });
         window.addEventListener('focus', () => {
             if (Date.now() - this.lastCheckAt >= FOCUS_RECHECK_INTERVAL_MS) {
-                void this.checkCurrentWorkspace();
+                void this.checkForPendingHooks();
             }
         });
     }
 
-    protected async checkCurrentWorkspace(): Promise<void> {
-        this.lastCheckAt = Date.now();
-        const cwd = await this.resolveCwd();
-        if (!cwd) {
+    /** Offers a review, one at a time, for the IDE root and every project agents found pending. */
+    protected async checkForPendingHooks(): Promise<void> {
+        if (this.checking) {
             return;
         }
-        const status = await this.fetchStatus(cwd);
-        const workspace = status?.workspace;
-        if (!workspace || workspace.state !== 'pending' || !workspace.digest || this.offeredDigests.has(workspace.digest)) {
+        this.checking = true;
+        try {
+            this.lastCheckAt = Date.now();
+            const candidates: Array<{ readonly cwd: string; readonly workspace: QaapAgentWorkspaceHooksStatus }> = [];
+            const rootCwd = await this.resolveCwd();
+            const rootStatus = rootCwd ? (await this.fetchStatus(rootCwd))?.workspace : undefined;
+            if (rootCwd && rootStatus) {
+                candidates.push({ cwd: rootCwd, workspace: rootStatus });
+            }
+            for (const pending of await this.fetchPending()) {
+                candidates.push({ cwd: pending.cwd, workspace: pending });
+            }
+            for (const { cwd, workspace } of candidates) {
+                await this.offerReview(cwd, workspace);
+            }
+        } finally {
+            this.checking = false;
+        }
+    }
+
+    protected async offerReview(cwd: string, workspace: QaapAgentWorkspaceHooksStatus): Promise<void> {
+        if (workspace.state !== 'pending' || !workspace.digest || this.offeredDigests.has(workspace.digest)) {
             return;
         }
         this.offeredDigests.add(workspace.digest);
@@ -76,7 +106,8 @@ export class QaapAgentHooksTrustContribution implements FrontendApplicationContr
         const ignore = nls.localize('qaap/agentHooks/ignore', 'Ignore');
         const notice = nls.localize(
             'qaap/agentHooks/reviewNotice',
-            'This project declares {0} agent hook command(s) in {1} that run shell commands around agent turns. They will not run until you review and trust them.',
+            'Project {0} declares {1} agent hook command(s) in {2} that run shell commands around agent turns. They will not run until you review and trust them.',
+            this.projectName(workspace.root ?? cwd),
             workspace.hooks.length,
             QAAP_WORKSPACE_HOOKS_RELATIVE_PATH,
         );
@@ -120,6 +151,20 @@ export class QaapAgentHooksTrustContribution implements FrontendApplicationContr
         } catch {
             return undefined;
         }
+    }
+
+    protected async fetchPending(): Promise<readonly QaapAgentPendingWorkspaceHooks[]> {
+        try {
+            const response = await fetch(`${QAAP_AGENT_HOOKS_API_PATH}/pending`, { credentials: 'include', cache: 'no-store' });
+            return response.ok ? (await response.json() as QaapAgentHooksPendingResponse).workspaces ?? [] : [];
+        } catch {
+            return [];
+        }
+    }
+
+    /** Last path segment of a host path (POSIX or Windows), for the notice. */
+    protected projectName(fsPath: string): string {
+        return fsPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || fsPath;
     }
 
     protected async postDecision(action: 'trust' | 'ignore', cwd: string, digest: string): Promise<QaapAgentHookTrustResponse | undefined> {

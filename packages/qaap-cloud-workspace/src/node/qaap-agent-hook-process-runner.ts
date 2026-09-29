@@ -7,6 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { ChildProcess, spawnSync } from 'child_process';
 import type { QaapAgentHookProcessResult } from '../common/qaap-agent-hooks';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { stripSharedProviderEnv } from './qaap-agent-provider-env';
 
 /** Per-stream capture cap; hooks are meant to print short decisions / context. */
 const MAX_HOOK_OUTPUT_CHARS = 64 * 1024;
@@ -21,6 +22,8 @@ export interface QaapAgentHookProcessOptions {
     readonly timeoutMs: number;
     /** Extra env (e.g. `CLAUDE_PROJECT_DIR`), merged over the sanitized backend env. */
     readonly env?: Record<string, string>;
+    /** Owner of the turn: operator provider credentials are withheld exactly as for the agent CLI. */
+    readonly ownerLogin?: string;
 }
 
 /**
@@ -100,6 +103,9 @@ export class QaapAgentHookProcessRunner {
                 env[key] = value;
             }
         }
+        // Same chokepoint as the agent CLI's env (operator provider keys, backend-only secrets), on top
+        // of the name-pattern filter above, so hooks never see more than the agent itself.
+        stripSharedProviderEnv(env, options.ownerLogin);
         env.PWD = options.cwd;
         return { ...env, ...(options.env ?? {}) };
     }

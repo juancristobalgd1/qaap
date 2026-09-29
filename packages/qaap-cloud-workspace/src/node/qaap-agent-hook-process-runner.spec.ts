@@ -91,4 +91,19 @@ describe('QaapAgentHookProcessRunner', function (): void {
             }
         }
     });
+
+    it('applies the agent CLI env chokepoint too (backend-only values the name filter misses)', async () => {
+        const saved = process.env.QAAP_VAPID_SUBJECT;
+        process.env.QAAP_VAPID_SUBJECT = 'mailto:ops@example.com';
+        try {
+            await runner.run(script('0'), { cwd, input: {}, timeoutMs: 10_000, ownerLogin: 'alice' });
+            expect(runner.lastEnv?.QAAP_VAPID_SUBJECT).to.equal(undefined);
+        } finally {
+            if (saved === undefined) {
+                delete process.env.QAAP_VAPID_SUBJECT;
+            } else {
+                process.env.QAAP_VAPID_SUBJECT = saved;
+            }
+        }
+    });
 });

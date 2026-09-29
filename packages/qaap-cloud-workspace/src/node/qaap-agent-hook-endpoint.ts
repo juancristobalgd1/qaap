@@ -10,7 +10,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
-import { QAAP_AGENT_HOOKS_API_PATH } from '../common/qaap-agent-hooks';
+import { QAAP_AGENT_HOOKS_API_PATH, type QaapAgentHooksPendingResponse } from '../common/qaap-agent-hooks';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
 
 /**
@@ -28,6 +28,7 @@ export class QaapAgentHookEndpoint implements BackendApplicationContribution {
     protected readonly auth: QaapGithubAuthGuard;
 
     configure(app: Application): void {
+        app.get(`${QAAP_AGENT_HOOKS_API_PATH}/pending`, (req, res) => this.handlePending(req, res));
         app.get(QAAP_AGENT_HOOKS_API_PATH, (req, res) => this.handle(req, res, 'status'));
         app.post(`${QAAP_AGENT_HOOKS_API_PATH}/trust`, (req, res) => this.handle(req, res, 'trust'));
         app.post(`${QAAP_AGENT_HOOKS_API_PATH}/ignore`, (req, res) => this.handle(req, res, 'ignore'));
@@ -76,6 +77,25 @@ export class QaapAgentHookEndpoint implements BackendApplicationContribution {
                 ? this.hooks.trust(resolved.cwd, ownerLogin, digest)
                 : this.hooks.ignore(resolved.cwd, ownerLogin, digest);
             res.status(result.ok ? 200 : 409).json(result);
+        } catch (error) {
+            res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    /**
+     * Workspaces the caller's agent turns found with hooks awaiting review. Only the caller's own
+     * entries are listed, and each is re-checked against the caller's repository ownership.
+     */
+    protected handlePending(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        try {
+            const workspaces = this.hooks.listPending(this.ownerLogin(ctx))
+                .filter(workspace => this.auth.resolveOwnedRepositoryCwd(ctx, workspace.cwd).kind === 'ok');
+            const response: QaapAgentHooksPendingResponse = { workspaces };
+            res.json(response);
         } catch (error) {
             res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
         }

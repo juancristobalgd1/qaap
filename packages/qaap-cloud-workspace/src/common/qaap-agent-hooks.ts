@@ -115,6 +115,16 @@ export function extractQaapAgentHookFileCandidates(command: string): string[] {
     return [...candidates];
 }
 
+/** A workspace whose hooks an agent turn skipped because they still await review, with the turn's cwd. */
+export interface QaapAgentPendingWorkspaceHooks extends QaapAgentWorkspaceHooksStatus {
+    readonly cwd: string;
+}
+
+/** `GET {QAAP_AGENT_HOOKS_API_PATH}/pending`: workspaces (any project, not only the IDE root) to review. */
+export interface QaapAgentHooksPendingResponse {
+    readonly workspaces: readonly QaapAgentPendingWorkspaceHooks[];
+}
+
 export interface QaapAgentHooksStatusResponse {
     readonly workspace: QaapAgentWorkspaceHooksStatus;
     readonly user: { readonly hooks: readonly QaapAgentHookSummaryEntry[]; readonly errors: readonly string[] };

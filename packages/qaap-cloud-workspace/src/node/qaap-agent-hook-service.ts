@@ -18,6 +18,7 @@ import {
     type QaapAgentHooksStatusResponse,
     type QaapAgentHookTrustResponse,
     type QaapAgentHookWarning,
+    type QaapAgentPendingWorkspaceHooks,
     type QaapAgentWorkspaceHooksStatus,
     type QaapAgentWorkspaceHookTrustState,
 } from '../common/qaap-agent-hooks';
@@ -56,6 +57,7 @@ interface QaapSelectedAgentHook {
 const CONFIG_CACHE_TTL_MS = 3_000;
 const MAX_WARNINGS_PER_WORKSPACE = 20;
 const MAX_TRACKED_SESSIONS = 5_000;
+const MAX_PENDING_WORKSPACES = 200;
 
 /**
  * Product-level lifecycle hooks around agent turns, independent of the CLI (codex, claude, qaiq…).
@@ -82,6 +84,8 @@ export class QaapAgentHookService {
     protected readonly startedSessions = new Set<string>();
     protected readonly announcedPending = new Set<string>();
     protected readonly configCache = new Map<string, { readonly at: number; readonly resolved: QaapResolvedAgentHooks }>();
+    /** Keyed by owner + workspace root; see {@link listPending}. */
+    protected readonly pendingWorkspaces = new Map<string, { readonly ownerLogin: string; readonly root: string; readonly cwd: string }>();
 
     // ---- configuration & trust -------------------------------------------------------------
 
@@ -139,6 +143,44 @@ export class QaapAgentHookService {
         return { ok: true, status: this.workspaceStatus(this.resolve(cwd, ownerLogin)) };
     }
 
+    /**
+     * Workspaces whose hooks agent turns of `ownerLogin` skipped because they await review — any project
+     * the agents ran in, not only the IDE root the frontend has open. Entries that are no longer pending
+     * (trusted, ignored, file removed) are dropped.
+     */
+    listPending(ownerLogin: string | undefined): QaapAgentPendingWorkspaceHooks[] {
+        this.invalidateCache();
+        const pending: QaapAgentPendingWorkspaceHooks[] = [];
+        for (const [key, entry] of this.pendingWorkspaces) {
+            if (entry.ownerLogin !== (ownerLogin ?? '')) {
+                continue;
+            }
+            let status: QaapAgentWorkspaceHooksStatus;
+            try {
+                status = this.workspaceStatus(this.resolve(entry.cwd, ownerLogin));
+            } catch {
+                continue;
+            }
+            if (status.state === 'pending' && status.root === entry.root) {
+                pending.push({ ...status, cwd: entry.cwd });
+            } else {
+                this.pendingWorkspaces.delete(key);
+            }
+        }
+        return pending;
+    }
+
+    protected rememberPendingWorkspace(context: QaapAgentHookRunContext, root: string): void {
+        const ownerLogin = context.ownerLogin ?? '';
+        const key = `${ownerLogin}\u0000${root}`;
+        // Re-insert so the map keeps the most recently seen workspaces when it is trimmed.
+        this.pendingWorkspaces.delete(key);
+        this.pendingWorkspaces.set(key, { ownerLogin, root, cwd: context.cwd });
+        if (this.pendingWorkspaces.size > MAX_PENDING_WORKSPACES) {
+            this.pendingWorkspaces.delete(this.pendingWorkspaces.keys().next().value!);
+        }
+    }
+
     protected decide(cwd: string, ownerLogin: string | undefined, digest: string, decision: 'trusted' | 'ignored'): QaapAgentHookTrustResponse {
         this.invalidateCache();
         const workspace = this.loader.loadWorkspace(cwd);
@@ -181,6 +223,10 @@ export class QaapAgentHookService {
         const workspace = resolved.workspace;
         if (workspace?.digest) {
             const workspaceHooks = selectQaapAgentHookCommands(workspace.declaration, event, matchValue);
+            if (resolved.workspaceState === 'pending') {
+                // Any turn in this workspace (whatever event) surfaces it for review in the frontend.
+                this.rememberPendingWorkspace(context, workspace.root);
+            }
             if (resolved.workspaceState === 'trusted') {
                 selected.push(...workspaceHooks.map(hook => ({ source: 'workspace' as const, hook })));
             } else if (resolved.workspaceState === 'pending' && workspaceHooks.length > 0) {
@@ -237,6 +283,7 @@ export class QaapAgentHookService {
                     cwd: context.cwd,
                     input,
                     timeoutMs: hook.timeoutSec * 1000,
+                    ...(context.ownerLogin ? { ownerLogin: context.ownerLogin } : {}),
                     env: {
                         CLAUDE_PROJECT_DIR: projectDir,
                         QAAP_PROJECT_DIR: projectDir,
