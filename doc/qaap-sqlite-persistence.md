@@ -45,6 +45,36 @@ Backups must include the complete containing directory. For a consistent live
 backup, stop the backend or use a filesystem snapshot; copying only the main
 `.sqlite` file while it is active can omit committed WAL frames.
 
+## Connection model
+
+All `QaapSqliteStore` instances that point at the same database file share one
+long-lived connection held by `QaapSqliteConnectionRegistry.shared`, whatever
+their namespace. The connection is opened lazily. The PRAGMAs (WAL,
+`synchronous=FULL`, foreign keys, busy timeout) and the schema migrations run
+once when it opens, and prepared statements are cached per SQL string. Keeping
+the connection open avoids the WAL checkpoint and file deletion that SQLite
+performs every time the last connection to a WAL database closes. Durability is
+unchanged: each commit is still fsynced (`synchronous=FULL`). Nested
+`withTransaction` calls from any store on the same file use savepoints on the
+shared connection. If the file is deleted or replaced while open (possible on
+POSIX), the next operation notices and reopens a fresh database.
+
+Connections close on process exit, or explicitly through `store.close()`,
+`QaapSqliteConnectionRegistry.shared.close(path)`, `closeUnder(directory)`, or
+`closeAll()`. The next operation reopens the connection transparently.
+
+**Tests and cleanup code must close before deleting.** On Windows an open
+SQLite file cannot be removed (`rmSync` fails with `EPERM`/`EBUSY`), so any spec
+or code path that removes a store's database or its directory must first call
+`QaapSqliteConnectionRegistry.shared.closeUnder(dir)` (or `store.close()`):
+
+```ts
+afterEach(() => {
+    QaapSqliteConnectionRegistry.shared.closeUnder(tmpDir);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+```
+
 ## Runtime requirement
 
 `node:sqlite` requires Node.js 22.13.0 or newer (22.5–22.12 only expose it behind
