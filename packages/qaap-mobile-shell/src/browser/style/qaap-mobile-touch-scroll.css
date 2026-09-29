@@ -153,7 +153,8 @@
   .qaap-lh-tool-result .theia-toolCall-text-result,
   .qaap-lh-tool-result .theia-toolCall-default-result,
   .qaap-lh-tool-result .theia-toolCall-error-result,
-  .qaap-lh-thinking-content {
+  .qaap-lh-thinking-content,
+  .qaap-agent-hooks-review-list {
     overflow-y: auto !important;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;

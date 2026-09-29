@@ -34,6 +34,7 @@ import {
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
     removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
 } from './qaap-agent-task-runner-utils';
+import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
         options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
@@ -261,8 +262,14 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         };
         ctx.tasks.set(task.id, task);
         void ctx.persist();
-        const prompt = (request.prompt ?? '').trim();
+        let prompt = (request.prompt ?? '').trim();
         if (prompt) {
+            // SessionStart / UserPromptSubmit hooks (doc/qaap-agent-hooks.md): may block or extend the prompt.
+            const hookedPrompt = await applyPreTurnAgentHooks(ctx, task, prompt, request.agent);
+            if (hookedPrompt === undefined) {
+                return;
+            }
+            prompt = hookedPrompt;
             try {
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
@@ -409,6 +416,11 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         };
         bumpIdleTimer();
         let stdioLineBuffer = '';
+        // PreToolUse hooks hold a control request while they run; "no decision" re-feeds the line.
+        const preToolUseHookGate = createQaiqPreToolUseHookGate(ctx, task, logStream, line => {
+            stdioLineBuffer = `${line}\n${stdioLineBuffer}`;
+            scanStdioApprovalChunk('');
+        });
         const scanStdioApprovalChunk = (chunk: unknown): void => {
             stdioLineBuffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
             let newline: number;
@@ -420,6 +432,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     continue;
                 }
                 if (event.type === 'control-request') {
+                    if (preToolUseHookGate.screen(event.request, line)) {
+                        continue;
+                    }
                     const autoAction = resolveQaiqControlRequestAutoAction(
                         task.command,
                         task.autoApprove,
@@ -471,6 +486,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         ctx.scheduleQueuedApprovalTimeout(task.id, event.request, logStream);
                     }
                 } else if (event.type === 'control-cancel') {
+                    preToolUseHookGate.cancel(event.requestId);
                     const pending = ctx.pendingQaiqControlRequests.get(task.id);
                     const index = pending?.findIndex(entry => entry.requestId === event.requestId) ?? -1;
                     if (pending && index >= 0) {
