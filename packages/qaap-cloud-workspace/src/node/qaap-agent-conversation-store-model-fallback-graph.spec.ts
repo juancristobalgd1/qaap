@@ -31,7 +31,8 @@ import type {
     QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestRunStore extends QaapWorkflowRunStore {
     persistCalls = 0;
@@ -312,6 +313,7 @@ describe('QaapAgentConversationStore model fallback via the chat-turn graph (QAA
             expect(agentModelKey(user.turnAgentModel)).to.equal(agentModelKey(CHAIN[2]));
             expect(chatTurnRuns(reopenedRuns)[0].run.visits['turn-fallback']).to.equal(2);
         } finally {
+            QaapSqliteConnectionRegistry.shared.closeUnder(directory);
             fs.rmSync(directory, { recursive: true, force: true });
         }
     });

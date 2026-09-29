@@ -22,7 +22,8 @@ import {
     QaapWorkflowDeterministicPort,
     QaapWorkflowDispatcher,
 } from './qaap-workflow-dispatcher';
-import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestStore extends QaapWorkflowRunStore {
     constructor(protected readonly testDirectory: string) { super(); }
@@ -70,7 +71,10 @@ describe('QaapWorkflowDispatcher (ADR-002)', () => {
         agent = new FakeAgentPort();
     });
 
-    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+    afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
+        fs.rmSync(directory, { recursive: true, force: true });
+    });
 
     function templateDispatcher(): QaapWorkflowDispatcher {
         return new QaapWorkflowDispatcher(

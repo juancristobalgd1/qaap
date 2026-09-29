@@ -10,7 +10,8 @@ import * as path from 'path';
 import type { QaapAgentConversation, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
 import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import type { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
+import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class VisualEvidenceStoreHarness extends QaapAgentConversationStore {
     readonly createdTasks: { task: QaapAgentTask; request: QaapCreateAgentTaskRequest }[] = [];
@@ -129,6 +130,7 @@ describe('QaapAgentConversationStore visual verification', () => {
     });
 
     afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(root);
         fs.rmSync(root, { recursive: true, force: true });
     });
 
@@ -299,6 +301,7 @@ describe('QaapAgentConversationStore visual verification', () => {
         expect(content).to.contain('[QAAP visual verification]');
         expect(content).to.contain('Recorded a video tour of 1 page.');
         expect(content).to.contain(`visual-verifications/${evidenceId}.webm`);
+        QaapSqliteConnectionRegistry.shared.closeUnder(sourceDir);
         fs.rmSync(sourceDir, { recursive: true, force: true });
     });
 

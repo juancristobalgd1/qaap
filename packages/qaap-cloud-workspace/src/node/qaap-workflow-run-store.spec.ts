@@ -12,7 +12,8 @@ import {
     QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS,
     QaapWorkflowRunRequestError,
     QaapWorkflowRunStore,
-} from './qaap-workflow-run-store';
+} from './qaap-workflow-run-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestStore extends QaapWorkflowRunStore {
     protected testNow: number | undefined;
@@ -33,7 +34,10 @@ describe('QaapWorkflowRunStore', () => {
         store.initialize();
     });
 
-    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+    afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
+        fs.rmSync(directory, { recursive: true, force: true });
+    });
 
     it('starts a run and returns the entry node to dispatch', async () => {
         const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'Ada', inputs: { task: 'fix the login bug' } });
