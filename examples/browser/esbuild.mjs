@@ -32,17 +32,52 @@ const { 'editor.worker': editorWorkerEntry, 'plugin-worker': pluginWorkerEntry, 
  * The generated loader does `container.load(containerModule.default)` and
  * crashes with "registry is not a function" on that double-default shape.
  * Patch the generated entry's loader to unwrap both shapes.
+ *
+ * The same plugin also parallelizes the module fetches. The generated entry does
+ * `await load(container, import('...'))` once per frontend module (~100), and
+ * with splitting each `import()` is a chunk request issued only after the
+ * previous module loaded: one serial round trip per module on a cold cache.
+ * Each run of consecutive such lines becomes one array of `import()` promises
+ * started up front, followed by `await load(container, <promise N>)` in the
+ * original order, so `container.load` (DI binding) order is unchanged. Chunk
+ * bodies may now evaluate in arrival order; frontend module bodies only define
+ * classes and a ContainerModule, and their dependencies resolve through
+ * `require`. The preload block and the main block remain separate runs: the
+ * main imports must not start before the preloader has loaded the localization,
+ * because module-level `nls.localize` calls read it at evaluation time.
  */
+const SEQUENTIAL_MODULE_LOADS = /^([ \t]*)await load\(container, import\(('[^']+'|"[^"]+")\)\);[ \t]*\r?\n(?:[ \t]*await load\(container, import\((?:'[^']+'|"[^"]+")\)\);[ \t]*\r?\n)+/gm;
+
+function parallelizeModuleLoads(source) {
+    let run = 0;
+    return source.replace(SEQUENTIAL_MODULE_LOADS, block => {
+        const indent = block.match(/^[ \t]*/)[0];
+        const eol = block.includes('\r\n') ? '\r\n' : '\n';
+        const specifiers = [...block.matchAll(/import\(('[^']+'|"[^"]+")\)/g)].map(match => match[1]);
+        const name = `qaapFrontendModules${run++}`;
+        return [
+            `${indent}const ${name} = [`,
+            ...specifiers.map(specifier => `${indent}    import(${specifier}),`),
+            `${indent}];`,
+            // Rejections surface through the ordered awaits below; keep promises that
+            // are not awaited yet (a failure aborts the loop) from reporting as unhandled.
+            `${indent}${name}.forEach(modulePromise => modulePromise.catch(() => undefined));`,
+            ...specifiers.map((_, index) => `${indent}await load(container, ${name}[${index}]);`),
+            '',
+        ].join(eol);
+    });
+}
+
 const esmDiInteropPlugin = {
     name: 'qaap-esm-di-interop',
     setup(build) {
         build.onLoad({ filter: /src-gen[\\/]frontend[\\/](index|secondary-index)\.js$/ }, async args => {
             const fs = await import('node:fs/promises');
             const source = await fs.readFile(args.path, 'utf8');
-            const patched = source.replaceAll(
+            const patched = parallelizeModuleLoads(source.replaceAll(
                 'container.load(containerModule.default)',
                 'container.load((m => (m && typeof m.registry === \'function\') ? m : m.default)(containerModule.default))',
-            );
+            ));
             return { contents: patched, loader: 'js' };
         });
     },

@@ -61,7 +61,14 @@ function patchIndexForFreshAssets(indexPath) {
     if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss) || !fs.existsSync(bundleJs)) {
         return;
     }
-    const html = fs.readFileSync(indexPath, 'utf8').replace(
+    let html = fs.readFileSync(indexPath, 'utf8');
+    // qaap-login-gate.js injects bundle.js late (after its own checks); start fetching the
+    // ES module entry while the page parses. The href gets the same stamp below that the
+    // gate derives from bundle.css, so the preloaded module is the one it imports.
+    if (!html.includes('rel="modulepreload" href="./bundle.js')) {
+        html = html.replace('</head>', '<link rel="modulepreload" href="./bundle.js">\n</head>');
+    }
+    html = html.replace(
         /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
         `./bundle.css?qaap-build=${BUILD_VERSION}`,
     ).replace(
