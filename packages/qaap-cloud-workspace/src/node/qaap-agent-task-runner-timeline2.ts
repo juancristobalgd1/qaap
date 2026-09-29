@@ -22,8 +22,13 @@ import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-gu
 import {
     buildQaiqAutoDeniedToolMessage,
     buildQaiqQueuedApprovalTimeoutMessage,
-    resolveQaiqControlRequestAutoAction,
+    commandMayChangeShellCwd,
+    resolveQaiqControlRequestAutoDecision,
 } from '../common/qaap-qaiq-control-auto-response';
+import {
+    QAAP_AUTO_APPROVE_READONLY_SHELL_PREF,
+    resolveAutoApproveReadOnlyShellPreference,
+} from '@theia/qaap-shared-core/lib/common/qaap-bash-readonly-classifier';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {
     applyAntigravityModelSetting,
@@ -421,6 +426,25 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             stdioLineBuffer = `${line}\n${stdioLineBuffer}`;
             scanStdioApprovalChunk('');
         });
+        // Read lazily (first control request) and once per run: the reader hits the per-tenant settings file.
+        let autoApproveReadOnlyShell: boolean | undefined;
+        // The agent shell keeps its cwd between calls; after any cd the classifier's cwd is stale.
+        let shellCwdMayHaveMoved = false;
+        const readAutoApproveReadOnlyShell = (): boolean => {
+            if (shellCwdMayHaveMoved) {
+                return false;
+            }
+            if (autoApproveReadOnlyShell === undefined) {
+                try {
+                    autoApproveReadOnlyShell = resolveAutoApproveReadOnlyShellPreference(
+                        ctx.preferenceReaderForOwner(task.ownerLogin)(QAAP_AUTO_APPROVE_READONLY_SHELL_PREF),
+                    );
+                } catch {
+                    autoApproveReadOnlyShell = resolveAutoApproveReadOnlyShellPreference(undefined);
+                }
+            }
+            return autoApproveReadOnlyShell;
+        };
         const scanStdioApprovalChunk = (chunk: unknown): void => {
             stdioLineBuffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
             let newline: number;
@@ -435,14 +459,27 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     if (preToolUseHookGate.screen(event.request, line)) {
                         continue;
                     }
-                    const autoAction = resolveQaiqControlRequestAutoAction(
+                    const autoDecision = resolveQaiqControlRequestAutoDecision(
                         task.command,
                         task.autoApprove,
                         event.request,
+                        {
+                            autoApproveReadOnlyShell: readAutoApproveReadOnlyShell(),
+                            cwd: task.cwd,
+                            checkGitExecConfig: () => ctx.checkGitExecConfig(task.cwd),
+                            checkPathsInsideCwd: paths => ctx.checkShellPathsInsideCwd(task.cwd, paths),
+                        },
                     );
+                    const autoAction = autoDecision.action;
+                    if (autoDecision.readOnlyBlockedReason) {
+                        logStream.write(`\n[qaap] read-only shell command needs approval: ${autoDecision.readOnlyBlockedReason}.\n`);
+                    }
                     const command = typeof event.request.toolInput?.command === 'string'
                         ? event.request.toolInput.command
                         : undefined;
+                    if (!shellCwdMayHaveMoved && commandMayChangeShellCwd(command)) {
+                        shellCwdMayHaveMoved = true;
+                    }
                     ctx.observability?.recordAgentToolCommand({
                         taskId: task.id,
                         tenantLogin: task.ownerLogin,
@@ -452,6 +489,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         toolName: event.request.toolName,
                         command,
                         decision: autoAction === 'allow' ? 'approve' : autoAction === 'deny' ? 'reject' : 'queue',
+                        ...(autoDecision.reason ? { autoApprovalReason: autoDecision.reason } : {}),
                     });
                     if (autoAction !== 'queue') {
                         const devServerDenial = findQaiqDevServerGuardDenial(event.request);
@@ -461,7 +499,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                             ?? (autoAction === 'deny' && event.request.toolName
                                 ? buildQaiqAutoDeniedToolMessage(event.request.toolName, event.request.toolInput)
                                 : undefined);
-                        if (devServerDenial) {
+                        if (autoDecision.reason === 'read-only-shell') {
+                            logStream.write(`\n[qaap] auto-approved: read-only shell command (${autoDecision.detail ?? 'read-only'}).\n`);
+                        } else if (devServerDenial) {
                             logStream.write('\n[qaap] auto-denied long-lived dev-server shell command; Qaap manages dev servers via the preview bootstrap.\n');
                         } else if (destructiveDenial) {
                             logStream.write('\n[qaap] auto-denied destructive shell command; the agent must propose it for explicit user approval.\n');

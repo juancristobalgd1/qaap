@@ -24,6 +24,7 @@ import { QaapShellCommandPermissionService } from './qaap-shell-command-permissi
 import { QaapTerminalPreferenceContribution } from './qaap-terminal-preferences';
 import { QaapSkillsPreferenceContribution } from './qaap-skills-preferences';
 import { QaapHarnessPreferenceContribution } from './qaap-harness-preferences';
+import { QaapAgentApprovalPreferenceContribution } from './qaap-agent-approval-preferences';
 import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-widget';
 import { QaapAiConfigurationNavigationWidget } from './qaap-ai-configuration-navigation-widget';
 
@@ -91,6 +92,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapHarnessPreferenceContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapHarnessPreferenceContribution);
+
+    bind(QaapAgentApprovalPreferenceContribution).toSelf().inSingletonScope();
+    bind(PreferenceContribution).toService(QaapAgentApprovalPreferenceContribution);
 
     bind(QaapHarnessConfigurationWidget).toSelf();
     bind(WidgetFactory)

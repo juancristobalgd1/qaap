@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapBashReadOnlyClassifier } from '@theia/qaap-shared-core/lib/common/qaap-bash-readonly-classifier';
 import { findQaiqDestructiveCommandGuardDenial } from './qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
 import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
@@ -21,6 +22,37 @@ function isNonVerificationAgentCall(toolName: string, request: QaapQaiqPendingCo
 }
 
 export type QaapQaiqControlAutoAction = 'allow' | 'deny' | 'queue';
+
+/** Why a control request was answered without asking; only set for the read-only shell shortcut today. */
+export type QaapQaiqControlAutoReason = 'read-only-shell';
+
+export interface QaapQaiqControlAutoDecision {
+    readonly action: QaapQaiqControlAutoAction;
+    readonly reason?: QaapQaiqControlAutoReason;
+    /** Classifier explanation when {@link reason} is `read-only-shell`. */
+    readonly detail?: string;
+    /** Set when a read-only shell command was NOT auto-approved because of a runtime safety check. */
+    readonly readOnlyBlockedReason?: string;
+}
+
+export interface QaapQaiqControlAutoOptions {
+    /** User preference `ai-features.agentApprovals.autoApproveReadOnlyShell` (default off; only `true` enables it). */
+    readonly autoApproveReadOnlyShell?: boolean;
+    /** Task working directory; absolute path arguments are read-only only inside it. */
+    readonly cwd?: string;
+    /**
+     * Returns a reason when the effective git config could make git run a program (fsmonitor, pager,
+     * external diff/textconv, filters). Required for read-only auto-approval of commands that use git:
+     * when absent, such commands fall back to the preset rules.
+     */
+    readonly checkGitExecConfig?: () => string | undefined;
+    /**
+     * Returns a reason when any of the classifier's path arguments reaches outside the task cwd once
+     * symlinks are resolved. Required when the command has path arguments: when absent, it falls back
+     * to the preset rules.
+     */
+    readonly checkPathsInsideCwd?: (paths: readonly string[]) => string | undefined;
+}
 
 const NETWORK_TOOL_NAMES = new Set(['WebSearch', 'WebFetch', 'Fetch']);
 const SHELL_TOOL_NAMES = new Set(['Bash', 'Shell', 'ShellCommand', 'run_terminal_cmd']);
@@ -55,12 +87,111 @@ export function resolveQaiqControlRequestAutoAction(
     command: string,
     autoApprove: boolean | undefined,
     request: QaapQaiqPendingControlRequest,
+    options: QaapQaiqControlAutoOptions = {},
 ): QaapQaiqControlAutoAction {
+    return resolveQaiqControlRequestAutoDecision(command, autoApprove, request, options).action;
+}
+
+/**
+ * {@link resolveQaiqControlRequestAutoAction} plus the reason for an automatic answer, so the runner can
+ * record "auto-approved: read-only" for shell commands the read-only classifier proved harmless.
+ *
+ * Precedence: dev-server deny > destructive guard > core `--tools` allowlist deny > read-only shell
+ * auto-approval (when the preference is on, even under request-approval) > the preset rules below.
+ */
+export function resolveQaiqControlRequestAutoDecision(
+    command: string,
+    autoApprove: boolean | undefined,
+    request: QaapQaiqPendingControlRequest,
+    options: QaapQaiqControlAutoOptions = {},
+): QaapQaiqControlAutoDecision {
     // Dev servers break the preview even when a human approves them (shell tools time out ~30s),
     // so this guard denies BEFORE the manual-approval queue — it can never be approved.
     if (findQaiqDevServerGuardDenial(request)) {
-        return 'deny';
+        return { action: 'deny' };
     }
+    const readOnly = classifyReadOnlyShellRequest(command, request, options);
+    if (readOnly?.allowed) {
+        return { action: 'allow', reason: 'read-only-shell', detail: readOnly.detail };
+    }
+    return {
+        action: resolvePresetAutoAction(command, autoApprove, request),
+        ...(readOnly ? { readOnlyBlockedReason: readOnly.detail } : {}),
+    };
+}
+
+/** `cd` / `pushd` / `popd` as a command word (start, or after an operator / opening brace). */
+const SHELL_CWD_CHANGE_RE = /(?:^|[\s;&|({])(?:cd|pushd|popd)(?:\s|$|;)/;
+
+/**
+ * True when a shell command may move the agent shell's working directory. Agent shells keep their cwd
+ * between tool calls, while the read-only classifier resolves paths from the task cwd, so once any
+ * command changed directory the runner stops auto-approving for the rest of the run.
+ */
+export function commandMayChangeShellCwd(command: string | undefined): boolean {
+    return !!command && SHELL_CWD_CHANGE_RE.test(command);
+}
+
+/**
+ * `allowed` when the request is a shell tool call whose command is provably read-only and may skip the
+ * approval prompt; `allowed: false` when the command is read-only but a runtime check (git config) vetoed
+ * it; `undefined` otherwise. The destructive guard and a core `--tools` allowlist that excludes the shell
+ * tool always win over the read-only shortcut.
+ */
+function classifyReadOnlyShellRequest(
+    command: string,
+    request: QaapQaiqPendingControlRequest,
+    options: QaapQaiqControlAutoOptions,
+): { readonly allowed: boolean; readonly detail: string } | undefined {
+    if (options.autoApproveReadOnlyShell !== true) {
+        return undefined;
+    }
+    const toolName = request.toolName?.trim() ?? '';
+    if (!toolName || !isShellTool(toolName)) {
+        return undefined;
+    }
+    if (findQaiqDestructiveCommandGuardDenial(request)) {
+        return undefined;
+    }
+    const coreTools = parseQaiqCoreTools(command);
+    if (coreTools && !coreTools.has(toolName)) {
+        return undefined;
+    }
+    const shellCommand = typeof request.toolInput?.command === 'string' ? request.toolInput.command : undefined;
+    const verdict = QaapBashReadOnlyClassifier.classifyCommand(shellCommand, { cwd: options.cwd });
+    if (!verdict.readOnly) {
+        return undefined;
+    }
+    if (verdict.commands?.includes('git')) {
+        let gitRisk: string | undefined;
+        try {
+            gitRisk = options.checkGitExecConfig ? options.checkGitExecConfig() : 'git config not verified';
+        } catch (error) {
+            gitRisk = `git config check failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        if (gitRisk) {
+            return { allowed: false, detail: gitRisk };
+        }
+    }
+    if (verdict.paths?.length) {
+        let pathRisk: string | undefined;
+        try {
+            pathRisk = options.checkPathsInsideCwd ? options.checkPathsInsideCwd(verdict.paths) : 'paths not verified';
+        } catch (error) {
+            pathRisk = `path check failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        if (pathRisk) {
+            return { allowed: false, detail: pathRisk };
+        }
+    }
+    return { allowed: true, detail: verdict.reason };
+}
+
+function resolvePresetAutoAction(
+    command: string,
+    autoApprove: boolean | undefined,
+    request: QaapQaiqPendingControlRequest,
+): QaapQaiqControlAutoAction {
     if (autoApprove === false) {
         return 'queue';
     }
