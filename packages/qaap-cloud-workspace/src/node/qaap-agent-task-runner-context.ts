@@ -257,6 +257,8 @@ export interface QaapAgentTaskRunnerContext {
     captureWorktreeFingerprint(cwd: string): string | undefined;
     /** Reason when the effective git config in `cwd` could make git run a program; `undefined` when safe. */
     checkGitExecConfig(cwd: string): string | undefined;
+    /** Reason when a shell path argument resolves (through symlinks) outside `cwd`; `undefined` when all stay inside. */
+    checkShellPathsInsideCwd(cwd: string, paths: readonly string[]): string | undefined;
     resolveVerificationScriptsForCwd(cwd: string): Promise<string[]>;
     runVerificationScripts(
         task: QaapAgentTask,

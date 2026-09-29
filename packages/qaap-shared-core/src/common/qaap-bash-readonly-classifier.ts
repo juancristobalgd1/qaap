@@ -13,8 +13,11 @@
  */
 export const QAAP_AUTO_APPROVE_READONLY_SHELL_PREF = 'ai-features.agentApprovals.autoApproveReadOnlyShell';
 
-/** Default for {@link QAAP_AUTO_APPROVE_READONLY_SHELL_PREF}. */
-export const QAAP_AUTO_APPROVE_READONLY_SHELL_DEFAULT = true;
+/**
+ * Default for {@link QAAP_AUTO_APPROVE_READONLY_SHELL_PREF}. Off: the shortcut skips prompts the user
+ * chose by picking request-approval, so it must be an explicit opt-in.
+ */
+export const QAAP_AUTO_APPROVE_READONLY_SHELL_DEFAULT = false;
 
 /** Resolve the preference value; anything that is not an explicit boolean falls back to the default. */
 export function resolveAutoApproveReadOnlyShellPreference(value: unknown): boolean {
@@ -27,6 +30,12 @@ export interface QaapBashReadOnlyClassification {
     readonly reason: string;
     /** Command names of every simple command, in order (only set when `readOnly`). */
     readonly commands?: readonly string[];
+    /**
+     * Every non-flag argument (including input redirection targets), relative to the task cwd with `cd`
+     * applied, or absolute as written. The check is lexical, so callers with filesystem access must still
+     * verify these do not reach outside the cwd through symlinks (only set when `readOnly`).
+     */
+    readonly paths?: readonly string[];
 }
 
 /** Options for {@link QaapBashReadOnlyClassifier.classify}. */
@@ -86,8 +95,26 @@ const GIT_READONLY_SUBCOMMANDS = new Set([
     'check-ignore', 'check-attr', 'cherry',
 ]);
 
-/** git flags that write files or run external programs even on read subcommands. */
-const GIT_FORBIDDEN_ARG_RE = /^--(?:output(?:-directory)?|ext-diff|exec|upload-pack|receive-pack|open-files-in-pager)(?:=|$)|^-O/;
+/**
+ * git long flags that write files or run external programs even on read subcommands. Matched by
+ * PREFIX (see {@link isLongOptionPrefix}): parse-options accepts unambiguous abbreviations.
+ */
+const GIT_FORBIDDEN_LONG_OPTIONS = ['output', 'output-directory', 'ext-diff', 'exec', 'upload-pack', 'receive-pack', 'open-files-in-pager'];
+
+/** git short flags that run a program (`grep -O<pager>`); matched anywhere in a bundle such as `-iO`. */
+const GIT_FORBIDDEN_SHORT_FLAG_RE = /^-[^-]*O/;
+
+/** git flags that make read commands read files outside the index (untracked / ignored content). */
+const GIT_UNTRACKED_READ_LONG_OPTIONS = ['untracked', 'no-index', 'no-exclude-standard'];
+
+/** grep/egrep/fgrep flags that recurse into directories (short bundles like `-rn` included). */
+const GREP_RECURSIVE_ARG_RE = /^-[^-]*[rR]|^--(?:recursive|dereference-recursive)$|^--directories=recurse$|^-d$/;
+
+/** rg flags that search hidden / ignored files, follow symlinks, or run programs. */
+const RG_FORBIDDEN_ARG_RE = /^--(?:pre|pre-glob|hostname-bin|hidden|no-ignore[\w-]*|unrestricted|follow)(?:=|$)|^-[^-]*[u.L]/;
+
+/** fd flags that execute programs (`-x`/`-X`, also inside bundles such as `-Hx`). */
+const FD_FORBIDDEN_ARG_RE = /^-[^-]*[xX]|^--exec/;
 
 /** `git branch` flags that only list. */
 // eslint-disable-next-line max-len
@@ -103,6 +130,49 @@ const GIT_CONFIG_READ_FLAGS = new Set(['--get', '--get-all', '--get-regexp', '--
 const SENSITIVE_PATH_COMPONENT_RE = /^(?:\.env(?:$|[.*?[])|id_(?:rsa|dsa|ecdsa|ed25519)|\.npmrc$|\.netrc$|\.git-credentials$|\.aws$|\.ssh$|credentials)|\.(?:pem|key)$/i;
 
 const WINDOWS_DRIVE_RE = /^([A-Za-z]):\//;
+
+/**
+ * Representative names the sensitive-path policy protects. A glob segment that could expand to any of
+ * them (`.en?`, `id_r*`, `*`) is treated as naming a secret, since the literal check cannot see it.
+ */
+const SENSITIVE_SAMPLE_NAMES = [
+    '.env', '.env.local', 'id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519', '.npmrc', '.netrc', '.git-credentials',
+    '.aws', '.ssh', 'credentials', 'credentials.json', 'server.pem', 'server.key',
+];
+
+/** `--name[=value]` that is a (possibly abbreviated) spelling of one of `longOptions`. */
+function isLongOptionPrefix(arg: string, longOptions: readonly string[]): boolean {
+    if (!arg.startsWith('--') || arg.length < 3) {
+        return false;
+    }
+    const name = arg.slice(2).split('=')[0];
+    return longOptions.some(option => option.startsWith(name));
+}
+
+/** Converts one unquoted glob path segment (`*`, `?`, `[...]`) to an anchored RegExp. */
+function globSegmentToRegExp(segment: string): RegExp {
+    let source = '';
+    for (let i = 0; i < segment.length; i++) {
+        const ch = segment[i];
+        if (ch === '*') {
+            source += '.*';
+        } else if (ch === '?') {
+            source += '.';
+        } else if (ch === '[') {
+            const end = segment.indexOf(']', i + 2);
+            if (end < 0) {
+                source += '\\[';
+            } else {
+                const body = segment.slice(i + 1, end).replace(/^!/, '^').replace(/\\/g, '\\\\');
+                source += `[${body}]`;
+                i = end;
+            }
+        } else {
+            source += ch.replace(/[.+^${}()|\\]/g, '\\$&');
+        }
+    }
+    return new RegExp(`^${source}$`, 'i');
+}
 
 /** A `sed` script that only prints line ranges, e.g. `10,20p`, `$p`, `5p`. */
 const SED_PRINT_SCRIPT_RE = /^(?:\d+|\$)(?:,(?:\d+|\$))?p$/;
@@ -127,6 +197,7 @@ export class QaapBashReadOnlyClassifier {
             return { readOnly: false, reason: 'command too long to classify' };
         }
         let segments: QaapShellWord[][];
+        const paths: string[] = [];
         try {
             const inputTargets: string[] = [];
             segments = this.splitSimpleCommands(this.tokenize(text, inputTargets));
@@ -134,13 +205,14 @@ export class QaapBashReadOnlyClassifier {
             if (inputReason) {
                 return { readOnly: false, reason: inputReason };
             }
+            paths.push(...inputTargets.map(target => this.describePath(target, [])));
         } catch (error) {
             return { readOnly: false, reason: error instanceof QaapShellRejection ? error.message : 'unparseable command' };
         }
         // Relative location (path segments below cwd) tracked through `cd` so `cd a && cat ../../x` is caught.
         let location: string[] = [];
         for (const words of segments) {
-            const reason = this.checkSimpleCommand(words) ?? this.checkPathArguments(words, location, options.cwd);
+            const reason = this.checkSimpleCommand(words) ?? this.checkPathArguments(words, location, options.cwd, paths);
             if (reason) {
                 return { readOnly: false, reason };
             }
@@ -153,7 +225,7 @@ export class QaapBashReadOnlyClassifier {
             }
         }
         const commands = segments.map(words => words[0].value);
-        return { readOnly: true, reason: `read-only: ${commands.join(', ')}`, commands };
+        return { readOnly: true, reason: `read-only: ${commands.join(', ')}`, commands, paths };
     }
 
     /** Lexes the command into words and control operators, rejecting every construct we do not model. */
@@ -401,15 +473,26 @@ export class QaapBashReadOnlyClassifier {
             case 'find':
                 return this.checkFind(args);
             case 'rg':
-                return args.some(arg => /^--pre(?:-glob)?(?:=|$)/.test(arg.value)) ? 'rg --pre runs a program' : undefined;
+                return args.some(arg => RG_FORBIDDEN_ARG_RE.test(arg.value))
+                    ? 'rg flag runs a program or reads hidden/ignored files' : undefined;
             case 'fd':
             case 'fdfind':
-                return args.some(arg => /^(?:-x|-X|--exec|--exec-batch)(?:=|$)/.test(arg.value)) ? 'fd --exec' : undefined;
+                return args.some(arg => FD_FORBIDDEN_ARG_RE.test(arg.value)) ? 'fd --exec' : undefined;
+            case 'grep':
+            case 'egrep':
+            case 'fgrep':
+                return args.some(arg => GREP_RECURSIVE_ARG_RE.test(arg.value)) ? 'recursive grep reads every file' : undefined;
+            case 'diff':
+                return args.some(arg => /^-[^-]*r|^--recursive$/.test(arg.value)) ? 'recursive diff reads every file' : undefined;
+            case 'jq':
+                // `env` / `$ENV` dump the process environment (API keys).
+                return args.some(arg => /\benv\b|\$ENV|input_filename/.test(arg.value)) ? 'jq reads the environment' : undefined;
             case 'sort':
                 return args.some(arg => /^--(?:output|compress-program)(?:=|$)/.test(arg.value) || /^-[a-zA-Z]*o/.test(arg.value))
                     ? 'sort writes a file or runs a compressor' : undefined;
             case 'tree':
-                return args.some(arg => /^-[a-zA-Z]*o|^--output/.test(arg.value)) ? 'tree -o writes a file' : undefined;
+                // `-o` writes a file; `-R` re-runs tree with `-o 00Tree.html` in every directory.
+                return args.some(arg => /^-[a-zA-Z]*[oR]|^--output/.test(arg.value)) ? 'tree writes a file' : undefined;
             case 'file':
                 return args.some(arg => /^-[a-zA-Z]*C|^--compile$/.test(arg.value)) ? 'file -C writes a magic file' : undefined;
             case 'date':
@@ -427,16 +510,51 @@ export class QaapBashReadOnlyClassifier {
     }
 
     /** Every argument (and `--flag=value` value) must be a non-sensitive path inside the working directory. */
-    protected checkPathArguments(words: QaapShellWord[], location: string[], cwd: string | undefined): string | undefined {
+    protected checkPathArguments(words: QaapShellWord[], location: string[], cwd: string | undefined, paths?: string[]): string | undefined {
         for (const word of words.slice(1)) {
             const value = word.value;
             const eq = value.startsWith('-') ? value.indexOf('=') : -1;
-            const reason = this.checkPathWord(eq >= 0 ? value.slice(eq + 1) : value, location, cwd);
+            const target = eq >= 0 ? value.slice(eq + 1) : value;
+            const reason = (word.glob ? this.checkGlobWord(target) : undefined) ?? this.checkPathWord(target, location, cwd);
             if (reason) {
                 return reason;
             }
+            if (paths && target && !target.startsWith('-')) {
+                paths.push(this.describePath(target, location));
+            }
         }
         return undefined;
+    }
+
+    /**
+     * Globs expand after classification, so check what they COULD match: a segment starting with `.`
+     * may match `..` (bash < 5.2) or a dotfile secret; any segment that could match a sensitive name
+     * (`.en?`, `id_r*`, `*`) is rejected too.
+     */
+    protected checkGlobWord(word: string): string | undefined {
+        for (const segment of word.replace(/\\/g, '/').split('/')) {
+            if (!/[*?[]/.test(segment)) {
+                continue;
+            }
+            if (segment.startsWith('.')) {
+                return `glob may match a hidden file or ..: ${word}`;
+            }
+            const pattern = globSegmentToRegExp(segment);
+            const secret = SENSITIVE_SAMPLE_NAMES.find(name => !name.startsWith('.') && pattern.test(name));
+            if (secret) {
+                return `glob may match a sensitive file (${secret}): ${word}`;
+            }
+        }
+        return undefined;
+    }
+
+    /** Path of an argument relative to the task cwd (posix separators), or the absolute path as given. */
+    protected describePath(value: string, location: string[]): string {
+        const normalized = value.replace(/\\/g, '/');
+        if (normalized.startsWith('/') || WINDOWS_DRIVE_RE.test(normalized)) {
+            return normalized;
+        }
+        return [...location, normalized].join('/');
     }
 
     /** Returns a rejection reason for a word that names a sensitive file or a path outside the cwd. */
@@ -567,7 +685,9 @@ export class QaapBashReadOnlyClassifier {
         if (rest.some(arg => arg.glob)) {
             return 'unquoted glob in git arguments';
         }
-        const forbidden = rest.find(arg => GIT_FORBIDDEN_ARG_RE.test(arg.value));
+        const forbidden = rest.find(arg => GIT_FORBIDDEN_SHORT_FLAG_RE.test(arg.value)
+            || isLongOptionPrefix(arg.value, GIT_FORBIDDEN_LONG_OPTIONS)
+            || isLongOptionPrefix(arg.value, GIT_UNTRACKED_READ_LONG_OPTIONS));
         if (forbidden) {
             return `git ${subcommand} ${forbidden.value}`;
         }

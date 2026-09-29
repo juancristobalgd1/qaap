@@ -21,7 +21,7 @@ export const qaapAgentApprovalPreferenceSchema: PreferenceSchema = {
                 'Auto-approve read-only shell commands: let agents run shell commands that only read (for example `ls`, `cat`, `grep`, `find` without '
                 + '`-exec`, `git status`/`log`/`diff`) without asking for approval, even under **Request approval**. '
                 + 'Commands with redirections, substitutions, or any write/exec are still asked for, and destructive '
-                + 'commands are never auto-approved.',
+                + 'commands are never auto-approved. Off by default: the check is lexical and best-effort, not a sandbox.',
             ),
         },
     },

@@ -22,6 +22,7 @@ import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-gu
 import {
     buildQaiqAutoDeniedToolMessage,
     buildQaiqQueuedApprovalTimeoutMessage,
+    commandMayChangeShellCwd,
     resolveQaiqControlRequestAutoDecision,
 } from '../common/qaap-qaiq-control-auto-response';
 import {
@@ -415,7 +416,12 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let stdioLineBuffer = '';
         // Read lazily (first control request) and once per run: the reader hits the per-tenant settings file.
         let autoApproveReadOnlyShell: boolean | undefined;
+        // The agent shell keeps its cwd between calls; after any cd the classifier's cwd is stale.
+        let shellCwdMayHaveMoved = false;
         const readAutoApproveReadOnlyShell = (): boolean => {
+            if (shellCwdMayHaveMoved) {
+                return false;
+            }
             if (autoApproveReadOnlyShell === undefined) {
                 try {
                     autoApproveReadOnlyShell = resolveAutoApproveReadOnlyShellPreference(
@@ -446,6 +452,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                             autoApproveReadOnlyShell: readAutoApproveReadOnlyShell(),
                             cwd: task.cwd,
                             checkGitExecConfig: () => ctx.checkGitExecConfig(task.cwd),
+                            checkPathsInsideCwd: paths => ctx.checkShellPathsInsideCwd(task.cwd, paths),
                         },
                     );
                     const autoAction = autoDecision.action;
@@ -455,6 +462,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     const command = typeof event.request.toolInput?.command === 'string'
                         ? event.request.toolInput.command
                         : undefined;
+                    if (!shellCwdMayHaveMoved && commandMayChangeShellCwd(command)) {
+                        shellCwdMayHaveMoved = true;
+                    }
                     ctx.observability?.recordAgentToolCommand({
                         taskId: task.id,
                         tenantLogin: task.ownerLogin,

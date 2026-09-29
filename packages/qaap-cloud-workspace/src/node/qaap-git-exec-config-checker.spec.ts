@@ -88,4 +88,26 @@ describe('QaapGitExecConfigChecker', () => {
         checker.check(repo);
         expect(calls).to.equal(2);
     });
+
+    it('does not verify repositories with submodules (their config is separate)', () => {
+        fs.writeFileSync(path.join(repo, '.gitmodules'), '[submodule "x"]\n\tpath = x\n');
+        expect(checkerWith(() => gitResult(1)).check(repo)).to.contain('submodule');
+    });
+
+    it('re-checks when an included config file changes', () => {
+        const included = path.join(root, 'shared.gitconfig');
+        fs.writeFileSync(included, '[core]\n');
+        let calls = 0;
+        const checker = checkerWith(() => {
+            calls++;
+            return gitResult(0, `file:${path.join(repo, '.git', 'config')}\tinclude.path ${included}\n`);
+        });
+        expect(checker.check(repo)).to.equal(undefined);
+        checker.check(repo);
+        expect(calls).to.equal(1);
+        const later = new Date(Date.now() + 60_000);
+        fs.utimesSync(included, later, later);
+        checker.check(repo);
+        expect(calls).to.equal(2);
+    });
 });

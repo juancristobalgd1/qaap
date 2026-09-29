@@ -36,7 +36,7 @@ export interface QaapQaiqControlAutoDecision {
 }
 
 export interface QaapQaiqControlAutoOptions {
-    /** User preference `ai-features.agentApprovals.autoApproveReadOnlyShell` (default on). */
+    /** User preference `ai-features.agentApprovals.autoApproveReadOnlyShell` (default off; only `true` enables it). */
     readonly autoApproveReadOnlyShell?: boolean;
     /** Task working directory; absolute path arguments are read-only only inside it. */
     readonly cwd?: string;
@@ -46,6 +46,12 @@ export interface QaapQaiqControlAutoOptions {
      * when absent, such commands fall back to the preset rules.
      */
     readonly checkGitExecConfig?: () => string | undefined;
+    /**
+     * Returns a reason when any of the classifier's path arguments reaches outside the task cwd once
+     * symlinks are resolved. Required when the command has path arguments: when absent, it falls back
+     * to the preset rules.
+     */
+    readonly checkPathsInsideCwd?: (paths: readonly string[]) => string | undefined;
 }
 
 const NETWORK_TOOL_NAMES = new Set(['WebSearch', 'WebFetch', 'Fetch']);
@@ -114,6 +120,18 @@ export function resolveQaiqControlRequestAutoDecision(
     };
 }
 
+/** `cd` / `pushd` / `popd` as a command word (start, or after an operator / opening brace). */
+const SHELL_CWD_CHANGE_RE = /(?:^|[\s;&|({])(?:cd|pushd|popd)(?:\s|$|;)/;
+
+/**
+ * True when a shell command may move the agent shell's working directory. Agent shells keep their cwd
+ * between tool calls, while the read-only classifier resolves paths from the task cwd, so once any
+ * command changed directory the runner stops auto-approving for the rest of the run.
+ */
+export function commandMayChangeShellCwd(command: string | undefined): boolean {
+    return !!command && SHELL_CWD_CHANGE_RE.test(command);
+}
+
 /**
  * `allowed` when the request is a shell tool call whose command is provably read-only and may skip the
  * approval prompt; `allowed: false` when the command is read-only but a runtime check (git config) vetoed
@@ -125,7 +143,7 @@ function classifyReadOnlyShellRequest(
     request: QaapQaiqPendingControlRequest,
     options: QaapQaiqControlAutoOptions,
 ): { readonly allowed: boolean; readonly detail: string } | undefined {
-    if (options.autoApproveReadOnlyShell === false) {
+    if (options.autoApproveReadOnlyShell !== true) {
         return undefined;
     }
     const toolName = request.toolName?.trim() ?? '';
@@ -153,6 +171,17 @@ function classifyReadOnlyShellRequest(
         }
         if (gitRisk) {
             return { allowed: false, detail: gitRisk };
+        }
+    }
+    if (verdict.paths?.length) {
+        let pathRisk: string | undefined;
+        try {
+            pathRisk = options.checkPathsInsideCwd ? options.checkPathsInsideCwd(verdict.paths) : 'paths not verified';
+        } catch (error) {
+            pathRisk = `path check failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        if (pathRisk) {
+            return { allowed: false, detail: pathRisk };
         }
     }
     return { allowed: true, detail: verdict.reason };

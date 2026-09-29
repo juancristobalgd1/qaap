@@ -21,7 +21,7 @@ describe('QaapBashReadOnlyClassifier', () => {
         'head -n 20 README.md',
         'tail -n 50 log.txt',
         'wc -l src/*.ts',
-        'grep -rn "TODO" src',
+        'grep -n "TODO" src/a.ts',
         'grep -E \'foo|bar\' file.txt',
         'rg --files -g "*.ts"',
         'rg -n "resolveQaiq" packages',
@@ -185,7 +185,7 @@ describe('QaapBashReadOnlyClassifier', () => {
             'ls /home/alice/project',
             'cat ./src/../README.md',
             'cd src && cat ../package.json',
-            'grep -rn foo src/lib',
+            'grep -n foo src/lib/a.ts',
             'cat "C:\\Users\\Alice\\project\\README.md"',
         ];
         const OUTSIDE: readonly string[] = [
@@ -258,10 +258,89 @@ describe('QaapBashReadOnlyClassifier', () => {
         expect(classifier.classify('ls | wc -l').reason).to.equal('read-only: ls, wc');
     });
 
-    it('defaults the preference to on unless explicitly false', () => {
-        expect(resolveAutoApproveReadOnlyShellPreference(undefined)).to.equal(true);
-        expect(resolveAutoApproveReadOnlyShellPreference('false')).to.equal(true);
+    it('defaults the preference to off unless explicitly true', () => {
+        expect(resolveAutoApproveReadOnlyShellPreference(undefined)).to.equal(false);
+        expect(resolveAutoApproveReadOnlyShellPreference('true')).to.equal(false);
         expect(resolveAutoApproveReadOnlyShellPreference(false)).to.equal(false);
         expect(resolveAutoApproveReadOnlyShellPreference(true)).to.equal(true);
+    });
+
+    describe('hardening (review of #155)', () => {
+        const cwd = '/home/alice/project';
+        /** Commands that must never be auto-approved; payloads are harmless placeholders. */
+        const REJECTED: readonly string[] = [
+            // Program execution through option bundling / long-option abbreviations.
+            'fd -Hx echo x',
+            'fd . -1HX echo x',
+            'fd --exec-b echo x',
+            "git grep -iO'echo x' foo",
+            "git grep --open='echo x' foo",
+            'git grep --open-files foo',
+            'rg --hostname-bin=./x foo',
+            'rg --pre=./x foo',
+            // Writes.
+            'tree -R -H . -L 1',
+            'git diff --output=x.txt',
+            'git log --outp=x.txt',
+            // Reads of hidden / ignored / untracked content.
+            'grep -r KEY .',
+            'grep -rn KEY src',
+            'grep --recursive KEY .',
+            'grep -d recurse KEY .',
+            'diff -ru a b',
+            'rg --hidden KEY',
+            'rg -uu KEY',
+            'rg -. KEY',
+            'rg -L KEY',
+            'git grep --untracked KEY',
+            'git grep --no-index KEY',
+            'jq -n env',
+            "jq -n '$ENV'",
+            // Globs that can expand to secrets or `..`.
+            'cat .en?',
+            'cat .e*',
+            'cat id_r?a',
+            'cat *.pe?',
+            'cat creden*',
+            'cat *',
+            'cat .*/.*/etc/passwd',
+            'ls src/.*',
+        ];
+        for (const command of REJECTED) {
+            it(`rejects: ${command}`, () => {
+                const result = classifier.classify(command, { cwd });
+                expect(result.readOnly, result.reason).to.equal(false);
+            });
+        }
+
+        const STILL_READ_ONLY: readonly string[] = [
+            'ls *.ts',
+            'grep -n TODO src/*.ts',
+            'rg TODO src',
+            'rg -i -n TODO',
+            'fd -e ts',
+            'git grep -n TODO',
+            'git log --oneline -5',
+            'git diff --stat',
+            'tree -L 2',
+            'diff a.txt b.txt',
+            "jq '.name' package.json",
+        ];
+        for (const command of STILL_READ_ONLY) {
+            it(`keeps read-only: ${command}`, () => {
+                const result = classifier.classify(command, { cwd });
+                expect(result.readOnly, result.reason).to.equal(true);
+            });
+        }
+
+        it('reports path arguments relative to the cwd with cd applied, including input redirections', () => {
+            const result = classifier.classify('cd src && cat a.txt lib/b.txt < in.txt', { cwd });
+            expect(result.readOnly).to.equal(true);
+            expect([...result.paths ?? []].sort()).to.deep.equal(['in.txt', 'src', 'src/a.txt', 'src/lib/b.txt']);
+        });
+
+        it('reports no paths for argument-less commands', () => {
+            expect(classifier.classify('pwd', { cwd }).paths).to.deep.equal([]);
+        });
     });
 });
