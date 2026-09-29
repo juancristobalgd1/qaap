@@ -5,11 +5,13 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { fetchQaapTerminalSessions, upsertQaapTerminalSessions } from './qaap-cloud-workspace-client';
+import { QaapDeferredStartup, QaapVisibleInterval } from './qaap-deferred-startup';
 
 const PERSIST_INTERVAL_MS = 15_000;
 
@@ -25,17 +27,25 @@ export class QaapTerminalPersistenceContribution implements FrontendApplicationC
     @inject(MessageService)
     protected readonly messages: MessageService;
 
-    protected timer: number | undefined;
+    @inject(QaapDeferredStartup)
+    protected readonly deferredStartup: QaapDeferredStartup;
+
+    protected persistTimer: QaapVisibleInterval | undefined;
+    protected deferredStart: Disposable | undefined;
 
     onStart(): void {
-        void this.restoreHint();
-        this.timer = window.setInterval(() => { void this.persist(); }, PERSIST_INTERVAL_MS);
+        // The restore hint is informational: fetch it after ready + idle, not during boot.
+        // The persist tick is a no-op without terminals and is skipped while the tab is hidden.
+        this.deferredStart = this.deferredStartup.whenReadyAndIdle(() => {
+            void this.restoreHint();
+            this.persistTimer = new QaapVisibleInterval(() => { void this.persist(); }, PERSIST_INTERVAL_MS);
+        });
     }
 
     onStop(): void {
-        if (this.timer !== undefined) {
-            window.clearInterval(this.timer);
-        }
+        this.deferredStart?.dispose();
+        this.persistTimer?.dispose();
+        this.persistTimer = undefined;
     }
 
     protected workspaceKey(): string {

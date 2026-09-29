@@ -9,6 +9,8 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { warmAgentRunner } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { resolveWorkspaceHostFsPath } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-shell';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { Disposable } from '@theia/core/lib/common/disposable';
+import { QaapDeferredStartup } from './qaap-deferred-startup';
 
 /**
  * Pre-warms the VPS agent runner when a workspace opens so the first chat message skips
@@ -20,11 +22,23 @@ export class QaapAgentRunnerWarmContribution implements FrontendApplicationContr
     @inject(WorkspaceService)
     protected readonly workspace: WorkspaceService;
 
+    @inject(QaapDeferredStartup)
+    protected readonly deferredStartup: QaapDeferredStartup;
+
+    protected deferredWarm: Disposable | undefined;
+
     onStart(): void {
-        void this.workspace.ready.then(() => this.warmCurrentWorkspace());
+        // The warm-up only shortens the FIRST chat turn; it must not compete with boot/first paint.
+        this.deferredWarm = this.deferredStartup.whenReadyAndIdle(() => {
+            void this.warmCurrentWorkspace();
+        });
         this.workspace.onWorkspaceLocationChanged(() => {
             void this.warmCurrentWorkspace();
         });
+    }
+
+    onStop(): void {
+        this.deferredWarm?.dispose();
     }
 
     protected async warmCurrentWorkspace(): Promise<void> {
