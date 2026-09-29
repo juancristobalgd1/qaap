@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { QAAP_SQLITE_SCHEMA_VERSION, QaapSqliteStore } from './qaap-sqlite-store';
+import { QAAP_SQLITE_SCHEMA_VERSION, QaapSqliteConnectionRegistry, QaapSqliteStore } from './qaap-sqlite-store';
 
 function userVersion(databasePath: string): number {
     const database = new DatabaseSync(databasePath);
@@ -27,6 +27,7 @@ describe('QaapSqliteStore', () => {
     });
 
     afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
         fs.rmSync(directory, { recursive: true, force: true });
     });
 
@@ -127,11 +128,85 @@ describe('QaapSqliteStore', () => {
         });
     });
 
-    it('leaves no open handle after an operation, so the directory can be removed on every platform', () => {
-        const store = new QaapSqliteStore({ databasePath: path.join(directory, 'state.sqlite'), namespace: 'test' });
-        store.set('k', 1);
-        store.withTransaction(() => store.set('k2', 2));
-        fs.rmSync(directory, { recursive: true, force: true });
-        expect(fs.existsSync(directory)).to.equal(false);
+    describe('connection lifecycle', () => {
+        class CountingRegistry extends QaapSqliteConnectionRegistry {
+            opens = 0;
+            protected override openDatabase(databasePath: string): DatabaseSync {
+                this.opens++;
+                return super.openDatabase(databasePath);
+            }
+        }
+
+        let registry: CountingRegistry;
+
+        beforeEach(() => {
+            registry = new CountingRegistry();
+        });
+
+        afterEach(() => {
+            registry.closeAll();
+        });
+
+        it('reuses one connection across operations and across stores on the same file', () => {
+            const databasePath = path.join(directory, 'state.sqlite');
+            const first = new QaapSqliteStore({ databasePath, namespace: 'a', registry });
+            const second = new QaapSqliteStore({ databasePath, namespace: 'b', registry });
+            first.set('k', 1);
+            second.set('k', 2);
+            first.replace([['r', 3]]);
+            first.withTransaction(() => second.set('nested', 4));
+            expect(first.list<number>()).to.deep.equal([['r', 3]]);
+            expect(second.list<number>()).to.deep.equal([['k', 2], ['nested', 4]]);
+            expect(first.delete('r')).to.equal(true);
+            expect(registry.opens).to.equal(1);
+            expect(registry.isOpen(databasePath)).to.equal(true);
+        });
+
+        it('reopens lazily after close() and keeps the data', () => {
+            const databasePath = path.join(directory, 'state.sqlite');
+            const store = new QaapSqliteStore({ databasePath, namespace: 'test', registry });
+            store.set('k', { v: 1 });
+            store.close();
+            expect(registry.isOpen(databasePath)).to.equal(false);
+            expect(store.get<{ v: number }>('k')).to.deep.equal({ v: 1 });
+            store.set('k2', 2);
+            expect(registry.opens).to.equal(2);
+
+            registry.closeAll();
+            const reopened = new QaapSqliteStore({ databasePath, namespace: 'test', registry });
+            expect(reopened.list()).to.deep.equal([['k', { v: 1 }], ['k2', 2]]);
+            expect(registry.opens).to.equal(3);
+        });
+
+        it('refuses to close while a transaction is running', () => {
+            const store = new QaapSqliteStore({ databasePath: path.join(directory, 'state.sqlite'), namespace: 'test', registry });
+            expect(() => store.withTransaction(() => store.close())).to.throw(/while a transaction is running/);
+            store.set('still-usable', 1);
+            expect(store.get('still-usable')).to.equal(1);
+        });
+
+        it('lets the directory be removed after close(), on every platform', () => {
+            const databasePath = path.join(directory, 'state.sqlite');
+            const store = new QaapSqliteStore({ databasePath, namespace: 'test', registry });
+            store.set('k', 1);
+            store.withTransaction(() => store.set('k2', 2));
+            store.close();
+            fs.rmSync(directory, { recursive: true, force: true });
+            expect(fs.existsSync(directory)).to.equal(false);
+        });
+
+        it('starts a fresh database when the file was deleted while open (POSIX)', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const databasePath = path.join(directory, 'nested', 'state.sqlite');
+            const store = new QaapSqliteStore({ databasePath, namespace: 'test', registry });
+            store.set('old', 1);
+            fs.rmSync(path.dirname(databasePath), { recursive: true, force: true });
+            store.set('new', 2);
+            expect(store.list<number>()).to.deep.equal([['new', 2]]);
+            expect(fs.existsSync(databasePath)).to.equal(true);
+            expect(registry.opens).to.equal(2);
+        });
     });
 });
