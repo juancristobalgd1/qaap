@@ -34,51 +34,27 @@ const { 'editor.worker': editorWorkerEntry, 'plugin-worker': pluginWorkerEntry, 
  * crashes with "registry is not a function" on that double-default shape.
  * Patch the generated entry's loader to unwrap both shapes.
  *
- * The same plugin also parallelizes the module fetches. The generated entry does
- * `await load(container, import('...'))` once per frontend module (~100), and
- * with splitting each `import()` is a chunk request issued only after the
- * previous module loaded: one serial round trip per module on a cold cache.
- * Each run of consecutive such lines becomes one array of `import()` promises
- * started up front, followed by `await load(container, <promise N>)` in the
- * original order, so `container.load` (DI binding) order is unchanged. Chunk
- * bodies may now evaluate in arrival order; frontend module bodies only define
- * classes and a ContainerModule, and their dependencies resolve through
- * `require`. The preload block and the main block remain separate runs: the
- * main imports must not start before the preloader has loaded the localization,
- * because module-level `nls.localize` calls read it at evaluation time.
+ * The generated entry keeps its sequential `await load(container, import(...))`
+ * lines: each frontend module chunk is evaluated only after the previous module
+ * loaded, exactly as the generator intends. #146 started every `import()` up
+ * front instead, so chunk bodies evaluated in network/cache arrival order; since
+ * then the mobile E2E suite intermittently never finished starting ("took too
+ * long to start"), mostly after a reload, when every chunk arrives from cache at
+ * once. The fetch
+ * parallelism now comes from `<link rel="modulepreload">` hints for the entry's
+ * chunks (modulePreloadPlugin below): preloaded modules are fetched and parsed
+ * concurrently but only evaluated when the ordered `import()` reaches them.
  */
-const SEQUENTIAL_MODULE_LOADS = /^([ \t]*)await load\(container, import\(('[^']+'|"[^"]+")\)\);[ \t]*\r?\n(?:[ \t]*await load\(container, import\((?:'[^']+'|"[^"]+")\)\);[ \t]*\r?\n)+/gm;
-
-function parallelizeModuleLoads(source) {
-    let run = 0;
-    return source.replace(SEQUENTIAL_MODULE_LOADS, block => {
-        const indent = block.match(/^[ \t]*/)[0];
-        const eol = block.includes('\r\n') ? '\r\n' : '\n';
-        const specifiers = [...block.matchAll(/import\(('[^']+'|"[^"]+")\)/g)].map(match => match[1]);
-        const name = `qaapFrontendModules${run++}`;
-        return [
-            `${indent}const ${name} = [`,
-            ...specifiers.map(specifier => `${indent}    import(${specifier}),`),
-            `${indent}];`,
-            // Rejections surface through the ordered awaits below; keep promises that
-            // are not awaited yet (a failure aborts the loop) from reporting as unhandled.
-            `${indent}${name}.forEach(modulePromise => modulePromise.catch(() => undefined));`,
-            ...specifiers.map((_, index) => `${indent}await load(container, ${name}[${index}]);`),
-            '',
-        ].join(eol);
-    });
-}
-
 const esmDiInteropPlugin = {
     name: 'qaap-esm-di-interop',
     setup(build) {
         build.onLoad({ filter: /src-gen[\\/]frontend[\\/](index|secondary-index)\.js$/ }, async args => {
             const fs = await import('node:fs/promises');
             const source = await fs.readFile(args.path, 'utf8');
-            const patched = parallelizeModuleLoads(source.replaceAll(
+            const patched = source.replaceAll(
                 'container.load(containerModule.default)',
                 'container.load((m => (m && typeof m.registry === \'function\') ? m : m.default)(containerModule.default))',
-            ));
+            );
             return { contents: patched, loader: 'js' };
         });
     },
@@ -237,6 +213,67 @@ const pruneStaleChunksPlugin = {
     },
 };
 
+/**
+ * Fetch parallelism for the sequential frontend module loads (see esbuild-DI interop above).
+ * After each build, append to the `bundle` entry a snippet that adds a
+ * `<link rel="modulepreload">` for every chunk the entry imports dynamically (its frontend
+ * modules), taken from the metafile. A preloaded chunk is fetched and parsed concurrently but
+ * evaluated only when the ordered `import()` reaches it, so DI and evaluation order stay exactly
+ * as generated. The snippet runs synchronously while the entry's async startup is parked at its
+ * first `await` (the preloader), i.e. before any main module is imported. It lives in bundle.js,
+ * not index.html, because `theia start` regenerates index.html on every start. The snippet goes
+ * before the `sourceMappingURL` comment so every mapped line keeps its position.
+ */
+const MODULE_PRELOAD_ENTRY = 'bundle.js';
+
+function appendModulePreloads(metafile) {
+    const [entryOutput, entry] = Object.entries(metafile.outputs)
+        .find(([output]) => path.basename(output) === MODULE_PRELOAD_ENTRY) ?? [];
+    if (!entry) {
+        return;
+    }
+    const chunks = [...new Set(entry.imports
+        .filter(imported => imported.kind === 'dynamic-import' && !imported.external)
+        .map(imported => path.basename(imported.path))
+        .filter(name => PRUNABLE_CHUNK.test(name) && name.endsWith('.js')))];
+    if (!chunks.length) {
+        return;
+    }
+    const file = path.resolve(entryOutput);
+    const source = fs.readFileSync(file, 'utf8');
+    const snippet = [
+        '// qaap: modulepreload the frontend module chunks (fetched in parallel, evaluated in order)',
+        `for (const qaapPreloadChunk of ${JSON.stringify(chunks)}) {`,
+        '  const qaapPreloadLink = document.createElement("link");',
+        '  qaapPreloadLink.rel = "modulepreload";',
+        '  qaapPreloadLink.href = new URL("./" + qaapPreloadChunk, import.meta.url).href;',
+        '  document.head.appendChild(qaapPreloadLink);',
+        '}',
+        '',
+    ].join('\n');
+    const mapComment = source.lastIndexOf('//# sourceMappingURL=');
+    const patched = mapComment === -1
+        ? `${source}\n${snippet}`
+        : `${source.slice(0, mapComment)}${snippet}${source.slice(mapComment)}`;
+    fs.writeFileSync(file, patched);
+}
+
+const modulePreloadPlugin = {
+    name: 'qaap-module-preload',
+    setup(build) {
+        build.onEnd(result => {
+            if (result.errors.length || !result.metafile) {
+                return;
+            }
+            try {
+                appendModulePreloads(result.metafile);
+            } catch (error) {
+                console.warn('[qaap] modulepreload hints skipped:', error);
+            }
+        });
+    },
+};
+
 const mainOptions = {
     ...browserOptions,
     entryPoints: mainEntryPoints,
@@ -247,7 +284,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, pruneStaleChunksPlugin],
+    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin],
 };
 const workerOptions = {
     ...browserOptions,
