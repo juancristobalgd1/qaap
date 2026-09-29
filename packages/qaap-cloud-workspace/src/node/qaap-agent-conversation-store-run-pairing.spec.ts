@@ -73,7 +73,7 @@ class TestConversationStore extends QaapAgentConversationStore {
         return undefined;
     }
 
-    override captureCheckpoint(): undefined {
+    override async captureCheckpoint(): Promise<undefined> {
         return undefined;
     }
 

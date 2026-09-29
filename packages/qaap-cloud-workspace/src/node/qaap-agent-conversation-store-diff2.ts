@@ -2,10 +2,40 @@
 
 import {
     QaapAgentConversation,
+    QaapConversationCheckpoint,
     toConversationSummary,
 } from '../common/qaap-agent-conversation';
 import { planConversationRewind } from '../common/qaap-agent-conversation-rewind';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
+import { QAAP_GIT_ADD_ALL_TIMEOUT_MS } from './qaap-agent-conversation-store-git';
+
+/**
+ * Capture an undo checkpoint and restore the worktree to `commit`, as one job on the
+ * per-repository git chain so it never interleaves with a turn-settle checkpoint.
+ */
+function captureUndoAndRestore(ctx: QaapAgentConversationStoreContext, cwd: string, conversationId: string,
+    messageId: string, undoLabel: string, commit: string): Promise<QaapConversationCheckpoint | undefined> {
+    return ctx.runSerializedGit(cwd, async () => {
+        const repositoryCheck = await ctx.mutatingGit(
+            cwd,
+            ['rev-parse', '--is-inside-work-tree'],
+        );
+        if (repositoryCheck.status !== 0) {
+            throw new Error('The conversation workspace is not a git repository.');
+        }
+        const undo = await ctx.captureCheckpoint(cwd, conversationId, messageId, undoLabel);
+        const restore = await ctx.mutatingGit(
+            cwd,
+            ['restore', '--source', commit, '--worktree', '--', '.'],
+            undefined,
+            QAAP_GIT_ADD_ALL_TIMEOUT_MS,
+        );
+        if (restore.status !== 0) {
+            throw new Error(`Restore failed: ${(restore.stderr || '').trim() || 'git restore error'}`);
+        }
+        return undo;
+    });
+}
 
 export async function rewindToMessageExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, messageId: string): Promise<QaapAgentConversation | undefined> {
         const conv = ctx.conversations.get(conversationId);
@@ -29,21 +59,7 @@ export async function rewindToMessageExtracted(ctx: QaapAgentConversationStoreCo
             gitDiffRemoved: undefined,
         };
         if (plan.restoreCheckpoint) {
-            const repositoryCheck = ctx.mutatingGitSync(
-                conv.cwd,
-                ['rev-parse', '--is-inside-work-tree'],
-            );
-            if (repositoryCheck.status !== 0) {
-                throw new Error('The conversation workspace is not a git repository.');
-            }
-            const undo = ctx.captureCheckpoint(conv.cwd, conversationId, messageId, 'Before rewind');
-            const restore = ctx.mutatingGitSync(
-                conv.cwd,
-                ['restore', '--source', plan.restoreCheckpoint.commit, '--worktree', '--', '.'],
-            );
-            if (restore.status !== 0) {
-                throw new Error(`Restore failed: ${(restore.stderr || '').trim() || 'git restore error'}`);
-            }
+            const undo = await captureUndoAndRestore(ctx, conv.cwd, conversationId, messageId, 'Before rewind', plan.restoreCheckpoint.commit);
             if (undo) {
                 next = { ...next, checkpoints: [...(next.checkpoints ?? []), undo] };
             }
@@ -63,21 +79,12 @@ export async function restoreCheckpointExtracted(ctx: QaapAgentConversationStore
         if (!checkpoint) {
             throw new Error('Checkpoint not found.');
         }
-        const repositoryCheck = ctx.mutatingGitSync(
-            conv.cwd,
-            ['rev-parse', '--is-inside-work-tree'],
-        );
-        if (repositoryCheck.status !== 0) {
-            throw new Error('The conversation workspace is not a git repository.');
-        }
-        const undo = ctx.captureCheckpoint(conv.cwd, conversationId, checkpoint.messageId, 'Before restore');
-        const restore = ctx.mutatingGitSync(conv.cwd, ['restore', '--source', checkpoint.commit, '--worktree', '--', '.']);
-        if (restore.status !== 0) {
-            throw new Error(`Restore failed: ${(restore.stderr || '').trim() || 'git restore error'}`);
-        }
-        let next = conv;
+        const undo = await captureUndoAndRestore(ctx, conv.cwd, conversationId, checkpoint.messageId, 'Before restore', checkpoint.commit);
+        // Re-read across the git await: a peer run may have streamed into this conversation meanwhile.
+        const current = ctx.conversations.get(conversationId) ?? conv;
+        let next = current;
         if (undo) {
-            next = { ...conv, checkpoints: [...(conv.checkpoints ?? []), undo], updatedAt: Date.now() };
+            next = { ...current, checkpoints: [...(current.checkpoints ?? []), undo], updatedAt: Date.now() };
             ctx.conversations.set(conversationId, next);
             ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
             void ctx.persist();

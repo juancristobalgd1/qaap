@@ -1,7 +1,7 @@
 // Extracted from qaap-agent-conversation-store.ts
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
-import { QaapAgentConversation, QaapAgentMessage, toConversationSummary } from '../common/qaap-agent-conversation';
+import { QaapAgentConversation, QaapAgentMessage, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
@@ -84,6 +84,45 @@ export function resolveStructuredParsedTraceEventsExtracted(ctx: QaapAgentConver
     return resolveStructuredParsedTraceEventsHelper(message, parsed);
 }
 
+/** Diff stats + checkpoint captured for a delivered turn (git side of the settle). */
+interface QaapTurnGitState {
+    readonly gitStats?: { added: number; removed: number };
+    readonly checkpoint?: QaapConversationCheckpoint;
+}
+
+/**
+ * Same git sequence as before (numstat diff, then the throwaway-index checkpoint), but async and
+ * serialized per repository so two settles (peer runs) or a concurrent rewind never interleave.
+ * Failures are non-fatal: a turn without stats/checkpoint still settles.
+ */
+async function captureTurnGitState(ctx: QaapAgentConversationStoreContext, conversationId: string,
+    userMessageId: string, startSha: string | undefined): Promise<QaapTurnGitState | undefined> {
+    const conv = ctx.conversations.get(conversationId);
+    if (!conv) {
+        return undefined;
+    }
+    const cwd = conv.cwd;
+    const userMessage = conv.messages.find(m => m.id === userMessageId);
+    const label = userMessage ? ctx.checkpointLabel(userMessage.content ?? '') : 'Turn';
+    try {
+        return await ctx.runSerializedGit(cwd, async () => {
+            const gitStats = await ctx.computeGitDiffStats(cwd, startSha);
+            const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, gitStats);
+            return { gitStats, checkpoint };
+        });
+    } catch {
+        return undefined;
+    }
+}
+
+/** The checkpoint was captured ahead of the tool-support reroute; drop its ref so it does not leak. */
+function discardUnrecordedCheckpoint(ctx: QaapAgentConversationStoreContext, cwd: string, checkpoint: QaapConversationCheckpoint | undefined): void {
+    if (!checkpoint) {
+        return;
+    }
+    void ctx.runSerializedGit(cwd, () => ctx.discardCheckpointRef(cwd, checkpoint.ref)).catch(() => undefined);
+}
+
 export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreContext, ref: QaapConversationTaskRef,
     task: QaapAgentTask, ): Promise<QaapWorkflowNodeOutcome> {
     const { conversationId, userMessageId, agentMessageId, turnAgentId, startSha } = ref;
@@ -155,9 +194,25 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         return 'blocked';
     }
     const detail = await ctx.taskRunner.detail(task.id);
-    // Re-read across the await: with in-session multitasking a PEER run can stream into this
-    // same conversation while we wait for the task detail, and everything below derives what
-    // it writes back from this baseline. Keeping the pre-await snapshot would silently drop
+    const log = ctx.filterAgentLogChunk((detail?.log ?? '').trim());
+    // 'completed_with_warnings' (clean exit, verification still red) is a delivered turn:
+    // it takes the success path below — with a warning trace instead of the failure flow.
+    // Exception: CLI blocking failures that still exit 0 — auth/session (Sign-in card),
+    // and quota/rate-limit (Task failed dialog). Antigravity often prints a plain
+    // "Individual quota reached…" line and exits 0; never treat that as success.
+    const completedAuthFailureReason = (task.state === 'completed' || task.state === 'completed_with_warnings')
+        ? ctx.resolveCompletedTurnAuthFailureReason(log)
+        : undefined;
+    const deliveredTurn = (task.state === 'completed' || task.state === 'completed_with_warnings') && !completedAuthFailureReason;
+    // Diff stats + checkpoint run BEFORE the re-read below, as async git on the per-repository
+    // chain: a settle must never block the shared backend, and everything after the re-read
+    // stays synchronous so no peer-run write can land between the baseline and the final set.
+    const turnGit = deliveredTurn
+        ? await captureTurnGitState(ctx, conversationId, userMessageId, startSha)
+        : undefined;
+    // Re-read across the awaits: with in-session multitasking a PEER run can stream into this
+    // same conversation while we wait for the task detail / git, and everything below derives
+    // what it writes back from this baseline. Keeping the pre-await snapshot would silently drop
     // the other agent's output (read-modify-write over one shared conversation record).
     const latest = ctx.conversations.get(conversationId);
     if (!latest) {
@@ -169,7 +224,6 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         contextUsageEstimated: usageFinalized.contextUsageEstimated,
         contextWindowSize: usageFinalized.contextWindowSize,
     };
-    const log = ctx.filterAgentLogChunk((detail?.log ?? '').trim());
     const streamingAgent = agentMessageId
         ? withUsageBaseline.messages.find(message => message.id === agentMessageId)
         : undefined;
@@ -179,15 +233,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             || (streamingAgent?.traceEvents?.length ?? 0) > 0
         ));
     const structuredParsed = log && !skipLogReparse ? ctx.parseStructuredLog(turnAgentId, log) : undefined;
-    // 'completed_with_warnings' (clean exit, verification still red) is a delivered turn:
-    // it takes the success path below — with a warning trace instead of the failure flow.
-    // Exception: CLI blocking failures that still exit 0 — auth/session (Sign-in card),
-    // and quota/rate-limit (Task failed dialog). Antigravity often prints a plain
-    // "Individual quota reached…" line and exits 0; never treat that as success.
-    const completedAuthFailureReason = (task.state === 'completed' || task.state === 'completed_with_warnings')
-        ? ctx.resolveCompletedTurnAuthFailureReason(log)
-        : undefined;
-    if ((task.state !== 'completed' && task.state !== 'completed_with_warnings') || completedAuthFailureReason) {
+    if (!deliveredTurn) {
         let convForFailure = withUsageBaseline;
         let agentMessageForFailure = streamingAgent;
         if (agentMessageId && log && streamingAgent?.role === 'agent' && !agentMessageHasStructuredTrace(streamingAgent)) {
@@ -330,8 +376,10 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             turnAgentId,
             startSha,
         )) {
+            discardUnrecordedCheckpoint(ctx, withReply.cwd, turnGit?.checkpoint);
             return 'fail';
         }
+        discardUnrecordedCheckpoint(ctx, withReply.cwd, turnGit?.checkpoint);
         const reason = localizeAgentFailureMessage('tool_unsupported');
         const failed = ctx.markTurnFailed(withReply, {
             userMessageId,
@@ -346,18 +394,11 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'failed', detail: reason });
         return 'fail';
     }
-    const gitStats = ctx.computeGitDiffStats(conv.cwd, startSha);
+    const gitStats = turnGit?.gitStats;
     if (gitStats) {
         withReply = { ...withReply, gitDiffAdded: gitStats.added, gitDiffRemoved: gitStats.removed };
     }
-    const userMessage = withReply.messages.find(m => m.id === userMessageId);
-    const checkpoint = ctx.captureCheckpoint(
-        withReply.cwd,
-        conversationId,
-        userMessageId,
-        userMessage ? ctx.checkpointLabel(userMessage.content ?? '') : 'Turn',
-        gitStats,
-    );
+    const checkpoint = turnGit?.checkpoint;
     if (checkpoint) {
         withReply = { ...withReply, checkpoints: [...(withReply.checkpoints ?? []), checkpoint] };
         withReply = ctx.appendCheckpointTrace(withReply, agentMessageId, checkpoint);

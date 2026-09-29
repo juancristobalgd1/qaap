@@ -73,11 +73,14 @@ class TestConversationStore extends QaapAgentConversationStore {
         return undefined;
     }
 
-    override computeGitDiffStats(): { added: number; removed: number } | undefined {
-        return undefined;
+    /** Optional async git-stats seam: runs while the settle awaits turn git (see race spec). */
+    gitStatsHook?: () => Promise<{ added: number; removed: number } | undefined>;
+
+    override async computeGitDiffStats(): Promise<{ added: number; removed: number } | undefined> {
+        return this.gitStatsHook ? this.gitStatsHook() : undefined;
     }
 
-    override captureCheckpoint(): undefined {
+    override async captureCheckpoint(): Promise<undefined> {
         return undefined;
     }
 
@@ -316,6 +319,24 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', function (
         // The drained message is now in the transcript.
         expect(store.get('c1')!.messages.filter(m => m.role === 'user').map(m => m.content))
             .to.include('queued message');
+    });
+
+    it('keeps a peer write that lands while the async turn git (stats/checkpoint) is running', async () => {
+        const { store } = createStore();
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        store.gitStatsHook = async () => {
+            await new Promise(resolve => setImmediate(resolve));
+            store.appendPeerMessage('c1', 'mid-git');
+            return { added: 4, removed: 2 };
+        };
+
+        await store.settleRun('c1', firstUserMessageId, 'task-1');
+
+        const settled = store.get('c1')!;
+        expect(settled.messages.map(m => m.content)).to.include('mid-git');
+        expect(settled.gitDiffAdded).to.equal(4);
+        expect(settled.gitDiffRemoved).to.equal(2);
     });
 
     it('batches multiple queued messages into a single agent turn', async () => {

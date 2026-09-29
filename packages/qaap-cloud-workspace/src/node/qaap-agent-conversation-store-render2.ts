@@ -3,7 +3,7 @@ import type { QaapAgentConversationStoreContext } from './qaap-agent-conversatio
 
 import { randomUUID } from 'crypto';
 
-import { spawnSync, SpawnSyncReturns } from 'child_process';
+import { QAAP_GIT_DEFAULT_TIMEOUT_MS, QaapGitRunResult, runGitAsync } from './qaap-agent-conversation-store-git';
 
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -41,14 +41,24 @@ import { hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper } from
 import { allocateQaapWorktreeOrdinal } from './qaap-worktree-ordinal-allocator';
 import { QAAP_MAX_BATCH_SIZE, QAAP_COALESCE_WINDOW_MS, type PostUserMessageInternalOptions } from './qaap-agent-conversation-store-constants';
 
-export function mutatingGitSyncExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
-    const wrapped = ctx.tenantSpawn.wrapShellForTenant(
-        cwd,
-        'git',
-        ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
-    );
-    const runEnv = { ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) };
-    return spawnSync(wrapped.file, wrapped.args, { cwd, env: runEnv, encoding: 'utf8' });
+/**
+ * MUTATING git under the tenant wrapper, run asynchronously so a turn settle / checkpoint never
+ * blocks the shared multi-tenant backend event loop. Failures (non-zero exit, spawn error,
+ * timeout) resolve with a non-zero / `null` status; this never rejects.
+ */
+export function mutatingGitExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[], env?: NodeJS.ProcessEnv,
+    timeoutMs: number = QAAP_GIT_DEFAULT_TIMEOUT_MS): Promise<QaapGitRunResult> {
+    try {
+        const wrapped = ctx.tenantSpawn.wrapShellForTenant(
+            cwd,
+            'git',
+            ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
+        );
+        const runEnv = { ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) };
+        return runGitAsync(wrapped.file, wrapped.args, { cwd, env: runEnv, timeoutMs, maxBuffer: 64 * 1024 * 1024 });
+    } catch (error) {
+        return Promise.resolve({ status: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
+    }
 }
 
 export function initExtracted(ctx: QaapAgentConversationStoreContext): void {

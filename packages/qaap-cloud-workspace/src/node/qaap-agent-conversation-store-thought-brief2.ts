@@ -17,6 +17,8 @@ import { QAAP_CHAT_TURN_NODE, QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT, QAAP_CHAT_TU
 import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 
 import { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
+
+import { QAAP_GIT_ADD_ALL_TIMEOUT_MS } from './qaap-agent-conversation-store-git';
 import { QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
 
 import type { QaapAgentTask } from '../common/qaap-agent-task';
@@ -377,25 +379,25 @@ export async function persistExtracted(ctx: QaapAgentConversationStoreContext): 
     return ctx.persistChain;
 }
 
-export function captureCheckpointExtracted(ctx: QaapAgentConversationStoreContext, cwd: string,
+export async function captureCheckpointExtracted(ctx: QaapAgentConversationStoreContext, cwd: string,
         conversationId: string,
         messageId: string,
         label: string,
-        stats?: { added: number; removed: number }, ): QaapConversationCheckpoint | undefined {
+        stats?: { added: number; removed: number }, ): Promise<QaapConversationCheckpoint | undefined> {
         const tmpIndex = path.join(os.tmpdir(), `qaap-ckpt-${randomUUID()}.index`);
         const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
         try {
             // Seed the throwaway index from HEAD when a commit exists (best-effort; empty repo is fine).
-            ctx.mutatingGitSync(cwd, ['read-tree', 'HEAD'], env);
-            if (ctx.mutatingGitSync(cwd, ['add', '-A'], env).status !== 0) {
+            await ctx.mutatingGit(cwd, ['read-tree', 'HEAD'], env);
+            if ((await ctx.mutatingGit(cwd, ['add', '-A'], env, QAAP_GIT_ADD_ALL_TIMEOUT_MS)).status !== 0) {
                 return undefined;
             }
-            const tree = ctx.mutatingGitSync(cwd, ['write-tree'], env);
+            const tree = await ctx.mutatingGit(cwd, ['write-tree'], env);
             const treeId = tree.status === 0 ? tree.stdout.trim() : '';
             if (!treeId) {
                 return undefined;
             }
-            const commitRes = ctx.mutatingGitSync(
+            const commitRes = await ctx.mutatingGit(
                 cwd,
                 ['-c', 'user.email=qaap@local', '-c', 'user.name=qaap', 'commit-tree', treeId, '-m', `qaap checkpoint: ${label}`],
                 env,
@@ -405,14 +407,20 @@ export function captureCheckpointExtracted(ctx: QaapAgentConversationStoreContex
                 return undefined;
             }
             const ref = `refs/qaap/checkpoints/${conversationId}/${messageId}-${Date.now()}`;
-            ctx.mutatingGitSync(cwd, ['update-ref', ref, commit]);
+            await ctx.mutatingGit(cwd, ['update-ref', ref, commit]);
             return { id: randomUUID(), messageId, label, commit, ref, capturedAt: Date.now(), added: stats?.added, removed: stats?.removed };
         } catch {
             return undefined;
         } finally {
-            try {
-                fs.rmSync(tmpIndex, { force: true });
-            } catch { /* ignore */ }
+            // A timed-out (SIGKILLed) git can leave the throwaway index lock behind; drop both.
+            await Promise.all([tmpIndex, `${tmpIndex}.lock`].map(file => fs.promises.rm(file, { force: true }).catch(() => undefined)));
         }
+}
+
+export async function discardCheckpointRefExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, ref: string): Promise<void> {
+    if (!ref.startsWith('refs/qaap/checkpoints/')) {
+        return;
+    }
+    await ctx.mutatingGit(cwd, ['update-ref', '-d', ref]);
 }
 
