@@ -32,6 +32,8 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
 import { type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
@@ -1124,6 +1126,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly tenantSpawn: QaapTenantSpawnService;
 
+    /** Qaap-level lifecycle hooks (doc/qaap-agent-hooks.md); optional for bare test harnesses. */
+    @inject(QaapAgentHookService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly agentHooks: QaapAgentHookService | undefined;
+
     /** @see QaapTenantSpawnService.enforceIsolationPolicy — throws to fail the spawn when refused. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public enforceAgentIsolationPolicy(): void {
@@ -1256,8 +1263,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
+        const previousState = this.tasks.get(id)?.state;
         const task = finishTaskExtracted(this, id, state, exitCode);
         this.releaseTenantOperation(id);
+        if (task) {
+            fireStopAgentHook(this, task, previousState, state);
+        }
         return task;
     }
 

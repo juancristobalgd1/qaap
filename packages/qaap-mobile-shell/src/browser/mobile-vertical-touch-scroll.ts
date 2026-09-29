@@ -217,6 +217,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-transcript-checks-panel',
     '.theia-mobile-transcript-review-checks-body',
     '.theia-mobile-open-repo-list',
+    '.qaap-rewind-preview-list',
     '.theia-mobile-routine-sheet-panel',
     '.theia-mobile-agent-transcript',
     '.theia-mobile-agent-log-output',
@@ -261,6 +262,8 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.qaap-lh-tool-result .theia-toolCall-default-result',
     '.qaap-lh-tool-result .theia-toolCall-error-result',
     '.qaap-lh-thinking-content',
+    // Workspace agent-hooks review dialog: the full command list scrolls inside the dialog.
+    '.qaap-agent-hooks-review-list',
     '.gs-container',
     '.monaco-editor .overflow-guard',
 ] as const;

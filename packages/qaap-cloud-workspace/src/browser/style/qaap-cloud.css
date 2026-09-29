@@ -85,3 +85,38 @@
   background: var(--theia-toolbar-hoverBackground);
   color: var(--theia-foreground);
 }
+
+/* Workspace agent-hooks review dialog: every command verbatim, the list scrolls. */
+.qaap-agent-hooks-review {
+  max-width: min(640px, 90vw);
+}
+
+.qaap-agent-hooks-review-list {
+  max-height: 50vh;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.qaap-agent-hooks-review-event {
+  color: var(--theia-descriptionForeground);
+  font-size: var(--theia-ui-font-size0);
+  margin-top: 8px;
+}
+
+.qaap-agent-hooks-review-command {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--theia-textCodeBlock-background);
+  font-family: var(--theia-code-font-family);
+  font-size: var(--theia-code-font-size);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.qaap-agent-hooks-review-covered {
+  color: var(--theia-descriptionForeground);
+  word-break: break-all;
+}

@@ -109,7 +109,8 @@ import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, b
 import { appendAgentReplyExtracted, appendBlockedTraceExtracted, appendCheckpointTraceExtracted, appendReviewTraceExtracted, appendRunCancelledTraceExtracted, appendVerificationWarningTraceExtracted, buildTaskCreateRequestExtracted, clearRunActiveExtracted, detectAgentBlockedNeedExtracted, extractAgentMentionFromUserMessageExtracted, failTurnBeforeSpawnExtracted, finalizeStreamingAgentMessageExtracted, markTurnFailedExtracted, maybeAutoContinueIncompleteTurnExtracted, maybeRetryTurnWithFallbackModelExtracted, postAutoContinueMessageExtracted, prepareContextCompactionForTurnExtracted, publishFinalizedAgentMessageExtracted, reportPreviewBootstrapFailureExtracted, resolveTurnAgentExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-conversation-store-tool-pills2';
 import { applyAgUiTranscriptEventExtracted, buildPromptExtracted, clearAgUiReducerExtracted, cwdMatchesGithubRepoExtracted, fireAgentMessageWireUpdateExtracted, flushPersistExtracted, forceStopZombieTurnExtracted, maybeAutoResumeInterruptedTurnExtracted, recordStreamMetricsExtracted, resolveRunAgentMessageIdExtracted, restoreFromDiskExtracted, schedulePersistExtracted, stageWireMetricsBaselineExtracted, startTurnWatchdogExtracted, sweepZombieStreamingTurnsExtracted, tryAutoLinkConversationToGitBranchExtracted } from './qaap-agent-conversation-store-live-status2';
 import { captureCheckpointExtracted, discardCheckpointRefExtracted, countDurableLoopSpawnsExtracted, findLiveChatTurnRunExtracted, interruptStreamingTurnForRestartExtracted, maybeRetryTurnWithFallbackModelViaGraphExtracted, persistExtracted, reapOrphanedChatTurnRunsExtracted, resumeInterruptedTurnViaGraphExtracted, settleChatTurnRunExtracted } from './qaap-agent-conversation-store-thought-brief2';
-import { restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-agent-conversation-store-diff2';
+import { previewRewindExtracted, restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-agent-conversation-store-diff2';
+import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qaap-conversation-rewind-preview';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 /**
@@ -1014,12 +1015,20 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
         return checkpointLabelHelper(content);
     }
 
-    async rewindToMessage(conversationId: string, messageId: string): Promise<QaapAgentConversation | undefined> {
-        return rewindToMessageExtracted(this, conversationId, messageId);
+    async rewindToMessage(conversationId: string, messageId: string, options?: QaapRewindRestoreOptions): Promise<QaapAgentConversation | undefined> {
+        return rewindToMessageExtracted(this, conversationId, messageId, options);
     }
 
-    async restoreCheckpoint(conversationId: string, checkpointId: string): Promise<QaapAgentConversation | undefined> {
-        return restoreCheckpointExtracted(this, conversationId, checkpointId);
+    async restoreCheckpoint(conversationId: string, checkpointId: string, options?: QaapRewindRestoreOptions): Promise<QaapAgentConversation | undefined> {
+        return restoreCheckpointExtracted(this, conversationId, checkpointId, options);
+    }
+
+    /** Dry run of a checkpoint restore or message rewind: per-file safe/unsafe classification. */
+    async previewRewind(
+        conversationId: string,
+        target: { readonly checkpointId?: string; readonly messageId?: string },
+    ): Promise<QaapRewindPreviewDTO | undefined> {
+        return previewRewindExtracted(this, conversationId, target);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
