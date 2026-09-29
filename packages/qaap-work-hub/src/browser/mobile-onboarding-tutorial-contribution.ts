@@ -298,6 +298,9 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         if (this.activeAgentWatchTimer !== undefined || typeof window === 'undefined') {
             return;
         }
+        // Poll guard: at most one conversation-work request in flight, and none while the tab
+        // is hidden (the 400ms cadence would otherwise pile up requests on a slow backend).
+        let workRequestInFlight = false;
         const tick = (): void => {
             if (!this.active) {
                 return;
@@ -306,12 +309,18 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 this.dismiss(true);
                 return;
             }
+            if (workRequestInFlight || document.hidden) {
+                return;
+            }
             // Any conversation existing (created via composer or API, streaming or already idle)
             // means the user is doing agent work — get the coach-marks out of the way for good.
+            workRequestInFlight = true;
             void hasAnyAgentConversationWork().then(exists => {
                 if (exists && this.active) {
                     this.dismiss(true);
                 }
+            }, () => undefined).finally(() => {
+                workRequestInFlight = false;
             });
         };
         this.activeAgentWatchTimer = window.setInterval(tick, 400);

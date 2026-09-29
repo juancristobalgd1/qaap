@@ -145,20 +145,56 @@ export function qaapAuthenticatedFetchInit(extra?: RequestInit): RequestInit {
 
 export const QAAP_REQUIRE_LOGIN_EVENT = 'qaap-require-login';
 
-export async function fetchQaapAuthConfig(): Promise<QaapAuthConfigResponse> {
+export interface FetchQaapAuthConfigOptions {
+    /** Bypass the shared cache and hit `/auth/config` again (e.g. build-freshness rechecks). */
+    fresh?: boolean;
+}
+
+/**
+ * Shared in-flight / resolved `/auth/config` request. Several contributions ask for the
+ * config during startup; they all share one request. Only successful (`response.ok`)
+ * results are cached; failures clear the cache so the next caller retries.
+ */
+let qaapAuthConfigCache: Promise<QaapAuthConfigResponse> | undefined;
+
+/** Drop the cached `/auth/config` response so the next {@link fetchQaapAuthConfig} refetches. */
+export function invalidateQaapAuthConfigCache(): void {
+    qaapAuthConfigCache = undefined;
+}
+
+async function requestQaapAuthConfig(): Promise<{ config: QaapAuthConfigResponse, cacheable: boolean }> {
     const response = await fetchQaapWithTimeout(
         `${QAAP_AUTH_API_PATH}/config`,
         qaapAuthenticatedFetchInit(),
         QAAP_AUTH_REQUEST_TIMEOUT_MS,
     );
     if (!response.ok) {
-        return { githubOAuth: false };
+        return { config: { githubOAuth: false }, cacheable: false };
     }
     const config = await response.json() as QaapAuthConfigResponse;
     if (typeof config.productionRuntime === 'boolean') {
         rememberQaapHostedRuntime(config.productionRuntime);
     }
-    return config;
+    return { config, cacheable: true };
+}
+
+export function fetchQaapAuthConfig(options?: FetchQaapAuthConfigOptions): Promise<QaapAuthConfigResponse> {
+    if (!options?.fresh && qaapAuthConfigCache) {
+        return qaapAuthConfigCache;
+    }
+    const pending = requestQaapAuthConfig().then(result => {
+        if (!result.cacheable && qaapAuthConfigCache === pending) {
+            qaapAuthConfigCache = undefined;
+        }
+        return result.config;
+    }, (error: unknown) => {
+        if (qaapAuthConfigCache === pending) {
+            qaapAuthConfigCache = undefined;
+        }
+        throw error;
+    });
+    qaapAuthConfigCache = pending;
+    return pending;
 }
 
 export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {
@@ -672,6 +708,7 @@ export async function signOutQaapAuth(): Promise<void> {
     } catch {
         /* still clear local session */
     }
+    invalidateQaapAuthConfigCache();
     clearQaapAuthSession();
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('qaap-mobile-projects-cache-clear'));
@@ -740,6 +777,7 @@ export async function completeQaapGithubOAuthReturn(): Promise<boolean> {
     if (peekQaapOAuthReturnFromUrl() !== 'github') {
         return false;
     }
+    invalidateQaapAuthConfigCache();
     const ok = await syncQaapAuthSessionFromServer();
     consumeQaapOAuthReturnFromUrl();
     if (ok) {

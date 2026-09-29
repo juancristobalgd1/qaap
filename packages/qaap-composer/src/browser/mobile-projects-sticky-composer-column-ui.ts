@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { ChatMode } from '@theia/ai-chat';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import {
@@ -642,6 +643,12 @@ export class MobileProjectsStickyComposerColumnUi {
     /**
      * Grow the prompt textarea up to five lines and expose a smooth expand/collapse
      * control for longer prompts.
+     *
+     * The composer is rebuilt often (every remount creates a fresh textarea), so the
+     * window `resize` listener detaches itself as soon as it fires for a textarea that
+     * is no longer in the document, and re-attaches on the next `focus`/`input` if the
+     * same textarea is mounted again. The returned disposable tears everything down
+     * explicitly for callers that own the composer lifecycle.
      */
     protected installTextareaAutoGrow(
         input: HTMLTextAreaElement,
@@ -649,7 +656,7 @@ export class MobileProjectsStickyComposerColumnUi {
         expandBtn: HTMLButtonElement,
         expandIcon: HTMLSpanElement,
         expandLabel: HTMLSpanElement,
-    ): void {
+    ): Disposable {
         const COLLAPSED_LINE_COUNT = 5;
         const MIN_HEIGHT = 24;
         const MAX_EXPANDED_HEIGHT = 360;
@@ -709,15 +716,49 @@ export class MobileProjectsStickyComposerColumnUi {
             resize();
         });
 
+        let windowResizeAttached = false;
+        const detachWindowResize = (): void => {
+            if (windowResizeAttached) {
+                windowResizeAttached = false;
+                window.removeEventListener('resize', onWindowResize);
+            }
+        };
+        const onWindowResize = (): void => {
+            if (!input.isConnected) {
+                // Stale composer (remounted): drop the window listener so it no longer
+                // pins the detached DOM tree.
+                detachWindowResize();
+                return;
+            }
+            resize();
+        };
+        const attachWindowResize = (): void => {
+            if (!windowResizeAttached) {
+                windowResizeAttached = true;
+                window.addEventListener('resize', onWindowResize, { passive: true });
+            }
+        };
+
         input.addEventListener('input', resize);
-        window.addEventListener('resize', resize, { passive: true });
+        input.addEventListener('input', attachWindowResize);
+        input.addEventListener('focus', attachWindowResize);
+        attachWindowResize();
         // Handle programmatic value changes (prompt history, slash commands, etc.)
-        new MutationObserver(resize).observe(input, {
+        // The observer is owned by the textarea, so it is collected with it once detached.
+        const valueObserver = new MutationObserver(resize);
+        valueObserver.observe(input, {
             attributes: true,
             attributeFilter: ['value'],
         });
         // Initial sizing for any pre-existing draft content.
         resize();
+        return Disposable.create(() => {
+            detachWindowResize();
+            valueObserver.disconnect();
+            input.removeEventListener('input', resize);
+            input.removeEventListener('input', attachWindowResize);
+            input.removeEventListener('focus', attachWindowResize);
+        });
     }
 
     /**

@@ -71,7 +71,7 @@ export class QaapBuildFreshnessContribution implements FrontendApplicationContri
             return;
         }
         this.lastCheckAt = now;
-        const current = (await fetchQaapAuthConfig().catch(() => undefined))?.build?.trim();
+        const current = (await fetchQaapAuthConfig({ fresh: true }).catch(() => undefined))?.build?.trim();
         if (!current || current === this.loadedBuild) {
             return;
         }

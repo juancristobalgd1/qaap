@@ -41,6 +41,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import * as React from '@theia/core/shared/react';
 import { ReactNode } from '@theia/core/shared/react';
 import { ResponseNode } from '@theia/ai-chat-ui/lib/browser/chat-tree-view';
+import { QaapSharedElapsedTicker } from './qaap-shared-elapsed-ticker';
 import {
     QaapLobehubScrollShadowHost,
     useScrollShadowRef
@@ -221,6 +222,56 @@ const formatParamValue = (value: unknown): string => {
 };
 
 /**
+ * LobeHub ExecutionTime format: <1000ms -> "Xms"; <60s -> "X.Xs"; >=60s -> "XminYs".
+ */
+const formatLobehubElapsedTime = (ms: number): string => {
+    if (ms < 1000) { return `${ms}ms`; }
+    const seconds = ms / 1000;
+    if (seconds < 60) { return `${seconds.toFixed(1)}s`; }
+    const totalSeconds = Math.floor(seconds);
+    const minutes = Math.floor(totalSeconds / 60);
+    const remainingSeconds = totalSeconds % 60;
+    return `${minutes}min${remainingSeconds}s`;
+};
+
+/** One 100ms interval (LobeHub cadence) shared by every running tool-call timer. */
+const lobehubToolElapsedTicker = new QaapSharedElapsedTicker(100);
+
+/**
+ * Running elapsed timer chip. Mounted only while the tool call runs; `startMs`
+ * is owned by the parent so a remount (e.g. the summary moving into the
+ * expandable branch once args arrive) keeps counting. The text is written straight to the DOM by the
+ * shared ticker, so a tick never re-renders the surrounding tool-call content
+ * (and never re-parses its arguments).
+ */
+interface LobehubToolElapsedTimeProps {
+    startMs: number;
+}
+
+const LobehubToolElapsedTimeChip = ({ startMs }: LobehubToolElapsedTimeProps): React.ReactElement => {
+    const elementRef = React.useRef<HTMLSpanElement | undefined>(undefined);
+    // Callback ref: registers with the shared ticker on mount and unregisters on unmount.
+    const setElement = React.useCallback((element: HTMLSpanElement | null): void => {
+        const previous = elementRef.current;
+        if (previous) {
+            lobehubToolElapsedTicker.unregister(previous);
+        }
+        elementRef.current = element ?? undefined;
+        if (!element) {
+            return;
+        }
+        lobehubToolElapsedTicker.register({
+            element,
+            render: now => {
+                element.textContent = `(${formatLobehubElapsedTime(Math.max(0, now - startMs))})`;
+            },
+        });
+    }, [startMs]);
+    return <span ref={setElement} className='qaap-lh-execTime' />;
+};
+const LobehubToolElapsedTime = React.memo(LobehubToolElapsedTimeChip);
+
+/**
  * Parse args JSON safely, returning undefined while still streaming (partial
  * JSON) or when empty. The raw string is shown verbatim inside the expandable
  * technical block, so we don't need a tolerant partial parse — we just wait
@@ -267,8 +318,14 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
         showArgsTooltip(response, summaryRef.current);
     }, [showArgsTooltip, response]);
 
-    const argsLabel = getArgumentsLabel(response.name, response.arguments);
-    const args = parseArgs(response.arguments);
+    // Keyed on the primitive values (not `response`, which is mutated in place
+    // during streaming) so the parse/label only rerun when the arguments change.
+    const responseArguments = response.arguments;
+    const argsLabel = React.useMemo(
+        () => getArgumentsLabel(response.name, responseArguments),
+        [getArgumentsLabel, response.name, responseArguments]
+    );
+    const args = React.useMemo(() => parseArgs(responseArguments), [responseArguments]);
     const isArgumentsStreaming = !!response.arguments && !args && response.arguments.trim() !== '{}' && !response.finished;
 
     // Compute the result node on every render. The upstream
@@ -291,37 +348,15 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
     //   - format: <1000ms -> "Xms"; <60s -> "X.Xs"; >=60s -> "XminYs"
     //   - update interval: 100ms
     //   - shows from the start (no >=1s gate; LobeHub shows "0ms" immediately)
+    // Ticking lives in <LobehubToolElapsedTime> so it never re-renders this component.
     const isRunning = (confirmationState === 'allowed' || confirmationState === 'pending') && !response.finished && !requestCanceled;
-    const [elapsedMs, setElapsedMs] = React.useState(0);
-    const startRef = React.useRef<number | undefined>(undefined);
-    React.useEffect(() => {
-        if (!isRunning) {
-            startRef.current = undefined;
-            setElapsedMs(0);
-            return;
-        }
-        if (startRef.current === undefined) {
-            startRef.current = Date.now();
-        }
-        const tick = () => {
-            const start = startRef.current ?? Date.now();
-            setElapsedMs(Math.max(0, Date.now() - start));
-        };
-        tick();
-        const id = setInterval(tick, 100);
-        return () => clearInterval(id);
-    }, [isRunning]);
-
-    const formatElapsedTime = (ms: number): string => {
-        if (ms < 1000) { return `${ms}ms`; }
-        const seconds = ms / 1000;
-        if (seconds < 60) { return `${seconds.toFixed(1)}s`; }
-        const totalSeconds = Math.floor(seconds);
-        const minutes = Math.floor(totalSeconds / 60);
-        const remainingSeconds = totalSeconds % 60;
-        return `${minutes}min${remainingSeconds}s`;
-    };
-    const elapsedText = isRunning ? formatElapsedTime(elapsedMs) : undefined;
+    const runStartRef = React.useRef<number | undefined>(undefined);
+    if (!isRunning) {
+        runStartRef.current = undefined;
+    } else if (runStartRef.current === undefined) {
+        runStartRef.current = Date.now();
+    }
+    const runStartMs = runStartRef.current;
 
     // Status block state (mirrors LobeHub StatusIndicator).
     const isDenied = confirmationState === 'denied';
@@ -460,7 +495,7 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
                     </span>
                 )}
             </span>
-            {elapsedText && <span className='qaap-lh-execTime'>({elapsedText})</span>}
+            {runStartMs !== undefined && <LobehubToolElapsedTime startMs={runStartMs} />}
         </span>
     );
 
