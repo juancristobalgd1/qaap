@@ -12,6 +12,7 @@ import { MOBILE_NARROW_VIEWPORT_MEDIA_QUERY } from '@theia/core/lib/browser/shel
 import {
     installMobileVerticalTouchScroll,
     MOBILE_VERTICAL_SCROLL_SELECTOR,
+    supportsNativeNestedTouchScroll,
 } from './mobile-vertical-touch-scroll';
 import {
     installMobileHorizontalTouchScroll,
@@ -19,7 +20,8 @@ import {
 } from './mobile-horizontal-touch-scroll';
 
 /**
- * Wires {@link installMobileVerticalTouchScroll} onto dynamically created scroll
+ * Wires {@link installMobileVerticalTouchScroll} (old WebKit only) and
+ * {@link installMobileHorizontalTouchScroll} onto dynamically created scroll
  * hosts (file tree, AI chat, terminal viewport, output, …) on narrow / touch UIs.
  */
 @injectable()
@@ -30,6 +32,9 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
     protected readonly patchedHorizontal = new WeakSet<HTMLElement>();
     protected scrollPatches = new DisposableCollection();
     protected observer: MutationObserver | undefined;
+    /** Element roots added since the last flush; patched once per animation frame. */
+    protected readonly pendingRoots = new Set<HTMLElement>();
+    protected flushHandle: number | undefined;
     protected mobileMq: MediaQueryList | undefined;
     protected coarseMq: MediaQueryList | undefined;
     protected active = false;
@@ -74,13 +79,21 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
         // Observe `document.body` so overlays appended outside `#theia-app-shell`
         // (agent transcript sheets, parallel-run dialogs, …) receive the touch fallback.
         this.patchExisting(document.body);
+        // Streaming transcripts insert thousands of nodes per second; queue element roots
+        // (text nodes are skipped) and patch them once per frame instead of running the
+        // selector scan synchronously for every added node.
         this.observer = new MutationObserver(mutations => {
             for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node instanceof HTMLElement) {
-                        this.patchExisting(node);
+                const added = mutation.addedNodes;
+                for (let i = 0; i < added.length; i++) {
+                    const node = added[i];
+                    if (node.nodeType === Node.ELEMENT_NODE && node instanceof HTMLElement) {
+                        this.pendingRoots.add(node);
                     }
                 }
+            }
+            if (this.pendingRoots.size > 0 && this.flushHandle === undefined) {
+                this.flushHandle = window.requestAnimationFrame(this.flushPendingRoots);
             }
         });
         this.observer.observe(document.body, { childList: true, subtree: true });
@@ -95,6 +108,11 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
         this.active = false;
         this.observer?.disconnect();
         this.observer = undefined;
+        if (this.flushHandle !== undefined) {
+            window.cancelAnimationFrame(this.flushHandle);
+            this.flushHandle = undefined;
+        }
+        this.pendingRoots.clear();
         document.removeEventListener('touchend', this.handleTouchEnd);
         this.scrollPatches.dispose();
     }
@@ -126,13 +144,42 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
         (active as HTMLElement).blur();
     };
 
+    protected readonly flushPendingRoots = (): void => {
+        this.flushHandle = undefined;
+        if (!this.active) {
+            this.pendingRoots.clear();
+            return;
+        }
+        const roots = this.pendingRoots;
+        for (const root of roots) {
+            // Detached roots are gone; roots nested in another queued root are covered by
+            // that ancestor's subtree scan.
+            if (root.isConnected && !this.hasQueuedAncestor(root, roots)) {
+                this.patchExisting(root);
+            }
+        }
+        roots.clear();
+    };
+
+    protected hasQueuedAncestor(root: HTMLElement, roots: Set<HTMLElement>): boolean {
+        for (let parent = root.parentElement; parent; parent = parent.parentElement) {
+            if (roots.has(parent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     protected patchExisting(root: ParentNode): void {
         // Only patch known scroll hosts. Do not call patchElement on every inserted node — otherwise
         // controls such as the inline mic toggle get touch-scroll handlers and break taps on iOS.
-        if (root instanceof HTMLElement && root.matches(MOBILE_VERTICAL_SCROLL_SELECTOR)) {
-            this.patchElement(root);
+        // Engines with native nested touch scroll never get the vertical fallback, so skip that scan.
+        if (!supportsNativeNestedTouchScroll()) {
+            if (root instanceof HTMLElement && root.matches(MOBILE_VERTICAL_SCROLL_SELECTOR)) {
+                this.patchElement(root);
+            }
+            root.querySelectorAll<HTMLElement>(MOBILE_VERTICAL_SCROLL_SELECTOR).forEach(el => this.patchElement(el));
         }
-        root.querySelectorAll<HTMLElement>(MOBILE_VERTICAL_SCROLL_SELECTOR).forEach(el => this.patchElement(el));
         if (root instanceof HTMLElement && root.matches(MOBILE_HORIZONTAL_SCROLL_SELECTOR)) {
             this.patchHorizontalElement(root);
         }
