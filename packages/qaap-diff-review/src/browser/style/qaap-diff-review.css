@@ -13,6 +13,19 @@
     color: var(--theia-foreground);
 }
 
+/* Polite live region for screen readers only; the diff body itself is not announced. */
+.qaap-diff-review-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .qaap-diff-review-spacer {
     flex: 1;
 }
