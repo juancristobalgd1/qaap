@@ -10,7 +10,8 @@ import * as path from 'path';
 import { Emitter } from '@theia/core/lib/common/event';
 import { QaapResearchStore } from './qaap-research-store';
 import type { ResearchGoal, ResearchMetricSpec } from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
-import type { ResearchExperimentRecord } from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
+import type { ResearchExperimentRecord } from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 /** Bypasses the constructor/@postConstruct (which would initialize the goal SQLite store) —
  *  same trick `qaap-agent-task-runner.verification.spec.ts` uses for the sibling task runner. */
@@ -60,6 +61,7 @@ describe('QaapResearchStore ledger', () => {
     });
 
     afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(tmpDir);
         fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 

@@ -165,6 +165,13 @@ if (fs.existsSync(media)) {
 // This converts the 37 MB bundle.js into ~9 MB — a critical mobile performance win.
 const GZIP_EXTS = /\.(js|css|wasm|svg|html|json)$/i;
 const GZIP_MIN_BYTES = 1024; // skip tiny files where gzip overhead isn't worth it
+// Level 9 costs several times the CPU of level 6 for ~1-2% smaller output: only worth it
+// for production bundles. Development builds (`npm run bundle`) use level 6. serveGzipped
+// falls back to the uncompressed file when no .gz companion exists, so either is safe.
+const PRODUCTION = process.argv.includes('--production')
+    || process.argv.some((arg, i, argv) => arg === '--mode=production' || (arg === '--mode' && argv[i + 1] === 'production'))
+    || process.env.NODE_ENV === 'production';
+const GZIP_LEVEL = PRODUCTION ? 9 : 6;
 
 async function gzipFile(filePath) {
     const stat = fs.statSync(filePath);
@@ -177,7 +184,7 @@ async function gzipFile(filePath) {
     }
     await pipeline(
         fs.createReadStream(filePath),
-        createGzip({ level: 9 }),
+        createGzip({ level: GZIP_LEVEL }),
         fs.createWriteStream(gzPath)
     );
 }
@@ -202,11 +209,9 @@ if (compressed.length) {
     console.log('[qaap] gzipped:', sizes.join(', '));
 }
 
-// Keep generated chunks recoverable between browser rebuilds. A timestamp-based prune is
-// unsafe here: the bundle and its code-split chunks can be written by different build steps,
-// and deleting a chunk before the browser has fetched it leaves the app at the startup error
-// screen. Content-hashed names make old files harmless (nothing current imports them), while
-// retaining them keeps a tab that is still on the previous bundle able to lazy-load its chunks.
-console.log('[qaap] retained generated chunks for safe browser reloads');
+// Stale code-split chunks are pruned by esbuild.mjs (qaap-prune-stale-chunks) right after the
+// main build, from esbuild's metafile: it keeps this build's chunks plus the previous build's, so
+// a tab still on the previous bundle can keep lazy-loading its chunks. Never prune here by
+// timestamp: the bundle and its chunks can be written by different build steps.
 
 console.log('[qaap] synced frontend static files → lib/frontend/');

@@ -120,6 +120,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapDockerControlPlaneContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapDockerControlPlaneContribution);
     bind(QaapTenantRuntimeStore).toSelf().inSingletonScope();
+    // onStop flushes throttled activity touches to SQLite.
+    bind(BackendApplicationContribution).toService(QaapTenantRuntimeStore);
     bind(QaapObservability).toSelf().inSingletonScope();
     bind(QaapTenantRuntimeMetrics).toSelf().inSingletonScope();
     bind(QaapTenantActivityTracker).toSelf().inSingletonScope();

@@ -44,7 +44,7 @@ class TestConversationStore extends QaapAgentConversationStore {
     override async restoreFromDisk(): Promise<void> { /* no-op */ }
     override startTurnWatchdog(): void { /* no-op */ }
     override captureGitSha(): string | undefined { return undefined; }
-    override captureCheckpoint(): undefined { return undefined; }
+    override async captureCheckpoint(): Promise<undefined> { return undefined; }
     override fireAgentMessageWireUpdate(): void { /* no-op */ }
 
     configureForTest(taskRunner: QaapAgentTaskRunner): void {

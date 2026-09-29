@@ -67,7 +67,7 @@ import {
     resolveVisualVerificationFile as resolveVisualVerificationFileHelper,
     sweepUnreferencedVisualEvidence as sweepUnreferencedVisualEvidenceHelper,
 } from './qaap-agent-conversation-store-visual';
-import { parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper, readGitBranch as readGitBranchHelper, captureGitSha as captureGitShaHelper, computeGitDiffStats as computeGitDiffStatsHelper, checkpointLabel as checkpointLabelHelper, isDirectory as isDirectoryHelper, } from './qaap-agent-conversation-store-git';
+import { parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper, readGitBranch as readGitBranchHelper, captureGitSha as captureGitShaHelper, computeGitDiffStats as computeGitDiffStatsHelper, QaapGitCwdSerializer, QaapGitRunResult, runGitAsync,checkpointLabel as checkpointLabelHelper, isDirectory as isDirectoryHelper, } from './qaap-agent-conversation-store-git';
 import {
     resolveLoopBudgetKey as resolveLoopBudgetKeyHelper,
     countAutoContinueAttempts as countAutoContinueAttemptsHelper,
@@ -102,13 +102,13 @@ export {
     QaapMaxConcurrentRunsError,
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
-import { cancelExtracted, cancelQueuedMessageExtracted, countStreamingForksExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitSyncExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
+import { cancelExtracted, cancelQueuedMessageExtracted, countStreamingForksExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
 import { appendAgentReplyExtracted, appendBlockedTraceExtracted, appendCheckpointTraceExtracted, appendReviewTraceExtracted, appendRunCancelledTraceExtracted, appendVerificationWarningTraceExtracted, buildTaskCreateRequestExtracted, clearRunActiveExtracted, detectAgentBlockedNeedExtracted, extractAgentMentionFromUserMessageExtracted, failTurnBeforeSpawnExtracted, finalizeStreamingAgentMessageExtracted, markTurnFailedExtracted, maybeAutoContinueIncompleteTurnExtracted, maybeRetryTurnWithFallbackModelExtracted, postAutoContinueMessageExtracted, prepareContextCompactionForTurnExtracted, publishFinalizedAgentMessageExtracted, reportPreviewBootstrapFailureExtracted, resolveTurnAgentExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-conversation-store-tool-pills2';
 import { applyAgUiTranscriptEventExtracted, buildPromptExtracted, clearAgUiReducerExtracted, cwdMatchesGithubRepoExtracted, fireAgentMessageWireUpdateExtracted, flushPersistExtracted, forceStopZombieTurnExtracted, maybeAutoResumeInterruptedTurnExtracted, recordStreamMetricsExtracted, resolveRunAgentMessageIdExtracted, restoreFromDiskExtracted, schedulePersistExtracted, stageWireMetricsBaselineExtracted, startTurnWatchdogExtracted, sweepZombieStreamingTurnsExtracted, tryAutoLinkConversationToGitBranchExtracted } from './qaap-agent-conversation-store-live-status2';
-import { captureCheckpointExtracted, countDurableLoopSpawnsExtracted, findLiveChatTurnRunExtracted, interruptStreamingTurnForRestartExtracted, maybeRetryTurnWithFallbackModelViaGraphExtracted, persistExtracted, reapOrphanedChatTurnRunsExtracted, resumeInterruptedTurnViaGraphExtracted, settleChatTurnRunExtracted } from './qaap-agent-conversation-store-thought-brief2';
+import { captureCheckpointExtracted, discardCheckpointRefExtracted, countDurableLoopSpawnsExtracted, findLiveChatTurnRunExtracted, interruptStreamingTurnForRestartExtracted, maybeRetryTurnWithFallbackModelViaGraphExtracted, persistExtracted, reapOrphanedChatTurnRunsExtracted, resumeInterruptedTurnViaGraphExtracted, settleChatTurnRunExtracted } from './qaap-agent-conversation-store-thought-brief2';
 import { restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-agent-conversation-store-diff2';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
@@ -136,8 +136,16 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     public readonly tenantSpawn!: QaapTenantSpawnService;
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public mutatingGitSync(cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
-        return mutatingGitSyncExtracted(this, cwd, args, env);
+    public mutatingGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<QaapGitRunResult> {
+        return mutatingGitExtracted(this, cwd, args, env, timeoutMs);
+    }
+
+    /** Per-repository chain for checkpoint/restore git sequences (see {@link QaapGitCwdSerializer}). */
+    protected readonly gitSerializer = new QaapGitCwdSerializer();
+
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public runSerializedGit<T>(cwd: string, job: () => Promise<T>): Promise<T> {
+        return this.gitSerializer.run(cwd, job);
     }
 
     /**
@@ -965,8 +973,18 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public computeGitDiffStats(cwd: string, startSha?: string): { added: number; removed: number } | undefined {
-        return computeGitDiffStatsHelper(cwd, startSha, this.readGitSync.bind(this));
+    public computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number } | undefined> {
+        return computeGitDiffStatsHelper(cwd, startSha, this.readGit.bind(this));
+    }
+
+    /** Async twin of {@link readGitSync} for the turn-settle path: same tenant worker, same 4s budget. */
+    protected readGit(cwd: string, args: readonly string[]): Promise<QaapGitRunResult> {
+        try {
+            const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+            return runGitAsync(wrapped.file, wrapped.args, { cwd, timeoutMs: 4000, maxBuffer: 64 * 1024 * 1024 });
+        } catch (error) {
+            return Promise.resolve({ status: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     /** Read Git metadata through the validated tenant worker; never reopen the host Git boundary. */
@@ -982,8 +1000,13 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number }, ): QaapConversationCheckpoint | undefined {
+    public captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number }, ): Promise<QaapConversationCheckpoint | undefined> {
         return captureCheckpointExtracted(this, cwd, conversationId, messageId, label, stats);
+    }
+
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public discardCheckpointRef(cwd: string, ref: string): Promise<void> {
+        return discardCheckpointRefExtracted(this, cwd, ref);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

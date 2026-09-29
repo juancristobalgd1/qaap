@@ -13,6 +13,8 @@ const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
 const QAAP_AGENT_COMPLETED_EVENT = 'qaap-agent-completed';
 const QAAP_AGENT_CONFIRMATION_NEEDED_EVENT = 'qaap-agent-confirmation-needed';
 import { fetchQaapPushVapid, sendQaapPushNotify, subscribeQaapWebPush } from './qaap-cloud-workspace-client';
+import { Disposable } from '@theia/core/lib/common/disposable';
+import { QaapDeferredStartup } from './qaap-deferred-startup';
 
 @injectable()
 export class QaapWebPushContribution implements FrontendApplicationContribution {
@@ -20,8 +22,16 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
     @inject(QaapProjectBootstrapService)
     protected readonly bootstrap: QaapProjectBootstrapService;
 
+    @inject(QaapDeferredStartup)
+    protected readonly deferredStartup: QaapDeferredStartup;
+
+    protected deferredRegistration: Disposable | undefined;
+
     onStart(): void {
-        void this.registerWebPushSubscription();
+        // Push registration (VAPID fetch + service worker subscribe) is not needed for first paint.
+        this.deferredRegistration = this.deferredStartup.whenReadyAndIdle(() => {
+            void this.registerWebPushSubscription();
+        });
         this.bootstrap.onStateChange(state => {
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
                 const kind = qaapBootstrapFailureKind(state.phase, state.error);
@@ -43,6 +53,7 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
     }
 
     onStop(): void {
+        this.deferredRegistration?.dispose();
         window.removeEventListener(QAAP_BOOTSTRAP_FAILED_EVENT, this.onBootstrapFailed);
         window.removeEventListener(QAAP_AGENT_COMPLETED_EVENT, this.onAgentCompleted);
         window.removeEventListener(QAAP_AGENT_CONFIRMATION_NEEDED_EVENT, this.onConfirmationNeeded);

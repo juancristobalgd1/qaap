@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildChatTurnWorkflow } from '../common/qaap-chat-turn-workflow';
-import { QaapWorkflowRunRequestError, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapWorkflowRunRequestError, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestStore extends QaapWorkflowRunStore {
     constructor(protected readonly testDirectory: string) { super(); }
@@ -31,7 +32,10 @@ describe('QaapWorkflowRunStore.adoptRun (ADR-002)', () => {
         store.initialize();
     });
 
-    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+    afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
+        fs.rmSync(directory, { recursive: true, force: true });
+    });
 
     it('adopts a mid-life run parked on its seed node and survives a restart', async () => {
         const adopted = await store.adoptRun(buildChatTurnWorkflow(), {

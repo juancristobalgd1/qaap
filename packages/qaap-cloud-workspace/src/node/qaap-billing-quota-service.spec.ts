@@ -9,7 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapPlanRepoLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapBillingQuotaService } from './qaap-billing-quota-service';
-import { QaapBillingStore } from './qaap-billing-store';
+import { QaapBillingStore } from './qaap-billing-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 function makeStore(filePath: string): QaapBillingStore {
     const store = Object.create(QaapBillingStore.prototype) as QaapBillingStore;
@@ -31,6 +32,7 @@ describe('QaapBillingQuotaService', () => {
     });
 
     afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(tmpDir);
         fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 

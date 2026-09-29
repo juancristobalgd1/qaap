@@ -12,6 +12,8 @@ import {
     fetchQaapTenantRuntimeStatus,
     touchQaapTenantRuntime,
 } from './qaap-cloud-workspace-client';
+import { Disposable } from '@theia/core/lib/common/disposable';
+import { QaapDeferredStartup, QaapVisibleInterval } from './qaap-deferred-startup';
 
 const ACTIVITY_THROTTLE_MS = 20_000;
 const STATUS_POLL_MS = 15_000;
@@ -26,9 +28,14 @@ export class QaapTenantRuntimeUiContribution implements FrontendApplicationContr
     @inject(MessageService)
     protected readonly messages: MessageService;
 
+    @inject(QaapDeferredStartup)
+    protected readonly deferredStartup: QaapDeferredStartup;
+
     protected activityHandler: (() => void) | undefined;
     protected visibilityHandler: (() => void) | undefined;
-    protected statusTimer: number | undefined;
+    protected statusPoll: QaapVisibleInterval | undefined;
+    protected deferredStart: Disposable | undefined;
+    protected stopped = false;
     protected lastActivityAt = 0;
     protected lastState: string | undefined;
 
@@ -48,11 +55,18 @@ export class QaapTenantRuntimeUiContribution implements FrontendApplicationContr
             this.touch('workspace');
             void this.refreshStatus();
         });
-        void this.workspace.ready.then(() => {
-            this.touch('workspace');
-            void this.refreshStatus();
+        // Non-critical at boot: every proxied HTTP request already counts as backend activity and the
+        // status only drives informational toasts. Start after ready + idle; poll only while visible.
+        this.deferredStart = this.deferredStartup.whenReadyAndIdle(() => {
+            void this.workspace.ready.then(() => {
+                if (this.stopped) {
+                    return;
+                }
+                this.touch('workspace');
+                void this.refreshStatus();
+                this.statusPoll = new QaapVisibleInterval(() => { void this.refreshStatus(); }, STATUS_POLL_MS);
+            });
         });
-        this.statusTimer = window.setInterval(() => { void this.refreshStatus(); }, STATUS_POLL_MS);
     }
 
     onStop(): void {
@@ -64,9 +78,10 @@ export class QaapTenantRuntimeUiContribution implements FrontendApplicationContr
         if (this.visibilityHandler) {
             document.removeEventListener('visibilitychange', this.visibilityHandler);
         }
-        if (this.statusTimer !== undefined) {
-            window.clearInterval(this.statusTimer);
-        }
+        this.stopped = true;
+        this.deferredStart?.dispose();
+        this.statusPoll?.dispose();
+        this.statusPoll = undefined;
     }
 
     protected touch(reason: 'user' | 'workspace'): void {

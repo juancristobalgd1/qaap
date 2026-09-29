@@ -19,12 +19,14 @@ import { QaapHubChatSyncContribution } from './qaap-hub-chat-sync-contribution';
 import { QaapMissionUndoContribution } from './qaap-mission-undo-contribution';
 import { QaapWorkspaceIsolationContribution } from './qaap-workspace-isolation-contribution';
 import { QaapTenantRuntimeUiContribution } from './qaap-tenant-runtime-ui-contribution';
+import { QaapDeferredStartup } from './qaap-deferred-startup';
 import {
     WorkspaceHandlingContribution,
     WorkspaceOpenHandlerContribution,
 } from '@theia/workspace/lib/browser';
 
 export default new ContainerModule(bind => {
+    bind(QaapDeferredStartup).toSelf().inSingletonScope();
     bind(QaapCloudBootstrapUiContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapCloudBootstrapUiContribution);
     bind(CommandContribution).toService(QaapCloudBootstrapUiContribution);

@@ -137,7 +137,13 @@ export function installAgentsHubEmptySurfaceGuardExtracted(ctx: MobileProjectsPa
         : undefined;
     observer?.observe(ctx.root, { attributes: true, attributeFilter: ['class', 'hidden'] });
     observer?.observe(ctx.scroll, { childList: true });
-    interval = window.setInterval(schedule, 2000);
+    // Periodic safety net only matters for a visible tab; the MutationObserver still covers
+    // DOM changes while hidden.
+    interval = window.setInterval(() => {
+        if (!document.hidden) {
+            schedule();
+        }
+    }, 2000);
     ctx.agentsHubEmptySurfaceGuardDispose = Disposable.create(() => {
         observer?.disconnect();
         if (interval !== undefined) {

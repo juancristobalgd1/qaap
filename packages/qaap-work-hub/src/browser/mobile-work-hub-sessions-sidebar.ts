@@ -114,9 +114,17 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly listHost: HTMLElement;
     protected settingsOptions: MobileWorkHubSettingsSidebarOptions | undefined;
     protected readonly resizeHandle: HTMLElement;
+    /** rAF-throttled: `updateProjectsHeading` measures every group, so run it at most once per frame. */
     protected readonly onProjectsScroll = (): void => {
-        this.updateProjectsHeading();
+        if (this.projectsHeadingRaf) {
+            return;
+        }
+        this.projectsHeadingRaf = window.requestAnimationFrame(() => {
+            this.projectsHeadingRaf = 0;
+            this.updateProjectsHeading();
+        });
     };
+    protected projectsHeadingRaf = 0;
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
     protected refreshListRaf = 0;
@@ -594,13 +602,14 @@ export class MobileWorkHubSessionsSidebar {
                 if (Math.abs(w - lastW) > 0.5 || Math.abs(h - lastH) > 0.5) {
                     lastW = w;
                     lastH = h;
-                    this.dispatchShellResize();
+                    // Coalesced: at most one `resize` per animation frame during the transition.
+                    this.scheduleShellResize();
                 }
             }
             window.clearTimeout(this.shellResizeSettleTimer);
             this.shellResizeSettleTimer = window.setTimeout(() => {
                 // Final resize after transition fully settles.
-                this.dispatchShellResize();
+                this.flushShellResize();
                 this.disposeShellResizeObserver();
             }, 200);
         });
@@ -609,9 +618,18 @@ export class MobileWorkHubSessionsSidebar {
         // Safety: disconnect after the sidebar transition even if the shell dimensions do not
         // produce a ResizeObserver callback (for example when a browser batches grid updates).
         this.shellResizeFallbackTimer = window.setTimeout(() => {
-            this.dispatchShellResize();
+            this.flushShellResize();
             this.disposeShellResizeObserver();
         }, 700);
+    }
+
+    /** Final (settle) resize: drop any frame-coalesced dispatch still pending and dispatch once now. */
+    protected flushShellResize(): void {
+        if (this.shellResizeRaf) {
+            window.cancelAnimationFrame(this.shellResizeRaf);
+            this.shellResizeRaf = 0;
+        }
+        this.dispatchShellResize();
     }
 
     protected scheduleShellResize(): void {

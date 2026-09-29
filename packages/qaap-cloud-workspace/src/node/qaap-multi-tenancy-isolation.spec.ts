@@ -41,7 +41,8 @@ import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 import { QaapResearchEndpoint } from './qaap-research-endpoint';
-import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
+import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
 
@@ -910,6 +911,7 @@ describe('Multi-tenancy isolation', () => {
                 expect(aliceReader('ai-features.openrouter.openrouterApiKey')).to.equal('alice-secret');
                 expect(resolveUserSettingsFilePath(userA, home)).to.contain(path.join('users', userA, 'settings.json'));
             } finally {
+                QaapSqliteConnectionRegistry.shared.closeUnder(home);
                 fs.rmSync(home, { recursive: true, force: true });
             }
         });

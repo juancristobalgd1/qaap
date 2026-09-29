@@ -15,6 +15,7 @@ import {
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import type { Request, Response } from '@theia/core/shared/express';
@@ -78,6 +79,35 @@ describe('qaap-github-auth-guard security', () => {
                 delete process.env[key];
             } else {
                 process.env[key] = savedBetaEnv[key];
+            }
+        }
+    });
+
+    // Keep session stores out of the developer's real ~/.qaap: point the auth store (and thus its SQLite
+    // sibling) at a per-test temp dir, and drop any global SQLite override a developer `.env` may set.
+    const storeEnvKeys = ['QAAP_AUTH_STORE_PATH', 'QAAP_SQLITE_STORE_PATH'] as const;
+    const savedStoreEnv: Partial<Record<typeof storeEnvKeys[number], string>> = {};
+    let authStoreDir: string;
+    before(() => {
+        for (const key of storeEnvKeys) {
+            savedStoreEnv[key] = process.env[key];
+        }
+    });
+    beforeEach(() => {
+        authStoreDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-auth-store-'));
+        process.env.QAAP_AUTH_STORE_PATH = path.join(authStoreDir, 'sessions.json');
+        delete process.env.QAAP_SQLITE_STORE_PATH;
+    });
+    afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(authStoreDir);
+        fs.rmSync(authStoreDir, { recursive: true, force: true });
+    });
+    after(() => {
+        for (const key of storeEnvKeys) {
+            if (savedStoreEnv[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = savedStoreEnv[key];
             }
         }
     });
@@ -148,7 +178,11 @@ describe('qaap-github-auth-guard security', () => {
             });
         });
 
-        afterEach(() => fs.rmSync(reposRoot, { recursive: true, force: true }));
+        afterEach(() => {
+            // On Windows an open SQLite file blocks removal of its directory.
+            QaapSqliteConnectionRegistry.shared.closeUnder(reposRoot);
+            fs.rmSync(reposRoot, { recursive: true, force: true });
+        });
 
         it('403s a lexically-owned path that symlinks into another tenant', () => {
             // alice plants a symlink inside her own workspace pointing at bob's tree.
@@ -235,7 +269,10 @@ describe('qaap-github-auth-guard security', () => {
             (guard as unknown as { reposRoot: string }).reposRoot = reposRoot;
         });
 
-        afterEach(() => fs.rmSync(tmpBase, { recursive: true, force: true }));
+        afterEach(() => {
+            QaapSqliteConnectionRegistry.shared.closeUnder(tmpBase);
+            fs.rmSync(tmpBase, { recursive: true, force: true });
+        });
 
         it('passes through an already-correct per-user repository path', () => {
             expect(resolveFor('alice', p('users', 'alice', 'acme', 'demo')))

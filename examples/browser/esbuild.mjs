@@ -6,6 +6,9 @@ import { browserOptions, watch } from './gen-esbuild.browser.mjs';
 import { nodeOptions } from './gen-esbuild.node.mjs';
 import { exposeModulePlugin } from '@theia/bundle-plugin';
 import esbuild from 'esbuild';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 browserOptions.plugins.push(exposeModulePlugin());
 
@@ -56,16 +59,88 @@ const esmDiInteropPlugin = {
  */
 const CHUNK_HASH_EPOCH = '/* qaap-chunk-epoch: 2 */';
 
+/**
+ * Stale chunk pruning. `splitting` + `chunk-[hash]` names mean every rebuild writes
+ * new chunk files next to the old ones, and esbuild never cleans `outdir`, so
+ * lib/frontend grew without bound (thousands of dead chunk .js/.map/.gz files,
+ * gigabytes on disk, all re-stat'ed and gzipped by copy-frontend-static.mjs).
+ *
+ * After each successful main build, delete top-level `chunk-*` files (plus their
+ * `.map` / `.gz` companions) that neither this build nor the previous one emitted,
+ * according to esbuild's metafile. The previous generation is kept so a tab still
+ * running the previous bundle can keep lazy-loading its chunks until it reloads.
+ * Only `chunk-<HASH>.(js|css)[.map][.gz]` names are touched: entry bundles, workers,
+ * and everything copy-frontend-static.mjs writes (index.html, login gate, media/,
+ * legal/, manifest, service worker) are never candidates.
+ */
+const FRONTEND_OUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'frontend');
+const CHUNK_MANIFEST = path.join(FRONTEND_OUT_DIR, '..', '.qaap-frontend-chunks.json');
+const PRUNABLE_CHUNK = /^chunk-[A-Z0-9]+\.(?:js|css)(?:\.map)?(?:\.gz)?$/;
+
+function readPreviousChunkGeneration() {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(CHUNK_MANIFEST, 'utf8'));
+        return Array.isArray(parsed.chunks) ? parsed.chunks : [];
+    } catch {
+        return [];
+    }
+}
+
+function pruneStaleFrontendChunks(metafile) {
+    const current = Object.keys(metafile.outputs)
+        .map(output => path.basename(output))
+        .filter(name => PRUNABLE_CHUNK.test(name));
+    if (!current.length || !fs.existsSync(FRONTEND_OUT_DIR)) {
+        return;
+    }
+    const keep = new Set([...current, ...readPreviousChunkGeneration()]);
+    let removed = 0;
+    let failed = 0;
+    for (const name of fs.readdirSync(FRONTEND_OUT_DIR)) {
+        if (!PRUNABLE_CHUNK.test(name) || keep.has(name.replace(/\.gz$/, ''))) {
+            continue;
+        }
+        try {
+            fs.unlinkSync(path.join(FRONTEND_OUT_DIR, name));
+            removed++;
+        } catch {
+            // Windows keeps served files locked; the next build retries.
+            failed++;
+        }
+    }
+    fs.writeFileSync(CHUNK_MANIFEST, JSON.stringify({ chunks: current }) + '\n', 'utf8');
+    if (removed || failed) {
+        console.log(`[qaap] pruned ${removed} stale frontend chunk file(s)${failed ? `, ${failed} locked (retry next build)` : ''}`);
+    }
+}
+
+const pruneStaleChunksPlugin = {
+    name: 'qaap-prune-stale-chunks',
+    setup(build) {
+        build.onEnd(result => {
+            if (result.errors.length || !result.metafile) {
+                return;
+            }
+            try {
+                pruneStaleFrontendChunks(result.metafile);
+            } catch (error) {
+                console.warn('[qaap] stale chunk pruning skipped:', error);
+            }
+        });
+    },
+};
+
 const mainOptions = {
     ...browserOptions,
     entryPoints: mainEntryPoints,
     format: 'esm',
     splitting: true,
     chunkNames: 'chunk-[hash]',
+    metafile: true,
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, ...browserOptions.plugins],
+    plugins: [esmDiInteropPlugin, ...browserOptions.plugins, pruneStaleChunksPlugin],
 };
 const workerOptions = {
     ...browserOptions,

@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { hoursToMinutes } from '../common/qaap-billing-plans';
-import { QaapBillingStore } from './qaap-billing-store';
+import { QaapBillingStore } from './qaap-billing-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 function makeStore(filePath: string): QaapBillingStore {
     const store = Object.create(QaapBillingStore.prototype) as QaapBillingStore;
@@ -34,6 +35,7 @@ describe('QaapBillingStore', () => {
     });
 
     afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(tmpDir);
         fs.rmSync(tmpDir, { recursive: true, force: true });
         if (savedDefault === undefined) {
             delete process.env.QAAP_BILLING_DEFAULT_PLAN;

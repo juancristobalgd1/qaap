@@ -14,7 +14,7 @@
 // which are imported back into `qaap-agent-conversation-store.ts`).
 
 import type { Emitter } from '@theia/core/lib/common/event';
-import type { SpawnSyncReturns } from 'child_process';
+import type { QaapGitRunResult } from './qaap-agent-conversation-store-git';
 import type { QaapSqliteStore } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type {
     QaapAgentConversation,
@@ -339,16 +339,21 @@ export interface QaapAgentConversationStoreContext {
     cwdMatchesGithubRepo(cwd: string, owner: string, repo: string): boolean;
     parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined;
     readGitBranch(cwd: string): string | undefined;
-    mutatingGitSync(cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string>;
+    mutatingGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<QaapGitRunResult>;
+    /** Serialize an async git job with every other checkpoint/restore job on the same repository. */
+    runSerializedGit<T>(cwd: string, job: () => Promise<T>): Promise<T>;
     captureGitSha(cwd: string): string | undefined;
-    computeGitDiffStats(cwd: string, startSha?: string): { added: number; removed: number } | undefined;
+    computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number } | undefined>;
+    /** Not serialized by itself: callers wrap it (plus related git) in {@link runSerializedGit}. */
     captureCheckpoint(
         cwd: string,
         conversationId: string,
         messageId: string,
         label: string,
         stats?: { added: number; removed: number },
-    ): QaapConversationCheckpoint | undefined;
+    ): Promise<QaapConversationCheckpoint | undefined>;
+    /** Best-effort removal of a checkpoint ref that ended up not recorded on the conversation. */
+    discardCheckpointRef(cwd: string, ref: string): Promise<void>;
     checkpointLabel(content: string): string;
     isDirectory(target: string): boolean;
 

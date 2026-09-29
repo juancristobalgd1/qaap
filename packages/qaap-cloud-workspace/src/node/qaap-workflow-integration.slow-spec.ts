@@ -30,7 +30,8 @@ import {
 } from './qaap-workflow-dispatcher';
 import { QaapWorkflowJobFunctions } from './qaap-workflow-job-functions';
 import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
-import { QaapWorkflowDeterministicAdapter } from './qaap-workflow-runtime-ports';
+import { QaapWorkflowDeterministicAdapter } from './qaap-workflow-runtime-ports';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestStore extends QaapWorkflowRunStore {
     constructor(protected readonly testDirectory: string) { super(); }
@@ -92,6 +93,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
 
     afterEach(() => {
         fs.rmSync(repo, { recursive: true, force: true });
+        QaapSqliteConnectionRegistry.shared.closeUnder(storeDir);
         fs.rmSync(storeDir, { recursive: true, force: true });
     });
 

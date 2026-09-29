@@ -16,7 +16,8 @@ import {
     QaapWorkflowDispatcher,
 } from './qaap-workflow-dispatcher';
 import { DEFAULT_QAAP_WORKFLOW_RUN_BUDGET } from '../common/qaap-workflow-run';
-import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 /** An agent log whose terminal record carries `text` as the turn's final message. */
 function resultLog(text: string): string {
@@ -96,7 +97,10 @@ describe('QaapWorkflowDispatcher', () => {
         dispatcher = new QaapWorkflowDispatcher(store, { agent, deterministic: jobs });
     });
 
-    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+    afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
+        fs.rmSync(directory, { recursive: true, force: true });
+    });
 
     async function startRun(): Promise<string> {
         const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
@@ -489,7 +493,10 @@ describe('QaapWorkflowDispatcher plan mode', () => {
         dispatcher = new QaapWorkflowDispatcher(store, { agent, deterministic: jobs });
     });
 
-    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+    afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
+        fs.rmSync(directory, { recursive: true, force: true });
+    });
 
     async function startPlanRun(): Promise<string> {
         const started = await store.start(buildImplementThenReviewWorkflow({ withPlan: true }), {
@@ -555,7 +562,10 @@ describe('QaapWorkflowDispatcher run trace', () => {
         dispatcher = new QaapWorkflowDispatcher(store, { agent, deterministic: jobs });
     });
 
-    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+    afterEach(() => {
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
+        fs.rmSync(directory, { recursive: true, force: true });
+    });
 
     it('records every step with what happened and how long it took', async () => {
         const started = await store.start(buildImplementThenReviewWorkflow(), {
