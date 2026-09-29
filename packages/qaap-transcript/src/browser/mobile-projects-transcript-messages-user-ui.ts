@@ -480,6 +480,23 @@ export class MobileProjectsTranscriptMessagesUserUi {
         if (decision.kind === 'cancel') {
             return;
         }
+        if (decision.kind === 'fallback') {
+            // The preview could not classify the files (error, timeout on a huge repo): the legacy
+            // rewind reverts the whole tree, so never run it without an explicit confirmation.
+            const confirmed = await new ConfirmDialog({
+                title: nls.localize('qaap/transcriptRewind/editTitle', 'Edit message'),
+                msg: nls.localize(
+                    'qaap/transcriptRewind/editFallbackMsg',
+                    'Could not check which files the rewind would change. Rewind anyway? Tracked files revert to the previous checkpoint, '
+                    + 'including changes the agent did not make.',
+                ),
+                ok: nls.localize('qaap/transcriptRewind/editConfirm', 'Rewind and edit'),
+                cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
+            }).open();
+            if (!confirmed) {
+                return;
+            }
+        }
         try {
             const updated = await rewindConversationToMessage(
                 conv.id,
