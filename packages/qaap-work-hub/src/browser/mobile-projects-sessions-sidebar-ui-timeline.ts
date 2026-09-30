@@ -2,7 +2,6 @@ import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-s
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { QuickPickItem } from '@theia/core/lib/browser';
 import {
     readStoredAgent,
     SHELL_AGENT_ID,
@@ -12,6 +11,7 @@ import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/commo
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { MobileWorkHubUnifiedSearchDialog } from './mobile-work-hub-unified-search-dialog';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
@@ -258,30 +258,23 @@ export function onSessionsSidebarAccountClickExtracted(ctx: MobileProjectsSessio
 }
 
 export async function openSessionsSidebarSearchExtracted(ctx: MobileProjectsSessionsSidebarUiContext): Promise<void> {
-    if (!ctx.host.quickInputService) {
-        return;
-    }
-    const project = ctx.resolveWorkHubSessionsSidebarProject();
-    if (!project) {
-        return;
-    }
-    const conversations = [...ctx.host.conversationIndexUi.conversationsForProject(project)]
-        .sort((a, b) => b.updatedAt - a.updatedAt);
-    type SessionPickItem = QuickPickItem & { summary: QaapAgentConversationSummaryDTO };
-    const quickPick = ctx.host.quickInputService.createQuickPick<SessionPickItem>();
-    quickPick.placeholder = nls.localize('qaap/sessionsSidebar/searchPlaceholder', 'Search sessions');
-    quickPick.items = conversations.map(summary => ({
-        label: summary.title?.trim() || nls.localize('qaap/mobileProjects/untitledChat', 'Untitled chat'),
-        description: summary.agentId,
-        summary,
-    }));
-    quickPick.onDidAccept(() => {
-        const selected = quickPick.selectedItems[0];
-        if (selected?.summary) {
+    const chats = ctx.host.projects.flatMap(project =>
+        ctx.host.conversationIndexUi.conversationsForProject(project)
+            .map(summary => ({ project, summary })));
+    const dialog = new MobileWorkHubUnifiedSearchDialog(
+        ctx.host.commands,
+        chats,
+        chat => {
             ctx.host.sessionsSidebar?.hide();
-            void ctx.host.openConversationSummary(project, selected.summary);
-        }
-        quickPick.hide();
-    });
-    quickPick.show();
+            void ctx.host.openConversationSummary(chat.project, chat.summary);
+        },
+        command => {
+            ctx.host.sessionsSidebar?.hide();
+            void ctx.host.commands.executeCommand(command.id).catch(error => {
+                console.warn('[qaap-unified-search] command failed', command.id, error);
+            });
+        },
+        ctx.host.sessionsSidebar?.node ?? document.activeElement as HTMLElement,
+    );
+    dialog.show();
 }

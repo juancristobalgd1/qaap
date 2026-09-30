@@ -210,19 +210,11 @@ export class MobileProjectsHubHeaderUi {
             openSidebar.title = nls.localize('qaap/pullRequests/openSidebar', 'Open pull requests sidebar');
             openSidebar.setAttribute('aria-label', openSidebar.title);
             openSidebar.innerHTML = '<span class="codicon codicon-layout-sidebar-left" aria-hidden="true"></span>';
-            openSidebar.addEventListener('click', () => this.host.openWorkHubSessionsSidebar());
+            openSidebar.addEventListener('click', event => {
+                event.stopPropagation();
+                this.host.openWorkHubSessionsSidebar();
+            });
             leading.append(openSidebar);
-        }
-
-        if (pullRequest && !sidebarVisible) {
-            const back = document.createElement('button');
-            back.type = 'button';
-            back.className = 'theia-mobile-work-hub-pull-request-header-back';
-            back.title = nls.localize('qaap/pullRequests/backToList', 'Back to pull requests');
-            back.setAttribute('aria-label', back.title);
-            back.innerHTML = '<span class="codicon codicon-chevron-left" aria-hidden="true"></span>';
-            back.addEventListener('click', () => this.host.closePullRequestDetail?.());
-            leading.append(back);
         }
 
         const status = document.createElement('span');

@@ -22,6 +22,7 @@ import {
     type QaapGithubPullRequestDetailResponse,
     type QaapGithubPullRequestSearchResponse,
     type QaapGithubPullRequestStateFilter,
+    type QaapGithubPullRequestViewFilter,
     type QaapGithubPullRequestSummary,
     type QaapGithubPullRequestsResponse,
     type QaapGithubRepositoriesResponse,
@@ -299,6 +300,7 @@ export async function fetchQaapGithubPullRequests(
 
 export interface QaapGithubPullRequestSearchRequest {
     readonly state: QaapGithubPullRequestStateFilter;
+    readonly view: QaapGithubPullRequestViewFilter;
     readonly page?: number;
     /** Work Hub project repositories (`owner/name`) to include next to the user's own scope. */
     readonly repositories?: readonly string[];
@@ -308,7 +310,7 @@ export interface QaapGithubPullRequestSearchRequest {
 
 /** All pull requests (open, merged, closed) the signed-in user can see, one search page at a time. */
 export async function searchQaapGithubPullRequests(request: QaapGithubPullRequestSearchRequest): Promise<QaapGithubPullRequestSearchResponse> {
-    const params = new URLSearchParams({ state: request.state, page: String(request.page ?? 1) });
+    const params = new URLSearchParams({ state: request.state, view: request.view, page: String(request.page ?? 1) });
     if (request.repositories?.length) {
         params.set('repos', request.repositories.join(','));
     }

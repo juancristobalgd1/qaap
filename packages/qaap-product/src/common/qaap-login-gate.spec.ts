@@ -27,6 +27,34 @@ describe('Qaap login gate', () => {
         return run;
     }
 
+    it('clears a saved IDE surface and holds Work Hub in front on mobile boot', async () => {
+        const run = start(
+            pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+            'http://localhost:3000/#/workspace/demo',
+            {
+                beforeRun: window => {
+                    window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');
+                    window.sessionStorage.setItem('qaap.mobileProjects.explicitDesktopIde', '1');
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            },
+        );
+        await run.bundleAppended;
+        expect(run.window.sessionStorage.getItem('qaap.mobileProjects.preferDesktopIde')).to.equal(null);
+        expect(run.window.sessionStorage.getItem('qaap.mobileProjects.explicitDesktopIde')).to.equal(null);
+        expect(run.document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
+        expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+    });
+
     describe('GitHub OAuth callback', () => {
         it('stores the session, strips the OAuth marker from the URL and loads the bundle', async () => {
             const run = start(

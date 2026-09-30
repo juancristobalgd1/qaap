@@ -276,7 +276,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerConversationsBtn.getAttribute('aria-haspopup')).to.equal('menu');
         });
 
-        it('shows the project workspace and warns when an active task uses a temporary workspace', () => {
+        it('does not show the workspace path for a temporary-workspace task in the header', () => {
             const p = project('mockup', 'Mockup');
             const cwd = 'C:\\Users\\Personal\\AppData\\Local\\Temp\\cloud-ws-test';
             const summary = {
@@ -298,12 +298,10 @@ describe('MobileProjectsHubHeaderUi', () => {
             new MobileProjectsHubHeaderUi(host).renderHeader();
 
             const context = host.titleBlock.querySelector<HTMLElement>('.qaap-transcript-workspace-context');
-            expect(context?.hidden).to.equal(false);
-            expect(context?.getAttribute('aria-label')).to.contain('Mockup');
-            expect(context?.getAttribute('aria-label')).to.contain(cwd);
-            expect(context?.classList.contains('theia-mod-temporary')).to.equal(true);
-            expect(context?.querySelector('.qaap-transcript-workspace-context-label')?.textContent)
-                .to.equal('Temporary workspace');
+            expect(context?.hidden).to.equal(true);
+            expect(context?.textContent).not.to.contain(cwd);
+            expect(context?.title).to.equal('');
+            expect(context?.getAttribute('aria-label')).to.equal(null);
         });
 
         it('shows the active project name in the header project control on Agents landing', () => {

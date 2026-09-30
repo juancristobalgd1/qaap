@@ -1,0 +1,23 @@
+# Endpoints in packages/qaap-* that register a route without an auth/ownership primitive
+# visible to scripts/qaap-endpoint-ownership-check.js (single-file, in-file delegation only).
+# This list may only shrink: add the guard or make it visible to the checker, then delete the line.
+# Each entry carries a reviewed reason why the route is intentionally public or guarded off-file.
+#
+# Regenerate only with review: node scripts/qaap-endpoint-ownership-check.js --write
+
+packages/qaap-cloud-workspace/src/node/qaap-billing-endpoint.ts :: POST QAAP_BILLING_WEBHOOK_API_PATH
+# Stripe webhook: authenticated by Stripe's HMAC signature over the raw body
+# (verifyStripeWebhookEvent, qaap-stripe-billing.ts), not by session. A session guard
+# here would break Stripe's own calls. Auth in handler: none by design.
+
+packages/qaap-shared-core/src/node/qaap-dev-preview-endpoint-render.ts :: POST QAAP_DEV_PREVIEW_CLAIM_PATH
+packages/qaap-shared-core/src/node/qaap-dev-preview-endpoint-render.ts :: POST QAAP_DEV_PREVIEW_RELEASE_PATH
+# Guard lives in an imported extracted function (handleClaimExtracted /
+# handleReleaseExtracted, qaap-dev-preview-endpoint-render.ts / -streaming.ts), which
+# calls ctx.auth.authenticate(req) and returns 401 on unauthorized. Off-file, invisible
+# to the single-file scan by design of the *Extracted refactor; verified manually.
+
+packages/qaap-shared-core/src/node/qaap-github-oauth-endpoint.ts :: GET QAAP_GITHUB_OAUTH_START_PATH
+# OAuth dance entry point: by definition pre-login (it initiates the GitHub OAuth flow).
+# Stateless; the state parameter's CSRF protection and the callback validation happen
+# later in the flow (handleOAuthCallback is itself guarded).

@@ -45,6 +45,7 @@ import { MobileProjectsHeaderOverflowMenuItem, MobileProjectsPanel } from './mob
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
@@ -243,7 +244,9 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 onProjectOpenInIde: project => {
                     // Persist the IDE surface before opening the selected project so a workspace
                     // reload lands in that project's classic IDE with the shared IDE/Agents switch.
-                    markPreferDesktopIde();
+                    if (!matchesMobileOneColumnLayout()) {
+                        markPreferDesktopIde();
+                    }
                     void this.projectsService.openInCurrentWindowAsync(project);
                 },
                 onDismiss: () => this.close(),

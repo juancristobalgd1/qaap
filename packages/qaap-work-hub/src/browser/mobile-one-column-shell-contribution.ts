@@ -35,6 +35,7 @@ import { QuickInputService } from '@theia/core';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
 import {
+    matchesMobileOneColumnLayout,
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
@@ -608,6 +609,12 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly onMediaChange = (): void => {
+        // The classic IDE is a desktop-only surface. If a desktop IDE session crosses into the
+        // one-column layout, restore Work Hub before reconciling the mobile shell.
+        if (matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
+            this.returnToAgentsFromDesktopIde();
+            return;
+        }
         this.workHubBootstrap.persistAgentsSurfaceForActiveSession();
         if (this.shouldActivateMobileLayout()) {
             this.enterMobileLayout();

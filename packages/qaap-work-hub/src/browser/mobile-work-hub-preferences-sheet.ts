@@ -37,6 +37,7 @@ export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
 
 const AI_FEATURES_SEARCH_LOCKED_CLASS = 'theia-mod-ai-features-search-locked';
 const BYOK_SETTINGS_WIDGET_CLASS = 'theia-mod-byok-settings';
+const SETTINGS_JSON_EDITOR_OVERLAY_CLASS = 'theia-mod-work-hub-settings-json-editor-open';
 const DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 262;
 const MIN_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 180;
 const MAX_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 420;
@@ -124,6 +125,7 @@ export class MobileWorkHubPreferencesSheet {
     protected embeddedSettingsRenderToken = 0;
     protected embeddedSettingsWidget: Widget | undefined;
     protected settingsSidebarController: MobileWorkHubSessionsSidebar | undefined;
+    protected settingsJsonEditorOverlayObserver: MutationObserver | undefined;
 
     protected readonly resolveWorkHubHost: (() => HTMLElement | undefined) | undefined;
     protected readonly resolveSettingsSidebar: (() => MobileWorkHubSessionsSidebar | undefined) | undefined;
@@ -201,6 +203,18 @@ export class MobileWorkHubPreferencesSheet {
             ev.stopPropagation();
             this.hide();
         }
+    };
+
+    protected readonly onSettingsJsonLinkClick = (ev: MouseEvent): void => {
+        if (!this.visible || this.activeSettingsSectionId !== 'models'
+            || !this.node.classList.contains('theia-mod-work-hub-inline')) {
+            return;
+        }
+        const target = ev.target;
+        if (!(target instanceof Element) || !target.closest('.theia-json-input')) {
+            return;
+        }
+        void this.showSettingsJsonEditorOverlay();
     };
 
     constructor(
@@ -346,6 +360,7 @@ export class MobileWorkHubPreferencesSheet {
 
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
+        this.widgetHost.addEventListener('click', this.onSettingsJsonLinkClick, true);
 
         this.customContentHost = document.createElement('div');
         this.customContentHost.className = 'theia-mobile-work-hub-settings-custom-content';
@@ -435,6 +450,7 @@ export class MobileWorkHubPreferencesSheet {
             return;
         }
         this.stopSettingsSidebarResize();
+        this.stopSettingsJsonEditorOverlay();
         if (this.windowResizeListener) {
             window.removeEventListener('resize', this.windowResizeListener);
             this.windowResizeListener = undefined;
@@ -462,8 +478,50 @@ export class MobileWorkHubPreferencesSheet {
 
     dispose(): void {
         this.unobserveWidgetHostResize();
+        this.widgetHost.removeEventListener('click', this.onSettingsJsonLinkClick, true);
         this.hide();
         this.node.remove();
+    }
+
+    protected async showSettingsJsonEditorOverlay(): Promise<void> {
+        for (let attempt = 0; attempt < 30; attempt++) {
+            await animationFrame();
+            if (!this.visible || this.activeSettingsSectionId !== 'models') {
+                return;
+            }
+            if (this.isSettingsJsonEditorActive()) {
+                document.body.classList.add(SETTINGS_JSON_EDITOR_OVERLAY_CLASS);
+                this.settingsJsonEditorOverlayObserver?.disconnect();
+                this.settingsJsonEditorOverlayObserver = new MutationObserver(() => {
+                    if (!this.isSettingsJsonEditorActive()) {
+                        this.stopSettingsJsonEditorOverlay();
+                    }
+                });
+                const editorPanel = document.getElementById('theia-main-content-panel');
+                if (editorPanel) {
+                    this.settingsJsonEditorOverlayObserver.observe(editorPanel, {
+                        attributes: true,
+                        childList: true,
+                        subtree: true,
+                        attributeFilter: ['class'],
+                    });
+                }
+                return;
+            }
+        }
+    }
+
+    protected isSettingsJsonEditorActive(): boolean {
+        const activeTab = document.querySelector<HTMLElement>(
+            '#theia-main-content-panel .lm-TabBar-tab.lm-mod-current .lm-TabBar-tabLabel',
+        );
+        return activeTab?.textContent?.trim() === 'settings.json';
+    }
+
+    protected stopSettingsJsonEditorOverlay(): void {
+        this.settingsJsonEditorOverlayObserver?.disconnect();
+        this.settingsJsonEditorOverlayObserver = undefined;
+        document.body.classList.remove(SETTINGS_JSON_EDITOR_OVERLAY_CLASS);
     }
 
     protected attachWidget(widget: PreferencesWidget): void {
@@ -1073,7 +1131,11 @@ export class MobileWorkHubPreferencesSheet {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'theia-mobile-work-hub-settings-primary-button';
-        button.textContent = nls.localize('qaap/workHubSettings/planUsage/manage', 'Manage plan');
+        button.textContent = nls.localize('qaap/workHubSettings/planUsage/billing', 'Billing');
+        button.setAttribute('aria-label', nls.localize(
+            'qaap/workHubSettings/planUsage/openBilling',
+            'Open Billing to view plans and manage payment',
+        ));
         button.addEventListener('click', () => {
             this.hide();
             void this.openBilling?.();

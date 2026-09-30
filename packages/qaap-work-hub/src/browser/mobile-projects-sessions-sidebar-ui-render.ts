@@ -108,6 +108,7 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSession
             },
             storageScope: () => ctx.host.projectsService.getCurrentWorkspaceCwd(),
             onAccountMenu: anchor => { ctx.onSessionsSidebarAccountClick(anchor); },
+            onSettings: () => ctx.host.openPreferencesSheet?.(),
             onSearch: () => { void ctx.openSessionsSidebarSearch(); },
             onPullRequestSearch: anchor => { ctx.togglePullRequestSearch(anchor); },
             onPullRequestSearchClose: () => { ctx.closePullRequestSearch?.(); },

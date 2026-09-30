@@ -1,6 +1,7 @@
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 // Extracted from mobile-one-column-shell-contribution.ts
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { toArray } from '@lumino/algorithm';
 import {
     clearMobileWorkHubBootGuard,
@@ -14,7 +15,7 @@ import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-bro
 import { GETTING_STARTED_WIDGET_COMMAND } from './mobile-one-column-shell-contribution';
 
 export function ensureMobilePreviewEditorVisibleExtracted(ctx: MobileOneColumnShellContributionContext): void {
-        if (!ctx.mobileActive) {
+        if (!ctx.mobileActive || matchesMobileOneColumnLayout()) {
             return;
         }
         setMobileWorkHubHideBottomChrome(false);
@@ -48,6 +49,9 @@ export async function relocatePreviewToMainIfNeededExtracted(ctx: MobileOneColum
 }
 
 export async function toggleMobilePreviewExtracted(ctx: MobileOneColumnShellContributionContext): Promise<void> {
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
         ctx.hideProjectsPanel();
         ctx.hidePullRequestPanel();
         ctx.ensureMobilePreviewEditorVisible();

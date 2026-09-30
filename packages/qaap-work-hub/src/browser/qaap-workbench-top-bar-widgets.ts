@@ -370,8 +370,9 @@ export class QaapWorkbenchViewModeCenterWidget extends Widget {
     }
 
     protected syncViewModeSwitch(): void {
-        const visible = document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
-            || peekPreferDesktopIde();
+        const visible = !matchesMobileOneColumnLayout()
+            && (document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
+                || peekPreferDesktopIde());
         this.node.hidden = !visible;
         this.node.style.display = visible ? '' : 'none';
         this.viewModeSwitchHost.hidden = !visible;

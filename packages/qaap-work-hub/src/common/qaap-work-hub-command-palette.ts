@@ -60,8 +60,11 @@ export const WORK_HUB_COMMAND_PALETTE_EXCLUDED_QAAP_IDS: ReadonlySet<string> = n
 ]);
 
 /** True when the command should appear in the Work Hub command palette. */
-export function isWorkHubCommandPaletteCommand(command: Command): boolean {
+export function isWorkHubCommandPaletteCommand(command: Command, options?: { readonly mobile?: boolean }): boolean {
     const id = command.id;
+    if (options?.mobile && id === 'qaap.mobile.openDesktopIde') {
+        return false;
+    }
     if (WORK_HUB_COMMAND_PALETTE_SHARED_IDS.has(id)) {
         return true;
     }

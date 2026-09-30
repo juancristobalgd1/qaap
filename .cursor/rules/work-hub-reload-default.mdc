@@ -1,22 +1,22 @@
 ---
-description: Persistir superficie activa (Work Hub o IDE) en reload/F5 dentro de la misma sesión de pestaña (CRITICO)
+description: Mantener Work Hub en movil y persistir IDE clasico solo en escritorio
 alwaysApply: true
 ---
 
 # Superficie activa en reload (critico)
 
-Al recargar la pagina (F5) dentro de la misma sesion de pestaña, la app debe **mantener la superficie que el usuario tenia abierta**:
+El IDE clasico es una superficie exclusiva de escritorio. En el layout movil de una columna, la app debe mostrar siempre Work Hub:
 
-- **Work Hub / Agents** → recargar y seguir en Work Hub (sin flash del IDE).
-- **IDE clasico** (tras "Open IDE") → recargar y seguir en el IDE.
+- **Work Hub / Agents** en escritorio o movil → recargar y seguir en Work Hub.
+- **IDE clasico** en escritorio → recargar y seguir en el IDE mientras la ventana siga fuera del modo movil.
+- Al entrar en modo movil con una sesion IDE abierta, limpiar la preferencia IDE y volver a Work Hub.
+- Una pestaña nueva o sin preferencia guardada debe abrir Work Hub.
 
-Mantener el IDE activo tras F5 es **intencional** (contrato de producto confirmado por el owner el 2026-09-05); no resetear IDE a Work Hub/ADE en reload.
-
-Work Hub sigue siendo la superficie **por defecto** en el primer arranque de una pestaña nueva o cuando no hay preferencia persistida.
+El modo movil lo define `MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY` (`(max-width: 767px), (pointer: coarse)`). La paleta de comandos movil no debe ofrecer "Open IDE".
 
 ## Persistencia permitida (solo sessionStorage, misma pestaña)
 
-- `qaap.mobileProjects.preferDesktopIde` / `qaap.mobileProjects.explicitDesktopIde` — usuario eligio IDE (`markPreferDesktopIde()` la escribe y persiste durante toda la sesion de la pestaña).
+- `qaap.mobileProjects.preferDesktopIde` / `qaap.mobileProjects.explicitDesktopIde` — eleccion explicita del IDE en escritorio; al entrar en modo movil se limpian ambas claves.
 - `qaap.mobileProjects.preferAgentsSurface` / `qaap.mobileProjects.dismissPanel` — usuario esta en Work Hub.
 
 No persistir en `localStorage`, query/hash, backend, ni layout restore como selector de superficie inicial.
@@ -26,15 +26,19 @@ No persistir en `localStorage`, query/hash, backend, ni layout restore como sele
 - `packages/qaap-shared-core/src/common/qaap-mobile-work-surface-preference.ts`
 - `packages/qaap-shared-core/src/browser/mobile-projects-open.ts`
 - `packages/qaap-work-hub/src/browser/mobile-one-column-shell-contribution.ts`
+- `packages/qaap-work-hub/src/browser/mobile-one-column-shell-contribution-timeline.ts`
+- `packages/qaap-work-hub/src/browser/qaap-quick-command-service.ts`
 - `packages/qaap-product/resources/qaap-login-gate.js`
 - `packages/qaap-work-hub/src/browser/qaap-shell-layout-restore-contribution.ts`
 
 ## Contrato esperado
 
-- F5 en Work Hub → Work Hub (boot guard oculta IDE hasta montar hub).
-- F5 en IDE → IDE (login gate y boot guard hacen `return` si `preferDesktopIde` en sessionStorage).
-- "Back to Work Hub" limpia preferencia IDE y marca Agents surface.
+- Work Hub → F5 → Work Hub, en cualquier viewport.
+- Open IDE en escritorio → F5 → IDE clasico.
+- IDE clasico → modo movil → Work Hub y preferencia IDE limpiada.
 - Nueva pestana / sessionStorage vacio → Work Hub por defecto.
+- En el modo movil la paleta no lista "Open IDE" y ningun control abre la superficie IDE clasica.
+- "Back to Work Hub" limpia la preferencia IDE y marca Agents surface.
 
 ## Verificacion
 
@@ -47,6 +51,7 @@ npx lerna run test --scope @theia/qaap-shared-core --scope @theia/qaap-work-hub
 
 Y verificar manualmente en browser:
 
-1. Abrir workspace → Work Hub → F5 → Work Hub.
-2. "Open IDE" → F5 → IDE clasico.
-3. Volver a Work Hub → F5 → Work Hub.
+1. Abrir workspace en Work Hub → F5 → Work Hub.
+2. "Open IDE" en escritorio → F5 → IDE clasico.
+3. Redimensionar el IDE abierto a modo movil → Work Hub.
+4. Abrir la paleta en movil → no aparece "Open IDE".

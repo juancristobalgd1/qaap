@@ -308,8 +308,15 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
     triggerLabel.textContent = displaySpec.label;
     triggerLabel.setAttribute('aria-hidden', 'true');
     const chevron = document.createElement('span');
-    chevron.className = 'theia-mobile-transcript-tab-icon-select-chevron codicon codicon-chevron-down';
+    chevron.className = 'theia-mobile-transcript-tab-icon-select-chevron theia-mobile-transcript-tab-icon-select-double-chevron codicon codicon-chevron-down';
     chevron.setAttribute('aria-hidden', 'true');
+    const chevronIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    chevronIcon.setAttribute('viewBox', '0 0 16 16');
+    chevronIcon.setAttribute('focusable', 'false');
+    const chevronPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    chevronPath.setAttribute('d', 'M3 4.5 8 9.5l5-5 M3 8 8 13l5-5');
+    chevronIcon.append(chevronPath);
+    chevron.append(chevronIcon);
     trigger.append(triggerLabel, chevron);
     trigger.addEventListener('click', event => {
         event.stopPropagation();

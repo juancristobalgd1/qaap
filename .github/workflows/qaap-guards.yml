@@ -68,6 +68,12 @@ jobs:
       - name: Drift check
         run: node scripts/qaap-drift-check.js
 
+      # Same rationale as the drift check: pure static scan, no install needed.
+      # Fails when a route in packages/qaap-* registers without an auth/ownership
+      # primitive and is not a reviewed entry in the (shrink-only) baseline.
+      - name: Endpoint ownership check
+        run: node scripts/qaap-endpoint-ownership-check.js
+
       - name: Install
         run: npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
 

@@ -654,7 +654,33 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   font-size: 11px;
   line-height: 1;
   opacity: 0.72;
-  transition: transform 120ms ease;
+}
+
+.theia-mobile-transcript-tab-icon-select-double-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 0;
+  line-height: 0;
+}
+
+.theia-mobile-transcript-tab-icon-select-double-chevron::before {
+  content: none !important;
+  display: none !important;
+}
+
+.theia-mobile-transcript-tab-icon-select-double-chevron svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .theia-mobile-transcript-tab-icon-select[aria-expanded='true'] {
@@ -665,7 +691,6 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
 }
 
 .theia-mobile-transcript-tab-icon-select[aria-expanded='true'] .theia-mobile-transcript-tab-icon-select-chevron {
-  transform: rotate(180deg);
   opacity: 1;
 }
 

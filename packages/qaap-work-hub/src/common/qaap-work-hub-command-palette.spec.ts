@@ -41,6 +41,12 @@ describe('isWorkHubCommandPaletteCommand', () => {
         })).to.equal(true);
     });
 
+    it('hides Open IDE from the mobile Work Hub command palette while retaining it on desktop', () => {
+        const command = { id: 'qaap.mobile.openDesktopIde', label: 'Open IDE' };
+        expect(isWorkHubCommandPaletteCommand(command, { mobile: true })).to.equal(false);
+        expect(isWorkHubCommandPaletteCommand(command, { mobile: false })).to.equal(true);
+    });
+
     it('includes shared hub catalog / preferences commands', () => {
         expect(isWorkHubCommandPaletteCommand({
             id: 'workbench.action.selectTheme',

@@ -286,7 +286,7 @@ function syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar: Mobi
     if (activeHeader.parentElement !== header) {
         const before = sidebar.viewModeHost?.parentElement === header
             ? sidebar.viewModeHost
-            : close;
+            : executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close);
         header.insertBefore(activeHeader, before);
     }
 }
@@ -319,6 +319,10 @@ function resolveExecutionSurfaceSidebarToolbarHostExtracted(activeSurface: strin
     return undefined;
 }
 
+function executionSurfaceSidebarHeaderActionsAnchorExtracted(header: HTMLElement, close: HTMLElement): HTMLElement {
+    return header.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header-divider') ?? close;
+}
+
 function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     const activeHost = sidebar.activeHost as HTMLElement | undefined;
     const header = sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header');
@@ -327,8 +331,10 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     if (!header || !close || !toolbar?.parentNode) {
         return;
     }
+    const actionsAnchor = executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close);
     const currentToolbar = sidebar.toolbarHost as HTMLElement | undefined;
-    if (currentToolbar === toolbar && currentToolbar.parentElement === header) {
+    if (currentToolbar === toolbar && currentToolbar.parentElement === header
+        && (currentToolbar.compareDocumentPosition(actionsAnchor) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) {
         return;
     }
     if (currentToolbar && currentToolbar !== toolbar) {
@@ -344,7 +350,7 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
         sidebar.toolbarPlaceholder = placeholder;
     }
     toolbar.classList.add('theia-mobile-execution-surface-sidebar-toolbar');
-    header.insertBefore(toolbar, close);
+    header.insertBefore(toolbar, actionsAnchor);
     sidebar.toolbarHost = toolbar;
 }
 
@@ -389,11 +395,13 @@ function promoteExecutionSurfaceSidebarViewModeHostExtracted(sidebar: MobileProj
             candidate.replaceWith(sidebar.viewModePlaceholder);
         }
     }
-    if (candidate.parentElement !== header) {
+    const actionsAnchor = executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close);
+    if (candidate.parentElement !== header
+        || (candidate.compareDocumentPosition(actionsAnchor) & Node.DOCUMENT_POSITION_FOLLOWING) === 0) {
         // Keep the placeholder in the drawer header so dismissing the drawer can
         // restore the original header position even if the global header rerenders
         // while the drawer is open.
-        header.insertBefore(candidate, close);
+        header.insertBefore(candidate, actionsAnchor);
     }
 }
 
@@ -435,7 +443,7 @@ function promoteExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: MobilePro
         const previewHeader = header.querySelector<HTMLElement>('.theia-mobile-transcript-files-preview-header');
         const before = sidebar.viewModeHost?.parentElement === header
             ? sidebar.viewModeHost
-            : close;
+            : executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close);
         if (previewHeader && previewHeader.nextElementSibling !== before) {
             header.insertBefore(previewHeader, before);
         }
@@ -464,7 +472,7 @@ function promoteExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: MobilePro
     }
     const before = sidebar.viewModeHost?.parentElement === header
         ? sidebar.viewModeHost
-        : close;
+        : executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close);
     if (previewHeader.parentElement !== header || previewHeader.nextElementSibling !== before) {
         header.insertBefore(previewHeader, before);
     }

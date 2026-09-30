@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { ChatService } from '@theia/ai-chat';
 import { type QaapAgentConversationSummaryDTO, isFailedRunSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
@@ -105,9 +106,7 @@ export class MobileProjectsCardMenuUi {
         menu.setAttribute('role', 'menu');
         menu.hidden = true;
 
-        if (typeof window !== 'undefined'
-            && typeof window.matchMedia === 'function'
-            && window.matchMedia('(min-width: 768px)').matches) {
+        if (!matchesMobileOneColumnLayout()) {
             this.appendCardMenuItem(menu, {
                 label: nls.localize('qaap/mobileProjects/openInIde', 'Open in IDE'),
                 iconClass: 'codicon-go-to-file',
@@ -196,14 +195,6 @@ export class MobileProjectsCardMenuUi {
             retrySep.setAttribute('role', 'separator');
             menu.append(retrySep);
         }
-
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/openChat', 'Open chat'),
-            iconClass: 'codicon-comment-discussion',
-            onSelect: () => {
-                void this.host.openConversationSummary(project, summary);
-            },
-        });
 
         const isTheiaChat = summary.source === 'theia-chat';
         const canFork = isTheiaChat

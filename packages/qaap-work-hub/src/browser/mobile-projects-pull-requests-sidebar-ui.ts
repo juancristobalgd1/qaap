@@ -34,7 +34,7 @@ export interface MobileProjectsPullRequestSidebarFilter {
     readonly query?: string;
 }
 
-/** State chip, tab and free-text filtering of the sidebar list; newest first. */
+/** Applies state and text filters locally; API scopes Reviewing and Created, while Created is also checked against inbox entries. */
 export function filterMobileProjectsSidebarPullRequests(
     pullRequests: readonly QaapGithubPullRequestSummary[],
     filter: MobileProjectsPullRequestSidebarFilter,
@@ -47,9 +47,6 @@ export function filterMobileProjectsSidebarPullRequests(
                 return false;
             }
             if (filter.tab === 'created' && (!login || pullRequest.author.toLowerCase() !== login)) {
-                return false;
-            }
-            if (filter.tab === 'reviewing' && login && pullRequest.author.toLowerCase() === login) {
                 return false;
             }
             if (!query) {
@@ -126,7 +123,7 @@ export class MobileProjectsPullRequestsSidebarUi {
     protected activeTab: MobileProjectsPullRequestSidebarTab = 'all';
     protected searchQuery = '';
     protected stateFilter: MobileProjectsPullRequestSidebarState = 'all';
-    protected readonly searchLists = new Map<MobileProjectsPullRequestSidebarState, PullRequestSearchListState>();
+    protected readonly searchLists = new Map<string, PullRequestSearchListState>();
     protected searchQuickPick: QuickPick<PullRequestSearchPickItem> | undefined;
     protected searchQuickPickCleanup: Disposable = Disposable.NULL;
     protected filterQuickPick: QuickPick<PullRequestFilterPickItem> | undefined;
@@ -156,12 +153,12 @@ export class MobileProjectsPullRequestsSidebarUi {
             button.type = 'button';
             button.className = 'theia-mobile-work-hub-pull-requests-tab';
             button.textContent = tab[1];
+            button.dataset.view = tab[0];
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-selected', String(this.activeTab === tab[0]));
             button.classList.toggle('theia-mod-active', this.activeTab === tab[0]);
             button.addEventListener('click', () => {
-                this.activeTab = tab[0];
-                this.rerender();
+                this.setViewFilter(tab[0]);
             });
             tabs.append(button);
         }
@@ -208,17 +205,28 @@ export class MobileProjectsPullRequestsSidebarUi {
         }
     }
 
+    setViewFilter(view: MobileProjectsPullRequestSidebarTab): void {
+        if (this.activeTab === view) {
+            return;
+        }
+        this.activeTab = view;
+        this.rerender();
+        if (this.searchQuickPick) {
+            this.searchQuickPick.items = this.buildSearchPickItems();
+        }
+    }
+
     /** Re-runs the first search page of the active chip; `force` bypasses the backend cache. */
     reloadSearch(force = true): Promise<void> {
-        return this.loadSearchPage(this.stateFilter, 1, force);
+        return this.loadSearchPage(this.activeTab, this.stateFilter, 1, force);
     }
 
     loadMore(): Promise<void> {
-        const list = this.searchLists.get(this.stateFilter);
+        const list = this.searchLists.get(this.searchListKey(this.activeTab, this.stateFilter));
         if (!list || list.loading || !list.hasMore) {
             return Promise.resolve();
         }
-        return this.loadSearchPage(this.stateFilter, list.page + 1, false);
+        return this.loadSearchPage(this.activeTab, this.stateFilter, list.page + 1, false);
     }
 
     toggleSearchPopup(anchor: HTMLElement): void {
@@ -308,14 +316,24 @@ export class MobileProjectsPullRequestsSidebarUi {
         if (this.host.inboxGithubSignedIn === false) {
             return;
         }
-        const list = this.searchLists.get(this.stateFilter);
+        const list = this.searchLists.get(this.searchListKey(this.activeTab, this.stateFilter));
         if (!list || (!list.loaded && !list.loading && !list.error)) {
-            void this.loadSearchPage(this.stateFilter, 1, false);
+            void this.loadSearchPage(this.activeTab, this.stateFilter, 1, false);
         }
     }
 
-    protected async loadSearchPage(state: MobileProjectsPullRequestSidebarState, page: number, force: boolean): Promise<void> {
-        const previous = this.searchLists.get(state);
+    protected searchListKey(view: MobileProjectsPullRequestSidebarTab, state: MobileProjectsPullRequestSidebarState): string {
+        return `${view}:${state}`;
+    }
+
+    protected async loadSearchPage(
+        view: MobileProjectsPullRequestSidebarTab,
+        state: MobileProjectsPullRequestSidebarState,
+        page: number,
+        force: boolean,
+    ): Promise<void> {
+        const key = this.searchListKey(view, state);
+        const previous = this.searchLists.get(key);
         // A fresh object per request: a response is applied only while its list is still current,
         // so a refresh or a newer page request makes older in-flight responses harmless.
         const list: PullRequestSearchListState = {
@@ -326,19 +344,20 @@ export class MobileProjectsPullRequestsSidebarUi {
             rateLimited: previous?.rateLimited,
             loading: true,
         };
-        this.searchLists.set(state, list);
-        if (state === this.stateFilter) {
+        this.searchLists.set(key, list);
+        if (view === this.activeTab && state === this.stateFilter) {
             this.renderPullRequestResults();
         }
         const search = this.host.searchPullRequests?.bind(this.host) ?? searchQaapGithubPullRequests;
         try {
             const response = await search({
                 state,
+                view,
                 page,
                 repositories: this.host.pullRequestRepoKeys?.() ?? [],
                 force,
             });
-            if (this.searchLists.get(state) !== list) {
+            if (this.searchLists.get(key) !== list) {
                 return;
             }
             if (!response.signedIn) {
@@ -356,14 +375,14 @@ export class MobileProjectsPullRequestsSidebarUi {
             list.error = undefined;
             list.loaded = true;
         } catch (err) {
-            if (this.searchLists.get(state) !== list) {
+            if (this.searchLists.get(key) !== list) {
                 return;
             }
             list.error = err instanceof Error ? err.message : String(err);
         } finally {
-            if (this.searchLists.get(state) === list) {
+            if (this.searchLists.get(key) === list) {
                 list.loading = false;
-                if (state === this.stateFilter) {
+                if (view === this.activeTab && state === this.stateFilter) {
                     this.renderPullRequestResults();
                     if (this.searchQuickPick) {
                         this.searchQuickPick.items = this.buildSearchPickItems();
@@ -385,17 +404,21 @@ export class MobileProjectsPullRequestsSidebarUi {
      * `open`, and forget the `merged` list so its next visit fetches the fresh server results.
      */
     markPullRequestMerged(pullRequest: QaapGithubPullRequestSummary): void {
-        const key = githubPullRequestSummaryKey(pullRequest);
-        for (const [state, list] of this.searchLists) {
+        const pullRequestKey = githubPullRequestSummaryKey(pullRequest);
+        for (const [entryKey, list] of this.searchLists) {
+            const state = entryKey.slice(entryKey.indexOf(':') + 1) as MobileProjectsPullRequestSidebarState;
             if (state === 'merged') {
                 continue;
             }
             list.items = state === 'open'
-                ? list.items.filter(item => githubPullRequestSummaryKey(item) !== key)
-                : list.items.map(item => githubPullRequestSummaryKey(item) === key ? { ...item, state: 'merged' } : item);
+                ? list.items.filter(item => githubPullRequestSummaryKey(item) !== pullRequestKey)
+                : list.items.map(item => githubPullRequestSummaryKey(item) === pullRequestKey ? { ...item, state: 'merged' } : item);
         }
-        if (!this.searchLists.get('merged')?.loading) {
-            this.searchLists.delete('merged');
+        for (const view of ['all', 'reviewing', 'created'] as const) {
+            const key = this.searchListKey(view, 'merged');
+            if (!this.searchLists.get(key)?.loading) {
+                this.searchLists.delete(key);
+            }
         }
         if (this.stateFilter === 'merged') {
             this.ensureSearchLoaded();
@@ -521,7 +544,7 @@ export class MobileProjectsPullRequestsSidebarUi {
         }
         const previousScrollTop = results.scrollTop;
         results.replaceChildren();
-        const list = this.searchLists.get(this.stateFilter);
+        const list = this.searchLists.get(this.searchListKey(this.activeTab, this.stateFilter));
         const pullRequests = this.filteredPullRequests();
         const searchLoading = list?.loading === true && !list.loaded;
         const inboxLoading = !this.host.inboxPullRequestsLoaded && this.host.inboxPullRequestsLoading;
@@ -632,9 +655,12 @@ export class MobileProjectsPullRequestsSidebarUi {
 
     /** Search results of the active chip merged with the live inbox pull requests of Work Hub projects. */
     protected filteredPullRequests(includeSearchQuery = true): QaapGithubPullRequestSummary[] {
-        const searched = this.searchLists.get(this.stateFilter)?.items ?? [];
+        const searched = this.searchLists.get(this.searchListKey(this.activeTab, this.stateFilter))?.items ?? [];
         return filterMobileProjectsSidebarPullRequests(
-            mergeGithubPullRequestSummaries(searched, this.host.inboxPullRequests),
+            mergeGithubPullRequestSummaries(
+                searched,
+                this.activeTab === 'reviewing' ? [] : this.host.inboxPullRequests,
+            ),
             {
                 state: this.stateFilter,
                 tab: this.activeTab,

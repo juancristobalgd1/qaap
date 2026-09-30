@@ -4,13 +4,15 @@
 // *****************************************************************************
 
 import { nls, URI } from '@theia/core';
-import { codicon, open } from '@theia/core/lib/browser';
+import { codicon, MarkdownRenderer } from '@theia/core/lib/browser';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import * as React from '@theia/core/shared/react';
-import { Skill } from '@theia/ai-core/lib/common/skill';
+import { parseSkillFile, Skill } from '@theia/ai-core/lib/common/skill';
 import { PreferenceService } from '@theia/core/lib/common';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { AISkillsConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/skills-configuration-widget';
 import { QaapSkillService } from './qaap-skill-service';
+import { QaapSkillMarkdownDialog } from './qaap-skill-markdown-dialog';
 import { QAAP_DISABLED_SKILLS_PREF } from './qaap-skills-preferences';
 
 export type QaapSkillSourceKind = 'system' | 'user' | 'project';
@@ -23,6 +25,12 @@ export class QaapAiSkillsConfigurationWidget extends AISkillsConfigurationWidget
 
     @inject(PreferenceService)
     protected readonly preferenceService: PreferenceService;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
+
+    @inject(MarkdownRenderer)
+    protected readonly markdownRenderer: MarkdownRenderer;
 
     @postConstruct()
     protected override init(): void {
@@ -146,6 +154,22 @@ export class QaapAiSkillsConfigurationWidget extends AISkillsConfigurationWidget
     }
 
     protected override openSkill = (skill: Skill): void => {
-        open(this.openerService, URI.fromFilePath(skill.location));
+        const dialog = new QaapSkillMarkdownDialog(skill, this.markdownRenderer);
+        void dialog.open();
+        void this.loadSkillMarkdown(skill, dialog);
     };
+
+    protected async loadSkillMarkdown(skill: Skill, dialog: QaapSkillMarkdownDialog): Promise<void> {
+        try {
+            const file = await this.fileService.read(URI.fromFilePath(skill.location), { encoding: 'utf-8' });
+            dialog.setMarkdown(parseSkillFile(file.value).content);
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            dialog.setError(nls.localize(
+                'qaap/aiConfiguration/skillReadError',
+                'Could not read SKILL.md: {0}',
+                detail,
+            ));
+        }
+    }
 }

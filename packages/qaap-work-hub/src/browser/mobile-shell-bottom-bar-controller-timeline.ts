@@ -10,6 +10,7 @@ import {
     setMobileWorkHubHideBottomChrome,
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import {
     BottomBarSecondaryItem,
     MobileBottomButton,
@@ -122,6 +123,9 @@ export async function onMobileBottomButtonClickExtracted(ctx: MobileShellBottomB
         return;
     }
     if (def.id === 'editor') {
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
         if (ctx.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND) && ctx.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
             await ctx.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
             return;

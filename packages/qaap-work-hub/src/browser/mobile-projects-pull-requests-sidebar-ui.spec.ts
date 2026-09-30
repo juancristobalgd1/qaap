@@ -260,6 +260,67 @@ describe('mobile-projects-pull-requests-sidebar-ui', () => {
         expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal('PR 1');
     });
 
+    it('applies each view tab and state chip to the search request and visible results', async () => {
+        const { host, requests } = createSearchHost(request => {
+            const state = request.state === 'all' ? 'open' : request.state;
+            const number = request.view === 'all'
+                ? ({ all: 1, open: 2, merged: 3, closed: 4 } as const)[request.state]
+                : request.view === 'reviewing'
+                    ? ({ all: 5, open: 6, merged: 7, closed: 8 } as const)[request.state]
+                    : ({ all: 9, open: 10, merged: 11, closed: 12 } as const)[request.state];
+            return {
+                pullRequests: [pullRequest({
+                    number,
+                    author: request.view === 'created' ? 'octo' : 'someone-else',
+                    state,
+                })],
+                page: request.page ?? 1,
+                hasMore: false,
+                signedIn: true,
+            };
+        });
+        const ui = new MobileProjectsPullRequestsSidebarUi(host);
+        const container = document.createElement('div');
+        document.body.append(container);
+
+        ui.render(container);
+        await flush();
+        expect(requests[0]).to.deep.include({ view: 'all', state: 'all' });
+        expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal('PR 1');
+
+        for (const state of ['open', 'merged', 'closed', 'all'] as const) {
+            (container.querySelector(`[data-state="${state}"]`) as HTMLButtonElement).click();
+            await flush();
+            const activeChip = container.querySelector('.theia-mobile-work-hub-pull-requests-state-chip.theia-mod-active') as HTMLElement;
+            expect(activeChip.dataset.state).to.equal(state);
+            expect(requests.some(request => request.view === 'all' && request.state === state)).to.equal(true);
+            expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal(`PR ${{ open: 2, merged: 3, closed: 4, all: 1 }[state]}`);
+        }
+
+        (container.querySelector('[data-view="reviewing"]') as HTMLButtonElement).click();
+        await flush();
+        expect(requests[requests.length - 1]).to.deep.include({ view: 'reviewing', state: 'all' });
+        expect(container.querySelector('[data-view="reviewing"]')?.getAttribute('aria-selected')).to.equal('true');
+        expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal('PR 5');
+
+        (container.querySelector('[data-state="merged"]') as HTMLButtonElement).click();
+        await flush();
+        expect(requests[requests.length - 1]).to.deep.include({ view: 'reviewing', state: 'merged' });
+        expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal('PR 7');
+
+        (container.querySelector('[data-view="created"]') as HTMLButtonElement).click();
+        await flush();
+        expect(requests[requests.length - 1]).to.deep.include({ view: 'created', state: 'merged' });
+        expect(container.querySelector('[data-view="created"]')?.getAttribute('aria-selected')).to.equal('true');
+        expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal('PR 11');
+
+        (container.querySelector('[data-view="all"]') as HTMLButtonElement).click();
+        await flush();
+        expect(container.querySelector('[data-view="all"]')?.getAttribute('aria-selected')).to.equal('true');
+        expect(requests.some(request => request.view === 'all' && request.state === 'merged')).to.equal(true);
+        expect(container.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent).to.equal('PR 3');
+    });
+
     it('shows an error state with retry when the search fails', async () => {
         let fail = true;
         const { host } = createSearchHost(() => {

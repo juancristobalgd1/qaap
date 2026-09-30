@@ -15,7 +15,7 @@ import {
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 
 export interface MobileShellIdeFallbackHost {
     isMobileActive(): boolean;
@@ -44,7 +44,7 @@ export interface MobileShellIdeFallbackOptions {
     sessionState: MobileShellSessionState;
 }
 
-/** Classic IDE entry/exit while keeping IDE and Work Hub as explicit, persistent session surfaces. */
+/** Desktop-only classic IDE entry and Work Hub return flow. */
 export class MobileShellIdeFallbackController {
 
     protected readonly host: MobileShellIdeFallbackHost;
@@ -69,7 +69,9 @@ export class MobileShellIdeFallbackController {
     }
 
     openDesktopIde(): void {
-        const preserveNarrowMobileLayout = this.host.isMobileActive() && matchesMobileNarrowViewport();
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
         this.host.cancelAgentsBootstrap();
         clearPreferAgentsSurface();
         markPreferDesktopIde();
@@ -79,16 +81,6 @@ export class MobileShellIdeFallbackController {
         document.body.classList.remove('theia-mobile-mod-landing');
         clearMobileWorkHubBootGuard();
         this.disposeProjectsPanelForDesktopIde();
-        if (preserveNarrowMobileLayout) {
-            this.host.forceCenterColumnFullWidth();
-            this.host.syncMobileHubPrimaryBottomChrome();
-            this.host.refreshBottomBar();
-            this.host.refreshWorkbenchTopBar();
-            this.host.requestFullShellRelayout();
-            this.host.scheduleSnapAndUiRefresh();
-            this.host.syncOverlayEdgeSwipeZones();
-            return;
-        }
         // Classic IDE always uses the normal responsive layout (never the mobile one-column view).
         this.host.leaveMobileLayout();
         this.host.syncOverlayEdgeSwipeZones();

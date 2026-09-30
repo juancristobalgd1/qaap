@@ -11,6 +11,7 @@ import type {
     QaapGithubPullRequestSummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { nls } from '@theia/core/lib/common/nls';
+import * as markdownit from '@theia/core/shared/markdown-it';
 
 export interface MobileProjectsPullRequestDetailHost {
     pullRequestDetail: QaapGithubPullRequestSummary | undefined;
@@ -32,6 +33,7 @@ type PullRequestDetailTab = MobileProjectsPullRequestDetailTab;
 /** Main-content pull-request detail surface opened from the sidebar navigator. */
 export class MobileProjectsPullRequestDetailUi {
 
+    protected readonly descriptionMarkdown = markdownit({ linkify: true });
     protected activeTab: PullRequestDetailTab = 'summary';
     protected readonly expandedFiles = new Set<string>();
     protected descriptionEditing = false;
@@ -219,7 +221,11 @@ export class MobileProjectsPullRequestDetailUi {
         } else {
             root.append(this.createSummaryView(pullRequest));
         }
-        this.host.scroll.replaceChildren(root);
+        const detailChildren: HTMLElement[] = [root];
+        if (this.activeTab !== 'code') {
+            detailChildren.push(this.createActivityCommentComposer());
+        }
+        this.host.scroll.replaceChildren(...detailChildren);
     }
 
     protected createSummaryView(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
@@ -339,9 +345,9 @@ export class MobileProjectsPullRequestDetailUi {
             });
             body.append(textarea, edit);
         } else {
-            const text = document.createElement('p');
+            const text = document.createElement('div');
             text.className = 'theia-mobile-work-hub-pull-request-description-text';
-            text.textContent = this.description;
+            text.innerHTML = this.descriptionMarkdown.render(this.description);
             body.append(text, edit);
         }
         return body;
@@ -376,6 +382,10 @@ export class MobileProjectsPullRequestDetailUi {
             activity.append(item);
         }
 
+        return activity;
+    }
+
+    protected createActivityCommentComposer(): HTMLElement {
         const commentRow = document.createElement('div');
         commentRow.className = 'theia-mobile-work-hub-pull-request-comment-row';
         const comment = document.createElement('textarea');
@@ -400,8 +410,7 @@ export class MobileProjectsPullRequestDetailUi {
             this.render();
         });
         commentRow.append(comment, submit);
-        activity.append(commentRow);
-        return activity;
+        return commentRow;
     }
 
     protected createCodeView(pullRequest: QaapGithubPullRequestSummary): HTMLElement {

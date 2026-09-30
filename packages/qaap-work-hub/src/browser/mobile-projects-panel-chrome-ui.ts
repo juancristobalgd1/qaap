@@ -11,7 +11,7 @@ import {
     installMobilePullToRefresh,
     installMobileSheetDragDismiss,
 } from '@theia/qaap-mobile-shell/lib/browser/mobile-sheet-gestures';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { createQaapViewModeSwitch } from './qaap-workbench-account-menu';
@@ -178,7 +178,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.sessionsMenuBtn.setAttribute('aria-hidden', 'true');
         this.host.sessionsMenuBtn.title = nls.localize('qaap/sessionsSidebar/open', 'Open session history');
         this.host.sessionsMenuBtn.setAttribute('aria-label', this.host.sessionsMenuBtn.title);
-        this.host.sessionsMenuBtn.innerHTML = '<span class="codicon codicon-layout-sidebar-left" aria-hidden="true"></span>';
+        this.host.sessionsMenuBtn.innerHTML = '<svg class="theia-mobile-projects-sessions-menu-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="2"></rect><path d="M6 2v12"></path></svg>';
         this.host.sessionsMenuBtn.addEventListener('click', ev => {
             ev.stopPropagation();
             this.host.openWorkHubSessionsSidebar();
@@ -423,7 +423,7 @@ export class MobileProjectsPanelChromeUi {
     }
 
     syncHeaderIdeAgentsSwitch(): void {
-        const visible = !matchesMobileNarrowViewport()
+        const visible = !matchesMobileOneColumnLayout()
             && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
         this.host.headerIdeAgentsSwitchHost.hidden = !visible;
         this.host.headerIdeAgentsSwitchHost.style.display = visible ? '' : 'none';

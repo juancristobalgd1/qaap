@@ -32,7 +32,8 @@
 }
 
 .qaap-ai-skills-configuration .qaap-ai-skill-card.theia-mod-disabled {
-    opacity: 0.72;
+    /* Enabled state belongs on the switch so every card keeps the same visual weight. */
+    opacity: 1;
 }
 
 .qaap-ai-skills-configuration .qaap-ai-skill-card-icon {
@@ -138,4 +139,89 @@
 
 .qaap-ai-skills-configuration .qaap-ai-skill-toggle.theia-mod-on::after {
     transform: translateX(16px);
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .dialogBlock {
+    width: min(920px, calc(100vw - 28px));
+    max-height: min(88vh, 920px);
+    min-width: min(400px, calc(100vw - 28px));
+    border-color: var(--theia-widget-border, var(--theia-contrastBorder));
+    border-radius: 12px;
+    background: var(--theia-editor-background);
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .dialogTitle {
+    min-height: 44px;
+    border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+    background: var(--theia-sideBar-background, var(--theia-editor-background));
+    color: var(--theia-foreground);
+    text-align: left;
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .dialogContent.qaap-ai-skill-markdown-dialog-body {
+    min-height: 0;
+    max-height: min(72vh, 760px);
+    overflow: auto;
+    background: var(--theia-editor-background);
+    color: var(--theia-foreground);
+    white-space: normal;
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-status {
+    margin: 0;
+    color: var(--theia-descriptionForeground);
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--theia-foreground);
+    line-height: 1.6;
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content > :first-child {
+    margin-top: 0;
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content > :last-child {
+    margin-bottom: 0;
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content pre {
+    max-width: 100%;
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+    border-radius: 8px;
+    background: var(--theia-textCodeBlock-background, var(--theia-sideBar-background));
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content code {
+    font-family: var(--theia-code-font-family);
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+}
+
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content th,
+.lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .qaap-ai-skill-markdown-content td {
+    padding: 6px 9px;
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
+    text-align: left;
+}
+
+@media (max-width: 520px) {
+    .lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .dialogBlock {
+        width: calc(100vw - 20px);
+        min-width: 0;
+        max-height: calc(100dvh - 20px);
+    }
+
+    .lm-Widget.dialogOverlay.qaap-ai-skill-markdown-dialog .dialogContent.qaap-ai-skill-markdown-dialog-body {
+        max-height: calc(100dvh - 150px);
+    }
 }

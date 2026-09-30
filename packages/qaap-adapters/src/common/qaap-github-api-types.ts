@@ -201,6 +201,9 @@ export interface QaapGithubPullRequestSummary {
 /** State chip of the all-pull-requests navigator; `closed` means closed without merging. */
 export type QaapGithubPullRequestStateFilter = 'all' | 'open' | 'merged' | 'closed';
 
+/** View tab of the all-pull-requests navigator. */
+export type QaapGithubPullRequestViewFilter = 'all' | 'reviewing' | 'created';
+
 export interface QaapGithubPullRequestSearchResponse {
     pullRequests: QaapGithubPullRequestSummary[];
     /** 1-based page that was served. */

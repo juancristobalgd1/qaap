@@ -71,6 +71,16 @@ describe('QaapGithubPullRequestSearchService', () => {
         expect(calls.map(call => call.query)).to.deep.equal(['is:pr involves:octo', 'is:pr user:octo', 'is:pr org:acme']);
     });
 
+    it('uses dedicated GitHub scopes for reviewing and created views', async () => {
+        const service = createService();
+        await service.search({ accessToken: 't', login: 'octo', state: 'all', view: 'reviewing', page: 1 });
+        expect(calls.map(call => call.query)).to.deep.equal(['is:pr review-requested:octo']);
+
+        calls = [];
+        await service.search({ accessToken: 't', login: 'octo', state: 'all', view: 'created', page: 1 });
+        expect(calls.map(call => call.query)).to.deep.equal(['is:pr author:octo']);
+    });
+
     it('only re-queries searches that still have pages', async () => {
         const service = createService();
         await service.search({ accessToken: 't', login: 'octo', state: 'all', page: 1 });

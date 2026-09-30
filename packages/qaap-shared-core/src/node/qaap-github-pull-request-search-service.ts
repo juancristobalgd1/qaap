@@ -6,6 +6,7 @@
 import type {
     QaapGithubPullRequestSearchResponse,
     QaapGithubPullRequestStateFilter,
+    QaapGithubPullRequestViewFilter,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     buildGithubPullRequestSearchQueries,
@@ -22,6 +23,7 @@ export interface QaapGithubPullRequestSearchRequest {
     readonly accessToken: string;
     readonly login: string;
     readonly state: QaapGithubPullRequestStateFilter;
+    readonly view?: QaapGithubPullRequestViewFilter;
     /** 1-based. */
     readonly page: number;
     /** Extra `owner/name` repositories (Work Hub projects). */
@@ -82,10 +84,13 @@ export class QaapGithubPullRequestSearchService {
 
     async search(request: QaapGithubPullRequestSearchRequest): Promise<QaapGithubPullRequestSearchResponse> {
         const page = Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(request.page) || 1));
-        const orgs = await this.resolveOrganizations(request);
+        const orgs = request.view === undefined || request.view === 'all'
+            ? await this.resolveOrganizations(request)
+            : [];
         const queries = buildGithubPullRequestSearchQueries({
             login: request.login,
             state: request.state,
+            view: request.view,
             orgs,
             repositories: request.repositories,
         });

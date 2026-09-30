@@ -756,6 +756,25 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
 }
 
 /* Full-bleed preview: hide Work Hub chrome and expand the preview surface. */
+body.qaap-mod-preview-maximized .theia-mini-browser-toolbar > :not(.theia-mini-browser-workbench-controls),
+body.qaap-mod-preview-maximized .theia-mini-browser-toolbar-read-only > :not(.theia-mini-browser-workbench-controls),
+body.qaap-mod-preview-maximized .qaap-agent-preview-embedded-toolbar > :not(.theia-mini-browser-workbench-controls),
+body.qaap-mod-preview-maximized .theia-mini-browser-workbench-controls > :not(.qaap-preview-maximize-button),
+body.qaap-mod-preview-maximized .theia-mobile-execution-surface-sidebar-header-divider,
+body.qaap-mod-preview-maximized .theia-mobile-execution-surface-sidebar-close {
+  display: none !important;
+}
+
+body.qaap-mod-preview-maximized .theia-mobile-execution-surface-sidebar-header:has(> .theia-mobile-execution-surface-sidebar-toolbar.qaap-agent-preview-embedded-toolbar) {
+  position: fixed !important;
+  inset: 0 0 auto;
+  z-index: 2401 !important;
+}
+
+body.qaap-mod-preview-maximized .theia-mobile-execution-surface-sidebar-header > .theia-mobile-execution-surface-sidebar-toolbar.qaap-agent-preview-embedded-toolbar {
+  justify-content: flex-end;
+}
+
 body.qaap-mod-preview-maximized .theia-mobile-projects-header,
 body.qaap-mod-preview-maximized .theia-mobile-projects-sticky-composer-column,
 body.qaap-mod-preview-maximized .theia-mobile-projects-sticky-composer,

@@ -3,7 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapGithubPullRequestStateFilter, QaapGithubPullRequestSummary } from './qaap-github-api-types';
+import type {
+    QaapGithubPullRequestStateFilter,
+    QaapGithubPullRequestSummary,
+    QaapGithubPullRequestViewFilter,
+} from './qaap-github-api-types';
 
 /** GitHub rejects search queries longer than 256 characters (qualifiers included). */
 export const GITHUB_SEARCH_QUERY_MAX_LENGTH = 256;
@@ -12,6 +16,7 @@ export const GITHUB_SEARCH_QUERY_MAX_LENGTH = 256;
 export const GITHUB_PULL_REQUEST_SEARCH_MAX_CHUNK_QUERIES = 2;
 
 export const QAAP_GITHUB_PULL_REQUEST_STATE_FILTERS: readonly QaapGithubPullRequestStateFilter[] = ['all', 'open', 'merged', 'closed'];
+export const QAAP_GITHUB_PULL_REQUEST_VIEW_FILTERS: readonly QaapGithubPullRequestViewFilter[] = ['all', 'reviewing', 'created'];
 
 const GITHUB_LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const GITHUB_REPOSITORY_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
@@ -20,6 +25,7 @@ export interface GithubPullRequestSearchQueryInput {
     /** Signed-in GitHub login; required, every query is scoped to it or to an explicit repo/org. */
     readonly login: string;
     readonly state: QaapGithubPullRequestStateFilter;
+    readonly view?: QaapGithubPullRequestViewFilter;
     /** Organizations the user belongs to (`org:` qualifiers). */
     readonly orgs?: readonly string[];
     /** Extra `owner/name` repositories (e.g. Work Hub projects) that may not be covered otherwise. */
@@ -30,6 +36,12 @@ export interface GithubPullRequestSearchQueryInput {
 export function parseGithubPullRequestStateFilter(raw: unknown): QaapGithubPullRequestStateFilter {
     return typeof raw === 'string' && (QAAP_GITHUB_PULL_REQUEST_STATE_FILTERS as readonly string[]).includes(raw)
         ? raw as QaapGithubPullRequestStateFilter
+        : 'all';
+}
+
+export function parseGithubPullRequestViewFilter(raw: unknown): QaapGithubPullRequestViewFilter {
+    return typeof raw === 'string' && (QAAP_GITHUB_PULL_REQUEST_VIEW_FILTERS as readonly string[]).includes(raw)
+        ? raw as QaapGithubPullRequestViewFilter
         : 'all';
 }
 
@@ -64,6 +76,12 @@ export function buildGithubPullRequestSearchQueries(input: GithubPullRequestSear
         return [];
     }
     const base = ['is:pr', githubPullRequestStateQualifiers(input.state)].filter(Boolean).join(' ');
+    if (input.view === 'reviewing') {
+        return [`${base} review-requested:${login}`];
+    }
+    if (input.view === 'created') {
+        return [`${base} author:${login}`];
+    }
     const queries = [`${base} involves:${login}`, `${base} user:${login}`];
     const maxChunkQueries = Math.max(0, input.maxChunkQueries ?? GITHUB_PULL_REQUEST_SEARCH_MAX_CHUNK_QUERIES);
 

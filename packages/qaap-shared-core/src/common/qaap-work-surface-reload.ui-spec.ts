@@ -14,11 +14,10 @@ enableJSDOM();
 import type * as PreferenceModule from './qaap-mobile-work-surface-preference';
 
 /**
- * Owner-confirmed contract (CLAUDE.md / .cursor/rules/work-hub-reload-default.mdc):
- * F5 in the same tab must restore whichever surface (Work Hub or classic IDE) the user
- * had open, via `sessionStorage` only. A brand-new tab (empty sessionStorage) must
- * default to Work Hub. `localStorage`, URL state and restored layout must never be
- * used as the surface selector.
+ * Surface persistence contract (.cursor/rules/work-hub-reload-default.mdc):
+ * Work Hub is restored on mobile and desktop; an explicit IDE choice is restored only
+ * in desktop mode. A brand-new tab (empty sessionStorage) defaults to Work Hub.
+ * `localStorage`, URL state and restored layout must never select the surface.
  */
 describe('qaap-work-surface-reload (F5 same-tab surface contract)', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -57,7 +56,7 @@ describe('qaap-work-surface-reload (F5 same-tab surface contract)', () => {
         document.body.classList.remove('theia-mobile-mod-desktop-ide');
     });
 
-    it('(1) restores the IDE surface after reload when the user chose "Open IDE"', () => {
+    it('(1) restores an explicit desktop IDE choice after reload', () => {
         const mod = freshModule();
         mod.markPreferDesktopIde();
 
@@ -119,10 +118,12 @@ describe('qaap-work-surface-reload (F5 same-tab surface contract)', () => {
 
     describe('(6) qaap-login-gate.js boot-guard decision, evaluated in a jsdom window', () => {
         let disableGuardJSDOM: (() => void) | undefined;
+        let originalMatchMedia: typeof window.matchMedia;
         let installGuard: (win: Window, doc: Document) => void;
 
         before(() => {
             disableGuardJSDOM = enableJSDOM();
+            originalMatchMedia = window.matchMedia;
             const source = fs.readFileSync(LOGIN_GATE_PATH, 'utf8');
             const startMarker = '(function installMobileWorkHubBootGuardEarly() {';
             const startIndex = source.indexOf(startMarker);
@@ -137,6 +138,7 @@ describe('qaap-work-surface-reload (F5 same-tab surface contract)', () => {
         });
 
         after(() => {
+            window.matchMedia = originalMatchMedia;
             disableGuardJSDOM?.();
             disableGuardJSDOM = undefined;
         });
@@ -171,6 +173,28 @@ describe('qaap-work-surface-reload (F5 same-tab surface contract)', () => {
             window.sessionStorage.setItem('qaap.mobileProjects.explicitDesktopIde', '1');
             installGuard(window, document);
             expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(false);
+        });
+
+        it('clears an IDE preference and installs the Work Hub guard in mobile mode', () => {
+            window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');
+            window.sessionStorage.setItem('qaap.mobileProjects.explicitDesktopIde', '1');
+            window.matchMedia = (query: string): MediaQueryList => ({
+                matches: query === '(max-width: 767px), (pointer: coarse)',
+                media: query,
+                onchange: null,
+                addListener: () => undefined,
+                removeListener: () => undefined,
+                addEventListener: () => undefined,
+                removeEventListener: () => undefined,
+                dispatchEvent: () => false,
+            } as MediaQueryList);
+
+            installGuard(window, document);
+
+            expect(window.sessionStorage.getItem('qaap.mobileProjects.preferDesktopIde')).to.equal(null);
+            expect(window.sessionStorage.getItem('qaap.mobileProjects.explicitDesktopIde')).to.equal(null);
+            expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+            expect(document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
         });
     });
 });

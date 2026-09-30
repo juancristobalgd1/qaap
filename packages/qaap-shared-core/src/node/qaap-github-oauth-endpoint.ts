@@ -59,7 +59,10 @@ import {
 } from './qaap-github-api';
 import { seedEmptyRepository } from './qaap-github-seed-empty-repository';
 import { QaapGithubPullRequestSearchService } from './qaap-github-pull-request-search-service';
-import { parseGithubPullRequestStateFilter } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
+import {
+    parseGithubPullRequestStateFilter,
+    parseGithubPullRequestViewFilter,
+} from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -508,7 +511,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     /**
      * All pull requests (open, merged, closed) across the user's repositories, organizations and
      * involvement, paged via GitHub search. `state=all|open|merged|closed`, `page` is 1-based,
-     * `repos=owner/name,...` adds Work Hub project repositories, `force=1` skips the fresh cache.
+     * `view=all|reviewing|created` scopes the tab; `repos=owner/name,...` adds Work Hub project
+     * repositories to the all view, and `force=1` skips the fresh cache.
      */
     protected async handleSearchGithubPullRequests(req: Request, res: Response): Promise<void> {
         const auth = this.auth.authenticate(req);
@@ -528,6 +532,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 accessToken: stored.accessToken,
                 login: stored.user.login,
                 state: parseGithubPullRequestStateFilter(req.query.state),
+                view: parseGithubPullRequestViewFilter(req.query.view),
                 page: Number.isInteger(page) && page > 0 ? page : 1,
                 repositories: this.parseGithubReposQuery(req.query.repos).map(repo => repo.fullName),
                 force: req.query.force === '1',

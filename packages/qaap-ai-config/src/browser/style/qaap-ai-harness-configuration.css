@@ -82,6 +82,8 @@
 
 .qaap-ai-harness-configuration .qaap-harness-card.theia-mod-disabled {
     opacity: 0.68;
+    border-color: var(--theia-widget-border, rgba(128, 128, 128, 0.35));
+    background: transparent;
 }
 
 .qaap-ai-harness-configuration .qaap-harness-card-icon {

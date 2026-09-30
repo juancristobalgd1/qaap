@@ -21,6 +21,7 @@ import type {
 } from './mobile-shell-ide-fallback';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
+import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 
 disableImportJSDOM();
 
@@ -111,6 +112,29 @@ describe('mobile-shell-ide-fallback', () => {
         expect(host.calls).to.include('panel.dispose');
         expect(host.panel).to.equal(undefined);
         expect(document.body.classList.contains('theia-mobile-mod-landing')).to.equal(false);
+    });
+
+    it('does not enter the classic IDE in one-column mobile mode', () => {
+        const originalMatchMedia = window.matchMedia;
+        window.matchMedia = (query: string): MediaQueryList => ({
+            matches: query === MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
+        try {
+            const { controller, host } = createController();
+            controller.openDesktopIde();
+            expect(peekPreferDesktopIde()).to.equal(false);
+            expect(host.calls).to.deep.equal([]);
+            expect(host.panel).to.not.equal(undefined);
+        } finally {
+            window.matchMedia = originalMatchMedia;
+        }
     });
 
     it('returnToAgentsFromDesktopIde clears desktop IDE preference and restores agents surface', async () => {

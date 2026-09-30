@@ -41,6 +41,17 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
 
     it('lists Pin first (New agent is now a standalone row button)', () => {
         const target = project({ id: 'alpha' });
+        const originalMatchMedia = window.matchMedia;
+        window.matchMedia = (query: string): MediaQueryList => ({
+            matches: query === '(max-width: 767px), (pointer: coarse)',
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
         const host = {
             projectsService: { canRemove: () => true },
             conversationIndexUi: {
@@ -55,14 +66,32 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
         } as unknown as MobileProjectsCardMenuHost;
 
         const ui = new MobileProjectsCardMenuUi(host);
-        const menu = ui.buildProjectOptionsMenu(target);
-        const items = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')];
-        expect(items.map(item => item.textContent?.trim())).to.deep.equal([
-            'Pin',
-            'Remove',
-            'Clear all tasks',
-        ]);
-        expect(items[0]?.querySelector('.codicon-add')).to.equal(null);
+        try {
+            const menu = ui.buildProjectOptionsMenu(target);
+            const items = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')];
+            expect(items.map(item => item.textContent?.trim())).to.deep.equal([
+                'Pin',
+                'Remove',
+                'Clear all tasks',
+            ]);
+            expect(items[0]?.querySelector('.codicon-add')).to.equal(null);
+
+            window.matchMedia = (query: string): MediaQueryList => ({
+                matches: false,
+                media: query,
+                onchange: null,
+                addListener: () => undefined,
+                removeListener: () => undefined,
+                addEventListener: () => undefined,
+                removeEventListener: () => undefined,
+                dispatchEvent: () => false,
+            } as MediaQueryList);
+            const desktopMenu = ui.buildProjectOptionsMenu(target);
+            expect([...desktopMenu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+                .map(item => item.textContent?.trim())).to.include('Open in IDE');
+        } finally {
+            window.matchMedia = originalMatchMedia;
+        }
     });
 });
 

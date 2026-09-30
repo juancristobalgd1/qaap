@@ -44,40 +44,16 @@ export class MobileProjectsTranscriptHeaderUi {
 
     renderTranscriptWorkspaceContext(
         target: HTMLElement,
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
+        _project: MobileProjectEntry,
+        _summary: QaapAgentConversationSummaryDTO,
     ): void {
-        const cwd = summary.cwd?.trim();
-        if (!cwd) {
-            target.hidden = true;
-            target.replaceChildren();
-            return;
-        }
-
-        const normalizedCwd = cwd.replace(/\\/g, '/');
-        const workspaceName = normalizedCwd.split('/').filter(Boolean).pop() ?? cwd;
-        const isTemporary = /^cloud-ws-/i.test(workspaceName);
-        const contextLabel = document.createElement('span');
-        contextLabel.className = 'qaap-transcript-workspace-context-label';
-        contextLabel.textContent = isTemporary
-            ? nls.localize('qaap/mobileProjects/transcriptTemporaryWorkspace', 'Temporary workspace')
-            : nls.localize('qaap/mobileProjects/transcriptWorkspace', 'Workspace');
-        const path = document.createElement('span');
-        path.className = 'qaap-transcript-workspace-context-path';
-        path.textContent = cwd;
-
-        target.hidden = false;
-        target.classList.toggle('theia-mod-temporary', isTemporary);
-        target.replaceChildren(contextLabel, path);
-        target.title = nls.localize(
-            'qaap/mobileProjects/transcriptWorkspaceDetails',
-            'Project: {0} · Working directory: {1}',
-            project.name,
-            cwd,
-        );
-        target.setAttribute('aria-label', target.title);
-        target.dataset.workspaceCwd = cwd;
-        target.dataset.projectName = project.name;
+        target.hidden = true;
+        target.classList.remove('theia-mod-temporary');
+        target.replaceChildren();
+        target.removeAttribute('title');
+        target.removeAttribute('aria-label');
+        delete target.dataset.workspaceCwd;
+        delete target.dataset.projectName;
     }
 
 }

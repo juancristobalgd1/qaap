@@ -161,9 +161,11 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
         label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
     }, {
         execute: () => { void ctx.openDesktopIde(); },
-        isEnabled: () => ctx.shouldActivateMobileLayout()
+        isEnabled: () => !matchesMobileOneColumnLayout()
+            && ctx.shouldActivateMobileLayout()
             && !peekPreferDesktopIde(),
-        isVisible: () => ctx.shouldActivateWorkHubLayout(),
+        isVisible: () => !matchesMobileOneColumnLayout()
+            && ctx.shouldActivateWorkHubLayout(),
     });
     // The in-IDE header-view commands remain desktop/one-column IDE commands.
     if (!matchesMobileNarrowViewport()) {
@@ -186,7 +188,7 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
 }
 
 export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContributionContext): Promise<void> {
-    if (!ctx.ideFallback) {
+    if (matchesMobileOneColumnLayout() || !ctx.ideFallback) {
         return;
     }
 
@@ -373,6 +375,10 @@ export async function onProjectsPanelOpenExtracted(ctx: MobileOneColumnShellCont
 }
 
 export async function onProjectsPanelOpenInIdeExtracted(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): Promise<void> {
+    if (matchesMobileOneColumnLayout()) {
+        await onProjectsPanelOpenExtracted(ctx, project);
+        return;
+    }
     try {
         if (project.isCurrent) {
             const cwd = ctx.projectsService.getCurrentWorkspaceCwd();

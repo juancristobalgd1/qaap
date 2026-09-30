@@ -6,7 +6,9 @@
 import { injectable } from '@theia/core/shared/inversify';
 import { Command } from '@theia/core/lib/common/command';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+import { QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
 import { isWorkHubCommandPaletteCommand } from '../common/qaap-work-hub-command-palette';
 
 /**
@@ -21,9 +23,12 @@ export class QaapQuickCommandService extends QuickCommandService {
 
     protected override getValidCommands(raw: Command[]): Command[] {
         const valid = super.getValidCommands(raw);
+        const mobile = matchesMobileOneColumnLayout();
         if (peekPreferDesktopIde()) {
-            return valid;
+            return mobile
+                ? valid.filter(command => command.id !== QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+                : valid;
         }
-        return valid.filter(isWorkHubCommandPaletteCommand);
+        return valid.filter(command => isWorkHubCommandPaletteCommand(command, { mobile }));
     }
 }

@@ -12,6 +12,7 @@ import {
     matchesGithubPullRequestStateFilter,
     mergeGithubPullRequestSummaries,
     parseGithubPullRequestStateFilter,
+    parseGithubPullRequestViewFilter,
     parseGithubRepositoryApiUrl,
 } from './qaap-github-pull-request-search';
 
@@ -63,6 +64,15 @@ describe('qaap-github-pull-request-search', () => {
         });
     });
 
+    describe('view filter', () => {
+        it('parses known views and falls back to all', () => {
+            expect(parseGithubPullRequestViewFilter('reviewing')).to.equal('reviewing');
+            expect(parseGithubPullRequestViewFilter('created')).to.equal('created');
+            expect(parseGithubPullRequestViewFilter('unknown')).to.equal('all');
+            expect(parseGithubPullRequestViewFilter(undefined)).to.equal('all');
+        });
+    });
+
     describe('buildGithubPullRequestSearchQueries', () => {
         it('covers involvement and owned repositories for every state', () => {
             expect(buildGithubPullRequestSearchQueries({ login: 'octo', state: 'all' })).to.deep.equal([
@@ -72,6 +82,15 @@ describe('qaap-github-pull-request-search', () => {
             expect(buildGithubPullRequestSearchQueries({ login: 'octo', state: 'closed' })).to.deep.equal([
                 'is:pr is:closed is:unmerged involves:octo',
                 'is:pr is:closed is:unmerged user:octo',
+            ]);
+        });
+
+        it('scopes reviewing and created views at GitHub so paging stays complete', () => {
+            expect(buildGithubPullRequestSearchQueries({ login: 'octo', state: 'open', view: 'reviewing' })).to.deep.equal([
+                'is:pr is:open review-requested:octo',
+            ]);
+            expect(buildGithubPullRequestSearchQueries({ login: 'octo', state: 'merged', view: 'created' })).to.deep.equal([
+                'is:pr is:merged author:octo',
             ]);
         });
 

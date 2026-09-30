@@ -23,6 +23,7 @@ export const SESSIONS_SIDEBAR_STREAM_REFRESH_MS = 250;
 
 export interface MobileProjectsSessionsSidebarHost {
     openBillingSheet?: () => Promise<void>;
+    openPreferencesSheet?: (query?: string) => Promise<void>;
     sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
     sessionsSidebarExpandedProjectIds: Set<string>;
     sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;

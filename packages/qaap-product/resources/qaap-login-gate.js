@@ -29,6 +29,15 @@
             var ss = window.sessionStorage;
             var preferDesktopIde = ss.getItem('qaap.mobileProjects.preferDesktopIde') === '1'
                 || ss.getItem('qaap.mobileProjects.explicitDesktopIde') === '1';
+            // A mobile one-column viewport always boots into Work Hub. Keep this query aligned
+            // with MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY in core and the CSS mobile breakpoints.
+            var isMobileMode = typeof window.matchMedia === 'function'
+                && window.matchMedia('(max-width: 767px), (pointer: coarse)').matches;
+            if (preferDesktopIde && isMobileMode) {
+                ss.removeItem('qaap.mobileProjects.preferDesktopIde');
+                ss.removeItem('qaap.mobileProjects.explicitDesktopIde');
+                preferDesktopIde = false;
+            }
             if (preferDesktopIde) {
                 return;
             }

@@ -47,6 +47,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onClose(): void;
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
+    onSettings?(): void | Promise<void>;
     onSearch?: () => void;
     onPullRequestSearch?: (anchor: HTMLButtonElement) => void;
     onPullRequestSearchClose?: () => void;
@@ -107,6 +108,7 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly settingsSectionLabel: HTMLElement;
     protected readonly settingsNav: HTMLElement;
     protected readonly accountBtn: HTMLButtonElement;
+    protected readonly settingsBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly accountLabel: HTMLSpanElement;
     /** Short deployed git SHA from `/qaap/api/auth/config` (shown next to the account name). */
@@ -124,6 +126,19 @@ export class MobileWorkHubSessionsSidebar {
             this.projectsHeadingRaf = 0;
             this.updateProjectsHeading();
         });
+    };
+    protected readonly onOutsideClick = (event: MouseEvent): void => {
+        if (!this.visible || !this.root.classList.contains('theia-mod-embedded') || this.sidebarMode === 'settings') {
+            return;
+        }
+        const target = event.target;
+        if (!(target instanceof Node) || this.root.contains(target)) {
+            return;
+        }
+        if (target instanceof Element && target.closest('.theia-qaap-account-menu, .theia-mobile-work-hub-preferences')) {
+            return;
+        }
+        this.hide();
     };
     protected projectsHeadingRaf = 0;
     protected dismissHint: HTMLElement | undefined;
@@ -217,7 +232,16 @@ export class MobileWorkHubSessionsSidebar {
             ev.stopPropagation();
             this.delegate.onAccountMenu?.(this.accountBtn);
         });
-        footer.append(this.accountBtn);
+        this.settingsBtn = document.createElement('button');
+        this.settingsBtn.type = 'button';
+        this.settingsBtn.className = 'theia-mobile-work-hub-sessions-sidebar-settings-button codicon codicon-settings-gear';
+        this.settingsBtn.title = nls.localize('qaap/sessionsSidebar/settings', 'Settings');
+        this.settingsBtn.setAttribute('aria-label', this.settingsBtn.title);
+        this.settingsBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            void this.delegate.onSettings?.();
+        });
+        footer.append(this.accountBtn, this.settingsBtn);
         this.updateAccountAvatar();
         this.loadDeployedBuildSha();
 
@@ -368,6 +392,7 @@ export class MobileWorkHubSessionsSidebar {
         void this.root.offsetWidth;
         this.root.classList.add('theia-mod-visible');
         document.addEventListener('keydown', this.onKeyDown, true);
+        document.addEventListener('click', this.onOutsideClick);
         this.guardSidebarCloseButton(this.closeBtn);
         this.installLeftEdgeSwipeDismiss();
         this.installDesktopResize();
@@ -461,6 +486,7 @@ export class MobileWorkHubSessionsSidebar {
         // stuck hides the Work Hub composer via visibility:hidden (pointer:coarse CSS).
         document.body.classList.remove(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
         document.removeEventListener('keydown', this.onKeyDown, true);
+        document.removeEventListener('click', this.onOutsideClick);
         window.setTimeout(() => {
             if (!this.visible) {
                 this.root.hidden = true;
