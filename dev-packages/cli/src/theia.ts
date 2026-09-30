@@ -597,7 +597,11 @@ async function theiaCli(): Promise<void> {
                 if (!process.env.THEIA_CONFIG_DIR) {
                     process.env.THEIA_CONFIG_DIR = temp.track().mkdirSync('theia-test-config-dir');
                 }
-                const args = ['--no-sandbox'];
+                // The API suite exercises the classic desktop workbench. Headless Chrome's default
+                // 800x600 window leaves an innerWidth below Qaap's 767px one-column breakpoint on
+                // Windows/macOS (window chrome eats the difference), which forces Work Hub and drops
+                // the harness's desktop-IDE preference. Pin a desktop-sized window on every platform.
+                const args = ['--no-sandbox', '--window-size=1280,1024'];
                 if (!testInspect) {
                     args.push('--headless=old');
                 }
