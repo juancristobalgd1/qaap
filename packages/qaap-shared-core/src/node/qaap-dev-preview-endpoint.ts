@@ -6,6 +6,7 @@
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { EarlyExpressMiddleware } from '@theia/core/lib/node/backend-application';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as net from 'net';
@@ -17,7 +18,7 @@ import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-head
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
-import { configureExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
+import { configureExtracted, earlyMiddlewareExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
 import { buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, previewBaseDomainExtracted, previewHostLabelExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
 
@@ -56,6 +57,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     @inject(QaapDevPreviewUpstreamTunnel) @optional()
     protected readonly upstreamTunnel?: QaapDevPreviewUpstreamTunnel;
 
+    /** Runs before static file handlers; see {@link earlyMiddlewareExtracted}. Optional for tests. */
+    @inject(EarlyExpressMiddleware) @optional()
+    protected readonly earlyMiddleware?: EarlyExpressMiddleware;
+
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public reaperRunning = false;
 
@@ -69,6 +74,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     public forgetPortProbeState(port: number): void {
         this.invalidateTargetHost(port);
         forgetHeadUnsupportedPort(this, port);
+    }
+
+    initialize(): void {
+        this.earlyMiddleware?.handlers.push(...earlyMiddlewareExtracted(this));
     }
 
     configure(app: Application): void {

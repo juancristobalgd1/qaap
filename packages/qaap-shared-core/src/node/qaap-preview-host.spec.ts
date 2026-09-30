@@ -4,9 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { Response } from '@theia/core/shared/express';
+import type { Handler, Request, Response } from '@theia/core/shared/express';
 import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
-import { advertisePreviewRouteOnJson, isQaapTenantBackendRuntime } from './qaap-dev-preview-endpoint-render';
+import { advertisePreviewRouteOnJson, earlyMiddlewareExtracted, isQaapTenantBackendRuntime } from './qaap-dev-preview-endpoint-render';
+import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import { QAAP_PREVIEW_ROUTE_HEADER } from '../common/qaap-preview-route';
 
 describe('qaap-preview-host', () => {
@@ -91,5 +92,69 @@ describe('advertisePreviewRouteOnJson', () => {
     it('is only active inside a tenant backend', () => {
         expect(isQaapTenantBackendRuntime({ QAAP_TENANT_BACKEND_MODE: '1' })).to.equal(true);
         expect(isQaapTenantBackendRuntime({})).to.equal(false);
+    });
+});
+
+describe('earlyMiddlewareExtracted', () => {
+    type Sent = { status?: number; body?: string; headers: Record<string, string>; nextCalled: boolean; forwarded?: { port: number; path: string; prefix: string } };
+
+    function run(handlers: Handler[], host: string, reqPath: string, ctx: Partial<QaapDevPreviewEndpointContext>): Sent {
+        const sent: Sent = { headers: {}, nextCalled: false };
+        const res = {
+            status(code: number): unknown { sent.status = code; return res; },
+            type(): unknown { return res; },
+            send(body: string): unknown { sent.body = body; return res; },
+            setHeader(key: string, value: string): void { sent.headers[key] = value; },
+        } as unknown as Response;
+        const req = { headers: { host }, path: reqPath, url: reqPath } as unknown as Request;
+        let index = 0;
+        const next = (): void => {
+            const handler = handlers[index++];
+            if (handler) {
+                handler(req, res, next);
+            } else {
+                sent.nextCalled = true;
+            }
+        };
+        (ctx as { forwardHttp?: unknown }).forwardHttp = (_req: Request, _res: Response, port: number, path: string, prefix: string) => {
+            sent.forwarded = { port, path, prefix };
+            return Promise.resolve();
+        };
+        next();
+        return sent;
+    }
+
+    const label = buildQaapPreviewHostLabel('u-alice-w-x-1', 'secret');
+    const record = { previewId: 'u-alice-w-x-1', ownerLogin: 'alice', port: 5173, accessToken: 'secret' };
+    const ctx = (): Partial<QaapDevPreviewEndpointContext> => ({
+        previewHostLabel: (req: Request) => parseQaapPreviewHostLabel(req.headers.host as string, 'preview.example.test'),
+        portRegistry: {
+            getByHostLabel: (value: string) => (value === label ? record : undefined),
+            touchPreview: () => undefined,
+        } as unknown as QaapDevPreviewEndpointContext['portRegistry'],
+        isIdeListenPort: () => false,
+    });
+
+    it('answers isolated preview hosts before static files, at the origin root', () => {
+        const context = ctx();
+        const handlers = earlyMiddlewareExtracted(context as QaapDevPreviewEndpointContext);
+        const served = run(handlers, `${label}.preview.example.test`, '/', context);
+        expect(served.forwarded).to.deep.equal({ port: 5173, path: '/', prefix: '' });
+        expect(served.nextCalled).to.equal(false);
+        expect(served.headers).to.deep.equal({});
+        const unknown = run(handlers, `${'0'.repeat(32)}.preview.example.test`, '/index.html', context);
+        expect(unknown.status).to.equal(404);
+        expect(unknown.nextCalled).to.equal(false);
+    });
+
+    it('lets main-origin requests through with the shell frame guard on the shell document only', () => {
+        const context = ctx();
+        const handlers = earlyMiddlewareExtracted(context as QaapDevPreviewEndpointContext);
+        const shell = run(handlers, 'qaap.example.test', '/', context);
+        expect(shell.nextCalled).to.equal(true);
+        expect(shell.headers['X-Frame-Options']).to.equal('DENY');
+        const asset = run(handlers, 'qaap.example.test', '/bundle.js', context);
+        expect(asset.nextCalled).to.equal(true);
+        expect(asset.headers).to.deep.equal({});
     });
 });
