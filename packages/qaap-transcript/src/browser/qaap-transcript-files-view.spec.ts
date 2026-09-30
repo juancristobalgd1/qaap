@@ -347,6 +347,38 @@ describe('qaap-transcript-files-view', () => {
             expect(headerHost.querySelector('.theia-mobile-transcript-files-more')).to.be.null;
         });
 
+        it('re-lists a root that failed on the first load when re-attached', async () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            let fail = true;
+            const mount = mountTranscriptFilesView(host, '/repo', {
+                ...createServices(),
+                listDirectory: async () => {
+                    if (fail) {
+                        throw new Error('workspace not ready');
+                    }
+                    return [{ name: 'index.ts', resourcePath: 'file:///repo/index.ts', relativePath: 'index.ts', isDirectory: false }];
+                },
+            });
+            const settle = async (): Promise<void> => {
+                for (let i = 0; i < 10; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            };
+            try {
+                await settle();
+                expect(host.querySelector('.theia-mobile-transcript-files-row')).to.be.null;
+                expect(host.querySelector('.theia-mobile-transcript-files-tree-empty')?.textContent).to.contain('Could not load files');
+
+                fail = false;
+                mount.refreshIfEmpty?.();
+                await settle();
+                expect(host.querySelectorAll('.theia-mobile-transcript-files-row').length).to.equal(1);
+            } finally {
+                mount.dispose.dispose();
+            }
+        });
+
         it('switches the drawer header from the selected file to Changes', () => {
             const host = document.createElement('div');
             document.body.append(host);

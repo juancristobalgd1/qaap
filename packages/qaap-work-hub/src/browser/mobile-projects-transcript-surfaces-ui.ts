@@ -104,6 +104,8 @@ export interface MobileProjectsTranscriptSurfacesHost {
     transcriptHistoryRoot: string | undefined;
     transcriptHistoryLoading: boolean;
     transcriptFilesAttachedKey: TranscriptWorkspaceSurfaceKey | undefined;
+    /** Open execution-surface drawer, when any; the Files view must mount into its live host. */
+    readonly executionSurfaceSidebar?: { readonly activeTab?: string; readonly activeHost?: HTMLElement };
     readonly transcriptWorkspaceSurfaces: TranscriptWorkspaceSurfacesCache;
     readonly transcriptTerminalSlidesByWorkspace: Map<TranscriptWorkspaceSurfaceKey, TranscriptTerminalSliderState>;
     transcriptTerminalToolbar: HTMLElement | undefined;

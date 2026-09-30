@@ -18,6 +18,7 @@ import {
     installMobileHorizontalTouchScroll,
     MOBILE_HORIZONTAL_SCROLL_SELECTOR,
 } from './mobile-horizontal-touch-scroll';
+import { installMobileNativeTouchScrollGuard } from './mobile-native-touch-scroll-guard';
 
 /**
  * Wires {@link installMobileVerticalTouchScroll} (old WebKit only) and
@@ -76,6 +77,8 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
         }
         this.active = true;
         this.scrollPatches = new DisposableCollection();
+        // Upstream cancels every document-level touchmove; let nested hosts pan natively.
+        this.scrollPatches.push(installMobileNativeTouchScrollGuard());
         // Observe `document.body` so overlays appended outside `#theia-app-shell`
         // (agent transcript sheets, parallel-run dialogs, …) receive the touch fallback.
         this.patchExisting(document.body);

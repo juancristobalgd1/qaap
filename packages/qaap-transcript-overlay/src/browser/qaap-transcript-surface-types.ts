@@ -34,6 +34,11 @@ export interface TranscriptFilesMount {
     readonly setViewMode?: (mode: TranscriptFilesViewMode) => void;
     /** Current view mode ('files' or 'changes'). */
     readonly viewMode?: () => TranscriptFilesViewMode;
+    /**
+     * Re-lists the tree when its root failed to load or came back empty (e.g. the
+     * first listing raced the workspace or a clone). Called on every re-attach.
+     */
+    readonly refreshIfEmpty?: () => void;
 }
 
 export interface TranscriptTerminalSurface {

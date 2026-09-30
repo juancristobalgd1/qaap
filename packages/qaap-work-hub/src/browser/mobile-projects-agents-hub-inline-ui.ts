@@ -70,6 +70,8 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptReviewHost: HTMLElement | undefined;
     transcriptPreviewHost: HTMLElement | undefined;
     transcriptFilesHost: HTMLElement | undefined;
+    /** Open execution-surface drawer, when any (it temporarily owns one surface host). */
+    readonly executionSurfaceSidebar?: { readonly activeHost?: HTMLElement; placeholder?: Comment };
     transcriptTerminalHost: HTMLElement | undefined;
     transcriptComposerHost: HTMLElement | undefined;
     transcriptComposerProject: MobileProjectEntry | undefined;
@@ -317,12 +319,23 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.transcriptFilesHost = surfaces.filesHost;
             this.host.transcriptTerminalHost = surfaces.terminalHost;
         }
-        executionRoot.append(
+        const sidebar = this.host.executionSurfaceSidebar;
+        for (const surfaceHost of [
             this.host.transcriptReviewHost!,
             this.host.transcriptPreviewHost!,
             this.host.transcriptFilesHost!,
             this.host.transcriptTerminalHost!,
-        );
+        ]) {
+            if (sidebar && sidebar.activeHost === surfaceHost && surfaceHost.isConnected) {
+                // The open drawer owns this host: leave it there and move the drawer's
+                // return slot into the new root, so closing it restores the host here.
+                const placeholder = document.createComment('qaap execution surface sidebar host');
+                executionRoot.append(placeholder);
+                sidebar.placeholder = placeholder;
+                continue;
+            }
+            executionRoot.append(surfaceHost);
+        }
 
         const transcriptRoot = document.createElement('div');
         transcriptRoot.className = 'theia-mobile-agents-hub-inline-transcript';

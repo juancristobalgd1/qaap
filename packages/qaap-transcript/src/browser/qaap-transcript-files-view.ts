@@ -1187,6 +1187,32 @@ export function mountTranscriptFilesView(
         }
     };
 
+    // The project folder may not be ready yet on the first listing (clone or
+    // workspace still starting); retry the root a few times with backoff.
+    let rootRetryCount = 0;
+    let rootRetryTimer: number | undefined;
+    const scheduleRootRetry = (): void => {
+        if (rootRetryTimer !== undefined || rootRetryCount >= 3) {
+            return;
+        }
+        rootRetryCount++;
+        rootRetryTimer = window.setTimeout(() => {
+            rootRetryTimer = undefined;
+            if (!state.failedPaths.has(state.rootUri)) {
+                return;
+            }
+            state.childrenByPath.delete(state.rootUri);
+            state.failedPaths.delete(state.rootUri);
+            void renderTree();
+        }, 1000 * rootRetryCount);
+    };
+    disposables.push(Disposable.create(() => {
+        if (rootRetryTimer !== undefined) {
+            window.clearTimeout(rootRetryTimer);
+            rootRetryTimer = undefined;
+        }
+    }));
+
     const ensureChildren = async (resourcePath: string): Promise<readonly TranscriptFileTreeEntry[]> => {
         const cached = state.childrenByPath.get(resourcePath);
         if (cached) {
@@ -1216,6 +1242,9 @@ export function mountTranscriptFilesView(
         } catch {
             state.childrenByPath.set(resourcePath, []);
             state.failedPaths.add(resourcePath);
+            if (resourcePath === state.rootUri) {
+                scheduleRootRetry();
+            }
             return [];
         } finally {
             state.loadingPaths.delete(resourcePath);
@@ -1356,6 +1385,8 @@ export function mountTranscriptFilesView(
                 empty.className = 'theia-mobile-transcript-files-tree-empty';
                 empty.textContent = state.filter.trim()
                     ? services.localize('qaap/mobileProjects/filesNoMatches', 'No matching files.')
+                    : !state.childrenByPath.has(state.rootUri)
+                        ? services.localize('qaap/mobileProjects/filesLoadingTree', 'Loading files…')
                     : state.failedPaths.has(state.rootUri)
                         ? services.localize(
                             'qaap/mobileProjects/filesLoadFailed',
@@ -1910,6 +1941,20 @@ export function mountTranscriptFilesView(
 
     const viewMode = (): TranscriptFilesViewMode => state.viewMode;
 
+    const refreshIfEmpty = (): void => {
+        if (state.loadingPaths.has(state.rootUri)) {
+            return;
+        }
+        const rootChildren = state.childrenByPath.get(state.rootUri);
+        if (rootChildren && rootChildren.length > 0 && state.failedPaths.size === 0) {
+            return;
+        }
+        rootRetryCount = 0;
+        state.childrenByPath.clear();
+        state.failedPaths.clear();
+        void renderTree();
+    };
+
     return {
         root,
         dispose: disposables,
@@ -1920,5 +1965,6 @@ export function mountTranscriptFilesView(
         attachChangesHeaderActionHost,
         setViewMode,
         viewMode,
+        refreshIfEmpty,
     };
 }
