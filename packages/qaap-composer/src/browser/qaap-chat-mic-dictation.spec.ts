@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     advanceDictationBaseline,
     composeDictationFieldValue,
+    mergeCumulativeSpeechSegment,
     normalizeRestartedDictationSession,
     qaapChatMicUnavailableMessage,
     shouldClearInterimOnRecognitionRestart,
@@ -21,6 +22,38 @@ describe('qaap-chat-mic-dictation', () => {
             { isFinal: false, 0: { transcript: 'wor' } },
         ]);
         expect(split).to.deep.equal({ finals: 'hello ', interim: 'wor' });
+    });
+
+    it('collapses Android cumulative results instead of duplicating them', () => {
+        const split = splitSpeechRecognitionTranscript([
+            { isFinal: true, 0: { transcript: 'hola' } },
+            { isFinal: true, 0: { transcript: 'hola cómo estás' } },
+        ], { collapseCumulativeResults: true });
+        expect(split).to.deep.equal({ finals: 'hola cómo estás', interim: '' });
+    });
+
+    it('keeps finals a prefix of cumulative interim text', () => {
+        const split = splitSpeechRecognitionTranscript([
+            { isFinal: true, 0: { transcript: 'hola' } },
+            { isFinal: false, 0: { transcript: 'Hola cómo' } },
+        ], { collapseCumulativeResults: true });
+        expect(split).to.deep.equal({ finals: 'hola', interim: ' cómo' });
+    });
+
+    it('appends non-cumulative Android segments with a separating space', () => {
+        const split = splitSpeechRecognitionTranscript([
+            { isFinal: true, 0: { transcript: 'hola' } },
+            { isFinal: true, 0: { transcript: 'cómo estás' } },
+        ], { collapseCumulativeResults: true });
+        expect(split).to.deep.equal({ finals: 'hola cómo estás', interim: '' });
+    });
+
+    it('merges cumulative segments by words, ignoring case and punctuation', () => {
+        expect(mergeCumulativeSpeechSegment('', ' hola ')).to.equal('hola');
+        expect(mergeCumulativeSpeechSegment('hola', 'Hola, qué tal')).to.equal('hola qué tal');
+        expect(mergeCumulativeSpeechSegment('hola qué tal', 'hola qué tal')).to.equal('hola qué tal');
+        expect(mergeCumulativeSpeechSegment('no', 'no no')).to.equal('no no');
+        expect(mergeCumulativeSpeechSegment('hola', '   ')).to.equal('hola');
     });
 
     it('composes replace-style field values from a fixed baseline', () => {

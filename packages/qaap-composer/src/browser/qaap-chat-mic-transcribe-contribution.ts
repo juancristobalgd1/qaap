@@ -312,7 +312,9 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                         stop();
                         return;
                     }
-                    const split = splitSpeechRecognitionTranscript(event.results);
+                    const split = splitSpeechRecognitionTranscript(event.results, {
+                        collapseCumulativeResults: this.hasCumulativeSpeechResults(),
+                    });
                     const priorCommit = lastCommittedFinals;
                     let finals = split.finals;
                     let interim = split.interim;
@@ -504,7 +506,9 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                         stop();
                         return;
                     }
-                    const split = splitSpeechRecognitionTranscript(event.results);
+                    const split = splitSpeechRecognitionTranscript(event.results, {
+                        collapseCumulativeResults: this.hasCumulativeSpeechResults(),
+                    });
                     const priorCommit = lastCommittedFinals;
                     let finals = split.finals;
                     let interim = split.interim;
@@ -655,6 +659,14 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
             return false;
         }
         return matchesMobileOneColumnLayout();
+    }
+
+    /**
+     * Android's SpeechRecognition (Chrome, Samsung Internet, WebView) emits cumulative results in
+     * continuous mode: each result repeats the utterance so far. Desktop engines emit deltas.
+     */
+    protected hasCumulativeSpeechResults(): boolean {
+        return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
     }
 
     protected isFatalSpeechError(error: string | undefined): boolean {

@@ -29,9 +29,22 @@ export function trailingSpaceForDictationBaseline(baseline: string): string {
     return baseline.length > 0 && !/\s$/.test(baseline) ? ' ' : '';
 }
 
+export interface SplitSpeechRecognitionOptions {
+    /**
+     * Android Chrome with `continuous = true` re-sends the whole utterance so far in every new
+     * result ("hola", "hola cómo estás") instead of only the new words. Concatenating those
+     * results duplicates the transcript ("holahola cómo estás"), so collapse them instead.
+     */
+    readonly collapseCumulativeResults?: boolean;
+}
+
 export function splitSpeechRecognitionTranscript(
     results: ArrayLike<SpeechRecognitionResultLike>,
+    options: SplitSpeechRecognitionOptions = {},
 ): { readonly finals: string; readonly interim: string } {
+    if (options.collapseCumulativeResults) {
+        return splitCumulativeSpeechRecognitionTranscript(results);
+    }
     let finals = '';
     let interim = '';
     for (let i = 0; i < results.length; i++) {
@@ -44,6 +57,50 @@ export function splitSpeechRecognitionTranscript(
         }
     }
     return { finals, interim };
+}
+
+function splitCumulativeSpeechRecognitionTranscript(
+    results: ArrayLike<SpeechRecognitionResultLike>,
+): { readonly finals: string; readonly interim: string } {
+    let merged = '';
+    let finals = '';
+    for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        merged = mergeCumulativeSpeechSegment(merged, result?.[0]?.transcript ?? '');
+        if (result?.isFinal) {
+            finals = merged;
+        }
+    }
+    return { finals, interim: merged.slice(finals.length) };
+}
+
+function speechComparisonWords(text: string): string[] {
+    const trimmed = text.trim();
+    return trimmed ? trimmed.split(/\s+/).map(word => word.toLocaleLowerCase().replace(/[.,;:!?¡¿…"'()]+/g, '')) : [];
+}
+
+/**
+ * Appends one SpeechRecognition result to the text accumulated so far. When the segment repeats
+ * the accumulated words as a prefix (Android's cumulative results) only its new tail is added;
+ * otherwise the segment is appended as new speech, always separated by a single space. The result
+ * always starts with `accumulated`, so final text stays a stable prefix of the interim text.
+ */
+export function mergeCumulativeSpeechSegment(accumulated: string, segment: string): string {
+    const segmentWords = speechComparisonWords(segment);
+    if (segmentWords.length === 0) {
+        return accumulated;
+    }
+    const accumulatedWords = speechComparisonWords(accumulated);
+    if (accumulatedWords.length === 0) {
+        return segment.trim();
+    }
+    const isCumulative = accumulatedWords.length <= segmentWords.length
+        && accumulatedWords.every((word, index) => word === segmentWords[index]);
+    if (isCumulative) {
+        const tail = segment.trim().split(/\s+/).slice(accumulatedWords.length).join(' ');
+        return tail ? `${accumulated.trimEnd()} ${tail}` : accumulated;
+    }
+    return `${accumulated.trimEnd()} ${segment.trim()}`;
 }
 
 export function advanceDictationBaseline(
