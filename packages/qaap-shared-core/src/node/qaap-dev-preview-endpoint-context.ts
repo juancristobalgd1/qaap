@@ -117,13 +117,8 @@ export interface QaapDevPreviewEndpointContext {
 
     previewBaseDomain(): string | undefined;
 
-    previewIdFromHost(req: Request | http.IncomingMessage): string | undefined;
-
-    authorizePreviewHostRequest(req: Request, res: Response, record: QaapDevPreviewRecord): 'allowed' | 'redirected' | 'denied';
-
-    hasPreviewCapability(req: Request | http.IncomingMessage, record: QaapDevPreviewRecord): boolean;
-
-    matchesPreviewToken(candidate: string | null | undefined, expected: string): boolean;
+    /** Host label of an isolated preview host request (the label is the access capability). */
+    previewHostLabel(req: Request | http.IncomingMessage): string | undefined;
 
     firstHeaderValue(value: string | string[] | undefined): string | undefined;
 }

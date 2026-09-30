@@ -83,4 +83,11 @@ describe('classifyTranscriptPreviewLoss', () => {
         expect(isSameTranscriptPreviewClaim('/qaap-preview/p-a/', '/qaap-preview/p-b/')).to.equal(false);
         expect(isSameTranscriptPreviewClaim('http://localhost/qaap-dev/5173/', 'http://localhost/qaap-dev/5174/')).to.equal(false);
     });
+
+    it('keys isolated-origin claims by host label, ignoring the entry path', () => {
+        const a = 'https://0123456789abcdef0123456789abcdef.previews.qaap.example';
+        const b = 'https://ffffffffffffffffffffffffffffffff.previews.qaap.example';
+        expect(isSameTranscriptPreviewClaim(`${a}/`, `${a}/docs/demo/?x=1`)).to.equal(true);
+        expect(isSameTranscriptPreviewClaim(`${a}/`, `${b}/`)).to.equal(false);
+    });
 });

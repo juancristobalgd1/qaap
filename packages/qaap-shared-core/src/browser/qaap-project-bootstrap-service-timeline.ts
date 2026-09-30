@@ -5,6 +5,7 @@ import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
 import {
+    parsePreviewIdentityUrl,
     parsePreviewProxyPath,
     rebasePreviewUrlToIdentityClaim,
     resolveEffectivePreviewUrl,
@@ -92,6 +93,15 @@ export function extractPortExtracted(ctx: QaapProjectBootstrapServiceContext, ur
             if (parsed.pathname.startsWith('/qaap-preview/')) {
                 return ctx.activePreviewClaim?.port;
             }
+            // Isolated-origin preview (`https://<hostLabel>.<baseDomain>/`): its default 443 is
+            // never a dev port. Only the active claim serving that exact host label owns a port.
+            const isolated = parsePreviewIdentityUrl(url);
+            if (isolated?.isolatedOrigin) {
+                const claim = ctx.activePreviewClaim;
+                return claim && parsePreviewIdentityUrl(claim.previewUrl)?.previewId === isolated.previewId
+                    ? claim.port
+                    : undefined;
+            }
             if (parsed.port) {
                 return Number(parsed.port);
             }
@@ -120,9 +130,20 @@ export function recordForwardedPortExtracted(ctx: QaapProjectBootstrapServiceCon
         // failure, so a claim error still lets the preview attempt (and fail closed) rather than hang.
         const claimed = ctx.claimDevPreviewPort(port);
         const isPrimary = ctx._forwardedPorts.length === 0;
-        const isolatedUrl = ctx.activePreviewClaim?.port === port
+        const rebaseOntoActiveClaim = (): string => ctx.activePreviewClaim?.port === port
             ? rebasePreviewUrlToIdentityClaim(url, ctx.activePreviewClaim.previewUrl)
             : url;
+        // Best guess now (a claim may already be live); refreshed below once this claim resolves,
+        // since the claim decides the identity (same-origin path or isolated origin) of the URL.
+        const isolatedUrl = rebaseOntoActiveClaim();
+        void claimed.then(() => {
+            const refreshed = rebaseOntoActiveClaim();
+            const entry = ctx._forwardedPorts.find(p => p.port === port);
+            if (entry && refreshed !== entry.url) {
+                ctx._forwardedPorts = ctx._forwardedPorts.map(p => p === entry ? { ...p, url: refreshed } : p);
+                ctx.forwardedPortsEmitter.fire(ctx.forwardedPorts);
+            }
+        });
         const next: QaapForwardedPort = {
             port,
             url: isolatedUrl,

@@ -14,6 +14,7 @@ import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registr
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { resolveQaapPreviewIdentity } from '../common/qaap-preview-identity';
 import { rewriteNextPreviewDocument } from './qaap-dev-preview-endpoint-timeline';
+import { buildQaapPreviewHostLabel } from './qaap-preview-host';
 
 class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
     exposeRewriteDevPreviewBody(body: string, targetPort: number, publicPrefix?: string): string {
@@ -36,8 +37,8 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
         return this.buildIdentityPreviewUrl(req, record);
     }
 
-    exposePreviewIdFromHost(req: Request): string | undefined {
-        return this.previewIdFromHost(req);
+    exposePreviewHostLabel(req: Request): string | undefined {
+        return this.previewHostLabel(req);
     }
 
     exposeRewritePreviewCsp(raw: string | undefined, parentOrigin: string): string {
@@ -267,7 +268,7 @@ describe('QaapDevPreviewEndpoint', () => {
             }
         });
 
-        it('uses a per-preview hostname and capability only when the canonical parent is explicit', () => {
+        it('uses an unguessable per-preview host label as the capability when the canonical parent is explicit', () => {
             process.env.QAAP_PREVIEW_BASE_DOMAIN = 'preview.qaap.example';
             process.env.QAAP_OAUTH_PUBLIC_URL = 'https://app.qaap.example';
             const previewId = 'p-project-c-conv-r-run-abc1234';
@@ -280,11 +281,14 @@ describe('QaapDevPreviewEndpoint', () => {
                 previewId,
                 accessToken: 'secret-token',
             } as QaapDevPreviewRecord;
+            const hostLabel = buildQaapPreviewHostLabel(previewId, 'secret-token');
+            expect(hostLabel).to.match(/^[0-9a-f]{32}$/);
+            expect(hostLabel).to.not.equal(buildQaapPreviewHostLabel(previewId, 'rotated-token'));
             expect(endpoint.exposeIdentityPreviewUrl(req, record))
-                .to.equal(`https://${previewId}.preview.qaap.example/?qaap_preview_token=secret-token`);
-            expect(endpoint.exposePreviewIdFromHost({
-                headers: { host: `${previewId}.preview.qaap.example` },
-            } as unknown as Request)).to.equal(previewId);
+                .to.equal(`https://${hostLabel}.preview.qaap.example/`);
+            expect(endpoint.exposePreviewHostLabel({
+                headers: { host: `${hostLabel}.preview.qaap.example` },
+            } as unknown as Request)).to.equal(hostLabel);
         });
 
         it('rewrites frame policy for the Qaap parent and permits the injected loader', () => {

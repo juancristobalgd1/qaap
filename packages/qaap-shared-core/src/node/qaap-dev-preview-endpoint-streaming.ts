@@ -349,15 +349,15 @@ export function handleWebSocketUpgradeExtracted(ctx: QaapDevPreviewEndpointConte
         const queryIndex = rawUrl.indexOf('?');
         const pathname = queryIndex < 0 ? rawUrl : rawUrl.slice(0, queryIndex);
         const query = queryIndex < 0 ? '' : rawUrl.slice(queryIndex);
-        const hostPreviewId = ctx.previewIdFromHost(req);
-        if (hostPreviewId) {
-            const hostRecord = ctx.portRegistry.get(hostPreviewId);
-            if (!hostRecord || !ctx.hasPreviewCapability(req, hostRecord) || ctx.isIdeListenPort(hostRecord.port)) {
+        const hostLabel = ctx.previewHostLabel(req);
+        if (hostLabel) {
+            const hostRecord = ctx.portRegistry.getByHostLabel(hostLabel);
+            if (!hostRecord || ctx.isIdeListenPort(hostRecord.port)) {
                 socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
                 socket.destroy();
                 return;
             }
-            ctx.portRegistry.touchPreview(hostPreviewId, hostRecord.ownerLogin);
+            ctx.portRegistry.touchPreview(hostRecord.previewId, hostRecord.ownerLogin);
             void ctx.proxyWebSocket(req, socket, head, hostRecord.port, `${pathname || '/'}${query}`);
             return;
         }

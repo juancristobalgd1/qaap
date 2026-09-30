@@ -4,6 +4,12 @@
 // *****************************************************************************
 
 import { isAllowedDevPreviewPort } from '@theia/qaap-adapters/lib/common/qaap-dev-preview-ports';
+import {
+    isQaapIsolatedPreviewHostLabel,
+    parseQaapIsolatedPreviewUrl,
+    QAAP_ISOLATED_PREVIEW_HOST_LABEL_PATTERN,
+    QaapIsolatedPreviewUrl,
+} from '@theia/qaap-adapters/lib/common/qaap-isolated-preview-url';
 
 /** HTTP path prefix for proxied dev-server preview (Codespaces-style, same origin as Qaap). */
 export const QAAP_DEV_PREVIEW_PREFIX = '/qaap-dev';
@@ -83,6 +89,13 @@ export function isQaapDevPreviewClaimState(value: unknown): value is QaapDevPrev
 
 /** Single definition in qaap-adapters, shared with the browser preview URL helpers. */
 export { isAllowedDevPreviewPort };
+
+/**
+ * Isolated-origin preview URLs (`https://<hostLabel>.<QAAP_PREVIEW_BASE_DOMAIN>/…`). Single
+ * definition in qaap-adapters (lower layer), re-exported here as the central shared-core helper.
+ */
+export { isQaapIsolatedPreviewHostLabel, parseQaapIsolatedPreviewUrl, QAAP_ISOLATED_PREVIEW_HOST_LABEL_PATTERN };
+export type { QaapIsolatedPreviewUrl };
 
 export function parseQaapDevPreviewPort(raw: string | number | undefined): number | undefined {
     const port = typeof raw === 'number' ? raw : Number(raw);
@@ -496,23 +509,43 @@ export function parseQaapIdentityPreviewRequestPath(pathname: string): { preview
     }
 }
 
-/** Returns the first stable identity URL, ignoring legacy bare-port candidates. */
+export interface QaapPreviewUrlIdentityInfo {
+    /** Canonical preview id for `/qaap-preview/:id/`; the host label for an isolated-origin URL. */
+    readonly previewId: string;
+    /** App pathname (without the `/qaap-preview/:id` prefix). */
+    readonly targetPath: string;
+    /** Origin of an isolated-origin preview; absent for same-origin identity URLs. */
+    readonly isolatedOrigin?: string;
+}
+
+/**
+ * Identity carried by a full preview URL: same-origin `/qaap-preview/:previewId/…`, or an
+ * isolated-origin preview whose host label the backend accepts as a preview id alias.
+ * `publicOrigin` is the Qaap app origin (defaults to `window.location.origin` in the browser).
+ */
+export function parseQaapPreviewUrlIdentity(
+    url: string | undefined,
+    publicOrigin: string = resolveDevPreviewPublicOrigin(),
+): QaapPreviewUrlIdentityInfo | undefined {
+    const trimmed = url?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const isolated = parseQaapIsolatedPreviewUrl(trimmed, publicOrigin);
+    if (isolated) {
+        return { previewId: isolated.hostLabel, targetPath: new URL(trimmed).pathname || '/', isolatedOrigin: isolated.origin };
+    }
+    try {
+        return parseQaapIdentityPreviewRequestPath(new URL(trimmed, publicOrigin).pathname);
+    } catch {
+        return undefined;
+    }
+}
+
+/** Returns the first stable identity URL (same-origin or isolated origin), ignoring legacy bare-port candidates. */
 export function findQaapIdentityPreviewUrl(
     candidates: Array<string | undefined>,
     publicOrigin: string = resolveDevPreviewPublicOrigin(),
 ): string | undefined {
-    for (const candidate of candidates) {
-        if (!candidate) {
-            continue;
-        }
-        try {
-            const parsed = new URL(candidate, publicOrigin);
-            if (parseQaapIdentityPreviewRequestPath(parsed.pathname)) {
-                return candidate;
-            }
-        } catch {
-            // Ignore malformed compatibility candidates.
-        }
-    }
-    return undefined;
+    return candidates.find(candidate => !!candidate && !!parseQaapPreviewUrlIdentity(candidate, publicOrigin));
 }

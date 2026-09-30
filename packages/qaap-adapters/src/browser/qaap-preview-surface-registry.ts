@@ -94,10 +94,14 @@ export class QaapPreviewSurfaceRegistry {
         return this.surfaces.filter(surface => surface.isConnected());
     }
 
-    /** Returns the newest connected surface serving the requested project preview URL. */
-    getSurfaceForPreviewUrl(expectedUrl: string): QaapPreviewSurfaceHandle | undefined {
+    /**
+     * Returns the newest connected surface serving the requested project preview URL.
+     * `equivalentPreviewIds` (canonical preview id + isolated host label of one claim) lets a
+     * same-origin identity URL and the isolated URL of that claim resolve to the same surface.
+     */
+    getSurfaceForPreviewUrl(expectedUrl: string, equivalentPreviewIds?: readonly (string | undefined)[]): QaapPreviewSurfaceHandle | undefined {
         const matches = [...this.getConnectedSurfaces()].reverse()
-            .filter(surface => qaapPreviewFrameMatchesUrl(surface.frame, expectedUrl));
+            .filter(surface => qaapPreviewFrameMatchesUrl(surface.frame, expectedUrl, equivalentPreviewIds));
         return matches.find(surface => surface.kind === 'mini-browser') ?? matches[0];
     }
 

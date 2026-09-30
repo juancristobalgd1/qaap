@@ -4,6 +4,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     parseQaapDevPreviewRequestPath,
     parseQaapIdentityPreviewRequestPath,
+    parseQaapIsolatedPreviewUrl,
 } from './qaap-dev-preview';
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
@@ -167,12 +168,18 @@ export function buildQaapVisualVerificationFailureMarkdown(reason: string, retry
 
 /**
  * Keeps visual-evidence links on the Qaap preview proxy so transcript clicks stay inside the
- * integrated browser. Absolute origins are reduced to their safe same-origin preview path.
+ * integrated browser. Absolute origins are reduced to their safe same-origin preview path; an
+ * isolated-origin preview (`https://<hostLabel>.<baseDomain>/…`) has no same-origin path, so its
+ * absolute URL is kept (the transcript recognizes it as an integrated preview link).
  */
 export function normalizeQaapVisualPreviewUrl(value: string | undefined): string | undefined {
     const trimmed = value?.trim();
     if (!trimmed) {
         return undefined;
+    }
+    const isolated = parseQaapIsolatedPreviewUrl(trimmed);
+    if (isolated) {
+        return `${isolated.origin}${isolated.targetPath}`;
     }
     try {
         const parsed = new URL(trimmed, 'http://qaap.local');

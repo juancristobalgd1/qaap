@@ -7,7 +7,7 @@ import URI from '@theia/core/lib/common/uri';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import {
-    parsePreviewIdentityPath,
+    parsePreviewIdentityUrl,
     parsePreviewProxyPath,
     resolveEffectivePreviewUrl,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
@@ -257,7 +257,8 @@ export async function openPreviewWidgetExtracted(ctx: QaapProjectBootstrapServic
 async function resolvePreviewWidgetKeyFromUrl(url: string): Promise<QaapPreviewWidgetKey | undefined> {
         try {
             const parsed = new URL(url, resolveDevPreviewPublicOrigin());
-            const identity = parsePreviewIdentityPath(parsed.pathname);
+            // Isolated-origin URLs carry the host label, which the backend accepts as a preview id.
+            const identity = parsePreviewIdentityUrl(parsed.toString(), resolveDevPreviewPublicOrigin());
             if (identity) {
                 const probe = await probeQaapIdentityPreview(identity.previewId);
                 return qaapPreviewWidgetKeyFromCoordinates(probe.workspaceId, probe.projectId);
@@ -276,12 +277,8 @@ async function resolvePreviewWidgetKeyFromUrl(url: string): Promise<QaapPreviewW
 export async function openPreviewExtracted(ctx: QaapProjectBootstrapServiceContext, url: string,
         isPrimary: boolean = true,
         options?: { auto?: boolean; silent?: boolean },): Promise<void> {
-        let identity: ReturnType<typeof parsePreviewIdentityPath>;
-        try {
-            identity = parsePreviewIdentityPath(new URL(url, resolveDevPreviewPublicOrigin()).pathname);
-        } catch {
-            identity = undefined;
-        }
+        // Same-origin `/qaap-preview/:id/` or an isolated origin whose host label aliases the id.
+        const identity = parsePreviewIdentityUrl(url, resolveDevPreviewPublicOrigin());
         if (identity) {
             const probe = await probeQaapIdentityPreview(identity.previewId);
             if (!probe.ready) {

@@ -3,7 +3,7 @@
 #   QAAP_PUBLIC_HOST=161.97.69.219.sslip.io
 #   QAAP_OAUTH_PUBLIC_URL=https://161.97.69.219.sslip.io
 {$QAAP_PUBLIC_HOST:localhost} {
-	encode gzip
+	encode zstd gzip
 	# Keep baseline browser hardening on local and public deployments.
 	header {
 		X-Content-Type-Options "nosniff"
@@ -15,3 +15,7 @@
 	header @public Strict-Transport-Security "max-age=31536000"
 	reverse_proxy theia:{$THEIA_PORT:4873}
 }
+
+# Isolated preview origins (optional). The glob matches nothing unless QAAP_PREVIEW_CADDY_SITE is
+# set (see docker-compose.yml), and an unmatched import glob is not an error.
+import /etc/caddy/previews/{$QAAP_PREVIEW_CADDY_SITE:disabled}.caddy*

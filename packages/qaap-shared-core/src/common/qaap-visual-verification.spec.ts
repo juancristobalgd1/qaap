@@ -61,6 +61,13 @@ describe('qaap-visual-verification', () => {
         expect(normalizeQaapVisualPreviewUrl('https://qaap.example/untrusted/path')).to.equal(undefined);
     });
 
+    it('keeps isolated-origin preview links absolute instead of dropping them', () => {
+        const isolated = 'https://0123456789abcdef0123456789abcdef.previews.qaap.example/checkout?step=2#pay';
+        expect(normalizeQaapVisualPreviewUrl(isolated)).to.equal(isolated);
+        expect(normalizeQaapVisualPreviewUrl('https://0123456789abcdef0123456789abcdef.example/checkout')).to.equal(undefined);
+        expect(normalizeQaapVisualPreviewUrl('https://not-a-label.previews.qaap.example/')).to.equal(undefined);
+    });
+
     it('builds one evidence block per walked route, marked once', () => {
         const markdown = buildQaapVisualFlowMarkdown([
             { label: '/', imageUrl: '/evidence/1', result: { status: 'passed', summary: 'Home ok.', issues: [] } },

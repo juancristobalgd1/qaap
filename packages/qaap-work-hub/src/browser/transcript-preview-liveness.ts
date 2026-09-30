@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import {
-    parseQaapIdentityPreviewRequestPath,
+    parseQaapPreviewUrlIdentity,
     type QaapDevPreviewClaimState,
 } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 
@@ -86,10 +86,11 @@ export interface TranscriptPreviewLossInput {
     readonly currentClaimBooting: boolean;
 }
 
+/** Canonical preview id of a same-origin identity URL, or the host label of an isolated-origin URL. */
 function transcriptPreviewClaimKey(url: string): string {
     try {
         const parsed = new URL(url, 'http://localhost');
-        return parseQaapIdentityPreviewRequestPath(parsed.pathname)?.previewId ?? parsed.href;
+        return parseQaapPreviewUrlIdentity(parsed.href, 'http://localhost')?.previewId ?? parsed.href;
     } catch {
         return url;
     }

@@ -17,7 +17,62 @@ import {
     parseQaapDevPreviewRequestPath,
     parseQaapDevPreviewPort,
     QAAP_DEV_PREVIEW_WAITING_MAX_MS,
+    findQaapIdentityPreviewUrl,
+    parseQaapIsolatedPreviewUrl,
+    parseQaapPreviewUrlIdentity,
 } from './qaap-dev-preview';
+
+const HOST_LABEL = '0123456789abcdef0123456789abcdef';
+const APP_ORIGIN = 'https://app.qaap.example';
+
+describe('qaap-dev-preview isolated origin', () => {
+    it('parses an isolated preview URL into host label, origin and app route', () => {
+        expect(parseQaapIsolatedPreviewUrl(`https://${HOST_LABEL}.previews.qaap.example/dash?tab=1#top`, APP_ORIGIN))
+            .to.deep.equal({
+                hostLabel: HOST_LABEL,
+                origin: `https://${HOST_LABEL}.previews.qaap.example`,
+                targetPath: '/dash?tab=1#top',
+            });
+        expect(parseQaapIsolatedPreviewUrl(`http://${HOST_LABEL}.p.localhost:8443/`)?.targetPath).to.equal('/');
+    });
+
+    it('rejects shapes that are not isolated previews', () => {
+        // Too few labels after the host label.
+        expect(parseQaapIsolatedPreviewUrl(`https://${HOST_LABEL}.example/`)).to.equal(undefined);
+        // Canonical preview ids and short / non-hex labels are not host labels.
+        expect(parseQaapIsolatedPreviewUrl('https://u-alice-w-ws-p-app-x-1-abcdefgh.previews.qaap.example/')).to.equal(undefined);
+        expect(parseQaapIsolatedPreviewUrl(`https://${HOST_LABEL.slice(1)}.previews.qaap.example/`)).to.equal(undefined);
+        expect(parseQaapIsolatedPreviewUrl(`https://${HOST_LABEL}0.previews.qaap.example/`)).to.equal(undefined);
+        // Relative, non-http(s) and malformed inputs.
+        expect(parseQaapIsolatedPreviewUrl(`/${HOST_LABEL}.previews.qaap.example/`)).to.equal(undefined);
+        expect(parseQaapIsolatedPreviewUrl(`ftp://${HOST_LABEL}.previews.qaap.example/`)).to.equal(undefined);
+        expect(parseQaapIsolatedPreviewUrl(undefined)).to.equal(undefined);
+        // Never the Qaap app origin itself.
+        const sameOrigin = `https://${HOST_LABEL}.previews.qaap.example`;
+        expect(parseQaapIsolatedPreviewUrl(`${sameOrigin}/x`, `${sameOrigin}/`)).to.equal(undefined);
+    });
+
+    it('treats isolated URLs as identity-bearing with the host label as preview id', () => {
+        expect(parseQaapPreviewUrlIdentity(`https://${HOST_LABEL}.previews.qaap.example/settings?a=1`, APP_ORIGIN))
+            .to.deep.equal({
+                previewId: HOST_LABEL,
+                targetPath: '/settings',
+                isolatedOrigin: `https://${HOST_LABEL}.previews.qaap.example`,
+            });
+        expect(parseQaapPreviewUrlIdentity('/qaap-preview/live-id/docs/', APP_ORIGIN))
+            .to.deep.equal({ previewId: 'live-id', targetPath: '/docs/' });
+        expect(parseQaapPreviewUrlIdentity(`${APP_ORIGIN}/qaap-dev/5173/`, APP_ORIGIN)).to.equal(undefined);
+        expect(parseQaapPreviewUrlIdentity('http://localhost:5173/', APP_ORIGIN)).to.equal(undefined);
+    });
+
+    it('findQaapIdentityPreviewUrl accepts isolated URLs and still skips bare-port candidates', () => {
+        const isolated = `https://${HOST_LABEL}.previews.qaap.example/`;
+        expect(findQaapIdentityPreviewUrl(['http://localhost:5173/', undefined, isolated], APP_ORIGIN)).to.equal(isolated);
+        expect(findQaapIdentityPreviewUrl([`${APP_ORIGIN}/qaap-dev/5173/`, '/qaap-preview/live-id/'], APP_ORIGIN))
+            .to.equal('/qaap-preview/live-id/');
+        expect(findQaapIdentityPreviewUrl(['http://localhost:5173/'], APP_ORIGIN)).to.equal(undefined);
+    });
+});
 
 describe('qaap-dev-preview', () => {
     it('injectQaapPreviewDiagnostics before app scripts and remains idempotent', () => {

@@ -25,7 +25,8 @@ import {
     resolveQaapPreviewIdentity,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes } from '../common/qaap-preview-route';
+import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes, type QaapPreviewRoute } from '../common/qaap-preview-route';
+import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
@@ -36,13 +37,21 @@ export function isQaapTenantBackendRuntime(env: NodeJS.ProcessEnv = process.env)
     return /^(1|true)$/i.test(env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
 }
 
-/** Adds {@link QAAP_PREVIEW_ROUTE_HEADER} for a `previewId` carried by the JSON body about to be sent. */
+/**
+ * Adds {@link QAAP_PREVIEW_ROUTE_HEADER} for a `previewId` carried by the JSON body about to be sent,
+ * plus the host label of its isolated `previewUrl` (the identifier the control plane routes by).
+ */
 export function advertisePreviewRouteOnJson(res: Response): void {
     const json = res.json.bind(res);
     res.json = ((body?: unknown) => {
-        const previewId = (body as { previewId?: unknown } | undefined)?.previewId;
+        const { previewId, previewUrl } = (body ?? {}) as { previewId?: unknown; previewUrl?: unknown };
         if (typeof previewId === 'string' && !res.headersSent) {
-            const header = formatQaapPreviewRoutes([{ kind: 'preview', id: previewId }]);
+            const routes: QaapPreviewRoute[] = [{ kind: 'preview', id: previewId }];
+            const hostLabel = previewHostLabelOfUrl(previewUrl);
+            if (hostLabel) {
+                routes.push({ kind: 'preview', id: hostLabel });
+            }
+            const header = formatQaapPreviewRoutes(routes);
             if (header) {
                 res.setHeader(QAAP_PREVIEW_ROUTE_HEADER, header);
             }
@@ -51,25 +60,32 @@ export function advertisePreviewRouteOnJson(res: Response): void {
     }) as Response['json'];
 }
 
+function previewHostLabelOfUrl(previewUrl: unknown): string | undefined {
+    if (typeof previewUrl !== 'string') {
+        return undefined;
+    }
+    try {
+        return parseQaapPreviewHostLabel(new URL(previewUrl).host, resolveQaapPreviewBaseDomain());
+    } catch {
+        return undefined;
+    }
+}
+
 export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Application): void {
-    // Optional isolated-origin mode. DNS/TLS should route `*.QAAP_PREVIEW_BASE_DOMAIN` here;
-    // access uses a host-only preview capability, never the IDE's broad session cookie.
+    // Optional isolated-origin mode. DNS/TLS should route `*.QAAP_PREVIEW_BASE_DOMAIN` here. The
+    // unguessable host label is the preview capability, never the IDE's broad session cookie.
     app.use((req: Request, res: Response, next: NextFunction) => {
-        const previewId = ctx.previewIdFromHost(req);
-        if (!previewId) {
+        const hostLabel = ctx.previewHostLabel(req);
+        if (!hostLabel) {
             next();
             return;
         }
-        const record = ctx.portRegistry.get(previewId);
+        const record = ctx.portRegistry.getByHostLabel(hostLabel);
         if (!record) {
             res.status(404).type('text/plain').send('Preview not found.');
             return;
         }
-        const capability = ctx.authorizePreviewHostRequest(req, res, record);
-        if (capability !== 'allowed') {
-            return;
-        }
-        ctx.portRegistry.touchPreview(previewId, record.ownerLogin);
+        ctx.portRegistry.touchPreview(record.previewId, record.ownerLogin);
         if (ctx.isIdeListenPort(record.port)) {
             res.status(403).type('text/plain').send('Invalid preview target.');
             return;
