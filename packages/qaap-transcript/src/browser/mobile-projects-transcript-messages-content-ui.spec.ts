@@ -188,12 +188,16 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         const previewId = 'project-conversation-run-a1b2c3';
         expect(normalizeTranscriptPreviewHref(`/qaap-preview/${previewId}/dashboard`, origin))
             .to.equal(`${origin}/qaap-preview/${previewId}/dashboard`);
-        const isolated = `https://${previewId}.preview.qaap.example/dashboard`;
+        const hostLabel = '0123456789abcdef0123456789abcdef';
+        const isolated = `https://${hostLabel}.previews.qaap.example/dashboard?tab=1`;
         expect(normalizeTranscriptPreviewHref(isolated, origin)).to.equal(isolated);
-        expect(extractTranscriptPreviewId(isolated, origin)).to.equal(previewId);
+        expect(extractTranscriptPreviewId(isolated, origin)).to.equal(hostLabel);
+        // Canonical ids are never host labels; only the 32-hex capability shape is isolated.
+        expect(extractTranscriptPreviewId(`https://${previewId}.preview.qaap.example/`, origin)).to.equal(undefined);
+        expect(extractTranscriptPreviewId(`https://${hostLabel}.example/`, origin)).to.equal(undefined);
         expect(normalizeTranscriptPreviewHref('https://example.com/dashboard', origin)).to.equal(undefined);
         expect(normalizeTranscriptPreviewHref('/qaap-preview/api/probe', origin)).to.equal(undefined);
-        expect(normalizeTranscriptPreviewHref(`ftp://${previewId}.preview.qaap.example/`, origin)).to.equal(undefined);
+        expect(normalizeTranscriptPreviewHref(`ftp://${hostLabel}.previews.qaap.example/`, origin)).to.equal(undefined);
     });
 
     it('isTranscriptPreviewHrefShellSelf detects the IDE URL itself', () => {
@@ -248,18 +252,57 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
     it('linkifies previewId URLs returned as plain agent text', () => {
         const ui = new MobileProjectsTranscriptMessagesContentUi({} as never);
         const previewId = 'project-conversation-run-a1b2c3';
+        const isolated = 'https://0123456789abcdef0123456789abcdef.previews.qaap.example/';
         const linked = ui.linkifyTranscriptPreviewUrls(
-            `Abre /qaap-preview/${previewId}/ o https://${previewId}.preview.qaap.example/`,
+            `Abre /qaap-preview/${previewId}/ o ${isolated}`,
         );
         expect(linked).to.contain(`[/qaap-preview/${previewId}/](/qaap-preview/${previewId}/)`);
-        expect(linked).to.contain(
-            `[https://${previewId}.preview.qaap.example/](https://${previewId}.preview.qaap.example/)`,
-        );
+        expect(linked).to.contain(`[${isolated}](${isolated})`);
+    });
+
+    it('validates an isolated-origin link by host label although the probe reports the canonical id', async () => {
+        const hostLabel = '0123456789abcdef0123456789abcdef';
+        const isolated = `https://${hostLabel}.previews.qaap.example/`;
+        let selectedTab = '';
+        const project = { id: 'project', name: 'Project' };
+        const summary = { id: 'conversation' };
+        const host = {
+            transcriptComposerSummary: summary,
+            transcriptOpenSummary: summary,
+            transcriptOpenProject: project,
+            projects: [project],
+            projectsService: { recordProjectPreviewUrl: async (): Promise<void> => undefined },
+            executionSurfaceTabsUi: { selectTranscriptTab: (tab: string): void => { selectedTab = tab; } },
+            transcriptPreviewRequestPending: true,
+            transcriptPreviewRequestRunning: true,
+        };
+        const ui = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const probed: string[] = [];
+        const testUi = ui as unknown as {
+            previewPublicOrigin: () => string;
+            probePreviewIdentity: (id: string) => Promise<{ ready: boolean; previewUrl: string; previewId: string }>;
+        };
+        testUi.previewPublicOrigin = () => 'https://app.qaap.example';
+        testUi.probePreviewIdentity = async id => {
+            probed.push(id);
+            return { ready: true, previewUrl: isolated, previewId: 'u-alice-w-ws-p-app-x-1-abcdefgh' };
+        };
+        const snackbar = MobileSnackbar as typeof MobileSnackbar & { show: typeof MobileSnackbar.show };
+        const originalShow = snackbar.show;
+        snackbar.show = () => { /* no DOM timer in this unit test */ };
+        try {
+            expect(await ui.openTranscriptPreviewUrlFromLink(isolated)).to.equal(true);
+            expect(probed).to.deep.equal([hostLabel]);
+            expect(selectedTab).to.equal('preview');
+            expect(host.transcriptOpenProject).to.deep.include({ previewUrl: isolated });
+        } finally {
+            snackbar.show = originalShow;
+        }
     });
 
     it('validates an identity link and selects the integrated Preview tab', async () => {
         const previewId = 'project-conversation-run-a1b2c3';
-        const verifiedUrl = `https://${previewId}.preview.qaap.example/`;
+        const verifiedUrl = 'https://0123456789abcdef0123456789abcdef.previews.qaap.example/';
         let selectedTab = '';
         let persistedUrl = '';
         const project = { id: 'project', name: 'Project' };

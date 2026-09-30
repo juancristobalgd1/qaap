@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapPreviewIdentity } from '../common/qaap-preview-identity';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
+import { buildQaapPreviewHostLabel } from './qaap-preview-host';
 
 class PersistentTestRegistry extends QaapDevPreviewPortRegistry {
     initialize(): void {
@@ -73,6 +74,47 @@ describe('QaapDevPreviewPortRegistry rebindPort', () => {
         })!;
         expect(registry.rebindPort(other.previewId, 'alice', 8123)).to.equal(undefined);
         expect(registry.getByPort(8124)?.previewId).to.equal(other.previewId);
+    });
+});
+
+describe('QaapDevPreviewPortRegistry isolated host labels', () => {
+    function registerAlice(registry: QaapDevPreviewPortRegistry): ReturnType<QaapDevPreviewPortRegistry['register']> {
+        return registry.register({
+            ...resolveQaapPreviewIdentity({
+                userId: 'alice',
+                workspaceId: 'file:///workspace/alice/site',
+                projectId: 'file:///workspace/alice/site',
+                conversationId: 'section-a',
+                processId: 'process-a',
+            }),
+            ownerLogin: 'alice',
+            root: '/workspace/alice/site',
+            port: 8125,
+        });
+    }
+
+    it('resolves a record by its host label and accepts the label wherever a preview id is taken', () => {
+        const registry = new QaapDevPreviewPortRegistry();
+        const record = registerAlice(registry)!;
+        const label = buildQaapPreviewHostLabel(record.previewId, record.accessToken);
+        expect(registry.getByHostLabel(label)?.previewId).to.equal(record.previewId);
+        expect(registry.get(label)?.previewId).to.equal(record.previewId);
+        expect(registry.getForOwner(label, 'alice')?.previewId).to.equal(record.previewId);
+        expect(registry.getForOwner(label, 'mallory')).to.equal(undefined);
+        expect(registry.getByHostLabel('0'.repeat(32))).to.equal(undefined);
+        expect(registry.get('0'.repeat(32))).to.equal(undefined);
+    });
+
+    it('keeps writes keyed by the canonical preview id when addressed by host label', () => {
+        const registry = new QaapDevPreviewPortRegistry();
+        const record = registerAlice(registry)!;
+        const label = buildQaapPreviewHostLabel(record.previewId, record.accessToken);
+        registry.touchPreview(label, 'alice');
+        expect(registry.attachProcess(label, 'alice', 4242)).to.equal(true);
+        expect(registry.get(record.previewId)?.osProcessId).to.equal(4242);
+        expect(registry.releasePreview(label, 'alice')).to.equal(true);
+        expect(registry.get(record.previewId)).to.equal(undefined);
+        expect(registry.getByPort(8125)).to.equal(undefined);
     });
 });
 

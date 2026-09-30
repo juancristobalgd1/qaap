@@ -10,6 +10,7 @@ import {
     openCurrentComposerPreview,
     resolveComposerFallbackPreviewUrls,
     resolveComposerPreviewCandidate,
+    resolveComposerPreviewTarget,
     resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
@@ -23,6 +24,17 @@ describe('qaap-composer-preview-action', () => {
         phase: 'running',
         previewUrl: 'http://localhost:3000/qaap-dev/5173/',
     };
+
+    it('enables the Open preview pill for an isolated-origin preview, targeting its host label', () => {
+        const label = '0123456789abcdef0123456789abcdef';
+        const isolated = `https://${label}.previews.qaap.example/`;
+        const origin = 'https://app.qaap.example';
+        expect(resolveComposerPreviewTarget(`${isolated}settings`, origin)).to.deep.equal({ previewId: label });
+        const runtime = { ...ready, previewUrl: isolated };
+        expect(resolveComposerPreviewCandidate(runtime, origin)).to.equal(isolated);
+        expect(resolveVerifiedComposerPreviewUrl(runtime, `${isolated}settings`, origin)).to.equal(`${isolated}settings`);
+        expect(resolveComposerPreviewTarget(`https://${label}.example/`, origin)).to.equal(undefined);
+    });
 
     it('is hidden when dependencies are not installed', () => {
         expect(resolveComposerPreviewCandidate({ ...ready, dependenciesInstalled: false })).to.equal(undefined);

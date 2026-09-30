@@ -11,6 +11,7 @@ import {
     buildQaapDevPreviewOpenUrl,
     buildQaapIdentityPreviewUrl,
     isQaapDevPreviewClaimState,
+    isQaapIsolatedPreviewHostLabel,
     type QaapDevPreviewClaimState,
     type QaapDevPreviewMemoryStatus,
     type QaapDevPreviewProbeResponse,
@@ -249,11 +250,28 @@ export function resolveQaapIdentityProbeState(
     return outcome.body.ready ? 'ready' : 'stopped';
 }
 
-export async function probeQaapIdentityPreview(previewId: string, signal?: AbortSignal): Promise<QaapDevPreviewProbeResponse> {
+/**
+ * Probes one identity preview. `previewId` may be the canonical id or an isolated-origin host
+ * label (the backend accepts both). `knownPreviewUrl` is the last URL the backend returned for this
+ * claim; it is the fallback `previewUrl` when the probe cannot answer, because a same-origin
+ * `/qaap-preview/<id>/` guess is wrong in isolated-origin mode.
+ */
+export async function probeQaapIdentityPreview(
+    previewId: string,
+    signal?: AbortSignal,
+    knownPreviewUrl?: string,
+): Promise<QaapDevPreviewProbeResponse> {
     const origin = getQaapPublicOrigin();
+    const fallbackPreviewUrl = (): string => {
+        if (knownPreviewUrl) {
+            return knownPreviewUrl;
+        }
+        // A host label only addresses an isolated origin, which the frontend cannot rebuild.
+        return origin && !isQaapIsolatedPreviewHostLabel(previewId) ? buildQaapIdentityPreviewUrl(origin, previewId) : '';
+    };
     const fallback = (state: QaapDevPreviewClaimState): QaapDevPreviewProbeResponse => ({
         ready: false,
-        previewUrl: origin ? buildQaapIdentityPreviewUrl(origin, previewId) : '',
+        previewUrl: fallbackPreviewUrl(),
         previewId,
         state,
     });
@@ -285,7 +303,7 @@ export async function probeQaapIdentityPreview(previewId: string, signal?: Abort
     return {
         ready: state === 'ready',
         readiness: state === 'ready' ? 'transport_ready' : body.readiness === 'failed' ? 'failed' : undefined,
-        previewUrl: body.previewUrl || fallback(state).previewUrl,
+        previewUrl: body.previewUrl || fallbackPreviewUrl(),
         previewId: typeof body.previewId === 'string' ? body.previewId : previewId,
         workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
         projectId: typeof body.projectId === 'string' ? body.projectId : undefined,

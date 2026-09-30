@@ -205,7 +205,8 @@ PWA service worker includes `push` / `notificationclick` handlers (see `Frontend
   inside the worker. `off` keeps everything under the tmpfs HOME. HOME itself always stays on the tmpfs.
 - `QAAP_OAUTH_PUBLIC_URL` — canonical Qaap application origin (also the trusted parent of preview iframes)
 - `QAAP_PREVIEW_BASE_DOMAIN` — optional isolated preview domain, for example `preview.qaap.example`.
-  Configure wildcard DNS/TLS (`*.preview.qaap.example`) to the Qaap backend. Each execution then
-  opens on `https://<previewId>.preview.qaap.example/` using a host-only, per-preview capability;
-  the GitHub/IDE session cookie is never shared with project code. Without it, Qaap uses the
+  Configure wildcard DNS/TLS (`*.preview.qaap.example`) to the Qaap backend (the Docker deployment's
+  Caddy does it with `DUCKDNS_TOKEN` for a DuckDNS domain). Each execution then opens on
+  `https://<hostLabel>.preview.qaap.example/`, where the unguessable host label is the per-preview
+  capability; the GitHub/IDE session cookie is never shared with project code. Without it, Qaap uses the
   compatibility path `/qaap-preview/<previewId>/` on the application origin.

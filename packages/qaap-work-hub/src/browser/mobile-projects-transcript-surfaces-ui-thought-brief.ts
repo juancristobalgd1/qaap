@@ -16,7 +16,7 @@ import {
     findQaapIdentityPreviewUrl,
     isLocalQaapPreviewOrigin,
     parseQaapDevPreviewRequestPath,
-    parseQaapIdentityPreviewRequestPath,
+    parseQaapPreviewUrlIdentity,
     resolveDevPreviewPublicOrigin,
 } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import {
@@ -146,7 +146,8 @@ export async function previewUrlMatchesProjectExtracted(ctx: MobileProjectsTrans
                 cwdUri,
                 projectName: project.name,
             });
-            const identityPath = parseQaapIdentityPreviewRequestPath(parsed.pathname);
+            // Same-origin identity path or isolated-origin host label (a backend-accepted alias).
+            const identityPath = parseQaapPreviewUrlIdentity(parsed.toString(), window.location.origin);
             if (identityPath) {
                 const probe = await probeQaapIdentityPreview(identityPath.previewId);
                 if (!probe.ready) {

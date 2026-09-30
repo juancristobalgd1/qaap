@@ -1,0 +1,12 @@
+# Isolated preview hosts: <hostLabel>.QAAP_PREVIEW_BASE_DOMAIN (the unguessable label is the preview
+# capability). Imported only when compose sets QAAP_PREVIEW_CADDY_SITE=duckdns, i.e. when both
+# QAAP_PREVIEW_BASE_DOMAIN and DUCKDNS_TOKEN are set in .env. One wildcard certificate covers every
+# preview, obtained through the DuckDNS DNS-01 challenge.
+*.{$QAAP_PREVIEW_BASE_DOMAIN} {
+	tls {
+		dns duckdns {$DUCKDNS_TOKEN}
+	}
+	encode zstd gzip
+	header X-Content-Type-Options "nosniff"
+	reverse_proxy theia:{$THEIA_PORT:4873}
+}

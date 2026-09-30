@@ -90,6 +90,13 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
     accept third parties in `QAAP_BETA_ALLOWED_LOGINS` otherwise (logins listed in
     `QAAP_OPERATOR_LOGINS` do not count; `QAAP_PREVIEW_ALLOW_SAME_SITE=1`
     only overrides the heuristic for multi-label public suffixes such as `co.uk`).
+    Each preview host is `<label>.<domain>`, where the label is 128 bits derived
+    from the preview's secret access token: the hostname itself is the
+    capability (bearer URL, like share links). A cookie cannot carry it because
+    the preview is framed by the Qaap app, a different site, where browsers
+    withhold `SameSite` cookies and Safari blocks third-party cookies. Preview
+    responses carry `Referrer-Policy: same-origin` so the label does not leak to
+    third parties the previewed app calls.
     Independently of the domain, the preview proxy never forwards Qaap cookies or
     `x-qaap-*` headers to the dev server and drops `Set-Cookie` for Qaap cookie names.
   - The frontend-facing `EnvVariablesServer` filters secret-like variables and

@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { createHash } from 'crypto';
 import { isQaapPreviewId } from '../common/qaap-preview-identity';
 import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
 
 /**
- * Base domain of isolated preview hosts (`<previewId>.<domain>`), or undefined when that mode is off.
+ * Base domain of isolated preview hosts (`<hostLabel>.<domain>`), or undefined when that mode is off.
  * The main origin is also baked into the bridge loader and frame-ancestors policy, so the mode
  * requires an explicit public URL; deriving it from the preview Host would be unsafe.
  */
@@ -18,8 +19,19 @@ export function resolveQaapPreviewBaseDomain(env: NodeJS.ProcessEnv = process.en
     return normalizeQaapPreviewBaseDomain(env.QAAP_PREVIEW_BASE_DOMAIN);
 }
 
-/** The preview id an isolated preview host names, or undefined for any other host. */
-export function parseQaapPreviewIdFromHost(rawHost: string | undefined, baseDomain: string | undefined): string | undefined {
+/**
+ * DNS label of a preview's isolated host. The label IS the access capability: 128 bits derived
+ * from the preview's secret access token, so it cannot be guessed from the (readable) preview id.
+ * A cookie cannot carry the capability instead: the preview is framed by the Qaap app, a different
+ * site, where browsers withhold SameSite cookies and Safari blocks third-party cookies outright.
+ * Rotating the access token rotates the host.
+ */
+export function buildQaapPreviewHostLabel(previewId: string, accessToken: string): string {
+    return createHash('sha256').update(`qaap-preview-host\0${previewId}\0${accessToken}`).digest('hex').slice(0, 32);
+}
+
+/** The host label of an isolated preview host (see {@link buildQaapPreviewHostLabel}), or undefined for any other host. */
+export function parseQaapPreviewHostLabel(rawHost: string | undefined, baseDomain: string | undefined): string | undefined {
     if (!baseDomain || !rawHost) {
         return undefined;
     }
@@ -33,6 +45,6 @@ export function parseQaapPreviewIdFromHost(rawHost: string | undefined, baseDoma
     if (!hostname.endsWith(suffix)) {
         return undefined;
     }
-    const previewId = hostname.slice(0, -suffix.length);
-    return isQaapPreviewId(previewId) ? previewId : undefined;
+    const label = hostname.slice(0, -suffix.length);
+    return isQaapPreviewId(label) ? label : undefined;
 }

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { parseQaapIdentityPreviewRequestPath, type QaapDevPreviewProbeResponse } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
+import { parseQaapPreviewUrlIdentity, type QaapDevPreviewProbeResponse } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import type { QaapBootstrapPhase } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -42,21 +42,17 @@ function normalizePath(value: string): string {
 /**
  * Identity or port carried by a preview URL. Identity URLs (`/qaap-preview/<id>/`) have NO port —
  * treating "no port" as "not previewable" silently disabled the whole Open-preview pill for
- * identity-proxied apps.
+ * identity-proxied apps. Isolated-origin URLs (`https://<hostLabel>.<baseDomain>/`) are identity
+ * URLs too: the host label is probed as the preview id (the backend accepts it as an alias).
  */
 export function resolveComposerPreviewTarget(url: string | undefined, origin?: string): ComposerPreviewTarget | undefined {
     if (!url) {
         return undefined;
     }
     const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : undefined);
-    try {
-        const parsed = new URL(url, base);
-        const identity = parseQaapIdentityPreviewRequestPath(parsed.pathname);
-        if (identity?.previewId) {
-            return { previewId: identity.previewId };
-        }
-    } catch {
-        // fall through to the port extraction below
+    const identity = parseQaapPreviewUrlIdentity(url, base);
+    if (identity?.previewId) {
+        return { previewId: identity.previewId };
     }
     const port = extractDevPreviewPortFromUrl(url);
     return port !== undefined ? { port } : undefined;

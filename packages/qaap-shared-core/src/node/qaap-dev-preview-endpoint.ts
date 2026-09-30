@@ -19,12 +19,11 @@ import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { configureExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
-import { authorizePreviewHostRequestExtracted, buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, hasPreviewCapabilityExtracted, matchesPreviewTokenExtracted, previewBaseDomainExtracted, previewIdFromHostExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
+import { buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, previewBaseDomainExtracted, previewHostLabelExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
 
 export const PROBE_TIMEOUT_MS = 2500;
 export const LOCAL_TARGET_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
 export const TEXT_RESPONSE_PATTERN = /\b(?:text\/html|text\/css|application\/javascript|text\/javascript|application\/x-javascript)\b/i;
-export const QAAP_PREVIEW_ACCESS_QUERY = 'qaap_preview_token';
 export const QAAP_PREVIEW_ACCESS_COOKIE = QAAP_PREVIEW_ACCESS_COOKIE_NAME;
 export const PREVIEW_PORT_ALLOCATION_ATTEMPTS = 128;
 export const PREVIEW_RESERVATION_START_GRACE_MS = 5 * 60_000;
@@ -332,23 +331,8 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public previewIdFromHost(req: Request | http.IncomingMessage): string | undefined {
-        return previewIdFromHostExtracted(this, req);
-    }
-
-    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public authorizePreviewHostRequest(req: Request, res: Response, record: QaapDevPreviewRecord,): 'allowed' | 'redirected' | 'denied' {
-        return authorizePreviewHostRequestExtracted(this, req, res, record);
-    }
-
-    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public hasPreviewCapability(req: Request | http.IncomingMessage, record: QaapDevPreviewRecord): boolean {
-        return hasPreviewCapabilityExtracted(this, req, record);
-    }
-
-    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public matchesPreviewToken(candidate: string | null | undefined, expected: string): boolean {
-        return matchesPreviewTokenExtracted(this, candidate, expected);
+    public previewHostLabel(req: Request | http.IncomingMessage): string | undefined {
+        return previewHostLabelExtracted(this, req);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

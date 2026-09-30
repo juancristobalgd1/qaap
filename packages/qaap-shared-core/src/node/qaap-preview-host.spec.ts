@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { Response } from '@theia/core/shared/express';
-import { parseQaapPreviewIdFromHost, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
+import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
 import { advertisePreviewRouteOnJson, isQaapTenantBackendRuntime } from './qaap-dev-preview-endpoint-render';
 import { QAAP_PREVIEW_ROUTE_HEADER } from '../common/qaap-preview-route';
 
@@ -16,15 +16,32 @@ describe('qaap-preview-host', () => {
             .to.equal('preview.example.test');
     });
 
-    it('extracts the preview id of a preview host and nothing else', () => {
-        expect(parseQaapPreviewIdFromHost('u-alice-w-x-1.preview.example.test', 'preview.example.test')).to.equal('u-alice-w-x-1');
-        expect(parseQaapPreviewIdFromHost('U-ALICE-W-X-1.preview.example.test:443', 'preview.example.test')).to.equal('u-alice-w-x-1');
-        expect(parseQaapPreviewIdFromHost('qaap.example.test', 'preview.example.test')).to.equal(undefined);
-        expect(parseQaapPreviewIdFromHost('a.b.preview.example.test', 'preview.example.test')).to.equal(undefined);
-        expect(parseQaapPreviewIdFromHost('evilpreview.example.test', 'preview.example.test')).to.equal(undefined);
-        expect(parseQaapPreviewIdFromHost('u-alice-w-x-1.preview.example.test', undefined)).to.equal(undefined);
+    it('extracts the host label of a preview host and nothing else', () => {
+        expect(parseQaapPreviewHostLabel('u-alice-w-x-1.preview.example.test', 'preview.example.test')).to.equal('u-alice-w-x-1');
+        expect(parseQaapPreviewHostLabel('U-ALICE-W-X-1.preview.example.test:443', 'preview.example.test')).to.equal('u-alice-w-x-1');
+        expect(parseQaapPreviewHostLabel('qaap.example.test', 'preview.example.test')).to.equal(undefined);
+        expect(parseQaapPreviewHostLabel('a.b.preview.example.test', 'preview.example.test')).to.equal(undefined);
+        expect(parseQaapPreviewHostLabel('evilpreview.example.test', 'preview.example.test')).to.equal(undefined);
+        expect(parseQaapPreviewHostLabel('u-alice-w-x-1.preview.example.test', undefined)).to.equal(undefined);
+    });
+
+    it('derives a stable 128-bit DNS label from the preview id and its secret token', () => {
+        const label = buildQaapPreviewHostLabel('u-alice-w-x-1', 'token-a');
+        expect(label).to.match(/^[0-9a-f]{32}$/);
+        expect(buildQaapPreviewHostLabel('u-alice-w-x-1', 'token-a')).to.equal(label);
+        expect(buildQaapPreviewHostLabel('u-alice-w-x-1', 'token-b')).to.not.equal(label);
+        expect(buildQaapPreviewHostLabel('u-bob-w-x-1', 'token-a')).to.not.equal(label);
+        expect(parseQaapPreviewHostLabel(`${label}.preview.example.test`, 'preview.example.test')).to.equal(label);
     });
 });
+
+function restoreEnv(key: string, value: string | undefined): void {
+    if (value === undefined) {
+        delete process.env[key];
+    } else {
+        process.env[key] = value;
+    }
+}
 
 describe('advertisePreviewRouteOnJson', () => {
     function fakeResponse(): { res: Response; headers: Record<string, string>; bodies: unknown[] } {
@@ -44,6 +61,23 @@ describe('advertisePreviewRouteOnJson', () => {
         res.json({ previewId: 'u-alice-w-x-1', previewUrl: 'https://u-alice-w-x-1.preview.example.test/' });
         expect(headers[QAAP_PREVIEW_ROUTE_HEADER]).to.equal('preview:u-alice-w-x-1');
         expect(bodies).to.have.length(1);
+    });
+
+    it('also advertises the host label of an isolated preview URL', () => {
+        const priorBase = process.env.QAAP_PREVIEW_BASE_DOMAIN;
+        const priorPublic = process.env.QAAP_OAUTH_PUBLIC_URL;
+        process.env.QAAP_PREVIEW_BASE_DOMAIN = 'preview.example.test';
+        process.env.QAAP_OAUTH_PUBLIC_URL = 'https://qaap.example.test';
+        try {
+            const label = buildQaapPreviewHostLabel('u-alice-w-x-1', 'secret');
+            const { res, headers } = fakeResponse();
+            advertisePreviewRouteOnJson(res);
+            res.json({ previewId: 'u-alice-w-x-1', previewUrl: `https://${label}.preview.example.test/` });
+            expect(headers[QAAP_PREVIEW_ROUTE_HEADER]).to.equal(`preview:u-alice-w-x-1, preview:${label}`);
+        } finally {
+            restoreEnv('QAAP_PREVIEW_BASE_DOMAIN', priorBase);
+            restoreEnv('QAAP_OAUTH_PUBLIC_URL', priorPublic);
+        }
     });
 
     it('adds nothing for answers without a valid preview id', () => {

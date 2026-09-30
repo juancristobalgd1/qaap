@@ -90,6 +90,17 @@ ensure_docker_pull_space() {
     fi
 }
 
+ensure_caddy_image() {
+    # Caddy is built locally (deploy/caddy/Dockerfile adds the DuckDNS DNS provider for isolated
+    # preview hosts). Build it before any `up --no-build`, so a failed build stops the deploy while
+    # the current containers keep serving. Cached layers make this a no-op after the first build.
+    if ! docker compose config --services | grep -Fxq caddy; then
+        return 0
+    fi
+    echo "[qaap-vps-update] building Caddy image"
+    docker compose build caddy
+}
+
 refresh_caddy() {
     # Git replaces a checked-out bind-mounted file by inode. A running Caddy container can keep
     # the old inode, so `docker compose up -d` may leave the previous Caddyfile active even though
@@ -323,6 +334,7 @@ export QAAP_BUILD_SHA="$BEFORE"
 
 # Fail before replacing the old container if runtime state is still in its writable layer.
 run_runtime_state_check
+ensure_caddy_image
 
 # Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
 # same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
