@@ -481,6 +481,11 @@ export function ensureTranscriptFilesTabExtracted(
     }
     if (ctx.host.transcriptFilesAttachedKey === workspaceKey && host.querySelector('.theia-mobile-transcript-files')) {
         const attached = ctx.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey);
+        if (attached) {
+            // Keep the visible mount most-recently-used so LRU eviction never disposes it.
+            ctx.host.transcriptWorkspaceSurfaces.setFiles(workspaceKey, attached);
+            attached.refreshIfEmpty?.();
+        }
         const pendingMode = readPendingTranscriptFilesViewMode();
         if (requestedMode) {
             clearPendingTranscriptFilesViewMode();
@@ -588,6 +593,8 @@ export function ensureTranscriptFilesTabExtracted(
     } else {
         // Cached mount — consume any pending view-mode flag set by a
         // 'review' → 'files' redirect so the switch updates on re-attach.
+        ctx.host.transcriptWorkspaceSurfaces.setFiles(workspaceKey, mount);
+        mount.refreshIfEmpty?.();
         const pendingMode = readPendingTranscriptFilesViewMode();
         if (requestedMode) {
             clearPendingTranscriptFilesViewMode();

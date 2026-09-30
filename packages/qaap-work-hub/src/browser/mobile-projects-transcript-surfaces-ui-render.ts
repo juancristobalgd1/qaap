@@ -240,6 +240,13 @@ export function executionPreviewHostExtracted(ctx: MobileProjectsTranscriptSurfa
 }
 
 export function executionFilesHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): HTMLElement | undefined {
+    // The Files drawer resolves its host independently (and may open before the
+    // view is mounted). Once open, its host is the only visible one, so mount
+    // there instead of into a sibling inline host the drawer did not pick.
+    const sidebar = ctx.host.executionSurfaceSidebar;
+    if (sidebar?.activeTab === 'files' && sidebar.activeHost?.isConnected) {
+        return sidebar.activeHost;
+    }
     return ctx.executionSurfaceHost(
         ctx.host.transcriptFilesHost,
         ctx.host.projectDetailSurfaceTargets?.filesHost,

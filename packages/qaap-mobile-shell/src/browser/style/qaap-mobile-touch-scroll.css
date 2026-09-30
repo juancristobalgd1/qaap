@@ -165,6 +165,44 @@
   }
 
   /*
+   * Work Hub hosts that already own `overflow: auto` (search overlay, sidebar
+   * PR list and settings nav, history, dialogs, pickers). Kept out of the rule
+   * above (and from MOBILE_VERTICAL_SCROLL_SELECTORS): several are fixed
+   * overlays or lay out their own overflow, so they only get the touch /
+   * overscroll contract, not forced overflow or containment. They pan natively
+   * through `mobile-native-touch-scroll-guard.ts`.
+   */
+  .theia-mobile-work-hub-unified-search,
+  .theia-mobile-work-hub-unified-search-results,
+  .theia-mobile-work-hub-pull-requests-results,
+  .theia-mobile-work-hub-settings-nav,
+  .theia-mobile-work-hub-settings-custom-content,
+  .theia-mobile-work-hub-settings-embedded-widget .ai-skills-configuration-container,
+  .theia-mobile-work-hub-settings-embedded-widget .mcp-configuration-container,
+  .theia-mobile-transcript-history-list,
+  .theia-mobile-transcript-preview-devlog,
+  .theia-mobile-agent-activity-thinking-body,
+  .theia-qaap-tool-approval-rules-list,
+  .theia-mobile-open-repo-panel.theia-mod-clone,
+  .theia-mobile-projects-sticky-composer-attach-menu,
+  .theia-mobile-agent-login-dialog-content,
+  .qaap-project-bootstrap-log-content,
+  .theia-mobile-transcript-app-picker-list {
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+  }
+
+  /* Diff / code blocks pan on both axes. */
+  .theia-mobile-work-hub-pull-request-diff,
+  .theia-mobile-work-hub-pull-request-description-text pre {
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    overscroll-behavior: contain;
+  }
+
+  /*
    * Promote the scroll layer to the GPU only while the user is actively panning
    * (`.theia-mod-touch-scrolling` from installMobileVerticalTouchScroll).
    * Never on `.theia-mobile-projects-scroll` — sticky row heads break when the

@@ -32,6 +32,14 @@
   overflow: hidden;
 }
 
+/* The outer sidebar scroller is locked in this mode, so bound the panel to it
+   and let the results list own the scroll (otherwise it grows unbounded and
+   can never scroll, on touch or with a mouse). */
+.theia-mobile-work-hub-sessions-sidebar.theia-mod-pull-requests .theia-mobile-work-hub-pull-requests {
+  height: 100%;
+  min-height: 0;
+}
+
 .theia-mobile-work-hub-pull-requests {
   display: flex;
   flex-direction: column;
