@@ -9,7 +9,8 @@ import {
     isQaapProcessPreviewIdentity,
     type QaapResolvedPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import { randomBytes } from 'crypto';
+import { buildQaapPreviewHostLabel } from './qaap-preview-host';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -42,6 +43,8 @@ interface PersistedQaapDevPreviewRegistry {
 }
 
 const PERSIST_DEBOUNCE_MS = 100;
+/** Shape of `buildQaapPreviewHostLabel` output; no preview id matches it (they start with `u-`/`p-`). */
+const QAAP_PREVIEW_HOST_LABEL_PATTERN = /^[0-9a-f]{32}$/;
 const STORE_FILE_MODE = 0o600;
 const STORE_DIR_MODE = 0o700;
 
@@ -202,9 +205,29 @@ export class QaapDevPreviewPortRegistry {
         this.onDidReleasePortEmitter.fire(record.port);
     }
 
+    /**
+     * The live record for `previewId`, which may also be the preview's isolated host label: the
+     * frontend only sees that label in an isolated preview URL and uses it as the preview's id.
+     * Callers that write back must key by the returned `record.previewId`.
+     */
     get(previewId: string): QaapDevPreviewRecord | undefined {
         const record = this.previews.get(previewId);
-        return record && !this.isRecordExpired(record) ? record : undefined;
+        if (!record) {
+            return QAAP_PREVIEW_HOST_LABEL_PATTERN.test(previewId) ? this.getByHostLabel(previewId) : undefined;
+        }
+        return !this.isRecordExpired(record) ? record : undefined;
+    }
+
+    /** The live record whose isolated host label (see `buildQaapPreviewHostLabel`) is `hostLabel`. */
+    getByHostLabel(hostLabel: string): QaapDevPreviewRecord | undefined {
+        const expected = Buffer.from(hostLabel);
+        for (const record of this.previews.values()) {
+            const candidate = Buffer.from(buildQaapPreviewHostLabel(record.previewId, record.accessToken));
+            if (candidate.length === expected.length && timingSafeEqual(candidate, expected)) {
+                return this.isRecordExpired(record) ? undefined : record;
+            }
+        }
+        return undefined;
     }
 
     getForOwner(previewId: string, ownerLogin: string): QaapDevPreviewRecord | undefined {
@@ -218,7 +241,7 @@ export class QaapDevPreviewPortRegistry {
             return;
         }
         const now = Date.now();
-        this.previews.set(previewId, { ...record, touchedAt: now });
+        this.previews.set(record.previewId, { ...record, touchedAt: now });
         this.claims.set(record.port, { ownerLogin, at: now });
         this.schedulePersist();
     }
@@ -228,7 +251,7 @@ export class QaapDevPreviewPortRegistry {
         if (!record) {
             return false;
         }
-        this.previews.set(previewId, { ...record, osProcessId, touchedAt: Date.now() });
+        this.previews.set(record.previewId, { ...record, osProcessId, touchedAt: Date.now() });
         this.schedulePersist();
         return true;
     }
@@ -273,8 +296,8 @@ export class QaapDevPreviewPortRegistry {
         if (!record) {
             return false;
         }
-        this.previews.delete(previewId);
-        if (this.previewIdByPort.get(record.port) === previewId) {
+        this.previews.delete(record.previewId);
+        if (this.previewIdByPort.get(record.port) === record.previewId) {
             this.previewIdByPort.delete(record.port);
         }
         if (this.claims.get(record.port)?.ownerLogin === ownerLogin) {

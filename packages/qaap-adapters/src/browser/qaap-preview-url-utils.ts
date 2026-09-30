@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { isAllowedDevPreviewPort, QAAP_DEV_PREVIEW_MAX_PORT, QAAP_DEV_PREVIEW_MIN_PORT } from '../common/qaap-dev-preview-ports';
+import { parseQaapIsolatedPreviewUrl } from '../common/qaap-isolated-preview-url';
 
 /** Same prefix as {@link QAAP_DEV_PREVIEW_PREFIX} in qaap-shared-core (keep in sync). */
 export const QAAP_DEV_PREVIEW_PATH_PREFIX = '/qaap-dev';
@@ -183,6 +184,41 @@ export function parsePreviewIdentityPath(pathname: string): QaapPreviewIdentityP
     return { previewId: match[1], targetPath: match[2] || '/' };
 }
 
+export interface QaapPreviewUrlIdentity extends QaapPreviewIdentityPath {
+    /**
+     * Set for an isolated-origin preview (`https://<hostLabel>.<baseDomain>/…`): `previewId` is then
+     * the host label (a backend-accepted alias, not the canonical id) and `targetPath` the pathname.
+     */
+    readonly isolatedOrigin?: string;
+}
+
+/**
+ * Identity carried by a full preview URL: a same-origin `/qaap-preview/:previewId/…` path, or an
+ * isolated-origin preview whose host label stands in for the preview id. Prefer this over
+ * {@link parsePreviewIdentityPath} whenever the whole URL (not only its pathname) is available.
+ */
+export function parsePreviewIdentityUrl(url: string | undefined, publicOrigin?: string): QaapPreviewUrlIdentity | undefined {
+    const trimmed = url?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const origin = (publicOrigin ?? ideOrigin())?.replace(/\/+$/, '');
+    const isolated = parseQaapIsolatedPreviewUrl(trimmed, origin);
+    if (isolated) {
+        return { previewId: isolated.hostLabel, targetPath: new URL(trimmed).pathname || '/', isolatedOrigin: isolated.origin };
+    }
+    try {
+        return parsePreviewIdentityPath(new URL(trimmed, origin ?? 'http://localhost/').pathname);
+    } catch {
+        return undefined;
+    }
+}
+
+/** True for an isolated-origin preview URL (never same-origin with the Qaap app). */
+export function isIsolatedPreviewUrl(url: string | undefined, publicOrigin?: string): boolean {
+    return !!parseQaapIsolatedPreviewUrl(url, (publicOrigin ?? ideOrigin())?.replace(/\/+$/, ''));
+}
+
 /**
  * Replaces a retired preview/proxy identity with the newly claimed identity while preserving the
  * app route, query, and hash. A fresh claim supersedes the previous `/qaap-preview/:id/` URL, so
@@ -193,18 +229,21 @@ export function rebasePreviewUrlToIdentityClaim(sourceUrl: string, claimedPrevie
     try {
         const source = new URL(sourceUrl);
         const claimed = new URL(claimedPreviewUrl);
-        const claimedIdentity = parsePreviewIdentityPath(claimed.pathname);
+        const claimedIdentity = parsePreviewIdentityUrl(claimedPreviewUrl);
         if (!claimedIdentity) {
             return claimedPreviewUrl;
         }
-        const sourceIdentity = parsePreviewIdentityPath(source.pathname);
+        const sourceIdentity = parsePreviewIdentityUrl(sourceUrl);
         const sourceProxy = parsePreviewProxyPath(source.pathname);
         const targetPath = sourceIdentity?.targetPath
             ?? sourceProxy?.targetPath
             ?? source.pathname
             ?? '/';
         const normalizedTargetPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
-        claimed.pathname = `${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/${encodeURIComponent(claimedIdentity.previewId)}${normalizedTargetPath}`;
+        // An isolated origin serves the app at its root; a same-origin identity under its prefix.
+        claimed.pathname = claimedIdentity.isolatedOrigin
+            ? normalizedTargetPath
+            : `${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/${encodeURIComponent(claimedIdentity.previewId)}${normalizedTargetPath}`;
         claimed.search = source.search;
         claimed.hash = source.hash;
         return claimed.toString();
@@ -233,7 +272,7 @@ export function previewAppPathFromUrl(url: string | undefined): string | undefin
     }
     try {
         const parsed = new URL(trimmed);
-        const identity = parsePreviewIdentityPath(parsed.pathname);
+        const identity = parsePreviewIdentityUrl(trimmed);
         if (identity) {
             return identity.targetPath && identity.targetPath !== '/' ? identity.targetPath : undefined;
         }
@@ -275,7 +314,9 @@ export function resolveEffectivePreviewUrl(options: {
     }
     if (identity) {
         try {
-            if (parsePreviewIdentityPath(new URL(identity).pathname)) {
+            // Isolated claims are identity-bearing too: rebase the app route onto that origin
+            // instead of letting a direct localhost candidate fall back to `/qaap-dev/:port`.
+            if (parsePreviewIdentityUrl(identity)) {
                 next = rebasePreviewUrlToIdentityClaim(next, identity);
             }
         } catch {
@@ -301,12 +342,14 @@ export function applyNestedPathToPreviewUrl(previewUrl: string, nestedPath: stri
     }
     try {
         const parsed = new URL(previewUrl);
-        const identity = parsePreviewIdentityPath(parsed.pathname);
+        const identity = parsePreviewIdentityUrl(previewUrl);
         if (identity) {
             if (identity.targetPath && identity.targetPath !== '/') {
                 return previewUrl;
             }
-            parsed.pathname = `${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/${encodeURIComponent(identity.previewId)}${nested}`;
+            parsed.pathname = identity.isolatedOrigin
+                ? nested
+                : `${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/${encodeURIComponent(identity.previewId)}${nested}`;
             return parsed.toString();
         }
         const proxy = parsePreviewProxyPath(parsed.pathname);

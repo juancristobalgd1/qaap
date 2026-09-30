@@ -16,7 +16,7 @@ import {
 import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import { pickScopedPreviewClaim } from '@theia/qaap-shared-core/lib/browser/qaap-preview-claim-scope';
 import {
-    parseQaapIdentityPreviewRequestPath,
+    parseQaapPreviewUrlIdentity,
 } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -408,12 +408,8 @@ export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: Mobil
         if (!mountedUrl) {
             return;
         }
-        let identity: { previewId: string } | undefined;
-        try {
-            identity = parseQaapIdentityPreviewRequestPath(new URL(mountedUrl, window.location.href).pathname);
-        } catch {
-            identity = undefined;
-        }
+        // Same-origin identity path or isolated-origin host label (accepted by the probe as an id).
+        const identity = parseQaapPreviewUrlIdentity(mountedUrl, window.location.origin);
         if (!identity) {
             // Legacy port-scoped mounts cannot be superseded-403'd; the tab probe covers them.
             return;
@@ -726,12 +722,7 @@ export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsT
         if (ctx.transcriptPreviewProjectId !== project.id || !host.isConnected) {
             return;
         }
-        let candidateIdentity: ReturnType<typeof parseQaapIdentityPreviewRequestPath>;
-        try {
-            candidateIdentity = parseQaapIdentityPreviewRequestPath(new URL(candidateUrl, window.location.href).pathname);
-        } catch {
-            candidateIdentity = undefined;
-        }
+        const candidateIdentity = parseQaapPreviewUrlIdentity(candidateUrl, window.location.origin);
         if (candidateIdentity) {
             // A claim that does not answer is not necessarily superseded: its dev server may be
             // booting, stopped (idle tenant, redeploy, crash) or the backend briefly unreachable.
@@ -764,12 +755,7 @@ export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsT
             fallBackFromSupersededTranscriptPreviewExtracted(ctx, host, latestProject, summary, candidateUrl);
             return;
         }
-        let identityPath: ReturnType<typeof parseQaapIdentityPreviewRequestPath>;
-        try {
-            identityPath = parseQaapIdentityPreviewRequestPath(new URL(candidateUrl, window.location.href).pathname);
-        } catch {
-            identityPath = undefined;
-        }
+        const identityPath = parseQaapPreviewUrlIdentity(candidateUrl, window.location.origin);
         const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
         if (identityPath || extractDevPreviewPortFromUrl(candidateUrl) === undefined) {
             if (ctx.matchesActivePreviewSummary(summary) || previewTabActive) {

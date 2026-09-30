@@ -18,7 +18,7 @@ import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-githu
 import { filterQaapReservedSetCookies, QAAP_PREVIEW_ACCESS_COOKIE_NAME, stripQaapReservedCookies } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forward-headers';
 import { QAAP_DEV_PREVIEW_PREFIX, QAAP_IDENTITY_PREVIEW_PREFIX } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import { QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantActivityReason } from '../common/qaap-cloud-api-types';
-import { parseQaapPreviewIdFromHost, resolveQaapPreviewBaseDomain } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
+import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
 import { QAAP_PREVIEW_ROUTE_HEADER, parseQaapPreviewRoutes, type QaapPreviewRoute } from '@theia/qaap-shared-core/lib/common/qaap-preview-route';
 import { parseQaapPublicPreviewSharePath } from '../common/qaap-preview-share';
 import { QaapTenantPreviewRouteTable } from './qaap-tenant-preview-route-table';
@@ -185,7 +185,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
 
     /**
      * Public preview traffic that carries its own capability instead of the IDE session: isolated
-     * preview hosts (`<previewId>.<QAAP_PREVIEW_BASE_DOMAIN>`, preview-access cookie/token) and public
+     * preview hosts (`<hostLabel>.<QAAP_PREVIEW_BASE_DOMAIN>`, the unguessable label is the capability) and public
      * share links (`/qaap-dev/public/<token>/`). It is routed by identifier, never by the visitor's
      * session, so a signed-in visitor of someone else's share reaches the owner's backend, and never
      * carries the visitor's identity. Set `QAAP_TENANT_PREVIEW_ROUTING=0` to serve it locally.
@@ -195,9 +195,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             return undefined;
         }
         const rawHost = this.firstHeader(request.headers['x-forwarded-host']) ?? this.firstHeader(request.headers.host);
-        const previewId = parseQaapPreviewIdFromHost(rawHost, resolveQaapPreviewBaseDomain());
-        if (previewId) {
-            return { kind: 'preview', id: previewId };
+        const hostLabel = parseQaapPreviewHostLabel(rawHost, resolveQaapPreviewBaseDomain());
+        if (hostLabel) {
+            return { kind: 'preview', id: hostLabel };
         }
         const share = parseQaapPublicPreviewSharePath((request.url ?? '/').split('?', 1)[0]);
         return share ? { kind: 'share', id: share.token } : undefined;

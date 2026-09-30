@@ -12,7 +12,7 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { shouldPreferWorkHubAgentsLayout } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { MobileHaptics } from '@theia/qaap-mobile-shell/lib/browser/mobile-haptics';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
-import { parsePreviewIdentityPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { parsePreviewIdentityUrl } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import { formatQaapBootstrapDiagnostic } from '@theia/qaap-shared-core/lib/browser/qaap-bootstrap-display';
 import {
@@ -188,7 +188,8 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
         }
         try {
             const parsed = new URL(previewUrl, window.location.origin);
-            const identity = parsePreviewIdentityPath(parsed.pathname);
+            // Isolated-origin URLs are identity-bearing too; their host label is a probe alias.
+            const identity = parsePreviewIdentityUrl(parsed.toString(), window.location.origin);
             if (identity?.previewId) {
                 const probe = await probeQaapIdentityPreview(identity.previewId);
                 if (!probe.ready) {

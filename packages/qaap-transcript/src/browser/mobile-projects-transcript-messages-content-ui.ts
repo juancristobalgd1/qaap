@@ -16,8 +16,10 @@ import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/brows
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import {
+    isQaapIsolatedPreviewHostLabel,
     parseQaapDevPreviewRequestPath,
     parseQaapIdentityPreviewRequestPath,
+    parseQaapIsolatedPreviewUrl,
     type QaapDevPreviewProbeResponse,
 } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import { collapseExactRepeatedText } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
@@ -65,9 +67,11 @@ const STREAM_TOTAL_LENGTH_DATA = 'qaapStreamTotalLength';
  *  attribute serialization on every frame while a long turn streams. */
 const transcriptStreamSourceCache = new WeakMap<HTMLElement, string>();
 
-const QAAP_PREVIEW_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-
-/** Extracts the execution identity from same-origin proxy and `preview.qaap` URLs. */
+/**
+ * Extracts the execution identity from same-origin `/qaap-preview/<id>/` URLs, or the host label of
+ * an isolated-origin preview (`https://<hostLabel>.<baseDomain>/`), which the backend accepts as a
+ * preview id alias (its responses still report the canonical id).
+ */
 export function extractTranscriptPreviewId(href: string, publicOrigin: string): string | undefined {
     try {
         const origin = new URL(publicOrigin);
@@ -78,15 +82,10 @@ export function extractTranscriptPreviewId(href: string, publicOrigin: string): 
         if (parsed.origin === origin.origin) {
             return parseQaapIdentityPreviewRequestPath(parsed.pathname)?.previewId;
         }
-        const labels = parsed.hostname.toLowerCase().split('.');
-        const previewId = labels[0];
-        if (labels.length >= 3 && labels[1] === 'preview' && QAAP_PREVIEW_ID_PATTERN.test(previewId)) {
-            return previewId;
-        }
+        return parseQaapIsolatedPreviewUrl(parsed.toString(), origin.origin)?.hostLabel;
     } catch {
         return undefined;
     }
-    return undefined;
 }
 
 /** Returns only URLs that Qaap can safely route into the conversation's integrated preview. */
@@ -244,7 +243,9 @@ export class MobileProjectsTranscriptMessagesContentUi {
             }
         } else if (previewId) {
             const probe = await this.probePreviewIdentity(previewId);
-            if (!probe.ready || probe.previewId !== previewId) {
+            // A host label is an alias: the backend resolves it and reports the canonical id.
+            const sameIdentity = probe.previewId === previewId || isQaapIsolatedPreviewHostLabel(previewId);
+            if (!probe.ready || !sameIdentity) {
                 const claimUrl = await this.resolveClaimPreviewUrlFallback();
                 if (!claimUrl) {
                     return false;
@@ -611,7 +612,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
     linkifyTranscriptPreviewUrls(content: string | undefined | null): string {
         const text = content ?? '';
         return text.replace(
-            /(^|[\s(])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-preview\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\/[^\s\x60<)]*)?|https?:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.preview\.[a-z0-9.-]+(?::\d{2,5})?(?:\/[^\s\x60<)]*)?)/gi,
+            /(^|[\s(])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-preview\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\/[^\s\x60<)]*)?|https?:\/\/[0-9a-f]{32}(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?){2,}(?::\d{2,5})?(?:\/[^\s\x60<)]*)?)/gi,
             (match, prefix: string, url: string, offset: number) => {
                 // Avoid slicing the entire accumulated stream for every URL.
                 // lastIndexOf preserves the markdown-context checks while

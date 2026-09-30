@@ -253,7 +253,10 @@ services:
 
   # Free, self-hosted web search for @qaiq — no API key, only Docker. Reachable ONLY from
   caddy:
-    image: caddy:2
+    # Stock Caddy plus the DuckDNS DNS provider (deploy/caddy/Dockerfile), used only for the
+    # wildcard certificate of isolated preview hosts. Built on the VPS by qaap-vps-update.sh.
+    build: ./deploy/caddy
+    image: qaap-caddy:local
     restart: unless-stopped
     depends_on:
       - theia
@@ -263,8 +266,14 @@ services:
     environment:
       QAAP_PUBLIC_HOST: ${QAAP_PUBLIC_HOST:-localhost}
       THEIA_PORT: ${THEIA_PORT:-4873}
+      # Isolated preview hosts (*.QAAP_PREVIEW_BASE_DOMAIN) are served only when both the domain
+      # and its DuckDNS token are set; the Caddyfile imports deploy/caddy/previews/duckdns.caddy then.
+      QAAP_PREVIEW_BASE_DOMAIN: ${QAAP_PREVIEW_BASE_DOMAIN:-}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:-}
+      QAAP_PREVIEW_CADDY_SITE: ${QAAP_PREVIEW_BASE_DOMAIN:+${DUCKDNS_TOKEN:+duckdns}}
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/caddy/previews:/etc/caddy/previews:ro
       - caddy_data:/data
       - caddy_config:/config
 

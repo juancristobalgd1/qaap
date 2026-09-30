@@ -69,6 +69,37 @@ describe('qaap-preview-surface-match', () => {
         )).to.equal(false);
     });
 
+    describe('isolated origin', () => {
+        const LABEL = '0123456789abcdef0123456789abcdef';
+        const OTHER = 'ffffffffffffffffffffffffffffffff';
+
+        it('matches isolated URLs by host label, never by the shared 443 port', () => {
+            expect(qaapPreviewFrameMatchesUrl(
+                frame(`https://${LABEL}.previews.qaap.example/cart`),
+                `https://${LABEL}.previews.qaap.example/`
+            )).to.equal(true);
+            expect(qaapPreviewFrameMatchesUrl(
+                frame(`https://${LABEL}.previews.qaap.example/`),
+                `https://${OTHER}.previews.qaap.example/`
+            )).to.equal(false);
+            expect(qaapPreviewFrameMatchesUrl(
+                frame(`https://${LABEL}.previews.qaap.example/`),
+                'https://ide.example/qaap-dev/443/'
+            )).to.equal(false);
+        });
+
+        it('treats the canonical identity URL and the isolated URL of one claim as the same surface', () => {
+            const identityUrl = `http://ide.example/qaap-preview/${ID_A}/`;
+            const isolatedUrl = `https://${LABEL}.previews.qaap.example/`;
+            expect(qaapPreviewFrameMatchesUrl(frame(isolatedUrl), identityUrl)).to.equal(false);
+            expect(qaapPreviewFrameMatchesUrl(frame(isolatedUrl), identityUrl, [ID_A, LABEL])).to.equal(true);
+            expect(qaapPreviewFrameMatchesUrl(frame(identityUrl), isolatedUrl, [ID_A, LABEL])).to.equal(true);
+            // Aliases of a claim never join an unrelated identity.
+            expect(qaapPreviewFrameMatchesUrl(frame(`http://ide.example/qaap-preview/${ID_B}/`), isolatedUrl, [ID_A, LABEL]))
+                .to.equal(false);
+        });
+    });
+
     it('rejects empty and about:blank frames', () => {
         expect(qaapPreviewFrameMatchesUrl(frame(''), `http://ide.example/qaap-preview/${ID_A}/`)).to.equal(false);
         expect(qaapPreviewFrameMatchesUrl(frame('about:blank'), 'http://ide.example/qaap-dev/5173/')).to.equal(false);

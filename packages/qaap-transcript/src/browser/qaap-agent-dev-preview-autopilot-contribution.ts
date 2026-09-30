@@ -157,6 +157,12 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             // to Browser/Preview — the user opens that tab only via an explicit affordance.
             await this.bootstrap.openPreview(readyUrl, true, { silent: true }).catch(() => undefined);
             const capturePreviewUrl = this.bootstrap.previewUrl ?? readyUrl;
+            if (this.isCrossOriginPreview(capturePreviewUrl)) {
+                // An isolated-origin preview cannot be read from here (`contentDocument` is
+                // cross-origin). The backend headless capture renders it on localhost on its own,
+                // so skip without reporting a failure or spending the in-frame polling budget.
+                return;
+            }
             // Work Hub normally suspends preview iframes to avoid background HMR traffic. Resume
             // them only for this bounded capture, then restore the normal shell policy.
             resumeQaapMiniBrowserPreview(this.shell);
@@ -256,6 +262,15 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             } catch {
                 /* best effort */
             }
+        }
+    }
+
+    /** True when the preview is served from another origin than Qaap (isolated-origin mode). */
+    protected isCrossOriginPreview(previewUrl: string): boolean {
+        try {
+            return new URL(previewUrl, window.location.href).origin !== window.location.origin;
+        } catch {
+            return false;
         }
     }
 

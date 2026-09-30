@@ -114,6 +114,8 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
         let upstreamPort: number;
         let frontPort: number;
         let upstreamHandler: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+        /** `''` serves like an isolated preview host (origin root); undefined uses the legacy port prefix. */
+        let frontPrefix: string | undefined;
         const endpoint = new ProxyTestEndpoint();
 
         before(async () => {
@@ -125,7 +127,7 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
                     type(value: string): unknown { res.setHeader('content-type', value); return outgoing; },
                     send(value: string): unknown { res.end(value); return outgoing; },
                 });
-                void endpoint.forwardHttp(req as unknown as Request, outgoing as unknown as Response, upstreamPort, req.url ?? '/');
+                void endpoint.forwardHttp(req as unknown as Request, outgoing as unknown as Response, upstreamPort, req.url ?? '/', frontPrefix);
             });
             await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve));
             await new Promise<void>(resolve => front.listen(0, '127.0.0.1', resolve));
@@ -150,6 +152,40 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             });
 
         const moduleSource = 'import "/src/a.js";';
+
+        it('streams isolated-host scripts untouched and keeps the host label out of third-party referers', async () => {
+            upstreamHandler = (_req, res) => {
+                res.writeHead(200, { 'content-type': 'application/javascript', 'content-length': Buffer.byteLength(moduleSource) });
+                res.end(moduleSource);
+            };
+            frontPrefix = '';
+            try {
+                const response = await request('GET', '/a.js');
+                expect(response.body).to.equal(moduleSource);
+                expect(response.headers['content-length']).to.equal(String(Buffer.byteLength(moduleSource)));
+                expect(response.headers['referrer-policy']).to.equal('same-origin');
+            } finally {
+                frontPrefix = undefined;
+            }
+        });
+
+        it('still injects the bridge into isolated-host documents, without the path-prefix scripts', async () => {
+            const html = '<html><head></head><body><script type="module" src="/src/main.ts"></script></body></html>';
+            upstreamHandler = (_req, res) => {
+                res.writeHead(200, { 'content-type': 'text/html' });
+                res.end(html);
+            };
+            frontPrefix = '';
+            try {
+                const response = await request('GET', '/');
+                expect(response.body).to.contain('data-qaap-preview-bridge-loader');
+                expect(response.body).to.contain('src="/src/main.ts"');
+                expect(response.body).to.not.contain('TSS_ROUTER_BASEPATH');
+                expect(response.headers['referrer-policy']).to.equal('same-origin');
+            } finally {
+                frontPrefix = undefined;
+            }
+        });
 
         it('rewrites small JS bodies and drops the stale content-length', async () => {
             upstreamHandler = (_req, res) => {

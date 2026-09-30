@@ -2,8 +2,7 @@
 
 import type { Request, Response } from '@theia/core/shared/express';
 import * as http from 'http';
-import { timingSafeEqual } from 'crypto';
-import { parseQaapPreviewIdFromHost, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
+import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
 import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
@@ -20,8 +19,7 @@ import {
     isQaapDevPreviewServedResponse,
     isAllowedDevPreviewPort,
 } from '../common/qaap-dev-preview';
-import { QAAP_PREVIEW_ACCESS_QUERY } from './qaap-dev-preview-endpoint';
-import { TEXT_RESPONSE_PATTERN, LOCAL_TARGET_HOSTNAMES, PROBE_TIMEOUT_MS, QAAP_PREVIEW_ACCESS_COOKIE } from './qaap-dev-preview-endpoint';
+import { TEXT_RESPONSE_PATTERN, LOCAL_TARGET_HOSTNAMES, PROBE_TIMEOUT_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 
 export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, incoming: Request,
@@ -71,11 +69,20 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             if (typeof location === 'string') {
                 responseHeaders.location = ctx.rewriteDevPreviewLocation(location, targetPort, publicPrefix);
             }
+            // An isolated preview host (empty prefix) serves the app at the root of its own origin.
+            const isolatedHost = publicPrefix === '';
+            if (isolatedHost) {
+                // The host label is the preview capability: never leak it to third parties the app calls.
+                responseHeaders['referrer-policy'] = 'same-origin';
+            }
 
             const statusCode = proxyRes.statusCode ?? 502;
             const contentType = proxyRes.headers['content-type'];
             const isHtml = typeof contentType === 'string' && /\btext\/html\b/i.test(contentType);
             if (!ctx.shouldRewriteProxyBody(proxyRes)
+                // At the origin root every URL is already right: only documents need the bridge scripts,
+                // so scripts and styles stream through untouched instead of being buffered and scanned.
+                || (isolatedHost && !isHtml)
                 // No body to rewrite: keep content-length (HEAD reports the GET size).
                 || incoming.method === 'HEAD' || statusCode === 204 || statusCode === 304) {
                 outgoing.writeHead(statusCode, responseHeaders);
@@ -487,65 +494,19 @@ export function buildIdentityPreviewUrlExtracted(ctx: QaapDevPreviewEndpointCont
             return buildQaapIdentityPreviewUrl(ctx.resolvePublicOrigin(req), record.previewId);
         }
         const protocol = ctx.firstHeaderValue(req.headers['x-forwarded-proto']) ?? req.protocol ?? 'https';
-        const url = new URL(`${protocol}://${record.previewId}.${baseDomain}/`);
-        url.searchParams.set(QAAP_PREVIEW_ACCESS_QUERY, record.accessToken);
-        return url.toString();
+        // The host label is the capability (see buildQaapPreviewHostLabel): no token query, no
+        // cookie, no redirect hop before the first byte of the app.
+        return `${protocol}://${buildQaapPreviewHostLabel(record.previewId, record.accessToken)}.${baseDomain}/`;
 }
 
 export function previewBaseDomainExtracted(ctx: QaapDevPreviewEndpointContext): string | undefined {
         return resolveQaapPreviewBaseDomain();
 }
 
-export function previewIdFromHostExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage): string | undefined {
+export function previewHostLabelExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage): string | undefined {
         const rawHost = ctx.firstHeaderValue(req.headers['x-forwarded-host'])
             ?? ctx.firstHeaderValue(req.headers.host);
-        return parseQaapPreviewIdFromHost(rawHost, ctx.previewBaseDomain());
-}
-
-export function authorizePreviewHostRequestExtracted(ctx: QaapDevPreviewEndpointContext, req: Request,
-        res: Response,
-        record: QaapDevPreviewRecord,): 'allowed' | 'redirected' | 'denied' {
-        if (ctx.hasPreviewCapability(req, record)) {
-            return 'allowed';
-        }
-        const requestUrl = new URL(req.originalUrl || req.url || '/', 'http://preview.invalid');
-        const queryToken = requestUrl.searchParams.get(QAAP_PREVIEW_ACCESS_QUERY);
-        if (!ctx.matchesPreviewToken(queryToken, record.accessToken)) {
-            res.status(403).type('text/plain').send('Preview access denied.');
-            return 'denied';
-        }
-        const secure = (ctx.firstHeaderValue(req.headers['x-forwarded-proto']) ?? req.protocol) === 'https' ? '; Secure' : '';
-        res.setHeader('Set-Cookie', `${QAAP_PREVIEW_ACCESS_COOKIE}=${encodeURIComponent(record.accessToken)}; Path=/; HttpOnly; SameSite=Strict${secure}`);
-        requestUrl.searchParams.delete(QAAP_PREVIEW_ACCESS_QUERY);
-        res.redirect(302, `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}` || '/');
-        return 'redirected';
-}
-
-export function hasPreviewCapabilityExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage, record: QaapDevPreviewRecord): boolean {
-        const cookieHeader = ctx.firstHeaderValue(req.headers.cookie);
-        if (!cookieHeader) {
-            return false;
-        }
-        for (const part of cookieHeader.split(';')) {
-            const [name, ...rest] = part.trim().split('=');
-            if (name === QAAP_PREVIEW_ACCESS_COOKIE) {
-                try {
-                    return ctx.matchesPreviewToken(decodeURIComponent(rest.join('=')), record.accessToken);
-                } catch {
-                    return false;
-                }
-            }
-        }
-        return false;
-}
-
-export function matchesPreviewTokenExtracted(ctx: QaapDevPreviewEndpointContext, candidate: string | null | undefined, expected: string): boolean {
-        if (!candidate) {
-            return false;
-        }
-        const left = Buffer.from(candidate);
-        const right = Buffer.from(expected);
-        return left.length === right.length && timingSafeEqual(left, right);
+        return parseQaapPreviewHostLabel(rawHost, ctx.previewBaseDomain());
 }
 
 export function firstHeaderValueExtracted(ctx: QaapDevPreviewEndpointContext, value: string | string[] | undefined): string | undefined {

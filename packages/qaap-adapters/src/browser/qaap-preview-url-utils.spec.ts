@@ -11,6 +11,8 @@ import {
     getSameOriginPreviewProxyPort,
     normalizePreviewUrlForSameOrigin,
     applyNestedPathToPreviewUrl,
+    isIsolatedPreviewUrl,
+    parsePreviewIdentityUrl,
     previewAppPathFromUrl,
     rebasePreviewUrlToIdentityClaim,
     resolveEffectivePreviewUrl,
@@ -139,6 +141,69 @@ describe('qaap-preview-url-utils', () => {
             identityUrl: 'http://localhost:3000/qaap-preview/live-execution/',
             nestedEntry: '/docs/demo/',
         })).to.equal('http://localhost:3000/qaap-preview/live-execution/settings');
+    });
+
+    describe('isolated-origin previews', () => {
+        const label = '0123456789abcdef0123456789abcdef';
+        const isolatedRoot = `https://${label}.previews.qaap.example/`;
+        const app = 'https://app.qaap.example';
+
+        it('parses the host label as the preview identity', () => {
+            expect(parsePreviewIdentityUrl(`https://${label}.previews.qaap.example/dash?x=1`, app)).to.deep.equal({
+                previewId: label,
+                targetPath: '/dash',
+                isolatedOrigin: `https://${label}.previews.qaap.example`,
+            });
+            expect(parsePreviewIdentityUrl(`${app}/qaap-preview/live-id/a`, app)).to.deep.equal({ previewId: 'live-id', targetPath: '/a' });
+            expect(isIsolatedPreviewUrl(isolatedRoot, app)).to.equal(true);
+            expect(isIsolatedPreviewUrl(`${app}/qaap-preview/live-id/`, app)).to.equal(false);
+            expect(previewAppPathFromUrl(`https://${label}.previews.qaap.example/docs/demo/`)).to.equal('/docs/demo/');
+            expect(previewAppPathFromUrl(isolatedRoot)).to.equal(undefined);
+        });
+
+        it('rebases onto an isolated claim at the origin root, keeping route, query and hash', () => {
+            expect(rebasePreviewUrlToIdentityClaim('http://localhost:3000/qaap-preview/old-id/dashboard?tab=1#x', isolatedRoot))
+                .to.equal(`https://${label}.previews.qaap.example/dashboard?tab=1#x`);
+            expect(rebasePreviewUrlToIdentityClaim('http://localhost:3000/qaap-dev/5173/settings', isolatedRoot))
+                .to.equal(`https://${label}.previews.qaap.example/settings`);
+            expect(rebasePreviewUrlToIdentityClaim('http://127.0.0.1:5173/profile?q=2', isolatedRoot))
+                .to.equal(`https://${label}.previews.qaap.example/profile?q=2`);
+            const other = 'ffffffffffffffffffffffffffffffff';
+            expect(rebasePreviewUrlToIdentityClaim(`https://${other}.previews.qaap.example/cart`, isolatedRoot))
+                .to.equal(`https://${label}.previews.qaap.example/cart`);
+            // Same-origin identity claims still accept an isolated source route.
+            expect(rebasePreviewUrlToIdentityClaim(`https://${other}.previews.qaap.example/cart`, 'http://localhost:3000/qaap-preview/live/'))
+                .to.equal('http://localhost:3000/qaap-preview/live/cart');
+        });
+
+        it('resolveEffectivePreviewUrl never falls back to /qaap-dev/<port> for an isolated claim', () => {
+            expect(resolveEffectivePreviewUrl({
+                candidateUrl: 'http://localhost:5173/settings',
+                identityUrl: isolatedRoot,
+            })).to.equal(`https://${label}.previews.qaap.example/settings`);
+            expect(resolveEffectivePreviewUrl({
+                candidateUrl: isolatedRoot,
+                identityUrl: isolatedRoot,
+                nestedEntry: '/docs/demo/',
+            })).to.equal(`https://${label}.previews.qaap.example/docs/demo/`);
+            expect(resolveEffectivePreviewUrl({
+                candidateUrl: 'http://localhost:3000/qaap-dev/8080/',
+                identityUrl: isolatedRoot,
+                rememberedUrls: ['http://localhost:3000/qaap-preview/old-id/docs/demo/'],
+            })).to.equal(`https://${label}.previews.qaap.example/docs/demo/`);
+        });
+
+        it('pins a nested entry onto the isolated root only', () => {
+            expect(applyNestedPathToPreviewUrl(isolatedRoot, 'docs/demo')).to.equal(`https://${label}.previews.qaap.example/docs/demo/`);
+            expect(applyNestedPathToPreviewUrl(`https://${label}.previews.qaap.example/settings`, '/docs/demo/'))
+                .to.equal(`https://${label}.previews.qaap.example/settings`);
+        });
+
+        it('leaves isolated URLs untouched when normalizing for the same-origin proxy', () => {
+            const url = `https://${label}.previews.qaap.example/a?b=1`;
+            expect(normalizePreviewUrlForSameOrigin(url, app)).to.equal(url);
+            expect(getSameOriginPreviewProxyPort(url, app)).to.equal(undefined);
+        });
     });
 
     it('explains why privileged and IDE-port localhost URLs are not proxied', () => {
