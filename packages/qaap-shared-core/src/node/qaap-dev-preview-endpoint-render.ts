@@ -1,6 +1,6 @@
 // Extracted from qaap-dev-preview-endpoint.ts
 
-import type { Application, NextFunction, Request, Response } from '@theia/core/shared/express';
+import type { Application, Handler, NextFunction, Request, Response } from '@theia/core/shared/express';
 import { FileUri } from '@theia/core/lib/node';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -71,40 +71,50 @@ function previewHostLabelOfUrl(previewUrl: unknown): string | undefined {
     }
 }
 
-export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Application): void {
-    // Optional isolated-origin mode. DNS/TLS should route `*.QAAP_PREVIEW_BASE_DOMAIN` here. The
-    // unguessable host label is the preview capability, never the IDE's broad session cookie.
-    app.use((req: Request, res: Response, next: NextFunction) => {
-        const hostLabel = ctx.previewHostLabel(req);
-        if (!hostLabel) {
+/**
+ * Handlers that must run BEFORE the frontend static server and Theia's gzipped-asset routes
+ * (registered through `EarlyExpressMiddleware` in `initialize()`): contributions' `configure()`
+ * runs after those, so an isolated preview host would otherwise be answered with Qaap's own
+ * `/`, `/index.html`, bundles and icons instead of the previewed app.
+ */
+export function earlyMiddlewareExtracted(ctx: QaapDevPreviewEndpointContext): Handler[] {
+    return [
+        // Optional isolated-origin mode. DNS/TLS should route `*.QAAP_PREVIEW_BASE_DOMAIN` here. The
+        // unguessable host label is the preview capability, never the IDE's broad session cookie.
+        (req: Request, res: Response, next: NextFunction) => {
+            const hostLabel = ctx.previewHostLabel(req);
+            if (!hostLabel) {
+                next();
+                return;
+            }
+            const record = ctx.portRegistry.getByHostLabel(hostLabel);
+            if (!record) {
+                res.status(404).type('text/plain').send('Preview not found.');
+                return;
+            }
+            ctx.portRegistry.touchPreview(record.previewId, record.ownerLogin);
+            if (ctx.isIdeListenPort(record.port)) {
+                res.status(403).type('text/plain').send('Invalid preview target.');
+                return;
+            }
+            void ctx.forwardHttp(req, res, record.port, req.url || '/', '');
+        },
+        // The IDE shell must never render inside a frame: typing the bare Qaap origin into the
+        // preview bar — or a previewed app navigating its own iframe to "/" — loaded Qaap
+        // recursively inside itself. Runs AFTER the isolated-host handler (which never calls
+        // next() for preview hosts), so it only ever touches the MAIN origin's shell document.
+        (req: Request, res: Response, next: NextFunction) => {
+            const shellPath = (req.path || '').toLowerCase();
+            if (shellPath === '/' || shellPath === '/index.html') {
+                res.setHeader('X-Frame-Options', 'DENY');
+                res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+            }
             next();
-            return;
-        }
-        const record = ctx.portRegistry.getByHostLabel(hostLabel);
-        if (!record) {
-            res.status(404).type('text/plain').send('Preview not found.');
-            return;
-        }
-        ctx.portRegistry.touchPreview(record.previewId, record.ownerLogin);
-        if (ctx.isIdeListenPort(record.port)) {
-            res.status(403).type('text/plain').send('Invalid preview target.');
-            return;
-        }
-        void ctx.forwardHttp(req, res, record.port, req.url || '/', '');
-    });
-    // The IDE shell must never render inside a frame: typing the bare Qaap origin into the
-    // preview bar — or a previewed app navigating its own iframe to "/" — loaded Qaap
-    // recursively inside itself. Registered AFTER the isolated-host middleware (which never
-    // calls next() for preview hosts), so it only ever touches the MAIN origin's shell
-    // document; proxied previews, webviews, and mini-browser endpoints keep their own rules.
-    app.use((req: Request, res: Response, next: NextFunction) => {
-        const shellPath = (req.path || '').toLowerCase();
-        if (shellPath === '/' || shellPath === '/index.html') {
-            res.setHeader('X-Frame-Options', 'DENY');
-            res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
-        }
-        next();
-    });
+        },
+    ];
+}
+
+export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Application): void {
     // A per-tenant backend advertises every preview id it hands out, so the control plane can route
     // the id's isolated preview host (reached without the IDE session) back to this backend.
     app.use([`${QAAP_DEV_PREVIEW_PREFIX}/api`, `${QAAP_IDENTITY_PREVIEW_PREFIX}/api`], (req: Request, res: Response, next: NextFunction) => {
