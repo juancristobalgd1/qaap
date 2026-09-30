@@ -9,10 +9,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { TheiaAppLoader } from '../theia-app-loader';
 import { TheiaApp } from '../theia-app';
+import { TheiaExplorerView } from '../theia-explorer-view';
 import { TheiaWorkspace } from '../theia-workspace';
 
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const DESKTOP_WORK_HUB_VIEWPORT = { width: 1200, height: 953 };
+/** Wider than the 767px one-column breakpoint: the classic IDE is only reachable here. */
+const DESKTOP_IDE_VIEWPORT = { width: 1280, height: 900 };
 const KPI_PREVIEW_MS = 120_000;
 
 /** Compiled tests live under lib/tests; fixtures stay in src/tests/resources. */
@@ -118,42 +121,66 @@ async function openDesktopIdeViaCommandPalette(app: TheiaApp): Promise<boolean> 
     }
     await app.page.waitForSelector('.quick-input-widget', { state: 'hidden', timeout: 15_000 })
         .catch(() => app.page.keyboard.press('Escape'));
-    return app.page.locator('#theia-mobile-bottom-bar').isVisible();
+    return isDesktopIdeSurface(app.page);
 }
 
-/** Escape hatch: Work Hub → classic mobile IDE (bottom bar + main editor). */
+/** Classic desktop IDE: the shell left the one-column layout and the Work Hub panel is gone. */
+async function isDesktopIdeSurface(page: Page): Promise<boolean> {
+    return page.evaluate(() => {
+        const shell = document.getElementById('theia-app-shell');
+        return !!shell
+            && !shell.classList.contains('theia-mod-mobile-one-column')
+            && !document.body.classList.contains('theia-mobile-mod-landing')
+            && document.querySelectorAll('.theia-mobile-projects-sticky-composer-input').length === 0;
+    });
+}
+
+async function waitForDesktopIdeSurface(page: Page, timeout: number): Promise<boolean> {
+    return expect.poll(() => isDesktopIdeSurface(page), { timeout }).toBe(true).then(() => true, () => false);
+}
+
+/**
+ * Escape hatch: Work Hub → classic IDE. The classic IDE is desktop-only (one-column mobile mode
+ * always shows Work Hub, see .cursor/rules/work-hub-reload-default.mdc), so switch to a desktop
+ * viewport before choosing "Open IDE".
+ */
 async function openDesktopIde(app: TheiaApp): Promise<void> {
+    await app.page.setViewportSize(DESKTOP_IDE_VIEWPORT);
     await dismissMobileTutorial(app.page);
     await waitForWorkHubReady(app.page);
 
-    const bottomBar = app.page.locator('#theia-mobile-bottom-bar');
-    if (await bottomBar.isVisible()) {
-        return;
-    }
-
     for (let attempt = 0; attempt < 3; attempt++) {
-        if (await bottomBar.isVisible()) {
-            return;
+        if (await isDesktopIdeSurface(app.page)) {
+            break;
         }
-        const viaMenu = await openDesktopIdeViaAccountMenu(app.page);
-        if (viaMenu && await bottomBar.isVisible({ timeout: 5_000 }).catch(() => false)) {
-            return;
+        if (await openDesktopIdeViaAccountMenu(app.page) && await waitForDesktopIdeSurface(app.page, 5_000)) {
+            break;
         }
-        if (await openDesktopIdeViaCommandPalette(app)) {
-            return;
+        if (await openDesktopIdeViaCommandPalette(app) && await waitForDesktopIdeSurface(app.page, 5_000)) {
+            break;
         }
         await app.page.waitForTimeout(800);
     }
 
-    await expect(bottomBar).toBeVisible({ timeout: 30_000 });
-    await expect(app.page.locator('body')).not.toHaveClass(/theia-mobile-mod-landing/);
-    await expect(app.page.locator('#theia-mobile-bottom-bar .theia-mobile-bottom-activity-btn[data-action-id="preview"]')).toBeVisible();
+    await expectClassicIdeSurface(app.page);
 }
 
 async function expectClassicIdeSurface(page: Page): Promise<void> {
-    await expect(page.locator('#theia-mobile-bottom-bar')).toBeVisible();
-    await expect(page.locator('body')).not.toHaveClass(/theia-mobile-mod-landing/);
-    await expect(page.locator('.theia-mobile-projects-sticky-composer-input')).toHaveCount(0);
+    await expect.poll(() => isDesktopIdeSurface(page), { timeout: 30_000 }).toBe(true);
+    await expect(page.locator('#theia-main-content-panel')).toBeVisible();
+}
+
+async function expectOpenIdeNotOffered(app: TheiaApp): Promise<void> {
+    await app.quickCommandPalette.open();
+    const input = app.page.locator(
+        '#quick-input-container .monaco-inputbox .input, #quick-input-container .quick-input-and-message input'
+    );
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await input.fill('>');
+    await input.pressSequentially('Open IDE', { delay: 40 });
+    await app.page.waitForTimeout(500);
+    await expect(app.page.locator('.quick-input-list .monaco-list-row').filter({ hasText: /open ide/i })).toHaveCount(0);
+    await app.quickCommandPalette.hide();
 }
 
 async function openWorkHubSessionsSidebar(page: Page): Promise<void> {
@@ -410,41 +437,34 @@ test.describe('@qaap-mobile Work Hub (default mobile UI)', () => {
     });
 });
 
-test.describe('@qaap-mobile Classic IDE (Open IDE escape hatch)', () => {
+test.describe('@qaap-mobile Classic IDE (desktop Open IDE escape hatch)', () => {
 
-    test.use({ viewport: MOBILE_VIEWPORT });
+    test.use({ viewport: DESKTOP_IDE_VIEWPORT });
 
-    test('opens Explorer from the bottom bar', async ({ playwright, browser }) => {
+    test('opens Explorer in the classic IDE', async ({ playwright, browser }) => {
         const ws = new TheiaWorkspace([SAMPLE_FILES]);
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);
         await app.waitForShellAndInitialized();
         await openDesktopIde(app);
 
-        const explorerBtn = app.page.locator('#theia-mobile-bottom-bar .theia-mobile-bottom-activity-btn[data-action-id="explore"]');
-        await expect(explorerBtn).toBeVisible();
-        await explorerBtn.click();
-
+        await app.openView(TheiaExplorerView);
         await expect(app.page.locator('#theia-left-content-panel')).not.toHaveClass(/theia-mod-collapsed/);
         await expect(app.page.locator('#explorer-view-container--files')).toBeVisible();
 
         await app.page.close();
     });
 
-    test('collapses left explorer sheet after opening a file', async ({ playwright, browser }) => {
+    test('opens a file from Explorer in the editor', async ({ playwright, browser }) => {
         const ws = new TheiaWorkspace([SAMPLE_FILES]);
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);
         await app.waitForShellAndInitialized();
         await openDesktopIde(app);
 
-        const explorerBtn = app.page.locator('#theia-mobile-bottom-bar .theia-mobile-bottom-activity-btn[data-action-id="explore"]');
-        await explorerBtn.click();
-        await app.page.waitForSelector('#explorer-view-container--files', { state: 'visible' });
+        await app.openView(TheiaExplorerView);
         const sampleFile = app.page.locator('#explorer-view-container--files .theia-FileStatNode', { hasText: 'sample.txt' });
         await expect(sampleFile).toBeVisible();
         await sampleFile.dblclick();
-        await app.page.waitForSelector('span:has-text("content line 2")');
-
-        await expect(app.page.locator('#theia-left-content-panel')).toHaveClass(/theia-mod-collapsed/);
+        await expect(app.page.locator('#theia-main-content-panel span:has-text("content line 2")').first()).toBeVisible();
 
         await app.page.close();
     });
@@ -475,21 +495,6 @@ test.describe('@qaap-mobile Classic IDE (Open IDE escape hatch)', () => {
         await app.page.close();
     });
 
-    test('opens the Agent Work Hub chat from the bottom bar', async ({ playwright, browser }) => {
-        const app = await TheiaAppLoader.load({ playwright, browser });
-        await app.waitForShellAndInitialized();
-        await openDesktopIde(app);
-
-        const agentBtn = app.page.locator('#theia-mobile-bottom-bar .theia-mobile-bottom-activity-btn[data-action-id="agent"]');
-        await expect(agentBtn).toBeVisible();
-        await agentBtn.click();
-
-        await expect(app.page.locator('.theia-mobile-projects.theia-mod-agents-hub-shell-active')).toBeVisible({ timeout: 15_000 });
-        await expect(app.page.locator('.theia-mobile-projects-sticky-composer-input')).toBeVisible({ timeout: 15_000 });
-
-        await app.page.close();
-    });
-
     test('detects Vite workspace in bootstrap banner', async ({ playwright, browser }) => {
         const ws = new TheiaWorkspace([VITE_FIXTURE]);
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);
@@ -504,14 +509,35 @@ test.describe('@qaap-mobile Classic IDE (Open IDE escape hatch)', () => {
         await app.page.close();
     });
 
-    test('keeps one-column layout with visible bottom bar', async ({ playwright, browser }) => {
+    test('returns to Work Hub when the classic IDE enters mobile mode', async ({ playwright, browser }) => {
         const ws = new TheiaWorkspace([SAMPLE_FILES]);
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);
         await app.waitForShellAndInitialized();
         await openDesktopIde(app);
 
+        await app.page.setViewportSize(MOBILE_VIEWPORT);
+        await waitForWorkHubReady(app.page);
         await expect(app.page.locator('#theia-app-shell')).toHaveClass(/theia-mod-mobile-one-column/);
-        await expect(app.page.locator('#theia-mobile-bottom-bar')).toBeVisible();
+        await expect.poll(() => app.page.evaluate(() =>
+            window.sessionStorage.getItem('qaap.mobileProjects.preferDesktopIde'))).toBeNull();
+
+        await app.page.close();
+    });
+});
+
+test.describe('@qaap-mobile Classic IDE is desktop-only', () => {
+
+    test.use({ viewport: MOBILE_VIEWPORT });
+
+    test('does not offer Open IDE in the mobile command palette', async ({ playwright, browser }) => {
+        const ws = new TheiaWorkspace([SAMPLE_FILES]);
+        const app = await TheiaAppLoader.load({ playwright, browser }, ws);
+        await app.waitForShellAndInitialized();
+        await dismissMobileTutorial(app.page);
+        await waitForWorkHubReady(app.page);
+
+        await expectOpenIdeNotOffered(app);
+        await expectAgentsHubLanding(app.page);
 
         await app.page.close();
     });
@@ -579,7 +605,6 @@ test.describe('@qaap-mobile Qaap time to preview', () => {
             const app = await TheiaAppLoader.load({ playwright, browser }, ws);
             await app.waitForShellAndInitialized();
             await openDesktopIde(app);
-            await expectClassicIdeSurface(app.page);
             await waitForBackendDevProbe(app.page, 5173);
 
             const started = Date.now();

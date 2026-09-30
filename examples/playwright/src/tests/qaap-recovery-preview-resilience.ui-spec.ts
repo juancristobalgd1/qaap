@@ -13,6 +13,8 @@ import { TheiaWorkspace } from '../theia-workspace';
 import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '../qaap-work-hub-perf-probe-support';
 
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
+/** Wider than the 767px one-column breakpoint: the classic IDE is only reachable here. */
+const DESKTOP_IDE_VIEWPORT = { width: 1280, height: 900 };
 const RESOURCES = path.join(path.resolve(__dirname, '../../src/tests/resources'));
 const SAMPLE_FILES = path.join(RESOURCES, 'sample-files1');
 const BOOTSTRAP_FIXTURE = path.join(RESOURCES, 'qaap-bootstrap-fixture');
@@ -114,29 +116,43 @@ async function openDesktopIdeViaCommandPalette(app: TheiaApp): Promise<boolean> 
     }
     await app.page.waitForSelector('.quick-input-widget', { state: 'hidden', timeout: 15_000 })
         .catch(() => app.page.keyboard.press('Escape'));
-    return app.page.locator('#theia-mobile-bottom-bar').isVisible();
+    return isDesktopIdeSurface(app.page);
 }
 
+/** Classic desktop IDE: the shell left the one-column layout and the Work Hub panel is gone. */
+async function isDesktopIdeSurface(page: Page): Promise<boolean> {
+    return page.evaluate(() => {
+        const shell = document.getElementById('theia-app-shell');
+        return !!shell
+            && !shell.classList.contains('theia-mod-mobile-one-column')
+            && !document.body.classList.contains('theia-mobile-mod-landing')
+            && document.querySelectorAll('.theia-mobile-projects-sticky-composer-input').length === 0;
+    });
+}
+
+async function waitForDesktopIdeSurface(page: Page, timeout: number): Promise<boolean> {
+    return expect.poll(() => isDesktopIdeSurface(page), { timeout }).toBe(true).then(() => true, () => false);
+}
+
+/** The classic IDE is desktop-only: one-column mobile mode always shows Work Hub. */
 async function openDesktopIde(app: TheiaApp): Promise<void> {
+    await app.page.setViewportSize(DESKTOP_IDE_VIEWPORT);
     await dismissMobileTutorial(app.page);
     await waitForWorkHubReady(app.page);
 
-    const bottomBar = app.page.locator('#theia-mobile-bottom-bar');
-    if (await bottomBar.isVisible()) {
-        return;
-    }
     for (let attempt = 0; attempt < 3; attempt++) {
-        if (await openDesktopIdeViaAccountMenu(app.page)
-            && await bottomBar.isVisible({ timeout: 5_000 }).catch(() => false)) {
-            return;
+        if (await isDesktopIdeSurface(app.page)) {
+            break;
         }
-        if (await openDesktopIdeViaCommandPalette(app)
-            && await bottomBar.isVisible({ timeout: 5_000 }).catch(() => false)) {
-            return;
+        if (await openDesktopIdeViaAccountMenu(app.page) && await waitForDesktopIdeSurface(app.page, 5_000)) {
+            break;
+        }
+        if (await openDesktopIdeViaCommandPalette(app) && await waitForDesktopIdeSurface(app.page, 5_000)) {
+            break;
         }
         await app.page.waitForTimeout(700);
     }
-    await expect(bottomBar).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => isDesktopIdeSurface(app.page), { timeout: 30_000 }).toBe(true);
 }
 
 async function waitForTcpListener(port: number): Promise<void> {
