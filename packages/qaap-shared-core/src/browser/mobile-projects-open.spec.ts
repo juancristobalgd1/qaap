@@ -180,6 +180,14 @@ describe('work hub hide-ide-side-panels invariant', () => {
         expect(hasHideClass()).to.equal(false);
     });
 
+    it('choosing the classic IDE immediately lifts the boot-guard hide class (no reload needed)', () => {
+        // qaap-login-gate.js adds the class before the bundle; switching to the IDE in place must
+        // reveal the bottom panel / terminal without waiting for another surface transition.
+        document.body.classList.add(HIDE_CLASS);
+        markPreferDesktopIde();
+        expect(hasHideClass()).to.equal(false);
+    });
+
 });
 
 describe('mobile-shell-landing-state', () => {

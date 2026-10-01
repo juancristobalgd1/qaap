@@ -226,7 +226,10 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
                     || normalizeQaapPreviewConversationId(candidate.conversationId) === conversationFilter))
             .sort((left, right) => right.touchedAt - left.touchedAt || right.claimedAt - left.claimedAt)[0];
         if (!record) {
-            res.status(404).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
+            // "No claim" is the normal answer for an idle project, polled on every liveness tick:
+            // answer 200 with an empty claim (no `previewId`) instead of a 404 the browser logs
+            // as a failed request in the console.
+            res.json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
         const conversationId = isQaapProcessPreviewIdentity(record)
@@ -260,7 +263,7 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         const withinStartGrace = Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
         if (!withinStartGrace) {
             ctx.portRegistry.releasePreview(record.previewId, login);
-            res.status(404).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
+            res.json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
         res.json({

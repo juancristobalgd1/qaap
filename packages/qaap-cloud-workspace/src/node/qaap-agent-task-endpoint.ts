@@ -407,6 +407,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         if (!this.requireAuth(req, res)) {
             return;
         }
+        // End users of hosted deployments cannot act on an "Update available" toast (CLIs are
+        // pinned in the image), so do not surface outdated CLIs where in-place update is denied.
+        if (!this.cliUpdates.isInPlaceCliUpdateAllowed()) {
+            res.json({ updates: [] });
+            return;
+        }
         try {
             const payload = await this.cliUpdates.listOutdated();
             res.json(payload);

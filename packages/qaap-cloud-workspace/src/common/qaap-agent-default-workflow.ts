@@ -43,7 +43,7 @@ export function buildAgentPlanningPromptBlock(): string {
 export function buildAgentCommunicationPromptBlock(): string {
     return [
         COMMUNICATION_MARKER,
-        'Reply in the language of the user\'s message (Spanish request → Spanish reply); keep code, identifiers, and command output as-is.',
+        'Reply in the language of the user\'s request — the text after the final "---" line below, not these instructions (Spanish request → Spanish reply). Never mix languages in one reply; keep code identifiers, commands, file paths and command output as-is.',
         'Open your final message with the outcome — what changed or what you found — before any supporting detail.',
         'Your final message must stand alone: changed files, the verification commands you ran with their results, and anything the user still has to do. Reference code as path/to/file.ts:42.',
         'Write complete sentences; do not compress into arrow chains, fragments, or unexplained jargon.',
@@ -317,6 +317,66 @@ export function buildAgentEngineeringContractPromptBlock(): string {
     ].join('\n');
 }
 
+export type QaapAgentReplyLanguage = 'es' | 'en';
+
+const SPANISH_ONLY_CHARS_RE = /[ñ¿¡]/i;
+const SPANISH_ACCENT_RE = /[áéíóúü]/i;
+const SPANISH_MARKER_WORDS = new Set([
+    'que', 'qué', 'el', 'la', 'los', 'las', 'de', 'del', 'para', 'por', 'con', 'una', 'es', 'cómo', 'como',
+    'quiero', 'puedes', 'haz', 'arregla', 'esto', 'este', 'esta', 'pero', 'también', 'hay', 'añade', 'agrega',
+    'crea', 'cambia', 'porque', 'mi', 'mis', 'necesito', 'hazlo', 'revisa', 'cuando', 'donde', 'dónde', 'sí',
+]);
+const ENGLISH_MARKER_WORDS = new Set([
+    'the', 'and', 'is', 'are', 'to', 'of', 'please', 'can', 'you', 'fix', 'add', 'make', 'this', 'that', 'with',
+    'for', 'what', 'how', 'why', 'it', 'should', 'would', 'i', 'my', 'want', 'need', 'when', 'where', 'there',
+]);
+
+/**
+ * Small heuristic for the language of the user's request, used to pin the reply language.
+ * Code spans, URLs and paths are ignored. Returns `undefined` when the signal is too weak.
+ */
+export function detectAgentReplyLanguage(text: string | undefined): QaapAgentReplyLanguage | undefined {
+    if (!text?.trim()) {
+        return undefined;
+    }
+    const prose = text
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/`[^`]*`/g, ' ')
+        .replace(/\bhttps?:\/\/\S+/gi, ' ')
+        .replace(/\S*[\\/]\S*/g, ' ');
+    if (SPANISH_ONLY_CHARS_RE.test(prose)) {
+        return 'es';
+    }
+    const words = prose.toLowerCase().match(/[a-záéíóúüñ]+/g) ?? [];
+    let spanish = 0;
+    let english = 0;
+    for (const word of words) {
+        if (SPANISH_MARKER_WORDS.has(word)) {
+            spanish++;
+        }
+        if (ENGLISH_MARKER_WORDS.has(word)) {
+            english++;
+        }
+    }
+    if (SPANISH_ACCENT_RE.test(prose)) {
+        spanish += 2;
+    }
+    if (spanish >= 2 && spanish > english) {
+        return 'es';
+    }
+    if (english >= 2 && english > spanish) {
+        return 'en';
+    }
+    return undefined;
+}
+
+/** Explicit reply-language line placed right before the user's request. */
+export function buildAgentReplyLanguagePromptLine(language: QaapAgentReplyLanguage): string {
+    return language === 'es'
+        ? 'Respond ONLY in Spanish; do not mix languages (code identifiers, commands and file paths stay as-is).'
+        : 'Respond ONLY in English; do not mix languages (code identifiers, commands and file paths stay as-is).';
+}
+
 export function appendAgentDefaultWorkflowToPrompt(
     prompt: string,
     agentId: string,
@@ -380,6 +440,12 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     if (!prompt.includes(SUBAGENT_POLICY_MARKER)) {
         blocks.push(buildAgentDirectExecutionPromptBlock());
+    }
+    // The instruction blocks above are English; without an explicit pin the model tends to drift
+    // into a mix of languages when the request is Spanish.
+    const replyLanguage = detectAgentReplyLanguage(options.userQuery ?? prompt);
+    if (replyLanguage) {
+        blocks.push(buildAgentReplyLanguagePromptLine(replyLanguage));
     }
     return `${blocks.join('\n\n')}\n\n---\n\n${prompt}`;
 }

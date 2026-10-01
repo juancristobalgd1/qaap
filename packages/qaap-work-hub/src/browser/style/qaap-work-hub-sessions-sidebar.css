@@ -1018,12 +1018,22 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   white-space: nowrap;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text {
-  width: max-content;
-  min-width: 100%;
-  max-width: none;
-  overflow: visible;
-  text-overflow: clip;
+/* Overflowing titles keep the ellipsis at rest (also when the row is selected/clicked);
+   the max-content/clip layout needed by the marquee only applies while it runs (hover or
+   keyboard focus, see the hover media block below). */
+
+@keyframes qaap-task-title-marquee-start-fade {
+  0%, 14% {
+    opacity: 0;
+  }
+
+  22%, 84% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes qaap-task-title-marquee {
@@ -1786,16 +1796,24 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-visible .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(:focus-visible) .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text {
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
     animation: qaap-task-title-marquee 5.2s cubic-bezier(0.2, 0.75, 0.25, 1) 180ms 1 both;
   }
 
   /* Fade the moving title into the row surface at both edges, matching the subtle
      marquee treatment used by ChatGPT while keeping the text readable at rest. */
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-visible .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(:focus-visible) .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::after,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::after {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-visible .theia-mobile-projects-task-title.theia-mod-title-overflow::after,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(:focus-visible) .theia-mobile-projects-task-title.theia-mod-title-overflow::after {
     content: "";
     position: absolute;
     top: 0;
@@ -1806,8 +1824,13 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::before {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-visible .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(:focus-visible) .theia-mobile-projects-task-title.theia-mod-title-overflow::before {
     left: 0;
+    /* The start fade only shows while the title is actually scrolled; at rest (animation
+       finished) the first characters must stay readable. */
+    opacity: 0;
+    animation: qaap-task-title-marquee-start-fade 5.2s linear 180ms 1 both;
     background: linear-gradient(
       to right,
       var(--theia-list-hoverBackground, var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e))) 0%,
@@ -1815,7 +1838,8 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::after,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::after {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-visible .theia-mobile-projects-task-title.theia-mod-title-overflow::after,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(:focus-visible) .theia-mobile-projects-task-title.theia-mod-title-overflow::after {
     right: 0;
     background: linear-gradient(
       to left,
@@ -1904,8 +1928,15 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title.theia-mod-title-overflow::before {
     animation: none !important;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text {
+    width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
 }
 

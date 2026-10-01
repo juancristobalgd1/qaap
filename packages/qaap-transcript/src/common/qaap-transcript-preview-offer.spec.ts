@@ -12,6 +12,7 @@ import {
     conversationHasActiveShellRun,
     conversationMayAutoOpenTranscriptPreview,
     conversationRequestsDevPreview,
+    conversationShouldProbeDefaultDevPreviewPorts,
     extractDevPreviewUrlFromAgentText,
     findTranscriptPreviewPortHint,
     isLikelyDevServerShellCommand,
@@ -279,5 +280,55 @@ describe('qaap-transcript-preview-offer', () => {
         };
         expect(conversationMayAutoOpenTranscriptPreview(requested)).to.equal(true);
         expect(conversationMayAutoOpenTranscriptPreview({ ...requested, status: 'idle' })).to.equal(true);
+    });
+    it('never sweeps default ports for an idle conversation without a preview signal', () => {
+        const idle: QaapAgentConversationDTO = {
+            id: 'c6',
+            cwd: '/repo',
+            agentId: 'qaiq',
+            title: 'Docs',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Fix the README typo',
+                createdAt: 1,
+            }, {
+                id: 'a1',
+                role: 'agent',
+                content: 'Done.',
+                createdAt: 2,
+                segments: [{
+                    type: 'tool',
+                    toolUseId: 't1',
+                    name: 'Edit',
+                    args: '{"file_path":"README.md"}',
+                    finished: true,
+                }],
+            }],
+        };
+        expect(conversationShouldProbeDefaultDevPreviewPorts(idle)).to.equal(false);
+        expect(transcriptPreviewProbePorts(idle)).to.deep.equal([]);
+    });
+
+    it('probes only the hinted port for an idle conversation that named one', () => {
+        const hinted: QaapAgentConversationDTO = {
+            id: 'c7',
+            cwd: '/repo',
+            agentId: 'qaiq',
+            title: 'Server',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [{
+                id: 'a1',
+                role: 'agent',
+                content: 'The server listens on http://localhost:5174/',
+                createdAt: 2,
+            }],
+        };
+        expect(transcriptPreviewProbePorts(hinted)).to.deep.equal([5174]);
     });
 });

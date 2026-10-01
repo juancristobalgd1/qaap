@@ -669,6 +669,9 @@ export class MobileWorkHubPreferencesSheet {
             item.classList.toggle('theia-mod-selected', selected);
             item.setAttribute('aria-current', selected ? 'page' : 'false');
         }
+        // The visible menu on desktop is rendered by the Work Hub sessions sidebar, not by
+        // this sheet's own (unmounted) nav: keep its selection in sync too.
+        this.settingsSidebarController?.refreshSettingsNavigation();
     }
 
     protected async selectSettingsSection(section: WorkHubSettingsSection): Promise<void> {

@@ -244,16 +244,19 @@ function conversationAgentFinishedTool(conv: QaapAgentConversationDTO): boolean 
     return latestAgentTraceSegments(conv).some(segment => segment.type === 'tool' && segment.finished);
 }
 
-/** True when default dev ports may be probed (avoids opening a stale server mid-turn). */
+/**
+ * True when the default dev ports may be swept. Requires a positive signal: the user asked to
+ * run/preview the app, or the current turn is running a dev server / shell or just finished a
+ * tool. An idle conversation without such a signal never sweeps (it used to probe 8 ports on
+ * every tick); when the agent named a port, only that hinted port is probed
+ * (see {@link transcriptPreviewProbePorts}).
+ */
 export function conversationShouldProbeDefaultDevPreviewPorts(conv: QaapAgentConversationDTO): boolean {
     if (conversationEverRequestedDevPreview(conv)) {
         return true;
     }
-    if (findTranscriptPreviewPortHint(conv) !== undefined) {
-        return true;
-    }
     if (conv.status !== 'streaming') {
-        return true;
+        return false;
     }
     if (conversationHasActiveDevServerRun(conv) || conversationHasActiveShellRun(conv)) {
         return true;

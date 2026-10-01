@@ -15,8 +15,10 @@ import {
     buildAgentEngineeringContractPromptBlock,
     buildAgentHonestReportingPromptBlock,
     buildAgentPlanningPromptBlock,
+    buildAgentReplyLanguagePromptLine,
     buildAgentRepoMemoryPromptBlock,
     buildAgentSecretsPromptBlock,
+    detectAgentReplyLanguage,
     isBoundedEvidenceAuditRequest,
     parseAgentBlockedSignal,
 } from './qaap-agent-default-workflow';
@@ -256,5 +258,46 @@ describe('parseAgentBlockedSignal', () => {
         expect(parseAgentBlockedSignal('All done.')).to.equal(undefined);
         expect(parseAgentBlockedSignal('')).to.equal(undefined);
         expect(parseAgentBlockedSignal(undefined)).to.equal(undefined);
+    });
+});
+
+describe('reply language pin', () => {
+    it('detects Spanish requests from accents, ñ/¿¡ and common words', () => {
+        expect(detectAgentReplyLanguage('¿Puedes revisar el login?')).to.equal('es');
+        expect(detectAgentReplyLanguage('arregla el bug de la pantalla de login')).to.equal('es');
+        expect(detectAgentReplyLanguage('Añade una sección FAQ')).to.equal('es');
+    });
+
+    it('detects English requests and ignores code, paths and URLs', () => {
+        expect(detectAgentReplyLanguage('Please fix the login bug in `el_la_de.ts`')).to.equal('en');
+        expect(detectAgentReplyLanguage('Can you add a test for src/de/la/que.ts?')).to.equal('en');
+    });
+
+    it('returns undefined when the signal is too weak', () => {
+        expect(detectAgentReplyLanguage('npm run build')).to.equal(undefined);
+        expect(detectAgentReplyLanguage(undefined)).to.equal(undefined);
+    });
+
+    it('pins the Spanish reply language right before the user request', () => {
+        const result = appendAgentDefaultWorkflowToPrompt('arregla el bug de la pantalla de login', 'claude-code', {
+            userQuery: 'arregla el bug de la pantalla de login',
+        });
+        const [instructions, request] = result.split('\n\n---\n\n');
+        expect(instructions.trimEnd().endsWith(buildAgentReplyLanguagePromptLine('es'))).to.equal(true);
+        expect(instructions).to.include('Respond ONLY in Spanish; do not mix languages');
+        expect(request).to.equal('arregla el bug de la pantalla de login');
+    });
+
+    it('pins English for English requests and nothing for ambiguous ones', () => {
+        expect(appendAgentDefaultWorkflowToPrompt('Please fix the build', 'claude-code', { userQuery: 'Please fix the build' }))
+            .to.include('Respond ONLY in English');
+        const ambiguous = appendAgentDefaultWorkflowToPrompt('npm run build', 'claude-code', { userQuery: 'npm run build' });
+        expect(ambiguous).not.to.include('Respond ONLY in');
+    });
+
+    it('tells the agent where the user request starts and to never mix languages', () => {
+        const block = buildAgentCommunicationPromptBlock();
+        expect(block).to.include('after the final "---"');
+        expect(block).to.include('Never mix languages');
     });
 });

@@ -158,6 +158,49 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         sidebar.hide();
     });
 
+    it('moves the Settings selection when the owner selects another section', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        let active = 'general';
+        const options: MobileWorkHubSettingsSidebarOptions = {
+            sections: [
+                { id: 'general', label: 'General', icon: 'settings-gear' },
+                { id: 'harness', label: 'Harness', icon: 'tools' },
+            ],
+            activeSectionId: () => active,
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onSectionSelected: sectionId => {
+                active = sectionId;
+                sidebar.refreshSettingsNavigation();
+            },
+            onSearch: () => undefined,
+        };
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.showSettings(options);
+
+        const item = (id: string): HTMLElement => sidebar.node.querySelector(`[data-qaap-settings-section="${id}"]`) as HTMLElement;
+        const harness = item('harness');
+        harness.click();
+
+        expect(item('harness')).to.equal(harness, 'items are updated in place');
+        expect(harness.classList.contains('theia-mod-selected')).to.equal(true);
+        expect(harness.getAttribute('aria-current')).to.equal('page');
+        expect(item('general').classList.contains('theia-mod-selected')).to.equal(false);
+        expect(item('general').getAttribute('aria-current')).to.equal('false');
+        sidebar.hide();
+    });
+
     it('places the Settings close control at the trailing edge', () => {
         const currentWindow = (global as { window?: Window }).window;
         (global as { window?: Window }).window = {

@@ -375,7 +375,7 @@
             '.qaap-login-title{margin:0;font-size:30px;font-weight:700;letter-spacing:-.8px}',
             '.qaap-login-tagline{margin:0;max-width:280px;font-size:14px;line-height:1.45;text-align:center;color:var(--qaap-muted)}',
             '.qaap-login-spacer{flex:1;min-height:24px}',
-            '.qaap-login-actions{display:flex;flex-direction:column;gap:10px}',
+            '.qaap-login-actions{display:flex;flex-direction:column;gap:10px;width:100%;max-width:360px;margin:0 auto}',
             '.qaap-login-btn{width:100%;min-height:44px;height:48px;border-radius:10px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}',
             '.qaap-login-btn[hidden]{display:none}',
             '.qaap-login-btn--primary{border:none;background:var(--qaap-ink);color:var(--qaap-surface)}',
@@ -652,7 +652,35 @@
         });
     }
 
-    function resumeAfterOAuthOrSession() {
+    function stripOAuthQueryParams() {
+        try {
+            var next = new URL(window.location.href);
+            if (!next.searchParams.has('qaap_oauth') && !next.searchParams.has('qaap_oauth_error')) {
+                return;
+            }
+            next.searchParams.delete('qaap_oauth');
+            next.searchParams.delete('qaap_oauth_error');
+            next.searchParams.delete('qaap_oauth_reason');
+            window.history.replaceState({}, '', next.pathname + next.search + (next.hash || ''));
+        } catch (e) { /* ignore */ }
+    }
+
+    /** Resolves with the parsed session JSON; rejects on network/HTTP failure. */
+    function fetchSessionProbe() {
+        return fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, AUTH_SESSION_TIMEOUT_MS)
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('session');
+                }
+                return response.json();
+            });
+    }
+
+    /**
+     * @param sessionProbe optional already-started session probe (see the parallel boot probes
+     * at the bottom of this file) so a cold start does not pay two sequential round-trips.
+     */
+    function resumeAfterOAuthOrSession(sessionProbe) {
         if (window.location.search.indexOf('qaap_oauth_error=1') !== -1) {
             try {
                 var errParams = new URLSearchParams(window.location.search);
@@ -669,22 +697,24 @@
                     return response.json();
                 })
                 .then(function (data) {
-                    if (data && data.signedIn && data.user && data.user.provider) {
-                        writeSignedIn(data.user.provider, data.user);
+                    stripOAuthQueryParams();
+                    if (!(data && data.signedIn && data.user && data.user.provider)) {
+                        // Never reveal the IDE without a session: it would boot unauthenticated
+                        // and flash 401s before the user can sign in again.
+                        throw new Error('unsigned');
                     }
-                    document.body.classList.remove('qaap-login-active');
+                    writeSignedIn(data.user.provider, data.user);
+                    if (document.body) {
+                        document.body.classList.remove('qaap-login-active');
+                    }
                     var host = document.getElementById('qaap-login-host');
                     if (host) {
                         host.remove();
                     }
-                    var next = new URL(window.location.href);
-                    next.searchParams.delete('qaap_oauth');
-                    next.searchParams.delete('qaap_oauth_error');
-                    var clean = next.pathname + next.search + (next.hash || '');
-                    window.history.replaceState({}, '', clean);
                     loadBundle();
                 })
                 .catch(function () {
+                    stripOAuthQueryParams();
                     clearStaleAuthLocalStorage();
                     if (document.body) {
                         showGateAndLoadBundle();
@@ -694,13 +724,7 @@
                 });
             return;
         }
-        fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, AUTH_SESSION_TIMEOUT_MS)
-            .then(function (response) {
-                if (!response.ok) {
-                    throw new Error('session');
-                }
-                return response.json();
-            })
+        (sessionProbe || fetchSessionProbe())
             .then(function (data) {
                 if (data && data.signedIn && data.user && data.user.provider) {
                     writeSignedIn(data.user.provider, data.user);
@@ -812,9 +836,14 @@
         speculativePreloadBundle();
         verifyStoredSessionThenLoad();
     } else {
+        // Probe auth config and session in parallel (cold tenant containers make each
+        // round-trip expensive). The session result is only used when skip-auth is off.
+        var parallelSessionProbe = fetchSessionProbe();
+        // Avoid an unhandled rejection when the probe result is never consumed.
+        parallelSessionProbe.catch(function () { /* handled by resumeAfterOAuthOrSession */ });
         trySkipAuthDevMode().then(function (skipped) {
             if (skipped === false) {
-                resumeAfterOAuthOrSession();
+                resumeAfterOAuthOrSession(parallelSessionProbe);
             } else if (skipped === true) {
                 speculativePreloadBundle();
             } else {

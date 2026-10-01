@@ -180,6 +180,8 @@ export async function fetchQaapCurrentDevPreview(
             cache: 'no-store',
             signal: probeSignal(signal),
         });
+        // "No claim" is a normal result: current backends answer 200 without `previewId`,
+        // older ones 404. Both resolve to `undefined` silently.
         if (!response.ok) {
             return undefined;
         }

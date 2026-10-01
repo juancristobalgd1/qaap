@@ -59,6 +59,12 @@ export class QaapGithubSessionStore {
     protected readonly storePath: string = resolveQaapAuthStorePath();
     protected readonly sqlitePath: string = resolveQaapSqlitePath(this.storePath);
     protected sqliteStore: QaapSqliteStore | undefined;
+    /**
+     * Keys changed since the last flush (`undefined` = delete). Persistence is per key because
+     * several backends (main + tenant backends) share the same SQLite file: rewriting the whole
+     * namespace would wipe sessions/OAuth states another process just created (`state_lost`).
+     */
+    protected readonly dirtyKeys = new Map<string, QaapGithubStoredSession | number | undefined>();
     protected persistTimer: NodeJS.Timeout | undefined;
     protected loaded = false;
     protected shutdownHandlersInstalled = false;
@@ -75,6 +81,7 @@ export class QaapGithubSessionStore {
         }
         const id = crypto.randomUUID();
         this.sessions.set(id, data);
+        this.markDirty(`session:${id}`, data);
         this.schedulePersist();
         return id;
     }
@@ -94,26 +101,87 @@ export class QaapGithubSessionStore {
 
     deleteSession(sessionId: string | undefined): void {
         if (sessionId && this.sessions.delete(sessionId)) {
+            this.markDirty(`session:${sessionId}`, undefined);
             this.schedulePersist();
         }
     }
 
     createOAuthState(): string {
         const state = crypto.randomUUID();
-        this.oauthStates.set(state, Date.now());
+        const createdAt = Date.now();
+        this.oauthStates.set(state, createdAt);
         this.pruneOAuthStates();
-        this.schedulePersist();
+        // Written immediately (not debounced): the GitHub callback may be served by another
+        // backend process sharing this store before the debounce window elapses.
+        this.writeKeyNow(`oauth:${state}`, createdAt);
         return state;
     }
 
     consumeOAuthState(state: string | undefined): boolean {
         this.pruneOAuthStates();
-        if (!state || !this.oauthStates.has(state)) {
+        if (!state) {
             return false;
         }
-        this.oauthStates.delete(state);
-        this.schedulePersist();
-        return true;
+        const key = `oauth:${state}`;
+        const inMemory = this.oauthStates.delete(state);
+        // Persistence not loaded, or never written to SQLite yet (write failed and is pending a
+        // retry): memory is authoritative.
+        const pendingWrite = this.dirtyKeys.get(key) !== undefined;
+        this.dirtyKeys.delete(key);
+        let valid: boolean;
+        if (pendingWrite || !this.loaded) {
+            valid = inMemory;
+        } else {
+            // SQLite is the source of truth shared by every backend process: the state may have
+            // been created by another process (or before a restart), or already consumed by one.
+            const persisted = this.readPersistedOAuthState(key);
+            valid = persisted === 'unavailable'
+                ? inMemory
+                : persisted !== undefined && Date.now() - persisted <= OAUTH_STATE_MAX_AGE_MS;
+        }
+        // Delete synchronously so the same state cannot be replayed through another process.
+        this.deleteKeyNow(key);
+        return valid;
+    }
+
+    protected readPersistedOAuthState(key: string): number | undefined | 'unavailable' {
+        try {
+            const value = this.getSqliteStore().get<unknown>(key);
+            return typeof value === 'number' ? value : undefined;
+        } catch (error) {
+            console.warn('[qaap-auth] Could not read persisted OAuth state:', error);
+            return 'unavailable';
+        }
+    }
+
+    protected markDirty(key: string, value: QaapGithubStoredSession | number | undefined): void {
+        this.dirtyKeys.set(key, value);
+    }
+
+    protected writeKeyNow(key: string, value: QaapGithubStoredSession | number): void {
+        if (!this.loaded) {
+            return;
+        }
+        try {
+            this.getSqliteStore().set(key, value);
+        } catch (error) {
+            console.warn('[qaap-auth] Could not persist session store key:', error);
+            this.markDirty(key, value);
+            this.schedulePersist();
+        }
+    }
+
+    protected deleteKeyNow(key: string): void {
+        if (!this.loaded) {
+            return;
+        }
+        try {
+            this.getSqliteStore().delete(key);
+        } catch (error) {
+            console.warn('[qaap-auth] Could not delete session store key:', error);
+            this.markDirty(key, undefined);
+            this.schedulePersist();
+        }
     }
 
     protected pruneOAuthStates(): void {
@@ -122,6 +190,7 @@ export class QaapGithubSessionStore {
         for (const [state, created] of this.oauthStates.entries()) {
             if (now - created > OAUTH_STATE_MAX_AGE_MS) {
                 this.oauthStates.delete(state);
+                this.markDirty(`oauth:${state}`, undefined);
                 removed = true;
             }
         }
@@ -228,13 +297,29 @@ export class QaapGithubSessionStore {
     }
 
     protected persistNow(): void {
+        if (this.dirtyKeys.size === 0) {
+            return;
+        }
+        const pending = [...this.dirtyKeys.entries()];
+        this.dirtyKeys.clear();
         try {
-            const entries: Array<readonly [string, QaapGithubStoredSession | number]> = [
-                ...[...this.sessions.entries()].map(([id, session]) => [`session:${id}`, session] as const),
-                ...[...this.oauthStates.entries()].map(([state, createdAt]) => [`oauth:${state}`, createdAt] as const),
-            ];
-            this.getSqliteStore().replace(entries);
+            const store = this.getSqliteStore();
+            store.withTransaction(() => {
+                for (const [key, value] of pending) {
+                    if (value === undefined) {
+                        store.delete(key);
+                    } else {
+                        store.set(key, value);
+                    }
+                }
+            });
         } catch (err) {
+            // Keep the writes for the next flush unless a newer change superseded them.
+            for (const [key, value] of pending) {
+                if (!this.dirtyKeys.has(key)) {
+                    this.dirtyKeys.set(key, value);
+                }
+            }
             console.warn('[qaap-auth] Could not persist session store:', err);
         }
     }

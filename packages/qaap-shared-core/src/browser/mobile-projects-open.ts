@@ -8,7 +8,7 @@ import {
     clearPreferDesktopIde,
     hasWorkspaceRouteInUrl,
     markPreferAgentsSurface,
-    markPreferDesktopIde,
+    markPreferDesktopIde as markPreferDesktopIdePreference,
     peekPreferAgentsSurface,
     peekPreferDesktopIde,
     shouldInstallWorkHubBootGuard,
@@ -19,7 +19,6 @@ export {
     clearPreferDesktopIde,
     hasWorkspaceRouteInUrl,
     markPreferAgentsSurface,
-    markPreferDesktopIde,
     peekPreferAgentsSurface,
     peekPreferDesktopIde,
     resolveWorkSurfaceBootIntent,
@@ -92,6 +91,17 @@ export function setMobileWorkHubSideSheetOpen(open: boolean): void {
 export function recomputeMobileWorkHubHideIdeSidePanels(): void {
     const mobileWorkHubSideSheetOpen = getMobileWorkHubSideSheetOpen();
     setMobileWorkHubHideIdeSidePanels(!peekPreferDesktopIde() && !mobileWorkHubSideSheetOpen);
+}
+
+/**
+ * Persist the explicit classic-IDE choice and immediately reveal the IDE side/bottom panels.
+ * The boot guard (qaap-login-gate.js / {@link installMobileWorkHubBootGuard}) hides them while
+ * Work Hub is the surface; when the IDE opens without a reload (same workspace), that class must
+ * not survive or the bottom panel / terminal stays invisible.
+ */
+export function markPreferDesktopIde(): void {
+    markPreferDesktopIdePreference();
+    recomputeMobileWorkHubHideIdeSidePanels();
 }
 
 export function markMobileProjectsLeftLanding(): void {

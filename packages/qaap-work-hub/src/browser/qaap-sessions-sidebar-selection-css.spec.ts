@@ -56,6 +56,18 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/\.theia-mobile-projects-task-title\.theia-mod-title-overflow::after[\s\S]*?linear-gradient\(/s);
     });
 
+    it('keeps a selected (clicked) overflowing title readable from its start', () => {
+        // At rest (no hover / keyboard focus) the overflow layout must not drop the ellipsis.
+        expect(css).not.to.match(
+            /^\.theia-mobile-work-hub-sessions-sidebar-list \.theia-mobile-projects-task-title\.theia-mod-title-overflow \.theia-mobile-projects-task-title-text\s*\{/m);
+        // A mouse click focuses the row; only keyboard focus may start the marquee.
+        expect(css).not.to.match(/task-row:focus-within \.theia-mobile-projects-task-title\.theia-mod-title-overflow/);
+        expect(css).to.include('task-row:has(:focus-visible) .theia-mobile-projects-task-title.theia-mod-title-overflow');
+        // The start fade is only painted while the title is scrolled.
+        expect(css).to.include('@keyframes qaap-task-title-marquee-start-fade');
+        expect(css).to.match(/::before\s*\{[^}]*opacity:\s*0;[^}]*animation:\s*qaap-task-title-marquee-start-fade/s);
+    });
+
     it('gives resting titles more room and reserves the action slot on interaction', () => {
         expect(css).to.match(/\.theia-mobile-projects-task-row \.theia-mobile-projects-task-body\s*\{[^}]*padding-right:\s*calc\(var\(--qaap-sessions-row-gutter\) \+ 40px\)/s);
         expect(css).to.match(/\.theia-mobile-projects-task-row:hover \.theia-mobile-projects-task-body[^}]*padding-right:\s*84px/s);

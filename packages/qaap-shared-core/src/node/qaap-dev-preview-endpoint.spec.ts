@@ -1239,7 +1239,7 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(res.record.body?.previewUrl).to.contain(`/qaap-preview/${newest.previewId}`);
         });
 
-        it('404s when the project only has claims owned by another tenant', async () => {
+        it('answers an empty claim (200, no previewId) when the project only has claims owned by another tenant', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
             registerProcessPreview(registry, 'run-1', 4173);
@@ -1249,7 +1249,7 @@ describe('QaapDevPreviewEndpoint', () => {
             const res = makeJsonRes();
             await ep.exposeHandleCurrent(currentReq(projectRoot), res);
 
-            expect(res.record.code).to.equal(404);
+            expect(res.record.code).to.equal(200);
             expect(res.record.body?.previewId).to.equal(undefined);
         });
 
@@ -1278,7 +1278,7 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(res.record.body?.previewUrl).to.contain(`/qaap-preview/${record.previewId}`);
         });
 
-        it('404s and releases a dead claim once the start grace expires', async () => {
+        it('answers an empty claim and releases a dead claim once the start grace expires', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
             const record = registerProcessPreview(registry, 'run-dead', 4176);
@@ -1294,7 +1294,7 @@ describe('QaapDevPreviewEndpoint', () => {
             const res = makeJsonRes();
             await ep.exposeHandleCurrent(currentReq(projectRoot), res);
 
-            expect(res.record.code).to.equal(404);
+            expect(res.record.code).to.equal(200);
             expect(res.record.body?.ready).to.equal(false);
             expect(res.record.body?.previewUrl).to.equal('');
             expect(registry.get(record.previewId)).to.equal(undefined);

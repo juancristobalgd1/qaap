@@ -68,24 +68,50 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
         }
         const login = this.connections.getCurrentLogin();
         if (!login) {
-            throw this.forbidden();
+            throw this.forbidden(fsPath);
         }
         if (isQaapTenantConfigPath(fsPath)) {
             if (!isRealPathUnder(fsPath, resolveQaapTenantUserRoot(login))) {
-                throw this.forbidden();
+                throw this.forbidden(fsPath);
             }
             return;
         }
         const systemSkillsDir = process.env.QAAP_SYSTEM_SKILLS_DIR?.trim();
         if (systemSkillsDir && isRealPathUnder(fsPath, systemSkillsDir)) {
             if (access === 'write') {
-                throw this.forbidden();
+                throw this.forbidden(fsPath);
             }
             return;
         }
-        if (!this.isOwnedWorkspaceArtifact(fsPath, login)) {
-            throw this.forbidden();
+        // Installed extension code (e.g. the Python extension reading its own bundled files) is
+        // shared, non-user data: readable, never writable. Plugin *storage* stays tenant-only.
+        if (access === 'read' && this.resolveReadOnlyPluginCodeRoots().some(root => isRealPathUnder(fsPath, root))) {
+            return;
         }
+        if (!this.isOwnedWorkspaceArtifact(fsPath, login)) {
+            throw this.forbidden(fsPath);
+        }
+    }
+
+    /**
+     * Directories holding deployed VS Code extension code: the Theia config dir's
+     * `deployedPlugins` / `extensions` and the app's `local-dir:` plugin folders. They contain no
+     * per-user data (storage lives in `globalStorage` / `workspace-storage`, not exempted here).
+     */
+    protected resolveReadOnlyPluginCodeRoots(): string[] {
+        const configDir = process.env.THEIA_CONFIG_DIR?.trim() || path.join(os.homedir(), '.theia');
+        const roots = [path.join(configDir, 'deployedPlugins'), path.join(configDir, 'extensions')];
+        const pluginsDir = process.env.THEIA_PLUGINS_DIR?.trim();
+        if (pluginsDir) {
+            roots.push(pluginsDir);
+        }
+        for (const entry of (process.env.THEIA_DEFAULT_PLUGINS ?? '').split(',')) {
+            const localDir = entry.trim().match(/^local-dir:(.+)$/)?.[1]?.trim();
+            if (localDir) {
+                roots.push(localDir.startsWith('file://') ? FileUri.fsPath(localDir) : localDir);
+            }
+        }
+        return roots.filter(root => path.isAbsolute(root));
     }
 
     protected isTenantBackendRuntime(): boolean {
@@ -114,8 +140,10 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
      * Promise-returning operations are `async` so a forbidden path surfaces as a rejected promise
      * (handled by the caller's `.catch`) rather than a synchronous throw that escapes it.
      */
-    protected forbidden(): never {
-        throw createFileSystemProviderError('Forbidden workspace path', FileSystemProviderErrorCode.NoPermissions);
+    protected forbidden(fsPath?: string): never {
+        // The path is included for diagnosis (it is the caller's own request, never a secret).
+        const message = fsPath ? `Forbidden workspace path: ${fsPath}` : 'Forbidden workspace path';
+        throw createFileSystemProviderError(message, FileSystemProviderErrorCode.NoPermissions);
     }
 
     override async stat(resource: URI): Promise<Stat> {

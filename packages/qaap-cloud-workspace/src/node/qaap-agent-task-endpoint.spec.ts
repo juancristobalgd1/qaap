@@ -20,7 +20,35 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     createForTest(req: Request, res: Response): Promise<void> {
         return this.handleCreate(req, res);
     }
+    listCliUpdatesForTest(req: Request, res: Response): Promise<void> {
+        return this.handleListCliUpdates(req, res);
+    }
 }
+
+describe('QaapAgentTaskEndpoint CLI updates', () => {
+    const outdated = { updates: [{ id: 'claude', label: 'Claude Code', latestVersion: '2.0.0', updateAvailable: true, updateSupported: false }] };
+
+    async function listWith(allowed: boolean): Promise<{ payload: unknown; listed: number }> {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        let listed = 0;
+        let payload: unknown;
+        Object.assign(endpoint, {
+            requireAuth: () => ({}),
+            cliUpdates: { isInPlaceCliUpdateAllowed: () => allowed, listOutdated: async () => { listed++; return outdated; } },
+        });
+        const res = { json: (body: unknown) => { payload = body; } } as unknown as Response;
+        await endpoint.listCliUpdatesForTest({} as Request, res);
+        return { payload, listed };
+    }
+
+    it('hides "Update available" from users when in-place updates are not allowed', async () => {
+        expect(await listWith(false)).to.deep.equal({ payload: { updates: [] }, listed: 0 });
+    });
+
+    it('lists outdated CLIs where in-place updates are allowed (local/dev)', async () => {
+        expect(await listWith(true)).to.deep.equal({ payload: outdated, listed: 1 });
+    });
+});
 
 describe('QaapAgentTaskEndpoint queue admission', () => {
     it('checks workspace freshness only after ownership is authorized', async () => {

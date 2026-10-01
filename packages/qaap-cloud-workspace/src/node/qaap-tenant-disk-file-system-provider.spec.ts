@@ -178,6 +178,40 @@ describe('QaapTenantDiskFileSystemProvider', () => {
         }
     });
 
+    it('allows reading deployed extension code but not writing it, nor reading plugin storage', () => {
+        const keys = ['THEIA_CONFIG_DIR', 'THEIA_PLUGINS_DIR'] as const;
+        const previous = keys.map(key => process.env[key]);
+        const configDir = path.join(os.tmpdir(), 'qaap-fs-guard-config');
+        const pluginsDir = path.join(os.tmpdir(), 'qaap-fs-guard-plugins');
+        process.env.THEIA_CONFIG_DIR = configDir;
+        process.env.THEIA_PLUGINS_DIR = pluginsDir;
+        try {
+            const registry = new QaapWebsocketAuthRegistry();
+            const provider = createProvider({});
+            (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+            const guard = provider as unknown as { assertAllowed(uri: URI, access?: 'read' | 'write'): void };
+            const deployed = FileUri.create(path.join(configDir, 'deployedPlugins', 'ms-python.python', 'package.json'));
+            const bundled = FileUri.create(path.join(pluginsDir, 'ms-python.python', 'extension', 'package.json'));
+            const storage = FileUri.create(path.join(configDir, 'globalStorage', 'ms-python.python', 'state.json'));
+            registry.runWithLogin('alice', () => {
+                expect(() => guard.assertAllowed(deployed)).to.not.throw();
+                expect(() => guard.assertAllowed(bundled)).to.not.throw();
+                expect(() => guard.assertAllowed(deployed, 'write')).to.throw();
+                expect(() => guard.assertAllowed(storage)).to.throw(/Forbidden workspace path: .*globalStorage/);
+            });
+            // Never without an authenticated connection.
+            expect(() => guard.assertAllowed(deployed)).to.throw();
+        } finally {
+            keys.forEach((key, index) => {
+                if (previous[index] === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = previous[index];
+                }
+            });
+        }
+    });
+
     it('allows only the active tenant worktree and parallel-run roots', () => {
         const registry = new QaapWebsocketAuthRegistry();
         const provider = createProvider({});

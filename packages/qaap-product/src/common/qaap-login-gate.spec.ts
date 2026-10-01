@@ -78,11 +78,43 @@ describe('Qaap login gate', () => {
             expect(run.document.getElementById('qaap-login-host')).to.not.equal(null);
         });
 
+        it('keeps the sign-in gate (never reveals the IDE) when the callback has no signed-in session', async () => {
+            const run = start(
+                pathname => pathname === SESSION ? { ok: true, body: { signedIn: false } } : undefined,
+                'http://localhost:3000/?qaap_oauth=github&keep=1',
+            );
+            await run.bundleAppended;
+            expect(run.document.getElementById('qaap-login-host')).to.not.equal(null);
+            expect(run.document.body.classList.contains('qaap-login-active')).to.equal(true);
+            expect(run.window.location.search).to.equal('?keep=1');
+        });
+
         it('logs the backend reason of a failed OAuth callback and shows the gate', async () => {
             const run = start(() => undefined, 'http://localhost:3000/?qaap_oauth_error=1&qaap_oauth_reason=state_mismatch');
             await run.bundleAppended;
             expect(run.consoleErrors.join('\n')).to.contain('Reason: state_mismatch');
             expect(run.document.getElementById('qaap-login-host')).to.not.equal(null);
+        });
+    });
+
+    describe('cold start probes', () => {
+        it('probes auth config and session in parallel and loads a signed-in user without the gate', async () => {
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : undefined;
+            });
+            await run.bundleAppended;
+            expect(run.requests.slice(0, 2).sort()).to.deep.equal([CONFIG, SESSION].sort());
+            expect(run.requests.filter(request => request === SESSION)).to.have.length(1);
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+        });
+
+        it('still honours skip-auth dev mode while the session probe runs', async () => {
+            const run = start(pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined);
+            await run.bundleAppended;
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
         });
     });
 

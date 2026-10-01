@@ -549,6 +549,24 @@ export class MobileWorkHubSessionsSidebar {
         this.renderSettingsSidebar();
     }
 
+    /**
+     * Re-sync the selected Settings section in the visible sidebar menu after the owner
+     * changed it (e.g. a nav click or a deep link). Toggles the existing items in place so
+     * keyboard focus on the clicked item is kept.
+     */
+    refreshSettingsNavigation(): void {
+        const options = this.settingsOptions;
+        if (!options || this.sidebarMode !== 'settings') {
+            return;
+        }
+        const activeSectionId = options.activeSectionId();
+        for (const item of this.settingsNav.querySelectorAll<HTMLButtonElement>('[data-qaap-settings-section]')) {
+            const selected = item.dataset.qaapSettingsSection === activeSectionId;
+            item.classList.toggle('theia-mod-selected', selected);
+            item.setAttribute('aria-current', selected ? 'page' : 'false');
+        }
+    }
+
     protected renderSettingsSidebar(): void {
         const options = this.settingsOptions;
         if (!options) {

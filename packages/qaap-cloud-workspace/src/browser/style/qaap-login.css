@@ -91,6 +91,9 @@ body.qaap-login-active .theia-preload {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
 }
 
 .qaap-login-btn {
