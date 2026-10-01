@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { QaapDeployEnvVar, QaapDeployRunRequest, QaapDeployRunResponse } from '../common/qaap-cloud-api-types';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { childProcessEnv } from './qaap-child-process-env';
 
 @injectable()
 export class QaapDeployRunner {
@@ -17,7 +18,7 @@ export class QaapDeployRunner {
 
     async run(request: QaapDeployRunRequest, ownerLogin?: string): Promise<QaapDeployRunResponse> {
         const envMap = await this.loadEnv(request.workspaceKey, ownerLogin);
-        const env = { ...process.env, ...Object.fromEntries(envMap.entries()) };
+        const env = { ...childProcessEnv(), ...Object.fromEntries(envMap.entries()) };
         if (request.provider === 'vercel') {
             return this.runCli(request, env, [
                 'npx', '--yes', 'vercel', 'deploy', '--prod', '--yes',
