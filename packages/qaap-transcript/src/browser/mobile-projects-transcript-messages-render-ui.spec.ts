@@ -233,7 +233,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             host.transcriptLastTransportEventAt = seeded.at;
             renderUi.renderTranscriptMessages(chatHost, streaming);
         };
-        host.transcriptLastStreamProgressAt = Date.now() - 61_000;
+        // No agent output yet → the first-output budget (180s) applies, not the 60s one.
+        host.transcriptLastStreamProgressAt = Date.now() - 181_000;
         host.transcriptLastTransportEventAt = Date.now();
 
         const streaming = streamingIdleConv();

@@ -14,6 +14,13 @@ import {
 /** Longer budget while a tool call is still running without finishing. */
 export const TRANSCRIPT_STREAM_ACTIVE_TOOL_TIMEOUT_MS = 120_000;
 
+/**
+ * Budget before the turn's first agent output. A cold first run (tenant wake, CLI boot, provider
+ * auth, model cold start) routinely needs more than a minute; timing out at 60s told users the
+ * agent "didn't respond" while it was still starting. The backend keeps its own idle watchdog.
+ */
+export const TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS = 180_000;
+
 /** No SSE/WS payload for this long while status is still streaming. */
 export const TRANSCRIPT_SSE_STALE_MS = 45_000;
 
@@ -35,6 +42,8 @@ export interface TranscriptStreamHealth {
     readonly hasActiveTool: boolean;
     readonly thinkingActive: boolean;
     readonly idleMs: number;
+    /** Streaming, but the agent has not produced anything for this turn yet. */
+    readonly awaitingFirstOutput: boolean;
 }
 
 export function resolveTranscriptStreamHealth(
@@ -50,6 +59,7 @@ export function resolveTranscriptStreamHealth(
             hasActiveTool: hasActiveTranscriptToolSegment(input.segments),
             thinkingActive: isTranscriptAgentThinkingPhase(input.segments, input.streaming),
             idleMs: 0,
+            awaitingFirstOutput: false,
         };
     }
     const idleMs = Math.max(0, now - input.lastProgressAtMs);
@@ -57,9 +67,10 @@ export function resolveTranscriptStreamHealth(
     const thinkingActive = isTranscriptAgentThinkingPhase(input.segments, input.streaming);
     const sseStale = input.lastTransportEventAtMs !== undefined
         && now - input.lastTransportEventAtMs >= TRANSCRIPT_SSE_STALE_MS;
+    const awaitingFirstOutput = input.segments.length === 0;
     const timeoutBudget = hasActiveTool
         ? TRANSCRIPT_STREAM_ACTIVE_TOOL_TIMEOUT_MS
-        : TRANSCRIPT_STREAM_TIMEOUT_MS;
+        : awaitingFirstOutput ? TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS : TRANSCRIPT_STREAM_TIMEOUT_MS;
     const timedOut = idleMs >= timeoutBudget;
     let timeoutCause: TranscriptStreamTimeoutCause | undefined;
     if (timedOut) {
@@ -80,5 +91,6 @@ export function resolveTranscriptStreamHealth(
         hasActiveTool,
         thinkingActive,
         idleMs,
+        awaitingFirstOutput,
     };
 }

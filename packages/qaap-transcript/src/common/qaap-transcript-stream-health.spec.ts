@@ -8,6 +8,7 @@ import {
     resolveTranscriptStreamHealth,
     TRANSCRIPT_SSE_STALE_MS,
     TRANSCRIPT_STREAM_ACTIVE_TOOL_TIMEOUT_MS,
+    TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS,
 } from './qaap-transcript-stream-health';
 import { TRANSCRIPT_STREAM_STALL_MS, TRANSCRIPT_STREAM_TIMEOUT_MS } from './qaap-transcript-stream-status';
 
@@ -50,6 +51,20 @@ describe('qaap-transcript-stream-health', () => {
         });
         expect(health.timedOut).to.equal(true);
         expect(health.timeoutCause).to.equal('semantic_idle');
+    });
+
+    it('gives a cold first run the longer first-output budget before timing out', () => {
+        const base = { streaming: true, lastProgressAtMs: 0, segments: [] };
+        const early = resolveTranscriptStreamHealth({ ...base, lastTransportEventAtMs: TRANSCRIPT_STREAM_TIMEOUT_MS + 1_000, now: TRANSCRIPT_STREAM_TIMEOUT_MS + 1_000 });
+        expect(early.awaitingFirstOutput).to.equal(true);
+        expect(early.timedOut).to.equal(false);
+        expect(early.stalled).to.equal(true);
+        const late = resolveTranscriptStreamHealth({
+            ...base,
+            lastTransportEventAtMs: TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS + 1_000,
+            now: TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS + 1_000,
+        });
+        expect(late.timedOut).to.equal(true);
     });
 
     it('extends the timeout budget while a tool is still running', () => {

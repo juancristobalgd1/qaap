@@ -34,6 +34,16 @@ export function resolveTranscriptStreamingActivityFromSegments(
             ),
         };
     }
+    if (options?.stalled && segments.length === 0) {
+        return {
+            kind: 'stall',
+            title: nls.localize('qaap/mobileProjects/transcriptActivityStillStarting', 'Still starting the agent'),
+            detail: nls.localize(
+                'qaap/mobileProjects/transcriptActivityStillStartingDetail',
+                'The first run in a while can take a minute while the workspace and model warm up.',
+            ),
+        };
+    }
     if (options?.stalled) {
         return {
             kind: 'stall',
@@ -80,6 +90,15 @@ export function resolveTranscriptStreamingActivityFromSegments(
             kind: 'planning',
             title: planningTitle,
             detail: nls.localize('qaap/mobileProjects/transcriptActivityThinkingDetail', 'Planning the next step before changing anything.'),
+        };
+    }
+    if (segments.length === 0) {
+        // Nothing from the agent yet: the backend is still waking the workspace / starting the CLI.
+        // "Planning next moves" with 0 tokens read as a hang.
+        return {
+            kind: 'planning',
+            title: nls.localize('qaap/mobileProjects/transcriptActivityStartingAgent', 'Starting the agent'),
+            detail: nls.localize('qaap/mobileProjects/transcriptActivityStartingAgentDetail', 'Getting the workspace and model ready.'),
         };
     }
     return {

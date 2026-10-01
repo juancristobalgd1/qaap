@@ -9,9 +9,20 @@ import { resolveTranscriptStreamingActivityFromSegments } from './qaap-transcrip
 describe('qaap-transcript-streaming-activity', () => {
 
     it('returns stall state when requested', () => {
-        const view = resolveTranscriptStreamingActivityFromSegments([], { stalled: true, stallTitle: 'Slow' });
+        const view = resolveTranscriptStreamingActivityFromSegments([{ type: 'thinking', content: 'hmm' }], { stalled: true, stallTitle: 'Slow' });
         expect(view.kind).to.equal('stall');
         expect(view.title).to.equal('Slow');
+    });
+
+    it('says the agent is still starting when it stalls before any output', () => {
+        const view = resolveTranscriptStreamingActivityFromSegments([], { stalled: true, stallTitle: 'Slow' });
+        expect(view.kind).to.equal('stall');
+        expect(view.title).to.equal('Still starting the agent');
+    });
+
+    it('shows "Starting the agent" instead of "Planning next moves" before the first output', () => {
+        expect(resolveTranscriptStreamingActivityFromSegments([]).title).to.equal('Starting the agent');
+        expect(resolveTranscriptStreamingActivityFromSegments([{ type: 'thinking', content: '' }]).title).to.equal('Planning next moves');
     });
 
     it('returns timeout state when requested', () => {

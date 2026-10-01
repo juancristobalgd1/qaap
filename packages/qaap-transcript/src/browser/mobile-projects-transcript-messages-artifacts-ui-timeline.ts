@@ -217,15 +217,30 @@ export function patchStreamingAgentToolSegmentsExtracted(ctx: MobileProjectsTran
         return true;
 }
 
+/** Minimum gap between silent stall resyncs, so a long quiet phase polls instead of hammering. */
+const TRANSCRIPT_STALL_RESYNC_INTERVAL_MS = 30_000;
+let lastTranscriptStallResyncAt = 0;
+
 export function resolveTranscriptStreamHealthExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, conv?: QaapAgentConversationDTO) {
         const streaming = !!conv && resolveTranscriptEffectiveStatus(conv) === 'streaming';
         const segments = conv ? resolveTranscriptStreamingAgentSegments(conv) : [];
-        return resolveTranscriptStreamHealth({
+        const health = resolveTranscriptStreamHealth({
             streaming,
             lastProgressAtMs: ctx.host.transcriptLastStreamProgressAt,
             lastTransportEventAtMs: ctx.host.transcriptLastTransportEventAt,
             segments,
         });
+        // Silent self-heal: a stalled stream is often a missed push while the backend kept going
+        // (the timeout card's manual Retry "fixed" exactly that by refetching). Refetch quietly,
+        // at most every 30s, before the user ever sees a timeout.
+        const now = Date.now();
+        const liveUi = ctx.host.transcriptLiveUi as Partial<typeof ctx.host.transcriptLiveUi> | undefined;
+        if ((health.stalled || health.timedOut) && typeof liveUi?.refreshOpenTranscriptConversation === 'function'
+            && now - lastTranscriptStallResyncAt >= TRANSCRIPT_STALL_RESYNC_INTERVAL_MS) {
+            lastTranscriptStallResyncAt = now;
+            liveUi.refreshOpenTranscriptConversation({ forcePoll: true }).catch(() => undefined);
+        }
+        return health;
 }
 
 export function resolveTranscriptStreamVisualIdleExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segments: readonly QaapAgentMessageSegmentDTO[],
