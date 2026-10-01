@@ -17,6 +17,8 @@ const DESKTOP_WORK_HUB_VIEWPORT = { width: 1200, height: 953 };
 /** Wider than the 767px one-column breakpoint: the classic IDE is only reachable here. */
 const DESKTOP_IDE_VIEWPORT = { width: 1280, height: 900 };
 const KPI_PREVIEW_MS = 120_000;
+/** The shell's main area; the Memory Inspector widget reuses the same id inside its own dock panel. */
+const MAIN_CONTENT_PANEL = '#theia-bottom-split-panel > #theia-main-content-panel';
 
 /** Compiled tests live under lib/tests; fixtures stay in src/tests/resources. */
 const RESOURCES = path.resolve(__dirname, '../../src/tests/resources');
@@ -26,7 +28,7 @@ const NEXT_FIXTURE = path.join(RESOURCES, 'qaap-next-fixture');
 const LEGACY_BOOTSTRAP_FIXTURE = path.join(RESOURCES, 'qaap-bootstrap-fixture');
 
 const PREVIEW_FRAME_SELECTOR = [
-    '#theia-main-content-panel .theia-mini-browser iframe',
+    `${MAIN_CONTENT_PANEL} .theia-mini-browser iframe`,
     '.theia-mini-browser iframe[src*="qaap-dev"]',
     '.theia-mini-browser iframe[src*="127.0.0.1"]',
     '.theia-mini-browser iframe[src*="localhost"]',
@@ -124,14 +126,19 @@ async function openDesktopIdeViaCommandPalette(app: TheiaApp): Promise<boolean> 
     return isDesktopIdeSurface(app.page);
 }
 
-/** Classic desktop IDE: the shell left the one-column layout and the Work Hub panel is gone. */
+/**
+ * Classic desktop IDE: the shell left the one-column layout and no Work Hub composer is visible.
+ * The Work Hub chat view stays mounted (hidden) while the IDE is shown, so only visible composer
+ * inputs count.
+ */
 async function isDesktopIdeSurface(page: Page): Promise<boolean> {
     return page.evaluate(() => {
         const shell = document.getElementById('theia-app-shell');
         return !!shell
             && !shell.classList.contains('theia-mod-mobile-one-column')
             && !document.body.classList.contains('theia-mobile-mod-landing')
-            && document.querySelectorAll('.theia-mobile-projects-sticky-composer-input').length === 0;
+            && ![...document.querySelectorAll<HTMLElement>('.theia-mobile-projects-sticky-composer-input')]
+                .some(input => input.offsetParent !== null);
     });
 }
 
@@ -167,7 +174,7 @@ async function openDesktopIde(app: TheiaApp): Promise<void> {
 
 async function expectClassicIdeSurface(page: Page): Promise<void> {
     await expect.poll(() => isDesktopIdeSurface(page), { timeout: 30_000 }).toBe(true);
-    await expect(page.locator('#theia-main-content-panel')).toBeVisible();
+    await expect(page.locator(MAIN_CONTENT_PANEL)).toBeVisible();
 }
 
 async function expectOpenIdeNotOffered(app: TheiaApp): Promise<void> {
@@ -300,7 +307,8 @@ async function openProxiedDevPreview(app: TheiaApp, port: number): Promise<void>
 }
 
 async function waitForDevPreviewSurface(app: TheiaApp): Promise<void> {
-    const miniBrowser = app.page.locator('#theia-main-content-panel .theia-mini-browser');
+    // The desktop IDE docks the preview in the right side panel, not the main area.
+    const miniBrowser = app.page.locator('.theia-mini-browser').filter({ visible: true }).first();
     await expect(miniBrowser).toBeVisible({ timeout: 60_000 });
 }
 
@@ -464,7 +472,7 @@ test.describe('@qaap-mobile Classic IDE (desktop Open IDE escape hatch)', () => 
         const sampleFile = app.page.locator('#explorer-view-container--files .theia-FileStatNode', { hasText: 'sample.txt' });
         await expect(sampleFile).toBeVisible();
         await sampleFile.dblclick();
-        await expect(app.page.locator('#theia-main-content-panel span:has-text("content line 2")').first()).toBeVisible();
+        await expect(app.page.locator(`${MAIN_CONTENT_PANEL} span:has-text("content line 2")`).first()).toBeVisible();
 
         await app.page.close();
     });
