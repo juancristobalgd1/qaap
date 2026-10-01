@@ -17,6 +17,7 @@ import {
     resolveUserSettingsFilePath,
     usesSharedAiSettingsFallback,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { isQaapAiSettingsPrefKey } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
@@ -377,12 +378,21 @@ export function appendBoundedCommandOutput(current: string, chunk: string, maxCh
  *  Authenticated `ownerLogin` reads ONLY `~/.qaap/users/{login}/settings.json` — never the shared
  *  `~/.theia/settings.json`, which would leak User A's BYOK keys into User B's spawn.
  *  Skip-auth / anonymous still fall back to the shared file for local single-user VPS. */
-export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = os.homedir()): Record<string, unknown> {
+export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
     try {
         const sharedSettingsPath = path.join(homeDir, '.theia', 'settings.json');
         const userSettingsPath = ownerLogin?.trim()
             ? resolveUserSettingsFilePath(ownerLogin, homeDir)
             : undefined;
+        if (userSettingsPath && isTenantBackendOwnedBy(ownerLogin!, env)) {
+            // A per-tenant backend serves exactly this login, so its `~/.theia/settings.json` is the
+            // user's own — it is where the Settings UI writes (e.g. Settings > Harness). Ignoring it
+            // here left a disabled harness enabled for every turn. The per-user file still wins.
+            return {
+                ...(fs.existsSync(sharedSettingsPath) ? parseSettingsJsonFile(sharedSettingsPath) : {}),
+                ...(fs.existsSync(userSettingsPath) ? parseSettingsJsonFile(userSettingsPath) : {}),
+            };
+        }
         let settingsPath = sharedSettingsPath;
         if (userSettingsPath) {
             if (fs.existsSync(userSettingsPath)) {
@@ -399,6 +409,13 @@ export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = 
         console.warn('[qaap-agent-tasks] failed to read user settings from disk:', error instanceof Error ? error.message : String(error));
         return {};
     }
+}
+
+function isTenantBackendOwnedBy(ownerLogin: string, env: NodeJS.ProcessEnv): boolean {
+    const tenantLogin = env[QAAP_TENANT_LOGIN_ENV]?.trim().toLowerCase();
+    return /^(1|true)$/i.test(env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '')
+        && !!tenantLogin
+        && tenantLogin === ownerLogin.trim().toLowerCase();
 }
 
 export function parseSettingsJsonFile(settingsPath: string): Record<string, unknown> {

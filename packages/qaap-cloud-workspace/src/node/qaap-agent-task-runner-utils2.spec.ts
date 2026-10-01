@@ -203,6 +203,27 @@ describe('qaap-agent-task-runner-utils2', () => {
         }
     });
 
+    it('a per-tenant backend reads its owner\'s ~/.theia/settings.json (Settings > Harness lives there)', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-tenant-settings-'));
+        try {
+            fs.mkdirSync(path.join(home, '.theia'), { recursive: true });
+            fs.writeFileSync(path.join(home, '.theia', 'settings.json'), JSON.stringify({
+                'ai-features.harness.disabledAgents': ['claude'],
+                'ai-features.chat.defaultChatAgent': 'Shared',
+            }));
+            const tenantEnv = { QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_LOGIN: 'Alice' };
+            expect(readUserSettingsFromDisk('alice', home, tenantEnv)['ai-features.harness.disabledAgents']).to.deep.equal(['claude']);
+            // The per-user file still overrides the shared one.
+            writeUserSettingsToDisk('alice', { 'ai-features.chat.defaultChatAgent': 'Coder' }, home);
+            expect(readUserSettingsFromDisk('alice', home, tenantEnv)['ai-features.chat.defaultChatAgent']).to.equal('Coder');
+            // Another login, or a shared multi-user backend, never sees the shared file.
+            expect(readUserSettingsFromDisk('bob', home, tenantEnv)).to.deep.equal({});
+            expect(readUserSettingsFromDisk('bob', home, {})).to.deep.equal({});
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
+
     it('applyProviderPreferenceEnv does not export the Ollama schema-default host', () => {
         const run = (host: string): NodeJS.ProcessEnv => {
             const env: NodeJS.ProcessEnv = {};
