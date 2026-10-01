@@ -150,7 +150,13 @@ export async function restoreCheckpointExtracted(
         const current = ctx.conversations.get(conversationId) ?? conv;
         let next = current;
         if (undo) {
-            next = { ...current, checkpoints: [...(current.checkpoints ?? []), undo], updatedAt: Date.now() };
+            next = {
+                ...current,
+                checkpoints: [...(current.checkpoints ?? []), undo],
+                updatedAt: Date.now(),
+                // The cancelled turn's changes were just discarded; do not offer it again.
+                ...(current.discardCheckpointId === checkpointId ? { discardCheckpointId: undefined } : {}),
+            };
             ctx.conversations.set(conversationId, next);
             ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
             void ctx.persist();

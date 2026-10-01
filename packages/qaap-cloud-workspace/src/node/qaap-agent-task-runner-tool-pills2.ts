@@ -364,7 +364,9 @@ export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string,
         }
         const worktreeFinishedFingerprint = task.worktreeBaselineFingerprint && task.agentId === 'shell'
             ? ctx.captureWorktreeFingerprint(task.cwd) : undefined;
-        const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now(), worktreeFinishedFingerprint };
+        // The live verification phase only means something while the task runs; drop it on settle
+        // (including a cancel mid-verification) so a finished task never reads as "verifying".
+        const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now(), worktreeFinishedFingerprint, verificationPhase: undefined };
         ctx.tasks.set(id, finished);
         void ctx.persist();
         ctx.observability?.recordAgentCommandFinished(

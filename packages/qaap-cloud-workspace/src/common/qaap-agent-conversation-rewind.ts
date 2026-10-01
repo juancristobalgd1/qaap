@@ -44,7 +44,8 @@ export function planConversationRewind(
         }
     }
     const restoreCheckpoint = priorUserId
-        ? [...(conv.checkpoints ?? [])].reverse().find(checkpoint => checkpoint.messageId === priorUserId)
+        // Pre-turn snapshots of the prior turn predate its edits; rewinding keeps that turn's result.
+        ? [...(conv.checkpoints ?? [])].reverse().find(checkpoint => checkpoint.messageId === priorUserId && checkpoint.kind !== 'pre-turn')
         : undefined;
     return {
         trimmedMessages,

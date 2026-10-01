@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentConversationTurnPhaseDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { formatToolActivityLabel } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind } from './qaap-agent-transcript-segments';
 
@@ -22,8 +22,14 @@ export function resolveTranscriptStreamingActivityFromSegments(
         readonly timedOut?: boolean;
         readonly stallTitle?: string;
         readonly localizeToolTitle?: (label: string) => string;
+        /** Live turn phase from the conversation; `'verifying'` wins over stall/timeout and segments. */
+        readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
     },
 ): TranscriptStreamingActivityView {
+    const verifying = resolveTranscriptVerifyingActivity(options?.turnPhase);
+    if (verifying) {
+        return verifying;
+    }
     if (options?.timedOut) {
         return {
             kind: 'timeout',
@@ -106,6 +112,27 @@ export function resolveTranscriptStreamingActivityFromSegments(
         title: planningTitle,
         detail: nls.localize('qaap/mobileProjects/transcriptActivityStartingDetail', 'Preparing context and selecting the next action.'),
     };
+}
+
+/**
+ * Activity row for the runner's automatic post-turn verification, or `undefined` when the turn is
+ * not verifying. The agent output is complete at this point, so segments cannot describe it.
+ */
+export function resolveTranscriptVerifyingActivity(
+    turnPhase: QaapAgentConversationTurnPhaseDTO | undefined,
+): TranscriptStreamingActivityView | undefined {
+    if (turnPhase?.kind !== 'verifying') {
+        return undefined;
+    }
+    const base = nls.localize('qaap/mobileProjects/transcriptActivityVerifying', 'Automatic verification in progress');
+    const fixing = turnPhase.status === 'fixing' && turnPhase.attempt > 0;
+    const title = fixing
+        ? base + nls.localize('qaap/mobileProjects/transcriptActivityVerifyingFixAttempt', ' (fix attempt {0}/{1})', turnPhase.attempt, turnPhase.maxAttempts)
+        : base;
+    const detail = fixing
+        ? nls.localize('qaap/mobileProjects/transcriptActivityVerifyingFixDetail', 'A check failed; the agent is repairing it before finishing.')
+        : nls.localize('qaap/mobileProjects/transcriptActivityVerifyingDetail', 'Running the project checks on the changes before finishing.');
+    return { kind: 'verifying', title, detail };
 }
 
 /** Max characters of live thinking text surfaced as the activity detail (roughly one sentence). */

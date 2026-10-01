@@ -1,5 +1,7 @@
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { resolveTranscriptDiscardChangesHandler } from './mobile-projects-transcript-messages-artifacts-ui-render';
+import { resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -68,6 +70,8 @@ export function syncRowProcessAccordionExtracted(ctx: MobileProjectsTranscriptMe
             failureReason: localizeAgentFailureShortReason(message?.error),
             activityVerb,
             onStopRun: ctx.resolveRunStopHandler(conv, message, isWorking),
+            onDiscardChanges: resolveTranscriptDiscardChangesHandler(ctx, conv, message),
+            retryAttempt: resolveTranscriptTurnRetryAttempt(conv, message?.id),
             // Only the finalize path calls with streaming=false, and it does so
             // AFTER appending the closing narrative + diff summary — that is
             // the one moment auto-collapse is allowed. Streaming syncs must

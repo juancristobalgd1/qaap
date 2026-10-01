@@ -42,6 +42,7 @@ import {
     didExecutionToolSegmentsChange as didExecutionToolSegmentsChangeHelper,
     collectMobileClosingNarrativeTextsBefore as collectMobileClosingNarrativeTextsBeforeHelper,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
+import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
         removeTranscriptLiveStatusElement(root, {
@@ -227,6 +228,8 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: MobileProjectsT
             failureReason: localizeAgentFailureShortReason(error ?? effectiveMessage?.error),
             activityVerb,
             onStopRun: ctx.resolveRunStopHandler(conv, message, isWorking),
+            onDiscardChanges: resolveTranscriptDiscardChangesHandler(ctx, conv, effectiveMessage),
+            retryAttempt: resolveTranscriptTurnRetryAttempt(conv, effectiveMessage?.id),
             settled: !isWorking,
         });
         ctx.bindMobileExecutionEventTimelineFileOpen(accordion);
@@ -309,6 +312,24 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: MobileProjectsT
 export function shouldShowMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, conv: QaapAgentConversationDTO | undefined,
         renderStreaming: boolean,): boolean {
         return ctx.isConversationFinalResponseCommitted(conv, renderStreaming);
+}
+
+/**
+ * "Discard changes" for a stopped run: restore its pre-turn snapshot through the checkpoint
+ * preview dialog. `undefined` (button hidden) until the backend published the snapshot.
+ */
+export function resolveTranscriptDiscardChangesHandler(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext,
+        conv: QaapAgentConversationDTO | undefined,
+        message: QaapAgentMessageDTO | undefined,): (() => void) | undefined {
+        const checkpointId = resolveTranscriptDiscardCheckpointId(conv, message?.id);
+        if (!checkpointId) {
+            return undefined;
+        }
+        // The preview dialog lists exactly what would change (and says so when nothing differs);
+        // the snapshot's own label ("Before: …") names the target state.
+        return () => {
+            void ctx.restoreTranscriptCheckpoint(checkpointId);
+        };
 }
 
 export function resolveRunStopHandlerExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, conv: QaapAgentConversationDTO | undefined,

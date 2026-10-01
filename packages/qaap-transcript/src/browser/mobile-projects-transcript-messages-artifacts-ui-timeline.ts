@@ -229,6 +229,7 @@ export function resolveTranscriptStreamHealthExtracted(ctx: MobileProjectsTransc
             lastProgressAtMs: ctx.host.transcriptLastStreamProgressAt,
             lastTransportEventAtMs: ctx.host.transcriptLastTransportEventAt,
             segments,
+            verifying: streaming && conv?.turnPhase?.kind === 'verifying',
         });
         // Silent self-heal: a stalled stream is often a missed push while the backend kept going
         // (the timeout card's manual Retry "fixed" exactly that by refetching). Refetch quietly,

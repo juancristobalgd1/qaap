@@ -9,6 +9,7 @@ import {
     type QaapAgentTask,
     type QaapAgentTaskReview,
     type QaapAgentTaskVerification,
+    type QaapAgentTaskVerificationPhase,
 } from '../common/qaap-agent-task';
 import { detectEmptyAgentTurn, type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
@@ -31,6 +32,27 @@ export function releaseVerificationPassExtracted(ctx: QaapAgentTaskRunnerContext
             return;
         }
         ctx.activeVerificationPasses = Math.max(0, ctx.activeVerificationPasses - 1);
+}
+
+/**
+ * Record the live verification phase on a still-running task and announce it with an `'updated'`
+ * task event so the conversation store / UI can show "automatic verification in progress".
+ * Passing `undefined` clears the phase (fires only when one was set). No-op once the task settled.
+ */
+export function setTaskVerificationPhaseExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string,
+        phase: QaapAgentTaskVerificationPhase | undefined): void {
+        // Progress reporting only: it must never break the verification it describes (partial
+        // runners in tests have no task map / emitter).
+        const current = ctx.tasks?.get(taskId);
+        if (!current || current.state !== 'running') {
+            return;
+        }
+        if (!phase && !current.verificationPhase) {
+            return;
+        }
+        const updated: QaapAgentTask = { ...current, verificationPhase: phase };
+        ctx.tasks.set(taskId, updated);
+        ctx.onDidChangeTaskEmitter?.fire({ type: 'updated', task: updated });
 }
 
 export async function finishSuccessfulTaskAfterVerificationExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
@@ -124,6 +146,7 @@ export async function finishSuccessfulTaskAfterVerificationExtracted(ctx: QaapAg
                 const latest = ctx.tasks.get(task.id) ?? task;
                 ctx.restoreBaselineSensitiveFiles(latest);
             }
+            setTaskVerificationPhaseExtracted(ctx, task.id, undefined);
             ctx.finishTask(task.id, withWarnings ? 'completed_with_warnings' : 'completed', exitCode);
         } finally {
             ctx.releaseVerificationPass();
@@ -163,6 +186,7 @@ export async function verifySuccessfulAgentTaskExtracted(ctx: QaapAgentTaskRunne
             summarizeVerificationFailure: (c, r) => ctx.summarizeVerificationFailure(c, r),
             listWorktreeChanges: t => ctx.listWorktreeChanges(t.cwd),
             revertWorktreeChanges: (t, changes) => revertOutOfScopeChangesExtracted(ctx, t, changes),
+            onVerificationPhase: (t, phase) => setTaskVerificationPhaseExtracted(ctx, t.id, phase),
         });
 }
 

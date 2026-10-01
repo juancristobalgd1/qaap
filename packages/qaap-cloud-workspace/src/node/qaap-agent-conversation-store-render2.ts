@@ -40,6 +40,7 @@ import { hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper } from
 
 import { allocateQaapWorktreeOrdinal } from './qaap-worktree-ordinal-allocator';
 import { QAAP_MAX_BATCH_SIZE, QAAP_COALESCE_WINDOW_MS, type PostUserMessageInternalOptions } from './qaap-agent-conversation-store-constants';
+import { capturePreTurnCheckpointGate } from './qaap-agent-conversation-store-pre-turn-checkpoint';
 
 /**
  * MUTATING git under the tenant wrapper, run asynchronously so a turn settle / checkpoint never
@@ -733,6 +734,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         } : {}),
         ...(internal?.batchedFromMessageIds ? { batchedFromMessageIds: internal.batchedFromMessageIds } : {}),
         ...(internal?.goalLoopIteration ? { goalLoopIteration: internal.goalLoopIteration } : {}),
+        ...(internal?.retryAttempt && internal.retryAttempt > 1 ? { retryAttempt: internal.retryAttempt } : {}),
     };
     const messages = [...conv.messages, userMessage];
     let next: QaapAgentConversation = {
@@ -745,6 +747,10 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         messages,
         // Posting a new turn implicitly resumes a paused chat.
         paused: undefined,
+        // A new turn starts outside verification, and its edits supersede the last cancelled
+        // turn's "Discard changes" offer.
+        turnPhase: undefined,
+        discardCheckpointId: undefined,
         ...modelPatch,
         ...(interactionModeId ? { interactionModeId } : {}),
         ...(approvalPolicyId ? { approvalPolicyId } : {}),
@@ -771,9 +777,13 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         if (next.ownerLogin && ctx.billingStore?.getOrCreateAccount) {
             void ctx.billingStore.getOrCreateAccount(next.ownerLogin).catch(() => undefined);
         }
+        // Snapshot the worktree BEFORE the agent can write (bounded wait, see
+        // capturePreTurnCheckpointGate) so a cancelled turn can later be discarded.
+        const spawnGate = capturePreTurnCheckpointGate(ctx, id, next.cwd, userMessage);
         task = ctx.taskRunner.create(
             ctx.buildTaskCreateRequest(next, turnAgentId, latencyMarks, userMessage.id),
             next.ownerLogin,
+            { spawnGate },
         );
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -855,20 +865,54 @@ export function linkConversationsToPullRequestExtracted(ctx: QaapAgentConversati
     return linked;
 }
 
-export function retryExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation {
-    const conv = ctx.conversations.get(id);
+/** Upper bound a forced retry waits for the cancelled run's agent process to exit. */
+export const QAAP_FORCED_RETRY_PROCESS_EXIT_TIMEOUT_MS = 20_000;
+
+export interface QaapConversationRetryOptions {
+    /**
+     * Retry even while the turn still streams (the stalled-stream banner): cancel the live run(s),
+     * wait for the agent process to exit, then re-post the last user message.
+     */
+    readonly force?: boolean;
+}
+
+export async function retryExtracted(ctx: QaapAgentConversationStoreContext, id: string, options?: QaapConversationRetryOptions): Promise<QaapAgentConversation> {
+    let conv = ctx.conversations.get(id);
     if (!conv) {
         throw new Error('Conversation not found.');
     }
+    const force = options?.force === true;
     if (conv.status === 'streaming') {
-        throw new Error('A turn is already in progress for this conversation.');
+        if (!force) {
+            throw new Error('A turn is already in progress for this conversation.');
+        }
+        const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
+        const taskIds = [...new Set([
+            ...ctx.getActiveTaskIdsForConversation(id),
+            ...(lastUser?.taskId ? [lastUser.taskId] : []),
+        ])];
+        cancelExtracted(ctx, id);
+        await (ctx.taskRunner.waitForProcessExit?.(taskIds, QAAP_FORCED_RETRY_PROCESS_EXIT_TIMEOUT_MS) ?? Promise.resolve(true));
+        conv = ctx.conversations.get(id);
+        if (!conv) {
+            throw new Error('Conversation not found.');
+        }
+        if (conv.status === 'streaming') {
+            // A queued message started its own turn after the cancel — do not race it.
+            throw new Error('A turn is already in progress for this conversation.');
+        }
     }
     // Prefer the last user message explicitly marked as failed. Older persisted conversations
     // can have status `failed` without the per-message error annotation, so fall back to the
-    // last user turn when the conversation itself is failed.
+    // last user turn when the conversation itself is failed — or, for a forced retry, whatever
+    // the last user turn was (it was just cancelled, or the stream was stuck).
     let failedIndex = conv.messages.reduce<number>((last, m, i) => m.role === 'user' && m.error ? i : last, -1);
+    const lastUserIndex = conv.messages.reduce<number>((last, m, i) => m.role === 'user' ? i : last, -1);
+    if (force && lastUserIndex > failedIndex) {
+        failedIndex = lastUserIndex;
+    }
     if (failedIndex < 0 && conv.status === 'failed') {
-        failedIndex = conv.messages.reduce<number>((last, m, i) => m.role === 'user' ? i : last, -1);
+        failedIndex = lastUserIndex;
     }
     if (failedIndex < 0) {
         throw new Error('No failed message to retry.');
@@ -891,7 +935,18 @@ export function retryExtracted(ctx: QaapAgentConversationStoreContext, id: strin
         failedMessage.content,
         failedMessage.turnAgentId,
         failedMessage.turnAgentModel,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { retryAttempt: nextRetryAttempt(failedMessage) },
     );
+}
+
+/** Attempt number of the retry of `message` (the original attempt counts as 1). */
+export function nextRetryAttempt(message: Pick<QaapAgentMessage, 'retryAttempt'>): number {
+    return (message.retryAttempt ?? 1) + 1;
 }
 
 export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {

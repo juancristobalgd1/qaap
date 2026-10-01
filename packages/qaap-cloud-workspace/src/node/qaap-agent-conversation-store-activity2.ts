@@ -30,6 +30,7 @@ import { resolveStructuredParsedTraceEvents as resolveStructuredParsedTraceEvent
 import { applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper } from './qaap-agent-conversation-store-helpers';
 
 import { type QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
+import { publishDiscardCheckpointAfterExit } from './qaap-agent-conversation-store-pre-turn-checkpoint';
 
 export function applyAccumulatorStructuredOutputExtracted(ctx: QaapAgentConversationStoreContext, taskId: string,
     ref: QaapConversationTaskRef,
@@ -191,6 +192,9 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             ctx.drainPendingMessages(conversationId);
         }
         ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'cancelled' });
+        // Offer "Discard changes" only once the stopping agent can no longer write.
+        void publishDiscardCheckpointAfterExit(ctx, conversationId, userMessageId, [task.id])
+            .catch(error => console.warn('[qaap-agent-conversation-store] failed to publish the discard checkpoint:', error));
         return 'blocked';
     }
     const detail = await ctx.taskRunner.detail(task.id);

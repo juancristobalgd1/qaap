@@ -276,6 +276,13 @@ export function retryOpenTranscriptStreamExtracted(ctx: MobileProjectsPanelConte
         // watchdog and the click) — never seed a phantom {...idle, streaming} snapshot.
         return;
     }
+    if (summary.status === 'streaming') {
+        // The user pressed Retry on a stalled turn: really re-run it (the server stops the
+        // stuck run and waits for its process to exit first). The silent auto-resync of the
+        // stall watchdog keeps refetching on its own and is not routed through here.
+        void ctx.conversationActionsUi.onRetryConversation(project, summary, { force: true });
+        return;
+    }
     ctx.transcriptLiveUi.applyOptimisticStreamTimeoutRetry(summary);
     ctx.conversations?.recordSnapshot({ ...summary, status: 'streaming', updatedAt: Date.now() });
     ctx.renderList();

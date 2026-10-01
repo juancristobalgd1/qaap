@@ -321,6 +321,8 @@ export function bindOpenTranscriptThreadStoreExtracted(ctx: MobileProjectsTransc
                 if (summary) {
                     const previousVisualPending = ctx.host.transcriptOpenSummary.visualVerificationPending ?? false;
                     const nextVisualPending = summary.visualVerificationPending ?? false;
+                    const liveTurnFieldsChanged = JSON.stringify(ctx.host.transcriptOpenSummary.turnPhase) !== JSON.stringify(summary.turnPhase)
+                        || ctx.host.transcriptOpenSummary.discardCheckpointId !== summary.discardCheckpointId;
                     ctx.host.transcriptOpenSummary = {
                         ...ctx.host.transcriptOpenSummary,
                         ...summary,
@@ -342,6 +344,20 @@ export function bindOpenTranscriptThreadStoreExtracted(ctx: MobileProjectsTransc
                     // skeleton chip swaps to the real screenshot/video in place; without this
                     // the evidence only surfaced after a manual page reload.
                     if (nextVisualPending !== previousVisualPending) {
+                        ctx.ensureTranscriptConversationRefresh();
+                    }
+                    // Automatic verification phase / "Discard changes" offer live on the document,
+                    // not in agent output: patch the open conversation now (live footer reads it)
+                    // and refetch so the transcript re-renders the accordion chrome.
+                    if (liveTurnFieldsChanged) {
+                        const open = ctx.host.transcriptLastConv;
+                        if (open?.id === conversationId) {
+                            ctx.host.transcriptLastConv = {
+                                ...open,
+                                turnPhase: summary.turnPhase,
+                                discardCheckpointId: summary.discardCheckpointId,
+                            };
+                        }
                         ctx.ensureTranscriptConversationRefresh();
                     }
                 }

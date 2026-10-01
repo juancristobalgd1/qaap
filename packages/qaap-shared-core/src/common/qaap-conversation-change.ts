@@ -25,7 +25,9 @@ export type QaapConversationSummaryField =
     | 'agentModel'
     | 'approvalPolicyId'
     | 'visualVerificationPending'
-    | 'goalLoop';
+    | 'goalLoop'
+    | 'turnPhase'
+    | 'discardCheckpointId';
 
 export type QaapConversationChangeKind =
     | 'snapshot'
@@ -71,6 +73,8 @@ const SUMMARY_FIELD_KEYS: readonly (keyof QaapAgentConversationSummaryDTO)[] = [
     'goalLoopIteration',
     'goalLoopMaxIterations',
     'goalLoopStopReason',
+    'turnPhase',
+    'discardCheckpointId',
 ];
 
 function fieldFromSummaryKey(key: keyof QaapAgentConversationSummaryDTO): QaapConversationSummaryField | undefined {

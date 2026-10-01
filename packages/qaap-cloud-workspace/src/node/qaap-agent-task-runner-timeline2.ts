@@ -1,5 +1,6 @@
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -211,6 +212,9 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
         }
+        // Bounded caller preparation (e.g. the conversation's pre-turn worktree snapshot) must
+        // finish before the agent can write.
+        await awaitQaapAgentTaskSpawnGate(request);
         // Stop can arrive while preference initialization is pending, before a child exists.
         // Do not resurrect a task that cancel() has already transitioned out of running.
         if (ctx.tasks.get(task.id)?.state !== 'running') {

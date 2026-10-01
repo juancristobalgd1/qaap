@@ -4162,6 +4162,56 @@ body.theia-dark .theia-mobile-agent-web-search,
   margin-left: 8px;
 }
 
+/* "Attempt {0}" badge on a retried turn (see mobile-process-accordion.ts). */
+.theia-mobile-process-accordion-attempt {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: var(--qaap-mobile-radius-control, 8px);
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* "Discard changes" on a stopped turn: restores the pre-turn snapshot via the preview dialog. */
+.theia-mobile-process-accordion-discard {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 0 10px;
+  border-radius: var(--qaap-mobile-radius-control, 8px);
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.theia-mobile-process-accordion-discard .codicon {
+  font-size: 12px;
+}
+
+.theia-mobile-process-accordion-discard:hover,
+.theia-mobile-process-accordion-discard:focus-visible {
+  color: var(--theia-foreground);
+  border-color: color-mix(in srgb, var(--theia-foreground) 40%, transparent);
+}
+
+.theia-mobile-process-accordion-discard:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.theia-mobile-process-accordion-discard+.theia-mobile-process-accordion-chevron {
+  margin-left: 8px;
+}
+
 /* Do not leave any accordion header visually marked after a touch. This covers
    native details/summary accordions and the custom disclosure headers used by
    tool, shell, timeline, diff, and process rows. */

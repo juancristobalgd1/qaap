@@ -168,6 +168,26 @@ export interface QaapAgentMessage {
     readonly batchedFromMessageIds?: ReadonlyArray<string>;
     /** Set on user messages posted by the goal loop: the 1-based loop iteration this turn is. */
     readonly goalLoopIteration?: number;
+    /**
+     * Set on a user message re-posted by Retry: which attempt of the same request this turn is
+     * (2 for the first retry, 3 for the second, …). Omitted on the original attempt.
+     */
+    readonly retryAttempt?: number;
+}
+
+/**
+ * Live, non-terminal phase of the in-flight turn that the agent output alone cannot reveal —
+ * today only the runner's automatic post-turn verification (repo checks + bounded fix turns).
+ * Cleared as soon as the turn settles.
+ */
+export interface QaapAgentConversationTurnPhase {
+    readonly kind: 'verifying';
+    /** `'running'`: repo checks execute; `'fixing'`: an automatic fix turn repairs a red check. */
+    readonly status: 'running' | 'fixing';
+    /** Fix attempt number (0 during the first verification pass). */
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly startedAt: number;
 }
 
 export interface QaapContextCompaction {
@@ -197,6 +217,11 @@ export interface QaapConversationCheckpoint {
      * wrote back. Rewind previews use it as the "last state Qaap produced" baseline.
      */
     readonly restoredFrom?: string;
+    /**
+     * `'pre-turn'`: snapshot taken right before the turn of {@link messageId} spawned its agent, so a
+     * cancelled turn's partial edits can be discarded. Omitted on the regular post-turn snapshots.
+     */
+    readonly kind?: 'pre-turn';
 }
 
 /** A persistent multi-turn thread with an agent, tied to a working directory. */
@@ -277,6 +302,13 @@ export interface QaapAgentConversation {
     readonly pendingUserMessages?: ReadonlyArray<QaapPendingUserMessage>;
     /** "Until done" goal loop driving this conversation (kept after it ends for the UI). */
     readonly goalLoop?: QaapAgentGoalLoopState;
+    /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */
+    readonly turnPhase?: QaapAgentConversationTurnPhase;
+    /**
+     * Pre-turn checkpoint of the most recent CANCELLED turn, published once that turn's agent
+     * process has exited, so the UI can offer "Discard changes". Cleared by the next turn.
+     */
+    readonly discardCheckpointId?: string;
 }
 
 /** Summary row used by list endpoints — omits messages to keep payloads small. */
@@ -361,6 +393,10 @@ export interface QaapAgentConversationSummary {
     readonly goalLoopIteration?: number;
     readonly goalLoopMaxIterations?: number;
     readonly goalLoopStopReason?: string;
+    /** Live phase of the in-flight turn (automatic verification); present only while streaming. */
+    readonly turnPhase?: QaapAgentConversationTurnPhase;
+    /** See {@link QaapAgentConversation.discardCheckpointId}. */
+    readonly discardCheckpointId?: string;
 }
 
 /** Conversations bucketed by project working directory. */
@@ -614,6 +650,8 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
             }
             : {}),
         ...(conversationNeedsVisualVerificationEvidence(conv) ? { visualVerificationPending: true } : {}),
+        ...(conv.turnPhase && status === 'streaming' ? { turnPhase: conv.turnPhase } : {}),
+        ...(conv.discardCheckpointId ? { discardCheckpointId: conv.discardCheckpointId } : {}),
     };
 }
 

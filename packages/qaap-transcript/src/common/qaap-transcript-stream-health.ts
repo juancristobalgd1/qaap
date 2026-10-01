@@ -32,6 +32,12 @@ export interface TranscriptStreamHealthInput {
     readonly lastTransportEventAtMs: number | undefined;
     readonly segments: readonly TranscriptSemanticProgressSegment[];
     readonly now?: number;
+    /**
+     * The backend reported automatic post-turn verification (repo checks / fix turns) in progress.
+     * Those phases legitimately run for minutes without agent output, so the stall / timeout
+     * watchdog stays quiet while this is set.
+     */
+    readonly verifying?: boolean;
 }
 
 export interface TranscriptStreamHealth {
@@ -50,7 +56,7 @@ export function resolveTranscriptStreamHealth(
     input: TranscriptStreamHealthInput,
 ): TranscriptStreamHealth {
     const now = input.now ?? Date.now();
-    if (!input.streaming || input.lastProgressAtMs === undefined) {
+    if (!input.streaming || input.lastProgressAtMs === undefined || input.verifying) {
         return {
             stalled: false,
             timedOut: false,

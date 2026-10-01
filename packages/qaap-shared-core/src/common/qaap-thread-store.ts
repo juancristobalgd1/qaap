@@ -128,7 +128,9 @@ export class QaapThreadStore {
         }
         if (document.status === summary.status
             && document.updatedAt >= summary.updatedAt
-            && JSON.stringify(document.contextCompaction) === JSON.stringify(summary.contextCompaction)) {
+            && JSON.stringify(document.contextCompaction) === JSON.stringify(summary.contextCompaction)
+            && JSON.stringify(document.turnPhase) === JSON.stringify(summary.turnPhase)
+            && document.discardCheckpointId === summary.discardCheckpointId) {
             return;
         }
         this.documents.set(conversationId, {
@@ -136,6 +138,8 @@ export class QaapThreadStore {
             status: summary.status,
             updatedAt: Math.max(document.updatedAt, summary.updatedAt),
             contextCompaction: summary.contextCompaction,
+            turnPhase: summary.turnPhase,
+            discardCheckpointId: summary.discardCheckpointId,
         });
     }
 

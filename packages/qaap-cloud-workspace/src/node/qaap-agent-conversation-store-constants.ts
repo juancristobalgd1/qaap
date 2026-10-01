@@ -141,6 +141,8 @@ export interface PostUserMessageInternalOptions {
     readonly batchedFromMessageIds?: ReadonlyArray<string>;
     /** Set by the goal loop runner: the loop iteration this backend-generated turn is. */
     readonly goalLoopIteration?: number;
+    /** Set by Retry: which attempt of the same request this turn is (2 = first retry). */
+    readonly retryAttempt?: number;
 }
 
 /** How an agent turn settled, as reported to the goal loop runner. */

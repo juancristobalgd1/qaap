@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { QAAP_AGENT_CONVERSATION_API_PATH, QaapAgentConversation, QaapAgentMessage, QaapCreateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
+import { QAAP_AGENT_CONVERSATION_API_PATH, QaapAgentConversation, QaapAgentConversationTurnPhase, QaapAgentMessage, QaapCreateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
@@ -146,9 +146,13 @@ export function onTaskChangedExtracted(ctx: QaapAgentConversationStoreContext, e
             }
             const task = event.task;
             if (task.state === 'running') {
-                return; // only react when the turn settles
+                if (event.type === 'updated') {
+                    applyTaskTurnPhase(ctx, ref.conversationId, task);
+                }
+                return; // otherwise only react when the turn settles
             }
             ctx.taskToConversation.delete(task.id);
+            clearConversationTurnPhase(ctx, ref.conversationId);
             // The graph settle is DEFERRED until the outcome flow finishes: a retriable failure
             // must become the run's `retry:model` edge (which steals the claim below), never a
             // premature terminal report racing the decision.
@@ -171,6 +175,44 @@ export function onTaskChangedExtracted(ctx: QaapAgentConversationStoreContext, e
             return;
         }
         void ctx.deliverSubtaskMailbox(task);
+}
+
+/** Map the runner's live verification phase onto the conversation (`turnPhase`) and announce it. */
+function applyTaskTurnPhase(ctx: QaapAgentConversationStoreContext, conversationId: string, task: QaapAgentTask): void {
+    const conv = ctx.conversations.get(conversationId);
+    if (!conv) {
+        return;
+    }
+    const turnPhase = resolveConversationTurnPhase(task);
+    if (JSON.stringify(turnPhase) === JSON.stringify(conv.turnPhase)) {
+        return;
+    }
+    const next: QaapAgentConversation = { ...conv, turnPhase };
+    ctx.conversations.set(conversationId, next);
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+}
+
+/** Drop a stale verification phase once the turn settles (the settle itself fires the update). */
+function clearConversationTurnPhase(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
+    const conv = ctx.conversations.get(conversationId);
+    if (conv?.turnPhase) {
+        ctx.conversations.set(conversationId, { ...conv, turnPhase: undefined });
+    }
+}
+
+/** Conversation-level live phase for a running task, or `undefined` when it is not verifying. */
+export function resolveConversationTurnPhase(task: Pick<QaapAgentTask, 'state' | 'verificationPhase'>): QaapAgentConversationTurnPhase | undefined {
+    const phase = task.verificationPhase;
+    if (task.state !== 'running' || !phase) {
+        return undefined;
+    }
+    return {
+        kind: 'verifying',
+        status: phase.status,
+        attempt: phase.attempt,
+        maxAttempts: phase.maxAttempts,
+        startedAt: phase.startedAt,
+    };
 }
 
 export function recordTaskLatencyMarksExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, task: QaapAgentTask): void {

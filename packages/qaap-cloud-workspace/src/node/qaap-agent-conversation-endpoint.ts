@@ -279,17 +279,20 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             this.handleGoalLoop(res, req.params.id, runner => runner.cancel(req.params.id));
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/retry`, (req, res) => {
-            if (!this.getConversationIfOwned(req, res, req.params.id)) {
-                return;
-            }
-            try {
-                const conv = this.store.retry(req.params.id);
-                res.json(conv);
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                const status = message.includes('not found') ? 404 : 400;
-                res.status(status).json({ error: message });
-            }
+            void (async () => {
+                if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                    return;
+                }
+                try {
+                    const force = (req.body as { force?: unknown } | undefined)?.force === true;
+                    const conv = await this.store.retry(req.params.id, { force });
+                    res.json(conv);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    const status = message.includes('not found') ? 404 : 400;
+                    res.status(status).json({ error: message });
+                }
+            })();
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/checkpoints/:checkpointId/restore`, (req, res) => {
             void (async () => {

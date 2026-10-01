@@ -17,7 +17,7 @@ import {
     isUiHiddenVpsAgent,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
-import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentConnectionState, QaapAgentTaskReview, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
+import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentConnectionState, QaapAgentTaskReview, QaapAgentTaskVerification, QaapAgentTaskVerificationPhase, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {
     classifyVerificationFailureScope,
@@ -478,6 +478,12 @@ export interface VerifySuccessfulAgentTaskDeps {
     listWorktreeChanges(task: QaapAgentTask): readonly QaapWorktreeChange[] | undefined;
     /** Put the given paths back to how they were before the fix turn; returns the paths restored. */
     revertWorktreeChanges(task: QaapAgentTask, changes: readonly QaapWorktreeChange[]): readonly string[];
+    /**
+     * Live progress hook: called once the loop is about to run repo scripts and again before/after
+     * each fix turn so the runner can surface "automatic verification in progress" while the task
+     * is still `'running'`. Never called when verification is skipped (no edits / no scripts).
+     */
+    onVerificationPhase?(task: QaapAgentTask, phase: QaapAgentTaskVerificationPhase): void;
 }
 
 export async function verifySuccessfulAgentTask(
@@ -499,6 +505,7 @@ export async function verifySuccessfulAgentTask(
     let attempts = 0;
     let lastCommand = '';
     let lastFailure: QaapGenericCommandResult | undefined;
+    deps.onVerificationPhase?.(task, { status: 'running', attempt: 0, maxAttempts: QAAP_AGENT_VERIFY_MAX_ATTEMPTS, startedAt });
     while (deps.isTaskStillRunning(task.id) && Date.now() - startedAt < QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
         const failed = await deps.runVerificationScripts(task, env, scripts, startedAt);
         if (!failed) {
@@ -521,6 +528,9 @@ export async function verifySuccessfulAgentTask(
             break;
         }
         attempts++;
+        deps.onVerificationPhase?.(task, {
+            status: 'fixing', attempt: attempts, maxAttempts: QAAP_AGENT_VERIFY_MAX_ATTEMPTS, command: failed.command, startedAt,
+        });
         const beforeFix = scopePaths ? deps.listWorktreeChanges(task) : undefined;
         const fixed = await deps.runAgentVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt, scopePaths ?? []);
         if (fixed === undefined) {
@@ -536,6 +546,9 @@ export async function verifySuccessfulAgentTask(
             if (outOfScope.length > 0) {
                 deps.revertWorktreeChanges(task, outOfScope);
             }
+        }
+        if (deps.isTaskStillRunning(task.id)) {
+            deps.onVerificationPhase?.(task, { status: 'running', attempt: attempts, maxAttempts: QAAP_AGENT_VERIFY_MAX_ATTEMPTS, startedAt });
         }
     }
     if (!lastFailure) {

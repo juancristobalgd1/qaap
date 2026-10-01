@@ -128,6 +128,26 @@ export interface QaapAgentTask {
     readonly verification?: QaapAgentTaskVerification;
     /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */
     readonly review?: QaapAgentTaskReview;
+    /**
+     * Live phase of the automatic post-turn verification (repo checks + bounded fix turns). Present
+     * only while the task is still `'running'` and the runner is executing verification scripts or
+     * a fix turn; cleared before the task settles. Announced with a task event of type `'updated'`.
+     */
+    readonly verificationPhase?: QaapAgentTaskVerificationPhase;
+}
+
+/** Progress of the automatic verification loop for a task that is still running. */
+export interface QaapAgentTaskVerificationPhase {
+    /** `'running'`: repo checks are executing; `'fixing'`: an agent fix turn is repairing a red check. */
+    readonly status: 'running' | 'fixing';
+    /** Fix attempt number (0 while the first verification pass runs, 1..maxAttempts during/after fix turns). */
+    readonly attempt: number;
+    /** Maximum number of fix turns the runner will attempt. */
+    readonly maxAttempts: number;
+    /** Failing command the current fix turn is repairing (set while fixing). */
+    readonly command?: string;
+    /** Epoch ms when the verification loop started. */
+    readonly startedAt: number;
 }
 
 export type QaapAgentTaskVerification =
@@ -356,7 +376,11 @@ export interface QaapAgentTaskAllResponse {
 
 /** Payload pushed over SSE when a task changes state. */
 export type QaapAgentTaskEvent =
-    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered'; readonly task: QaapAgentTask }
+    /**
+     * `'updated'`: a running task changed live metadata (e.g. {@link QaapAgentTask.verificationPhase})
+     * without changing state. Consumers that only care about state transitions can ignore it.
+     */
+    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered' | 'updated'; readonly task: QaapAgentTask }
     | { readonly type: 'output'; readonly task: QaapAgentTask; readonly chunk: string };
 
 /** True once the task has stopped and will not change state again. */

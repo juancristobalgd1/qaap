@@ -16,6 +16,7 @@ import {
     isConversationAutoApproveEnabled,
     renameConversation,
     retryConversation,
+    type QaapRetryConversationOptions,
     updateConversation,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -301,9 +302,14 @@ export class MobileProjectsConversationActionsUi {
         }
     }
 
+    /**
+     * Re-run the last turn. `force` (the stalled-stream banner's Retry) asks the server to stop a
+     * turn that still reads as streaming, wait for its agent process to exit, then re-post it.
+     */
     async onRetryConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
+        options?: QaapRetryConversationOptions,
     ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
         const rollbackSnapshot = { ...summary };
@@ -318,7 +324,7 @@ export class MobileProjectsConversationActionsUi {
         this.refreshConversationLists();
 
         try {
-            const retried = await retryConversation(summary.id);
+            const retried = await retryConversation(summary.id, options);
             this.host.conversations?.recordSnapshot(conversationToSummary(retried));
             const retriedTurn = [...retried.messages].reverse().find(message => message.role === 'user');
             this.host.applyTaskStartedToProject(retried.cwd, retriedTurn?.content ?? retried.title, retried.id);

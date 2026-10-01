@@ -58,6 +58,14 @@ export interface MobileProcessAccordionOptions {
      * Omitted (or with `isWorking` false) the header renders without one.
      */
     readonly onStopRun?: () => void;
+    /**
+     * Restores the workspace to this run's pre-turn snapshot. Only rendered (as "Discard changes")
+     * on a stopped turn that is no longer working; callers pass it only once the backend published
+     * the snapshot, which happens after the stopped agent process exited.
+     */
+    readonly onDiscardChanges?: () => void;
+    /** Retry attempt of this turn (2 = first retry); shows an "Attempt {0}" badge when > 1. */
+    readonly retryAttempt?: number;
     /** Elapsed execution time in milliseconds, or undefined if unknown. */
     readonly elapsedMs?: number;
     /**
@@ -148,6 +156,8 @@ export function wrapMobileProcessAccordion(
     clearLegacyAccordionHeaderProvenance(header);
     syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
     header.append(chevron);
+    syncMobileProcessAccordionRetryAttempt(header, options.retryAttempt);
+    syncMobileProcessAccordionDiscard(header, !isWorking && !!isCancelled, options.onDiscardChanges);
     // Orb lives in the pinned stream footer — never in the accordion header.
     syncMobileProcessAccordionBrandLogo(header, false);
     details.append(header);
@@ -308,6 +318,8 @@ export function syncMobileProcessAccordionState(
     if (header) {
         clearLegacyAccordionHeaderProvenance(header);
         syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
+        syncMobileProcessAccordionRetryAttempt(header, options.retryAttempt);
+        syncMobileProcessAccordionDiscard(header, !isWorking && !!isCancelled, options.onDiscardChanges);
         syncMobileProcessAccordionBrandLogo(header, false);
     }
 
@@ -428,6 +440,84 @@ function syncMobileProcessAccordionRunStop(
     } else {
         header.append(button);
     }
+}
+
+export const MOBILE_PROCESS_ACCORDION_RETRY_ATTEMPT_CLASS = 'theia-mobile-process-accordion-attempt';
+export const MOBILE_PROCESS_ACCORDION_DISCARD_CLASS = 'theia-mobile-process-accordion-discard';
+
+/** Insert `element` into the header right before the chevron (or at the end). */
+function insertBeforeAccordionChevron(header: HTMLElement, element: HTMLElement): void {
+    const chevron = header.querySelector('.theia-mobile-process-accordion-chevron');
+    if (chevron) {
+        header.insertBefore(element, chevron);
+    } else {
+        header.append(element);
+    }
+}
+
+/** "Attempt {0}" badge for a retried turn; removed for the original attempt. */
+function syncMobileProcessAccordionRetryAttempt(header: HTMLElement, retryAttempt: number | undefined): void {
+    const existing = header.querySelector<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_RETRY_ATTEMPT_CLASS}`);
+    if (retryAttempt === undefined || retryAttempt <= 1) {
+        existing?.remove();
+        return;
+    }
+    const text = nls.localize('theia/qaap-mobile-shell/processTimeline/retryAttempt', 'Attempt {0}', retryAttempt);
+    if (existing) {
+        if (existing.textContent !== text) {
+            existing.textContent = text;
+        }
+        return;
+    }
+    const badge = document.createElement('span');
+    badge.className = MOBILE_PROCESS_ACCORDION_RETRY_ATTEMPT_CLASS;
+    badge.textContent = text;
+    const label = header.querySelector('.theia-mobile-process-accordion-label');
+    if (label) {
+        label.after(badge);
+    } else {
+        insertBeforeAccordionChevron(header, badge);
+    }
+}
+
+/**
+ * "Discard changes" on a stopped turn: restores the pre-turn snapshot (through the caller's
+ * preview dialog). Like the run stop, the click must not toggle the `<summary>`.
+ */
+function syncMobileProcessAccordionDiscard(
+    header: HTMLElement,
+    stopped: boolean,
+    onDiscardChanges: (() => void) | undefined,
+): void {
+    const existing = header.querySelector<HTMLButtonElement>(`.${MOBILE_PROCESS_ACCORDION_DISCARD_CLASS}`);
+    if (!stopped || !onDiscardChanges) {
+        existing?.remove();
+        return;
+    }
+    const button = existing ?? document.createElement('button');
+    button.onclick = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        onDiscardChanges();
+    };
+    if (existing) {
+        return;
+    }
+    button.type = 'button';
+    button.className = MOBILE_PROCESS_ACCORDION_DISCARD_CLASS;
+    const label = nls.localize('theia/qaap-mobile-shell/processTimeline/discardChanges', 'Discard changes');
+    button.title = nls.localize(
+        'theia/qaap-mobile-shell/processTimeline/discardChangesTitle',
+        'Revert the workspace to how it was before this turn started',
+    );
+    button.setAttribute('aria-label', label);
+    const icon = document.createElement('span');
+    icon.className = 'codicon codicon-discard';
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = label;
+    button.append(icon, text);
+    insertBeforeAccordionChevron(header, button);
 }
 
 function formatMobileProcessLabelWithReason(

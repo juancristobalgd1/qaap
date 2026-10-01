@@ -133,6 +133,24 @@ export interface QaapAgentConversationSummaryDTO {
     readonly goalLoopIteration?: number;
     readonly goalLoopMaxIterations?: number;
     readonly goalLoopStopReason?: string;
+    /** Live phase of the in-flight turn (automatic verification); present only while streaming. */
+    readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
+    /** Pre-turn checkpoint of the last cancelled turn, published once its agent process exited. */
+    readonly discardCheckpointId?: string;
+}
+
+/**
+ * Live phase of the in-flight turn the agent output cannot reveal: the runner's automatic
+ * post-turn verification. Mirrors the backend `QaapAgentConversationTurnPhase`.
+ */
+export interface QaapAgentConversationTurnPhaseDTO {
+    readonly kind: 'verifying';
+    /** `'running'`: repo checks execute; `'fixing'`: an automatic fix turn repairs a red check. */
+    readonly status: 'running' | 'fixing';
+    /** Fix attempt number (0 during the first verification pass). */
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly startedAt: number;
 }
 
 export type QaapAgentMessageSegmentDTO =
@@ -188,6 +206,8 @@ export interface QaapAgentMessageDTO {
     readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
     /** Set on user messages posted by the goal loop: the 1-based loop iteration. */
     readonly goalLoopIteration?: number;
+    /** Set on a user message re-posted by Retry: 2 for the first retry, 3 for the second, … */
+    readonly retryAttempt?: number;
 }
 
 export interface QaapContextCompactionDTO {
@@ -211,6 +231,8 @@ export interface QaapConversationCheckpointDTO {
     readonly removed?: number;
     /** On a restore/rewind undo snapshot: the checkpoint commit the restore wrote back. */
     readonly restoredFrom?: string;
+    /** `'pre-turn'`: snapshot taken right before the turn's agent spawned (discard after cancel). */
+    readonly kind?: 'pre-turn';
 }
 
 /**
@@ -253,6 +275,10 @@ export interface QaapAgentConversationDTO {
     readonly pendingUserMessages?: QaapPendingUserMessageDTO[];
     /** "Until done" goal loop driving this conversation (kept after it ends). */
     readonly goalLoop?: QaapAgentGoalLoopStateDTO;
+    /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */
+    readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
+    /** Pre-turn checkpoint of the last cancelled turn, published once its agent process exited. */
+    readonly discardCheckpointId?: string;
 }
 
 // ─── Goal loop ("Until done") ────────────────────────────────────────────────
@@ -535,6 +561,8 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
             goalLoopMaxIterations: conv.goalLoop.budget.maxIterations,
             ...(conv.goalLoop.stopReason ? { goalLoopStopReason: conv.goalLoop.stopReason } : {}),
         } : {}),
+        ...(conv.turnPhase && status === 'streaming' ? { turnPhase: conv.turnPhase } : {}),
+        ...(conv.discardCheckpointId ? { discardCheckpointId: conv.discardCheckpointId } : {}),
     };
 }
 
@@ -965,10 +993,22 @@ export function resolveRunUserMessageId(
     return undefined;
 }
 
-export async function retryConversation(id: string): Promise<QaapAgentConversationDTO> {
+export interface QaapRetryConversationOptions {
+    /**
+     * Retry even while the turn still reads as streaming: the server cancels the live run(s) of the
+     * last user message, waits for the agent process to exit, then re-posts that message.
+     */
+    readonly force?: boolean;
+}
+
+export async function retryConversation(id: string, options?: QaapRetryConversationOptions): Promise<QaapAgentConversationDTO> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/retry`, {
         method: 'POST',
         credentials: 'include',
+        ...(options?.force ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: true }),
+        } : {}),
     });
     if (!response.ok) {
         throw new Error((await response.text()) || response.statusText);
