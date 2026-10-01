@@ -17,6 +17,7 @@ import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-ho
 import { COMMAND_FAILURE_OUTPUT_TAIL_CHARS, GIT_COMMAND_TIMEOUT_MS, LEDGER_PATHSPEC_EXCLUDE, MAX_RUN_RESUME_ATTEMPTS, RESEARCH_COMMAND_CAPTURE_MAX_CHARS } from './qaap-research-runner';
 import { resolveResearchMeasureTimeoutMs } from './qaap-research-runner';
 import { parseResearchMetricFromStdout } from './qaap-research-runner';
+import { childProcessEnv } from './qaap-child-process-env';
 
 export async function finishAsNoopExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         const finished: ResearchExperimentRecord = {
@@ -331,7 +332,7 @@ export function appendCommandOutputExtracted(ctx: QaapResearchRunnerContext, rea
 }
 
 export function buildResearchCommandEnvExtracted(ctx: QaapResearchRunnerContext, ownerLogin?: string): NodeJS.ProcessEnv {
-        const env: NodeJS.ProcessEnv = { ...process.env };
+        const env: NodeJS.ProcessEnv = childProcessEnv();
         // Research commands are autonomous tenant work too. Never fall back to the
         // backend-wide helper token: the owner is resolved from the goal at every phase.
         ctx.taskRunner.applyHelperEnv(env, ownerLogin);

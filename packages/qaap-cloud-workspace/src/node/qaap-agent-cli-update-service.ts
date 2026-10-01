@@ -15,6 +15,7 @@ import {
 } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { isOnPath } from './qaap-agent-task-runner-utils';
+import { childProcessEnv } from './qaap-child-process-env';
 
 /** Retained for compatibility with older configuration; hosted installs are now never permitted. */
 export const QAAP_ALLOW_IN_PLACE_CLI_UPDATE = 'QAAP_ALLOW_IN_PLACE_CLI_UPDATE';
@@ -185,7 +186,7 @@ export class QaapAgentCliUpdateService {
             {
                 encoding: 'utf8',
                 timeout: NPM_INSTALL_TIMEOUT_MS,
-                env: process.env,
+                env: childProcessEnv(),
                 // Windows npm is a cmd shim and cannot be spawned directly without a shell.
                 shell: process.platform === 'win32',
             },
