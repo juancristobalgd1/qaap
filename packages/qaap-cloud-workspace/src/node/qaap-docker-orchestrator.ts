@@ -27,6 +27,8 @@ import {
     resolveQaapDockerNodes,
     type QaapDockerNodeConfig,
 } from './qaap-docker-control-plane';
+import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
+import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import {
@@ -159,6 +161,8 @@ export class QaapDockerOrchestrator {
     protected readonly tenantEnsureOperations = new Map<string, { readonly promise: Promise<unknown>; readonly startedAt: number }>();
     /** Internal BrowserConnectionToken values captured from each tenant backend's health response. */
     protected readonly tenantBackendConnectionTokens = new Map<string, string>();
+    /** Tenants whose stale backend was kept because agent turns were running at recreation time. */
+    protected readonly deferredTenantBackendRecreations = new Set<string>();
 
     isEnabled(): boolean {
         const cloudMode = (process.env.QAAP_CLOUD_MODE?.trim() || 'local').toLowerCase();
@@ -892,6 +896,19 @@ export class QaapDockerOrchestrator {
                 // the bind-mounted tenant roots above. Recreate a managed backend when the
                 // serving image or hardening contract changed after a control-plane deploy.
                 // Unlabelled or differently-owned containers still fail closed below.
+                // Never recreate under a running agent turn: a deploy would otherwise kill it. Keep
+                // serving the old backend and let the reaper retry once the turns have finished.
+                const runningTarget = inspect.State.Running
+                    ? this.tenantBackendTargetFromInspect(inspect, name, node.config, ownerLogin)
+                    : undefined;
+                const busy = runningTarget ? await this.fetchTenantBusyStatus(runningTarget) : undefined;
+                if (runningTarget && busy?.busy) {
+                    console.warn(`[qaap-docker] Deferring recreation of stale tenant backend ${name} for ${ownerLogin}: `
+                        + `${busy.runningTasks} agent turn(s) running.`);
+                    this.deferredTenantBackendRecreations.add(ownerLogin.trim().toLowerCase());
+                    await this.waitForTenantBackendReady(runningTarget);
+                    return runningTarget;
+                }
                 console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin}.`);
                 await container.remove({ force: true });
                 const recreated = Object.assign(new Error(`Tenant backend ${name} was removed for recreation.`), { statusCode: 404 });
@@ -994,14 +1011,110 @@ export class QaapDockerOrchestrator {
         if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)) {
             throw new Error(`Tenant backend ${name} did not start with the required isolated configuration.`);
         }
+        const target = this.tenantBackendTargetFromInspect(inspect, name, node.config, ownerLogin);
+        if (!target) {
+            throw new Error(`Tenant backend ${name} has no published port on ${publishHostIp}.`);
+        }
+        await this.waitForTenantBackendReady(target);
+        return target;
+    }
+
+    protected tenantBackendTargetFromInspect(
+        inspect: Dockerode.ContainerInspectInfo,
+        name: string,
+        config: QaapDockerNodeConfig,
+        ownerLogin: string,
+    ): QaapTenantBackendTarget | undefined {
+        const publishHostIp = this.dockerPublishHostIp(config);
         const ports = (inspect.NetworkSettings?.Ports as Record<string, Array<{ HostIp?: string; HostPort?: string }> | null> | undefined)?.[`${TENANT_BACKEND_PORT}/tcp`];
         const hostPort = Number.parseInt(ports?.find(entry => entry.HostIp === publishHostIp)?.HostPort ?? '', 10);
         if (!Number.isInteger(hostPort) || hostPort <= 0) {
-            throw new Error(`Tenant backend ${name} has no published port on ${publishHostIp}.`);
+            return undefined;
         }
-        const target = { containerId: inspect.Id, containerName: name, host: this.dockerAdvertiseHost(node.config), port: hostPort, tenantLogin: ownerLogin };
-        await this.waitForTenantBackendReady(target);
-        return target;
+        return { containerId: inspect.Id, containerName: name, host: this.dockerAdvertiseHost(config), port: hostPort, tenantLogin: ownerLogin };
+    }
+
+    /**
+     * Ask a tenant backend whether agent turns are in flight there. Those turns hold their activity
+     * lease inside the tenant container, so the control-plane reaper cannot see them otherwise.
+     * `undefined` means the backend could not be asked (not running, unreachable, older image).
+     */
+    async probeTenantBackendBusy(ownerLogin: string): Promise<QaapTenantBusyStatus | undefined> {
+        if (!this.isBackendPerTenantEnabled() || !ownerLogin.trim()) {
+            return undefined;
+        }
+        const target = this.getTenantBackendTarget(ownerLogin) ?? await this.inspectRunningTenantBackendTarget(ownerLogin);
+        return target ? this.fetchTenantBusyStatus(target) : undefined;
+    }
+
+    /**
+     * Stale backends kept alive because a turn was running (see `createOrValidateTenantBackend`).
+     * Once idle, forget the cached target so the next request recreates them on the current image.
+     */
+    async retryDeferredTenantBackendRecreations(): Promise<void> {
+        for (const tenant of [...this.deferredTenantBackendRecreations]) {
+            const status = await this.probeTenantBackendBusy(tenant);
+            if (status?.busy) {
+                continue;
+            }
+            this.deferredTenantBackendRecreations.delete(tenant);
+            this.invalidateTenantBackendTarget(tenant);
+            console.info(`[qaap-docker] tenant backend for ${tenant} is idle; it will be recreated on its next request.`);
+        }
+    }
+
+    protected async inspectRunningTenantBackendTarget(ownerLogin: string): Promise<QaapTenantBackendTarget | undefined> {
+        try {
+            const node = this.dockerNodeForTenant(ownerLogin);
+            const docker = await this.getDocker(ownerLogin);
+            const name = this.backendContainerNameForTenant(ownerLogin);
+            const inspect = await docker.getContainer(name).inspect();
+            if (!inspect.State.Running || !this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+                return undefined;
+            }
+            return this.tenantBackendTargetFromInspect(inspect, name, node.config, ownerLogin);
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected fetchTenantBusyStatus(target: QaapTenantBackendTarget): Promise<QaapTenantBusyStatus | undefined> {
+        let probe: string;
+        try {
+            probe = QaapTenantBusyProbe.create(target.tenantLogin, this.tenantBackendSecret(target.tenantLogin));
+        } catch {
+            return Promise.resolve(undefined);
+        }
+        const token = this.tenantBackendConnectionTokens.get(target.tenantLogin.toLowerCase());
+        return new Promise(resolve => {
+            const request = http.get({
+                host: target.host,
+                port: target.port,
+                path: `${QAAP_TENANT_RUNTIME_API_PATH}/busy`,
+                timeout: 5_000,
+                headers: {
+                    [QAAP_TENANT_BUSY_PROBE_HEADER]: probe,
+                    ...(token ? { cookie: `theia-connection-token=${encodeURIComponent(token)}` } : {}),
+                },
+            }, response => {
+                let body = '';
+                response.setEncoding('utf8');
+                response.on('data', chunk => body += chunk);
+                response.on('end', () => {
+                    if (response.statusCode !== 200) {
+                        resolve(undefined);
+                        return;
+                    }
+                    try {
+                        resolve(QaapTenantBusyProbe.parseStatus(JSON.parse(body)));
+                    } catch {
+                        resolve(undefined);
+                    }
+                });
+            });
+            request.on('timeout', () => request.destroy(new Error('tenant busy probe timeout')));
+            request.on('error', () => resolve(undefined));
+        });
     }
 
     protected isManagedTenantBackendFor(

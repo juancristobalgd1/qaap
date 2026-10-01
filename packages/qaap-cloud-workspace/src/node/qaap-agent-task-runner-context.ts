@@ -167,6 +167,8 @@ export interface QaapAgentTaskRunnerContext {
     // ─── Concurrency / queue ────────────────────────────────────────────────
     maxConcurrentAgents(): number;
     countRunningTasks(): number;
+    /** True while a deploy drains this backend: new turns queue (persisted) instead of starting. */
+    isDrainingForDeploy?(): boolean;
     maxConcurrentAgentsPerUser(): number;
     runningTaskCountForOwner(ownerLogin: string): number;
     ownerAtConcurrencyCap(ownerLogin: string | undefined): boolean;
@@ -175,7 +177,7 @@ export interface QaapAgentTaskRunnerContext {
     repoAtConcurrencyCap(cwd: string | undefined): boolean;
     drainQueuedTasks(): void;
     list(): QaapAgentTask[];
-    create(request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask;
+    create(request: QaapCreateAgentTaskRequest, ownerLogin?: string, options?: import('./qaap-agent-task-spawn-gate').QaapAgentTaskCreateOptions): QaapAgentTask;
     cancel(id: string): QaapAgentTask | undefined;
 
     // ─── Prompt / command construction ──────────────────────────────────────

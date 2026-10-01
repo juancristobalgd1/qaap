@@ -81,6 +81,7 @@ import {
 import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
 import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
+import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
 import { buildAgentVerificationFixPromptExtracted, captureWorktreeBaselineExtracted, detectEmptyAgentTurnForTaskExtracted, finishSuccessfulTaskAfterVerificationExtracted, hasEditedFilesForVerificationExtracted, releaseVerificationPassExtracted, resolveReviewerCandidatesExtracted, restoreBaselineSensitiveFilesExtracted, reviewSuccessfulAgentTaskExtracted, runAgentVerificationFixTurnExtracted, runVerificationScriptsExtracted, verifySuccessfulAgentTaskExtracted } from './qaap-agent-task-runner-activity2';
 import { parseWorktreeStatusZ, type QaapWorktreeChange } from '../common/qaap-verification-scope';
@@ -204,6 +205,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** Cancelled process groups still consuming a concurrency slot during graceful shutdown. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly stoppingTaskIds = new Set<string>();
+    protected drainingForDeploy = false;
     /** Tasks spawned with stdin piped for manual approval mode. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly stdinInteractiveTasks = new Set<string>();
@@ -437,6 +439,25 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return countRunningTasksExtracted(this);
     }
 
+    public isDrainingForDeploy(): boolean {
+        return this.drainingForDeploy;
+    }
+
+    /**
+     * Deploy drain: while on, new turns are queued and persisted (the queue survives the restart)
+     * instead of starting, so the in-flight count can only go down. Turning it off restarts the queue.
+     */
+    public setDrainingForDeploy(draining: boolean): void {
+        if (this.drainingForDeploy === draining) {
+            return;
+        }
+        this.drainingForDeploy = draining;
+        console.info(`[qaap-agent] deploy drain ${draining ? 'started' : 'ended'} (${this.countRunningTasks()} running)`);
+        if (!draining) {
+            this.drainQueuedTasks();
+        }
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public maxConcurrentAgentsPerUser(): number {
         return maxConcurrentAgentsPerUserHelper();
@@ -662,7 +683,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return nativeModelRoutingTableExtracted(this);
     }
 
-    create(request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
+    create(request: QaapCreateAgentTaskRequest, ownerLogin?: string, options?: QaapAgentTaskCreateOptions): QaapAgentTask {
+        registerQaapAgentTaskSpawnGate(request, options);
         const task = createExtracted(this, request, ownerLogin);
         const owner = ownerLogin ?? task.ownerLogin;
         const tenantActivity = this.tenantActivity;
@@ -860,6 +882,15 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const task = cancelExtracted(this, id);
         this.releaseTenantOperation(id);
         return task;
+    }
+
+    /**
+     * Resolve `true` once none of `taskIds` has a live process (the agent CLI or a verification
+     * command) — e.g. after {@link cancel}, whose state flips immediately while the process tree
+     * keeps a graceful-stop window — or `false` when `timeoutMs` elapses first.
+     */
+    waitForProcessExit(taskIds: readonly string[], timeoutMs: number): Promise<boolean> {
+        return waitForQaapAgentTaskProcessesExit(taskId => this.processes.has(taskId), taskIds, timeoutMs);
     }
 
     retry(id: string, ownerLogin?: string): QaapAgentTask | undefined {

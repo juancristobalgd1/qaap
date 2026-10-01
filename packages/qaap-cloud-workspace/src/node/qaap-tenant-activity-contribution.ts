@@ -41,7 +41,8 @@ export class QaapTenantActivityContribution implements BackendApplicationContrib
     }
 
     protected isTrackedPath(path: string): boolean {
-        if (path === '/qaap/api/cloud/runtime/status' || path === '/qaap/api/cloud/runtime/metrics') {
+        // Read-only probes (status, metrics, the reaper's busy probe, deploy drain) are not user activity.
+        if (/^\/qaap\/api\/cloud\/runtime\/(status|metrics|busy|drain-status|drain)$/.test(path)) {
             return false;
         }
         return path.startsWith('/qaap/api/cloud/')

@@ -474,7 +474,8 @@ export function reorderQueuedTaskExtracted(
 }
 
 export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void {
-        if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed) {
+        if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed
+            || ctx.isDrainingForDeploy?.() === true) {
         return;
         }
         while (ctx.countRunningTasks() < ctx.maxConcurrentAgents()) {

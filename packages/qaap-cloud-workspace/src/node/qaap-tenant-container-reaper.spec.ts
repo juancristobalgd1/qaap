@@ -11,6 +11,7 @@ import type {
 import { QaapTenantContainerReaper, resolveTenantRuntimeDuration } from './qaap-tenant-container-reaper';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
+import type { QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import type {
     QaapTenantRuntimePatch,
     QaapTenantRuntimeRecord,
@@ -49,19 +50,24 @@ class MemoryRuntimeStore {
     }
 }
 
-function createHarness(containers: any[], record: QaapTenantRuntimeRecord): {
+function createHarness(containers: any[], record: QaapTenantRuntimeRecord, busy?: () => QaapTenantBusyStatus | undefined): {
     reaper: QaapTenantContainerReaper;
     store: MemoryRuntimeStore;
-    calls: { stop: number; destroy: number };
+    calls: { stop: number; destroy: number; probe: number };
 } {
     const store = new MemoryRuntimeStore();
     store.records.set(record.tenantLogin, record);
-    const calls = { stop: 0, destroy: 0 };
+    const calls = { stop: 0, destroy: 0, probe: 0 };
     const docker = {
         isEnabled: () => true,
         listManagedTenantContainers: async () => containers,
         stopTenantRuntime: async () => { calls.stop += 1; },
         destroyTenantRuntime: async () => { calls.destroy += 1; },
+        probeTenantBackendBusy: async () => {
+            calls.probe += 1;
+            return busy ? busy() : { busy: false, runningTasks: 0 };
+        },
+        retryDeferredTenantBackendRecreations: async () => undefined,
     };
     const activity = new QaapTenantActivityTracker();
     (activity as any).store = store;
@@ -138,5 +144,60 @@ describe('Qaap tenant container reaper', () => {
         release();
 
         expect(harness.calls.stop).to.equal(0);
+    });
+
+    const idleBackendTenant = (now: number): QaapTenantRuntimeRecord => ({
+        tenantLogin: 'alice',
+        state: 'active',
+        lastActivityAt: new Date(now - 200).toISOString(),
+        reaperEnabled: true,
+        updatedAt: new Date(now - 200).toISOString(),
+    });
+    const backendContainers = [
+        { tenantLogin: 'alice', kind: 'worker', containerId: 'worker-1', containerName: 'worker', running: true },
+        { tenantLogin: 'alice', kind: 'backend', containerId: 'backend-1', containerName: 'backend', running: true },
+    ];
+
+    it('does not stop a tenant whose backend still runs an agent turn after the tab closed', async () => {
+        const now = 10_000;
+        const harness = createHarness(backendContainers, idleBackendTenant(now), () => ({ busy: true, runningTasks: 1 }));
+
+        await harness.reaper.sweep(now);
+
+        expect(harness.calls.probe).to.equal(1);
+        expect(harness.calls.stop).to.equal(0);
+        expect(harness.store.get('alice')?.state).to.equal('active');
+        expect(harness.store.get('alice')?.lastActivityAt).to.equal(new Date(now).toISOString());
+    });
+
+    it('stops an idle tenant backend once it reports no running turns', async () => {
+        const now = 10_000;
+        const harness = createHarness(backendContainers, idleBackendTenant(now), () => ({ busy: false, runningTasks: 0 }));
+
+        await harness.reaper.sweep(now);
+
+        expect(harness.calls.stop).to.equal(1);
+        expect(harness.store.get('alice')?.state).to.equal('stopped');
+    });
+
+    it('gives an unreachable tenant backend one sweep of grace before stopping it', async () => {
+        const now = 10_000;
+        const harness = createHarness(backendContainers, idleBackendTenant(now), () => undefined);
+
+        await harness.reaper.sweep(now);
+        expect(harness.calls.stop).to.equal(0);
+
+        await harness.reaper.sweep(now + 1);
+        expect(harness.calls.stop).to.equal(1);
+    });
+
+    it('does not probe worker-only tenants', async () => {
+        const now = 10_000;
+        const harness = createHarness([backendContainers[0]], idleBackendTenant(now));
+
+        await harness.reaper.sweep(now);
+
+        expect(harness.calls.probe).to.equal(0);
+        expect(harness.calls.stop).to.equal(1);
     });
 });

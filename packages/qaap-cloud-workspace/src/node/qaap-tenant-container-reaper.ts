@@ -39,6 +39,8 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
     protected timer: NodeJS.Timeout | undefined;
     protected firstSweepTimer: NodeJS.Timeout | undefined;
     protected ticking = false;
+    /** Consecutive sweeps where a running tenant backend could not answer the busy probe. */
+    protected readonly unansweredBusyProbes = new Map<string, number>();
 
     onStart(): void {
         if (!this.isEnabled()) {
@@ -128,6 +130,7 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
             for (const candidate of candidates) {
                 await this.reconcile(candidate, byTenant.get(candidate.tenantLogin) ?? [], now);
             }
+            await this.docker.retryDeferredTenantBackendRecreations();
         } catch (error) {
             console.warn(`[qaap-runtime] reaper scan failed: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
@@ -185,12 +188,12 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
                 reaperEnabled: true,
                 lastError: undefined,
             }, now);
-            await this.stopIfStillIdle(candidate.tenantLogin, activityAt, now);
+            await this.stopIfStillIdle(candidate.tenantLogin, activityAt, now, containers);
             return;
         }
 
         if (hasRunning && latest.state === 'idle' && now - activityAt >= this.idleTimeoutMs()) {
-            await this.stopIfStillIdle(candidate.tenantLogin, activityAt, now);
+            await this.stopIfStillIdle(candidate.tenantLogin, activityAt, now, containers);
             return;
         }
 
@@ -202,9 +205,52 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
         }
     }
 
-    protected async stopIfStillIdle(tenantLogin: string, activityAt: number, now: number): Promise<void> {
+    /**
+     * Agent turns on a per-tenant backend hold their lease inside that container, invisible to this
+     * process. Ask the backend before stopping it, so closing the tab during a long turn never kills it.
+     * A backend that cannot answer gets one more sweep of grace before it is treated as idle.
+     */
+    protected async tenantTurnState(
+        tenantLogin: string,
+        containers: readonly QaapManagedTenantContainer[],
+    ): Promise<'busy' | 'unanswered' | 'idle'> {
+        if (!containers.some(container => container.kind === 'backend' && container.running)) {
+            this.unansweredBusyProbes.delete(tenantLogin);
+            return 'idle';
+        }
+        const status = await this.docker.probeTenantBackendBusy(tenantLogin);
+        if (status) {
+            this.unansweredBusyProbes.delete(tenantLogin);
+            return status.busy ? 'busy' : 'idle';
+        }
+        const unanswered = (this.unansweredBusyProbes.get(tenantLogin) ?? 0) + 1;
+        this.unansweredBusyProbes.set(tenantLogin, unanswered);
+        if (unanswered < 2) {
+            console.warn(`[qaap-runtime] tenant ${tenantLogin} did not answer the busy probe; postponing idle stop`);
+            return 'unanswered';
+        }
+        this.unansweredBusyProbes.delete(tenantLogin);
+        return 'idle';
+    }
+
+    protected async stopIfStillIdle(
+        tenantLogin: string,
+        activityAt: number,
+        now: number,
+        containers: readonly QaapManagedTenantContainer[] = [],
+    ): Promise<void> {
         const latest = this.store.get(tenantLogin);
         if (!latest || this.activity.isProtected(tenantLogin, now) || Date.parse(latest.lastActivityAt ?? '') > activityAt) {
+            return;
+        }
+        const turns = await this.tenantTurnState(tenantLogin, containers);
+        if (turns === 'busy') {
+            // A running turn is activity: keep the tenant active and restart its idle clock.
+            this.store.setState(tenantLogin, 'active', { idleSince: undefined, reaperEnabled: true }, now);
+            this.activity.touch(tenantLogin, 'agent', now);
+            return;
+        }
+        if (turns === 'unanswered') {
             return;
         }
         try {

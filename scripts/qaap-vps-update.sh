@@ -320,6 +320,70 @@ if [[ -n "$REVISION" && "$(git rev-parse "${REVISION}^{commit}")" != "$SOURCE_SH
 fi
 echo "[qaap-vps-update] commit: $BEFORE"
 
+# Deploy drain: before the control-plane container is replaced, stop it from starting new agent
+# turns (they queue and persist, and resume on the new container) and wait for in-flight turns to
+# finish, so a deploy never cuts a running turn. Tenant backends are separate containers and are
+# protected on their side: a stale backend is not recreated while it reports running turns.
+DRAIN_TIMEOUT_SECONDS="${QAAP_DEPLOY_DRAIN_TIMEOUT_SECONDS:-900}"
+DRAIN_ACTIVE=0
+
+drain_request() {
+    # $1 method, $2 runtime sub-path, $3 optional JSON body. Prints the JSON answer; non-zero when the
+    # serving container has no drain endpoint (older image) or is unreachable.
+    docker compose exec -T theia node -e '
+        const [method, path, body] = process.argv.slice(1);
+        const req = require("http").request({
+            host: "127.0.0.1", port: process.env.PORT || 4873, method,
+            path: "/qaap/api/cloud/runtime/" + path,
+            headers: { "content-type": "application/json" }, timeout: 5000,
+        }, res => {
+            let data = "";
+            res.on("data", chunk => data += chunk);
+            res.on("end", () => { if (res.statusCode !== 200) { process.exit(2); } process.stdout.write(data); });
+        });
+        req.on("timeout", () => req.destroy(new Error("timeout")));
+        req.on("error", () => process.exit(1));
+        if (body) { req.write(body); }
+        req.end();
+    ' "$1" "$2" "${3:-}" 2>/dev/null
+}
+
+undo_drain_on_failure() {
+    if [[ "$DRAIN_ACTIVE" -eq 1 ]]; then
+        echo "[qaap-vps-update] deploy failed before the switch; ending agent drain" >&2
+        drain_request POST drain '{"draining":false}' >/dev/null || true
+    fi
+}
+trap undo_drain_on_failure EXIT
+
+drain_agent_turns() {
+    if [[ -z "$(docker compose ps -q theia 2>/dev/null | tr -d '')" ]]; then
+        return 0
+    fi
+    local answer running
+    if ! answer="$(drain_request POST drain '{"draining":true}')"; then
+        echo "[qaap-vps-update] serving container has no agent drain endpoint; switching without drain"
+        return 0
+    fi
+    DRAIN_ACTIVE=1
+    local deadline=$((SECONDS + DRAIN_TIMEOUT_SECONDS))
+    while :; do
+        running="$(printf '%s' "$answer" | sed -n 's/.*"runningTasks":\([0-9][0-9]*\).*/\1/p')"
+        if [[ "${running:-0}" -eq 0 ]]; then
+            echo "[qaap-vps-update] no agent turns running; switching"
+            return 0
+        fi
+        if (( SECONDS >= deadline )); then
+            echo "[qaap-vps-update] drain timed out after ${DRAIN_TIMEOUT_SECONDS}s with $running turn(s) running;" \
+                "switching anyway (interrupted turns resume on the new container)" >&2
+            return 0
+        fi
+        echo "[qaap-vps-update] waiting for $running agent turn(s) to finish..."
+        sleep 10
+        answer="$(drain_request GET drain-status)" || answer='{"runningTasks":0}'
+    done
+}
+
 # Image serving before this deploy: retained by the post-deploy cleanup for rollback.
 PRE_DEPLOY_IMAGE_ID=''
 PRE_DEPLOY_CONTAINER_ID="$(docker compose ps -aq theia 2>/dev/null | tr -d '\r' | sed -n '1p' || true)"
@@ -364,7 +428,9 @@ if [[ -n "$IMAGE_REF" ]]; then
         echo "[qaap-vps-update] tenant image: $QAAP_TENANT_DOCKER_IMAGE"
     fi
     preload_tenant_image_before_switch
+    drain_agent_turns
     docker compose up -d --no-build
+    DRAIN_ACTIVE=0
 else
     # Pin source builds to the exact upstream QAIQ commit. CI-built GHCR images already receive
     # this build arg in the publish job, so the pull path skips all build work on the VPS.
@@ -385,7 +451,9 @@ else
         docker compose build --build-arg "QAIQ_COMMIT=$CACHE_BUST" --build-arg "CACHE_BUST=$CACHE_BUST" theia
     fi
     preload_tenant_image_before_switch
+    drain_agent_turns
     docker compose up -d
+    DRAIN_ACTIVE=0
 fi
 # Safety net (a no-op when the pre-switch seed succeeded): seed through the new container.
 preload_tenant_image

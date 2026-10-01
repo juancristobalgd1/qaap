@@ -159,7 +159,8 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             : resolveAgentAutoApprove(
                 request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
             );
-        const atCapacity = ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
+        const atCapacity = ctx.isDrainingForDeploy?.() === true
+            || ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
             || ctx.ownerAtConcurrencyCap(ownerLogin)
             || ctx.repoAtConcurrencyCap(cwd);
         if (atCapacity) {
