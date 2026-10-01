@@ -16,6 +16,7 @@ import {
     type QaapPreviewProcessStatus,
 } from '../common/qaap-preview-supervisor-types';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { childProcessEnv } from './qaap-child-process-env';
 
 interface QaapPreviewProcessRecord {
     readonly key: string;
@@ -183,7 +184,7 @@ export class QaapPreviewSupervisor {
         // points HOME/USER at the tenant's writable home. No-op when uid-per-user is off / not root.
         let child: ChildProcess;
         try {
-            const env = this.tenantSpawn.resolveProcessEnv(cwd, { ...process.env, PORT: String(port), BROWSER: 'none' });
+            const env = this.tenantSpawn.resolveProcessEnv(cwd, { ...childProcessEnv(), PORT: String(port), BROWSER: 'none' });
             child = await this.tenantSpawn.spawnArgvPreparedAsync(plan.command, plan.args, { cwd, env });
         } catch (error) {
             const refused: QaapPreviewProcessRecord = {

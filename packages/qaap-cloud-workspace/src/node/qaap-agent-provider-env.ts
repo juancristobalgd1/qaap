@@ -5,6 +5,7 @@
 
 import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { AGENT_ENV_PREFS } from './qaap-agent-task-runner-constants';
+import { stripBackendOnlyEnv } from './qaap-child-process-env';
 
 /**
  * Operator-level credentials read by the built-in agent CLIs (see QAAP_BUILTIN_AGENT_DEFINITIONS) that have
@@ -54,7 +55,5 @@ export function stripSharedProviderEnv(env: NodeJS.ProcessEnv, ownerLogin?: stri
     // {...process.env}, so any user could exfiltrate them with `env | grep -i secret`: the OAuth
     // client secret enables app impersonation, and the VAPID private key lets it forge Web Push
     // to other users. Deleting them here (the single spawn-env chokepoint) closes SEC-3.
-    delete env.QAAP_GITHUB_CLIENT_SECRET;
-    delete env.QAAP_VAPID_PRIVATE_KEY;
-    delete env.QAAP_VAPID_SUBJECT;
+    stripBackendOnlyEnv(env);
 }
