@@ -181,7 +181,7 @@ describe('QaapAgentConversationStore restart auto-resume via the chat-turn graph
         const now = Date.now();
         store.seed(streamingConversation('c2', now - 3 * 60 * 1000, {
             messages: [
-                { id: 'c2-u1', role: 'user', content: 'do it', createdAt: now - 3 * 60 * 1000, taskId: 'c2-task', turnAgentId: 'qaiq', restartResumeCount: 1 },
+                { id: 'c2-u1', role: 'user', content: 'do it', createdAt: now - 3 * 60 * 1000, taskId: 'c2-task', turnAgentId: 'qaiq', restartResumeCount: 2 },
                 { id: 'c2-a1', role: 'agent', content: 'working…', createdAt: now - 3 * 60 * 1000 + 1000, runUserMessageId: 'c2-u1' },
             ],
         }));
@@ -236,14 +236,14 @@ describe('QaapAgentConversationStore restart auto-resume via the chat-turn graph
 
     it('trusts the run ledger when it is stricter than the projection (belt and braces)', async () => {
         const now = Date.now();
-        // Projection says 0 resumes, but a surviving run already spent the ceiling (visits 2 with
-        // QAAP_MAX_RESTART_RESUMES default 1): the graph must refuse and settle its failure edge.
+        // Projection says 0 resumes, but a surviving run already spent the ceiling (visits 3 with
+        // QAAP_MAX_RESTART_RESUMES default 2): the graph must refuse and settle its failure edge.
         store.seed(streamingConversation('c7', now - 3 * 60 * 1000));
         await runStore.adoptRun(buildChatTurnWorkflow(), {
             cwd: '/tmp/project',
             inputs: { conversationId: 'c7', rootUserMessageId: 'c7-u1' },
             seedNodeId: 'turn',
-            seedVisits: 2,
+            seedVisits: 3,
             deadExternalId: 'c7-task',
         });
 

@@ -129,10 +129,10 @@ describe('QaapAgentConversationStore restart auto-resume', () => {
         const store = new TestConversationStore();
         store.configureForTest(runner);
         const now = Date.now();
-        // Default QAAP_MAX_RESTART_RESUMES = 1 → a turn already resumed once must not resume again.
+        // Default QAAP_MAX_RESTART_RESUMES = 2 → a turn already resumed twice must not resume again.
         store.seed(streamingConversation('c2', now - 3 * 60 * 1000, {
             messages: [
-                { id: 'c2-u1', role: 'user', content: 'do it', createdAt: now - 3 * 60 * 1000, taskId: 'c2-task', turnAgentId: 'qaiq', restartResumeCount: 1 },
+                { id: 'c2-u1', role: 'user', content: 'do it', createdAt: now - 3 * 60 * 1000, taskId: 'c2-task', turnAgentId: 'qaiq', restartResumeCount: 2 },
                 { id: 'c2-a1', role: 'agent', content: 'working…', createdAt: now - 3 * 60 * 1000 + 1000, runUserMessageId: 'c2-u1' },
             ],
         }));
@@ -191,5 +191,56 @@ describe('QaapAgentConversationStore restart auto-resume', () => {
 
         // Resumed turn has a live task → left running, not interrupted.
         expect(store.get('c6')!.status).to.equal('streaming');
+    });
+
+    it('waits for the task runner to finish its own startup restore before resuming', async () => {
+        // The runner restores its index asynchronously and refuses create() while 'loading'.
+        // Resuming first used to fail every interrupted turn with "The backend restarted…".
+        let finishRecovery: () => void = () => undefined;
+        class RecoveringTaskRunner extends TestTaskRunner {
+            recovered = false;
+            override whenRecovered(): Promise<void> {
+                return new Promise(resolve => {
+                    finishRecovery = () => {
+                        this.recovered = true;
+                        resolve();
+                    };
+                });
+            }
+            override create(request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
+                if (!this.recovered) {
+                    throw new Error('storage unavailable');
+                }
+                return super.create(request, ownerLogin);
+            }
+        }
+        const now = Date.now();
+        const persisted = streamingConversation('c7', now - 60 * 1000);
+        class DiskBackedStore extends TestConversationStore {
+            override async restoreFromDisk(): Promise<void> {
+                return QaapAgentConversationStore.prototype.restoreFromDisk.call(this);
+            }
+            override getSqliteStore(): ReturnType<QaapAgentConversationStore['getSqliteStore']> {
+                return {
+                    migrateLegacy: () => undefined,
+                    get: (key: string) => (key === 'conversations' ? [persisted] : undefined),
+                } as unknown as ReturnType<QaapAgentConversationStore['getSqliteStore']>;
+            }
+            override isTurnGraphEnabled(): boolean {
+                return false;
+            }
+        }
+        const runner = new RecoveringTaskRunner();
+        const store = new DiskBackedStore();
+        store.configureForTest(runner);
+
+        const restoring = store.restoreFromDisk();
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(runner.created).to.have.length(0);
+        finishRecovery();
+        await restoring;
+
+        expect(runner.created).to.have.length(1);
+        expect(store.get('c7')!.status).to.equal('streaming');
     });
 });

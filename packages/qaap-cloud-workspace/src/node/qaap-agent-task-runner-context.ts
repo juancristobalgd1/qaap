@@ -118,6 +118,7 @@ export interface QaapAgentTaskRunnerContext {
     cachedNativeModelRoutingTable: QaapNativeModelRoutingTable | undefined;
     persistChain: Promise<void>;
     recoveryState: 'loading' | 'ready' | 'failed';
+    recoveryReady: Promise<void>;
     storageWriteFailed: boolean;
     activeVerificationPasses: number;
     verificationPassWaiters: Array<() => void>;

@@ -298,6 +298,10 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreCo
         if (backfillQaapWorktreeOrdinals(ctx)) {
             anyChanged = true;
         }
+        // The task runner restores its own index asynchronously and refuses `create` until it is
+        // done. Resuming before that threw "storage unavailable", burned the resume budget and
+        // left "The backend restarted…" on turns that could have continued on their own.
+        await ctx.taskRunner.whenRecovered?.();
         const now = Date.now();
         // First try to auto-resume turns the restart interrupted (bounded, persisted counter).
         // A turn that resumes gets a live task, so the sweep below skips it (getActiveTaskIds guard).

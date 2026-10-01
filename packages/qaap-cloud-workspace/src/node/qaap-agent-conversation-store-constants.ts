@@ -99,13 +99,14 @@ export const QAAP_AGENT_AUTO_CONTINUE_ENABLED = !/^(0|false|off)$/i.test(process
 export const QAAP_AUTO_RESUME_TURNS_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AUTO_RESUME_TURNS?.trim() ?? '');
 
 /**
- * Max auto-resumes per human-authored turn across ALL restarts. 1 bounds the worst case (a turn
- * whose own work is what OOMs the container) to a single extra restart cycle before it degrades to
- * the manual retry. Override with QAAP_MAX_RESTART_RESUMES.
+ * Max auto-resumes per human-authored turn across ALL restarts. 2 lets a turn survive a redeploy
+ * that lands while it is already resuming from an earlier one, and still bounds the worst case (a
+ * turn whose own work is what OOMs the container) to two extra restart cycles before it degrades
+ * to the manual retry. Override with QAAP_MAX_RESTART_RESUMES.
  */
 export const MAX_RESTART_RESUMES = (() => {
     const parsed = Number.parseInt(process.env.QAAP_MAX_RESTART_RESUMES?.trim() ?? '', 10);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2;
 })();
 
 /**

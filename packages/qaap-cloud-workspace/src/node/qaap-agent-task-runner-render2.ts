@@ -38,7 +38,7 @@ export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         ctx.recoveryState = 'loading';
         ctx.detectAgents();
         ctx.ensureHelperCli();
-        void ctx.restoreFromDisk();
+        ctx.recoveryReady = ctx.restoreFromDisk();
 }
 
 export function ensureHelperCliExtracted(ctx: QaapAgentTaskRunnerContext): void {

@@ -262,6 +262,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     public persistChain: Promise<void> = Promise.resolve();
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public recoveryState: 'loading' | 'ready' | 'failed' = 'ready';
+    /** @internal Settles when the startup index restore leaves `'loading'` (never rejects). */
+    public recoveryReady: Promise<void> = Promise.resolve();
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public storageWriteFailed = false;
 
@@ -410,6 +412,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public async restoreFromDisk(): Promise<void> {
         return restoreFromDiskExtracted(this);
+    }
+
+    /**
+     * Resolves once the startup restore has finished. `create` refuses work while recovery is
+     * `'loading'`, so anything that spawns tasks during startup (restart auto-resume) waits here.
+     */
+    public whenRecovered(): Promise<void> {
+        return this.recoveryReady ?? Promise.resolve();
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
