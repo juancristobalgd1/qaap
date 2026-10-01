@@ -21,6 +21,17 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'idle' }, { status: 'streaming', messageCount: 1 }).id).to.equal('running');
     });
 
+    it('shows a cancelled run as cancelled, not as an unread reply that needs the user', () => {
+        expect(resolveQaapAgentTaskVisualStatus({ state: 'cancelled' }).id).to.equal('cancelled');
+        expect(resolveQaapAgentTaskVisualStatus(
+            { state: 'idle' },
+            { status: 'idle', lastMessageRole: 'agent', messageCount: 2, lastTurnCancelled: true },
+            true,
+        ).id).to.equal('cancelled');
+        // A new run on the same conversation is running again.
+        expect(resolveQaapAgentTaskVisualStatus({ state: 'running' }, { status: 'streaming', messageCount: 3, lastTurnCancelled: true }).id).to.equal('running');
+    });
+
     it('keeps blocked and interrupted tasks distinct from generic attention and failure', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'blocked' }).id).to.equal('blocked');
         expect(resolveQaapAgentTaskVisualStatus({ state: 'interrupted' }).id).to.equal('interrupted');

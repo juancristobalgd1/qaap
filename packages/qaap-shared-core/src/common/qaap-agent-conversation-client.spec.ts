@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     conversationToSummary,
     isFailedRunSummary,
+    isLastTurnCancelled,
     looksLikeSelfReportedAgentStopFailure,
     preferQaapConversationSummary,
     type QaapAgentConversationSummaryDTO,
@@ -40,6 +41,19 @@ describe('looksLikeSelfReportedAgentStopFailure', () => {
         expect(looksLikeSelfReportedAgentStopFailure(undefined)).to.be.false;
         expect(looksLikeSelfReportedAgentStopFailure('')).to.be.false;
         expect(looksLikeSelfReportedAgentStopFailure('   ')).to.be.false;
+    });
+});
+
+describe('isLastTurnCancelled', () => {
+    const cancelledAgent = { role: 'agent', traceEvents: [{ type: 'run_cancelled' }] };
+    it('is true for an idle conversation whose last agent message recorded a user cancel', () => {
+        expect(isLastTurnCancelled({ status: 'idle', messages: [{ role: 'user' }, cancelledAgent] })).to.equal(true);
+    });
+    it('is false for restart interruptions (failed), live runs and normal finishes', () => {
+        expect(isLastTurnCancelled({ status: 'failed', messages: [cancelledAgent] })).to.equal(false);
+        expect(isLastTurnCancelled({ status: 'streaming', messages: [cancelledAgent] })).to.equal(false);
+        expect(isLastTurnCancelled({ status: 'idle', messages: [{ role: 'agent', traceEvents: [{ type: 'tool_call' }] }] })).to.equal(false);
+        expect(isLastTurnCancelled({ status: 'idle', messages: [cancelledAgent, { role: 'user' }] })).to.equal(false);
     });
 });
 

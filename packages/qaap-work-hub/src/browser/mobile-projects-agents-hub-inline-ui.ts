@@ -127,6 +127,8 @@ export class MobileProjectsAgentsHubInlineUi {
     constructor(protected readonly host: MobileProjectsAgentsHubInlineHost) { }
 
     protected agentsHubExecutionHeaderProjectId: string | undefined;
+    /** Last streaming conversation the hub shell rendered — kept on screen if its run is cancelled. */
+    protected lastShellStreamingConversationId: string | undefined;
 
     shouldPreserveAgentsHubInlineTranscriptShell(): boolean {
         return this.host.hubView === 'tasks'
@@ -228,10 +230,20 @@ export class MobileProjectsAgentsHubInlineUi {
         if (this.host.transcriptOpenSummary && !isQaapWorkspaceContainerPath(this.host.transcriptOpenSummary.cwd)) {
             return this.host.transcriptOpenSummary;
         }
-        const active = this.host.conversationsForProject(project)
+        const conversations = this.host.conversationsForProject(project);
+        const active = conversations
             .find(summary => summary.status === 'streaming' && !isAgentsHubIdleConversationSummary(summary));
         if (active) {
+            this.lastShellStreamingConversationId = active.id;
             return active;
+        }
+        // Stopping the run the shell was showing must not drop the user onto the empty
+        // "Ready when you are" screen: stay on that task so they can see what changed.
+        const cancelled = this.lastShellStreamingConversationId
+            ? conversations.find(summary => summary.id === this.lastShellStreamingConversationId && summary.lastTurnCancelled && !summary.archived)
+            : undefined;
+        if (cancelled) {
+            return cancelled;
         }
         const cwd = this.resolveAgentsHubShellCwd(project);
         return buildAgentsHubIdleConversationSummary(cwd ?? '');
@@ -766,6 +778,7 @@ export class MobileProjectsAgentsHubInlineUi {
      * Needed when "New agent" is tapped after an idle submit left a live activity row in the chat host.
      */
     resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void {
+        this.lastShellStreamingConversationId = undefined;
         this.host.transcriptLiveUi.stopTranscriptLiveWatch();
         this.host.transcriptLastConv = undefined;
         this.host.transcriptLastFingerprint = undefined;

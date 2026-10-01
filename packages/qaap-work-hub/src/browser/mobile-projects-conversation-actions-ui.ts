@@ -253,7 +253,7 @@ export class MobileProjectsConversationActionsUi {
     ): void {
         this.host.cardMenuUi.closeCardMenu();
 
-        this.host.conversations?.recordSnapshot({ ...summary, status: 'idle', updatedAt: Date.now() });
+        this.host.conversations?.recordSnapshot({ ...summary, status: 'idle', lastTurnCancelled: true, updatedAt: Date.now() });
         this.host.transcriptLiveUi.applyOptimisticConversationCancel(summary);
         this.refreshConversationLists();
 

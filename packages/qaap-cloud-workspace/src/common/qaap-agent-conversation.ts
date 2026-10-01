@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
-import { excerptConversationMessageError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import {
     agentMessageHasVisualVerificationMarker,
@@ -293,6 +293,8 @@ export interface QaapAgentConversationSummary {
     readonly lastMessagePreview?: string;
     /** Excerpt of the most recent message's persisted failure reason, when it failed. */
     readonly lastMessageError?: string;
+    /** The latest turn ended because someone pressed Stop / Cancel run — not a finish, not a failure. */
+    readonly lastTurnCancelled?: boolean;
     /** Role of the most recent message, so the UI can render "you said…" vs. "agent replied…". */
     readonly lastMessageRole?: QaapAgentMessageRole;
     readonly priority?: boolean;
@@ -562,6 +564,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         lastMessagePreview: last ? excerpt(resolveMessagePreviewText(last)) : undefined,
         lastMessageRole: last?.role,
         ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
+        ...(isLastTurnCancelled({ status, messages: conv.messages }) ? { lastTurnCancelled: true } : {}),
         priority: conv.priority || undefined,
         paused: conv.paused || undefined,
         archived: conv.archived || undefined,

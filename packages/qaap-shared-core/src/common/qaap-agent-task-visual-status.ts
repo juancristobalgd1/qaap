@@ -14,6 +14,7 @@ export type QaapAgentTaskVisualStatusId =
     | 'blocked'
     | 'failed'
     | 'interrupted'
+    | 'cancelled'
     | 'pr-ready'
     | 'pr-merged'
     | 'pr-closed'
@@ -91,6 +92,15 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         className: 'theia-mod-failed',
         iconClass: 'codicon-error',
         color: 'var(--theia-errorForeground, #f14c4c)',
+        gitPr: false,
+    },
+    'cancelled': {
+        id: 'cancelled',
+        labelKey: 'qaap/mobileProjects/taskStateCancelled',
+        label: 'cancelled',
+        className: 'theia-mod-cancelled',
+        iconClass: 'codicon-circle-slash',
+        color: 'var(--theia-descriptionForeground)',
         gitPr: false,
     },
     'interrupted': {
@@ -323,7 +333,8 @@ export function resolveQaapAgentTaskVisualStatus(
         | 'lastGitActionKind'
         | 'worktreeBranch'
         | 'linesAdded'
-        | 'linesRemoved'>,
+        | 'linesRemoved'
+        | 'lastTurnCancelled'>,
     unread = false,
 ): QaapAgentTaskVisualStatus {
     const state = task.state;
@@ -353,6 +364,11 @@ export function resolveQaapAgentTaskVisualStatus(
     }
     if (summary?.status === 'settled') {
         return STATUS_BY_ID['background'];
+    }
+    // The user stopped it: neither a finish nor something that needs them — a neutral glyph, not
+    // the unread-reply warning triangle it used to inherit from the "Turn cancelled." message.
+    if (state === 'cancelled' || summary?.lastTurnCancelled) {
+        return STATUS_BY_ID['cancelled'];
     }
     if (
         state === 'needs-input'

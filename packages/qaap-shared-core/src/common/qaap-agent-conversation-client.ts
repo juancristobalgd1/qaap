@@ -71,6 +71,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly lastMessageRole?: 'user' | 'agent';
     /** Excerpt of the most recent message's persisted failure reason, when it failed. */
     readonly lastMessageError?: string;
+    /** The latest turn ended because someone pressed Stop / Cancel run — not a finish, not a failure. */
+    readonly lastTurnCancelled?: boolean;
     readonly workspacePath?: string;
     readonly sessionId?: string;
     /** User-flagged "high priority" — sorts at the top of the project list. */
@@ -453,6 +455,21 @@ export function normalizeAgentConversationFailures(conv: QaapAgentConversationDT
     return { ...conv, messages };
 }
 
+/**
+ * Whether the conversation's latest turn was cancelled by the user. Restart interruptions and
+ * watchdog stops also record `run_cancelled`, but they end as `failed`, so status tells them apart.
+ */
+export function isLastTurnCancelled(conv: {
+    readonly status: string;
+    readonly messages: readonly { readonly role: string; readonly traceEvents?: readonly { readonly type: string }[] }[];
+}): boolean {
+    if (conv.status === 'failed' || conv.status === 'streaming') {
+        return false;
+    }
+    const last = conv.messages[conv.messages.length - 1];
+    return last?.role === 'agent' && !!last.traceEvents?.some(event => event.type === 'run_cancelled');
+}
+
 /** Bounded, whitespace-collapsed copy of a message's failure reason for summary rows. */
 export function excerptConversationMessageError(error: string): string {
     const clean = error.replace(/\s+/g, ' ').trim();
@@ -485,6 +502,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         lastMessagePreview: preview,
         lastMessageRole: last?.role,
         ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
+        ...(isLastTurnCancelled({ status, messages: conv.messages }) ? { lastTurnCancelled: true } : {}),
         priority: conv.priority,
         paused: conv.paused,
         archived: conv.archived,

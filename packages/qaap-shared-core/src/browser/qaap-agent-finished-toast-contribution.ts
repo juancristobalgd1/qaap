@@ -66,6 +66,11 @@ export class QaapAgentFinishedToastContribution implements FrontendApplicationCo
             return;
         }
 
+        // The user pressed Stop: announcing "Agent finished" for it is wrong, and they already know.
+        if (summary.lastTurnCancelled) {
+            return;
+        }
+
         // Don't toast if the user is already viewing this conversation.
         const openId = this.callbacks?.resolveOpenConversationId();
         if (openId === conversationId) {
