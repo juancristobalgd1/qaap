@@ -38,6 +38,8 @@ export const CUSTOM_AGENTS_ENV = 'QAAP_AGENT_COMMANDS';
 export const QAAP_AGENT_VERIFY_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_VERIFY?.trim() ?? '');
 export const QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS = 12_000;
 export const QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS = 4_000;
+/** Upper bound for the user request kept on a task and repeated in verification fix prompts. */
+export const USER_REQUEST_MAX_CHARS = 2_000;
 
 /** Exported so other node/ services that reuse {@link QaapAgentTaskRunner.runGenericCommand} — the
  *  auto-researcher runner's `run`/`measure` phases — can type its result. */

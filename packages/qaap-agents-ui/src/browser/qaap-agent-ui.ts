@@ -644,6 +644,21 @@ export function createAgentTaskVerificationBadge(verification?: MobileProjectTas
     if (!verification || verification.status === 'skipped') {
         return undefined;
     }
+    if (verification.status === 'preexisting') {
+        // Red only in files the task did not touch: informative, not this task's failure.
+        const neutral = document.createElement('span');
+        neutral.className = 'theia-qaap-agent-task-verify-badge theia-mod-preexisting';
+        const neutralIcon = document.createElement('span');
+        neutralIcon.className = 'codicon codicon-info';
+        neutralIcon.setAttribute('aria-hidden', 'true');
+        const neutralText = document.createElement('span');
+        neutralText.className = 'theia-qaap-agent-task-verify-badge-label';
+        neutralText.textContent = nls.localize('qaap/mobileProjects/verifyChecksPreexisting', 'Checks already failing');
+        neutral.append(neutralIcon, neutralText);
+        neutral.title = nls.localize('qaap/mobileProjects/verifyChecksPreexistingTip',
+            '{0} fails only in files this task did not edit, so it was left alone: {1}', verification.command, verification.summary);
+        return neutral;
+    }
     const passed = verification.status === 'passed';
     const badge = document.createElement('span');
     badge.className = `theia-qaap-agent-task-verify-badge ${passed ? 'theia-mod-passed' : 'theia-mod-failed'}`;

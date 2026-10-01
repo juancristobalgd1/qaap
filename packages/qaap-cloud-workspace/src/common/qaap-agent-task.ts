@@ -118,6 +118,12 @@ export interface QaapAgentTask {
      * review — contents are never inlined in index.json or prompts.
      */
     readonly sensitiveSnapshotDir?: string;
+    /**
+     * The user's own words for this turn (mention-stripped, bounded). {@link command} holds the
+     * built CLI line, so without this a verification fix turn could not repeat the user's
+     * constraints ("only that text", "do not push").
+     */
+    readonly userRequest?: string;
     /** Backend self-verification result for QAIQ tasks that edited files. */
     readonly verification?: QaapAgentTaskVerification;
     /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */
@@ -127,7 +133,12 @@ export interface QaapAgentTask {
 export type QaapAgentTaskVerification =
     | { readonly status: 'skipped' }
     | { readonly status: 'passed'; readonly command: string; readonly attempts: number }
-    | { readonly status: 'failed'; readonly command: string; readonly attempts: number; readonly summary: string };
+    | { readonly status: 'failed'; readonly command: string; readonly attempts: number; readonly summary: string }
+    /**
+     * The checks are red only in files this task did not edit — they were already failing before
+     * the turn. Reported, never fed back to the agent, and does not downgrade the task to warnings.
+     */
+    | { readonly status: 'preexisting'; readonly command: string; readonly attempts: number; readonly summary: string };
 
 export interface QaapAgentTaskReview {
     /** 'inconclusive' = the reviewer ran but produced no verdict (fail-open to 'completed'). */

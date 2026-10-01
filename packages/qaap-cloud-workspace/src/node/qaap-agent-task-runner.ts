@@ -83,6 +83,7 @@ import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMap
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
 import { buildAgentVerificationFixPromptExtracted, captureWorktreeBaselineExtracted, detectEmptyAgentTurnForTaskExtracted, finishSuccessfulTaskAfterVerificationExtracted, hasEditedFilesForVerificationExtracted, releaseVerificationPassExtracted, resolveReviewerCandidatesExtracted, restoreBaselineSensitiveFilesExtracted, reviewSuccessfulAgentTaskExtracted, runAgentVerificationFixTurnExtracted, runVerificationScriptsExtracted, verifySuccessfulAgentTaskExtracted } from './qaap-agent-task-runner-activity2';
+import { parseWorktreeStatusZ, type QaapWorktreeChange } from '../common/qaap-verification-scope';
 import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
 import { runOneShotCommandExtracted } from './qaap-agent-task-runner-live-status2';
 import {
@@ -1063,13 +1064,29 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public async runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number,): Promise<QaapGenericCommandResult | undefined> {
-        return runAgentVerificationFixTurnExtracted(this, task, env, failedCommand, failure, attempt, startedAt);
+    public async runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number, scopePaths?: readonly string[]): Promise<QaapGenericCommandResult | undefined> {
+        return runAgentVerificationFixTurnExtracted(this, task, env, failedCommand, failure, attempt, startedAt, scopePaths);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public buildAgentVerificationFixPrompt(failedCommand: string, failure: QaapGenericCommandResult, attempt: number,): string {
-        return buildAgentVerificationFixPromptExtracted(this, failedCommand, failure, attempt);
+    public buildAgentVerificationFixPrompt(failedCommand: string, failure: QaapGenericCommandResult, attempt: number, task?: QaapAgentTask, scopePaths?: readonly string[]): string {
+        return buildAgentVerificationFixPromptExtracted(this, failedCommand, failure, attempt, task, scopePaths);
+    }
+
+    public listWorktreeChanges(cwd: string): readonly QaapWorktreeChange[] | undefined {
+        if (!fs.existsSync(path.join(cwd, '.git'))) {
+            return undefined;
+        }
+        const result = this.readGitSync(cwd, ['status', '--porcelain', '-z', '--untracked-files=all']);
+        if (result.status !== 0 || result.error || typeof result.stdout !== 'string') {
+            return undefined;
+        }
+        return parseWorktreeStatusZ(result.stdout);
+    }
+
+    public restoreWorktreePathsFromHead(cwd: string, paths: readonly string[]): boolean {
+        const result = this.readGitSync(cwd, ['checkout', 'HEAD', '--', ...paths]);
+        return result.status === 0 && !result.error;
     }
 
     runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly tailOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; readonly ownerLogin?: string; } = {},): Promise<QaapGenericCommandResult> {

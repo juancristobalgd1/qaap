@@ -11649,6 +11649,10 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   color: var(--theia-testing-iconFailed, var(--theia-errorForeground));
 }
 
+.theia-qaap-agent-task-verify-badge.theia-mod-preexisting {
+  color: var(--theia-descriptionForeground);
+}
+
 .theia-mobile-transcript-team-meta .theia-qaap-agent-task-verify-badge {
   margin-left: 6px;
 }

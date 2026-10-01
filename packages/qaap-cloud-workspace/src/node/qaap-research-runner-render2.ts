@@ -317,7 +317,8 @@ export async function runProposeExtracted(ctx: QaapResearchRunnerContext, goal: 
             realChangeFingerprint: roundRealChangeFingerprint,
             // Mirror the task-level change-quality gate (verification scripts + adversarial
             // review) onto the ledger row — the runner measures, the agent doesn't self-report.
-            gateVerification: finished.verification?.status,
+            // `preexisting` = red only in files this change did not touch, so the change itself is clean.
+            gateVerification: finished.verification?.status === 'preexisting' ? 'passed' : finished.verification?.status,
             gateReview: finished.review?.status,
             notes,
         };

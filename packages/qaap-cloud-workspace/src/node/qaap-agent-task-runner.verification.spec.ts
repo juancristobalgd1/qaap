@@ -155,6 +155,75 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(result && 'summary' in result ? result.summary : '').to.contain('did not complete');
         expect(fixTurns()).to.equal(0);
     });
+
+    const lintFailure = (stdout: string): ScriptRun => ({
+        command: 'npm run lint',
+        result: { exitCode: 1, stdout, stderr: '', timedOut: false },
+    });
+    const heroOnly = [{ path: 'src/components/Hero.tsx', untracked: false }];
+
+    it('reports lint failures confined to files the task did not edit as preexisting, without a fix turn', async () => {
+        const { runner, fixTurns } = makeRunner({
+            listWorktreeChanges: () => heroOnly,
+            runVerificationScripts: async (): Promise<ScriptRun> => lintFailure(
+                '/repo/src/components/Newsletter.tsx\n  12:3  warning  Unexpected any  @typescript-eslint/no-explicit-any\n'
+                + '/repo/src/components/ui/badge.tsx\n  4:1  warning  Fast refresh only works  react-refresh/only-export-components\n'),
+        });
+        const result = await runner.runVerify(TASK);
+        expect(result?.status).to.equal('preexisting');
+        expect(fixTurns()).to.equal(0);
+    });
+
+    it('still runs a fix turn when the lint failure names a file the task edited', async () => {
+        let scriptCalls = 0;
+        const { runner, fixTurns } = makeRunner({
+            listWorktreeChanges: () => heroOnly,
+            runVerificationScripts: async (): Promise<ScriptRun> => {
+                scriptCalls++;
+                return scriptCalls === 1 ? lintFailure('/repo/src/components/Hero.tsx\n  3:7  error  x is unused  no-unused-vars\n') : undefined;
+            },
+        });
+        const result = await runner.runVerify(TASK);
+        expect(result).to.deep.include({ status: 'passed', attempts: 1 });
+        expect(fixTurns()).to.equal(1);
+    });
+
+    it('reverts files a fix turn edited outside the task scope', async () => {
+        let snapshots = 0;
+        let restored: readonly string[] = [];
+        let scriptCalls = 0;
+        const { runner } = makeRunner({
+            // 1: scope, 2: before the fix turn, 3: after it (the fixer wandered into button.tsx).
+            listWorktreeChanges: () => (++snapshots >= 3
+                ? [...heroOnly, { path: 'src/components/ui/button.tsx', untracked: false }]
+                : heroOnly),
+            restoreWorktreePathsFromHead: (_cwd: string, paths: readonly string[]) => {
+                restored = paths;
+                return true;
+            },
+            appendAndFireOutput: () => undefined,
+            runVerificationScripts: async (): Promise<ScriptRun> => (++scriptCalls === 1 ? failure() : undefined),
+        });
+        await runner.runVerify(TASK);
+        expect(restored).to.deep.equal(['src/components/ui/button.tsx']);
+    });
+
+    it('builds a fix prompt that repeats the user request and the scope, without the default PR workflow', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        Object.assign(runner, { truncateForPrompt: (text: string) => text });
+        const prompt = runner.buildAgentVerificationFixPrompt(
+            'npm run lint',
+            { exitCode: 1, stdout: 'boom', stderr: '', timedOut: false },
+            1,
+            { ...TASK, userRequest: 'Cambia solo el subtítulo del hero. No hagas commit ni push.' },
+            ['src/components/Hero.tsx'],
+        );
+        expect(prompt).to.contain('Cambia solo el subtítulo del hero. No hagas commit ni push.');
+        expect(prompt).to.contain('src/components/Hero.tsx');
+        expect(prompt).to.contain('eslint-disable');
+        expect(prompt).to.contain('[QAAP default agent workflow]');
+        expect(prompt).not.to.contain('push the branch');
+    });
 });
 
 describe('QaapAgentTaskRunner worktree baseline', () => {

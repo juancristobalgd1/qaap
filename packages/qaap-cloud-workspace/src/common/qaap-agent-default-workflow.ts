@@ -10,6 +10,8 @@ import {
 
 const SHELL_AGENT_ID = 'shell';
 const DEFAULT_WORKFLOW_MARKER = '[QAAP default agent workflow]';
+/** A prompt carrying this marker already has (or deliberately opts out of) the default workflow block. */
+export const QAAP_AGENT_DEFAULT_WORKFLOW_MARKER = DEFAULT_WORKFLOW_MARKER;
 const PARALLEL_TOOLS_MARKER = '[QAAP parallel tools]';
 const SEARCH_HYGIENE_MARKER = '[QAAP search hygiene]';
 const DEV_PREVIEW_MARKER = '[QAAP dev preview]';

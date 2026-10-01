@@ -2,7 +2,9 @@ import { SHELL_AGENT_ID, EMPTY_TURN_GATE_COMMAND, MAX_LOG_BYTES, QAAP_AGENT_FIX_
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 // Extracted from qaap-agent-task-runner.ts
 
+import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import * as path from 'path';
 import {
     type QaapAgentTask,
     type QaapAgentTaskReview,
@@ -10,6 +12,8 @@ import {
 } from '../common/qaap-agent-task';
 import { detectEmptyAgentTurn, type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
+import { QAAP_AGENT_DEFAULT_WORKFLOW_MARKER } from '../common/qaap-agent-default-workflow';
+import type { QaapWorktreeChange } from '../common/qaap-verification-scope';
 import { hashSensitiveFiles, restoreSensitiveFiles } from './qaap-sensitive-files';
 import {
     reviewSuccessfulAgentTask as reviewSuccessfulAgentTaskHelper,
@@ -155,8 +159,10 @@ export async function verifySuccessfulAgentTaskExtracted(ctx: QaapAgentTaskRunne
             resolveVerificationScriptsForCwd: cwd => ctx.resolveVerificationScriptsForCwd(cwd),
             isTaskStillRunning: id => ctx.isTaskStillRunning(id),
             runVerificationScripts: (t, e, s, sa) => ctx.runVerificationScripts(t, e, s, sa),
-            runAgentVerificationFixTurn: (t, e, c, r, a, sa) => ctx.runAgentVerificationFixTurn(t, e, c, r, a, sa),
+            runAgentVerificationFixTurn: (t, e, c, r, a, sa, sp) => ctx.runAgentVerificationFixTurn(t, e, c, r, a, sa, sp),
             summarizeVerificationFailure: (c, r) => ctx.summarizeVerificationFailure(c, r),
+            listWorktreeChanges: t => ctx.listWorktreeChanges(t.cwd),
+            revertWorktreeChanges: (t, changes) => revertOutOfScopeChangesExtracted(ctx, t, changes),
         });
 }
 
@@ -300,7 +306,8 @@ export async function runAgentVerificationFixTurnExtracted(ctx: QaapAgentTaskRun
         failedCommand: string,
         failure: QaapGenericCommandResult,
         attempt: number,
-        startedAt: number,): Promise<QaapGenericCommandResult | undefined> {
+        startedAt: number,
+        scopePaths: readonly string[] = [],): Promise<QaapGenericCommandResult | undefined> {
         // Close the cancel race: if the task was cancelled between the failed verification and here,
         // do not spawn a full (token-costing) agent fix turn.
         if (!ctx.isTaskStillRunning(task.id)) {
@@ -317,7 +324,7 @@ export async function runAgentVerificationFixTurnExtracted(ctx: QaapAgentTaskRun
             ctx.appendAndFireOutput(task.id, '\n[qaap] Skipping self-verification fix turn: no coding agent to invoke.\n');
             return undefined;
         }
-        const prompt = ctx.buildAgentVerificationFixPrompt(failedCommand, failure, attempt);
+        const prompt = ctx.buildAgentVerificationFixPrompt(failedCommand, failure, attempt, task, scopePaths);
         let command: string;
         let stdinPrompt: string | undefined;
         let stdinPromptMode: 'qaiq-stdio' | 'plain' | undefined;
@@ -346,13 +353,32 @@ export async function runAgentVerificationFixTurnExtracted(ctx: QaapAgentTaskRun
 
 export function buildAgentVerificationFixPromptExtracted(ctx: QaapAgentTaskRunnerContext, failedCommand: string,
         failure: QaapGenericCommandResult,
-        attempt: number,): string {
+        attempt: number,
+        task?: QaapAgentTask,
+        scopePaths: readonly string[] = [],): string {
         const output = ctx.truncateForPrompt(`${failure.stdout}\n${failure.stderr}`.trim(), QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS);
+        const request = task?.userRequest?.trim();
         return [
+            // Opting out of the default workflow block: its "open a PR" and "reproduce first"
+            // guidance turned a scoped fix into an unrelated investigation of the whole repo.
+            QAAP_AGENT_DEFAULT_WORKFLOW_MARKER,
             'The previous coding-agent turn completed and edited files, but backend self-verification failed.',
             `Fix the issue causing this command to fail: ${failedCommand}`,
             `This is fix attempt ${attempt} of ${QAAP_AGENT_VERIFY_MAX_ATTEMPTS}.`,
-            'Make the smallest safe code changes needed. Do not ask questions. Do not commit.',
+            '',
+            ...(request ? [
+                "The user's original request (its limits still apply — never do more than it allows):",
+                request,
+                '',
+            ] : []),
+            'Scope rules:',
+            ...(scopePaths.length > 0 ? [
+                `- Only edit these files, which this task already changed: ${scopePaths.slice(0, 50).join(', ')}.`,
+                '- Edits to any other file are reverted automatically.',
+            ] : []),
+            "- Only fix failures caused by this task's edits. If the failure is in code this task did not touch, make no changes and stop.",
+            '- Never silence a check: no eslint-disable, @ts-ignore, @ts-expect-error or skipped tests.',
+            '- Make the smallest safe change. Do not ask questions. Do not commit, push or open a pull request.',
             'After your edits, stop; the backend will rerun verification.',
             '',
             'Captured verification output:',
@@ -360,3 +386,34 @@ export function buildAgentVerificationFixPromptExtracted(ctx: QaapAgentTaskRunne
         ].join('\n');
 }
 
+/**
+ * Undo edits a verification fix turn made outside the task's files. Every path given was clean
+ * before the fix turn, so restoring it from HEAD (tracked) or removing it (new untracked file)
+ * returns exactly the pre-fix state.
+ */
+export function revertOutOfScopeChangesExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, changes: readonly QaapWorktreeChange[]): readonly string[] {
+        const root = path.resolve(task.cwd);
+        const inside = (change: QaapWorktreeChange): boolean => {
+            const relative = path.relative(root, path.resolve(root, change.path));
+            return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+        };
+        const reverted: string[] = [];
+        const tracked = changes.filter(change => !change.untracked && inside(change)).map(change => change.path);
+        if (tracked.length > 0 && ctx.restoreWorktreePathsFromHead(task.cwd, tracked)) {
+            reverted.push(...tracked);
+        }
+        for (const change of changes.filter(candidate => candidate.untracked && inside(candidate))) {
+            try {
+                fs.rmSync(path.resolve(root, change.path), { force: true });
+                reverted.push(change.path);
+            } catch {
+                // Best effort: an undeletable file is still listed as out of scope in the log below.
+            }
+        }
+        const skipped = changes.map(change => change.path).filter(changePath => !reverted.includes(changePath));
+        ctx.appendAndFireOutput(
+            task.id,
+            `\n[qaap] Reverted edits outside this task's files: ${reverted.join(', ') || '(none)'}${skipped.length > 0 ? `; could not revert: ${skipped.join(', ')}` : ''}\n`,
+        );
+        return reverted;
+}

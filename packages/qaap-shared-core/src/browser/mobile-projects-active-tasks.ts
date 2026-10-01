@@ -38,7 +38,8 @@ export type MobileProjectTaskTransportState = 'connected' | 'reconnecting' | 'di
 export type MobileProjectTaskVerification =
     | { readonly status: 'skipped' }
     | { readonly status: 'passed'; readonly command: string; readonly attempts: number }
-    | { readonly status: 'failed'; readonly command: string; readonly attempts: number; readonly summary: string };
+    | { readonly status: 'failed'; readonly command: string; readonly attempts: number; readonly summary: string }
+    | { readonly status: 'preexisting'; readonly command: string; readonly attempts: number; readonly summary: string };
 
 /** Task row as shown in the mobile Projects panel (mirrors VPS agent-task API). */
 export interface MobileProjectTaskView {

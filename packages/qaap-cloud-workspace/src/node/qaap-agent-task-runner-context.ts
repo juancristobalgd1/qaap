@@ -36,6 +36,7 @@ import type { QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import type { QaapQaiqModelBinding } from '../common/qaap-qaiq-model-binding';
 import type { QaapNativeModelRoutingTable } from '../common/qaap-agent-native-model-routing';
 import type { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
+import type { QaapWorktreeChange } from '../common/qaap-verification-scope';
 import type { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import type { QaapWebPushService } from './qaap-web-push-service';
 import type { QaapBillingStore } from './qaap-billing-store';
@@ -276,8 +277,19 @@ export interface QaapAgentTaskRunnerContext {
         failure: QaapGenericCommandResult,
         attempt: number,
         startedAt: number,
+        scopePaths?: readonly string[],
     ): Promise<QaapGenericCommandResult | undefined>;
-    buildAgentVerificationFixPrompt(failedCommand: string, failure: QaapGenericCommandResult, attempt: number): string;
+    buildAgentVerificationFixPrompt(
+        failedCommand: string,
+        failure: QaapGenericCommandResult,
+        attempt: number,
+        task?: QaapAgentTask,
+        scopePaths?: readonly string[],
+    ): string;
+    /** `git status --porcelain -z` of `cwd` as paths; `undefined` outside a readable git checkout. */
+    listWorktreeChanges(cwd: string): readonly QaapWorktreeChange[] | undefined;
+    /** `git checkout HEAD -- <paths>`; true on success. */
+    restoreWorktreePathsFromHead(cwd: string, paths: readonly string[]): boolean;
     summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string;
 
     // ─── Command execution / output ─────────────────────────────────────────

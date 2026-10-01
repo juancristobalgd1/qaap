@@ -1,4 +1,4 @@
-import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS } from './qaap-agent-task-runner-constants';
+import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 // Extracted from qaap-agent-task-runner.ts
 
@@ -308,6 +308,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                     ...commandTask,
                     command,
                     agentId,
+                    ...(request.userQuery?.trim() ? { userRequest: request.userQuery.trim().slice(0, USER_REQUEST_MAX_CHARS) } : {}),
                     // Resolved here, not by the caller: only now is the concrete backend known (an
                     // unpinned dispatch falls through to the runner's own default agent).
                     ...(task.readOnlyWorkspace

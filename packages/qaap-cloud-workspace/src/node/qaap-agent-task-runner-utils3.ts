@@ -20,6 +20,12 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentConnectionState, QaapAgentTaskReview, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {
+    classifyVerificationFailureScope,
+    findOutOfScopeChanges,
+    isPerFileVerificationScript,
+    type QaapWorktreeChange,
+} from '../common/qaap-verification-scope';
+import {
     buildAgentReviewPrompt,
     parseAgentReviewVerdict,
     parseGitNumstat,
@@ -466,8 +472,12 @@ export interface VerifySuccessfulAgentTaskDeps {
     resolveVerificationScriptsForCwd(cwd: string): Promise<readonly string[]>;
     isTaskStillRunning(taskId: string): boolean;
     runVerificationScripts(task: QaapAgentTask, env: NodeJS.ProcessEnv, scripts: readonly string[], startedAt: number): Promise<{ command: string; result: QaapGenericCommandResult } | undefined>;
-    runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number): Promise<QaapGenericCommandResult | undefined>;
+    runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number, scopePaths: readonly string[]): Promise<QaapGenericCommandResult | undefined>;
     summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string;
+    /** Dirty paths in the task's checkout; `undefined` when git cannot report them (scope rules then stay off). */
+    listWorktreeChanges(task: QaapAgentTask): readonly QaapWorktreeChange[] | undefined;
+    /** Put the given paths back to how they were before the fix turn; returns the paths restored. */
+    revertWorktreeChanges(task: QaapAgentTask, changes: readonly QaapWorktreeChange[]): readonly string[];
 }
 
 export async function verifySuccessfulAgentTask(
@@ -483,6 +493,9 @@ export async function verifySuccessfulAgentTask(
     if (scripts.length === 0) {
         return undefined;
     }
+    // The files the turn left dirty are the only ones a fix turn may own. Pre-existing dirty files
+    // are included on purpose: they are the user's work in progress, not someone else's code.
+    const scopePaths = deps.listWorktreeChanges(task)?.map(change => change.path);
     let attempts = 0;
     let lastCommand = '';
     let lastFailure: QaapGenericCommandResult | undefined;
@@ -493,15 +506,36 @@ export async function verifySuccessfulAgentTask(
         }
         lastCommand = failed.command;
         lastFailure = failed.result;
+        // Lint-style findings name their file. When none of them is a file this task edited, the
+        // repo was already red before the turn: report it, never hand it to the agent as work.
+        if (scopePaths && isPerFileVerificationScript(failed.command)
+            && classifyVerificationFailureScope(`${failed.result.stdout}\n${failed.result.stderr}`, scopePaths) === 'out-of-scope') {
+            return {
+                status: 'preexisting',
+                command: failed.command,
+                attempts,
+                summary: deps.summarizeVerificationFailure(failed.command, failed.result),
+            };
+        }
         if (attempts >= QAAP_AGENT_VERIFY_MAX_ATTEMPTS || Date.now() - startedAt >= QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
             break;
         }
         attempts++;
-        const fixed = await deps.runAgentVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt);
+        const beforeFix = scopePaths ? deps.listWorktreeChanges(task) : undefined;
+        const fixed = await deps.runAgentVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt, scopePaths ?? []);
         if (fixed === undefined) {
             // No agent was available to attempt a fix — retrying the same failing scripts again
             // would just burn the remaining attempts for nothing, so stop here.
             break;
+        }
+        if (beforeFix) {
+            // Hard scope guard: the prompt asks the fixer to stay inside the task's files, this
+            // enforces it. Anything it touched that was clean before the fix turn goes back.
+            const afterFix = deps.listWorktreeChanges(task);
+            const outOfScope = afterFix ? findOutOfScopeChanges(afterFix, new Set(beforeFix.map(change => change.path))) : [];
+            if (outOfScope.length > 0) {
+                deps.revertWorktreeChanges(task, outOfScope);
+            }
         }
     }
     if (!lastFailure) {

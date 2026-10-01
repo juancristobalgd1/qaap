@@ -381,7 +381,8 @@ export class QaapAgentGoalLoopRunner implements BackendApplicationContribution {
      */
     protected async verify(cwd: string, task: QaapAgentTask): Promise<QaapAgentGoalLoopVerifyResult> {
         const checkedAt = (): number => Date.now();
-        if (task.verification?.status === 'passed') {
+        // `preexisting`: the repo was already red outside this turn's files — chasing that is not the goal.
+        if (task.verification?.status === 'passed' || task.verification?.status === 'preexisting') {
             return { status: 'passed', command: task.verification.command, checkedAt: checkedAt() };
         }
         if (task.verification?.status === 'failed') {
