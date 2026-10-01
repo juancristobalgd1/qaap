@@ -8,7 +8,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import { buildWorkHubSessionsSidebarRowFingerprint, buildWorkHubSessionsSidebarVisibleStructureFingerprint, QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
 import { expandConversationSlots, partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
-import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
 
 export function openWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
@@ -319,6 +319,7 @@ export function buildSidebarRowFingerprintExtracted(ctx: MobileProjectsSessionsS
         pinned: entry.pinned,
         isCurrent: ctx.host.transcriptOpenSummaryId === entry.summary.id,
         visualStatusId,
+        unread: isQaapAgentTaskUnreadReply(entry.summary, unread),
     });
 }
 

@@ -46,8 +46,61 @@ export namespace MobileSnackbar {
         position?: 'bottom' | 'top';
     }
 
+    /**
+     * The Work Hub sticky composer is a separate fixed layer owned by a higher package;
+     * it is located by selector so this lowest layer does not import it.
+     */
+    export const STICKY_COMPOSER_SELECTOR = '.theia-mobile-projects-sticky-composer:not([hidden])';
+    /** CSS custom property holding how far the visible composer reaches up from the viewport bottom. */
+    export const COMPOSER_LIFT_PROPERTY = '--theia-mobile-snackbar-composer-lift';
+
     let host: HTMLElement | undefined;
     let timer: number | undefined;
+    let composerObserver: ResizeObserver | undefined;
+    let observedComposer: HTMLElement | undefined;
+    let resizeListening = false;
+
+    /**
+     * Measure the visible sticky composer and lift the snackbar above it, so the action
+     * button never overlaps the primary input surface (same technique as the agent-CLI
+     * update toast).
+     */
+    export function updateComposerLift(): void {
+        if (!host || typeof window === 'undefined') {
+            return;
+        }
+        const composer = document.querySelector<HTMLElement>(STICKY_COMPOSER_SELECTOR) ?? undefined;
+        const composerTop = composer?.getBoundingClientRect().top;
+        const lift = composerTop === undefined || composer!.getClientRects().length === 0
+            ? 0
+            : Math.max(0, window.innerHeight - composerTop);
+        host.style.setProperty(COMPOSER_LIFT_PROPERTY, `${Math.round(lift)}px`);
+        if (composer !== observedComposer) {
+            composerObserver?.disconnect();
+            observedComposer = composer;
+            if (composer && typeof ResizeObserver !== 'undefined') {
+                composerObserver ??= new ResizeObserver(() => updateComposerLift());
+                composerObserver.observe(composer);
+            }
+        }
+    }
+
+    function trackComposer(): void {
+        updateComposerLift();
+        if (!resizeListening && typeof window.addEventListener === 'function') {
+            window.addEventListener('resize', updateComposerLift, { passive: true });
+            resizeListening = true;
+        }
+    }
+
+    function untrackComposer(): void {
+        composerObserver?.disconnect();
+        observedComposer = undefined;
+        if (resizeListening && typeof window.removeEventListener === 'function') {
+            window.removeEventListener('resize', updateComposerLift);
+        }
+        resizeListening = false;
+    }
 
     function ensureHost(): HTMLElement {
         if (host && document.body.contains(host)) {
@@ -111,6 +164,7 @@ export namespace MobileSnackbar {
         }
 
         node.hidden = false;
+        trackComposer();
         // Force reflow so the transition runs even when chaining show() rapidly.
         void node.offsetWidth;
         node.classList.add('theia-mod-visible');
@@ -136,6 +190,7 @@ export namespace MobileSnackbar {
         window.setTimeout(() => {
             if (host && !host.classList.contains('theia-mod-visible')) {
                 host.hidden = true;
+                untrackComposer();
             }
         }, 220);
     }

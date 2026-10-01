@@ -69,7 +69,10 @@
 .theia-mobile-snackbar {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + 12px);
+  /* `--theia-mobile-snackbar-composer-lift` is measured by `mobile-snackbar.ts` from the
+   * visible sticky composer (which already sits above the keyboard), so the Open/Undo
+   * action never overlaps the primary input on desktop or mobile. */
+  bottom: calc(max(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px), var(--theia-mobile-snackbar-composer-lift, 0px)) + 12px);
   transform: translate(-50%, 12px);
   /* Above parallel / agent-log overlays so run-start feedback stays readable. */
   z-index: 2147483020;

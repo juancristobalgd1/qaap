@@ -283,10 +283,22 @@ describe('QaapQaiqStreamAccumulator', () => {
         expect(acc.getSegments()).to.deep.equal([{ type: 'text', content: 'part1 part2' }]);
     });
 
-    it('captures usage from assistant and result envelopes', () => {
+    it('keeps the latest per-call usage instead of the summed result aggregate', () => {
         const acc = new QaapQaiqStreamAccumulator();
         acc.push('{"type":"assistant","message":{"usage":{"input_tokens":1200,"output_tokens":80}}}\n');
         expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 1200, outputTokens: 80 });
+        acc.push('{"type":"assistant","message":{"usage":{"input_tokens":20,"output_tokens":40,"cache_read_input_tokens":1300}}}\n');
+        // `result` sums every call of the turn; the context ring must not double count it.
+        acc.push('{"type":"result","usage":{"input_tokens":1220,"output_tokens":120,"cache_read_input_tokens":1300}}\n');
+        expect(acc.getTurnUsage()).to.deep.equal({
+            inputTokens: 20,
+            outputTokens: 40,
+            cacheReadInputTokens: 1300,
+        });
+    });
+
+    it('falls back to result usage when no per-call usage was reported', () => {
+        const acc = new QaapQaiqStreamAccumulator();
         acc.push('{"type":"result","usage":{"input_tokens":1500,"output_tokens":200,"cache_read_input_tokens":100}}\n');
         expect(acc.getTurnUsage()).to.deep.equal({
             inputTokens: 1500,

@@ -41,6 +41,21 @@ describe('qaap-transcript-live-status', () => {
         expect(resolveTranscriptLiveStatusTokenCount({ streamChars: 400 })).to.equal(100);
     });
 
+    it('labels a chars/4 estimate as output of the current turn', () => {
+        expect(formatTranscriptLiveStatusMeta({
+            elapsedMs: 12_000,
+            streamChars: 3_332,
+            tokenCount: 833,
+            tokenCountEstimated: true,
+            activityTitle: 'Planning next moves',
+        })).to.equal('12s · ~833 output tokens');
+        expect(formatTranscriptLiveStatusMeta({
+            elapsedMs: 12_000,
+            streamChars: 3_332,
+            activityTitle: 'Planning next moves',
+        })).to.equal('12s · ~833 output tokens');
+    });
+
     it('createTranscriptLiveStatusElement renders logo, activity, and meta (no chevron)', () => {
         const el = createTranscriptLiveStatusElement();
         expect(el.classList.contains(TRANSCRIPT_LIVE_STATUS_CLASS)).to.equal(true);
@@ -130,7 +145,7 @@ describe('qaap-transcript-live-status', () => {
             stalled: true,
         });
         expect(el.querySelector('.qaap-transcript-live-status-meta')?.textContent)
-            .to.equal('1m 23s · ~4.2k tokens');
+            .to.equal('1m 23s · ~4.2k output tokens');
         const activity = el.querySelector<HTMLElement>('.qaap-transcript-live-status-activity');
         expect(activity?.getAttribute('aria-label')).to.equal('Reading files…');
         expect(activity?.querySelectorAll('.qaap-agent-setup-letter').length).to.be.greaterThan(0);

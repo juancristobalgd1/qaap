@@ -91,7 +91,10 @@ export class QaapQaiqStreamAccumulator {
      * `input` after live `input_json_delta` already accumulated a richer payload.
      */
     protected readonly preservedToolArgsById = new Map<string, string>();
-    /** Latest usage reported for the in-flight turn (assistant snapshot or final result). */
+    /**
+     * Usage of the latest API call of the in-flight turn (assistant snapshot); the aggregate
+     * `result` usage is only a fallback when no per-call usage was reported.
+     */
     protected turnUsage: QaapAgentContextUsage | undefined;
 
     getTurnUsage(): QaapAgentContextUsage | undefined {
@@ -162,7 +165,13 @@ export class QaapQaiqStreamAccumulator {
             return;
         }
         if (type === 'result') {
-            this.captureUsage(envelope.usage);
+            // The `result` usage is summed across every API call of the turn, so it overstates
+            // the context window. Prefer the latest per-call snapshot (assistant message: its
+            // input + cache is the live context); fall back to the aggregate only when the
+            // stream reported no per-call usage at all.
+            if (!this.turnUsage) {
+                this.captureUsage(envelope.usage);
+            }
             if (typeof envelope.result === 'string' && envelope.result.trim()) {
                 const resultText = envelope.result.trim();
                 if (envelope.is_error) {

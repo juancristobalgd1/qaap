@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
@@ -75,25 +76,45 @@ export function formatTranscriptStreamElapsed(elapsedMs: number): string {
     return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
 }
 
-/** "~870 tokens", "~4.2k tokens"; "~0 tokens" when count is zero; undefined if not a number. */
-export function formatTranscriptTokenCount(tokens: number): string | undefined {
+/** "870", "4.2k", "12k", "0"; undefined if not a non-negative number. */
+function formatTranscriptTokenAmount(tokens: number): string | undefined {
     if (!Number.isFinite(tokens) || tokens < 0) {
         return undefined;
     }
-    if (tokens === 0) {
-        return '~0 tokens';
-    }
     if (tokens < 1000) {
-        return `~${Math.round(tokens)} tokens`;
+        return String(Math.round(tokens));
     }
     const thousands = tokens / 1000;
     const rounded = thousands >= 10 ? Math.round(thousands).toString() : (Math.round(thousands * 10) / 10).toFixed(1);
-    return `~${rounded}k tokens`;
+    return `${rounded}k`;
+}
+
+/** "~870 tokens", "~4.2k tokens"; "~0 tokens" when count is zero; undefined if not a number. */
+export function formatTranscriptTokenCount(tokens: number): string | undefined {
+    const amount = formatTranscriptTokenAmount(tokens);
+    return amount === undefined ? undefined : `~${amount} tokens`;
+}
+
+/**
+ * "~870 output tokens": a chars/4 estimate of what the in-flight turn has produced so far.
+ * Labelled as output so it is not mistaken for the provider context total shown by the
+ * context ring (which also counts the prompt, history and cache).
+ */
+export function formatTranscriptOutputTokenCount(tokens: number): string | undefined {
+    const amount = formatTranscriptTokenAmount(tokens);
+    return amount === undefined
+        ? undefined
+        : nls.localize('qaap/transcript/outputTokensEstimate', '~{0} output tokens', amount);
 }
 
 /** "~870 tokens", "~4.2k tokens"; undefined while nothing has streamed yet. */
 export function formatTranscriptStreamTokens(chars: number): string | undefined {
     return formatTranscriptTokenCount(Math.round(chars / STREAM_STATUS_CHARS_PER_TOKEN));
+}
+
+/** "~870 output tokens" estimated from the streamed characters of the current turn. */
+export function formatTranscriptStreamOutputTokens(chars: number): string | undefined {
+    return formatTranscriptOutputTokenCount(Math.round(chars / STREAM_STATUS_CHARS_PER_TOKEN));
 }
 
 type ThinkingPhaseSegment = Readonly<{ readonly type: string; readonly content?: string; readonly finished?: boolean }>;

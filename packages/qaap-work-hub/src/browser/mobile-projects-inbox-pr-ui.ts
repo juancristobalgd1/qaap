@@ -53,7 +53,11 @@ export class MobileProjectsInboxPrUi {
 
     finishInboxPullRequestLoad(generation: number): void {
         if (generation !== this.host.inboxLoadGeneration) {
-            this.host.inboxPullRequestsLoading = false;
+            // A stale (usually aborted) request must not clear the loading flag owned by a
+            // newer in-flight request; that request finishes its own load.
+            if (!this.host.inboxPullRequestsAbort) {
+                this.host.inboxPullRequestsLoading = false;
+            }
             return;
         }
         this.host.inboxPullRequestsLoaded = true;
@@ -143,10 +147,11 @@ export class MobileProjectsInboxPrUi {
             this.host.inboxPullRequests = [];
         } finally {
             window.clearTimeout(timeout);
-            if (this.host.inboxPullRequestsAbort === abort) {
+            const superseded = this.host.inboxPullRequestsAbort !== abort;
+            if (!superseded) {
                 this.host.inboxPullRequestsAbort = undefined;
+                this.finishInboxPullRequestLoad(generation);
             }
-            this.finishInboxPullRequestLoad(generation);
         }
     }
 }

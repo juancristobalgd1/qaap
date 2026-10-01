@@ -40,6 +40,8 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
         readonly pinned: boolean;
         readonly isCurrent: boolean;
         readonly visualStatusId: string;
+        /** Unread agent reply: shown as a dot next to the status glyph, so it must repaint the row. */
+        readonly unread?: boolean;
     },
 ): string {
     const title = conversation.status === 'streaming' ? '' : conversation.title;
@@ -53,6 +55,7 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
         options.pinned ? 1 : 0,
         options.isCurrent ? 1 : 0,
         options.visualStatusId,
+        options.unread ? 1 : 0,
         turnCurrent,
         turnTotal,
         title,

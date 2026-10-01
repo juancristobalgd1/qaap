@@ -8,7 +8,7 @@ import {
     isFailedRunSummary,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import {
     formatStoredAgentFailureMessage,
     localizeAgentFailureShortReason,
@@ -108,6 +108,9 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     if (needsInput) {
         item.classList.add('theia-mod-needs-input');
     }
+    // Unread agent reply: a small dot beside the status glyph, independent of the outcome glyph
+    // (a finished-but-unread run keeps its real status instead of the warning triangle).
+    row.classList.toggle('theia-mod-unread-reply', isQaapAgentTaskUnreadReply(summary, isUnread));
 
     const lineage = summary ? ctx.host.conversationIndexUi.resolveConversationLineage(summary, parentIds) : 'none';
     const taskDot = document.createElement('span');

@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveQaapAgentTaskVisualStatus, resolveQaapGitPrVisualStatus } from './qaap-agent-task-visual-status';
+import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus, resolveQaapGitPrVisualStatus } from './qaap-agent-task-visual-status';
 
 describe('resolveQaapAgentTaskVisualStatus', () => {
     it('keeps failures above every other signal', () => {
@@ -37,13 +37,26 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'interrupted' }).id).to.equal('interrupted');
     });
 
-    it('classifies explicit input waits and unread agent replies as needs-you', () => {
+    it('classifies explicit input waits and priority flags as needs-you', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'needs-input' }).id).to.equal('needs-you');
         expect(resolveQaapAgentTaskVisualStatus(
             { state: 'idle' },
-            { status: 'idle', lastMessageRole: 'agent', messageCount: 3 },
-            true,
+            { status: 'idle', priority: true, lastMessageRole: 'agent', messageCount: 3 },
         ).id).to.equal('needs-you');
+    });
+
+    it('keeps the real outcome glyph for an unread reply of a run that finished fine', () => {
+        const unreadReply = { status: 'idle', lastMessageRole: 'agent', messageCount: 3 } as const;
+        expect(resolveQaapAgentTaskVisualStatus({ state: 'completed' }, unreadReply, true).id).to.equal('verified');
+        expect(resolveQaapAgentTaskVisualStatus({ state: 'idle' }, unreadReply, true).id).to.equal('idle');
+        expect(resolveQaapAgentTaskVisualStatus(
+            { state: 'completed' },
+            { ...unreadReply, linkedPullRequest: { owner: 'acme', repo: 'app', number: 9, state: 'open' } },
+            true,
+        ).id).to.equal('pr-ready');
+        expect(isQaapAgentTaskUnreadReply(unreadReply, true)).to.equal(true);
+        expect(isQaapAgentTaskUnreadReply(unreadReply, false)).to.equal(false);
+        expect(isQaapAgentTaskUnreadReply({ lastMessageRole: 'user', messageCount: 3 }, true)).to.equal(false);
     });
 
     it('classifies linked pull requests as PR ready after attention states', () => {
@@ -159,7 +172,7 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
             },
             true,
         );
-        expect(status.id).to.equal('needs-you');
+        expect(status.id).to.equal('verified');
     });
 });
 

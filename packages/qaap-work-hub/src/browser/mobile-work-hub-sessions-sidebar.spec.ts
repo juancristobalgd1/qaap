@@ -379,6 +379,34 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(secondRow).to.equal(firstRow);
     });
 
+    it('renders pull requests into the live list host so async results stay visible', () => {
+        const hosts: HTMLElement[] = [];
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            renderPullRequestList: host => {
+                hosts.push(host);
+                host.replaceChildren();
+                const results = document.createElement('div');
+                results.className = 'results';
+                results.textContent = 'Loading…';
+                host.append(results);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.showPullRequests();
+        sidebar.refreshList();
+        sidebar.refreshList();
+
+        const lastHost = hosts[hosts.length - 1];
+        expect(lastHost.isConnected).to.equal(true);
+        // A late GitHub answer paints into the node the UI rendered into last.
+        lastHost.querySelector('.results')!.textContent = 'No pull requests';
+        expect(sidebar.node.textContent).to.contain('No pull requests');
+        sidebar.hide();
+    });
+
     it('runs tryPatch before shouldSkip so live progress can update without full rebuild', () => {
         let renderCalls = 0;
         let patchCalls = 0;

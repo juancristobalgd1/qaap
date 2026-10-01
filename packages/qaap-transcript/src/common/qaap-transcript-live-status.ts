@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 import {
+    formatTranscriptOutputTokenCount,
     formatTranscriptStreamElapsed,
     formatTranscriptTokenCount,
 } from './qaap-transcript-stream-status';
@@ -29,6 +30,11 @@ export interface TranscriptLiveStatusSnapshot {
     readonly streamChars: number;
     /** Preferred token count (provider usage); falls back to streamChars estimate. */
     readonly tokenCount?: number;
+    /**
+     * True when {@link tokenCount} is a chars/4 estimate of this turn's output rather than
+     * provider usage. Defaults to true when no `tokenCount` is given (streamChars fallback).
+     */
+    readonly tokenCountEstimated?: boolean;
     readonly activityTitle: string;
     readonly activityKind?: string;
     readonly stalled?: boolean;
@@ -184,10 +190,14 @@ export function clearLegacyTranscriptStreamFooterHost(chatHost: HTMLElement): vo
 
 export function formatTranscriptLiveStatusMeta(snapshot: TranscriptLiveStatusSnapshot): string {
     const parts: string[] = [formatTranscriptStreamElapsed(snapshot.elapsedMs)];
-    const rawTokens = snapshot.tokenCount !== undefined
+    const rawTokens = Math.max(0, snapshot.tokenCount !== undefined
         ? snapshot.tokenCount
-        : Math.round(snapshot.streamChars / 4);
-    parts.push(formatTranscriptTokenCount(Math.max(0, rawTokens)) ?? '~0 tokens');
+        : Math.round(snapshot.streamChars / 4));
+    const estimated = snapshot.tokenCountEstimated ?? snapshot.tokenCount === undefined;
+    // An estimate only covers what this turn has streamed so far; label it as output so it is
+    // not read against the provider context total of the context ring.
+    parts.push((estimated ? formatTranscriptOutputTokenCount(rawTokens) : formatTranscriptTokenCount(rawTokens))
+        ?? '~0 tokens');
     return parts.join(' · ');
 }
 

@@ -157,18 +157,18 @@ export function ensurePinnedTranscriptLiveStatusExtracted(ctx: MobileProjectsTra
         const timedOut = options?.timedOut ?? ctx.resolveTranscriptStreamTimedOut(latestConv);
         const activity = resolveTranscriptStreamingActivityFromSegments(
             latestSegments as QaapAgentMessageSegmentDTO[],
-            { stalled, timedOut },
+            { stalled, timedOut, turnPhase: latestConv.turnPhase },
         );
         const streamChars = resolveTranscriptTurnStreamChars(latestConv.messages);
-        const nextTokens = resolveTranscriptLiveStatusTokenCount({
-            streamChars,
-            // Conversation usage may belong to the previous turn; estimate only current output.
-        });
+        // Conversation usage is only stamped when a turn settles, so during the turn it belongs
+        // to the previous one; show the current turn's output estimate (labelled as such).
+        const nextTokens = resolveTranscriptLiveStatusTokenCount({ streamChars });
         ctx.pinnedLiveStatusPeakTokens = Math.max(ctx.pinnedLiveStatusPeakTokens, nextTokens);
         syncTranscriptLiveStatusElement(footer, {
             elapsedMs: Date.now() - turnStart,
             streamChars,
             tokenCount: ctx.pinnedLiveStatusPeakTokens,
+            tokenCountEstimated: true,
             activityTitle: activity.title,
             activityKind: activity.kind,
             stalled,

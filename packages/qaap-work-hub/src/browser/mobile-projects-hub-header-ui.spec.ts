@@ -261,7 +261,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             new MobileProjectsHubHeaderUi(host).renderHeader();
 
             expect(host.headerProjectCluster.hidden).to.equal(false);
-            expect(host.headerProjectLabelEl.textContent).to.equal('Corrige aislamiento de pre');
+            expect(host.headerProjectLabelEl.textContent).to.equal('Mockup · Corrige aislamiento de pre');
             expect(host.headerProjectCluster.classList.contains('theia-mod-conversation-title')).to.equal(true);
             expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(false);
             expect(host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator')).to.equal(null);
@@ -406,6 +406,27 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
             expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
             expect(host.headerConversationsBtn.hidden).to.equal(true);
+        });
+
+        it('names the open task project in the header when its transcript sheet is open over another hub', () => {
+            const pinned = project('pinned', 'Pinned');
+            const open = project('open', 'Open task project');
+            const host = createRenderableHost({ hubView: 'review', transcriptOpenProject: open });
+            host.projects = [pinned, open];
+            host.resolveHomePinnedProject = () => pinned;
+            host.composerHeaderUi = {
+                resolveStickyComposerProject: () => pinned,
+            } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'];
+
+            const ui = new MobileProjectsHubHeaderUi(host);
+            expect(ui.resolveHeaderProject()?.id).to.equal('open');
+            ui.renderHeader();
+
+            expect(host.headerProjectCluster.hidden).to.equal(false);
+            expect(host.headerProjectLabelEl.textContent).to.equal('Open task project');
+            expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
+            expect(host.headerConversationsBtn.hidden).to.equal(true);
+            expect(host.titleEl.textContent).to.equal('Review');
         });
 
         it('keeps titles visible on non-Agents surfaces', () => {

@@ -11425,6 +11425,19 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   gap: 8px;
 }
 
+/* Unread agent reply: a small dot before the title, separate from the status glyph so a run that
+   finished fine keeps its real outcome icon instead of the "needs you" warning. */
+.theia-mobile-projects-task-row.theia-mod-unread-reply .theia-mobile-projects-task-title-row::before {
+  content: "";
+  flex: 0 0 auto;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  margin-right: -2px;
+  border-radius: 999px;
+  background: var(--theia-notificationsInfoIcon-foreground, var(--theia-focusBorder));
+}
+
 .theia-mobile-projects-task-title {
   font-size: 13.5px;
   font-weight: 600;

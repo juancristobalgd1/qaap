@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isTranscriptAgentThinkingPhase, isTranscriptSimpleQaTurn, isTranscriptStreamStalled, isTranscriptStreamTimedOut, isTranscriptComposerVisualIdle, isTranscriptThinkingGracePeriod, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer, TRANSCRIPT_THINKING_UI_GRACE_MS } from './qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamOutputTokens, formatTranscriptStreamTokens, isTranscriptAgentThinkingPhase, isTranscriptSimpleQaTurn, isTranscriptStreamStalled, isTranscriptStreamTimedOut, isTranscriptComposerVisualIdle, isTranscriptThinkingGracePeriod, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer, TRANSCRIPT_THINKING_UI_GRACE_MS } from './qaap-transcript-stream-status';
 
 describe('qaap-transcript-stream-status', () => {
     it('formats elapsed time across ranges', () => {
@@ -20,6 +20,8 @@ describe('qaap-transcript-stream-status', () => {
         expect(formatTranscriptStreamTokens(3_480)).to.equal('~870 tokens');
         expect(formatTranscriptStreamTokens(16_800)).to.equal('~4.2k tokens');
         expect(formatTranscriptStreamTokens(48_000)).to.equal('~12k tokens');
+        expect(formatTranscriptStreamOutputTokens(3_332)).to.equal('~833 output tokens');
+        expect(formatTranscriptStreamOutputTokens(0)).to.equal('~0 output tokens');
     });
 
     it('resolves the turn start from the last user message', () => {

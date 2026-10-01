@@ -320,6 +320,10 @@ export function resolveQaapGitPrVisualStatus(
     return undefined;
 }
 
+/**
+ * Resolve the status glyph of a task row. `unread` is accepted for call-site compatibility but no
+ * longer changes the glyph: unread state is rendered separately (see `isQaapAgentTaskUnreadReply`).
+ */
 export function resolveQaapAgentTaskVisualStatus(
     task: { readonly state: string },
     summary?: Pick<QaapAgentConversationSummaryDTO,
@@ -335,6 +339,7 @@ export function resolveQaapAgentTaskVisualStatus(
         | 'linesAdded'
         | 'linesRemoved'
         | 'lastTurnCancelled'>,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     unread = false,
 ): QaapAgentTaskVisualStatus {
     const state = task.state;
@@ -370,11 +375,10 @@ export function resolveQaapAgentTaskVisualStatus(
     if (state === 'cancelled' || summary?.lastTurnCancelled) {
         return STATUS_BY_ID['cancelled'];
     }
-    if (
-        state === 'needs-input'
-        || summary?.priority
-        || (unread && summary?.lastMessageRole === 'agent' && (summary.messageCount ?? 0) > 0)
-    ) {
+    // Only an explicit input wait or a priority flag needs the user. An unread reply of a run
+    // that finished fine keeps its real outcome glyph (completed / PR / changes …); rows convey
+    // "unread" separately with a dot, never with the warning triangle.
+    if (state === 'needs-input' || summary?.priority) {
         return STATUS_BY_ID['needs-you'];
     }
     if (summary) {
@@ -389,3 +393,10 @@ export function resolveQaapAgentTaskVisualStatus(
     return STATUS_BY_ID['idle'];
 }
 
+/** True when the latest message of a conversation is an agent reply the user has not read yet. */
+export function isQaapAgentTaskUnreadReply(
+    summary: Pick<QaapAgentConversationSummaryDTO, 'lastMessageRole' | 'messageCount'> | undefined,
+    unread: boolean,
+): boolean {
+    return unread && summary?.lastMessageRole === 'agent' && (summary.messageCount ?? 0) > 0;
+}

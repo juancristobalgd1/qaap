@@ -5,7 +5,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { formatConversationExecutionSessionMeta } from '@theia/qaap-composer/lib/common/qaap-conversation-composer-state';
 import { createAgentIdentityElement, createAgentTaskBadge, createAgentTaskVerificationBadge } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
@@ -33,6 +33,10 @@ export function patchWorkHubTaskRowExtracted(ctx: MobileProjectsProjectRowsUiCon
         if (row.dataset.qaapConversationId !== summary.id) {
             return false;
         }
+        row.classList.toggle(
+            'theia-mod-unread-reply',
+            isQaapAgentTaskUnreadReply(summary, ctx.host.conversationIndexUi.isConversationUnread(summary)),
+        );
         if (row.classList.contains('theia-mod-sidebar-compact')) {
             return ctx.patchSidebarCompactTaskRow(row, project, task, summary, options);
         }

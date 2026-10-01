@@ -4,7 +4,7 @@ import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobil
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { extractTranscriptDiffCard } from '../common/qaap-agent-transcript-segments';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldShowTranscriptStreamingActivity, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamOutputTokens, isAwaitingFirstTranscriptAgentOutput, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldShowTranscriptStreamingActivity, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     resolveTranscriptEffectiveStatus,
@@ -268,9 +268,14 @@ export function createTranscriptStreamMetaExtracted(ctx: MobileProjectsTranscrip
         const update = (): void => {
             const parts = [formatTranscriptStreamElapsed(Date.now() - turnStart)];
             // Keep the token meter visible for the whole stream (incl. ~0).
-            parts.push(formatTranscriptStreamTokens(resolveTranscriptTurnStreamChars(
+            // Output estimate of the in-flight turn, labelled so it is not confused with the
+            // provider context total shown by the context ring.
+            const outputTokens = formatTranscriptStreamOutputTokens(resolveTranscriptTurnStreamChars(
                 ctx.host.transcriptLastConv?.id === conv.id ? ctx.host.transcriptLastConv.messages : conv.messages,
-            )) ?? '~0 tokens');
+            ));
+            if (outputTokens) {
+                parts.push(outputTokens);
+            }
             meta.textContent = `· ${parts.join(' · ')}`;
         };
         update();
@@ -311,6 +316,7 @@ export function resolveTranscriptStreamingActivityExtracted(ctx: MobileProjectsT
             timedOut: options?.timedOut,
             stallTitle: ctx.resolveTranscriptStreamStallLabel(),
             localizeToolTitle: label => ctx.host.projectRowsUi.localizeActivityLabel(label),
+            turnPhase: conv.turnPhase,
         });
 }
 

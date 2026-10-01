@@ -302,11 +302,17 @@ export class MobileProjectsHubHeaderUi {
 
     syncHeaderProjectControl(showSessionsMenu: boolean): void {
         const project = this.resolveHeaderProject();
-        const compact = this.shouldUseCompactHeaderProjectControl();
-        const conversationTitle = this.resolveHeaderProjectConversationTitle();
+        // Outside the Agents sessions surface the control only names the open task's project
+        // (e.g. a transcript sheet over another hub), always in the compact folder + name form.
+        const showForOpenTask = !showSessionsMenu && !!this.host.transcriptOpenProject;
+        const compact = showForOpenTask || this.shouldUseCompactHeaderProjectControl();
+        const conversationTitle = compact ? '' : this.resolveHeaderProjectConversationTitle();
         const projectName = project?.name?.trim() ?? '';
-        const sectionTitle = compact ? projectName : (conversationTitle || projectName);
-        const showProject = showSessionsMenu && !!project && sectionTitle.length > 0;
+        // Never drop the project name: an open conversation reads "project · conversation title".
+        const sectionTitle = conversationTitle && projectName
+            ? nls.localize('qaap/mobileProjects/headerProjectConversation', '{0} · {1}', projectName, conversationTitle)
+            : (conversationTitle || projectName);
+        const showProject = (showSessionsMenu || showForOpenTask) && !!project && sectionTitle.length > 0;
         const showConversationSeparator = showProject && !compact && this.headerProjectShowsConversationTitle();
         this.host.headerProjectCluster.hidden = !showProject;
         this.host.headerProjectCluster.setAttribute('aria-hidden', showProject ? 'false' : 'true');
@@ -418,7 +424,9 @@ export class MobileProjectsHubHeaderUi {
     }
 
     resolveHeaderProject(): MobileProjectEntry | undefined {
-        if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject) {
+        // Any open task (inline or sheet, any status including idle) owns the header project,
+        // ahead of the shell / sticky composer / pinned fallbacks.
+        if (this.host.transcriptOpenProject) {
             return this.host.transcriptOpenProject;
         }
         if (this.host.agentsHubShellActive) {

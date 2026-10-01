@@ -737,13 +737,22 @@ export class MobileWorkHubSessionsSidebar {
         const activeConversationId = this.listHost.contains(document.activeElement)
             ? (document.activeElement?.closest<HTMLElement>('[data-qaap-conversation-id]')?.dataset.qaapConversationId)
             : undefined;
+        if (pullRequests) {
+            // The pull request UI keeps references to the container and results nodes it renders
+            // into and fills them asynchronously when GitHub answers, so it must always render
+            // into the live list host; a throwaway node would leave it painting detached DOM.
+            this.delegate.renderPullRequestList?.(this.listHost);
+            this.scrollHost.scrollTop = previousScrollTop;
+            this.updateProjectsHeading();
+            this.delegate.rememberSessionListFingerprint?.(this.listHost);
+            if (this.visible) {
+                this.ensureScrollTouchFallback();
+            }
+            return;
+        }
         const nextList = document.createElement('div');
         nextList.className = this.listHost.className;
-        if (pullRequests) {
-            this.delegate.renderPullRequestList?.(nextList);
-        } else {
-            this.delegate.renderSessionList(nextList);
-        }
+        this.delegate.renderSessionList(nextList);
         if (!options?.force && this.listHost.innerHTML === nextList.innerHTML) {
             this.delegate.rememberSessionListFingerprint?.(this.listHost);
             this.updateProjectsHeading();
