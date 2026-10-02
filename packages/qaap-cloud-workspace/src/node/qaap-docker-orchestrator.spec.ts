@@ -82,13 +82,13 @@ class FakeDockerode {
  * flow at the post-start inspect so no test depends on a real daemon.
  */
 class CreateCapturingDockerode {
-    readonly created: Array<{ HostConfig?: Record<string, unknown> }> = [];
+    readonly created: Array<{ HostConfig?: Record<string, unknown>; Env?: string[]; User?: string }> = [];
 
     getContainer(_name: string): unknown {
         return { inspect: async () => { throw Object.assign(new Error('no such container'), { statusCode: 404 }); } };
     }
 
-    async createContainer(options: { HostConfig?: Record<string, unknown> }): Promise<unknown> {
+    async createContainer(options: { HostConfig?: Record<string, unknown>; Env?: string[]; User?: string }): Promise<unknown> {
         this.created.push(options);
         return {
             start: async () => undefined,
@@ -601,11 +601,18 @@ describe('QaapDockerOrchestrator', () => {
             process.env.QAAP_TENANT_NETWORK_MODE = 'none';
             process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
             process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
             const fakeDocker = await captureCreate(orchestrator =>
                 orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice')));
 
             expect(fakeDocker.created).to.have.length(1);
+            expect(fakeDocker.created[0].User).to.equal('0:0');
             expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
+            expect(fakeDocker.created[0].HostConfig?.CapDrop).to.deep.equal(['ALL']);
+            expect(fakeDocker.created[0].HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
+            expect(fakeDocker.created[0].Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
         });
     });
 

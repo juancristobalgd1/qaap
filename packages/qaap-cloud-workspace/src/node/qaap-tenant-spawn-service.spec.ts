@@ -5,6 +5,8 @@
 
 import { expect } from 'chai';
 import { spawnSync, type ChildProcess } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
@@ -89,6 +91,16 @@ class TestOwnershipRepairService extends QaapTenantSpawnService {
     }
 }
 
+class TenantBackendAclTestService extends QaapTenantSpawnService {
+    readonly commands: Array<{ file: string; args: readonly string[] }> = [];
+
+    protected override isBackendRoot(): boolean { return true; }
+    protected override runTenantAccessCommand(file: string, args: readonly string[]): boolean {
+        this.commands.push({ file, args });
+        return true;
+    }
+}
+
 const reposRoot = resolveQaapReposRoot();
 const tenantCwd = path.join(reposRoot, 'users', 'alice', 'octocat', 'hello');
 
@@ -132,12 +144,77 @@ describe('QaapTenantSpawnService.prepareTenantIsolation', () => {
     });
 });
 
+describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
+
+    const envKeys = [
+        'QAAP_CLOUD_MODE', 'QAAP_TENANT_CONTAINER_ISOLATION', 'QAAP_TENANT_BACKEND_MODE',
+        'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_AGENT_UID_PER_USER', 'QAAP_REPOS_ROOT',
+    ] as const;
+    const saved: Partial<Record<typeof envKeys[number], string | undefined>> = {};
+
+    beforeEach(() => {
+        for (const key of envKeys) {
+            saved[key] = process.env[key];
+        }
+        process.env.QAAP_CLOUD_MODE = 'local';
+        process.env.QAAP_TENANT_CONTAINER_ISOLATION = '0';
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        process.env.QAAP_AGENT_UID_PER_USER = '0';
+    });
+
+    afterEach(() => {
+        for (const key of envKeys) {
+            const value = saved[key];
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    });
+
+    it('grants the non-root agent ACLs only inside its mounted login tree', () => {
+        const reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-tenant-agent-acl-'));
+        const tenantRoot = path.join(reposRoot, 'users', 'alice');
+        const cwd = path.join(tenantRoot, 'octocat', 'hello');
+        fs.mkdirSync(cwd, { recursive: true });
+        process.env.QAAP_REPOS_ROOT = reposRoot;
+        try {
+            const service = new TenantBackendAclTestService();
+            service.prepareTenantIsolation(cwd);
+            service.prepareTenantIsolation(cwd);
+
+            expect(service.commands).to.have.length(3);
+            expect(service.commands[0]).to.deep.equal({
+                file: 'setfacl',
+                args: ['-m', 'u:1001:rwx,d:u:1001:rwx', tenantRoot],
+            });
+            expect(service.commands[1]?.args).to.include.members(['-uid', '0', '-type', 'd']);
+            expect(service.commands[2]?.args).to.include.members(['-uid', '0', '-type', 'f']);
+            expect(service.commands.flatMap(command => command.args).join(' ')).not.to.include(path.join(reposRoot, 'users', 'bob'));
+        } finally {
+            fs.rmSync(reposRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses tenant agent execution when the image has no non-root uid configured', () => {
+        delete process.env.QAAP_AGENT_UID;
+        const service = new TenantBackendAclTestService();
+        expect(() => service.resolveSpawnIdentity(tenantCwd)).to.throw(/non-root QAAP_AGENT_UID/);
+    });
+});
+
 describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
 
     const originalMemoryLimit = process.env.QAAP_AGENT_MEMORY_LIMIT;
     const originalCpuLimit = process.env.QAAP_AGENT_CPU_LIMIT;
     const originalNodeEnv = process.env.NODE_ENV;
     const originalTenantBackendMode = process.env.QAAP_TENANT_BACKEND_MODE;
+    const originalAgentUid = process.env.QAAP_AGENT_UID;
+    const originalAgentGid = process.env.QAAP_AGENT_GID;
+    const originalReposRoot = process.env.QAAP_REPOS_ROOT;
     const originalStorageRoot = process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
     const originalConfigRoot = process.env.QAAP_TENANT_CONFIG_ROOT;
     afterEach(() => {
@@ -170,6 +247,13 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
             delete process.env.QAAP_TENANT_BACKEND_MODE;
         } else {
             process.env.QAAP_TENANT_BACKEND_MODE = originalTenantBackendMode;
+        }
+        for (const [key, value] of [['QAAP_AGENT_UID', originalAgentUid], ['QAAP_AGENT_GID', originalAgentGid], ['QAAP_REPOS_ROOT', originalReposRoot]] as const) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
         }
     });
 
@@ -226,12 +310,27 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         expect(result.stdout.trim()).to.equal('qaap-wrapped-ok');
     });
 
-    it('does not add a host uid or resource wrapper inside a backend-per-tenant container', () => {
+    it('drops agent tasks to the configured non-root uid inside a backend-per-tenant container', () => {
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
         const svc = new TestTenantSpawnService();
-        svc.identity = { uid: 20005, gid: 20005 };
+        svc.backendRoot = true;
         svc.linuxResourceLimits = true;
         svc.systemdRun = false;
+        svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
+        expect(svc.launches[0].file).to.equal('setpriv');
+        expect(svc.launches[0].args).to.deep.equal([
+            '--reuid', '1001', '--regid', '1001', '--clear-groups', '--', 'npm', 'run', 'dev',
+        ]);
+    });
+
+    it('keeps an already non-root tenant backend agent under the backend uid', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        const svc = new TestTenantSpawnService();
+        svc.backendRoot = false;
         svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
         expect(svc.launches[0].file).to.equal('npm');
         expect(svc.launches[0].args).to.deep.equal(['run', 'dev']);
@@ -469,8 +568,18 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const svc = new TestTenantSpawnService();
         const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin', HOME: '/home/theia' });
         expect(env.HOME).to.equal('/tmp/qaap-home');
-        expect(env.USER).to.equal('qaap-tenant');
-        expect(env.LOGNAME).to.equal('qaap-tenant');
+        expect(env.USER).to.equal('theia');
+        expect(env.LOGNAME).to.equal('theia');
+    });
+
+    it('uses the non-root agent identity after a rootless tenant backend drops uid', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        const svc = new TestTenantSpawnService();
+        svc.backendRoot = true;
+        const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin', HOME: '/home/theia' });
+        expect(env.HOME).to.equal('/tmp/qaap-home');
+        expect(env.USER).to.equal('qaap-agent');
+        expect(env.LOGNAME).to.equal('qaap-agent');
     });
 
     it('moves package caches and agent data of a tenant backend to its disk-backed config mount', () => {
@@ -480,7 +589,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const svc = new TestTenantSpawnService();
         const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin' });
         const root = '/home/theia/.qaap/.qaap-agent-storage';
-        // HOME (agent config/credentials) intentionally stays on the tmpfs.
+        // Agent config stays on the tenant's writable tmpfs; caches and data use its disk mount.
         expect(env.HOME).to.equal('/tmp/qaap-home');
         expect(env.XDG_CACHE_HOME).to.equal(`${root}/cache`);
         expect(env.XDG_DATA_HOME).to.equal(`${root}/data`);

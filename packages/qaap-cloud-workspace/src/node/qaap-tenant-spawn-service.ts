@@ -107,6 +107,8 @@ export class QaapTenantSpawnService {
         return /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
     }
 
+    protected readonly preparedTenantBackendAgentRoots = new Set<string>();
+
     /** Resolve the tenant segment (sanitized login) from a workspace or repo working directory. */
     resolveTenantSegment(cwd: string): string | undefined {
         const canonical = this.canonicalizeCwd(cwd);
@@ -350,7 +352,17 @@ export class QaapTenantSpawnService {
     resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
         cwd = this.canonicalizeCwd(cwd);
         if (this.isTenantBackendMode()) {
-            return {};
+            // The backend container is isolated to one login. If it already runs as a normal
+            // container uid, inherit that non-root identity; rootless Docker starts it as uid 0
+            // inside its user namespace, where the explicit agent uid drop is required.
+            if (!this.isBackendRoot()) {
+                return {};
+            }
+            const identity = resolveAgentSpawnIdentityFromEnv(process.env, this.isBackendRoot());
+            if (identity.uid === undefined || identity.uid === 0 || identity.warnNotRoot) {
+                throw new Error('Refusing to spawn a tenant agent without a configured non-root QAAP_AGENT_UID.');
+            }
+            return { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) };
         }
         const isRoot = this.isBackendRoot();
         const tenant = resolvePerTenantSpawnIdentity({
@@ -418,6 +430,10 @@ export class QaapTenantSpawnService {
             }
             return;
         }
+        if (this.isTenantBackendMode()) {
+            this.ensureTenantBackendAgentWorkspaceAccess(cwd);
+            return;
+        }
         this.ensureTenantRootIsolated(cwd);
         this.ensureTenantIdentityProvisioned(cwd);
         if (!this.isBackendRoot()) {
@@ -435,6 +451,46 @@ export class QaapTenantSpawnService {
         if (this.applyTenantWorkingTreeOwnership(ownershipRoot, identity.uid, gid)) {
             this.ownershipPreparedRoots.add(ownershipRoot);
         }
+    }
+
+    /**
+     * A tenant backend stays root inside its rootless user namespace so it can serve its private
+     * bind mounts. Agent children still need a real uid drop. Bind-mounted workspaces are owned by
+     * uid 0 in that namespace, so give only the configured agent uid an ACL on this tenant's root
+     * (including default ACLs for later files) before dropping to it. The backend container mounts
+     * exactly one login's tree; this never grants access to a sibling tenant.
+     */
+    protected ensureTenantBackendAgentWorkspaceAccess(cwd: string): void {
+        if (!this.isBackendRoot()) {
+            return;
+        }
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
+        if (!target || !fs.existsSync(target.root)) {
+            throw new Error(`Refusing to spawn a tenant agent outside its mounted workspace: "${cwd}".`);
+        }
+        const root = path.resolve(target.root);
+        if (this.preparedTenantBackendAgentRoots.has(root)) {
+            return;
+        }
+        const uid = this.resolveSpawnIdentity(cwd).uid;
+        if (uid === undefined) {
+            throw new Error('Refusing to prepare tenant workspace access without a non-root agent uid.');
+        }
+        if (!this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, root])) {
+            throw new Error(`Could not grant the non-root agent access to its tenant workspace ${root}; install the acl package.`);
+        }
+        if (!this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+'])) {
+            throw new Error(`Could not prepare tenant workspace directories for agent uid ${uid}; install find and acl.`);
+        }
+        if (!this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+'])) {
+            throw new Error(`Could not prepare tenant workspace files for agent uid ${uid}; install find and acl.`);
+        }
+        this.preparedTenantBackendAgentRoots.add(root);
+    }
+
+    protected runTenantAccessCommand(file: string, args: readonly string[]): boolean {
+        const result = spawnSync(file, [...args], { stdio: 'ignore', timeout: 120_000 });
+        return !result.error && result.status === 0;
     }
 
     /**
@@ -680,7 +736,13 @@ export class QaapTenantSpawnService {
      */
     tenantHomeEnvOverlay(cwd: string): QaapTenantHomeEnvOverlay {
         cwd = this.canonicalizeCwd(cwd);
-        if (this.isContainerIsolationEnabled() || this.isTenantBackendMode()) {
+        if (this.isTenantBackendMode()) {
+            // The tenant image has a read-only rootfs. /tmp is a private per-container tmpfs, so
+            // keep agent CLI configuration writable there while caches/data use the tenant mount.
+            const user = this.isBackendRoot() ? 'qaap-agent' : 'theia';
+            return { HOME: '/tmp/qaap-home', USER: user, LOGNAME: user, ...this.tenantAgentStorageEnv() };
+        }
+        if (this.isContainerIsolationEnabled()) {
             // The host-side per-uid HOME is not mounted into a tenant worker. Passing it through
             // docker exec would make the child point at a nonexistent/shared host path and could
             // accidentally bypass the worker's private HOME. The orchestrator seeds this HOME
@@ -737,10 +799,24 @@ export class QaapTenantSpawnService {
                 fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
             }
             fs.chmodSync(root, 0o700);
+            const uid = Number.parseInt(process.env.QAAP_AGENT_UID?.trim() ?? '', 10);
+            const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
+            if (Number.isInteger(uid) && uid > 0 && configRoot) {
+                this.grantTenantAgentStorageAccess(configRoot, root, uid);
+            }
             this.preparedAgentStorageRoots.add(root);
         } catch (error) {
             console.warn(`[qaap-security] could not prepare tenant agent storage ${root}: `
                 + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    protected grantTenantAgentStorageAccess(configRoot: string, root: string, uid: number): void {
+        const configAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, configRoot]);
+        const rootAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx`, root]);
+        const childAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]);
+        if (!configAcl || !rootAcl || !childAcl) {
+            throw new Error(`Could not grant agent uid ${uid} access to its private tenant cache at ${root}.`);
         }
     }
 
