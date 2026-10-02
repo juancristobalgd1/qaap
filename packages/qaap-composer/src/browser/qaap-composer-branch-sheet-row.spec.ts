@@ -120,6 +120,27 @@ describe('qaap-composer-branch-sheet-row', () => {
         );
     });
 
+    it('uses the same UI font for Branch and Run in picker lists', () => {
+        const cssPath = path.join(
+            __dirname,
+            '..',
+            '..',
+            '..',
+            'qaap-work-hub',
+            'src',
+            'browser',
+            'style',
+            'mobile-workbench-conversation.css',
+        );
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css).to.match(
+            /\.qaap-sticky-composer-sheet-popover\.theia-mod-branch-sheet \.theia-mobile-sticky-composer-sheet-branch-row \.theia-mobile-sticky-composer-sheet-option-label,\s*\.qaap-sticky-composer-sheet-popover\.theia-mod-branch-sheet \.theia-mobile-sticky-composer-sheet-list > \.theia-mobile-sticky-composer-sheet-option \.theia-mobile-sticky-composer-sheet-option-label,[\s\S]*?font-family:\s*var\(--theia-ui-font-family,\s*sans-serif\);[^}]*font-size:\s*14px;[^}]*line-height:\s*1\.4;/s,
+        );
+        expect(css).to.not.match(
+            /\.qaap-sticky-composer-sheet-popover\.theia-mod-branch-sheet \.theia-mobile-sticky-composer-sheet-option-label\s*\{[^}]*monospace/s,
+        );
+    });
+
     it('does not trigger branch select when opening the menu', () => {
         let selected = false;
         const row = createComposerBranchSheetRow({
