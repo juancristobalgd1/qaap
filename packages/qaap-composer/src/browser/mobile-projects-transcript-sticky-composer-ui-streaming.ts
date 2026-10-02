@@ -196,6 +196,9 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     // A fresh/idle conversation has no activity and no git snapshot, so the whole row stays gone.
     const hasFileActivity = ctx.hasComposerFileActivity(conv);
     const hasCommittableChanges = hasFileActivity && ctx.hasComposerCommittableChangesFromGit(summary);
+    const interactionModeId = ctx.host.transcriptComposerModeId
+        ?? conv?.interactionModeId
+        ?? summary.interactionModeId;
     const previewRuntime = ctx.resolveComposerPreviewRuntime(project);
     const previewCandidate = resolveComposerPreviewCandidate(previewRuntime);
     ctx.syncComposerPreviewAvailability(project, previewCandidate);
@@ -277,6 +280,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         hasFileActivity,
         previewInConversation: composerConversationInvolvesPreview(conv, window.location.origin),
         hasCommittableChanges,
+        hideApproveCommit: interactionModeId === 'plan',
         filesExpanded: ctx.peekTranscriptComposerChangedFilesExpanded(summary.id),
         onFilesExpandedChange: expanded => { ctx.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
         agentWorking,
@@ -520,4 +524,3 @@ export function buildGitActionMetadataExtracted(ctx: MobileProjectsTranscriptSti
         } : {}),
     };
 }
-
