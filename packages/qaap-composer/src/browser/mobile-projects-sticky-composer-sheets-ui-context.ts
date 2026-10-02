@@ -26,6 +26,7 @@ export type MobileProjectsStickyComposerSheetsUiContextMember =
     | 'capabilityPopoverCleanup'
     | 'capabilitySheetAnchor'
     | 'closeAllComposerSheets'
+    | 'notifyComposerSheetsClosed'
     | 'contextUsageAnchor'
     | 'contextUsagePopoverCleanup'
     | 'createAgentPickerNoResultsHint'

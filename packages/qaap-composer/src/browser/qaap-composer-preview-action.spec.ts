@@ -6,7 +6,10 @@
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
+    COMPOSER_PREVIEW_PROBE_BACKOFF_MAX_MS,
     composerConversationInvolvesPreview,
+    composerPreviewProbeBackoffMs,
+    isComposerPreviewStartupActive,
     openCurrentComposerPreview,
     resolveComposerFallbackPreviewUrls,
     resolveComposerPreviewCandidate,
@@ -16,6 +19,21 @@ import {
 } from './qaap-composer-preview-action';
 
 describe('qaap-composer-preview-action', () => {
+
+    it('backs off failed preview probes exponentially from 2 s to a 30 s cap', () => {
+        expect([1, 2, 3, 4, 5, 6, 12].map(composerPreviewProbeBackoffMs))
+            .to.deep.equal([2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
+        expect(composerPreviewProbeBackoffMs(50)).to.equal(COMPOSER_PREVIEW_PROBE_BACKOFF_MAX_MS);
+    });
+
+    it('keeps periodic preview probing only while a preview is starting or running', () => {
+        expect(isComposerPreviewStartupActive({ phase: 'idle' })).to.equal(false);
+        expect(isComposerPreviewStartupActive({ phase: 'ready-to-run' })).to.equal(false);
+        expect(isComposerPreviewStartupActive({ phase: 'starting' })).to.equal(true);
+        expect(isComposerPreviewStartupActive({ phase: 'running' })).to.equal(true);
+        expect(isComposerPreviewStartupActive({ phase: 'idle' }, { previewRequestActive: true })).to.equal(true);
+        expect(isComposerPreviewStartupActive({ phase: 'idle' }, { agentWorking: true })).to.equal(true);
+    });
     const ready: ComposerPreviewRuntime = {
         projectId: 'project-a',
         projectCwd: '/workspace/project-a',

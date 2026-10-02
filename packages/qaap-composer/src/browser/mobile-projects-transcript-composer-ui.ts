@@ -407,6 +407,7 @@ export class MobileProjectsTranscriptComposerUi {
         if (this.host.stickyComposerWorkspaceSheet) {
             this.host.stickyComposerWorkspaceUi.closeComposerWorkspaceSheet();
         }
+        this.host.stickyComposerSheetsUi.notifyComposerSheetsClosed?.();
     }
 
     closeAllComposerSheets(): void {

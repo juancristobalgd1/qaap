@@ -61,6 +61,7 @@ export function closeStickyComposerSheetsExtracted(ctx: MobileProjectsStickyComp
         ctx.host.stickyComposerWorkspaceUi.closeComposerWorkspaceSheet();
         ctx.teardownContextUsagePresentation();
         ctx.teardownCapabilityPresentation();
+        ctx.notifyComposerSheetsClosed();
 }
 
 export function teardownCapabilityPresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {

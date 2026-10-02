@@ -143,6 +143,11 @@ export class MobileProjectsStickyComposerSheetsUi {
         this.host.closeTranscriptComposerSheets();
     }
 
+    /** Replays composer rebuilds that were deferred while a sheet was open. */
+    notifyComposerSheetsClosed(): void {
+        this.host.stickyComposerRenderUi?.scheduleDeferredComposerRenderFlush?.();
+    }
+
     openStickyComposerContextUsageSheet(refreshBreakdown: () => ContextUsageBreakdownView, transcriptOverlay?: boolean, anchor?: HTMLElement,): void {
         openStickyComposerContextUsageSheetExtracted(this, refreshBreakdown, transcriptOverlay, anchor);
     }

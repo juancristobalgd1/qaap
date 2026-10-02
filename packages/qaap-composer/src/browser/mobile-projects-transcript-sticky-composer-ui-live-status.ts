@@ -304,6 +304,11 @@ export function remountTranscriptStickyComposerExtracted(ctx: MobileProjectsTran
     if (!host?.isConnected || !project || !summary) {
         return;
     }
+    // A remount detaches the anchor of an open Mode/Agent/Approval picker, which then dismisses
+    // itself. Background remounts wait until the picker closes (user picks or clicks outside).
+    if (ctx.host.stickyComposerRenderUi?.deferComposerRenderWhileSheetOpen?.('remount')) {
+        return;
+    }
     ctx.host.transcriptComposerMountKey = undefined;
     ctx.mountTranscriptStickyComposer(host, project, summary, chatHost ?? host);
 }

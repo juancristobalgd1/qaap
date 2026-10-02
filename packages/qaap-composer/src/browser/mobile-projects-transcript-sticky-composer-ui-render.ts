@@ -31,12 +31,15 @@ import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-s
 import { extractTranscriptPreviewId } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-content-ui';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import {
+    composerPreviewProbeBackoffMs,
+    isComposerPreviewStartupActive,
     openCurrentComposerPreview,
     resolveComposerFallbackPreviewUrls,
     resolveComposerPreviewCandidate,
     resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
+import { isTranscriptDocumentVisible } from '@theia/qaap-transcript/lib/common/qaap-transcript-document-visibility';
 import { COMPOSER_PREVIEW_HEALTH_INTERVAL_MS } from './mobile-projects-transcript-sticky-composer-ui';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
@@ -95,36 +98,96 @@ export function clearComposerPreviewHealthTimerExtracted(ctx: MobileProjectsTran
         }
 }
 
-export function scheduleComposerPreviewHealthCheckExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, projectId: string): void {
+export function scheduleComposerPreviewHealthCheckExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, projectId: string,
+        delayMs: number = COMPOSER_PREVIEW_HEALTH_INTERVAL_MS): void {
         ctx.clearComposerPreviewHealthTimer();
         ctx.composerPreviewHealthTimer = window.setTimeout(() => {
             ctx.composerPreviewHealthTimer = undefined;
-            if (ctx.host.transcriptComposerProject?.id !== projectId
-                || !ctx.host.transcriptComposerHost?.isConnected) {
+            ctx.runComposerPreviewHealthCheck(projectId);
+        }, delayMs);
+}
+
+/**
+ * Periodic tick: re-verifies the candidate only. It deliberately does NOT re-render the composer
+ * activity stack — the probe callback refreshes it when the verified preview actually changed, so an
+ * idle Work Hub no longer churns the composer DOM (which dismissed open Mode/Agent pickers).
+ */
+export function runComposerPreviewHealthCheckExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, projectId: string): void {
+        const project = ctx.host.transcriptComposerProject;
+        if (project?.id !== projectId || !ctx.host.transcriptComposerHost?.isConnected) {
+            return;
+        }
+        if (!isTranscriptDocumentVisible()) {
+            ctx.resumeComposerPreviewProbeWhenVisible(projectId);
+            return;
+        }
+        ctx.composerPreviewLastCheckedAt = 0;
+        const candidate = resolveComposerPreviewCandidate(ctx.resolveComposerPreviewRuntime(project));
+        const hadVerified = ctx.verifiedComposerPreview?.projectId === projectId;
+        ctx.syncComposerPreviewAvailability(project, candidate);
+        if (!candidate && hadVerified) {
+            ctx.refreshComposerActivityStack();
+        }
+}
+
+/** Hidden tab: no probes; one `visibilitychange` listener resumes the health check when shown. */
+export function resumeComposerPreviewProbeWhenVisibleExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, projectId: string): void {
+        ctx.clearComposerPreviewHealthTimer();
+        if (ctx.composerPreviewVisibilityDispose || typeof document === 'undefined') {
+            return;
+        }
+        const onVisibilityChange = (): void => {
+            if (!isTranscriptDocumentVisible()) {
                 return;
             }
-            ctx.composerPreviewLastCheckedAt = 0;
-            ctx.refreshComposerActivityStack();
-        }, COMPOSER_PREVIEW_HEALTH_INTERVAL_MS);
+            ctx.composerPreviewVisibilityDispose?.();
+            ctx.runComposerPreviewHealthCheck(projectId);
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        ctx.composerPreviewVisibilityDispose = () => {
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            ctx.composerPreviewVisibilityDispose = undefined;
+        };
 }
 
 export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry, candidate: string | undefined): void {
         if (!candidate) {
             ctx.clearComposerPreviewHealthTimer();
+            ctx.composerPreviewVisibilityDispose?.();
+            ctx.composerPreviewProbeCandidate = undefined;
+            ctx.composerPreviewProbeFailures = 0;
+            ctx.composerPreviewNextProbeAt = 0;
             if (ctx.verifiedComposerPreview?.projectId === project.id) {
                 ctx.verifiedComposerPreview = undefined;
             }
             return;
+        }
+        if (ctx.composerPreviewProbeCandidate !== candidate) {
+            // A new candidate (preview started, project switched) is verified right away.
+            ctx.composerPreviewProbeCandidate = candidate;
+            ctx.composerPreviewProbeFailures = 0;
+            ctx.composerPreviewNextProbeAt = 0;
         }
         const runtime = ctx.resolveComposerPreviewRuntime(project);
         const verified = ctx.verifiedComposerPreview?.projectId === project.id
             ? resolveVerifiedComposerPreviewUrl(runtime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
             : undefined;
         if (verified && Date.now() - ctx.composerPreviewLastCheckedAt < COMPOSER_PREVIEW_HEALTH_INTERVAL_MS) {
-            ctx.scheduleComposerPreviewHealthCheck(project.id);
+            if (ctx.composerPreviewHealthTimer === undefined) {
+                ctx.scheduleComposerPreviewHealthCheck(project.id);
+            }
             return;
         }
         if (ctx.composerPreviewProbeInFlight) {
+            return;
+        }
+        // Failed-probe backoff gates EVERY caller: activity refreshes, mounts and SSE ticks all land
+        // here, and previously each re-probed an unverified (dead) port immediately.
+        if (Date.now() < ctx.composerPreviewNextProbeAt) {
+            return;
+        }
+        if (!isTranscriptDocumentVisible()) {
+            ctx.resumeComposerPreviewProbeWhenVisible(project.id);
             return;
         }
         // Identity preview URLs (`/qaap-preview/<id>/`) carry no port — verify them through the
@@ -145,13 +208,14 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
             const currentProject = ctx.host.transcriptComposerProject;
             const stillCurrent = currentProject?.id === project.id
                 && resolveComposerPreviewCandidate(ctx.resolveComposerPreviewRuntime(currentProject));
+            let adopted = false;
             if (!probe.ready && stillCurrent) {
                 // The candidate claim may have been superseded by a newer run (retry, second
                 // tab, backend restart) — its identity probe then 403s although the project has
                 // a live preview. Adopting the successor refreshes `bootstrap.previewUrl`, so
                 // the re-sync below verifies the live claim instead of dropping the pill.
-                const adopted = await ctx.host.projectBootstrap?.reconcileSupersededPreviewClaim()
-                    .catch(() => false);
+                adopted = await ctx.host.projectBootstrap?.reconcileSupersededPreviewClaim()
+                    .catch(() => false) === true;
                 if (adopted && ctx.host.transcriptComposerProject?.id === project.id) {
                     ctx.composerPreviewLastCheckedAt = 0;
                     window.setTimeout(() => {
@@ -167,9 +231,32 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
             const changed = ctx.verifiedComposerPreview?.projectId !== next?.projectId
                 || ctx.verifiedComposerPreview?.url !== next?.url;
             ctx.verifiedComposerPreview = next;
-            if (stillCurrent) {
+            if (ctx.composerPreviewProbeCandidate === candidate) {
+                if (probe.ready || adopted) {
+                    // An adopted successor claim is re-verified immediately by the refresh above.
+                    ctx.composerPreviewProbeFailures = 0;
+                    ctx.composerPreviewNextProbeAt = 0;
+                } else {
+                    ctx.composerPreviewProbeFailures += 1;
+                    ctx.composerPreviewNextProbeAt = Date.now() + composerPreviewProbeBackoffMs(ctx.composerPreviewProbeFailures);
+                }
+            }
+            const latestProject = ctx.host.transcriptComposerProject;
+            const startupActive = !!latestProject && latestProject.id === project.id && isComposerPreviewStartupActive(
+                ctx.resolveComposerPreviewRuntime(latestProject),
+                {
+                    previewRequestActive: !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending,
+                    agentWorking: ctx.isTranscriptStickyComposerAgentWorking(),
+                },
+            );
+            if (stillCurrent && probe.ready) {
                 ctx.scheduleComposerPreviewHealthCheck(project.id);
+            } else if (stillCurrent && startupActive) {
+                // A preview is coming up: keep checking, backing off 2 s → 30 s while it is not ready.
+                ctx.scheduleComposerPreviewHealthCheck(project.id, composerPreviewProbeBackoffMs(ctx.composerPreviewProbeFailures));
             } else {
+                // Nothing is starting (e.g. a port announced in an old turn): no periodic probe.
+                // Later activity refreshes re-verify, still gated by the backoff above.
                 ctx.clearComposerPreviewHealthTimer();
             }
             if (changed) {

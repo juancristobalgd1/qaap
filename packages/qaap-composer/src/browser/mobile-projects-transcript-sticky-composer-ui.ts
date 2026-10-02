@@ -66,7 +66,7 @@ import {
 } from './qaap-composer-preview-action';
 import { applyTranscriptComposerPrefsExtracted, applyTranscriptComposerPrefsFromConversationExtracted, ensureTranscriptComposerPrefsForMountExtracted, flushTranscriptComposerDraftExtracted, flushTranscriptComposerPrefsExtracted, hydrateTranscriptComposerPrefsExtracted, isTranscriptStickyComposerAgentWorkingExtracted, mirrorFollowUpToServerQueueExtracted, mountTranscriptStickyComposerExtracted, persistTranscriptComposerPrefsExtracted, queuePeerRunMessageExtracted, resetToProjectComposerDefaultsExtracted, schedulePersistTranscriptComposerDraftExtracted, schedulePersistTranscriptComposerPrefsExtracted, startPeerRunOrQueueExtracted, stopOpenComposerAgentLikeComposerStopExtracted, submitQueuedFollowUpEntryExtracted } from './mobile-projects-transcript-sticky-composer-ui-activity';
 import { remountTranscriptStickyComposerExtracted, submitTranscriptComposerDraftExtracted } from './mobile-projects-transcript-sticky-composer-ui-live-status';
-import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtracted, fetchWorkspaceChangedFilesExtracted, hasComposerAgentActivityExtracted, hasComposerCommittableChangesFromGitExtracted, hasComposerFileActivityExtracted, onTranscriptComposerAttachExtracted, openComposerPreviewExtracted, resolveChangedFilesStatsExtracted, resolveComposerActivityFilesForStackExtracted, resolveComposerPreviewRuntimeExtracted, resolveComposerUploadTargetDirExtracted, resolveComposerWorkspaceRootExtracted, resolveTranscriptContextUsageTargetExtracted, resolveTranscriptTheiaChatModelExtracted, scheduleComposerPreviewHealthCheckExtracted, scheduleIdleComposerFocusRetentionExtracted, shouldRefetchComposerGitSnapshotExtracted, syncComposerPreviewAvailabilityExtracted, syncTranscriptComposerQuickActionsVisibilityExtracted } from './mobile-projects-transcript-sticky-composer-ui-render';
+import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtracted, fetchWorkspaceChangedFilesExtracted, hasComposerAgentActivityExtracted, hasComposerCommittableChangesFromGitExtracted, hasComposerFileActivityExtracted, onTranscriptComposerAttachExtracted, openComposerPreviewExtracted, resolveChangedFilesStatsExtracted, resolveComposerActivityFilesForStackExtracted, resolveComposerPreviewRuntimeExtracted, resolveComposerUploadTargetDirExtracted, resolveComposerWorkspaceRootExtracted, resolveTranscriptContextUsageTargetExtracted, resolveTranscriptTheiaChatModelExtracted, resumeComposerPreviewProbeWhenVisibleExtracted, runComposerPreviewHealthCheckExtracted, scheduleComposerPreviewHealthCheckExtracted,scheduleIdleComposerFocusRetentionExtracted, shouldRefetchComposerGitSnapshotExtracted, syncComposerPreviewAvailabilityExtracted, syncTranscriptComposerQuickActionsVisibilityExtracted } from './mobile-projects-transcript-sticky-composer-ui-render';
 import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptionsExtracted, keepAllComposerChangedFilesExtracted, launchComposerDevPreviewExtracted, refreshComposerActivityGitFilesIfNeededExtracted, runComposerCommitActionExtracted, runComposerGitFileActionExtracted, syncComposerGitSnapshotExtracted, undoAllComposerChangedFilesExtracted } from './mobile-projects-transcript-sticky-composer-ui-streaming';
 import { appendRunningGitActionToTranscriptExtracted, applyGitActionTranscriptConversationExtracted, buildComposerActivityFingerprintExtracted, dispatchQueuedFollowUpInParallelExtracted, flushTranscriptFollowUpQueueExtracted, interruptQueuedFollowUpExtracted, isTranscriptFollowUpReadyExtracted, markPendingGitActionFailedExtracted, recordComposerGitActionInTranscriptExtracted, refreshComposerActivityStackExtracted, refreshTranscriptComposerActivityIfNeededExtracted, sendQueuedFollowUpNowExtracted, startIsolatedRunIfRequestedExtracted, syncComposerActivityFingerprintExtracted } from './mobile-projects-transcript-sticky-composer-ui-timeline';
 import { mountTranscriptStickyComposerAsyncExtracted } from './mobile-projects-transcript-sticky-composer-ui-tool-pills';
@@ -219,6 +219,18 @@ export class MobileProjectsTranscriptStickyComposerUi {
     public composerPreviewLastCheckedAt = 0;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public composerPreviewHealthTimer: number | undefined;
+    /** Candidate the failure backoff below belongs to; a new candidate resets it. */
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerPreviewProbeCandidate: string | undefined;
+    /** Consecutive not-ready probes of {@link composerPreviewProbeCandidate}. */
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerPreviewProbeFailures = 0;
+    /** No probe before this epoch-ms (exponential backoff after failures). */
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerPreviewNextProbeAt = 0;
+    /** Pending one-shot `visibilitychange` listener that resumes probing when the tab is shown. */
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerPreviewVisibilityDispose: (() => void) | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public pendingGitActionMessageId: string | undefined;
 
@@ -268,8 +280,18 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
-    public scheduleComposerPreviewHealthCheck(projectId: string): void {
-        scheduleComposerPreviewHealthCheckExtracted(this, projectId);
+    public scheduleComposerPreviewHealthCheck(projectId: string, delayMs?: number): void {
+        scheduleComposerPreviewHealthCheckExtracted(this, projectId, delayMs);
+    }
+
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public runComposerPreviewHealthCheck(projectId: string): void {
+        runComposerPreviewHealthCheckExtracted(this, projectId);
+    }
+
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resumeComposerPreviewProbeWhenVisible(projectId: string): void {
+        resumeComposerPreviewProbeWhenVisibleExtracted(this, projectId);
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */

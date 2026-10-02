@@ -29,6 +29,34 @@ export interface ComposerPreviewRuntime {
     readonly fallbackPreviewUrls?: readonly string[];
 }
 
+/** First retry after a failed composer preview probe; doubles per consecutive failure. */
+export const COMPOSER_PREVIEW_PROBE_BACKOFF_BASE_MS = 2_000;
+/** Ceiling for the failed-probe backoff. */
+export const COMPOSER_PREVIEW_PROBE_BACKOFF_MAX_MS = 30_000;
+
+/** Delay before re-probing after `failures` consecutive not-ready answers (2 s → 4 s → … → 30 s). */
+export function composerPreviewProbeBackoffMs(failures: number): number {
+    const exponent = Math.max(0, failures - 1);
+    return Math.min(COMPOSER_PREVIEW_PROBE_BACKOFF_BASE_MS * 2 ** exponent, COMPOSER_PREVIEW_PROBE_BACKOFF_MAX_MS);
+}
+
+/**
+ * A preview is actually coming up (or claimed to be up) for this project: the Run flow is starting
+ * or running, a preview request is in flight, or the agent is mid-turn (it may start a dev server
+ * from its own shell). Only then does an unverified candidate keep a periodic probe; otherwise a
+ * historical URL (e.g. `localhost:5173` announced in an old turn) is verified once per event and the
+ * composer stops polling `/qaap-dev/api/probe/<port>`.
+ */
+export function isComposerPreviewStartupActive(
+    runtime: Pick<ComposerPreviewRuntime, 'phase'>,
+    options: { readonly previewRequestActive?: boolean; readonly agentWorking?: boolean } = {},
+): boolean {
+    return runtime.phase === 'starting'
+        || runtime.phase === 'running'
+        || options.previewRequestActive === true
+        || options.agentWorking === true;
+}
+
 /** What the composer must probe to verify a preview URL: a process identity or a legacy port. */
 export interface ComposerPreviewTarget {
     readonly previewId?: string;

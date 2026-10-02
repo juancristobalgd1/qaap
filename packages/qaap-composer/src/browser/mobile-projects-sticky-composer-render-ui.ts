@@ -88,8 +88,14 @@ import {
 } from '../common/qaap-sticky-composer-model-capability';
 import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
 import { parkWorkingControlFromAncestor } from './qaap-sticky-composer-working-agents-popover';
+import {
+    ComposerSheetRenderDeferral,
+    isComposerSheetOpen,
+    type ComposerRenderKind,
+    type ComposerSheetSlots,
+} from './qaap-composer-sheet-render-deferral';
 
-export interface MobileProjectsStickyComposerRenderHost {
+export interface MobileProjectsStickyComposerRenderHost extends ComposerSheetSlots {
     root: HTMLElement;
     stickyComposerHost: HTMLElement;
     stickyComposerContextUsageDispose: Disposable;
@@ -158,6 +164,31 @@ export interface MobileProjectsStickyComposerRenderHost {
 
 export class MobileProjectsStickyComposerRenderUi {
     constructor(protected readonly host: MobileProjectsStickyComposerRenderHost) { }
+
+    /** Background rebuilds wait while a composer picker is open (see {@link ComposerSheetRenderDeferral}). */
+    protected readonly sheetRenderDeferral = new ComposerSheetRenderDeferral(
+        () => isComposerSheetOpen(this.host),
+        kind => {
+            if (kind === 'remount') {
+                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+            } else {
+                this.renderStickyComposer();
+            }
+        },
+    );
+
+    /**
+     * `true` when a composer sheet/popover is open: the rebuild is queued and replayed after the
+     * sheet closes, so a poll or status tick cannot detach the picker's anchor and dismiss it.
+     */
+    deferComposerRenderWhileSheetOpen(kind: ComposerRenderKind): boolean {
+        return this.sheetRenderDeferral.defer(kind);
+    }
+
+    /** Replays rebuilds deferred while a composer sheet was open. Call after closing sheets. */
+    scheduleDeferredComposerRenderFlush(): void {
+        this.sheetRenderDeferral.scheduleFlush();
+    }
 
     /** Tracks whether the real (non-placeholder) home-repos composer is currently mounted, to drive autofocus-on-ready. */
     protected reposComposerMounted = false;
@@ -308,6 +339,9 @@ export class MobileProjectsStickyComposerRenderUi {
     }
 
     renderStickyComposer(): void {
+        if (this.deferComposerRenderWhileSheetOpen('render')) {
+            return;
+        }
         this.clearStickyComposerFocusRetention();
         this.host.stickyComposerContextUsageDispose.dispose();
         const filtered = this.host.hubQueryUi.applySearch(this.host.hubQueryUi.applyFilter(this.host.projects, this.host.filter));
