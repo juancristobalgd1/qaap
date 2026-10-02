@@ -3,9 +3,17 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// The column UI pulls in Theia browser modules that touch the DOM while loading; jsdom is removed
+// again after the imports so no suite depends on another spec file leaving it behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import { syncStickyComposerRunPermissions } from './mobile-projects-sticky-composer-column-ui';
+
+disableImportJSDOM();
 
 describe('sticky composer running-turn permissions', () => {
 
