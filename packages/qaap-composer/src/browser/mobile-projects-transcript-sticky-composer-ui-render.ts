@@ -96,6 +96,9 @@ export function clearComposerPreviewHealthTimerExtracted(ctx: MobileProjectsTran
             window.clearTimeout(ctx.composerPreviewHealthTimer);
             ctx.composerPreviewHealthTimer = undefined;
         }
+        // A pending resume-on-visible listener is part of the same schedule: drop it with the timer
+        // so a project switch or teardown never leaves one bound to a stale project id.
+        ctx.composerPreviewVisibilityDispose?.();
 }
 
 export function scheduleComposerPreviewHealthCheckExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, projectId: string,

@@ -335,11 +335,45 @@ export function resolveOpencodePermissionEnv(options: {
     if (resolveApprovalAgentId(options.command, options.agentId) !== 'opencode') {
         return undefined;
     }
-    if (/(?:^|\s)--(?:dangerously-skip-permissions|auto|yolo)(?=\s|$)/.test(options.command)) {
+    // Only the CLI's own arguments count: the shell-quoted prompt may legitimately contain
+    // ` --yolo ` (pasted text, issue bodies) and must never ungate an explicitly chosen policy.
+    if (/(?:^|\s)--(?:dangerously-skip-permissions|auto|yolo)(?=\s|$)/.test(unquotedShellText(options.command))) {
         return undefined;
     }
     const gated = { bash: 'ask', webfetch: 'ask', websearch: 'ask' };
     return JSON.stringify(options.autoApprove === false ? { edit: 'ask', ...gated } : gated);
+}
+
+/**
+ * The command text outside POSIX quotes, with every quoted segment (and backslash-escaped
+ * character) replaced by a single space. A scanner rather than a regex because `shellQuote`
+ * escapes `'` as `'\''`, which a naive `'[^']*'` pass would split so prompt text leaks outside.
+ */
+function unquotedShellText(command: string): string {
+    let result = '';
+    let index = 0;
+    while (index < command.length) {
+        const char = command[index];
+        if (char === '\\') {
+            result += ' ';
+            index += 2;
+        } else if (char === '\'') {
+            const end = command.indexOf('\'', index + 1);
+            result += ' ';
+            index = end < 0 ? command.length : end + 1;
+        } else if (char === '"') {
+            index++;
+            while (index < command.length && command[index] !== '"') {
+                index += command[index] === '\\' ? 2 : 1;
+            }
+            result += ' ';
+            index++;
+        } else {
+            result += char;
+            index++;
+        }
+    }
+    return result;
 }
 
 function stripNonInteractiveApprovalFlags(command: string, agentId: string | undefined): string {
