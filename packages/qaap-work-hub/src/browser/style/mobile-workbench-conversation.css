@@ -3323,23 +3323,23 @@ body>.theia-mobile-transcript-files-menu {
   font-size: 12px;
 }
 
-/* Desktop: the parallel-runs sheet is a centered modal instead of a full-width top sheet. */
-@media (min-width: 768px) {
-  .theia-mobile-agent-log.theia-mobile-parallel-root {
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    box-sizing: border-box;
-  }
+.theia-mobile-agent-log.theia-mobile-parallel-root {
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: max(16px, env(safe-area-inset-top, 0px))
+    max(12px, env(safe-area-inset-right, 0px))
+    max(16px, env(safe-area-inset-bottom, 0px))
+    max(12px, env(safe-area-inset-left, 0px));
+}
 
-  .theia-mobile-parallel-root .theia-mobile-agent-log-sheet.theia-mod-parallel {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 640px;
-    max-height: min(88vh, 720px);
-    border: 1px solid var(--theia-panel-border);
-    border-radius: 12px;
-  }
+.theia-mobile-parallel-root .theia-mobile-agent-log-sheet.theia-mod-parallel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 640px;
+  max-height: min(88vh, 720px);
+  border: 1px solid var(--theia-panel-border);
+  border-radius: 12px;
 }
 
 .theia-qaap-agent-chip-group {
