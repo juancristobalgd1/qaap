@@ -202,6 +202,20 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         messageCount: 3,
     });
 
+    it('optimistic submit conversation keeps the approval policy so composer hydration cannot reset it', () => {
+        const ui = new MobileProjectsAgentsHubInlineUi(createHost());
+        const conv = ui.buildOptimisticSubmitConversation({
+            ...openSummary(),
+            agentId: 'opencode',
+            approvalPolicyId: 'request-approval',
+            autoApprove: false,
+            interactionModeId: 'build',
+        }, 'run lint', 'opencode');
+        expect(conv.approvalPolicyId).to.equal('request-approval');
+        expect(conv.autoApprove).to.equal(false);
+        expect(conv.interactionModeId).to.equal('build');
+    });
+
     it('skips full hub list rebuild when transcript overlay is open on any hub view', () => {
         const ui = new MobileProjectsAgentsHubInlineUi(createHost({
             hubView: 'review',

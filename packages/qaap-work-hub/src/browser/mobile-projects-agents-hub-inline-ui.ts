@@ -507,9 +507,18 @@ export class MobileProjectsAgentsHubInlineUi {
         contentOverride?: string,
     ): QaapAgentConversationDTO {
         const trimmed = outbound.trim();
-        const cachedMessages = this.host.transcriptLastConv?.id === summary.id
-            ? this.host.transcriptLastConv.messages
-            : [];
+        const cachedConv = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : undefined;
+        const cachedMessages = cachedConv?.messages ?? [];
+        // Carry the durable composer prefs: the transcript composer hydrates from this optimistic
+        // document, and dropping `approvalPolicyId` here re-showed "Approve for me" (and sent
+        // follow-ups with it) right after a "Request approval" submit.
+        const approvalPolicyId = summary.approvalPolicyId ?? cachedConv?.approvalPolicyId;
+        const autoApprove = summary.autoApprove ?? cachedConv?.autoApprove;
+        const agentModel = summary.agentModel ?? summary.qaiqModel ?? cachedConv?.agentModel ?? cachedConv?.qaiqModel;
+        const interactionModeId = summary.interactionModeId ?? cachedConv?.interactionModeId;
+        const toolApprovalRules = cachedConv?.toolApprovalRules;
         const pendingUserMessage = {
             id: `pending-user-${Date.now()}`,
             role: 'user' as const,
@@ -528,6 +537,11 @@ export class MobileProjectsAgentsHubInlineUi {
             createdAt: summary.createdAt ?? Date.now(),
             updatedAt: Date.now(),
             messages: appendOptimisticPendingUserMessage(cachedMessages, pendingUserMessage),
+            ...(approvalPolicyId ? { approvalPolicyId } : {}),
+            ...(autoApprove !== undefined ? { autoApprove } : {}),
+            ...(agentModel ? { agentModel } : {}),
+            ...(interactionModeId ? { interactionModeId } : {}),
+            ...(toolApprovalRules ? { toolApprovalRules } : {}),
         };
     }
 

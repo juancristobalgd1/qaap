@@ -13,15 +13,16 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapUpdateConversationBody } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     DEFAULT_AGENT_APPROVAL_POLICY_ID,
+    readStoredAgentApprovalPolicy,
     reconcileAgentApprovalPolicyId,
-    writeStoredAgentApprovalPolicy,
+    resolveAgentApprovalPolicyOption,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     reconcileAgentToolApprovalRules,
-    writeStoredAgentToolApprovalRules,
     type QaapAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
@@ -54,9 +55,15 @@ function isAgentApprovalPolicyId(value: string | undefined): value is QaapAgentA
     return value === 'request-approval' || value === 'approve-for-me' || value === 'full-access';
 }
 
-/** Derive the composer approval preset from durable conversation fields. */
+/**
+ * Derive the composer approval preset from durable conversation fields.
+ *
+ * A conversation (or an optimistic/partial summary of one) that carries no explicit preset must
+ * NOT be read as "Approve for me": that silently downgraded a "Request approval" task right after
+ * submit. Fall back to the project's stored choice, and only then to the global default.
+ */
 export function resolveApprovalPolicyFromConversation(
-    conv: Pick<QaapAgentConversationDTO, 'approvalPolicyId' | 'autoApprove'>,
+    conv: { readonly approvalPolicyId?: string; readonly autoApprove?: boolean; readonly cwd?: string },
 ): QaapAgentApprovalPolicyId {
     if (conv.approvalPolicyId && isAgentApprovalPolicyId(conv.approvalPolicyId)) {
         return conv.approvalPolicyId;
@@ -64,7 +71,22 @@ export function resolveApprovalPolicyFromConversation(
     if (conv.autoApprove === false) {
         return 'request-approval';
     }
-    return DEFAULT_AGENT_APPROVAL_POLICY_ID;
+    return readStoredAgentApprovalPolicy(conv.cwd) ?? DEFAULT_AGENT_APPROVAL_POLICY_ID;
+}
+
+/**
+ * Read-only "permissions in effect" line shown while a turn runs (the Mode / Approval / Until done
+ * row is hidden then), e.g. `Build · Request approval`.
+ */
+export function formatComposerRunPermissionsLabel(
+    modeLabel: string | undefined,
+    approvalPolicyId: QaapAgentApprovalPolicyId,
+): string {
+    const policyLabel = resolveAgentApprovalPolicyOption(approvalPolicyId).label;
+    const mode = modeLabel?.trim();
+    return mode
+        ? nls.localize('qaap/mobileProjects/runPermissionsLine', '{0} · {1}', mode, policyLabel)
+        : policyLabel;
 }
 
 export function extractConversationComposerPrefs(conv: QaapAgentConversationDTO): QaapConversationComposerPrefs {
@@ -157,7 +179,14 @@ export function buildRuntimeComposerPersistPatch(
     });
 }
 
-/** Persist composer prefs to project-scoped storage (agent/mode/approval — not per-conversation model). */
+/**
+ * Persist composer prefs to project-scoped storage (agent/mode — not per-conversation model).
+ *
+ * The approval policy and tool rules are deliberately NOT written here: this runs on every
+ * conversation hydration, and a summary missing `approvalPolicyId` used to clobber the user's
+ * explicit project choice with the default. Project approval storage is written only by an
+ * explicit pick in the approval sheet; each conversation keeps its own policy server-side.
+ */
 export function writeProjectComposerStorage(
     cwd: string | undefined,
     prefs: QaapConversationComposerPrefs,
@@ -169,8 +198,6 @@ export function writeProjectComposerStorage(
     if (prefs.interactionModeId) {
         writeStoredComposerMode(cwd, prefs.interactionModeId);
     }
-    writeStoredAgentApprovalPolicy(cwd, prefs.approvalPolicyId);
-    writeStoredAgentToolApprovalRules(cwd, prefs.toolApprovalRules);
 }
 
 export function readProjectComposerDefaults(

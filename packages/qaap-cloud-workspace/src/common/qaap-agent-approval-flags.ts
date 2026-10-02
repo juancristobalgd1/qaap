@@ -314,6 +314,34 @@ function applyOpencodeApprovalFlags(
     return next;
 }
 
+/**
+ * Value for the `OPENCODE_PERMISSION` env var (merged last over OpenCode's agent permissions) of an
+ * OpenCode task, or `undefined` when the run is meant to be ungated.
+ *
+ * OpenCode's built-in ruleset is `{"*": "allow"}`: omitting `--dangerously-skip-permissions` gates
+ * nothing, so a "Request approval" run executed `bash`/`edit` freely. Headless `opencode run`
+ * auto-rejects every `ask` (there is no stdio approval channel), so `ask` here means "denied and
+ * reported", never "silently executed".
+ *
+ * - Command carries the skip/auto flag (full access, approve-for-me with shell/network) → ungated.
+ * - `autoApprove === false` (Request approval) → edits, shell and network all gated.
+ * - Otherwise (approve-for-me without shell/network rules) → edits allowed, shell/network gated.
+ */
+export function resolveOpencodePermissionEnv(options: {
+    readonly command: string;
+    readonly agentId?: string;
+    readonly autoApprove?: boolean;
+}): string | undefined {
+    if (resolveApprovalAgentId(options.command, options.agentId) !== 'opencode') {
+        return undefined;
+    }
+    if (/(?:^|\s)--(?:dangerously-skip-permissions|auto|yolo)(?=\s|$)/.test(options.command)) {
+        return undefined;
+    }
+    const gated = { bash: 'ask', webfetch: 'ask', websearch: 'ask' };
+    return JSON.stringify(options.autoApprove === false ? { edit: 'ask', ...gated } : gated);
+}
+
 function stripNonInteractiveApprovalFlags(command: string, agentId: string | undefined): string {
     const effectiveId = resolveApprovalAgentId(command, agentId);
     if (effectiveId === 'qaiq') {

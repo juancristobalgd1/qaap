@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     applyAgentApprovalPolicyToCommand,
     resolveEffectiveToolApprovalRules,
+    resolveOpencodePermissionEnv,
     shouldUseInteractiveAgentApprovals,
     shouldUseQaiqStdioApprovals,
 } from './qaap-agent-approval-flags';
@@ -197,6 +198,39 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--dangerously-skip-permissions');
         expect(command).not.to.include('--auto');
         expect(command).to.include('opencode run');
+    });
+
+    it('request-approval gates OpenCode shell/edit via OPENCODE_PERMISSION (its default ruleset allows all)', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "opencode run --format json --dangerously-skip-permissions 'run npm run lint'",
+            { agentId: 'opencode', approvalPolicyId: 'request-approval', autoApprove: false },
+        );
+        const env = resolveOpencodePermissionEnv({ command, agentId: 'opencode', autoApprove: false });
+        expect(env).to.not.equal(undefined);
+        expect(JSON.parse(env!)).to.deep.equal({ edit: 'ask', bash: 'ask', webfetch: 'ask', websearch: 'ask' });
+    });
+
+    it('approve-for-me without shell/network rules gates only OpenCode shell/network', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "opencode run --format json 'hi'",
+            {
+                agentId: 'opencode',
+                approvalPolicyId: 'approve-for-me',
+                autoApprove: true,
+                toolApprovalRules: { shell: false, network: false },
+            },
+        );
+        const env = resolveOpencodePermissionEnv({ command, agentId: 'opencode', autoApprove: true });
+        expect(JSON.parse(env!)).to.deep.equal({ bash: 'ask', webfetch: 'ask', websearch: 'ask' });
+    });
+
+    it('full-access OpenCode and non-OpenCode agents get no OPENCODE_PERMISSION', () => {
+        const fullAccess = applyAgentApprovalPolicyToCommand(
+            "opencode run --format json 'hi'",
+            { agentId: 'opencode', approvalPolicyId: 'full-access', autoApprove: true },
+        );
+        expect(resolveOpencodePermissionEnv({ command: fullAccess, agentId: 'opencode', autoApprove: true })).to.equal(undefined);
+        expect(resolveOpencodePermissionEnv({ command: "qaiq --print 'hi'", agentId: 'qaiq', autoApprove: false })).to.equal(undefined);
     });
 
     it('approve-for-me with shell disabled omits Bash from the QAIQ tool allowlist', () => {

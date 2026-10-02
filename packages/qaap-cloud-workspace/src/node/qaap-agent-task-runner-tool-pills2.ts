@@ -26,6 +26,7 @@ import { billableAgentDurationMs } from '../common/qaap-billing-agent-runtime';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import {
     applyAgentApprovalPolicyToCommand,
+    resolveOpencodePermissionEnv,
 } from '../common/qaap-agent-approval-flags';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import {
@@ -261,6 +262,16 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             if (env.IS_SANDBOX === undefined) {
                 env.IS_SANDBOX = '1';
             }
+        }
+        // OpenCode allows every tool by default; gate it explicitly unless the run is meant to be
+        // ungated (security: "Request approval" must never execute shell commands silently).
+        const opencodePermission = resolveOpencodePermissionEnv({
+            command: task.command,
+            agentId: task.agentId,
+            autoApprove: task.autoApprove,
+        });
+        if (opencodePermission) {
+            env.OPENCODE_PERMISSION = opencodePermission;
         }
         ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
         return env;

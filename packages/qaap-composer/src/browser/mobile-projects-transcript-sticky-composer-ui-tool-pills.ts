@@ -33,6 +33,10 @@ import {
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import {
+    formatComposerRunPermissionsLabel,
+    resolveApprovalPolicyFromConversation,
+} from '../common/qaap-conversation-composer-state';
+import {
     disposeComposerContextEntries,
     hasPendingComposerContextEntries,
     revokeComposerContextPreview,
@@ -233,6 +237,22 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             })
             : undefined,
         isAgentWorking: () => ctx.isTranscriptStickyComposerAgentWorking(),
+        resolveRunPermissionsLabel: showApprovalPolicy && !isAgentsHubIdleConversationSummary(summary)
+            ? () => {
+                // Permissions of the RUNNING turn come from the conversation, not from the
+                // composer's next-turn selection.
+                const conv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
+                const policyId = resolveApprovalPolicyFromConversation({
+                    approvalPolicyId: conv?.approvalPolicyId ?? summary.approvalPolicyId
+                        ?? ctx.host.transcriptComposerApprovalPolicyId,
+                    autoApprove: conv?.autoApprove ?? summary.autoApprove,
+                    cwd,
+                });
+                const modeId = conv?.interactionModeId ?? summary.interactionModeId ?? ctx.host.transcriptComposerModeId;
+                const modeLabel = modes.length > 1 ? resolveComposerModeLabel(modes, modeId) : undefined;
+                return formatComposerRunPermissionsLabel(modeLabel, policyId);
+            }
+            : undefined,
         isAgentBeamIdle: () => ctx.isTranscriptStickyComposerAgentBeamIdle(),
         onStop: () => {
             // Re-resolve the target when the mount closure captured the idle placeholder

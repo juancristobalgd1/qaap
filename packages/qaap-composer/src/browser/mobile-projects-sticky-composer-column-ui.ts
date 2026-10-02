@@ -87,6 +87,11 @@ export class MobileProjectsStickyComposerColumnUi {
         untilDone?: StickyComposerUntilDoneToggleOptions;
         canSubmit: boolean;
         isAgentWorking?: () => boolean;
+        /**
+         * Read-only "permissions in effect" line (e.g. `Build · Request approval`) shown while the
+         * agent works, when the Mode / Approval / Until done controls are not available.
+         */
+        resolveRunPermissionsLabel?: () => string | undefined;
         isAgentBeamIdle?: () => boolean;
         onStop?: () => void;
         stopLabel?: string;
@@ -326,6 +331,29 @@ export class MobileProjectsStickyComposerColumnUi {
         expandLabel.className = 'theia-mobile-projects-sticky-composer-input-expand-label';
         expandBtn.append(expandIcon, expandLabel);
 
+        const runPermissions = document.createElement('div');
+        runPermissions.className = 'theia-mobile-projects-sticky-composer-run-permissions';
+        runPermissions.setAttribute('role', 'status');
+        runPermissions.hidden = true;
+        const runPermissionsIcon = document.createElement('span');
+        runPermissionsIcon.className = 'codicon codicon-shield';
+        runPermissionsIcon.setAttribute('aria-hidden', 'true');
+        const runPermissionsText = document.createElement('span');
+        runPermissionsText.className = 'theia-mobile-projects-sticky-composer-run-permissions-text';
+        runPermissions.append(runPermissionsIcon, runPermissionsText);
+        const updateRunPermissions = (working: boolean): void => {
+            const label = working ? options.resolveRunPermissionsLabel?.() : undefined;
+            runPermissions.hidden = !label;
+            if (label && runPermissionsText.textContent !== label) {
+                runPermissionsText.textContent = label;
+                runPermissions.title = nls.localize(
+                    'qaap/mobileProjects/runPermissionsTitle',
+                    'Permissions for the running turn: {0}',
+                    label,
+                );
+            }
+        };
+
         let lastSendIcon: 'send' | 'stop' | undefined;
         const updateSend = (): void => {
             const has = input.value.trim().length > 0;
@@ -334,6 +362,7 @@ export class MobileProjectsStickyComposerColumnUi {
             const beamIdle = working && (options.isAgentBeamIdle?.() ?? false);
             inputPanel.classList.toggle('theia-mod-agent-working', working && !beamIdle);
             inputPanel.classList.toggle('theia-mod-agent-working-idle', beamIdle);
+            updateRunPermissions(working);
             const showStop = working && !has;
             const sendLabel = options.sendLabel ?? nls.localize('qaap/mobileProjects/inlineStart', 'Start');
             const stopLabel = options.stopLabel ?? nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
@@ -555,7 +584,7 @@ export class MobileProjectsStickyComposerColumnUi {
         const borderBeamBloom = document.createElement('div');
         borderBeamBloom.className = 'qaap-border-beam-bloom';
         borderBeamBloom.setAttribute('aria-hidden', 'true');
-        inputPanel.append(inputBody, controlsRow, borderBeamBloom);
+        inputPanel.append(inputBody, runPermissions, controlsRow, borderBeamBloom);
         stage.append(inputPanel, toolbar);
 
         const card = document.createElement('div');

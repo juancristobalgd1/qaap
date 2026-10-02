@@ -6,8 +6,9 @@
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, formatConversationExecutionSessionMeta, readConversationComposerDraft, writeConversationComposerDraft } from './qaap-conversation-composer-state';
+import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, formatComposerRunPermissionsLabel, formatConversationExecutionSessionMeta, readConversationComposerDraft, readProjectComposerDefaults, writeConversationComposerDraft } from './qaap-conversation-composer-state';
 import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { readStoredAgentApprovalPolicy, writeStoredAgentApprovalPolicy } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 
 const baseConv = (): QaapAgentConversationDTO => ({
     id: 'conv-1',
@@ -146,6 +147,43 @@ describe('qaap-conversation-composer-state', () => {
         const runtime = applyProjectComposerDefaults(cwd, 'opencode');
         expect(runtime.conversationId).to.be.undefined;
         expect(runtime.agentModel?.modelId).to.equal('project-default');
+    });
+
+    it('a summary without approvalPolicyId does not overwrite the stored project policy', () => {
+        const cwd = '/repo';
+        writeStoredAgentApprovalPolicy(cwd, 'request-approval');
+        // Optimistic / partial summary seeded right after submit: no approval fields at all.
+        const prefs = extractConversationComposerPrefsFromSummary({
+            cwd,
+            agentId: 'opencode',
+            agentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'big-pickle' },
+        } as QaapAgentConversationSummaryDTO);
+        expect(prefs?.approvalPolicyId).to.equal('request-approval');
+        expect(prefs?.autoApprove).to.equal(false);
+        applyConversationComposerPrefs(prefs!, cwd, 'conv-new');
+        expect(readStoredAgentApprovalPolicy(cwd)).to.equal('request-approval');
+    });
+
+    it('hydrating another conversation never rewrites the project approval policy', () => {
+        const cwd = '/repo';
+        writeStoredAgentApprovalPolicy(cwd, 'request-approval');
+        const prefs = extractConversationComposerPrefs({ ...baseConv(), approvalPolicyId: 'approve-for-me' });
+        expect(prefs.approvalPolicyId).to.equal('approve-for-me');
+        applyConversationComposerPrefs(prefs, cwd, 'conv-old');
+        expect(readStoredAgentApprovalPolicy(cwd)).to.equal('request-approval');
+        expect(readProjectComposerDefaults(cwd, 'opencode').approvalPolicyId).to.equal('request-approval');
+    });
+
+    it('a conversation created from the sticky composer keeps request-approval through summary hydration', () => {
+        const conv = { ...baseConv(), approvalPolicyId: 'request-approval', autoApprove: false };
+        const prefs = extractConversationComposerPrefsFromSummary(conversationToSummary(conv));
+        expect(prefs?.approvalPolicyId).to.equal('request-approval');
+        expect(prefs?.autoApprove).to.equal(false);
+    });
+
+    it('formatComposerRunPermissionsLabel joins mode and policy', () => {
+        expect(formatComposerRunPermissionsLabel('Build', 'request-approval')).to.equal('Build · Request approval');
+        expect(formatComposerRunPermissionsLabel(undefined, 'full-access')).to.equal('Full access');
     });
 
     it('buildRuntimeComposerPersistPatch prefers explicit runtime model', () => {
