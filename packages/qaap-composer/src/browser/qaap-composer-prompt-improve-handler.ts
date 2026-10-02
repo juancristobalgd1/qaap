@@ -89,12 +89,13 @@ async function confirmImprovedPrompt(before: string, after: string): Promise<boo
         block.append(heading, text);
         comparison.appendChild(block);
     }
-    return new ConfirmDialog({
+    const accepted = await new ConfirmDialog({
         title: nls.localize('qaap/composer/improvePromptReviewTitle', 'Review improved prompt'),
         msg: comparison,
         ok: nls.localize('qaap/composer/improvePromptAccept', 'Use improved prompt'),
         cancel: nls.localize('qaap/composer/improvePromptKeepOriginal', 'Keep original'),
     }).open();
+    return accepted === true;
 }
 
 export function createStickyComposerImprovePromptHandler(
