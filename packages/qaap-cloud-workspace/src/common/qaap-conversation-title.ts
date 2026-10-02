@@ -6,7 +6,7 @@
 /**
  * Heuristic conversation-title derivation shared by the backend store (where titles are first
  * set) and any frontend fallback. Pure and side-effect free so it can be unit tested and reused
- * everywhere. The goal is a short, human-readable summary of the first user prompt that never ends
+ * everywhere. The goal is a short, human-readable excerpt of the first user prompt that never ends
  * mid-word and carries no trailing ellipsis/punctuation.
  *
  * LLM upgrade seam: the qaap backend only shells out to agent CLIs and has no `LanguageModel`
@@ -23,44 +23,6 @@ const TITLE_TARGET_LENGTH = 48;
 const CLAUSE_MIN = 24;
 /** Upper bound of the window in which a clause boundary is preferred over a plain word cut. */
 const CLAUSE_MAX = 56;
-
-/**
- * Leading imperative boilerplate stripped (case-insensitive) only when the remainder is still
- * meaningful (>= 3 words). Multi-word phrases must be listed so they are matched before their
- * single-word prefixes. English and Spanish equivalents are both covered.
- */
-const LEADING_BOILERPLATE: readonly string[] = [
-    'i want you to',
-    'i need you to',
-    'i would like you to',
-    'could you please',
-    'can you please',
-    'could you',
-    'can you',
-    'help me to',
-    'help me',
-    'please',
-    'now',
-    'immediately',
-    'run',
-    'lets',
-    "let's",
-    // Spanish
-    'por favor',
-    'quiero que',
-    'necesito que',
-    'me gustaria que',
-    'me gustaría que',
-    'ayudame a',
-    'ayúdame a',
-    'ayudame',
-    'ayúdame',
-    'podrias',
-    'podrías',
-    'puedes',
-    'ejecuta',
-    'ejecutá',
-];
 
 /** Trailing filler words trimmed from a plain word-boundary cut so titles do not dangle. */
 const TRAILING_STOPWORDS: ReadonlySet<string> = new Set([
@@ -81,9 +43,7 @@ export function deriveConversationTitle(firstUserMessage: string): string {
     if (!cleaned) {
         return '';
     }
-    const base = stripLeadingBoilerplate(cleaned);
-    const clipped = clipToTitle(base);
-    return capitalizeFirst(clipped);
+    return clipToTitle(cleaned);
 }
 
 /**
@@ -156,42 +116,6 @@ function cleanPromptText(input: string): string {
     return text.replace(/\s+/g, ' ').trim();
 }
 
-/** Number of whitespace-separated words. */
-function countWords(text: string): number {
-    return text.split(' ').filter(Boolean).length;
-}
-
-/**
- * Iteratively remove leading imperative phrases, but only while the remainder keeps at least three
- * words so single-clause prompts (e.g. 'Run ls -la') are left intact.
- */
-function stripLeadingBoilerplate(text: string): string {
-    let current = text;
-    let changed = true;
-    while (changed) {
-        changed = false;
-        const lower = current.toLowerCase();
-        for (const phrase of LEADING_BOILERPLATE) {
-            if (!lower.startsWith(phrase)) {
-                continue;
-            }
-            // Require a word boundary immediately after the phrase.
-            const after = current.charAt(phrase.length);
-            if (after && /\w/.test(after)) {
-                continue;
-            }
-            const candidate = current.slice(phrase.length).replace(/^[\s,:;.!?¡¿-]+/, '');
-            if (countWords(candidate) < 3) {
-                continue;
-            }
-            current = candidate;
-            changed = true;
-            break;
-        }
-    }
-    return current;
-}
-
 /** Cut to ~{@link TITLE_TARGET_LENGTH} chars, preferring a clause boundary in the clause window. */
 function clipToTitle(text: string): string {
     if (text.length <= TITLE_TARGET_LENGTH) {
@@ -262,12 +186,4 @@ function dropTrailingStopword(text: string): string {
 /** Remove trailing whitespace, punctuation and ellipsis. */
 function trimTitleEnd(text: string): string {
     return text.replace(/[\s.,;:!?¡¿…–—-]+$/u, '').trim();
-}
-
-/** Capitalize the first alphabetic character without touching the rest. */
-function capitalizeFirst(text: string): string {
-    if (!text) {
-        return text;
-    }
-    return text.charAt(0).toUpperCase() + text.slice(1);
 }
