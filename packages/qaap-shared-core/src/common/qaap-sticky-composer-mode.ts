@@ -65,13 +65,13 @@ export function reconcileComposerModeId(
     modes: readonly ChatMode[],
     cwd: string | undefined,
 ): string {
+    const stored = readStoredComposerMode(cwd);
+    if (stored && modes.some(mode => mode.id === stored)) {
+        return stored;
+    }
     const ids = new Set(modes.map(mode => mode.id));
     if (current && ids.has(current)) {
         return current;
-    }
-    const stored = readStoredComposerMode(cwd);
-    if (stored && ids.has(stored)) {
-        return stored;
     }
     return defaultComposerModeId(modes);
 }
