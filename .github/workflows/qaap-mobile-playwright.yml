@@ -4,43 +4,9 @@ on:
   push:
     branches:
       - master
-    paths:
-      - 'examples/playwright/**'
-      - 'examples/browser/**'
-      - 'packages/qaap-mobile-shell/**'
-      - 'packages/qaap-work-hub/**'
-      - 'packages/qaap-composer/**'
-      - 'packages/qaap-transcript/**'
-      - 'packages/qaap-agents-ui/**'
-      - 'packages/qaap-diff-review/**'
-      - 'packages/qaap-shared-core/**'
-      - 'packages/qaap-product/**'
-      - 'packages/qaap-product-theme/**'
-      - 'packages/qaap-adapters/**'
-      - 'packages/qaap-element-inspector/**'
-      - 'packages/qaap-ai-config/**'
-      - 'packages/qaap-cloud-workspace/**'
-      - 'packages/core/src/browser/shell/mobile-layout-state.ts'
   pull_request:
     branches:
       - master
-    paths:
-      - 'examples/playwright/**'
-      - 'examples/browser/**'
-      - 'packages/qaap-mobile-shell/**'
-      - 'packages/qaap-work-hub/**'
-      - 'packages/qaap-composer/**'
-      - 'packages/qaap-transcript/**'
-      - 'packages/qaap-agents-ui/**'
-      - 'packages/qaap-diff-review/**'
-      - 'packages/qaap-shared-core/**'
-      - 'packages/qaap-product/**'
-      - 'packages/qaap-product-theme/**'
-      - 'packages/qaap-adapters/**'
-      - 'packages/qaap-element-inspector/**'
-      - 'packages/qaap-ai-config/**'
-      - 'packages/qaap-cloud-workspace/**'
-      - 'packages/core/src/browser/shell/mobile-layout-state.ts'
   workflow_dispatch:
 
 jobs:
