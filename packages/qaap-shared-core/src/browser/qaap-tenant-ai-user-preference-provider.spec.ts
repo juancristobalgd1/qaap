@@ -130,4 +130,30 @@ describe('QaapTenantAiUserPreferenceProvider', () => {
         expect(container.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User)).to.equal(user);
         expect(container.getNamed(PreferenceProvider, PreferenceScope.Workspace)).to.be.instanceOf(FakeSharedUserProvider);
     });
+
+    it('installs an isolated User-scope provider in each tenant container', async () => {
+        const createTenantContainer = (): Container => {
+            const container = new Container();
+            container.load(new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
+                bind(PreferenceProvider).to(FakeSharedUserProvider).inSingletonScope().whenTargetNamed(PreferenceScope.User);
+                decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true);
+            }));
+            return container;
+        };
+        const firstContainer = createTenantContainer();
+        const secondContainer = createTenantContainer();
+        const first = firstContainer.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User);
+        const second = secondContainer.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User);
+
+        expect(first).to.be.instanceOf(QaapTenantAiUserPreferenceProvider);
+        expect(second).to.be.instanceOf(QaapTenantAiUserPreferenceProvider);
+        await first.setPreference(POLICY, 'Request approval');
+        await second.setPreference(POLICY, 'Approve for me');
+        expect(first.get(POLICY)).to.equal('Request approval');
+        expect(second.get(POLICY)).to.equal('Approve for me');
+        expect((first as QaapTenantAiUserPreferenceProvider).tenantSettings().get(POLICY))
+            .to.equal('Request approval');
+        expect((second as QaapTenantAiUserPreferenceProvider).tenantSettings().get(POLICY))
+            .to.equal('Approve for me');
+    });
 });
