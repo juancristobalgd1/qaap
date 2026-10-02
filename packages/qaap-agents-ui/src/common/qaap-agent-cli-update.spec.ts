@@ -11,6 +11,7 @@ import {
     pickNextAgentUpdateToShow,
     readAgentCliUpdateDismissMap,
     rememberAgentCliUpdateDismiss,
+    requestAgentCliUpdate,
     shouldShowAgentUpdateNotification,
     type QaapAgentCliUpdateInfo,
 } from './qaap-agent-cli-update';
@@ -152,6 +153,22 @@ describe('qaap-agent-cli-update', () => {
                 codex: '0.145.0',
                 claude: '1.0.1',
             })).to.equal(undefined);
+        });
+    });
+
+    describe('requestAgentCliUpdate', () => {
+        it('returns the backend failure detail so the user can act on it', async () => {
+            const result = await requestAgentCliUpdate('codex', async () => ({
+                ok: false,
+                status: 400,
+                json: async () => ({ error: 'EACCES: permission denied' }),
+            } as Response));
+
+            expect(result).to.deep.equal({
+                ok: false,
+                id: 'codex',
+                message: 'EACCES: permission denied',
+            });
         });
     });
 });

@@ -32,4 +32,17 @@ describe('CLI update notice dismissal', () => {
             toast.dispose();
         }
     });
+
+    it('dispatches the Update button to the update handler', () => {
+        const onUpdate = sinon.spy();
+        const toast = showAgentCliUpdateToast({ id: 'codex', label: 'Codex', bin: 'codex', latestVersion: '1.0.0', updateAvailable: true, updateSupported: true }, {
+            onCancel: () => undefined, onUpdate, onDismiss: () => undefined,
+        });
+        try {
+            toast.root.querySelector<HTMLButtonElement>('.qaap-agent-cli-update-toast-action.qaap-mod-primary')?.click();
+            expect(onUpdate.calledOnce).to.equal(true);
+        } finally {
+            toast.dispose();
+        }
+    });
 });
