@@ -300,6 +300,21 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         expect(header?.getAttribute('aria-label')).to.equal('Run in Current workspace');
     });
 
+    it('marks the selected Run in destination with a visible check', () => {
+        const projects = [project('current', 'Current', true)];
+        const host = createHost(projects);
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+
+        ui.openComposerWorkspaceDestinationSheet(projects[0]);
+
+        const selected = document.body.querySelector<HTMLElement>(
+            '.theia-mobile-sticky-composer-sheet-option.theia-mod-selected',
+        );
+        expect(selected?.querySelector('.theia-mobile-sticky-composer-sheet-option-label')?.textContent)
+            .to.equal('Current workspace');
+        expect(selected?.querySelector('.codicon-check')).to.not.equal(null);
+    });
+
     it('does not render header workspace nav for bottom-sheet project picker', () => {
         const projects = [project('current', 'Current', true)];
         const host = createHost(projects);

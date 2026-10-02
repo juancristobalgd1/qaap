@@ -8337,7 +8337,15 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
 
 .theia-mobile-sticky-composer-sheet-option.theia-mod-selected {
   background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 18%, transparent);
+  color: var(--theia-foreground);
+  font-weight: 600;
+  outline: 1px solid color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 58%, transparent);
+  outline-offset: -1px;
+}
+
+.theia-mobile-sticky-composer-sheet-option.theia-mod-selected .theia-mobile-sticky-composer-sheet-option-check {
   color: var(--q-accent, var(--qaap-accent, #E58E40));
+  opacity: 1;
 }
 
 .theia-mobile-sticky-composer-sheet-option-chevron {

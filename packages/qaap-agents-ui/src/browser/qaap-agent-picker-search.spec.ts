@@ -7,8 +7,13 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 import { expect } from 'chai';
 import { activateAgentPickerEntry, buildAgentPickerSearchResults, createAgentPickerInlineModelButton, modelMatchesAgentPickerQuery, type QaapAgentPickerSearchEntry } from './qaap-agent-picker-search';
-import { createAgentSheetOptionButton } from './qaap-agent-ui';
+import {
+    createAgentSheetOptionButton,
+    createApprovalPolicySheetOptionButton,
+    createModeSheetOptionButton,
+} from './qaap-agent-ui';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_AGENT_APPROVAL_POLICIES } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 
 const entries: readonly QaapAgentPickerSearchEntry[] = [
     {
@@ -216,7 +221,28 @@ describe('qaap-agent-picker-search', () => {
             selected.click();
             unselected.click();
             expect(activated).to.deep.equal(['selected', 'unselected']);
+            expect(selected.classList.contains('theia-mod-selected')).to.equal(true);
+            expect(selected.querySelector('.codicon-check')).to.not.equal(null);
+            expect(unselected.querySelector('.codicon-check')).to.equal(null);
+        });
+
+        it('marks the selected Mode and approval policy with a visible check', () => {
+            const mode = createModeSheetOptionButton({
+                modeId: 'agent',
+                label: 'Build',
+                selected: true,
+                onSelect: () => undefined,
+            });
+            const policy = createApprovalPolicySheetOptionButton({
+                policy: QAAP_AGENT_APPROVAL_POLICIES[0],
+                selected: true,
+                onSelect: () => undefined,
+            });
+
+            expect(mode.classList.contains('theia-mod-selected')).to.equal(true);
+            expect(mode.querySelector('.codicon-check')).to.not.equal(null);
+            expect(policy.classList.contains('theia-mod-selected')).to.equal(true);
+            expect(policy.querySelector('.codicon-check')).to.not.equal(null);
         });
     });
 });
-
