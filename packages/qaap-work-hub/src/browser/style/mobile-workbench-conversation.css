@@ -11437,7 +11437,15 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-sticky-com
 
 .theia-mobile-sticky-composer-sheet-branch-row.theia-mod-selected .theia-mobile-sticky-composer-sheet-option.theia-mod-branch-select {
   background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 18%, transparent);
+  color: var(--theia-foreground);
+  font-weight: 600;
+  outline: 1px solid color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 58%, transparent);
+  outline-offset: -1px;
+}
+
+.theia-mobile-sticky-composer-sheet-branch-row.theia-mod-selected .theia-mobile-sticky-composer-sheet-option-check {
   color: var(--q-accent, var(--qaap-accent, #E58E40));
+  opacity: 1;
 }
 
 .theia-mobile-sticky-composer-sheet-option.theia-mod-branch-select {
@@ -11941,6 +11949,14 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
 
   .theia-mobile-sticky-composer-sheet-option.theia-mod-selected {
     background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 22%, transparent);
+    color: var(--theia-foreground);
+    outline: 1px solid color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 58%, transparent);
+    outline-offset: -1px;
+  }
+
+  .theia-mobile-sticky-composer-sheet-option.theia-mod-selected .theia-mobile-sticky-composer-sheet-option-check {
+    color: var(--q-accent, var(--qaap-accent, #E58E40));
+    opacity: 1;
   }
 
   .theia-mobile-projects-sticky-composer-attach-menu-item:hover,

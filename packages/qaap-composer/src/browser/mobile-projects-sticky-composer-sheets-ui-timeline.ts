@@ -21,7 +21,9 @@ import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
     createUnavailableAgentSheetOption,
+    resolveAgentPickerDescription,
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     formatQaiqModelSelectionLabel,
@@ -286,7 +288,12 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         }
     }
     for (const agent of options.agents) {
-        agentEntries.push({ id: agent.id, label: agent.label, models: [], available: agent.available !== false });
+        agentEntries.push({
+            id: agent.id,
+            label: agent.label,
+            models: [],
+            available: agent.available !== false && agent.connectionState !== 'disconnected',
+        });
     }
     if (agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id))) {
         renderAgentPickerSkeleton(chrome.list);
@@ -321,27 +328,32 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     const content = document.createDocumentFragment();
     const appendAgent = (entry: QaapAgentPickerSearchEntry): void => {
         const { id: agentId, label } = entry;
+        const agentDescription = resolveAgentPickerDescription(agentId, label);
         if (entry.available === false) {
+            const agent = options.agents.find(candidate => candidate.id.toLowerCase() === agentId.toLowerCase());
             const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
                 && !!ctx.host.readPreference
                 && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference?.(key));
+            const needsApiKey = missingQaiqByok
+                || (agent?.available === true && agentNeedsSettingsApiKeyPath(agentId));
             content.append(createUnavailableAgentSheetOption({
                 agentId,
                 label,
-                status: nls.localize(
+                description: nls.localize(
                     missingQaiqByok
-                        ? 'qaap/mobileProjects/stickyComposerQaiqByokMissing'
-                        : 'qaap/mobileProjects/stickyComposerAgentNotConnected',
-                    missingQaiqByok ? 'Add a provider key to use QAIQ' : 'Not connected on this workspace',
+                        ? 'qaap/agentPicker/descriptionNeedsProviderKey'
+                        : 'qaap/agentPicker/descriptionNotConnected',
+                    missingQaiqByok ? '{0} · API key required' : '{0} · Not connected on this workspace',
+                    agentDescription,
                 ),
                 actionLabel: nls.localize(
-                    missingQaiqByok
-                        ? 'qaap/mobileProjects/stickyComposerAddByok'
-                        : 'qaap/mobileProjects/stickyComposerConnectAgent',
-                    missingQaiqByok ? 'Add BYOK' : 'Connect',
+                    needsApiKey
+                        ? 'qaap/agentPicker/addApiKey'
+                        : 'qaap/agentPicker/connect',
+                    needsApiKey ? 'Add API key' : 'Connect',
                 ),
                 onAction: () => {
-                    if (agentId.toLowerCase() === QAIQ_AGENT_ID) {
+                    if (needsApiKey) {
                         options.onOpenAiFeaturesSettings?.(agentId);
                     } else {
                         options.onProactiveLogin?.(agentId, options.project);
@@ -362,6 +374,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         const primary = createAgentSheetOptionButton({
             agentId,
             label: displayLabel,
+            description: agentDescription,
             selected: agentSelected,
             submenuChevron: hasModels ? 'forward' : undefined,
             onSelect: () => {
@@ -416,13 +429,18 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         const section = document.createElement('section');
         section.className = 'theia-qaap-agent-sheet-inline-model-group';
         section.dataset.agentId = group.agent.id;
-        const heading = createAgentBrandChip({
+        const heading = document.createElement('div');
+        heading.className = 'theia-qaap-agent-sheet-inline-model-group-heading';
+        const agentHeading = createAgentBrandChip({
             agentId: group.agent.id,
             label: group.agent.label,
         });
-        heading.classList.add('theia-qaap-agent-sheet-inline-model-group-heading');
-        heading.id = `qaap-agent-model-group-${renderGeneration}-${groupIndex}`;
-        section.setAttribute('aria-labelledby', heading.id);
+        agentHeading.id = `qaap-agent-model-group-${renderGeneration}-${groupIndex}`;
+        const description = document.createElement('span');
+        description.className = 'theia-qaap-agent-sheet-inline-model-group-description';
+        description.textContent = resolveAgentPickerDescription(group.agent.id, group.agent.label);
+        heading.append(agentHeading, description);
+        section.setAttribute('aria-labelledby', agentHeading.id);
         section.append(heading);
         const storedModel = readStoredAgentModel(options.cwd, group.agent.id);
         const agentSelected = isStickyComposerAgentSelected(
@@ -470,4 +488,3 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
     window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));
 }
-

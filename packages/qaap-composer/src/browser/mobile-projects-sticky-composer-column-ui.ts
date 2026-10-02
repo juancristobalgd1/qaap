@@ -56,6 +56,25 @@ export interface MobileProjectsStickyComposerColumnHost {
     resolveAttachmentPreview?: (item: AIVariableResolutionRequest) => Promise<string | undefined>;
 }
 
+/** Keep the running turn's mode and approval visible without exposing editable controls. */
+export function syncStickyComposerRunPermissions(
+    element: HTMLElement,
+    textElement: HTMLElement,
+    working: boolean,
+    resolveLabel?: () => string | undefined,
+): void {
+    const label = working ? resolveLabel?.() : undefined;
+    element.hidden = !label;
+    if (label && textElement.textContent !== label) {
+        textElement.textContent = label;
+        element.title = nls.localize(
+            'qaap/mobileProjects/runPermissionsTitle',
+            'Permissions for the running turn: {0}',
+            label,
+        );
+    }
+}
+
 export class MobileProjectsStickyComposerColumnUi {
     constructor(protected readonly host: MobileProjectsStickyComposerColumnHost) { }
 
@@ -342,16 +361,12 @@ export class MobileProjectsStickyComposerColumnUi {
         runPermissionsText.className = 'theia-mobile-projects-sticky-composer-run-permissions-text';
         runPermissions.append(runPermissionsIcon, runPermissionsText);
         const updateRunPermissions = (working: boolean): void => {
-            const label = working ? options.resolveRunPermissionsLabel?.() : undefined;
-            runPermissions.hidden = !label;
-            if (label && runPermissionsText.textContent !== label) {
-                runPermissionsText.textContent = label;
-                runPermissions.title = nls.localize(
-                    'qaap/mobileProjects/runPermissionsTitle',
-                    'Permissions for the running turn: {0}',
-                    label,
-                );
-            }
+            syncStickyComposerRunPermissions(
+                runPermissions,
+                runPermissionsText,
+                working,
+                options.resolveRunPermissionsLabel,
+            );
         };
 
         let lastSendIcon: 'send' | 'stop' | undefined;
@@ -1111,4 +1126,3 @@ function createStickyComposerImproveIcon(): HTMLElement {
     host.append(svg);
     return host;
 }
-

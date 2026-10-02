@@ -159,7 +159,12 @@ import { createQaapFileNavigatorWidget } from '@theia/qaap-shared-core/lib/brows
 import { QaapVsxExtensionsMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-vsx-extensions-mobile-contribution';
 import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/preference-layout';
 import { QaapPreferenceLayoutProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-layout-provider';
-export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
+import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
+export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
+    // The preference sync contribution is part of this Work Hub container. Install the tenant
+    // User-scope provider decorator here as well as in the product bindings module so standalone
+    // Work Hub and tenant child containers cannot fall back to the shared process-wide settings.
+    decorateQaapTenantAiUserPreferenceProvider(onActivation);
     // In Work Hub mode, let native browser editing shortcuts (Cmd+V, Cmd+C,
     // Cmd+X, etc.) pass through to the focused element instead of being
     // intercepted by the Theia keybinding system. In the classic IDE

@@ -37,6 +37,39 @@ export function resolveAgentDisplayLabel(agentId: string, fallbackLabel?: string
     return resolveAgentBrand(agentId)?.label ?? fallbackLabel ?? agentId;
 }
 
+/** One short, localized description for every agent in the composer picker. */
+export function resolveAgentPickerDescription(agentId: string, fallbackLabel: string): string {
+    switch (agentId.trim().toLowerCase()) {
+        case 'qaiq':
+            return nls.localize('qaap/agentPicker/descriptionQaiq', 'Qaap hosted coding agent');
+        case 'codex':
+            return nls.localize('qaap/agentPicker/descriptionCodex', 'OpenAI coding agent');
+        case 'claude':
+            return nls.localize('qaap/agentPicker/descriptionClaude', 'Anthropic coding agent');
+        case 'copilot':
+            return nls.localize('qaap/agentPicker/descriptionCopilot', 'GitHub coding agent');
+        case 'cursor':
+        case 'cursor-agent':
+            return nls.localize('qaap/agentPicker/descriptionCursor', 'Cursor coding agent');
+        case 'antigravity':
+        case 'gemini':
+            return nls.localize('qaap/agentPicker/descriptionAntigravity', 'Google coding agent');
+        case 'opencode':
+            return nls.localize('qaap/agentPicker/descriptionOpenCode', 'Open source coding agent');
+        case 'qwen':
+            return nls.localize('qaap/agentPicker/descriptionQwen', 'Alibaba coding agent');
+        case 'kimi':
+            return nls.localize('qaap/agentPicker/descriptionKimi', 'Moonshot AI coding agent');
+        case 'grok':
+        case 'grok-build':
+            return nls.localize('qaap/agentPicker/descriptionGrok', 'xAI coding agent');
+        case 'shell':
+            return nls.localize('qaap/agentPicker/descriptionShell', 'Run local shell commands');
+        default:
+            return nls.localize('qaap/agentPicker/descriptionOther', '{0} coding agent', fallbackLabel);
+    }
+}
+
 /** Toggle or static chip with brand icon + label. */
 export function createAgentBrandChip(options: QaapAgentChipOptions): HTMLElement {
     const label = options.label ?? resolveAgentDisplayLabel(options.agentId);
@@ -162,6 +195,7 @@ export function createAgentBrandSplitChip(options: QaapAgentBrandSplitChipOption
 export function createAgentSheetOptionButton(options: {
     readonly agentId: string;
     readonly label: string;
+    readonly description?: string;
     readonly selected?: boolean;
     readonly submenuChevron?: 'collapsed' | 'expanded' | 'forward';
     readonly onSelect: () => void;
@@ -175,10 +209,19 @@ export function createAgentSheetOptionButton(options: {
     const content = document.createElement('span');
     content.className = 'theia-mobile-sticky-composer-sheet-option-content';
     appendAgentBrandIcon(content, options.agentId, 'sm');
+    const text = document.createElement('span');
+    text.className = 'theia-qaap-agent-sheet-option-text';
     const labelEl = document.createElement('span');
     labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
     labelEl.textContent = options.label;
-    content.append(labelEl);
+    text.append(labelEl);
+    if (options.description) {
+        const description = document.createElement('span');
+        description.className = 'theia-qaap-agent-sheet-option-description';
+        description.textContent = options.description;
+        text.append(description);
+    }
+    content.append(text);
     if (options.selected) {
         const check = document.createElement('span');
         check.className = 'codicon codicon-check theia-mobile-sticky-composer-sheet-option-check';
@@ -206,7 +249,7 @@ export function createAgentSheetOptionButton(options: {
 export function createUnavailableAgentSheetOption(options: {
     readonly agentId: string;
     readonly label: string;
-    readonly status: string;
+    readonly description: string;
     readonly actionLabel: string;
     readonly onAction: () => void;
 }): HTMLElement {
@@ -222,10 +265,10 @@ export function createUnavailableAgentSheetOption(options: {
     const label = document.createElement('span');
     label.className = 'theia-qaap-agent-sheet-option-label';
     label.textContent = options.label;
-    const status = document.createElement('span');
-    status.className = 'theia-qaap-agent-sheet-unavailable-status';
-    status.textContent = options.status;
-    text.append(label, status);
+    const description = document.createElement('span');
+    description.className = 'theia-qaap-agent-sheet-unavailable-description';
+    description.textContent = options.description;
+    text.append(label, description);
     content.append(text);
 
     const action = document.createElement('button');
@@ -827,4 +870,3 @@ export function createDiffStatsLine(options: {
     }
     return line;
 }
-

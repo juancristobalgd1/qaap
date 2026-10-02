@@ -7,8 +7,15 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 import { expect } from 'chai';
 import { activateAgentPickerEntry, buildAgentPickerSearchResults, createAgentPickerInlineModelButton, modelMatchesAgentPickerQuery, type QaapAgentPickerSearchEntry } from './qaap-agent-picker-search';
-import { createAgentSheetOptionButton } from './qaap-agent-ui';
+import {
+    createAgentSheetOptionButton,
+    createApprovalPolicySheetOptionButton,
+    createModeSheetOptionButton,
+    createUnavailableAgentSheetOption,
+    resolveAgentPickerDescription,
+} from './qaap-agent-ui';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_AGENT_APPROVAL_POLICIES } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 
 const entries: readonly QaapAgentPickerSearchEntry[] = [
     {
@@ -34,6 +41,11 @@ const entries: readonly QaapAgentPickerSearchEntry[] = [
 ];
 
 describe('qaap-agent-picker-search', () => {
+    it('provides a short description for known and future agent rows', () => {
+        expect(resolveAgentPickerDescription('codex', 'Codex')).to.equal('OpenAI coding agent');
+        expect(resolveAgentPickerDescription('new-agent', 'New agent')).to.equal('New agent coding agent');
+    });
+
     it('filters models with the same normalized matching', () => {
         expect(entries[0].models.filter(model => modelMatchesAgentPickerQuery(model, 'sónnet'))).to.have.length(1);
     });
@@ -201,6 +213,7 @@ describe('qaap-agent-picker-search', () => {
             const selected = createAgentSheetOptionButton({
                 agentId: 'qaiq',
                 label: 'QAIQ',
+                description: resolveAgentPickerDescription('qaiq', 'QAIQ'),
                 selected: true,
                 submenuChevron: 'forward',
                 onSelect: () => activated.push('selected'),
@@ -216,7 +229,48 @@ describe('qaap-agent-picker-search', () => {
             selected.click();
             unselected.click();
             expect(activated).to.deep.equal(['selected', 'unselected']);
+            expect(selected.classList.contains('theia-mod-selected')).to.equal(true);
+            expect(selected.querySelector('.codicon-check')).to.not.equal(null);
+            expect(selected.querySelector('.theia-qaap-agent-sheet-option-description')?.textContent)
+                .to.equal('Qaap hosted coding agent');
+            expect(unselected.querySelector('.codicon-check')).to.equal(null);
+        });
+
+        it('shows a connection action beside the agent description', () => {
+            let actionCount = 0;
+            const row = createUnavailableAgentSheetOption({
+                agentId: 'opencode',
+                label: 'OpenCode',
+                description: 'Open source coding agent · Not connected on this workspace',
+                actionLabel: 'Add API key',
+                onAction: () => actionCount++,
+            });
+
+            expect(row.querySelector('.theia-qaap-agent-sheet-unavailable-description')?.textContent)
+                .to.equal('Open source coding agent · Not connected on this workspace');
+            const action = row.querySelector<HTMLButtonElement>('.theia-qaap-agent-sheet-inline-action');
+            expect(action?.textContent).to.equal('Add API key');
+            action?.click();
+            expect(actionCount).to.equal(1);
+        });
+
+        it('marks the selected Mode and approval policy with a visible check', () => {
+            const mode = createModeSheetOptionButton({
+                modeId: 'agent',
+                label: 'Build',
+                selected: true,
+                onSelect: () => undefined,
+            });
+            const policy = createApprovalPolicySheetOptionButton({
+                policy: QAAP_AGENT_APPROVAL_POLICIES[0],
+                selected: true,
+                onSelect: () => undefined,
+            });
+
+            expect(mode.classList.contains('theia-mod-selected')).to.equal(true);
+            expect(mode.querySelector('.codicon-check')).to.not.equal(null);
+            expect(policy.classList.contains('theia-mod-selected')).to.equal(true);
+            expect(policy.querySelector('.codicon-check')).to.not.equal(null);
         });
     });
 });
-

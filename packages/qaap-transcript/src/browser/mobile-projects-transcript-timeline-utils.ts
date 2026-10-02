@@ -6,6 +6,7 @@
 // Timeline utility functions extracted from
 // mobile-projects-transcript-messages-artifacts-ui.ts.
 
+import { nls } from '@theia/core/lib/common/nls';
 import type { TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
 
 export interface TranscriptActivityTimelineItem extends TranscriptActivityNavigationItem { }
@@ -16,10 +17,6 @@ export function isTranscriptExecutionTimelineNarrative(item: TranscriptActivityT
 
 export function transcriptExecutionTimelineCount(item: TranscriptActivityTimelineItem): number {
     return Math.max(1, item.groupCount ?? item.segmentIndices?.length ?? 1);
-}
-
-export function isTranscriptVerificationCommand(command: string | undefined): boolean {
-    return !!command && /(^|[\s"'`:,{[])(npm|yarn|pnpm|npx|node)?\s*(run\s+)?(test|vitest|lint|typecheck|tsc)(:|\b)/i.test(command);
 }
 
 export function resolveTranscriptExecutionToolGroupParts(
@@ -55,14 +52,16 @@ export function resolveTranscriptExecutionToolGroupParts(
         };
     }
     if (item.toolKind === 'terminal') {
-        const verification = isTranscriptVerificationCommand(item.detail);
-        const verb = verification ? 'Verification' : 'Run';
-        const unit = verification ? plural('check', 'checks') : plural('command', 'commands');
+        const verb = nls.localize('qaap/transcript/agentCommandVerb', 'Run');
+        const unit = plural(
+            nls.localize('qaap/transcript/agentCommandOne', 'command'),
+            nls.localize('qaap/transcript/agentCommandMany', 'commands'),
+        );
         return {
             timelineRole: 'toolGroup',
-            label: `${verb} ${count} ${unit}`,
+            label: nls.localize('qaap/transcript/agentCommandCount', '{0} {1}', String(count), unit),
             verb,
-            detail: `${count} ${unit}`,
+            detail: nls.localize('qaap/transcript/agentCommandCount', '{0} {1}', String(count), unit),
             tail: undefined,
         };
     }
@@ -86,9 +85,7 @@ export function resolveTranscriptExecutionNarrative(item: TranscriptActivityTime
         return "I'm updating the implementation.";
     }
     if (item.toolKind === 'terminal') {
-        return isTranscriptVerificationCommand(item.detail)
-            ? "I'm validating the implementation."
-            : "I'm running the next command.";
+        return nls.localize('qaap/transcript/agentCommandNarrative', "I'm running the next command.");
     }
     return "I'm applying the next step.";
 }

@@ -9,8 +9,8 @@ import type { QaapAgentTaskAgentOption } from '@theia/qaap-shared-core/lib/commo
  * How launchable an agent is for a "Run variants" fan-out, derived from the same backend catalog
  * fields the composer agent picker uses (`available` + `connectionState`):
  * - `ready`: the backend confirmed the harness is connected (or needs no login).
- * - `unverified`: installed, but the backend cannot probe its login (it may still ask to sign in).
- * - `not-connected`: the picker shows "Not connected on this workspace"; never launch it.
+ * - `unverified`: installed, but the backend cannot confirm its login; it must be connected first.
+ * - `not-connected`: unavailable or explicitly disconnected on this workspace.
  */
 export type QaapParallelAgentAvailability = 'ready' | 'unverified' | 'not-connected';
 
@@ -27,12 +27,12 @@ export namespace QaapParallelAgentDefaults {
     }
 
     export function isLaunchable(agent: Pick<QaapAgentTaskAgentOption, 'available' | 'connectionState'>): boolean {
-        return availability(agent) !== 'not-connected';
+        return availability(agent) === 'ready';
     }
 
     /**
-     * Default agent selection for the parallel-runs sheet: only launchable agents, the currently
-     * selected agent(s) first, then backend-confirmed connections, then unverified installs.
+     * Default agent selection for the parallel-runs sheet: only backend-confirmed connections,
+     * with the currently selected agent(s) first.
      */
     export function pickDefaultAgentIds(
         agents: readonly QaapAgentTaskAgentOption[],

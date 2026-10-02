@@ -23,6 +23,7 @@ import { respondToTranscriptApproval } from './qaap-transcript-approval-respond'
 import {
     conversationShouldWatchDevPreview,
     resolveReadyTranscriptPreviewUrlFromProbe,
+    transcriptPreviewProbeBackoffMs,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { probeQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
@@ -295,7 +296,11 @@ export function stopTranscriptPreviewOfferRefreshExtracted(ctx: MobileProjectsTr
 export function resolveTranscriptPreviewPollIntervalMsExtracted(ctx: MobileProjectsTranscriptLiveUiContext): number {
         return Math.min(
             TRANSCRIPT_PREVIEW_POLL_MAX_MS,
-            TRANSCRIPT_PREVIEW_POLL_BASE_MS + ctx.transcriptPreviewPollMisses * 400,
+            transcriptPreviewProbeBackoffMs(
+                ctx.transcriptPreviewPollMisses,
+                TRANSCRIPT_PREVIEW_POLL_BASE_MS,
+                TRANSCRIPT_PREVIEW_POLL_MAX_MS,
+            ),
         );
 }
 
@@ -440,4 +445,3 @@ export function stopTranscriptVisualVerificationPollExtracted(ctx: MobileProject
         }
         ctx.transcriptVisualVerificationPollUntil = undefined;
 }
-

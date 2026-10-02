@@ -8,11 +8,9 @@ import { deriveConversationTitle, isComposerAttachmentPreambleTitle, resolveConv
 
 describe('deriveConversationTitle', () => {
 
-    it('summarizes the task prompt and drops the leading imperative', () => {
-        const title = deriveConversationTitle('Run ls -la and then reply with one short sentence.');
-        // 'run' is stripped (remainder still >= 3 words); the remainder fits the target so only the
-        // trailing period is trimmed and the first letter capitalized.
-        expect(title).to.equal('Ls -la and then reply with one short sentence');
+    it('preserves the prompt wording and case while trimming terminal punctuation', () => {
+        const prompt = 'Run ls -la and then reply with one short sentence.';
+        expect(deriveConversationTitle(prompt)).to.equal('Run ls -la and then reply with one short sentence');
     });
 
     it('never ends mid-word and carries no trailing ellipsis or punctuation', () => {
@@ -46,13 +44,13 @@ describe('deriveConversationTitle', () => {
             .to.equal('Review the pull request changes');
     });
 
-    it('handles a Spanish prompt and drops Spanish boilerplate', () => {
-        const title = deriveConversationTitle('Por favor ejecuta el script de despliegue y verifica los logs.');
-        expect(title).to.equal('El script de despliegue y verifica los logs');
+    it('preserves Spanish prompt wording', () => {
+        const title = deriveConversationTitle('Por favor ejecuta los tests.');
+        expect(title).to.equal('Por favor ejecuta los tests');
     });
 
-    it('passes short prompts through, only capitalizing', () => {
-        expect(deriveConversationTitle('fix the login bug')).to.equal('Fix the login bug');
+    it('passes short prompts through without rewriting their first word', () => {
+        expect(deriveConversationTitle('fix the login bug')).to.equal('fix the login bug');
     });
 
     it('keeps boilerplate when stripping would leave fewer than three words', () => {
@@ -61,6 +59,13 @@ describe('deriveConversationTitle', () => {
 
     it('does not strip a word that merely starts with a boilerplate token', () => {
         expect(deriveConversationTitle('Running the test suite in watch mode')).to.equal('Running the test suite in watch mode');
+    });
+
+    it('keeps the original leading words when shortening a long prompt', () => {
+        const prompt = 'Please carefully review the authentication changes and verify the new session expiry behavior in every browser';
+        const title = deriveConversationTitle(prompt);
+        expect(prompt.startsWith(title)).to.equal(true);
+        expect(title).to.match(/^Please carefully review/);
     });
 
     it('returns an empty string for empty or whitespace-only input', () => {
@@ -100,7 +105,7 @@ describe('attachment-aware conversation titles', () => {
 
     it('titles preview feedback from the annotation comment, not the preamble or generic draft', () => {
         const message = `${feedback}\n\n---\n\nPlease address the attached preview feedback.`;
-        expect(deriveConversationTitle(message)).to.equal('Mejora la ui');
+        expect(deriveConversationTitle(message)).to.equal('mejora la ui');
     });
 
     it('prefers the typed draft over annotation comments', () => {

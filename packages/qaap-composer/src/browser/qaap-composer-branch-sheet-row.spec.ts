@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Modules below may touch the DOM while loading; it is removed again after the imports
 // so no suite depends on another spec file leaving jsdom behind.
@@ -62,6 +64,28 @@ describe('qaap-composer-branch-sheet-row', () => {
             .to.equal('work/jc-2026-07-14-work-hub-chrome');
         expect(row.querySelector('.theia-mobile-sticky-composer-sheet-branch-menu-btn')).to.not.equal(null);
         expect(row.querySelector('.codicon-check')).to.not.equal(null);
+        expect(row.classList.contains('theia-mod-selected')).to.equal(true);
+    });
+
+    it('styles the selected composer option with foreground text and a high-contrast check', () => {
+        const cssPath = path.join(
+            __dirname,
+            '..',
+            '..',
+            '..',
+            'qaap-work-hub',
+            'src',
+            'browser',
+            'style',
+            'mobile-workbench-work-hub.css',
+        );
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css).to.match(
+            /\.theia-mobile-sticky-composer-sheet-option\.theia-mod-selected\s*\{[^}]*color:\s*var\(--theia-foreground\)[^}]*outline:\s*1px solid/s,
+        );
+        expect(css).to.match(
+            /\.theia-mobile-sticky-composer-sheet-option\.theia-mod-selected \.theia-mobile-sticky-composer-sheet-option-check\s*\{[^}]*color:\s*var\(--q-accent,\s*var\(--qaap-accent,/s,
+        );
     });
 
     it('does not trigger branch select when opening the menu', () => {

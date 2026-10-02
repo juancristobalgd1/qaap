@@ -9,6 +9,7 @@
 // into the event-based timeline tree: narrative events with grouped tool
 // children. Extracted from qaap-execution-event-timeline.ts.
 
+import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { extractToolArgFilePath, formatReadToolDetailFromArgs } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, extractTranscriptTaskSummary } from '../common/qaap-agent-transcript-segments';
@@ -62,10 +63,7 @@ export function buildMobileExecutionEvents(segments: readonly QaapAgentMessageSe
         const lastEvent = events[events.length - 1];
 
         // Merge into last event if no new narrative and same kind.
-        // Never merge run/verification groups: incomplete Bash args often start
-        // as `run` and later flip to `verification`, which would collapse two
-        // events into one (`nextEvents.length < prev`) and force a full timeline
-        // rebuild (visible flicker) on every classification flip.
+        // Keep command groups separate so their stable tool ids survive stream updates.
         const canMergeKind = descriptor.kind !== 'run' && descriptor.kind !== 'verification';
         if (lastEvent && pendingNarrative.length === 0 && lastEvent.kind === descriptor.kind && canMergeKind) {
             lastEvent.tools.push(toMobileTool(segment, i, descriptor));
@@ -163,11 +161,16 @@ function describeMobileTool(segment: Extract<QaapAgentMessageSegmentDTO, { type:
             narrative: "I'm searching the web.",
         };
     }
-    if (isVerificationTool(segment, name)) {
-        return { kind: 'verification', icon: 'codicon-checklist', verb: 'Verification', narrative: "I'm validating the implementation." };
-    }
-    if (activityKind === 'terminal' || matchesName(name, ['bash', 'shell', 'terminal', 'command', 'exec', 'run', 'npm', 'yarn', 'pnpm', 'node'])) {
-        return { kind: 'run', icon: 'codicon-terminal', verb: 'Run', narrative: "I'm running commands." };
+    if (activityKind === 'terminal' || matchesName(name, [
+        'bash', 'shell', 'terminal', 'command', 'exec', 'run', 'npm', 'yarn', 'pnpm', 'node',
+        'vitest', 'test', 'lint', 'typecheck', 'tsc',
+    ])) {
+        return {
+            kind: 'run',
+            icon: 'codicon-terminal',
+            verb: nls.localize('qaap/transcript/agentCommandVerb', 'Run'),
+            narrative: nls.localize('qaap/transcript/agentCommandNarrative', "I'm running commands."),
+        };
     }
     if (activityKind === 'searching' || matchesName(name, ['grep', 'glob', 'search', 'find', 'ripgrep', 'rg'])) {
         return { kind: 'explore', icon: 'codicon-search', verb: 'Explore', narrative: "I'm looking through the project structure." };
@@ -194,23 +197,6 @@ function describeMobileTool(segment: Extract<QaapAgentMessageSegmentDTO, { type:
         };
     }
     return { kind: 'other', icon: 'codicon-tools', verb: 'Use', narrative: "I'm applying the next step." };
-}
-
-function isVerificationTool(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>, name: string): boolean {
-    if (matchesName(name, ['vitest', 'test', 'lint', 'typecheck', 'tsc'])) {
-        return true;
-    }
-    if (!matchesName(name, ['bash', 'shell', 'terminal', 'command', 'exec', 'run', 'npm', 'yarn', 'pnpm', 'node'])) {
-        return false;
-    }
-    return containsVerificationCommand(segment.args);
-}
-
-function containsVerificationCommand(args: string | undefined): boolean {
-    if (!args) {
-        return false;
-    }
-    return /(^|[\s"'`:,{[])(npm|yarn|pnpm|npx|node)?\s*(run\s+)?(test|vitest|lint|typecheck|tsc)(:|\b)/i.test(args);
 }
 
 function matchesName(name: string, tokens: string[]): boolean {
