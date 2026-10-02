@@ -561,6 +561,52 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         expect(branches).to.deep.equal(['main']);
     });
 
+    it('shows the current branch uncommitted change count from the git changes response', async () => {
+        const current = project('repo', 'Repo', true);
+        globalThis.fetch = input => {
+            const url = String(input);
+            if (url.includes('/branches')) {
+                return Promise.resolve(new Response(JSON.stringify({
+                    root: '/tmp/repo',
+                    current: 'feature/work',
+                    branches: ['main', 'feature/work'],
+                }), { status: 200 }));
+            }
+            if (url.includes('/changes')) {
+                return Promise.resolve(new Response(JSON.stringify({
+                    root: '/tmp/repo',
+                    branch: 'feature/work',
+                    files: [
+                        { path: 'src/a.ts', status: 'M', adds: 1, dels: 0, staged: false },
+                        { path: 'README.md', status: 'M', adds: 0, dels: 1, staged: true },
+                    ],
+                }), { status: 200 }));
+            }
+            return Promise.reject(new Error(`unexpected fetch: ${url}`));
+        };
+        const host = createHost([current]);
+        host.preparedCwdByProjectId.set(current.id, '/tmp/repo');
+        host.projectsService = {
+            getProjectCwd: () => '/tmp/repo',
+            getCurrentWorkspaceBranch: () => 'main',
+            prepareProjectCwd: async () => undefined,
+            createGithubProject: async () => [current],
+        } as unknown as MobileProjectsStickyComposerWorkspaceHost['projectsService'];
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-sticky-composer-sheet-list';
+        document.body.append(list);
+        host.stickyComposerWorkspaceSheet = list;
+
+        await ui.loadComposerWorkspaceBranchSheet(current, list);
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+        const currentRow = list.querySelector<HTMLElement>(`${COMPOSER_BRANCH_SHEET_ROW_SELECTOR}[data-branch-name="feature/work"]`);
+        expect(currentRow?.querySelector('.theia-mobile-sticky-composer-sheet-branch-changes')?.textContent).to.equal('2');
+        expect(list.querySelector(`${COMPOSER_BRANCH_SHEET_ROW_SELECTOR}[data-branch-name="main"] .theia-mobile-sticky-composer-sheet-branch-changes`))
+            .to.equal(null);
+    });
+
     it('restores a branch row and shows a snackbar when cwd is unavailable', async () => {
         const current = project('repo', 'Repo', true);
         let fetchCalled = false;

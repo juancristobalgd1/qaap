@@ -44,12 +44,47 @@
 }
 
 .theia-mobile-projects-sticky-composer-until-done.theia-mod-disabled {
+  position: relative;
   opacity: 0.45;
   cursor: not-allowed;
 }
 
 .theia-mobile-projects-sticky-composer-until-done.theia-mod-disabled:hover {
   background: transparent;
+}
+
+.theia-mobile-projects-sticky-composer-until-done.theia-mod-disabled::after {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1000;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.45));
+  border-radius: 6px;
+  background: var(--theia-menu-background, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  content: attr(data-disabled-reason);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 100ms ease, transform 100ms ease, visibility 100ms ease;
+}
+
+.theia-mobile-projects-sticky-composer-until-done.theia-mod-disabled:hover::after,
+.theia-mobile-projects-sticky-composer-until-done.theia-mod-disabled:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 /* Narrow viewport (keep in sync with MOBILE_NARROW_VIEWPORT_MEDIA_QUERY): icon-only toggle. */

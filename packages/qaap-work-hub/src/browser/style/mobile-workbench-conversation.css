@@ -3323,23 +3323,23 @@ body>.theia-mobile-transcript-files-menu {
   font-size: 12px;
 }
 
-/* Desktop: the parallel-runs sheet is a centered modal instead of a full-width top sheet. */
-@media (min-width: 768px) {
-  .theia-mobile-agent-log.theia-mobile-parallel-root {
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    box-sizing: border-box;
-  }
+.theia-mobile-agent-log.theia-mobile-parallel-root {
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: max(16px, env(safe-area-inset-top, 0px))
+    max(12px, env(safe-area-inset-right, 0px))
+    max(16px, env(safe-area-inset-bottom, 0px))
+    max(12px, env(safe-area-inset-left, 0px));
+}
 
-  .theia-mobile-parallel-root .theia-mobile-agent-log-sheet.theia-mod-parallel {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 640px;
-    max-height: min(88vh, 720px);
-    border: 1px solid var(--theia-panel-border);
-    border-radius: 12px;
-  }
+.theia-mobile-parallel-root .theia-mobile-agent-log-sheet.theia-mod-parallel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 640px;
+  max-height: min(88vh, 720px);
+  border: 1px solid var(--theia-panel-border);
+  border-radius: 12px;
 }
 
 .theia-qaap-agent-chip-group {
@@ -11422,10 +11422,13 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-sticky-com
   padding: 7px 10px;
 }
 
-.qaap-sticky-composer-sheet-popover.theia-mod-branch-sheet .theia-mobile-sticky-composer-sheet-option-label {
-  font-family: var(--theia-monospace-font-family, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.3;
+.qaap-sticky-composer-sheet-popover.theia-mod-branch-sheet .theia-mobile-sticky-composer-sheet-branch-row .theia-mobile-sticky-composer-sheet-option-label,
+.qaap-sticky-composer-sheet-popover.theia-mod-branch-sheet .theia-mobile-sticky-composer-sheet-list > .theia-mobile-sticky-composer-sheet-option .theia-mobile-sticky-composer-sheet-option-label,
+.theia-mobile-sticky-composer-sheet.theia-mod-workspace .theia-mobile-sticky-composer-sheet-branch-row .theia-mobile-sticky-composer-sheet-option-label,
+.theia-mobile-sticky-composer-sheet.theia-mod-workspace .theia-mobile-sticky-composer-sheet-list > .theia-mobile-sticky-composer-sheet-option .theia-mobile-sticky-composer-sheet-option-label {
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .theia-mobile-sticky-composer-sheet-branch-row {
@@ -11452,6 +11455,22 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-sticky-com
   flex: 1 1 auto;
   min-width: 0;
   margin-bottom: 0;
+}
+
+.theia-mobile-sticky-composer-sheet-branch-changes {
+  flex: 0 0 auto;
+  min-width: 18px;
+  box-sizing: border-box;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-descriptionForeground) 16%, transparent);
+  color: var(--theia-foreground);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .theia-mobile-sticky-composer-sheet-branch-menu-btn {

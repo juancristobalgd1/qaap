@@ -30,6 +30,7 @@ export function createStickyComposerUntilDoneToggle(options: StickyComposerUntil
     button.setAttribute('aria-pressed', String(checked));
     if (disabled) {
         button.setAttribute('aria-disabled', 'true');
+        button.dataset.disabledReason = options.disabledReason;
     }
     const label = nls.localize('theia/qaap/goalLoop/untilDone', 'Until done');
     button.title = disabled
