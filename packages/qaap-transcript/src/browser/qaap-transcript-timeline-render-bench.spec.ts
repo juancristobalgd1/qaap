@@ -792,7 +792,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
             .to.equal('export default function Page() { return null; }');
     });
 
-    it('renders verification as a compact progress group instead of a shell event', () => {
+    it('renders an agent test command as a command group, separate from Qaap verification', () => {
         const artifactsUi = createArtifactsUi();
         const segments: QaapAgentMessageSegmentDTO[] = [
             {
@@ -812,9 +812,9 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(timeline).to.not.equal(undefined);
         expect(timeline instanceof HTMLDetailsElement && timeline.open).to.equal(false);
         expect(timeline?.querySelector('.theia-mobile-agent-activity-narrative')?.textContent)
-            .to.equal("I'm validating the implementation.");
-        expect(timeline?.querySelector('.theia-mobile-agent-activity-verb')?.textContent).to.equal('Verification');
-        expect(timeline?.querySelector('.theia-mobile-agent-activity-detail')?.textContent).to.equal('1 check');
+            .to.equal("I'm running the next command.");
+        expect(timeline?.querySelector('.theia-mobile-agent-activity-verb')?.textContent).to.equal('Run');
+        expect(timeline?.querySelector('.theia-mobile-agent-activity-detail')?.textContent).to.equal('1 command');
         expect(timeline?.querySelector('.theia-mobile-agent-activity-expand') instanceof HTMLDetailsElement
             && timeline.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand')?.open).to.equal(false);
     });

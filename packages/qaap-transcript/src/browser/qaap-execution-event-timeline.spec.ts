@@ -89,16 +89,21 @@ describe('qaap-execution-event-timeline', () => {
             expect(timeline.events[2]?.kind).to.equal('edit');
         });
 
-        it('classifies verification commands as verification events', () => {
+        it('classifies test and lint shell commands as agent command events', () => {
             const timeline = buildMobileExecutionEvents([
                 toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run test' })),
                 toolSegment('Bash', 'tool-2', JSON.stringify({ command: 'pnpm lint' })),
+                toolSegment('vitest', 'tool-3', JSON.stringify({ command: 'vitest' })),
             ]);
 
-            // Run/verification tools stay one event per tool (stable ids; no kind-flip rebuilds).
-            expect(timeline.events).to.have.length(2);
-            expect(timeline.events[0]?.kind).to.equal('verification');
-            expect(timeline.events[1]?.kind).to.equal('verification');
+            // Keep one event per command tool so stable ids survive stream updates.
+            expect(timeline.events).to.have.length(3);
+            expect(timeline.events[0]?.kind).to.equal('run');
+            expect(timeline.events[1]?.kind).to.equal('run');
+            expect(timeline.events[2]?.kind).to.equal('run');
+            expect(timeline.events[0]?.tools[0]?.isVerification).to.equal(false);
+            expect(timeline.events[1]?.tools[0]?.isVerification).to.equal(false);
+            expect(timeline.events[2]?.tools[0]?.isVerification).to.equal(false);
             expect(timeline.events[0]?.id).to.equal('m-event-tool-1');
             expect(timeline.events[1]?.id).to.equal('m-event-tool-2');
         });
