@@ -233,7 +233,9 @@ const ALLOWED = [
     /^bom\.json$/,
     /^configs\/base\.tsconfig\.json$/,
     /^\.github\/workflows\/set-milestone-on-pr\.yml$/,
-    /^\.github\/workflows\/generate-sbom\.yml$/,
+    // Qaap does not use Theia's npm publishing, translation, SBOM, native release,
+    // discussion welcome, or API-doc publishing workflows.
+    /^\.github\/workflows\/(discussion-welcome|generate-sbom|native-dependencies|publish-api-doc-gh-pages|publish-ci|translation)\.yml$/,
     // ---- Product seams in upstream Theia AI packages -----------------------
     // Small tweaks in upstream Theia AI packages to match product behaviour
     // (model lists, branding strings, dropped-Theia-only test fixtures, minor
@@ -396,9 +398,6 @@ const ALLOWED = [
     // Playwright browser-cache step re-applied on top.
     /^\.github\/workflows\/playwright\.yml$/,
     /^\.github\/workflows\/production-smoke-test\.yml$/,
-    // Fork deploys gh-pages via peaceiris/actions-gh-pages (direct push) instead of
-    // upstream's pages environment — this repo has no github-pages environment.
-    /^\.github\/workflows\/publish-api-doc-gh-pages\.yml$/,
     /^\.prompts\//,
     /^\.theia\//,
     /^\.dockerignore$/,
