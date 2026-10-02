@@ -17,7 +17,10 @@ import {
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
-import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
+import {
+    ComposerPromptImproveTimeoutError,
+    type QaapImproveComposerPromptRequestBody,
+} from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
@@ -490,7 +493,17 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             });
             res.json({ improved });
         } catch (error) {
-            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+            const timedOut = error instanceof ComposerPromptImproveTimeoutError;
+            console.error('[qaap-agent-tasks] Improve prompt failed.', {
+                agentId,
+                errorType: error instanceof Error ? error.name : typeof error,
+                timedOut,
+            });
+            res.status(timedOut ? 504 : 500).json({
+                error: timedOut
+                    ? nls.localize('qaap/agentTasks/improvePromptTimeout', 'Prompt improvement timed out. Try again.')
+                    : nls.localize('qaap/agentTasks/improvePromptFailed', 'Could not improve the prompt. Try again.'),
+            });
         }
     }
 

@@ -19,6 +19,7 @@ import {
     COMPOSER_PROMPT_IMPROVE_TIMEOUT_MS,
     QAAP_COMPOSER_IMPROVE_API_PATH,
     ComposerPromptImproveCancelledError,
+    ComposerPromptImproveTimeoutError,
     buildImproveComposerPromptRequest,
     formatAgentModelLanguageModelId,
     sanitizeImprovedComposerPrompt,
@@ -44,6 +45,10 @@ export class QaapComposerPromptImprover {
     protected activeCancel: CancellationTokenSource | undefined;
     protected activeAbort: AbortController | undefined;
 
+    protected getTimeoutMs(): number {
+        return COMPOSER_PROMPT_IMPROVE_TIMEOUT_MS;
+    }
+
     cancelActive(): void {
         this.activeCancel?.cancel();
         this.activeCancel = undefined;
@@ -61,42 +66,55 @@ export class QaapComposerPromptImprover {
         const abort = new AbortController();
         this.activeCancel = tokenSource;
         this.activeAbort = abort;
+        let timedOut = false;
+        let rejectTimeout: (error: ComposerPromptImproveTimeoutError) => void = () => undefined;
+        const timeoutPromise = new Promise<never>((_resolve, reject) => {
+            rejectTimeout = reject;
+        });
         const timeout = window.setTimeout(() => {
+            timedOut = true;
             tokenSource.cancel();
             abort.abort();
-        }, COMPOSER_PROMPT_IMPROVE_TIMEOUT_MS);
+            rejectTimeout(new ComposerPromptImproveTimeoutError());
+        }, this.getTimeoutMs());
         try {
-            const backend = await this.tryImproveViaBackend(request, abort.signal);
-            if (backend) {
+            const operation = (async (): Promise<string> => {
+                const backend = await this.tryImproveViaBackend(request, abort.signal);
+                if (backend) {
+                    if (tokenSource.token.isCancellationRequested || abort.signal.aborted) {
+                        throw new ComposerPromptImproveCancelledError();
+                    }
+                    return backend;
+                }
+                const model = await this.pickModel(request.agentModel);
+                if (!model || !this.languageModelService) {
+                    throw new Error('No language model is ready for prompt improvement');
+                }
+                const response = await this.languageModelService.sendRequest(model, {
+                    messages: [{
+                        actor: 'user',
+                        type: 'text',
+                        text: buildImproveComposerPromptRequest(trimmed),
+                    }],
+                    sessionId: generateUuid(),
+                    requestId: generateUuid(),
+                    agentId: COMPOSER_PROMPT_IMPROVER_AGENT_ID,
+                    cancellationToken: tokenSource.token,
+                });
                 if (tokenSource.token.isCancellationRequested || abort.signal.aborted) {
                     throw new ComposerPromptImproveCancelledError();
                 }
-                return backend;
-            }
-            const model = await this.pickModel(request.agentModel);
-            if (!model || !this.languageModelService) {
-                throw new Error('No language model is ready for prompt improvement');
-            }
-            const response = await this.languageModelService.sendRequest(model, {
-                messages: [{
-                    actor: 'user',
-                    type: 'text',
-                    text: buildImproveComposerPromptRequest(trimmed),
-                }],
-                sessionId: generateUuid(),
-                requestId: generateUuid(),
-                agentId: COMPOSER_PROMPT_IMPROVER_AGENT_ID,
-                cancellationToken: tokenSource.token,
-            });
-            if (tokenSource.token.isCancellationRequested || abort.signal.aborted) {
-                throw new ComposerPromptImproveCancelledError();
-            }
-            const improved = sanitizeImprovedComposerPrompt(await getTextOfResponse(response));
-            if (!improved) {
-                throw new Error('The model returned an empty prompt');
-            }
-            return improved;
+                const improved = sanitizeImprovedComposerPrompt(await getTextOfResponse(response));
+                if (!improved) {
+                    throw new Error('The model returned an empty prompt');
+                }
+                return improved;
+            })();
+            return await Promise.race([operation, timeoutPromise]);
         } catch (error) {
+            if (timedOut) {
+                throw new ComposerPromptImproveTimeoutError();
+            }
             if (tokenSource.token.isCancellationRequested || abort.signal.aborted) {
                 throw new ComposerPromptImproveCancelledError();
             }

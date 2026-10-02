@@ -13,7 +13,10 @@ import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as path from 'path';
 import {
     buildImproveComposerPromptRequest,
+    ComposerPromptImproveTimeoutError,
+    COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
+import { QaapAgentCommandTimeoutError } from './qaap-agent-task-runner-utils3';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
@@ -562,15 +565,22 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(options.agentModel ? { agentModel: options.agentModel, qaiqModel: options.agentModel } : {}),
         };
-        return ctx.runOneShotCommand(
-            command,
-            cwd,
-            ctx.buildChildEnv(task),
-            agentId,
-            45_000,
-            transported.stdinPrompt,
-            transported.promptTempDir,
-        );
+        try {
+            return await ctx.runOneShotCommand(
+                command,
+                cwd,
+                ctx.buildChildEnv(task),
+                agentId,
+                COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
+                transported.stdinPrompt,
+                transported.promptTempDir,
+            );
+        } catch (error) {
+            if (error instanceof QaapAgentCommandTimeoutError) {
+                throw new ComposerPromptImproveTimeoutError();
+            }
+            throw error;
+        }
 }
 
 /**

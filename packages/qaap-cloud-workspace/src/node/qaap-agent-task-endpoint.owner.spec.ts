@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import type { Application, Request, Response } from '@theia/core/shared/express';
 import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import { ComposerPromptImproveTimeoutError } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 
 type Handler = (req: Request, res: Response) => void;
 
@@ -68,25 +69,29 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
         endpoint.configure(app);
     });
 
-    function response(): Response & { done: Promise<void> } {
+    function response(): Response & { done: Promise<void>; result: () => { statusCode: number; body: unknown } } {
         let settle: () => void = () => undefined;
+        let statusCode = 200;
+        let body: unknown;
         const done = new Promise<void>(resolve => { settle = resolve; });
         const res = {
             done,
-            status: () => res,
+            status: (code: number) => { statusCode = code; return res; },
             set: () => res,
             setHeader: () => res,
-            json: () => { settle(); return res; },
+            json: (value: unknown) => { body = value; settle(); return res; },
+            result: () => ({ statusCode, body }),
         };
-        return res as unknown as Response & { done: Promise<void> };
+        return res as unknown as Response & { done: Promise<void>; result: () => { statusCode: number; body: unknown } };
     }
 
-    async function call(route: string, req: Partial<Request>): Promise<void> {
+    async function call(route: string, req: Partial<Request>): Promise<{ statusCode: number; body: unknown }> {
         const handler = routes.get(route);
         expect(handler, route).to.not.equal(undefined);
         const res = response();
         handler!({ params: {}, query: {}, body: {}, header: () => undefined, ...req } as unknown as Request, res);
         await res.done;
+        return res.result();
     }
 
     it('task list and dashboard feed resolve agents, default agent and QAIQ models for the caller', async () => {
@@ -109,5 +114,24 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
         expect(ownerArgs('resume')).to.deep.equal([['t1', LOGIN]]);
         expect(ownerArgs('create').map(args => args[1])).to.deep.equal([LOGIN]);
         expect(ownerArgs('improveComposerPrompt').map(([options]) => (options as { ownerLogin?: string }).ownerLogin)).to.deep.equal([LOGIN]);
+    });
+
+    it('returns a logged 504 when Improve prompt times out without logging the prompt', async () => {
+        const runner = (endpoint as unknown as { runner: { improveComposerPrompt: (options: unknown) => Promise<string> } }).runner;
+        runner.improveComposerPrompt = async () => { throw new ComposerPromptImproveTimeoutError(); };
+        const previousError = console.error;
+        const logEntries: unknown[][] = [];
+        console.error = (...data: unknown[]) => { logEntries.push(data); };
+        try {
+            const result = await call(`POST ${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, {
+                body: { prompt: 'private prompt text', agentId: 'qaiq' },
+            });
+            expect(result.statusCode).to.equal(504);
+            expect(result.body).to.deep.equal({ error: 'Prompt improvement timed out. Try again.' });
+            expect(logEntries).to.have.length(1);
+            expect(JSON.stringify(logEntries)).not.to.contain('private prompt text');
+        } finally {
+            console.error = previousError;
+        }
     });
 });
