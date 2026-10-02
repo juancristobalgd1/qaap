@@ -391,6 +391,35 @@ describe('QaapTenantBackendProxyContribution', () => {
             });
         });
 
+        it('re-ensures a stale tenant target and retries a signed-in agent approval read', async () => {
+            const seen: Seen[] = [];
+            let ensureCalls = 0;
+            await withTenantAndFront((req, res) => {
+                seen.push({ url: req.url, headers: req.headers });
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end('{"approvals":[]}');
+            }, {
+                authenticated: true,
+                ensureTenantBackend: async target => {
+                    ensureCalls++;
+                    return ensureCalls === 1 ? { ...target, host: '127.0.0.2' } : target;
+                },
+            }, async ({ port, originalHits }) => {
+                const response = await request(port, '/qaap/api/agent-approvals', {
+                    cookie: `${QAAP_AUTH_SESSION_COOKIE}=valid-session`,
+                });
+                expect(response.status).to.equal(200);
+                expect(response.body).to.equal('{"approvals":[]}');
+                expect(originalHits).to.deep.equal([]);
+            });
+
+            expect(ensureCalls).to.equal(2);
+            expect(seen).to.have.length(1);
+            expect(seen[0].url).to.equal('/qaap/api/agent-approvals');
+            expect(seen[0].headers.cookie).to.equal(undefined);
+            expect(seen[0].headers[QAAP_TENANT_BACKEND_ASSERTION_HEADER]).to.be.a('string');
+        });
+
         it('keeps control-plane paths, anonymous requests and the non-tenant mode on the original listeners', async () => {
             await withTenantAndFront((_req, res) => res.end('tenant'), { authenticated: true }, async ({ port, originalHits }) => {
                 expect((await request(port, '/qaap/api/health')).body).to.equal('control-plane');

@@ -284,11 +284,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 // Never open an orphan upstream request (and Socket.IO handshake) nobody will read.
                 return;
             }
-            const assertion = createQaapTenantBackendAssertion({
-                tenantLogin: userLogin,
-                user: session.user,
-                githubAccessToken: session.accessToken,
-            }, this.docker.getTenantBackendAssertionSecret(userLogin));
+            const assertion = this.createTenantAssertion(userLogin, session);
             let socketIoHeaders: Record<string, string> | undefined;
             if (socketIo) {
                 const tenantConnectionToken = this.docker.getTenantBackendConnectionToken(userLogin);
@@ -303,8 +299,14 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                     origin: `http://${target.host}:${target.port}`,
                 };
             }
+            const retryOnConnectFailure = socketIo ? undefined : async (): Promise<void> => {
+                const retryTarget = await this.docker.ensureTenantBackend(userLogin, root);
+                this.forwardHttp(request as Request, response as Response, retryTarget,
+                    this.createTenantAssertion(userLogin, session), userLogin,
+                    this.remainingTenantProxyBudgetMs(deadline), undefined, undefined);
+            };
             this.forwardHttp(request as Request, response as Response, target, assertion, userLogin,
-                this.remainingTenantProxyBudgetMs(deadline), socketIoHeaders);
+                this.remainingTenantProxyBudgetMs(deadline), socketIoHeaders, undefined, retryOnConnectFailure);
         } catch (error) {
             this.writeProxyError(response as Response, error);
         }
@@ -478,15 +480,29 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 return;
             }
             const target = await this.docker.ensureTenantBackend(context.userLogin, root);
-            const assertion = createQaapTenantBackendAssertion({
-                tenantLogin: context.userLogin,
-                user: context.session.user,
-                githubAccessToken: context.session.accessToken,
-            }, this.docker.getTenantBackendAssertionSecret(context.userLogin));
-            this.forwardHttp(req, res, target, assertion, context.userLogin, this.remainingTenantProxyBudgetMs(deadline));
+            const assertion = this.createTenantAssertion(context.userLogin, context.session);
+            const retryOnConnectFailure = async (): Promise<void> => {
+                const retryTarget = await this.docker.ensureTenantBackend(context.userLogin, root);
+                this.forwardHttp(req, res, retryTarget,
+                    this.createTenantAssertion(context.userLogin, context.session), context.userLogin,
+                    this.remainingTenantProxyBudgetMs(deadline));
+            };
+            this.forwardHttp(req, res, target, assertion, context.userLogin,
+                this.remainingTenantProxyBudgetMs(deadline), undefined, undefined, retryOnConnectFailure);
         } catch (error) {
             this.writeProxyError(res, error);
         }
+    }
+
+    protected createTenantAssertion(
+        tenantLogin: string,
+        session: { accessToken: string; user: { provider: 'github' | 'gitlab'; login: string; name: string; avatarUrl?: string } },
+    ): string {
+        return createQaapTenantBackendAssertion({
+            tenantLogin,
+            user: session.user,
+            githubAccessToken: session.accessToken,
+        }, this.docker.getTenantBackendAssertionSecret(tenantLogin));
     }
 
     protected installUpgradeRouter(server: http.Server): void {
@@ -699,6 +715,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         responseTimeoutMs = this.getTenantProxyIdleTimeoutMs(),
         extraHeaders?: Record<string, string>,
         publicRoute?: QaapPreviewRoute,
+        retryOnConnectFailure?: () => Promise<void>,
     ): void {
         const headers = publicRoute
             ? this.publicPreviewHeaders(req.headers, target, publicRoute)
@@ -766,9 +783,19 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         });
         upstream.once('error', error => {
             clearTimeout(responseTimer);
-            if (this.shouldEvictTenantBackendTarget(error, timedOut, isConnected())) {
+            const connected = isConnected();
+            if (this.shouldEvictTenantBackendTarget(error, timedOut, connected)) {
                 // Drop the cached target so the next request re-ensures (restarts) the backend.
                 this.docker.invalidateTenantBackendTarget(tenantLogin, target);
+            }
+            const replayableRead = req.method === 'GET' || req.method === 'HEAD';
+            if (retryOnConnectFailure && replayableRead && !timedOut && !connected
+                && this.isTenantBackendConnectError(error)) {
+                // The target cache can outlive a crashed/restarted tenant. A safe read can recover
+                // in the same request after invalidation rather than surfacing a transient 502 to
+                // the signed-in client.
+                void retryOnConnectFailure().catch(retryError => this.writeProxyError(res, retryError));
+                return;
             }
             if (timedOut && !res.headersSent) {
                 this.writeJson(res, 504, { error: 'Tenant backend timed out', detail: error.message.slice(0, 240) });
@@ -778,6 +805,10 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         });
         if (body) {
             upstream.end(body);
+        } else if (req.method === 'GET' || req.method === 'HEAD') {
+            // These requests have no body, so ending explicitly also makes their one safe retry
+            // independent of whether Express or the early router already consumed the request.
+            upstream.end();
         } else {
             req.pipe(upstream);
         }
