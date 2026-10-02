@@ -57,9 +57,6 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     if (project.isCurrent) {
         row.classList.add('theia-mod-current');
     }
-    if (ctx.host.agentsHubSelectedProjectId === project.id) {
-        row.classList.add('theia-mod-selected');
-    }
     const chevronBtn = document.createElement('button');
     chevronBtn.type = 'button';
     chevronBtn.className = 'theia-mobile-work-hub-sessions-sidebar-project-chevron-btn';

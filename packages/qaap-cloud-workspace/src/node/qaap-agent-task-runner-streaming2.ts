@@ -1,4 +1,4 @@
-import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS } from './qaap-agent-task-runner-constants';
+import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
@@ -191,6 +191,9 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             ...(request.readOnlyWorkspace ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
             ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
+            ...((request.userQuery?.trim() || prompt)
+                ? { userRequest: (request.userQuery?.trim() || prompt).slice(0, USER_REQUEST_MAX_CHARS) }
+                : {}),
             ...(clientRequestId ? { clientRequestId } : {}),
             ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),

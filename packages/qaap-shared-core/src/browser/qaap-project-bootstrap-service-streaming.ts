@@ -14,6 +14,7 @@ import {
 } from './qaap-dev-preview-client';
 import {
     isReservedIdePort,
+    pickNextDevPort,
     wrapCommandForDevNodeEnv,
 } from './qaap-project-bootstrap-port';
 import {
@@ -27,6 +28,8 @@ import {
 import {
     shouldIgnoreWorkspaceRefreshForHubPin,
 } from './qaap-project-bootstrap-helpers';
+import { DEV_PORT_RECOVERY_MAX_ATTEMPTS } from './qaap-project-bootstrap-service';
+import { takePreviewStartupOutputListener } from './qaap-project-bootstrap-service-activity';
 
 export async function runInstallExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
         const descriptor = ctx._descriptor;
@@ -170,8 +173,19 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             }
             if (reservation.kind !== 'claimed' || reservation.port === undefined
                 || !reservation.previewId || !reservation.previewUrl) {
-                ctx._error = reservation.kind === 'conflict'
+                const identityConflict = reservation.kind === 'conflict' && reservation.reason === 'identity';
+                if (reservation.kind === 'conflict' && !identityConflict
+                    && await recoverPreviewPortClaimConflictExtracted(ctx, plan, descriptor, spawnPlan.targetPort)) {
+                    return;
+                }
+                ctx._error = identityConflict
                     ? nls.localize('qaap/projectBootstrap/previewIdentityConflict', 'The requested preview identity is already in use.')
+                    : reservation.kind === 'conflict'
+                    ? nls.localize(
+                        'qaap/projectBootstrap/previewPortConflict',
+                        'Port {0} is already in use, and Qaap could not reserve an alternate preview port.',
+                        String(spawnPlan.targetPort),
+                    )
                     : nls.localize('qaap/projectBootstrap/previewReservationFailed', 'Qaap could not reserve an isolated preview port.');
                 ctx.setPhase('run-failed');
                 return;
@@ -216,6 +230,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             // is no longer an in-flight spawn (an abandoned one may be reaped as an orphan).
             ctx.spawningPreviewTerminals.delete(terminal);
             if (runId !== ctx.devRunGeneration) {
+                takePreviewStartupOutputListener(terminal)?.dispose();
                 return;
             }
             const processClaim = ctx.activePreviewClaim;
@@ -226,7 +241,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             ctx.devTerminal = terminal;
             ctx.devTerminalConversationId = ctx.activePreviewConversationId;
             ctx.devTerminalListener.dispose();
-            const onOutput = terminal.onOutput(data => {
+            const onOutput = takePreviewStartupOutputListener(terminal) ?? terminal.onOutput(data => {
                 ctx.appendDevOutput(data);
                 ctx.scanDevOutput(data, { expectedPort: spawnPlan.targetPort });
             });
@@ -298,6 +313,28 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             const raw = e instanceof Error ? e.message : String(e);
             await ctx.failDevRun(ctx.toUserFacingDevError(raw), plan, runId);
         }
+}
+
+/** A backend claim can detect an occupied port before a terminal exists to emit the usual Vite error. */
+export async function recoverPreviewPortClaimConflictExtracted(
+    ctx: QaapProjectBootstrapServiceContext,
+    plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
+    descriptor: QaapProjectDescriptor,
+    conflictedPort: number,
+): Promise<boolean> {
+    if (ctx.automaticPortRecoveryAttempts >= DEV_PORT_RECOVERY_MAX_ATTEMPTS) {
+        return false;
+    }
+    const alternatePort = pickNextDevPort(conflictedPort, [...ctx.attemptedDevPorts]);
+    if (alternatePort === undefined) {
+        return false;
+    }
+    ctx.automaticPortRecoveryAttempts++;
+    ctx.portRecoveryFrom = conflictedPort;
+    ctx.devPortOverride = alternatePort;
+    ctx._phase = 'ready-to-run';
+    await ctx.startDevServer({ ...plan }, descriptor);
+    return true;
 }
 
 export function cancelActivePreviewLaunchExtracted(ctx: QaapProjectBootstrapServiceContext): void {

@@ -376,10 +376,11 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: MobileProjectsPanelCo
             const teamRoot = panel.scroll.querySelector<HTMLElement>(
                 '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks',
             );
-            if (teamRoot) {
-                panel.hubIncrementalUi.tryPatchTeamSection(teamRoot);
-            }
-            if (!panel.missionControlHubUi.tryPatchBeforeRebuild()) {
+            const teamPatched = !teamRoot || panel.hubIncrementalUi.tryPatchTeamSection(teamRoot);
+            const missionControlPatched = panel.missionControlHubUi.tryPatchBeforeRebuild();
+            // Both surfaces can be mounted in Agents Hub. A successful Mission Control patch
+            // must not hide a failed Team patch (for example, when its row structure changed).
+            if (!teamPatched || !missionControlPatched) {
                 panel.renderList();
             }
         },

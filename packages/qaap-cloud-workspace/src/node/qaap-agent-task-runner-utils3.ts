@@ -8,6 +8,7 @@
 import { spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     extractRetrievalKeywords,
     formatRelevantFilesHint,
@@ -21,8 +22,11 @@ import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentConnectionState, Qaap
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {
     classifyVerificationFailureScope,
+    findChangesExceedingScopeLimit,
+    findChangesSinceBaseline,
     findOutOfScopeChanges,
     isPerFileVerificationScript,
+    resolveAgentTaskChangedFilesLimit,
     type QaapWorktreeChange,
 } from '../common/qaap-verification-scope';
 import {
@@ -499,9 +503,28 @@ export async function verifySuccessfulAgentTask(
     if (scripts.length === 0) {
         return undefined;
     }
-    // The files the turn left dirty are the only ones a fix turn may own. Pre-existing dirty files
-    // are included on purpose: they are the user's work in progress, not someone else's code.
-    const scopePaths = deps.listWorktreeChanges(task)?.map(change => change.path);
+    // Only include paths that were clean at task start. Dirty files from the user's own work must
+    // never widen the agent's repair scope.
+    const currentChanges = deps.listWorktreeChanges(task);
+    const taskChanges = currentChanges ? findChangesSinceBaseline(currentChanges, task.worktreeBaselinePaths) : undefined;
+    const scopePaths = taskChanges?.map(change => change.path);
+    const changedFilesLimit = resolveAgentTaskChangedFilesLimit(process.env);
+    const exceededFiles = currentChanges && changedFilesLimit !== undefined && task.worktreeBaselinePaths !== undefined
+        ? findChangesExceedingScopeLimit(currentChanges, task.worktreeBaselinePaths, changedFilesLimit)
+        : undefined;
+    if (exceededFiles) {
+        return {
+            status: 'failed',
+            command: 'Qaap change-scope limit',
+            attempts: 0,
+            summary: nls.localize(
+                'qaap/agentTask/automaticFixScopeLimit',
+                'This task reached the default scope limit of {0} changed files: {1}. Automatic repair is paused. Review these changes and explicitly confirm before asking the agent to continue.',
+                String(changedFilesLimit),
+                exceededFiles.slice(0, 10).join(', '),
+            ),
+        };
+    }
     let attempts = 0;
     let lastCommand = '';
     let lastFailure: QaapGenericCommandResult | undefined;

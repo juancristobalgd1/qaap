@@ -29,6 +29,7 @@ import {
 import { isTranscriptScrollNearBottom } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-user-scroll-pin';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
+import { markTranscriptConversationRetryOptimistic } from '../common/qaap-transcript-turn-recovery';
 
 export function touchTranscriptSemanticProgressFromConversationExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): void {
         const segments = resolveTranscriptStreamingAgentSegments(conv);
@@ -122,11 +123,7 @@ export function applyOptimisticFailedTaskRetryExtracted(ctx: MobileProjectsTrans
         if (!chatHost || !conv) {
             return;
         }
-        const optimistic: QaapAgentConversationDTO = {
-            ...conv,
-            status: 'streaming',
-            updatedAt: Date.now(),
-        };
+        const optimistic = markTranscriptConversationRetryOptimistic(conv);
         ctx.host.transcriptLastConv = optimistic;
         ctx.host.transcriptLastFingerprint = undefined;
         ctx.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, optimistic);

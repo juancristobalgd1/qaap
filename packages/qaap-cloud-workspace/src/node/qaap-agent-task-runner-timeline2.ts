@@ -6,6 +6,7 @@ import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { ChildProcess, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentTask,
     type QaapCreateAgentTaskRequest,
@@ -36,11 +37,58 @@ import {
     isAntigravityCliCommand,
 } from './qaap-antigravity-settings';
 import { snapshotSensitiveFiles } from './qaap-sensitive-files';
+import { findChangesExceedingScopeLimit, resolveAgentTaskChangedFilesLimit } from '../common/qaap-verification-scope';
+
+/** `git status` runs synchronously, so the opt-in scope watch polls sparingly. */
+const CHANGE_SCOPE_WATCH_INTERVAL_MS = 10_000;
 import {
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
     removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
+
+export function enforceAgentTaskChangeScopeLimitExtracted(
+    ctx: QaapAgentTaskRunnerContext,
+    taskId: string,
+    cwd: string,
+    baselinePaths: readonly string[] | undefined,
+    child: ChildProcess,
+    maxFiles = resolveAgentTaskChangedFilesLimit(process.env),
+): boolean {
+    const currentTask = ctx.tasks.get(taskId);
+    if (!currentTask || currentTask.state !== 'running' || maxFiles === undefined) {
+        return false;
+    }
+    const currentChanges = ctx.listWorktreeChanges(cwd);
+    const exceededFiles = currentChanges
+        ? findChangesExceedingScopeLimit(currentChanges, baselinePaths, maxFiles)
+        : undefined;
+    if (!exceededFiles) {
+        return false;
+    }
+    const summary = nls.localize(
+        'qaap/agentTask/changeScopeLimitExceeded',
+        'The agent reached the default scope limit of {0} changed files and was paused. Review these changes ({1}) and explicitly confirm before asking it to continue.',
+        String(maxFiles),
+        exceededFiles.slice(0, 10).join(', '),
+    );
+    const scopeLimitedTask: QaapAgentTask = {
+        ...currentTask,
+        scopeLimitExceededFiles: exceededFiles,
+        verification: {
+            status: 'failed',
+            command: 'Qaap change-scope limit',
+            attempts: 0,
+            summary,
+        },
+    };
+    ctx.tasks.set(taskId, scopeLimitedTask);
+    void ctx.persist();
+    ctx.onDidChangeTaskEmitter.fire({ type: 'updated', task: scopeLimitedTask });
+    ctx.appendAndFireOutput(taskId, `\n[qaap] ${summary}\n`, currentTask.ownerLogin);
+    ctx.killAgentProcessTree(child, { escalateAfterMs: 0 });
+    return true;
+}
 
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
         options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
@@ -400,6 +448,27 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 logStream.write(`\n[qaap] failed to write prompt to agent stdin: ${error instanceof Error ? error.message : String(error)}\n`);
             }
         }
+        let changeScopeWatch: NodeJS.Timeout | undefined;
+        const clearChangeScopeWatch = (): void => {
+            if (changeScopeWatch) {
+                clearInterval(changeScopeWatch);
+                changeScopeWatch = undefined;
+            }
+        };
+        const changedFilesLimit = resolveAgentTaskChangedFilesLimit(process.env);
+        // Without a baseline, pre-existing dirty files would count against the cap.
+        if (changedFilesLimit !== undefined && task.worktreeBaselinePaths !== undefined) {
+            changeScopeWatch = setInterval(() => {
+                if (ctx.tasks.get(task.id)?.state !== 'running') {
+                    clearChangeScopeWatch();
+                    return;
+                }
+                if (enforceAgentTaskChangeScopeLimitExtracted(ctx, task.id, task.cwd, task.worktreeBaselinePaths, child, changedFilesLimit)) {
+                    clearChangeScopeWatch();
+                }
+            }, CHANGE_SCOPE_WATCH_INTERVAL_MS);
+            changeScopeWatch.unref?.();
+        }
         let idleTimer: NodeJS.Timeout | undefined;
         const clearIdleTimer = (): void => {
             if (idleTimer) {
@@ -573,6 +642,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
         });
         child.on('close', code => {
+            clearChangeScopeWatch();
             clearIdleTimer();
             finishAntigravitySettings();
             logStream.end();
@@ -587,6 +657,10 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.qaiqStdioTasks.delete(task.id);
             // A SIGTERM-killed task is already marked 'cancelled' by cancel().
             if (ctx.tasks.get(task.id)?.state !== 'running') {
+                return;
+            }
+            if (ctx.tasks.get(task.id)?.scopeLimitExceededFiles?.length) {
+                ctx.finishTask(task.id, 'completed_with_warnings', code ?? undefined);
                 return;
             }
             if (code === 0 && QAAP_AGENT_VERIFY_ENABLED) {

@@ -38,6 +38,10 @@ describe('qaap-preview-port-claim-service', () => {
     it('maps 409 to conflict and keeps all other statuses fail-closed', async () => {
         expect(await requestQaapPreviewPortClaim(5173, root, origin, async () => ({ status: 409 })))
             .to.deep.equal({ kind: 'conflict' });
+        expect(await requestQaapPreviewPortClaim(5173, root, origin, async () => ({
+            status: 409,
+            text: async () => 'This preview identity belongs to a different workspace.',
+        }))).to.deep.equal({ kind: 'conflict', reason: 'identity' });
         expect(await requestQaapPreviewPortClaim(5173, root, origin, async () => ({ status: 403 })))
             .to.deep.equal({ kind: 'error', status: 403 });
         expect(await requestQaapPreviewPortClaim(5173, root, origin, async () => Promise.reject(new Error('offline'))))

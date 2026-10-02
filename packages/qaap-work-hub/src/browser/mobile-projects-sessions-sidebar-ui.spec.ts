@@ -743,6 +743,25 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         row.remove();
     });
 
+    it('does not mark the selected project row as selected', () => {
+        const project = { id: 'selected-project', name: 'selected-project', status: 'working' } as MobileProjectEntry;
+        const host = {
+            sessionsSidebarExpandedProjectIds: new Set<string>(),
+            agentsHubSelectedProjectId: project.id,
+            cardMenuUi: {
+                buildProjectOptionsMenu: () => document.createElement('div'),
+                toggleCardMenu: () => undefined,
+            },
+            selectSessionsSidebarProject: async () => undefined,
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        const row = ui.createSessionsSidebarProjectRowHead(project, false, () => undefined);
+        const name = row.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-row') as HTMLButtonElement;
+
+        expect(row.classList.contains('theia-mod-selected')).to.equal(false);
+        expect(name.getAttribute('aria-current')).to.equal('true');
+    });
+
     it('selecting a collapsed project expands it so its conversations become visible', async () => {
         const project = { id: 'marked', name: 'marked', status: 'working' } as MobileProjectEntry;
         let toggled = 0;

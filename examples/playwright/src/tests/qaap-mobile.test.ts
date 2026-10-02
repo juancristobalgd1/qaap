@@ -6,6 +6,7 @@
 import { execSync, spawn, type ChildProcess } from 'child_process';
 import { expect, test, type Page } from '@playwright/test';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as path from 'path';
 import { TheiaAppLoader } from '../theia-app-loader';
 import { TheiaApp } from '../theia-app';
@@ -328,6 +329,22 @@ async function waitForDevServerOnPort(port: number, timeoutMs: number = 120_000)
     throw new Error(`Timed out waiting for dev server on port ${port}`);
 }
 
+async function reserveEphemeralTcpPort(): Promise<number> {
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+        await new Promise<void>(resolve => server.close(() => resolve()));
+        throw new Error('Could not allocate an ephemeral Vite port.');
+    }
+    const port = address.port;
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    return port;
+}
+
 function stopWorkspaceViteDevServer(viteDevServer: ChildProcess | undefined): void {
     if (!viteDevServer?.pid) {
         return;
@@ -344,25 +361,18 @@ function stopWorkspaceViteDevServer(viteDevServer: ChildProcess | undefined): vo
     viteDevServer.kill('SIGTERM');
 }
 
-async function startWorkspaceViteDevServer(workspacePath: string): Promise<ChildProcess> {
-    try {
-        execSync('lsof -ti tcp:5173 -sTCP:LISTEN | xargs kill -9', { stdio: 'ignore' });
-    } catch {
-        // Port was free.
-    }
-
+async function startWorkspaceViteDevServer(workspacePath: string, port: number): Promise<ChildProcess> {
+    const viteBin = path.join(workspacePath, 'node_modules', 'vite', 'bin', 'vite.js');
     const viteDevServer = spawn(
-        'npm',
-        ['run', 'dev'],
+        process.execPath,
+        [viteBin, '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
         {
             cwd: workspacePath,
             stdio: ['ignore', 'pipe', 'pipe'],
-            // npm is npm.cmd on Windows, which Node only launches through a shell.
-            shell: process.platform === 'win32',
             env: { ...process.env, NODE_ENV: 'development' },
         },
     );
-    await waitForDevServerOnPort(5173);
+    await waitForDevServerOnPort(port);
     return viteDevServer;
 }
 
@@ -596,27 +606,20 @@ test.describe('@qaap-mobile Qaap time to preview', () => {
         }
     });
 
-    test.beforeEach(() => {
-        try {
-            execSync('lsof -ti tcp:5173 -sTCP:LISTEN | xargs kill -9', { stdio: 'ignore' });
-        } catch {
-            // Port was free.
-        }
-    });
-
     test('opens proxied dev preview within KPI window from classic IDE', async ({ playwright, browser }) => {
         const ws = new TheiaWorkspace([VITE_FIXTURE]);
         let viteDevServer: ChildProcess | undefined;
+        const vitePort = await reserveEphemeralTcpPort();
         try {
-            viteDevServer = await startWorkspaceViteDevServer(VITE_FIXTURE);
+            viteDevServer = await startWorkspaceViteDevServer(VITE_FIXTURE, vitePort);
 
             const app = await TheiaAppLoader.load({ playwright, browser }, ws);
             await app.waitForShellAndInitialized();
             await openDesktopIde(app);
-            await waitForBackendDevProbe(app.page, 5173);
+            await waitForBackendDevProbe(app.page, vitePort);
 
             const started = Date.now();
-            await openProxiedDevPreview(app, 5173);
+            await openProxiedDevPreview(app, vitePort);
             await waitForDevPreviewSurface(app);
 
             const previewFrame = app.page.locator(PREVIEW_FRAME_SELECTOR);

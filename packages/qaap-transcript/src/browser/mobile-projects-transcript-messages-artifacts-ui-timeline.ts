@@ -6,7 +6,11 @@ import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
 import { isTranscriptComposerVisualIdle } from '../common/qaap-transcript-stream-status';
-import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
+import {
+    resolveTranscriptStreamHealth,
+    shouldAutoRetryTranscriptFirstOutput,
+    type TranscriptStreamTimeoutCause,
+} from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     resolveTranscriptEffectiveStatus,
@@ -363,6 +367,7 @@ interface TranscriptStreamStallWatch {
 
 const TRANSCRIPT_STREAM_STALL_TICK_MS = 1000;
 const transcriptStreamStallWatches = new WeakMap<MobileProjectsTranscriptMessagesArtifactsUiContext, TranscriptStreamStallWatch>();
+const transcriptFirstOutputAutoRetries = new WeakMap<MobileProjectsTranscriptMessagesArtifactsUiContext, string>();
 
 export function ensureTranscriptStreamStallWatchExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, row: HTMLElement): void {
         // Bind to the row's own document view rather than the global `window`: the global jsdom
@@ -433,9 +438,59 @@ function tickTranscriptStreamStallWatch(ctx: MobileProjectsTranscriptMessagesArt
         if (!isTranscriptDocumentVisible() || !conv || conv.status !== 'streaming') {
             return;
         }
+        void maybeAutoRetryTranscriptFirstOutput(ctx, conv);
         for (const row of watch.rows.keys()) {
             ctx.syncTranscriptStreamStallChrome(row, conv);
         }
+}
+
+async function maybeAutoRetryTranscriptFirstOutput(
+    ctx: MobileProjectsTranscriptMessagesArtifactsUiContext,
+    conv: QaapAgentConversationDTO,
+): Promise<void> {
+    const lastUserMessage = [...conv.messages].reverse().find(message => message.role === 'user');
+    if (!lastUserMessage?.id || typeof ctx.host.retryOpenTranscriptStream !== 'function') {
+        return;
+    }
+    const health = ctx.resolveTranscriptStreamHealth(conv);
+    if (!shouldAutoRetryTranscriptFirstOutput({
+        streaming: conv.status === 'streaming',
+        awaitingFirstOutput: health.awaitingFirstOutput,
+        idleMs: health.idleMs,
+        retryAttempt: lastUserMessage.retryAttempt,
+    })) {
+        return;
+    }
+    const key = `${conv.id}:${lastUserMessage.id}`;
+    if (transcriptFirstOutputAutoRetries.get(ctx) === key) {
+        return;
+    }
+    // Record before invoking the callback: it may synchronously render and tick again while its
+    // forced retry waits for the current agent process to exit.
+    transcriptFirstOutputAutoRetries.set(ctx, key);
+    const liveUi = ctx.host.transcriptLiveUi;
+    try {
+        // An apparently empty stream can be a missed SSE update. Poll before stopping/restarting
+        // the run so work already produced by the backend is not discarded.
+        await liveUi?.refreshOpenTranscriptConversation({ forcePoll: true });
+    } catch {
+        // A failed read must not permanently suppress the one bounded retry.
+    }
+    const latest = ctx.host.transcriptLastConv;
+    const latestUserMessage = latest && [...latest.messages].reverse().find(message => message.role === 'user');
+    if (!latest || latest.id !== conv.id || latest.status !== 'streaming' || latestUserMessage?.id !== lastUserMessage.id) {
+        return;
+    }
+    const latestHealth = ctx.resolveTranscriptStreamHealth(latest);
+    if (!shouldAutoRetryTranscriptFirstOutput({
+        streaming: latest.status === 'streaming',
+        awaitingFirstOutput: latestHealth.awaitingFirstOutput,
+        idleMs: latestHealth.idleMs,
+        retryAttempt: latestUserMessage.retryAttempt,
+    })) {
+        return;
+    }
+    await Promise.resolve(ctx.host.retryOpenTranscriptStream()).catch(() => undefined);
 }
 
 export function syncTranscriptStreamStallChromeExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, row: HTMLElement, conv: QaapAgentConversationDTO): void {

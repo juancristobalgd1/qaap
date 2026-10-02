@@ -90,6 +90,9 @@ const base = resolveDiffBase();
 const ALLOWED = [
     /^packages\/qaap-/,
     /^scripts\/qaap-/,
+    // Qaap Playwright harness seam: isolate the local app config, preview registry,
+    // and port for browser tests so runs do not mutate or terminate a developer's app.
+    /^examples\/playwright\/configs\/playwright\.config\.ts$/,
     // Existing Qaap Gemini startup policy: optional models.get probing is opt-in
     // (QAAP_GOOGLE_MODEL_METADATA); normalize configured ids and handle rejected
     // model synchronization. Keep these exact seams until extracted into qaap-ai-config.

@@ -15,6 +15,15 @@
 // *****************************************************************************
 
 import { PlaywrightTestConfig } from '@playwright/test';
+import * as os from 'os';
+import * as path from 'path';
+
+const configuredPort = Number.parseInt(process.env.QAAP_PLAYWRIGHT_PORT ?? '', 10);
+const playwrightPort = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 3000;
+const externalBaseURL = process.env.QAAP_PLAYWRIGHT_BASE_URL?.trim();
+const browserDirectory = path.resolve(__dirname, '../../browser');
+const isolatedTheiaConfig = path.join(os.tmpdir(), `qaap-playwright-${process.pid}-${playwrightPort}`);
+const isolatedPreviewRegistry = path.join(isolatedTheiaConfig, 'dev-previews.json');
 
 const config: PlaywrightTestConfig = {
     testDir: '../lib/tests',
@@ -24,7 +33,7 @@ const config: PlaywrightTestConfig = {
     // Timeout for each test in milliseconds.
     timeout: 60 * 1000,
     use: {
-        baseURL: 'http://localhost:3000',
+        baseURL: externalBaseURL || `http://localhost:${playwrightPort}`,
         browserName: 'chromium',
         permissions: ['clipboard-read'],
         screenshot: 'only-on-failure'
@@ -34,12 +43,23 @@ const config: PlaywrightTestConfig = {
         ['list'],
         ['allure-playwright']
     ],
-    // Reuse Theia backend on port 3000 or start instance before executing the tests
-    webServer: {
-        command: 'npm run theia:start',
-        port: 3000,
-        reuseExistingServer: true
-    }
+    // Run isolated browser tests on an optional port without terminating another local Theia app.
+    webServer: externalBaseURL ? undefined : {
+        command: `npm run start -- --port ${playwrightPort}`,
+        cwd: browserDirectory,
+        env: {
+            ...process.env,
+            QAAP_SKIP_AUTH: process.env.QAAP_SKIP_AUTH ?? '1',
+            QAAP_CLOUD_MODE: process.env.QAAP_CLOUD_MODE ?? 'local',
+            FRONTEND_CONNECTION_TIMEOUT: process.env.FRONTEND_CONNECTION_TIMEOUT ?? '2700000',
+            QAAP_PREVIEW_REGISTRY_PATH: process.env.QAAP_PREVIEW_REGISTRY_PATH ?? isolatedPreviewRegistry,
+            HOME: isolatedTheiaConfig,
+            USERPROFILE: isolatedTheiaConfig,
+            THEIA_CONFIG_DIR: isolatedTheiaConfig,
+        },
+        port: playwrightPort,
+        reuseExistingServer: true,
+    },
 };
 
 export default config;

@@ -7,6 +7,8 @@ import { expect } from 'chai';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 import { spawnSync, type ChildProcess } from 'child_process';
+import { enforceAgentTaskChangeScopeLimitExtracted } from './qaap-agent-task-runner-timeline2';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -103,6 +105,80 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         const result = await runner.runVerify(TASK);
         expect(result).to.deep.include({ status: 'passed', attempts: 1 });
         expect(fixTurns()).to.equal(1);
+    });
+
+    it('pauses automatic verification fixes when more than five task-owned files changed', async () => {
+        const previousLimit = process.env.QAAP_AGENT_TASK_MAX_CHANGED_FILES;
+        process.env.QAAP_AGENT_TASK_MAX_CHANGED_FILES = '5';
+        try {
+        const changedFiles = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts', 'src/f.ts'];
+        const currentChanges = changedFiles.map(filePath => ({ path: filePath, untracked: false }));
+        const { runner, fixTurns } = makeRunner({
+            listWorktreeChanges: () => currentChanges,
+        });
+        const result = await runner.runVerify({ ...TASK, worktreeBaselinePaths: ['src/preexisting.ts'] });
+        expect(result).to.deep.include({ status: 'failed', command: 'Qaap change-scope limit', attempts: 0 });
+        expect(result && 'summary' in result ? result.summary : '').to.contain('scope limit of 5 changed files');
+        expect(fixTurns()).to.equal(0);
+        } finally {
+            if (previousLimit === undefined) {
+                delete process.env.QAAP_AGENT_TASK_MAX_CHANGED_FILES;
+            } else {
+                process.env.QAAP_AGENT_TASK_MAX_CHANGED_FILES = previousLimit;
+            }
+        }
+    });
+
+    it('keeps the change-scope cap off unless QAAP_AGENT_TASK_MAX_CHANGED_FILES is set', async () => {
+        const previousLimit = process.env.QAAP_AGENT_TASK_MAX_CHANGED_FILES;
+        delete process.env.QAAP_AGENT_TASK_MAX_CHANGED_FILES;
+        try {
+            const changes = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts', 'src/f.ts']
+                .map(filePath => ({ path: filePath, untracked: false }));
+            const { runner } = makeRunner({ listWorktreeChanges: () => changes });
+            const result = await runner.runVerify({ ...TASK, worktreeBaselinePaths: [] });
+            expect(result && 'command' in result ? result.command : undefined).to.not.equal('Qaap change-scope limit');
+        } finally {
+            if (previousLimit !== undefined) {
+                process.env.QAAP_AGENT_TASK_MAX_CHANGED_FILES = previousLimit;
+            }
+        }
+    });
+
+    it('stops a live agent process when its task crosses the five-file cap', () => {
+        const files = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts', 'src/f.ts'];
+        const events: unknown[] = [];
+        const output: string[] = [];
+        let killOptions: { readonly escalateAfterMs?: number } | undefined;
+        const runningTask = { ...TASK, worktreeBaselinePaths: ['src/preexisting.ts'] };
+        const child = new EventEmitter() as ChildProcess;
+        const ctx = {
+            tasks: new Map([[runningTask.id, runningTask]]),
+            listWorktreeChanges: () => files.map(filePath => ({ path: filePath, untracked: false })),
+            persist: async () => undefined,
+            onDidChangeTaskEmitter: { fire: (event: unknown) => { events.push(event); } },
+            appendAndFireOutput: (_taskId: string, chunk: string) => { output.push(chunk); },
+            killAgentProcessTree: (_child: ChildProcess, options?: { readonly escalateAfterMs?: number }) => {
+                killOptions = options;
+            },
+        } as unknown as QaapAgentTaskRunnerContext;
+
+        const stopped = enforceAgentTaskChangeScopeLimitExtracted(
+            ctx,
+            runningTask.id,
+            runningTask.cwd,
+            runningTask.worktreeBaselinePaths,
+            child,
+            5,
+        );
+        const limitedTask = ctx.tasks.get(runningTask.id)!;
+
+        expect(stopped).to.equal(true);
+        expect(limitedTask.scopeLimitExceededFiles).to.deep.equal(files);
+        expect(limitedTask.verification).to.deep.include({ status: 'failed', command: 'Qaap change-scope limit' });
+        expect(killOptions?.escalateAfterMs).to.equal(0);
+        expect(events).to.have.length(1);
+        expect(output.join('')).to.contain('confirm before asking it to continue');
     });
 
     it('fails after exhausting the max fix attempts', async () => {

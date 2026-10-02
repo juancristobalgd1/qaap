@@ -1123,10 +1123,6 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   background: transparent;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-project-row-wrap.theia-mod-selected {
-  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
-}
-
 .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-work-hub-sessions-sidebar-project-row {
   display: flex;
   align-items: center;

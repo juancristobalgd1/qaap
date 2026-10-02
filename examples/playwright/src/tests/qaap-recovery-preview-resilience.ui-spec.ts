@@ -23,6 +23,7 @@ const DEV_PREVIEW_PORT = 5173;
 
 interface QaapBootstrapProbeState {
     readonly phase?: string;
+    readonly previewLogTail?: string;
     readonly previewUrl?: string;
     readonly error?: string;
     readonly needsInstall?: boolean;
@@ -340,7 +341,8 @@ test.describe('@qaap-mobile recovery and preview resilience', () => {
             });
             if (initialPhase === 'run-failed') {
                 expect(state?.phase).toBe('run-failed');
-                expect(`${state?.error ?? ''} ${await banner.textContent()}`).toMatch(/5173|port|address|in use/i);
+                expect(`${state?.error ?? ''} ${state?.previewLogTail ?? ''} ${await banner.textContent()}`)
+                    .toMatch(/5173|port|address|in use/i);
                 await expect(banner.getByRole('button', { name: /restart preview/i })).toBeVisible();
                 await expect(banner.getByRole('button', { name: /copy diagnostic/i })).toBeVisible();
                 occupied.kill();

@@ -309,12 +309,14 @@ export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, r
             res.status(409).type('text/plain').send('This preview port is in use by another workspace.');
             return;
         }
-        if (ctx.portRegistry.ownerOf(port) === undefined && stale === undefined
+        if (authResult.kind !== 'skip'
+            && ctx.portRegistry.ownerOf(port) === undefined && stale === undefined
             && !ctx.ownsUnclaimedPorts(owner)
             && await ctx.probeLocalDevServer(port, owner)) {
             // After a backend restart an unregistered listener has no trustworthy project or
             // tenant identity. Adopting it based only on liveness is the exact cross-project
-            // failure this endpoint must prevent. Local skip-auth never enters this branch.
+            // failure this endpoint must prevent. This guard applies to authenticated
+            // multi-user sessions; local skip-auth has no tenant boundary to cross.
             res.status(409).type('text/plain').send('This running server has no verifiable preview reservation.');
             return;
         }

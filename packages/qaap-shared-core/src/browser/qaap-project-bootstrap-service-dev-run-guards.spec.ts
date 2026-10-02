@@ -37,6 +37,7 @@ function fakeTerminal(label: string, cwdResolved?: Promise<URI>): FakeTerminal {
 describe('QaapProjectBootstrapService dev run guards', () => {
     let disableJSDOM: (() => void) | undefined;
     let activity: typeof import('./qaap-project-bootstrap-service-activity');
+    let streaming: typeof import('./qaap-project-bootstrap-service-streaming');
 
     before(() => {
         disableJSDOM = enableJSDOM();
@@ -50,9 +51,54 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             exports: { syncQaapMiniBrowserPreviewSuspension: () => undefined },
         } as NodeJS.Module;
         activity = require('./qaap-project-bootstrap-service-activity');
+        streaming = require('./qaap-project-bootstrap-service-streaming');
     });
 
     after(() => disableJSDOM?.());
+
+    describe('preview claim conflict recovery', () => {
+        it('restarts on the next available port when the backend rejects the initial claim', async () => {
+            let restartedPlan: typeof PLAN | undefined;
+            const state = {
+                automaticPortRecoveryAttempts: 0,
+                attemptedDevPorts: new Set([5173]),
+                portRecoveryFrom: undefined,
+                devPortOverride: undefined,
+                _phase: 'starting',
+                startDevServer: async (plan: typeof PLAN) => { restartedPlan = plan; },
+            };
+            const handled = await streaming.recoverPreviewPortClaimConflictExtracted(
+                state as unknown as QaapProjectBootstrapServiceContext,
+                PLAN,
+                { name: 'app' } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor,
+                5173,
+            );
+
+            expect(handled).to.equal(true);
+            expect(state.devPortOverride).to.equal(5174);
+            expect(state.portRecoveryFrom).to.equal(5173);
+            expect(state.automaticPortRecoveryAttempts).to.equal(1);
+            expect(restartedPlan).to.deep.equal(PLAN);
+        });
+
+        it('does not exceed the bounded alternate-port recovery budget', async () => {
+            const state = {
+                automaticPortRecoveryAttempts: 8,
+                attemptedDevPorts: new Set([5173]),
+                portRecoveryFrom: undefined,
+                devPortOverride: undefined,
+                _phase: 'starting',
+                startDevServer: async () => { throw new Error('must not start another run'); },
+            };
+            const handled = await streaming.recoverPreviewPortClaimConflictExtracted(
+                state as unknown as QaapProjectBootstrapServiceContext,
+                PLAN,
+                { name: 'app' } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor,
+                5173,
+            );
+            expect(handled).to.equal(false);
+        });
+    });
 
     describe('failDevRun', () => {
         function failingRunContext(overrides: object = {}): { ctx: QaapProjectBootstrapServiceContext; attachCalls: () => number } {

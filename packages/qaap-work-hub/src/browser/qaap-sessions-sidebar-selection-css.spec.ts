@@ -30,6 +30,11 @@ describe('sessions sidebar selection CSS', () => {
         );
     });
 
+    it('reserves the selected background for the active task, not its project row', () => {
+        expect(css).not.to.match(/\.theia-mobile-work-hub-sessions-sidebar-project-row-wrap\.theia-mod-selected\s*\{/);
+        expect(css).to.match(/\.theia-mobile-projects-task-row\.theia-mod-current::before\s*\{/);
+    });
+
     it('uses the active theme surface and restores dark sidebar contrast', () => {
         expect(css).to.include('--qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff))');
         expect(css).to.match(/body\.qaap-theme-dark \.theia-mobile-work-hub-sessions-sidebar[\s\S]*?--qaap-sessions-sidebar-background:\s*#0b0908/);

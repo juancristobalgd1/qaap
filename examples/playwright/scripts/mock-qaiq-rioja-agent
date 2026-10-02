@@ -120,6 +120,26 @@ if [[ -z "${PROMPT//[[:space:]]/}" ]]; then
     echo "mock-qaiq-rioja-agent: empty prompt" >&2
     exit 1
 fi
+
+# The Playwright continuation regression asks this exact run-app question. Model the real
+# search-only stop, then provide a Bash-backed result after Qaap's automatic continuation; this
+# keeps the test deterministic and avoids scaffolding files or installing packages in its fixture.
+RUN_APP_CONTINUATION_PROMPT='Figure out how to build and run this project locally.'
+if [[ "$PROMPT" == *"$RUN_APP_CONTINUATION_PROMPT"* ]]; then
+    emit_json '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"mock-auto-continue","tools":["Bash"],"model":"mock/qaiq-auto-continue"}'
+    if [[ "${PROMPT,,}" == *"continue this task now"* ]]; then
+        emit_assistant_thinking 'I have confirmed the Vite project and am starting the dev server now.'
+        emit_tool_use 'mock-auto-continue-bash' 'Bash' '{"command":"npm run dev"}'
+        emit_tool_result 'mock-auto-continue-bash' 'Vite dev server started at http://127.0.0.1:5173.'
+        emit_assistant_text 'The dev server is running at http://127.0.0.1:5173.'
+        emit_result 'The dev server is running at http://127.0.0.1:5173.'
+    else
+        emit_assistant_text 'I will inspect the project files before running the app.'
+        emit_result 'I will inspect the project files before running the app.'
+    fi
+    exit 0
+fi
+
 emit_json '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"mock-rioja","tools":["Write","Bash"],"model":"mock/qaiq-rioja"}'
 
 # Qaap injects operating rules (e.g. "sin frameworks") into the task context — match user intent only.
@@ -331,7 +351,11 @@ emit_write_tool "tu-write-css" "${APP_DIR}/src/style.css" "src/style.css"
 emit_write_tool "tu-write-js" "${APP_DIR}/src/main.js" "src/main.js"
 
 INSTALL_OUT=""
-if command -v npm >/dev/null 2>&1; then
+if [[ -f node_modules/vite/bin/vite.js ]]; then
+    # Mobile E2E copies the Vite fixture, including its installed dependencies. Avoid another
+    # registry request in that case; dedicated blank-workspace runs still exercise npm install.
+    INSTALL_OUT='Vite is already installed in the E2E workspace; skipped npm install.'
+elif command -v npm >/dev/null 2>&1; then
     # The E2E backend can run with a restricted HOME (and the runner cache may be unwritable). Keep
     # this fixture self-contained so a cache-permission problem does not make the generated app
     # impossible for Qaap's visual verifier to start.

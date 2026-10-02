@@ -18,6 +18,19 @@ export interface QaapWorktreeChange {
     readonly untracked: boolean;
 }
 
+/** Suggested cap for `QAAP_AGENT_TASK_MAX_CHANGED_FILES`; the cap itself is opt-in. */
+export const QAAP_AGENT_TASK_MAX_CHANGED_FILES = 5;
+
+/**
+ * Opt-in change-scope cap: a coding task that changes more files than this pauses for human review.
+ * Off unless `QAAP_AGENT_TASK_MAX_CHANGED_FILES` is a positive integer, because scaffolds, refactors
+ * and test suites legitimately touch many files.
+ */
+export function resolveAgentTaskChangedFilesLimit(env: Readonly<Record<string, string | undefined>>): number | undefined {
+    const value = Number.parseInt(env.QAAP_AGENT_TASK_MAX_CHANGED_FILES?.trim() ?? '', 10);
+    return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 /**
  * Parse `git status --porcelain -z --untracked-files=all`. Rename/copy entries carry the source path
  * as an extra NUL-separated field, which is skipped (the destination is what changed on disk).
@@ -43,6 +56,25 @@ export function parseWorktreeStatusZ(stdout: string): QaapWorktreeChange[] {
 /** Changes present now that were not in `scope` — edits a fix turn made outside the task's files. */
 export function findOutOfScopeChanges(current: readonly QaapWorktreeChange[], scope: ReadonlySet<string>): QaapWorktreeChange[] {
     return current.filter(change => !scope.has(change.path));
+}
+
+/** Remove dirty paths captured before the task so pre-existing user edits never widen task scope. */
+export function findChangesSinceBaseline(
+    current: readonly QaapWorktreeChange[],
+    baselinePaths: readonly string[] = [],
+): QaapWorktreeChange[] {
+    const baseline = new Set(baselinePaths.map(filePath => filePath.replace(/\\/g, '/')));
+    return current.filter(change => !baseline.has(change.path.replace(/\\/g, '/')));
+}
+
+/** New task-owned paths that exceed the default file cap, or `undefined` while within it. */
+export function findChangesExceedingScopeLimit(
+    current: readonly QaapWorktreeChange[],
+    baselinePaths: readonly string[] = [],
+    maxFiles = QAAP_AGENT_TASK_MAX_CHANGED_FILES,
+): string[] | undefined {
+    const changes = findChangesSinceBaseline(current, baselinePaths);
+    return changes.length > maxFiles ? changes.map(change => change.path) : undefined;
 }
 
 /** Scripts whose findings are reported per file, so a failure can be attributed to the files it names. */

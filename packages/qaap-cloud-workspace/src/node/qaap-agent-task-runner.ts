@@ -1044,8 +1044,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'sensitiveBaselineHashes'> {
-        return captureWorktreeBaselineExtracted(this, cwd);
+    public captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'worktreeBaselinePaths' | 'sensitiveBaselineHashes'> {
+        const baseline = captureWorktreeBaselineExtracted(this, cwd);
+        const baselineChanges = this.listWorktreeChanges(cwd);
+        return {
+            ...baseline,
+            ...(baselineChanges !== undefined ? { worktreeBaselinePaths: baselineChanges.map(change => change.path) } : {}),
+        };
     }
 
     /** Sensitive (gitignored) files this task changed, or `[]` when none / no baseline. */

@@ -6,6 +6,8 @@
 import { expect } from 'chai';
 import {
     classifyVerificationFailureScope,
+    findChangesExceedingScopeLimit,
+    findChangesSinceBaseline,
     findOutOfScopeChanges,
     isPerFileVerificationScript,
     parseWorktreeStatusZ,
@@ -25,6 +27,20 @@ describe('qaap-verification-scope', () => {
     it('finds changes outside the allowed set', () => {
         const current = parseWorktreeStatusZ(' M src/a.ts\0 M src/c.ts\0');
         expect(findOutOfScopeChanges(current, new Set(['src/a.ts'])).map(change => change.path)).to.deep.equal(['src/c.ts']);
+    });
+
+    it('keeps pre-existing dirty files out of the task change scope', () => {
+        const current = parseWorktreeStatusZ(' M src/Hero.tsx\0 M src/Newsletter.tsx\0?? notes/task.md\0');
+        expect(findChangesSinceBaseline(current, ['src/Newsletter.tsx']).map(change => change.path))
+            .to.deep.equal(['src/Hero.tsx', 'notes/task.md']);
+    });
+
+    it('allows five task-owned files and pauses on the sixth', () => {
+        const changes = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts']
+            .map(filePath => ({ path: filePath, untracked: false }));
+        expect(findChangesExceedingScopeLimit(changes.slice(0, 5))).to.equal(undefined);
+        expect(findChangesExceedingScopeLimit(changes.slice(0, 6))).to.deep.equal(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']);
+        expect(findChangesExceedingScopeLimit(changes, ['a.ts'])).to.deep.equal(['b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts']);
     });
 
     it('recognizes lint-style scripts only', () => {

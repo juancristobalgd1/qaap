@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from './qaap-transcript-turn-recovery';
+import { markTranscriptConversationRetryOptimistic, resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from './qaap-transcript-turn-recovery';
 import { resolveTranscriptStreamingActivityFromSegments, resolveTranscriptVerifyingActivity } from './qaap-transcript-streaming-activity';
 import { resolveTranscriptStreamHealth, TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS } from './qaap-transcript-stream-health';
 
@@ -43,6 +43,12 @@ describe('qaap-transcript-turn-recovery', () => {
     it('reads the retry attempt off the run user turn, hiding the original attempt', () => {
         expect(resolveTranscriptTurnRetryAttempt(conversation(), 'a2')).to.equal(3);
         expect(resolveTranscriptTurnRetryAttempt(conversation(), 'a1')).to.equal(undefined);
+    });
+
+    it('resets the timer and increments the attempt in the optimistic retry row', () => {
+        const retried = markTranscriptConversationRetryOptimistic(conversation(), 99);
+        expect(retried.status).to.equal('streaming');
+        expect(retried.messages[2]).to.deep.include({ id: 'u2', createdAt: 99, retryAttempt: 4 });
     });
 });
 

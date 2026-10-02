@@ -106,6 +106,10 @@ export interface QaapAgentTask {
      * git error) so pre-existing dirty files are still not attributed to the task.
      */
     readonly worktreeBaselineStatus?: string;
+    /** Repo-relative dirty paths that already existed before this task started. */
+    readonly worktreeBaselinePaths?: readonly string[];
+    /** Task-owned paths over the default cap that caused the runner to stop and request review. */
+    readonly scopeLimitExceededFiles?: readonly string[];
     /**
      * Content hashes of root-level secrets files (`.env`, `.env.*`) captured at task start.
      * Git-based edit detection cannot see gitignored files, so without this an agent that

@@ -1,7 +1,7 @@
 import type { QaapProjectBootstrapServiceContext } from './qaap-project-bootstrap-service-context';
 // Extracted from qaap-project-bootstrap-service.ts
 
-import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { DisposableCollection, type Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
@@ -48,6 +48,15 @@ import {
 } from './qaap-preview-terminal-lifecycle';
 import { buildQaapManagedShellInvocation, resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import { DEV_PREVIEW_AUTO_RETRY_DELAY_MS, DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS, DEV_PORT_RECOVERY_MAX_ATTEMPTS, PORT_IN_USE_REGEX, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS, TERMINAL_READY_DELAY_MS, TERMINAL_SPAWN_MAX_ATTEMPTS, TERMINAL_SPAWN_RETRY_DELAY_MS } from './qaap-project-bootstrap-service';
+
+const previewStartupOutputListeners = new WeakMap<TerminalWidget, Disposable>();
+
+/** Takes the listener installed before a preview process starts, avoiding a fast-exit output gap. */
+export function takePreviewStartupOutputListener(terminal: TerminalWidget): Disposable | undefined {
+        const listener = previewStartupOutputListeners.get(terminal);
+        previewStartupOutputListeners.delete(terminal);
+        return listener;
+}
 
 export async function failDevRunExtracted(ctx: QaapProjectBootstrapServiceContext, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
@@ -365,6 +374,17 @@ export async function spawnCommandExtracted(ctx: QaapProjectBootstrapServiceCont
             kind: options.kind,
         });
         if (options.kind === QAAP_PREVIEW_TERMINAL_KIND) {
+            const runId = ctx.devRunGeneration;
+            const expectedPort = ctx.activeDevPortHint;
+            previewStartupOutputListeners.set(terminal, terminal.onOutput(data => {
+                if (runId !== ctx.devRunGeneration) {
+                    return;
+                }
+                ctx.appendDevOutput(data);
+                ctx.scanDevOutput(data, { expectedPort });
+            }));
+        }
+        if (options.kind === QAAP_PREVIEW_TERMINAL_KIND) {
             // Visible in `terminalService.all` from here on, but not `devTerminal` until the caller
             // adopts it: shield it from restored-terminal cleanup running concurrently.
             ctx.spawningPreviewTerminals.add(terminal);
@@ -372,6 +392,7 @@ export async function spawnCommandExtracted(ctx: QaapProjectBootstrapServiceCont
         try {
             await terminal.start();
         } catch (e) {
+            takePreviewStartupOutputListener(terminal)?.dispose();
             ctx.spawningPreviewTerminals.delete(terminal);
             throw e;
         }

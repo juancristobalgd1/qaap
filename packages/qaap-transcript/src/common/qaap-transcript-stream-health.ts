@@ -21,6 +21,31 @@ export const TRANSCRIPT_STREAM_ACTIVE_TOOL_TIMEOUT_MS = 120_000;
  */
 export const TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS = 180_000;
 
+/**
+ * Retry a turn once when the agent has produced no output. Same budget as the first-output timeout:
+ * a cold first run routinely needs more than a minute, and a forced retry kills the running agent.
+ */
+export const TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS = TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS;
+
+export interface TranscriptFirstOutputRetryInput {
+    readonly streaming: boolean;
+    readonly awaitingFirstOutput: boolean;
+    readonly idleMs: number;
+    /** The original turn is attempt 1; a missing value is also the original turn. */
+    readonly retryAttempt?: number;
+}
+
+/**
+ * Whether the one automatic first-output retry is due. Later retries stay user initiated so a
+ * provider failure cannot create an unbounded retry loop.
+ */
+export function shouldAutoRetryTranscriptFirstOutput(input: TranscriptFirstOutputRetryInput): boolean {
+    return input.streaming
+        && input.awaitingFirstOutput
+        && input.idleMs >= TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS
+        && (input.retryAttempt ?? 1) <= 1;
+}
+
 /** No SSE/WS payload for this long while status is still streaming. */
 export const TRANSCRIPT_SSE_STALE_MS = 45_000;
 

@@ -548,10 +548,12 @@ describe('QaapDevPreviewEndpoint', () => {
                 return Promise.resolve(this.listeningPorts.size > 0 ? this.listeningPorts.has(port) : this.listening);
             }
 
-            setClaimFakes(login: string, registry: unknown): void {
+            setClaimFakes(login: string, registry: unknown, authKind: 'authenticated' | 'skip' = 'authenticated'): void {
                 const mutable = this as unknown as { auth: unknown; portRegistry: unknown };
                 mutable.auth = {
-                    authenticate: () => ({ kind: 'authenticated', userLogin: login, session: {}, sessionId: 's' }),
+                    authenticate: () => authKind === 'skip'
+                        ? ({ kind: 'skip', userLogin: login })
+                        : ({ kind: 'authenticated', userLogin: login, session: {}, sessionId: 's' }),
                     resolveUserLogin: () => login,
                     assertWorkspacePathOwned: () => true,
                 };
@@ -900,6 +902,20 @@ describe('QaapDevPreviewEndpoint', () => {
             await ep.exposeHandleClaim(claimReq(8080), res);
             expect(res.record.code).to.equal(409);
             expect(registry.ownerOf(8080)).to.equal(undefined);
+        });
+
+        it('allows local skip-auth to claim an unregistered listening preview port', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('_dev', registry, 'skip');
+            ep.listeningPorts.add(8080);
+            const res = makeRes();
+
+            await ep.exposeHandleClaim(claimReq(8080), res);
+
+            expect(res.record.code).to.equal(204);
+            expect(registry.ownerOf(8080)).to.equal('_dev');
         });
 
         it('allows only the owner to release a process preview', async () => {

@@ -46,3 +46,25 @@ export function resolveTranscriptTurnRetryAttempt(
     const attempt = userMessageId ? conv.messages.find(message => message.id === userMessageId)?.retryAttempt : undefined;
     return attempt !== undefined && attempt > 1 ? attempt : undefined;
 }
+
+/** Optimistic copy used while the retry request waits for the previous process to exit. */
+export function markTranscriptConversationRetryOptimistic(
+    conv: QaapAgentConversationDTO,
+    now = Date.now(),
+): QaapAgentConversationDTO {
+    const lastUserIndex = conv.messages.reduce<number>(
+        (last, message, index) => message.role === 'user' ? index : last,
+        -1,
+    );
+    if (lastUserIndex < 0) {
+        return { ...conv, status: 'streaming', updatedAt: now };
+    }
+    const lastUser = conv.messages[lastUserIndex];
+    const messages = [...conv.messages];
+    messages[lastUserIndex] = {
+        ...lastUser,
+        createdAt: now,
+        retryAttempt: (lastUser.retryAttempt ?? 1) + 1,
+    };
+    return { ...conv, status: 'streaming', updatedAt: now, messages };
+}

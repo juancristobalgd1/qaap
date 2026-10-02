@@ -6,6 +6,8 @@
 import { expect } from 'chai';
 import {
     resolveTranscriptStreamHealth,
+    shouldAutoRetryTranscriptFirstOutput,
+    TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS,
     TRANSCRIPT_SSE_STALE_MS,
     TRANSCRIPT_STREAM_ACTIVE_TOOL_TIMEOUT_MS,
     TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS,
@@ -13,6 +15,25 @@ import {
 import { TRANSCRIPT_STREAM_STALL_MS, TRANSCRIPT_STREAM_TIMEOUT_MS } from './qaap-transcript-stream-status';
 
 describe('qaap-transcript-stream-health', () => {
+
+    it('allows one automatic retry after 30 seconds with no first output', () => {
+        expect(shouldAutoRetryTranscriptFirstOutput({
+            streaming: true,
+            awaitingFirstOutput: true,
+            idleMs: TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS,
+        })).to.equal(true);
+        expect(shouldAutoRetryTranscriptFirstOutput({
+            streaming: true,
+            awaitingFirstOutput: true,
+            idleMs: TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS,
+            retryAttempt: 2,
+        })).to.equal(false);
+        expect(shouldAutoRetryTranscriptFirstOutput({
+            streaming: true,
+            awaitingFirstOutput: false,
+            idleMs: TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS * 2,
+        })).to.equal(false);
+    });
 
     it('returns idle health when not streaming', () => {
         const health = resolveTranscriptStreamHealth({
