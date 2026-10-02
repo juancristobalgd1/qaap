@@ -863,3 +863,145 @@ describe('QaapDockerOrchestrator tenant ensure timeout', () => {
         expect(starts).to.equal(2);
     });
 });
+
+describe('QaapDockerOrchestrator tenant backend build prediction', () => {
+    const BUILD_ENV_KEYS = ['QAAP_TENANT_DOCKER_IMAGE', 'QAAP_THEIA_IMAGE', 'QAAP_BACKEND_PER_TENANT', 'QAAP_BUILD_SHA', 'NODE_ENV', 'QAAP_CLOUD_MODE'] as const;
+    const TARGET = { containerId: 'c1', containerName: 'qaap-backend-x', host: '127.0.0.1', port: 4873, tenantLogin: 'Alice' };
+    const MANAGED_LABELS = { 'com.qaap.managed': 'true', 'com.qaap.tenant-backend': 'true', 'com.qaap.tenant-login': 'alice' };
+
+    interface BuildInternals {
+        readonly tenantBackendTargets: Map<string, unknown>;
+        readonly tenantBackendBuilds: Map<string, string>;
+        readonly deferredTenantBackendRecreations: Set<string>;
+        requestTenantBackendHealth(target: unknown): Promise<{ statusCode?: number; body: string; setCookie?: string[] }>;
+        waitForTenantBackendReady(target: unknown): Promise<void>;
+        getDocker(ownerLogin?: string): Promise<unknown>;
+        verifiedDockerNodesForTenant(ownerLogin?: string): Promise<unknown[]>;
+        getTenantBuildPredictionTimeoutMs(): number;
+        predictTenantBackendBuild(ownerLogin: string): Promise<string | undefined>;
+        invalidateTenantBackendTarget(ownerLogin: string | undefined): void;
+        stopTenantBackend(ownerLogin: string | undefined): Promise<void>;
+    }
+
+    let envSnapshot: Record<string, string | undefined>;
+
+    beforeEach(() => {
+        envSnapshot = {};
+        for (const key of BUILD_ENV_KEYS) {
+            envSnapshot[key] = process.env[key];
+        }
+        process.env.QAAP_TENANT_DOCKER_IMAGE = 'qaap-theia:spec';
+        process.env.QAAP_BACKEND_PER_TENANT = '1';
+        process.env.QAAP_BUILD_SHA = 'abc1234';
+    });
+
+    afterEach(() => {
+        for (const key of BUILD_ENV_KEYS) {
+            if (envSnapshot[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = envSnapshot[key];
+            }
+        }
+    });
+
+    function create(): BuildInternals {
+        return new QaapDockerOrchestrator() as unknown as BuildInternals;
+    }
+
+    /** Dockerode stand-in: `container` answers the backend container inspect, `image` the image inspect. */
+    function fakeDocker(container: () => Promise<unknown>, image: () => Promise<unknown>): { imageInspects: number } & Record<string, unknown> {
+        const docker = {
+            imageInspects: 0,
+            getContainer: () => ({ inspect: container }),
+            getImage: () => ({
+                inspect: () => {
+                    docker.imageInspects += 1;
+                    return image();
+                },
+            }),
+        };
+        return docker;
+    }
+
+    const notFound = (): Promise<never> => Promise.reject(Object.assign(new Error('no such container'), { statusCode: 404 }));
+    const imageWithBuild = (build: string) => async () => ({ Id: 'sha256:img', Config: { Env: ['PATH=/usr/bin', `QAAP_BUILD_SHA=${build}`] } });
+
+    it('records the build a ready tenant backend reports and serves it for the cached target', async () => {
+        const orchestrator = create();
+        orchestrator.requestTenantBackendHealth = async () => ({ statusCode: 200, body: JSON.stringify({ ok: true, ready: true, build: 'abc1234' }) });
+        await orchestrator.waitForTenantBackendReady(TARGET);
+        expect(orchestrator.tenantBackendBuilds.get('alice')).to.equal('abc1234');
+        orchestrator.tenantBackendTargets.set('alice', TARGET);
+        expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal('abc1234');
+    });
+
+    it('forgets the recorded build when the target is invalidated or the backend stopped', async () => {
+        const orchestrator = create();
+        orchestrator.requestTenantBackendHealth = async () => ({ statusCode: 200, body: JSON.stringify({ ready: true, build: 'abc1234' }) });
+        await orchestrator.waitForTenantBackendReady(TARGET);
+        orchestrator.tenantBackendTargets.set('alice', TARGET);
+        orchestrator.invalidateTenantBackendTarget('alice');
+        expect(orchestrator.tenantBackendBuilds.has('alice')).to.equal(false);
+
+        await orchestrator.waitForTenantBackendReady(TARGET);
+        orchestrator.tenantBackendTargets.set('alice', TARGET);
+        orchestrator.verifiedDockerNodesForTenant = async () => [];
+        await orchestrator.stopTenantBackend('alice');
+        expect(orchestrator.tenantBackendBuilds.has('alice')).to.equal(false);
+    });
+
+    it('drops a stale recorded build when a ready backend reports none', async () => {
+        const orchestrator = create();
+        orchestrator.tenantBackendBuilds.set('alice', 'old5678');
+        orchestrator.requestTenantBackendHealth = async () => ({ statusCode: 200, body: JSON.stringify({ ready: true }) });
+        await orchestrator.waitForTenantBackendReady(TARGET);
+        expect(orchestrator.tenantBackendBuilds.has('alice')).to.equal(false);
+    });
+
+    it('is unknown for a tenant whose stale backend recreation is deferred', async () => {
+        const orchestrator = create();
+        orchestrator.tenantBackendTargets.set('alice', TARGET);
+        orchestrator.tenantBackendBuilds.set('alice', 'abc1234');
+        orchestrator.deferredTenantBackendRecreations.add('alice');
+        expect(await orchestrator.predictTenantBackendBuild('Alice')).to.equal(undefined);
+    });
+
+    it('reads the build of a running backend container from its environment', async () => {
+        const orchestrator = create();
+        const docker = fakeDocker(async () => ({
+            State: { Running: true },
+            Config: { Labels: MANAGED_LABELS, Env: ['QAAP_BUILD_SHA=old5678'] },
+        }), imageWithBuild('abc1234'));
+        orchestrator.getDocker = async () => docker;
+        expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal('old5678');
+        expect(docker.imageInspects).to.equal(0);
+    });
+
+    it('uses the serving image build for a stopped or missing backend and caches the image inspect', async () => {
+        const orchestrator = create();
+        const stopped = fakeDocker(async () => ({ State: { Running: false }, Config: { Labels: MANAGED_LABELS, Env: ['QAAP_BUILD_SHA=old5678'] } }),
+            imageWithBuild('abc1234'));
+        orchestrator.getDocker = async () => stopped;
+        expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal('abc1234');
+        const missing = fakeDocker(notFound, imageWithBuild('zzz9999'));
+        orchestrator.getDocker = async () => missing;
+        // Same image reference within the cache window: no second image inspect.
+        expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal('abc1234');
+        expect(stopped.imageInspects + missing.imageInspects).to.equal(1);
+    });
+
+    it('is unknown when Docker fails, the container is foreign, or the answer is too slow', async () => {
+        const orchestrator = create();
+        orchestrator.getDocker = async () => fakeDocker(() => Promise.reject(new Error('daemon down')), imageWithBuild('abc1234'));
+        expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal(undefined);
+
+        orchestrator.getDocker = async () => fakeDocker(async () => ({ State: { Running: true }, Config: { Labels: {}, Env: ['QAAP_BUILD_SHA=abc1234'] } }),
+            imageWithBuild('abc1234'));
+        expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal(undefined);
+
+        orchestrator.getTenantBuildPredictionTimeoutMs = () => 20;
+        orchestrator.getDocker = async () => fakeDocker(() => new Promise(() => undefined), imageWithBuild('abc1234'));
+        expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal(undefined);
+    });
+});

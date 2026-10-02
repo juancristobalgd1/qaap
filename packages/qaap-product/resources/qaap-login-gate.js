@@ -199,12 +199,21 @@
 
     // Startup watchdog: bundle loaded but Theia DI/startup never completed.
     // Arms after bundle.js executes; fires if the splash is still visible 30s later.
+    // The static frontend is served by the control plane while a cold tenant backend
+    // starts, so the splash may legitimately wait for backend RPC: while the runtime
+    // reports it is starting, say so and keep waiting, up to STARTUP_WAIT_CAP_MS in total.
+    var STARTUP_WATCHDOG_MS = 30000;
+    var STARTUP_WAIT_CAP_MS = 120000;
+    var RUNTIME_STATUS_TIMEOUT_MS = 5000;
     var startupWatchdog = null;
+    var startupWatchdogRounds = 0;
+    var startupReady = false;
 
     // The product shell can become usable before the legacy Theia preload node
     // finishes its own transition. Let the app explicitly dismiss this watchdog
     // so a slow paint cannot cover a ready Work Hub with a retry dialog.
     function markStartupReady() {
+        startupReady = true;
         if (startupWatchdog) {
             window.clearTimeout(startupWatchdog);
             startupWatchdog = null;
@@ -213,21 +222,90 @@
         if (startupError) {
             startupError.remove();
         }
+        var startupWait = document.getElementById('qaap-startup-wait');
+        if (startupWait) {
+            startupWait.remove();
+        }
     }
     window.addEventListener('qaap-startup-ready', markStartupReady);
 
+    function isSplashVisible() {
+        var preload = document.querySelector('.theia-preload');
+        return !!(preload && preload.style.display !== 'none' &&
+            !preload.classList.contains('theia-hidden') &&
+            preload.offsetParent !== null);
+    }
+
     function armStartupWatchdog() {
-        if (startupWatchdog) { return; }
-        startupWatchdog = window.setTimeout(function () {
-            var preload = document.querySelector('.theia-preload');
-            var isVisible = preload && preload.style.display !== 'none' &&
-                !preload.classList.contains('theia-hidden') &&
-                preload.offsetParent !== null;
-            if (isVisible) {
-                console.warn('[Qaap] Theia startup timed out — showing retry UI');
-                showStartupError('startup');
+        if (startupWatchdog || startupReady) { return; }
+        startupWatchdog = window.setTimeout(onStartupWatchdog, STARTUP_WATCHDOG_MS);
+    }
+
+    function onStartupWatchdog() {
+        startupWatchdog = null;
+        startupWatchdogRounds += 1;
+        if (startupReady || !isSplashVisible()) {
+            return;
+        }
+        if (startupWatchdogRounds * STARTUP_WATCHDOG_MS >= STARTUP_WAIT_CAP_MS) {
+            showStartupTimeout();
+            return;
+        }
+        fetchTenantRuntimeState().then(function (state) {
+            if (startupReady || !isSplashVisible()) {
+                return;
             }
-        }, 30000);
+            // 'stopped' / 'idle' are being woken by the requests this page already made.
+            if (state === 'starting' || state === 'stopped' || state === 'idle') {
+                showStartupWait();
+                armStartupWatchdog();
+                return;
+            }
+            showStartupTimeout();
+        });
+    }
+
+    /** Control-plane runtime state of the signed-in tenant, or undefined when unknown. */
+    function fetchTenantRuntimeState() {
+        return fetchWithTimeout('/qaap/api/cloud/runtime/status', { credentials: 'include' }, RUNTIME_STATUS_TIMEOUT_MS)
+            .then(function (response) {
+                return response && response.ok ? response.json() : null;
+            })
+            .then(function (data) {
+                return data && data.runtime && typeof data.runtime.state === 'string' ? data.runtime.state : undefined;
+            })
+            .catch(function () {
+                return undefined;
+            });
+    }
+
+    function showStartupTimeout() {
+        var startupWait = document.getElementById('qaap-startup-wait');
+        if (startupWait) {
+            startupWait.remove();
+        }
+        console.warn('[Qaap] Theia startup timed out — showing retry UI');
+        showStartupError('startup');
+    }
+
+    function showStartupWait() {
+        var preload = document.querySelector('.theia-preload');
+        if (!preload || document.getElementById('qaap-startup-wait')) { return; }
+        if (!document.getElementById('qaap-startup-wait-styles')) {
+            var style = document.createElement('style');
+            style.id = 'qaap-startup-wait-styles';
+            style.textContent =
+                '#qaap-startup-wait{position:absolute;left:0;right:0;bottom:22%;text-align:center;' +
+                'font:500 14px/1.4 system-ui,-apple-system,sans-serif;color:#666}' +
+                '@media(prefers-color-scheme:dark){#qaap-startup-wait{color:#a0a0a0}}';
+            document.head.appendChild(style);
+        }
+        var message = document.createElement('div');
+        message.id = 'qaap-startup-wait';
+        message.setAttribute('role', 'status');
+        message.setAttribute('aria-live', 'polite');
+        message.textContent = 'Starting your workspace\u2026';
+        preload.appendChild(message);
     }
 
     function escapeHtml(value) {

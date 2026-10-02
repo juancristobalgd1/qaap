@@ -14,7 +14,7 @@ import {
     createQaapTenantBackendAssertion,
     QAAP_TENANT_BACKEND_ASSERTION_HEADER,
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
-import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { filterQaapReservedSetCookies, QAAP_PREVIEW_ACCESS_COOKIE_NAME, stripQaapReservedCookies } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forward-headers';
 import { QAAP_DEV_PREVIEW_PREFIX, QAAP_IDENTITY_PREVIEW_PREFIX } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import { QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantActivityReason } from '../common/qaap-cloud-api-types';
@@ -24,6 +24,7 @@ import { parseQaapPublicPreviewSharePath } from '../common/qaap-preview-share';
 import { QaapTenantPreviewRouteTable } from './qaap-tenant-preview-route-table';
 import { QaapDockerOrchestrator, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
+import { QaapFrontendStaticManifest } from './qaap-frontend-static-manifest';
 
 const HOP_BY_HOP_HEADERS = new Set([
     'connection',
@@ -38,6 +39,22 @@ const HOP_BY_HOP_HEADERS = new Set([
 
 /** Floor for the response wait when the tenant cold start consumed (almost) the whole budget. */
 const TENANT_PROXY_MIN_RESPONSE_WAIT_MS = 5_000;
+
+/** How long a per-tenant "control plane may serve the static frontend" decision is reused by assets. */
+const STATIC_SERVING_DECISION_TTL_MS = 30_000;
+
+/** Diagnostic response header: which process served a static frontend request. */
+const QAAP_STATIC_ORIGIN_HEADER = 'X-Qaap-Static-Origin';
+
+/**
+ * Authenticated static frontend requests the early router handed back to the control plane's own
+ * listeners. They must not be proxied again by the Express middleware in `configure()`, which runs
+ * after `serveGzipped` may already have rewritten `req.url` to `*.gz`, so they are tracked by object.
+ */
+const CONTROL_PLANE_STATIC_REQUESTS = new WeakSet<http.IncomingMessage>();
+
+type QaapAuthenticatedContext = Extract<QaapGithubAuthContext, { kind: 'authenticated' }>;
+type QaapStaticOrigin = 'control-plane' | 'tenant';
 
 /**
  * Routes an authenticated browser session to the complete Theia backend running in its tenant
@@ -62,9 +79,16 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     @inject(QaapTenantPreviewRouteTable)
     protected readonly previewRoutes: QaapTenantPreviewRouteTable;
 
+    @inject(QaapFrontendStaticManifest)
+    protected readonly staticManifest: QaapFrontendStaticManifest;
+
+    /** Per-tenant "same build as the control plane" decisions (see {@link staticServingAllowed}). */
+    protected readonly staticServingDecisions = new Map<string, { readonly allowed: boolean; readonly at: number }>();
+    protected readonly staticServingDecisionsInFlight = new Map<string, Promise<boolean>>();
+
     configure(app: Application): void {
         app.use((req: Request, res: Response, next: NextFunction) => {
-            if (!this.docker.isBackendPerTenantEnabled() || this.isControlPlanePath(req.url)) {
+            if (!this.docker.isBackendPerTenantEnabled() || this.isControlPlanePath(req.url) || CONTROL_PLANE_STATIC_REQUESTS.has(req)) {
                 next();
                 return;
             }
@@ -124,8 +148,107 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 dispatchOriginal(request, response);
                 return;
             }
-            void this.routeRequestToTenant(request, response, context.userLogin, context.session);
+            void this.routeAuthenticatedRequest(request, response, context, dispatchOriginal);
         });
+    }
+
+    /**
+     * Static frontend files (index.html, bundle.js, ~1,600 chunks, media) are build artifacts shared
+     * by the control plane and every tenant backend of the same build. Serving them here while the
+     * tenant backend warms in the background turns a cold first load from "wait for the container,
+     * then download" into "download while the container starts"; only RPC/WebSocket traffic waits.
+     */
+    protected async routeAuthenticatedRequest(
+        request: http.IncomingMessage,
+        response: http.ServerResponse,
+        context: QaapAuthenticatedContext,
+        dispatchOriginal: (request: http.IncomingMessage, response: http.ServerResponse) => void,
+    ): Promise<void> {
+        const origin = await this.staticOriginFor(request, response, context, request.url);
+        if (origin === 'control-plane') {
+            CONTROL_PLANE_STATIC_REQUESTS.add(request);
+            dispatchOriginal(request, response);
+            return;
+        }
+        await this.routeRequestToTenant(request, response, context.userLogin, context.session);
+    }
+
+    /**
+     * `undefined` for anything that is not a static frontend file. For static files the tenant
+     * backend is warmed (never awaited) and the serving origin is decided and advertised.
+     */
+    protected async staticOriginFor(
+        request: http.IncomingMessage,
+        response: http.ServerResponse,
+        context: QaapAuthenticatedContext,
+        rawUrl: string | undefined,
+    ): Promise<QaapStaticOrigin | undefined> {
+        if (!this.staticManifest || !this.isStaticFromControlPlaneEnabled()) {
+            return undefined;
+        }
+        const classification = this.staticManifest.classify(request.method, rawUrl);
+        if (!classification.static) {
+            return undefined;
+        }
+        let origin: QaapStaticOrigin = 'tenant';
+        // Without a tenant root the tenant path answers 403 exactly as before.
+        const root = this.auth.userWorkspaceRoot(context);
+        if (root) {
+            this.activity.touch(context.userLogin, 'user');
+            this.docker.warmTenantBackend(context.userLogin, root);
+            const allowed = await this.staticServingAllowed(context.userLogin, classification.isNavigation).catch(() => false);
+            origin = allowed ? 'control-plane' : 'tenant';
+        }
+        if (!response.headersSent) {
+            response.setHeader(QAAP_STATIC_ORIGIN_HEADER, origin);
+        }
+        return origin;
+    }
+
+    /**
+     * The control plane may serve a tenant's static frontend only when the tenant backend runs (or
+     * will run once ensured) exactly the control plane's build: a different bundle would speak RPC
+     * to a backend it was not built for. Navigations re-check; assets reuse the decision for a short
+     * while (one first load fetches ~1,600 chunks) and concurrent checks share one prediction.
+     */
+    protected async staticServingAllowed(userLogin: string, isNavigation: boolean): Promise<boolean> {
+        const key = userLogin.trim().toLowerCase();
+        const cached = this.staticServingDecisions.get(key);
+        if (!isNavigation && cached && Date.now() - cached.at < STATIC_SERVING_DECISION_TTL_MS) {
+            return cached.allowed;
+        }
+        const inFlight = this.staticServingDecisionsInFlight.get(key);
+        if (inFlight) {
+            return inFlight;
+        }
+        const decision = this.computeStaticServingAllowed(userLogin);
+        this.staticServingDecisionsInFlight.set(key, decision);
+        try {
+            const allowed = await decision;
+            this.staticServingDecisions.set(key, { allowed, at: Date.now() });
+            return allowed;
+        } finally {
+            this.staticServingDecisionsInFlight.delete(key);
+        }
+    }
+
+    protected async computeStaticServingAllowed(userLogin: string): Promise<boolean> {
+        const ownBuild = process.env.QAAP_BUILD_SHA?.trim();
+        if (!ownBuild || ownBuild === 'dev') {
+            return false;
+        }
+        const tenantBuild = await this.docker.predictTenantBackendBuild(userLogin).catch(() => undefined);
+        return tenantBuild === ownBuild;
+    }
+
+    /** Kill switch: `QAAP_TENANT_STATIC_FROM_CONTROL_PLANE=0` proxies the static frontend to the tenant again. */
+    protected isStaticFromControlPlaneEnabled(): boolean {
+        return !/^(0|false|off|no)$/i.test(process.env.QAAP_TENANT_STATIC_FROM_CONTROL_PLANE?.trim() ?? '');
+    }
+
+    /** The browser gave up (e.g. an abandoned Socket.IO poll) while the tenant backend was being ensured. */
+    protected isRequestAbandoned(request: http.IncomingMessage, response: http.ServerResponse): boolean {
+        return response.destroyed || request.destroyed || request.socket?.destroyed === true;
     }
 
     protected async routeRequestToTenant(
@@ -157,6 +280,10 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 return;
             }
             const target = await this.docker.ensureTenantBackend(userLogin, root);
+            if (this.isRequestAbandoned(request, response)) {
+                // Never open an orphan upstream request (and Socket.IO handshake) nobody will read.
+                return;
+            }
             const assertion = createQaapTenantBackendAssertion({
                 tenantLogin: userLogin,
                 user: session.user,
@@ -332,6 +459,12 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             next();
             return;
         }
+        // Same static split as the early router; `originalUrl` because `serveGzipped` may already
+        // have rewritten `req.url` to the `.gz` sibling.
+        if (await this.staticOriginFor(req, res, context, req.originalUrl || req.url) === 'control-plane') {
+            next();
+            return;
+        }
         this.activity.touch(context.userLogin, 'user');
         // One budget covers the tenant cold start and the wait for response headers, so a request
         // that first had to start the backend still gets its answer (at worst a 504) within
@@ -483,6 +616,11 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             // backend. Ensure from the authenticated tenant root so cold start is complete for
             // both HTTP and upgrade paths.
             const target = await this.docker.ensureTenantBackend(userLogin, root);
+            if (socket.destroyed) {
+                // The browser closed the socket during the cold start: no orphan upstream handshake.
+                release();
+                return;
+            }
             const tenantConnectionToken = this.docker.getTenantBackendConnectionToken(userLogin);
             if (!tenantConnectionToken) {
                 socket.destroy();

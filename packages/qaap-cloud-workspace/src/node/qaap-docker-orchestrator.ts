@@ -44,6 +44,8 @@ const WORKSPACE_MOUNT = '/workspace';
 const WORKTREES_MOUNT = `${WORKSPACE_MOUNT}/.qaap-worktrees`;
 const PARALLEL_MOUNT = `${WORKSPACE_MOUNT}/.qaap-parallel`;
 const TENANT_BACKEND_PORT = 4873;
+const TENANT_BUILD_PREDICTION_TIMEOUT_MS = 1_500;
+const TENANT_IMAGE_BUILD_CACHE_MS = 60_000;
 const TENANT_BACKEND_REPOS_ROOT = '/workspace/repos';
 const TENANT_BACKEND_REPOS_MOUNT = `${TENANT_BACKEND_REPOS_ROOT}/users`;
 const TENANT_BACKEND_WORKTREES_MOUNT = '/tmp/qaap-worktrees';
@@ -163,6 +165,10 @@ export class QaapDockerOrchestrator {
     protected readonly tenantBackendConnectionTokens = new Map<string, string>();
     /** Tenants whose stale backend was kept because agent turns were running at recreation time. */
     protected readonly deferredTenantBackendRecreations = new Set<string>();
+    /** `QAAP_BUILD_SHA` each ready tenant backend reported in its health payload (see {@link predictTenantBackendBuild}). */
+    protected readonly tenantBackendBuilds = new Map<string, string>();
+    /** Short-lived cache of the build baked into the tenant serving image, keyed by image reference. */
+    protected tenantImageBuildCache: { readonly image: string; readonly build: string | undefined; readonly at: number } | undefined;
 
     isEnabled(): boolean {
         const cloudMode = (process.env.QAAP_CLOUD_MODE?.trim() || 'local').toLowerCase();
@@ -246,6 +252,7 @@ export class QaapDockerOrchestrator {
         }
         this.tenantBackendTargets.delete(tenant);
         this.tenantBackendConnectionTokens.delete(tenant);
+        this.tenantBackendBuilds.delete(tenant);
     }
 
     /**
@@ -298,6 +305,88 @@ export class QaapDockerOrchestrator {
     }
 
     /**
+     * Start (or join) the tenant backend ensure without waiting for it. The proxy calls this for
+     * every static frontend request it serves from the control plane, so the backend warms while the
+     * browser downloads the bundle; the cached target / in-flight dedup keeps repeats cheap.
+     */
+    warmTenantBackend(ownerLogin: string, tenantRootHostPath: string): void {
+        void this.ensureTenantBackend(ownerLogin, tenantRootHostPath).catch(error => {
+            console.warn(`[qaap-docker] Background warm-up of the tenant backend for ${ownerLogin} failed:`,
+                error instanceof Error ? error.message : String(error));
+        });
+    }
+
+    /**
+     * Best-effort guess of the `QAAP_BUILD_SHA` the tenant's backend will serve once ensured, bounded
+     * by {@link getTenantBuildPredictionTimeoutMs}. `undefined` means "unknown": the caller must then
+     * treat the tenant as running a different frontend build than the control plane.
+     */
+    async predictTenantBackendBuild(ownerLogin: string): Promise<string | undefined> {
+        const tenant = ownerLogin.trim().toLowerCase();
+        // A deferred recreation keeps a stale backend serving until its agent turns finish.
+        if (!tenant || this.deferredTenantBackendRecreations.has(tenant)) {
+            return undefined;
+        }
+        if (this.tenantBackendTargets.has(tenant)) {
+            return this.tenantBackendBuilds.get(tenant);
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<undefined>(resolve => {
+            timer = setTimeout(() => resolve(undefined), this.getTenantBuildPredictionTimeoutMs());
+            timer.unref?.();
+        });
+        try {
+            return await Promise.race([this.inspectTenantBackendBuild(ownerLogin).catch(() => undefined), timeout]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /**
+     * A running backend keeps the build it was created with (a stale one may even be kept by a
+     * deferred recreation); a stopped or missing one is (re)started from the current serving image.
+     */
+    protected async inspectTenantBackendBuild(ownerLogin: string): Promise<string | undefined> {
+        const docker = await this.getDocker(ownerLogin);
+        try {
+            const inspect = await docker.getContainer(this.backendContainerNameForTenant(ownerLogin)).inspect();
+            if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+                return undefined;
+            }
+            if (inspect.State.Running) {
+                return this.buildFromEnv(inspect.Config?.Env);
+            }
+        } catch (error) {
+            if (!this.isDockerNotFound(error)) {
+                return undefined;
+            }
+        }
+        return this.tenantImageBuild(docker);
+    }
+
+    protected getTenantBuildPredictionTimeoutMs(): number {
+        return TENANT_BUILD_PREDICTION_TIMEOUT_MS;
+    }
+
+    protected async tenantImageBuild(docker: Dockerode): Promise<string | undefined> {
+        const image = this.getTenantImage();
+        const cached = this.tenantImageBuildCache;
+        if (cached && cached.image === image && Date.now() - cached.at < TENANT_IMAGE_BUILD_CACHE_MS) {
+            return cached.build;
+        }
+        const inspect = await docker.getImage(image).inspect();
+        const build = this.buildFromEnv(inspect.Config?.Env);
+        this.tenantImageBuildCache = { image, build, at: Date.now() };
+        return build;
+    }
+
+    protected buildFromEnv(env: readonly string[] | undefined): string | undefined {
+        const entry = env?.find(item => item.startsWith('QAAP_BUILD_SHA='));
+        const build = entry?.slice('QAAP_BUILD_SHA='.length).trim();
+        return build ? build : undefined;
+    }
+
+    /**
      * Refresh readiness for a cached backend when a WebSocket is about to be proxied. This keeps
      * the internal Theia connection token available after a backend restart without exposing the
      * tenant backend directly to the browser.
@@ -337,6 +426,7 @@ export class QaapDockerOrchestrator {
         } finally {
             this.tenantBackendTargets.delete(tenant);
             this.tenantBackendConnectionTokens.delete(tenant);
+            this.tenantBackendBuilds.delete(tenant);
         }
     }
 
@@ -416,6 +506,7 @@ export class QaapDockerOrchestrator {
         const tenant = ownerLogin.trim().toLowerCase();
         this.tenantBackendTargets.delete(tenant);
         this.tenantBackendConnectionTokens.delete(tenant);
+        this.tenantBackendBuilds.delete(tenant);
         const networkMode = this.getTenantNetworkMode(ownerLogin);
         if (networkMode !== 'none') {
             for (const node of nodes) {
@@ -1144,8 +1235,16 @@ export class QaapDockerOrchestrator {
                     this.tenantBackendConnectionTokens.set(target.tenantLogin.toLowerCase(), token);
                 }
                 if (response.statusCode === 200) {
-                    const payload = JSON.parse(response.body) as { ready?: boolean };
+                    const payload = JSON.parse(response.body) as { ready?: boolean; build?: unknown };
                     if (payload.ready === true) {
+                        // Lets the proxy serve the static frontend from the control plane only
+                        // when both run the same build (see predictTenantBackendBuild).
+                        const build = typeof payload.build === 'string' ? payload.build.trim() : '';
+                        if (build) {
+                            this.tenantBackendBuilds.set(target.tenantLogin.toLowerCase(), build);
+                        } else {
+                            this.tenantBackendBuilds.delete(target.tenantLogin.toLowerCase());
+                        }
                         return;
                     }
                     lastFailure = `health.ready=${String(payload.ready)}`;

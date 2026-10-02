@@ -264,11 +264,32 @@ describe('Qaap login gate', () => {
             clock = undefined;
         });
 
-        function startWithFakeTimers(config: object = { skipAuth: true }, splash = '<div class="theia-preload"></div>'): LoginGateRun {
-            return start(pathname => pathname === CONFIG ? { ok: true, body: config } : undefined, undefined, {
+        const RUNTIME_STATUS = '/qaap/api/cloud/runtime/status';
+
+        /** `runtimeStates[n]` answers the n-th runtime status probe; `undefined` (or past the end) fails it. */
+        function startWithFakeTimers(
+            config: object = { skipAuth: true },
+            splash = '<div class="theia-preload"></div>',
+            runtimeStates: Array<string | undefined> = [],
+        ): LoginGateRun {
+            return start((pathname, call) => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: config };
+                }
+                const state = pathname === RUNTIME_STATUS ? runtimeStates[call] : undefined;
+                return state ? { ok: true, body: { runtime: { tenantLogin: 'alice', state, reaperEnabled: true } } } : undefined;
+            }, undefined, {
                 bodyHtml: splash,
                 beforeRun: window => { clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] }); },
             });
+        }
+
+        function startupError(run: LoginGateRun): string | undefined {
+            return run.document.getElementById('qaap-startup-error')?.textContent ?? undefined;
+        }
+
+        function startupWait(run: LoginGateRun): string | undefined {
+            return run.document.getElementById('qaap-startup-wait')?.textContent ?? undefined;
         }
 
         async function loadedBundle(run: LoginGateRun): Promise<void> {
@@ -284,7 +305,61 @@ describe('Qaap login gate', () => {
             clock!.tick(29_999);
             expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
             clock!.tick(1);
-            expect(run.document.getElementById('qaap-startup-error')?.textContent).to.contain('The application took too long to start.');
+            // The runtime status probe failed: not a known cold start, so fail as before.
+            await run.waitFor(() => startupError(run) !== undefined, 'startup error');
+            expect(startupError(run)).to.contain('The application took too long to start.');
+            expect(run.requests).to.include(RUNTIME_STATUS);
+        });
+
+        it('keeps waiting with "Starting your workspace" while the tenant runtime is starting', async () => {
+            const run = startWithFakeTimers(undefined, undefined, ['starting', 'stopped']);
+            await loadedBundle(run);
+            clock!.tick(30_000);
+            await run.waitFor(() => startupWait(run) !== undefined, 'startup wait message');
+            expect(startupWait(run)).to.equal('Starting your workspace\u2026');
+            expect(startupError(run)).to.equal(undefined);
+            clock!.tick(30_000);
+            await run.waitFor(() => run.requests.filter(request => request === RUNTIME_STATUS).length === 2, 'second runtime probe');
+            await new Promise(resolve => setTimeout(resolve, 10));
+            expect(startupError(run)).to.equal(undefined);
+            // Third probe has no answer: the runtime is no longer known to be starting.
+            clock!.tick(30_000);
+            await run.waitFor(() => startupError(run) !== undefined, 'startup error after the runtime stopped starting');
+            expect(startupWait(run)).to.equal(undefined);
+        });
+
+        it('gives up after the 120 s cap even while the runtime still reports starting', async () => {
+            const run = startWithFakeTimers(undefined, undefined, ['starting', 'starting', 'starting', 'starting']);
+            await loadedBundle(run);
+            for (let round = 1; round <= 3; round++) {
+                clock!.tick(30_000);
+                await run.waitFor(() => run.requests.filter(request => request === RUNTIME_STATUS).length === round, `runtime probe ${round}`);
+                await new Promise(resolve => setTimeout(resolve, 10));
+                expect(startupError(run)).to.equal(undefined);
+            }
+            clock!.tick(30_000);
+            expect(startupError(run)).to.contain('The application took too long to start.');
+            expect(run.requests.filter(request => request === RUNTIME_STATUS)).to.have.length(3);
+        });
+
+        it('fails at 30 s when the runtime is already active (not a cold start)', async () => {
+            const run = startWithFakeTimers(undefined, undefined, ['active']);
+            await loadedBundle(run);
+            clock!.tick(30_000);
+            await run.waitFor(() => startupError(run) !== undefined, 'startup error');
+            expect(startupWait(run)).to.equal(undefined);
+        });
+
+        it('qaap-startup-ready removes the "Starting your workspace" message and disarms the watchdog', async () => {
+            const run = startWithFakeTimers(undefined, undefined, ['starting']);
+            await loadedBundle(run);
+            clock!.tick(30_000);
+            await run.waitFor(() => startupWait(run) !== undefined, 'startup wait message');
+            run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+            expect(startupWait(run)).to.equal(undefined);
+            clock!.tick(120_000);
+            await new Promise(resolve => setTimeout(resolve, 10));
+            expect(startupError(run)).to.equal(undefined);
         });
 
         for (const [label, splash] of [
@@ -329,7 +404,7 @@ describe('Qaap login gate', () => {
             const run = startWithFakeTimers();
             await loadedBundle(run);
             clock!.tick(30_000);
-            expect(run.document.getElementById('qaap-startup-error')).to.not.equal(null);
+            await run.waitFor(() => startupError(run) !== undefined, 'startup error');
             run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
             expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
         });
