@@ -1017,14 +1017,16 @@ export class QaapDockerOrchestrator {
                 'QAAP_CLOUD_MODE=local',
                 'QAAP_SKIP_AUTH=false',
                 'QAAP_AGENT_UID_PER_USER=0',
+                'QAAP_AGENT_UID=1001',
+                'QAAP_AGENT_GID=1001',
                 `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
                 `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
                 'QAAP_TENANT_BACKEND_MODE=1',
                 `QAAP_TENANT_BACKEND_SECRET=${secret}`,
                 `QAAP_TENANT_LOGIN=${ownerLogin}`,
                 `QAAP_SQLITE_STORE_PATH=${TENANT_BACKEND_SQLITE_STORE_PATH}`,
-                // Agent processes inside the backend keep HOME on the /tmp tmpfs but put package
-                // caches and harness databases on this tenant's disk-backed config mount.
+                // Agent processes use the image's private non-root HOME and put package caches and
+                // harness databases on this tenant's disk-backed config mount.
                 `${QAAP_TENANT_AGENT_STORAGE_ROOT_ENV}=${this.getTenantBackendAgentStorageRoot()}`,
                 `HOME=${TENANT_BACKEND_QAAP_HOME_MOUNT.replace('/.qaap', '')}`,
                 'USER=theia',
@@ -1087,6 +1089,10 @@ export class QaapDockerOrchestrator {
                     PidsLimit: this.getTenantPidsLimit(),
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
+                    // The backend needs only credential switching so setpriv can drop each agent
+                    // child to uid 1001. The rootless user namespace and no-new-privileges keep
+                    // those children unprivileged after the drop.
+                    CapAdd: ['SETUID', 'SETGID'],
                     ReadonlyRootfs: true,
                     Tmpfs: {
                         '/tmp': this.getTenantTmpfsOptions(),
@@ -1310,6 +1316,7 @@ export class QaapDockerOrchestrator {
                 PidsLimit?: number | null;
                 SecurityOpt?: string[];
                 CapDrop?: string[];
+                CapAdd?: string[];
                 ReadonlyRootfs?: boolean;
                 Tmpfs?: Record<string, string>;
                 NetworkMode?: string;
@@ -1336,6 +1343,8 @@ export class QaapDockerOrchestrator {
             'QAAP_CLOUD_MODE=local',
             'QAAP_SKIP_AUTH=false',
             'QAAP_AGENT_UID_PER_USER=0',
+            'QAAP_AGENT_UID=1001',
+            'QAAP_AGENT_GID=1001',
             `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
             `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
             'QAAP_TENANT_BACKEND_MODE=1',
@@ -1378,6 +1387,8 @@ export class QaapDockerOrchestrator {
             && hostConfig.PidsLimit === this.getTenantPidsLimit()
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
+            && hostConfig.CapAdd?.includes('SETUID') === true
+            && hostConfig.CapAdd?.includes('SETGID') === true
             && hostConfig.ReadonlyRootfs === true
             && hostConfig.Tmpfs?.['/tmp'] === this.getTenantTmpfsOptions()
             && hostConfig.Tmpfs?.[TENANT_BACKEND_LOGS_MOUNT] === TENANT_BACKEND_LOGS_TMPFS_OPTIONS

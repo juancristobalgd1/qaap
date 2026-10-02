@@ -65,6 +65,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     docker.io \
     python3 \
     build-essential \
+    acl \
+    util-linux \
     ripgrep \
     # Headless Chromium for server-side visual evidence (QaapHeadlessVisualCaptureService).
     chromium \
@@ -85,6 +87,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \
     && python3 -c "import tarfile; assert hasattr(tarfile, 'data_filter')"
+RUN setpriv --version >/dev/null && setfacl --version >/dev/null
 
 # Fetch and verify the reviewed commit itself, rather than using its SHA only as a cache key.
 ARG CACHE_BUST=unpinned
