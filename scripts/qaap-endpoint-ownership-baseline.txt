@@ -21,3 +21,11 @@ packages/qaap-shared-core/src/node/qaap-github-oauth-endpoint.ts :: GET QAAP_GIT
 # OAuth dance entry point: by definition pre-login (it initiates the GitHub OAuth flow).
 # Stateless; the state parameter's CSRF protection and the callback validation happen
 # later in the flow (handleOAuthCallback is itself guarded).
+
+packages/qaap-cloud-workspace/src/node/qaap-tenant-runtime-endpoint.ts :: GET `${QAAP_TENANT_RUNTIME_API_PATH}/drain-status`
+packages/qaap-cloud-workspace/src/node/qaap-tenant-runtime-endpoint.ts :: POST `${QAAP_TENANT_RUNTIME_API_PATH}/drain`
+# Deploy-only drain used by scripts/qaap-vps-update.sh via `docker compose exec theia` over the
+# container's own loopback. isLocalDeployRequest() answers 404 unless the peer is loopback AND no
+# X-Forwarded-For / X-Forwarded-Host / Forwarded header is present, so anything through Caddy or
+# the tenant proxy is refused. No user session exists in that context by design. Verified: public
+# GET /qaap/api/cloud/runtime/drain-status returns 404.
