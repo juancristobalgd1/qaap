@@ -26,14 +26,23 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
 }
 
 describe('QaapAgentTaskEndpoint CLI updates', () => {
-    const outdated = { updates: [{ id: 'claude', label: 'Claude Code', latestVersion: '2.0.0', updateAvailable: true, updateSupported: false }] };
+    const outdated = { updates: [
+        { id: 'claude', label: 'Claude Code', latestVersion: '2.0.0', updateAvailable: true, updateSupported: true },
+        { id: 'codex', label: 'Codex', latestVersion: '2.0.0', updateAvailable: true, updateSupported: true },
+    ] };
 
-    async function listWith(allowed: boolean): Promise<{ payload: unknown; listed: number }> {
+    async function listWith(allowed: boolean, enabledHarnesses: readonly string[] = ['codex']): Promise<{ payload: unknown; listed: number }> {
         const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
         let listed = 0;
         let payload: unknown;
+        const authContext = { kind: 'authenticated', userLogin: 'alice' };
         Object.assign(endpoint, {
-            requireAuth: () => ({}),
+            requireAuth: () => authContext,
+            auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+            runner: {
+                isAgentEnabled: (agentId: string, ownerLogin: string) =>
+                    ownerLogin === 'alice' && enabledHarnesses.includes(agentId),
+            },
             cliUpdates: { isInPlaceCliUpdateAllowed: () => allowed, listOutdated: async () => { listed++; return outdated; } },
         });
         const res = { json: (body: unknown) => { payload = body; } } as unknown as Response;
@@ -45,8 +54,18 @@ describe('QaapAgentTaskEndpoint CLI updates', () => {
         expect(await listWith(false)).to.deep.equal({ payload: { updates: [] }, listed: 0 });
     });
 
-    it('lists outdated CLIs where in-place updates are allowed (local/dev)', async () => {
-        expect(await listWith(true)).to.deep.equal({ payload: outdated, listed: 1 });
+    it('lists only harnesses enabled in the authenticated user configuration', async () => {
+        expect(await listWith(true, ['codex'])).to.deep.equal({
+            payload: { updates: [outdated.updates[1]] },
+            listed: 1,
+        });
+    });
+
+    it('includes Claude Code for an owner who has it enabled', async () => {
+        expect(await listWith(true, ['claude', 'codex'])).to.deep.equal({
+            payload: outdated,
+            listed: 1,
+        });
     });
 });
 
