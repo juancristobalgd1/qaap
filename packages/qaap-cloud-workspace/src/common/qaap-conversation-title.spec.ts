@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { deriveConversationTitle, isComposerAttachmentPreambleTitle, resolveConversationTitleSeed } from './qaap-conversation-title';
 
 describe('deriveConversationTitle', () => {
@@ -51,6 +52,12 @@ describe('deriveConversationTitle', () => {
 
     it('passes short prompts through without rewriting their first word', () => {
         expect(deriveConversationTitle('fix the login bug')).to.equal('fix the login bug');
+    });
+
+    it('titles a Plan conversation from the user prompt without an internal mode prefix', () => {
+        const userPrompt = 'Explain why sign in fails after a password reset';
+        expect(deriveConversationTitle(applyBackendInteractionModeToPrompt(userPrompt, 'plan')))
+            .to.equal('Explain why sign in fails after a password reset');
     });
 
     it('keeps boilerplate when stripping would leave fewer than three words', () => {

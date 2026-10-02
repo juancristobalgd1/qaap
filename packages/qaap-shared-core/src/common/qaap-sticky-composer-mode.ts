@@ -97,20 +97,20 @@ export function describeComposerInteractionMode(modeId: string | undefined): str
     return undefined;
 }
 
-const PLAN_MODE_PREFIX = nls.localize(
-    'qaap/mobileProjects/planModePrefix',
-    '[QAIQ Plan mode] Respond with a concise markdown plan only: goals, steps, risks, and open questions. '
-    + 'Do not edit files, run shell commands, or invoke tools until the user explicitly approves the plan '
-    + 'and switches to Build mode.',
-);
-
-export function applyBackendInteractionModeToPrompt(prompt: string, modeId: string | undefined): string {
-    const trimmed = prompt.trim();
-    if (!trimmed || !modeId || modeId === 'agent') {
-        return prompt;
-    }
-    if (modeId === 'plan') {
-        return [PLAN_MODE_PREFIX, '', trimmed].join('\n');
-    }
+export function applyBackendInteractionModeToPrompt(prompt: string, _modeId: string | undefined): string {
+    // The mode is sent separately as interactionModeId. Keep the user message intact so it is
+    // recorded and titled from what the user actually typed; the backend adds the mode instruction
+    // to the agent's hidden context and enforces its tool policy.
     return prompt;
+}
+
+export function resolveBackendInteractionModeSystemInstruction(modeId: string | undefined): string | undefined {
+    if (modeId?.trim().toLowerCase() !== 'plan') {
+        return undefined;
+    }
+    return nls.localize(
+        'qaap/mobileProjects/planModeSystemInstruction',
+        'The user selected Plan mode. Provide a concise Markdown plan with goals, steps, risks, and open questions. '
+        + 'Do not modify files or run shell commands. Use only read-only inspection tools when needed.',
+    );
 }

@@ -10,6 +10,7 @@ import {
     describeComposerInteractionMode,
     QAAP_BACKEND_INTERACTION_MODES,
     reconcileComposerModeId,
+    resolveBackendInteractionModeSystemInstruction,
     resolveStickyComposerModes,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 
@@ -20,9 +21,14 @@ describe('qaap-sticky-composer-mode', () => {
         expect(applyBackendInteractionModeToPrompt('fix tests', undefined)).to.equal('fix tests');
     });
 
-    it('applyBackendInteractionModeToPrompt prefixes plan mode', () => {
-        expect(applyBackendInteractionModeToPrompt('refactor auth', 'plan')).to.contain('[QAIQ Plan mode]');
-        expect(applyBackendInteractionModeToPrompt('refactor auth', 'plan')).to.contain('refactor auth');
+    it('keeps the plan request unchanged as user content', () => {
+        expect(applyBackendInteractionModeToPrompt('refactor auth', 'plan')).to.equal('refactor auth');
+        expect(applyBackendInteractionModeToPrompt('  refactor auth  ', 'plan')).to.equal('  refactor auth  ');
+    });
+
+    it('provides Plan instructions separately from user content', () => {
+        expect(resolveBackendInteractionModeSystemInstruction('plan')).to.contain('The user selected Plan mode.');
+        expect(resolveBackendInteractionModeSystemInstruction('agent')).to.equal(undefined);
     });
 
     it('resolveStickyComposerModes always exposes QAIQ product modes', () => {

@@ -22,6 +22,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { resolveBackendInteractionModeSystemInstruction } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
     formatQaiqInteractionFlags,
@@ -372,12 +373,16 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
                 researchLedger: ctx.readResearchLedger(resolvedCwd),
             }
             : undefined;
-        const agentPrompt = prependAgentTaskContextToPrompt(
+        const promptWithTaskContext = prependAgentTaskContextToPrompt(
             workflowPrompt,
             contextPreamble,
             resolvedCwd ? ctx.readProjectInfo(resolvedCwd) : undefined,
             repoContext,
         );
+        const modeInstruction = resolveBackendInteractionModeSystemInstruction(interactionModeId);
+        const agentPrompt = modeInstruction
+            ? `[Qaap interaction-mode system instruction]\n${modeInstruction}\n\n---\n\n${promptWithTaskContext}`
+            : promptWithTaskContext;
         ctx.assertQaiqConfigured(id, ownerLogin);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
