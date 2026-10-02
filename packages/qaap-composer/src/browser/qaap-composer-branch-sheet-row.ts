@@ -10,6 +10,7 @@ export const COMPOSER_BRANCH_SHEET_ROW_SELECTOR = '.theia-mobile-sticky-composer
 export interface ComposerBranchSheetRowOptions {
     readonly branch: string;
     readonly selected: boolean;
+    readonly uncommittedChanges?: number;
     /** When true, the delete action is omitted (e.g. currently checked-out branch). */
     readonly deleteDisabled?: boolean;
     readonly onSelect: () => void;
@@ -25,6 +26,52 @@ export function findComposerBranchSheetRow(list: HTMLElement, branch: string): H
 export function indexComposerBranchSheetRow(list: HTMLElement, branch: string): number {
     return [...list.querySelectorAll<HTMLElement>(COMPOSER_BRANCH_SHEET_ROW_SELECTOR)]
         .findIndex(row => row.dataset.branchName === branch);
+}
+
+/** Refresh the active branch's uncommitted file count without replacing its row or open menu. */
+export function updateComposerBranchSheetRowUncommittedChanges(row: HTMLElement | undefined, count: number): void {
+    if (!row) {
+        return;
+    }
+    const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+    row.dataset.uncommittedChanges = String(safeCount);
+    const selectBtn = row.querySelector<HTMLButtonElement>('.theia-mod-branch-select');
+    const content = selectBtn?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-sheet-option-content');
+    if (!selectBtn || !content) {
+        return;
+    }
+    let badge = content.querySelector<HTMLElement>('.theia-mobile-sticky-composer-sheet-branch-changes');
+    if (safeCount === 0) {
+        badge?.remove();
+        selectBtn.removeAttribute('aria-label');
+        return;
+    }
+    if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'theia-mobile-sticky-composer-sheet-branch-changes';
+        const check = content.querySelector('.theia-mobile-sticky-composer-sheet-option-check');
+        content.insertBefore(badge, check);
+    }
+    const countLabel = nls.localize(
+        'qaap/composerWorkspace/branchUncommittedChanges',
+        '{0} uncommitted changes',
+        String(safeCount),
+    );
+    badge.textContent = String(safeCount);
+    badge.title = countLabel;
+    badge.setAttribute('aria-label', countLabel);
+    const branchLabel = nls.localize(
+        'qaap/composerWorkspace/branchWithUncommittedChanges',
+        '{0}, {1}',
+        row.dataset.branchName ?? '',
+        countLabel,
+    );
+    selectBtn.setAttribute(
+        'aria-label',
+        row.classList.contains('theia-mod-selected')
+            ? nls.localize('qaap/composerWorkspace/branchSelectedWithUncommittedChanges', '{0}, selected', branchLabel)
+            : branchLabel,
+    );
 }
 
 let openBranchMenu: {
@@ -215,5 +262,6 @@ export function createComposerBranchSheetRow(options: ComposerBranchSheetRowOpti
     menuBtn.addEventListener('keydown', event => event.stopPropagation());
 
     row.append(selectBtn, menuBtn, menu);
+    updateComposerBranchSheetRowUncommittedChanges(row, options.uncommittedChanges ?? 0);
     return row;
 }

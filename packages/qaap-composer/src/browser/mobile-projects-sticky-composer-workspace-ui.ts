@@ -10,6 +10,7 @@ import {
     isQaapGitReviewNotRepoError,
     readQaapGitReviewErrorBody,
     type QaapGitBranchesResponse,
+    type QaapGitChangesResponse,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -35,6 +36,7 @@ import {
     createComposerBranchSheetRow,
     findComposerBranchSheetRow,
     indexComposerBranchSheetRow,
+    updateComposerBranchSheetRowUncommittedChanges,
 } from './qaap-composer-branch-sheet-row';
 
 export interface MobileProjectsStickyComposerWorkspaceHost {
@@ -82,6 +84,8 @@ export class MobileProjectsStickyComposerWorkspaceUi {
     private readonly deletingComposerWorkspaceBranches = new Set<string>();
     /** Branches removed in this tab session — filtered out of subsequent sheet loads. */
     private readonly deletedComposerWorkspaceBranchesByProjectId = new Map<string, Set<string>>();
+    /** Uncommitted file count for the current branch, refreshed whenever its sheet opens. */
+    private readonly composerWorkspaceUncommittedChangeCountByProjectId = new Map<string, number>();
 
     constructor(protected readonly host: MobileProjectsStickyComposerWorkspaceHost) { }
 
@@ -270,7 +274,10 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             if (!response.ok) {
                 return this.resolveComposerWorkspaceBranch(project);
             }
-            const payload = await response.json() as { branch?: string };
+            const payload = await response.json() as QaapGitChangesResponse;
+            if (Array.isArray(payload.files)) {
+                this.composerWorkspaceUncommittedChangeCountByProjectId.set(project.id, payload.files.length);
+            }
             if (payload.branch) {
                 this.host.composerWorkspaceBranchByProjectId.set(project.id, payload.branch);
                 return payload.branch;
@@ -626,6 +633,9 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         return createComposerBranchSheetRow({
             branch,
             selected: branch === current,
+            uncommittedChanges: branch === current
+                ? this.composerWorkspaceUncommittedChangeCountByProjectId.get(project.id)
+                : undefined,
             deleteDisabled: branch === current,
             onSelect: () => {
                 void this.checkoutComposerWorkspaceBranch(project, branch);
@@ -758,6 +768,12 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         }
         try {
             const params = new URLSearchParams({ root: cwd });
+            const changesPromise = fetch(`${QAAP_GIT_REVIEW_API_PATH}/changes?${params.toString()}`, {
+                credentials: 'include',
+                cache: 'no-store',
+            }).then(async changesResponse => changesResponse.ok
+                ? await changesResponse.json() as QaapGitChangesResponse
+                : undefined).catch(() => undefined);
             const response = await fetch(`${QAAP_GIT_REVIEW_API_PATH}/branches?${params.toString()}`, {
                 credentials: 'include',
                 cache: 'no-store',
@@ -775,6 +791,9 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 return;
             }
             const current = payload.current ?? this.resolveComposerWorkspaceBranch(project);
+            if (payload.current) {
+                this.host.composerWorkspaceBranchByProjectId.set(project.id, payload.current);
+            }
             list.replaceChildren();
             if (payload.branches.length === 0) {
                 const empty = document.createElement('p');
@@ -788,6 +807,19 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 this.appendComposerWorkspaceBranchRow(project, list, branch, current);
             }
             this.finishComposerWorkspaceBranchSheetList(list);
+            void changesPromise.then(changes => {
+                if (!changes || !Array.isArray(changes.files) || (changes.branch && changes.branch !== current)) {
+                    return;
+                }
+                const count = changes.files.length;
+                this.composerWorkspaceUncommittedChangeCountByProjectId.set(project.id, count);
+                if (list.isConnected) {
+                    updateComposerBranchSheetRowUncommittedChanges(
+                        findComposerBranchSheetRow(list, current),
+                        count,
+                    );
+                }
+            });
         } catch (error) {
             const text = error instanceof Error ? error.message : String(error);
             this.showComposerWorkspaceBranchSheetMessage(
@@ -818,6 +850,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             if (payload.branch) {
                 this.host.composerWorkspaceBranchByProjectId.set(project.id, payload.branch);
             }
+            this.composerWorkspaceUncommittedChangeCountByProjectId.delete(project.id);
             this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
             this.remountComposerWithWorkspaceBar(project);
             MobileSnackbar.show(
