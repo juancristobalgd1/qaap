@@ -11,7 +11,7 @@
 // Reads `docker inspect <backend-A> <backend-B>` JSON on stdin and verifies, for two DISTINCT tenants,
 // the isolation contract the orchestrator creates (qaap-docker-orchestrator.ts
 // createOrValidateTenantBackend): Qaap-managed labels bound to the tenant login, non-root user, no
-// privileges/capabilities, read-only rootfs, no host namespaces, only the tenant's own five mounts
+// privileges/capabilities (beyond SETUID/SETGID for agent uid drop), read-only rootfs, no host namespaces, only the tenant's own five mounts
 // (never the Docker socket), no control-plane secrets in the environment, per-tenant HMAC secret,
 // and no storage or network shared between the two tenants.
 //
@@ -32,6 +32,11 @@ const CONTROL_PLANE_ENV = [
     'QAAP_COOKIE_SECRET', 'QAAP_JWT_SECRET', 'QAAP_VAPID_PRIVATE_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
     'QAAP_TENANT_UID_REGISTRY_PATH', 'QAAP_DATABASE_URL', 'QAAP_REDIS_URL',
 ];
+
+// The backend drops every capability and only re-adds SETUID/SETGID so it can spawn agent tasks as the
+// unprivileged per-user agent uid via setpriv (qaap-docker-orchestrator.ts, QAAP_AGENT_UID_PER_USER=1).
+// Combined with no-new-privileges, these cannot be used to regain privileges. Anything else fails.
+const ALLOWED_BACKEND_CAPS = new Set(['SETUID', 'SETGID']);
 
 let failures = 0;
 const ok = message => console.log(`  OK   ${message}`);
@@ -85,8 +90,9 @@ function checkBackend(container, login) {
     if (hostConfig.Privileged === true) {
         problems.push('privileged');
     }
-    if (!(hostConfig.CapDrop ?? []).some(cap => String(cap).toUpperCase() === 'ALL') || (hostConfig.CapAdd ?? []).length > 0) {
-        problems.push('capabilities not fully dropped');
+    const extraCaps = (hostConfig.CapAdd ?? []).map(cap => String(cap).toUpperCase().replace(/^CAP_/, ''));
+    if (!(hostConfig.CapDrop ?? []).some(cap => String(cap).toUpperCase() === 'ALL') || extraCaps.some(cap => !ALLOWED_BACKEND_CAPS.has(cap))) {
+        problems.push(`capabilities not fully dropped${extraCaps.length ? ` (CapAdd: ${extraCaps.join(', ')})` : ''}`);
     }
     if (!(hostConfig.SecurityOpt ?? []).some(opt => opt === 'no-new-privileges:true' || opt === 'no-new-privileges')) {
         problems.push('no-new-privileges missing');
