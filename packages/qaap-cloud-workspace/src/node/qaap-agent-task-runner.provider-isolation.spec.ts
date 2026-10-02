@@ -22,7 +22,7 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         GEMINI_API_KEY: 'operator-gemini',
         GITHUB_TOKEN: 'operator-github',
     };
-    const MODE_ENV = ['NODE_ENV', 'QAAP_CLOUD_MODE', 'QAAP_TENANT_BACKEND_MODE'];
+    const MODE_ENV = ['NODE_ENV', 'QAAP_CLOUD_MODE', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_TENANT_BACKEND_SECRET'];
 
     /** Alice's own per-user settings file. */
     const ALICE_SETTINGS: Record<string, unknown> = {
@@ -43,6 +43,7 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
             delete process.env[key];
         }
         Object.assign(process.env, OPERATOR_ENV);
+        process.env.QAAP_TENANT_BACKEND_SECRET = 'tenant-control-plane-secret';
     });
 
     afterEach(() => {
@@ -100,6 +101,12 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         expect(env.OPENAI_API_KEY).to.equal('sk-alice-openrouter');
         expect(env.ANTHROPIC_API_KEY).to.equal(undefined);
         expect(leakedValues(env, [...Object.values(OPERATOR_ENV), 'sk-shared-anthropic'])).to.deep.equal([]);
+    });
+
+    it('never forwards the tenant backend authentication secret to the agent spawn env', () => {
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        const { env } = run('alice');
+        expect(env.QAAP_TENANT_BACKEND_SECRET).to.equal(undefined);
     });
 
     it('hosted backend, no login: neither operator env nor shared settings reach the agent', () => {
