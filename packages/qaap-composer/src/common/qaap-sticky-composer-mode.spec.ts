@@ -41,6 +41,12 @@ describe('qaap-sticky-composer-mode', () => {
         expect(describeComposerInteractionMode('plan')).to.contain('Plan mode');
     });
 
+    it('describes Plan with the agent selected for the composer', () => {
+        const banner = describeComposerInteractionMode('plan', 'OpenCode');
+        expect(banner).to.contain('OpenCode will draft a plan');
+        expect(banner).not.to.contain('QAIQ');
+    });
+
     it('reconcileComposerModeId falls back to default', () => {
         expect(reconcileComposerModeId('missing', QAAP_BACKEND_INTERACTION_MODES, undefined))
             .to.equal(defaultComposerModeId(QAAP_BACKEND_INTERACTION_MODES));

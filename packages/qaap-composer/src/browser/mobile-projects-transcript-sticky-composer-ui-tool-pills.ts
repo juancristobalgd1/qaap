@@ -3,6 +3,7 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -351,7 +352,11 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         },
         transcriptOverlay: !ctx.host.agentsHubShellActive,
     });
-    const modeHint = describeComposerInteractionMode(ctx.host.transcriptComposerModeId);
+    const pinnedAgentId = ctx.host.transcriptComposerPinnedAgentId;
+    const pinnedAgentLabel = ctx.host.transcriptComposerBackendAgents.find(agent =>
+        agent.id.toLowerCase() === pinnedAgentId?.toLowerCase()
+    )?.label ?? (pinnedAgentId ? resolveAgentDisplayLabel(pinnedAgentId) : undefined);
+    const modeHint = describeComposerInteractionMode(ctx.host.transcriptComposerModeId, pinnedAgentLabel);
     if (modeHint) {
         const modeBanner = document.createElement('div');
         modeBanner.className = 'theia-mobile-sticky-composer-mode-banner';
@@ -401,4 +406,3 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         ctx.host.transcriptLiveUi.syncTranscriptPendingApproval(ctx.host.transcriptLastConv);
     }
 }
-

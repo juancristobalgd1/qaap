@@ -84,14 +84,17 @@ export function resolveStickyComposerModes(
     return QAAP_BACKEND_INTERACTION_MODES;
 }
 
-export function describeComposerInteractionMode(modeId: string | undefined): string | undefined {
+export function describeComposerInteractionMode(modeId: string | undefined, agentLabel?: string): string | undefined {
     if (!modeId || modeId === 'agent') {
         return undefined;
     }
     if (modeId === 'plan') {
+        const selectedAgent = agentLabel?.trim()
+            || nls.localize('qaap/mobileProjects/selectedComposerAgent', 'The selected agent');
         return nls.localize(
             'qaap/mobileProjects/modePlanActive',
-            'Plan mode — QAIQ will draft a plan only. No edits or commands until you switch to Build.',
+            'Plan mode — {0} will draft a plan only. No edits or commands until you switch to Build.',
+            selectedAgent,
         );
     }
     return undefined;

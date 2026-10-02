@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import URI from '@theia/core/lib/common/uri';
@@ -659,14 +660,17 @@ export class MobileProjectsStickyComposerRenderUi {
                 );
             },
         });
-        const modeHint = describeComposerInteractionMode(this.host.stickyComposerModeId);
+        const pinnedAgentId = this.host.stickyComposerPinnedAgentId;
+        const pinnedAgentLabel = this.host.stickyComposerBackendAgents.find(agent =>
+            agent.id.toLowerCase() === pinnedAgentId?.toLowerCase()
+        )?.label ?? (pinnedAgentId ? resolveAgentDisplayLabel(pinnedAgentId) : undefined);
+        const modeHint = describeComposerInteractionMode(this.host.stickyComposerModeId, pinnedAgentLabel);
         if (modeHint) {
             const modeBanner = document.createElement('div');
             modeBanner.className = 'theia-mobile-sticky-composer-mode-banner';
             modeBanner.textContent = modeHint;
             this.host.stickyComposerHost.append(modeBanner);
         }
-        const pinnedAgentId = this.host.stickyComposerPinnedAgentId;
         if (
             this.host.openPreferencesSheet
             && agentNeedsSettingsApiKeyPath(pinnedAgentId)
@@ -810,4 +814,3 @@ export class MobileProjectsStickyComposerRenderUi {
         return indicatorDisposable;
     }
 }
-
