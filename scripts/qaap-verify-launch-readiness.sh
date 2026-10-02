@@ -38,8 +38,21 @@ else
     bad "production readiness or release identity is invalid"
 fi
 
+# Retry each legal page a few times: right after a container swap the proxy can
+# briefly answer one request with an empty body, which made deploys fail at random.
+legal_page_ok() {
+    local page="$1" attempt
+    for attempt in 1 2 3 4 5; do
+        if curl -fsS --max-time 8 "${BASE}/legal/${page}.html" | grep -q '<h1>'; then
+            return 0
+        fi
+        sleep 3
+    done
+    return 1
+}
+
 for page in terms privacy; do
-    if curl -fsS --max-time 8 "${BASE}/legal/${page}.html" | grep -q '<h1>'; then
+    if legal_page_ok "$page"; then
         ok "GET /legal/${page}.html"
     else
         bad "GET /legal/${page}.html is missing or empty — login terms/privacy must resolve"
