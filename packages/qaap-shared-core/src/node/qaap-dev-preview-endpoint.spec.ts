@@ -746,6 +746,30 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.getForOwner(bob.previewId, 'alice')).to.equal(undefined);
         });
 
+        it('hands a stale-root preview identity of the same owner to the current root instead of failing', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const identity = {
+                workspaceId: 'file:///workspace/alice/site',
+                projectId: 'site',
+                processId: 'process-a',
+            };
+            const firstRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, identity, 'file:///workspace/alice/site'), firstRes);
+            const first = firstRes.record.body as { previewId: string };
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            const stored = previews.get(first.previewId)!;
+            previews.set(first.previewId, { ...stored, root: '/legacy/non-canonical/site' });
+
+            const secondRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, identity, 'file:///workspace/alice/site'), secondRes);
+
+            expect(secondRes.record.code).to.equal(200);
+            expect(registry.getForOwner(first.previewId, 'alice')?.root).to.equal(stored.root);
+        });
+
         it('returns one stable preview when processId and conversation match', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

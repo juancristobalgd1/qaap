@@ -12,7 +12,7 @@ import {
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { QAAP_DEV_PREVIEW_CLAIM_PATH, QAAP_DEV_PREVIEW_RELEASE_PATH } from '../common/qaap-dev-preview';
 
-type QaapPreviewClaimFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'status'> & Partial<Pick<Response, 'json' | 'text'>>>;
+type QaapPreviewClaimFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'status'> & Partial<Pick<Response, 'json'>>>;
 
 export async function requestQaapPreviewPortClaim(
     port: number,
@@ -44,10 +44,7 @@ export async function requestQaapPreviewPortClaim(
             return { kind: 'error', status: response.status };
         }
         if (response.status === 409) {
-            const detail = response.text ? await response.text().catch(() => '') : '';
-            return /identity belongs to a different workspace/i.test(detail)
-                ? { kind: 'conflict', reason: 'identity' }
-                : { kind: 'conflict' };
+            return { kind: 'conflict' };
         }
         return { kind: 'error', status: response.status };
     } catch {

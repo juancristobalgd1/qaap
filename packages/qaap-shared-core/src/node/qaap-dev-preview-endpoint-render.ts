@@ -366,45 +366,55 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
     const existing = ctx.portRegistry.getForOwner(identity.previewId, owner);
     if (existing) {
         if (existing.root !== canonicalRoot) {
-            res.status(409).type('text/plain').send('This preview identity belongs to a different workspace.');
-            return;
-        }
-        if (!ctx.isPreviewProcessDead(existing) && await ctx.probeLocalDevServer(existing.port)) {
-            if (osProcessId !== undefined) {
-                ctx.portRegistry.attachProcess(existing.previewId, owner, osProcessId);
-            }
-            res.status(200).json({
+            // Same owner and identity, different root: a stale entry (non-canonical path from an older
+            // registry, moved checkout). Hand the identity to the current root, Codex-style, instead of
+            // failing the preview. Claims of other owners are never visible here (getForOwner).
+            console.info('[qaap-preview] reassigning preview identity to the current workspace root', {
                 previewId: existing.previewId,
-                previewUrl: ctx.buildIdentityPreviewUrl(req, existing),
-                port: existing.port,
+                ownerLogin: owner,
+                fromRoot: existing.root,
+                root: canonicalRoot,
             });
-            return;
-        }
-        // Reserved empty / dead claim, but the process bound the preferred port (common when a
-        // project hardcodes PORT while the allocator had to park on another free slot first).
-        if (preferredPort !== existing.port && await ctx.probeLocalDevServer(preferredPort)) {
-            const rebound = ctx.portRegistry.rebindPort(existing.previewId, owner, preferredPort);
-            if (rebound) {
+            ctx.terminatePreviewProcess(existing);
+            ctx.portRegistry.releasePreview(existing.previewId, owner);
+        } else {
+            if (!ctx.isPreviewProcessDead(existing) && await ctx.probeLocalDevServer(existing.port)) {
                 if (osProcessId !== undefined) {
-                    ctx.portRegistry.attachProcess(rebound.previewId, owner, osProcessId);
+                    ctx.portRegistry.attachProcess(existing.previewId, owner, osProcessId);
                 }
-                console.info('[qaap-preview] rebound process claim to listening preferred port', {
-                    previewId: rebound.previewId,
-                    ownerLogin: owner,
-                    fromPort: existing.port,
-                    port: rebound.port,
-                    processId: identity.processId,
-                });
                 res.status(200).json({
-                    previewId: rebound.previewId,
-                    previewUrl: ctx.buildIdentityPreviewUrl(req, rebound),
-                    port: rebound.port,
+                    previewId: existing.previewId,
+                    previewUrl: ctx.buildIdentityPreviewUrl(req, existing),
+                    port: existing.port,
                 });
                 return;
             }
+            // Reserved empty / dead claim, but the process bound the preferred port (common when a
+            // project hardcodes PORT while the allocator had to park on another free slot first).
+            if (preferredPort !== existing.port && await ctx.probeLocalDevServer(preferredPort)) {
+                const rebound = ctx.portRegistry.rebindPort(existing.previewId, owner, preferredPort);
+                if (rebound) {
+                    if (osProcessId !== undefined) {
+                        ctx.portRegistry.attachProcess(rebound.previewId, owner, osProcessId);
+                    }
+                    console.info('[qaap-preview] rebound process claim to listening preferred port', {
+                        previewId: rebound.previewId,
+                        ownerLogin: owner,
+                        fromPort: existing.port,
+                        port: rebound.port,
+                        processId: identity.processId,
+                    });
+                    res.status(200).json({
+                        previewId: rebound.previewId,
+                        previewUrl: ctx.buildIdentityPreviewUrl(req, rebound),
+                        port: rebound.port,
+                    });
+                    return;
+                }
+            }
+            ctx.terminatePreviewProcess(existing);
+            ctx.portRegistry.releasePreview(existing.previewId, owner);
         }
-        ctx.terminatePreviewProcess(existing);
-        ctx.portRegistry.releasePreview(existing.previewId, owner);
     }
 
     // Reattach only within the same conversation/section. Another section of the same project

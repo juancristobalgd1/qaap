@@ -173,14 +173,11 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             }
             if (reservation.kind !== 'claimed' || reservation.port === undefined
                 || !reservation.previewId || !reservation.previewUrl) {
-                const identityConflict = reservation.kind === 'conflict' && reservation.reason === 'identity';
-                if (reservation.kind === 'conflict' && !identityConflict
+                if (reservation.kind === 'conflict'
                     && await recoverPreviewPortClaimConflictExtracted(ctx, plan, descriptor, spawnPlan.targetPort)) {
                     return;
                 }
-                ctx._error = identityConflict
-                    ? nls.localize('qaap/projectBootstrap/previewIdentityConflict', 'The requested preview identity is already in use.')
-                    : reservation.kind === 'conflict'
+                ctx._error = reservation.kind === 'conflict'
                     ? nls.localize(
                         'qaap/projectBootstrap/previewPortConflict',
                         'Port {0} is already in use, and Qaap could not reserve an alternate preview port.',

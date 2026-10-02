@@ -10,8 +10,7 @@ export const QaapPreviewPortClaimService = Symbol('QaapPreviewPortClaimService')
 
 export type QaapPreviewPortClaimResult =
     | { readonly kind: 'claimed'; readonly previewId?: string; readonly previewUrl?: string; readonly port?: number }
-    /** `identity`: the preview identity belongs to another workspace, so another port will not help. */
-    | { readonly kind: 'conflict'; readonly reason?: 'identity' }
+    | { readonly kind: 'conflict' }
     | { readonly kind: 'error'; readonly status?: number };
 
 export interface QaapPreviewPortClaimService {
