@@ -28,6 +28,15 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
             { status: 'idle', lastMessageRole: 'agent', messageCount: 2, lastTurnCancelled: true },
             true,
         ).id).to.equal('cancelled');
+        expect(resolveQaapAgentTaskVisualStatus(
+            { state: 'idle' },
+            { status: 'settled', lastMessageRole: 'agent', messageCount: 2, lastTurnCancelled: true },
+            true,
+        ).id).to.equal('cancelled');
+        expect(resolveQaapAgentTaskVisualStatus(
+            { state: 'cancelled' },
+            { status: 'settled', messageCount: 2 },
+        ).id).to.equal('cancelled');
         // A new run on the same conversation is running again.
         expect(resolveQaapAgentTaskVisualStatus({ state: 'running' }, { status: 'streaming', messageCount: 3, lastTurnCancelled: true }).id).to.equal('running');
     });
@@ -175,4 +184,3 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
         expect(status.id).to.equal('verified');
     });
 });
-
