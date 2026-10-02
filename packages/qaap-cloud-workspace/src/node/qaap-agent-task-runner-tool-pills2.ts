@@ -269,6 +269,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             command: task.command,
             agentId: task.agentId,
             autoApprove: task.autoApprove,
+            readOnlyWorkspace: task.readOnlyWorkspace,
         });
         if (opencodePermission) {
             env.OPENCODE_PERMISSION = opencodePermission;

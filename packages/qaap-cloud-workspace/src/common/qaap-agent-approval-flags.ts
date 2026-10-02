@@ -178,6 +178,9 @@ export function applyAgentApprovalPolicyToCommand(
  */
 export function applyReadOnlyWorkspaceToCommand(command: string, agentId: string | undefined): string {
     const effectiveId = resolveApprovalAgentId(command, agentId);
+    if (effectiveId === 'opencode') {
+        return stripFlagTokens(command, ['--dangerously-skip-permissions', '--auto', '--yolo']);
+    }
     const flags = formatReadOnlyFlagsForAgent(effectiveId);
     if (!flags) {
         return command;
@@ -331,9 +334,23 @@ export function resolveOpencodePermissionEnv(options: {
     readonly command: string;
     readonly agentId?: string;
     readonly autoApprove?: boolean;
+    readonly readOnlyWorkspace?: boolean;
 }): string | undefined {
     if (resolveApprovalAgentId(options.command, options.agentId) !== 'opencode') {
         return undefined;
+    }
+    if (options.readOnlyWorkspace) {
+        return JSON.stringify({
+            '*': 'deny',
+            read: 'allow',
+            glob: 'allow',
+            grep: 'allow',
+            list: 'allow',
+            webfetch: 'allow',
+            websearch: 'allow',
+            lsp: 'allow',
+            question: 'allow',
+        });
     }
     if (/(?:^|\s)--(?:dangerously-skip-permissions|auto|yolo)(?=\s|$)/.test(options.command)) {
         return undefined;

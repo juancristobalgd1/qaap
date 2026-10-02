@@ -24,10 +24,11 @@ describe('qaap-agent-readonly-workspace enforcement table', () => {
         expect(resolveAgentReadOnlyEnforcement('claude')).to.equal('tool-deny');
         expect(resolveAgentReadOnlyEnforcement('qaiq')).to.equal('tool-deny');
         expect(resolveAgentReadOnlyEnforcement('openclaude')).to.equal('tool-deny');
+        expect(resolveAgentReadOnlyEnforcement('opencode')).to.equal('tool-deny');
     });
 
     it('reports no enforcement for backends with no verified mechanism', () => {
-        for (const agentId of ['grok', 'opencode', 'copilot', 'qwen', 'goose', 'cursor', 'shell', undefined]) {
+        for (const agentId of ['grok', 'copilot', 'qwen', 'goose', 'cursor', 'shell', undefined]) {
             expect(resolveAgentReadOnlyEnforcement(agentId), agentId ?? 'undefined').to.equal('none');
             expect(canEnforceReadOnlyWorkspace(agentId), agentId ?? 'undefined').to.equal(false);
             expect(formatReadOnlyFlagsForAgent(agentId), agentId ?? 'undefined').to.equal(undefined);
@@ -80,6 +81,17 @@ describe('qaap-agent-readonly-workspace command flags', () => {
         expect(command).to.include('--sandbox read-only');
         // Without this the sandboxed run stalls waiting for an approval nobody can give.
         expect(command).to.include('--ask-for-approval never');
+    });
+
+    it('removes OpenCode YOLO flags so the task runner can apply its deny-all permission environment', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "opencode run --format json --dangerously-skip-permissions --auto 'inspect this repo'",
+            { agentId: 'opencode', readOnlyWorkspace: true },
+        );
+        expect(command).to.include('opencode run');
+        expect(command).not.to.include('--dangerously-skip-permissions');
+        expect(command).not.to.include('--auto');
+        expect(canEnforceReadOnlyWorkspace('opencode')).to.equal(true);
     });
 
     it('strips the template auto-approval flags instead of leaving them beside the restriction', () => {

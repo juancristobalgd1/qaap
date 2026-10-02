@@ -18,9 +18,9 @@
  *   Every write path is closed, including writes attempted from a shell command. Complete.
  * - `'tool-deny'` — the CLI is launched without any workspace-mutating tool: the write tools are
  *   removed from the tool set (Claude-family `--disallowed-tools`, QAIQ `--tools` allowlist) AND the
- *   shell is removed with them, because leaving `Bash` in place makes the denial trivially
- *   bypassable with a `>` redirect and the "guarantee" fiction. Complete at the CLI layer, but it is
- *   the CLI enforcing its own contract rather than the kernel enforcing it on the CLI.
+ *   shell is removed with them (OpenCode receives an environment permission deny list), because
+ *   leaving a shell in place makes the denial trivially bypassable with a `>` redirect. Complete at
+ *   the CLI layer, but it is the CLI enforcing its own contract rather than the kernel enforcing it.
  * - `'none'` — the backend exposes no mechanism we can verify (Grok `--always-approve`, Copilot
  *   `--yolo`, Qwen `--approval-mode yolo`, Goose, Hermes, Cursor, Kimi, OpenClaw, Antigravity, and
  *   any operator-defined `QAAP_AGENT_COMMANDS` entry). Nothing is injected and nothing is claimed.
@@ -45,6 +45,7 @@ const ENFORCEMENT_BY_AGENT: Readonly<Record<string, QaapAgentReadOnlyEnforcement
     codex: 'sandbox',
     claude: 'tool-deny',
     qaiq: 'tool-deny',
+    opencode: 'tool-deny',
     // Legacy binary name for the same CLI, still accepted by the runner's detection.
     openclaude: 'tool-deny',
 };
@@ -96,9 +97,16 @@ export function formatReadOnlyFlagsForAgent(agentId: string | undefined): string
         case 'sandbox':
             return QAAP_READONLY_CODEX_FLAGS;
         case 'tool-deny':
-            return agentId?.trim().toLowerCase() === 'claude'
-                ? QAAP_READONLY_CLAUDE_FLAGS
-                : formatQaiqReadOnlyFlags();
+            switch (agentId?.trim().toLowerCase()) {
+                case 'claude':
+                    return QAAP_READONLY_CLAUDE_FLAGS;
+                case 'opencode':
+                    // OPENCODE_PERMISSION is set by the task runner. Strip YOLO on the command
+                    // line below; the environment deny-list removes shell and edit tools.
+                    return undefined;
+                default:
+                    return formatQaiqReadOnlyFlags();
+            }
         default:
             return undefined;
     }
