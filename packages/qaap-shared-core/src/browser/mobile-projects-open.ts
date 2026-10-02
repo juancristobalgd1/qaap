@@ -96,12 +96,28 @@ export function recomputeMobileWorkHubHideIdeSidePanels(): void {
 /**
  * Persist the explicit classic-IDE choice and immediately reveal the IDE side/bottom panels.
  * The boot guard (qaap-login-gate.js / {@link installMobileWorkHubBootGuard}) hides them while
- * Work Hub is the surface; when the IDE opens without a reload (same workspace), that class must
+ * Work Hub is the surface; when the IDE opens without a reload (same workspace), those classes must
  * not survive or the bottom panel / terminal stays invisible.
+ *
+ * This is the single place every "enter classic IDE" path goes through (shell IDE fallback, IDE
+ * switch, Work Hub chat view "Open in IDE", …), so it also drops the Work Hub-only chrome classes:
+ * the boot guard's inline CSS hides `#theia-main-content-panel`, the top panel and the bottom
+ * panel / split while `composer-header` is on the body, and `active-transcript` hides the status bar.
+ * Returning to Work Hub re-adds them through the hub surface transitions.
  */
 export function markPreferDesktopIde(): void {
     markPreferDesktopIdePreference();
-    recomputeMobileWorkHubHideIdeSidePanels();
+    clearMobileWorkHubSurfaceChromeForDesktopIde();
+}
+
+function clearMobileWorkHubSurfaceChromeForDesktopIde(): void {
+    if (typeof document === 'undefined') {
+        recomputeMobileWorkHubHideIdeSidePanels();
+        return;
+    }
+    document.body.classList.remove(QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS);
+    // Also recomputes the hide-IDE-side-panels class (desktop IDE preferred -> revealed).
+    setMobileWorkHubComposerHeaderChrome(false);
 }
 
 export function markMobileProjectsLeftLanding(): void {

@@ -188,6 +188,29 @@ describe('work hub hide-ide-side-panels invariant', () => {
         expect(hasHideClass()).to.equal(false);
     });
 
+    it('entering the classic IDE in place drops the Work Hub chrome that hides the bottom panel', () => {
+        // Boot guard / hub surface state, e.g. Work Hub chat view "Open in IDE" on the current
+        // workspace (no reload): the composer-header class also hides #theia-bottom-content-panel.
+        document.body.classList.add(
+            HIDE_CLASS,
+            'theia-mobile-mod-workhub-composer-header',
+            'theia-mobile-mod-active-transcript',
+        );
+        markPreferDesktopIde();
+        expect(document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(false);
+        expect(document.body.classList.contains('theia-mobile-mod-active-transcript')).to.equal(false);
+        expect(hasHideClass()).to.equal(false);
+        expect(document.body.classList.contains('theia-mobile-mod-desktop-ide')).to.equal(true);
+    });
+
+    it('returning to Work Hub after the IDE restores the composer chrome', () => {
+        markPreferDesktopIde();
+        clearPreferDesktopIde();
+        setMobileWorkHubComposerHeaderChrome(true);
+        expect(document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
+        expect(hasHideClass()).to.equal(true);
+    });
+
 });
 
 describe('mobile-shell-landing-state', () => {
