@@ -106,7 +106,7 @@ export const TRANSCRIPT_SSE_COALESCE_RAF = true;
 /** Debounce composer activity stack scans while the agent is still streaming. */
 export const TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS = 450;
 export const TRANSCRIPT_PREVIEW_POLL_BASE_MS = 900;
-export const TRANSCRIPT_PREVIEW_POLL_MAX_MS = 5_000;
+export const TRANSCRIPT_PREVIEW_POLL_MAX_MS = 30_000;
 /** While server-side capture runs, poll the open transcript until evidence lands. */
 export const TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS = 3_000;
 // Cover a cold dev-server boot (up to ~180s) before the headless capture can run, so the

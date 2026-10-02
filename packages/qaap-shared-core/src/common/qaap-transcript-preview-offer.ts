@@ -41,6 +41,12 @@ export function conversationEverRequestedDevPreview(conv: QaapAgentConversationD
     return (conv.messages ?? []).some(message => message.role === 'user' && messageRequestsDevPreview(message.content));
 }
 
+/** Whether the latest user turn requests a preview (older requests must not trigger later sweeps). */
+export function latestUserTurnRequestsDevPreview(conv: QaapAgentConversationDTO): boolean {
+    const latestUserMessage = [...(conv.messages ?? [])].reverse().find(message => message.role === 'user');
+    return !!latestUserMessage && messageRequestsDevPreview(latestUserMessage.content);
+}
+
 /** Whether this conversation should drive dev-preview bootstrap (any turn may have asked). */
 export function conversationRequestsDevPreview(conv: QaapAgentConversationDTO): boolean {
     return conversationEverRequestedDevPreview(conv);
@@ -252,7 +258,7 @@ function conversationAgentFinishedTool(conv: QaapAgentConversationDTO): boolean 
  * (see {@link transcriptPreviewProbePorts}).
  */
 export function conversationShouldProbeDefaultDevPreviewPorts(conv: QaapAgentConversationDTO): boolean {
-    if (conversationEverRequestedDevPreview(conv)) {
+    if (latestUserTurnRequestsDevPreview(conv)) {
         return true;
     }
     if (conv.status !== 'streaming') {
@@ -261,7 +267,18 @@ export function conversationShouldProbeDefaultDevPreviewPorts(conv: QaapAgentCon
     if (conversationHasActiveDevServerRun(conv) || conversationHasActiveShellRun(conv)) {
         return true;
     }
-    return conversationAgentFinishedTool(conv);
+    const latestMessage = conv.messages.at(-1);
+    return latestMessage?.role === 'agent' && conversationAgentFinishedTool(conv);
+}
+
+/** Exponential delay after consecutive transcript preview probe misses, capped at 30 seconds. */
+export function transcriptPreviewProbeBackoffMs(
+    consecutiveMisses: number,
+    baseDelayMs = 900,
+    maxDelayMs = 30_000,
+): number {
+    const exponent = Math.max(0, Math.floor(consecutiveMisses));
+    return Math.min(baseDelayMs * 2 ** exponent, maxDelayMs);
 }
 
 /** True when bootstrap may start install/dev for this conversation turn. */
