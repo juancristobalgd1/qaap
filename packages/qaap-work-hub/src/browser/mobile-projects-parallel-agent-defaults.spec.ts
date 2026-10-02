@@ -25,30 +25,32 @@ describe('QaapParallelAgentDefaults', () => {
         expect(QaapParallelAgentDefaults.availability({ available: true })).to.equal('unverified');
     });
 
-    it('never defaults to a disconnected agent, even when it is the preferred one', () => {
+    it('defaults only to connected agents, even when the preferred agent is disconnected', () => {
         const picked = QaapParallelAgentDefaults.pickDefaultAgentIds(agents, ['codex']);
         expect(picked).to.not.include('codex');
-        expect(picked).to.have.length(2);
+        expect(picked).to.deep.equal(['qaiq']);
     });
 
-    it('puts the currently selected agent first, then backend-confirmed agents', () => {
-        expect(QaapParallelAgentDefaults.pickDefaultAgentIds(agents, ['OpenCode'])).to.deep.equal(['opencode', 'qaiq']);
-        expect(QaapParallelAgentDefaults.pickDefaultAgentIds(agents, [undefined, ''])).to.deep.equal(['qaiq', 'claude']);
+    it('does not default to an installed agent until its connection is confirmed', () => {
+        expect(QaapParallelAgentDefaults.pickDefaultAgentIds(agents, ['OpenCode'])).to.deep.equal(['qaiq']);
+        expect(QaapParallelAgentDefaults.pickDefaultAgentIds(agents, [undefined, ''])).to.deep.equal(['qaiq']);
     });
 
-    it('returns a single agent when only one can launch', () => {
+    it('returns no default for an installed but unverified agent', () => {
         const onlyOne: QaapAgentTaskAgentOption[] = [
             { id: 'codex', label: 'Codex', available: false, connectionState: 'disconnected' },
             { id: 'opencode', label: 'OpenCode', available: true },
         ];
-        expect(QaapParallelAgentDefaults.pickDefaultAgentIds(onlyOne, ['codex'])).to.deep.equal(['opencode']);
+        expect(QaapParallelAgentDefaults.pickDefaultAgentIds(onlyOne, ['opencode'])).to.deep.equal([]);
+        expect(QaapParallelAgentDefaults.launchableSelection(onlyOne, ['opencode'])).to.deep.equal([]);
     });
 
     it('returns no defaults when nothing is connected', () => {
         expect(QaapParallelAgentDefaults.pickDefaultAgentIds([agents[1]], ['codex'])).to.deep.equal([]);
     });
 
-    it('drops disconnected and unknown ids from a selection before launch', () => {
-        expect(QaapParallelAgentDefaults.launchableSelection(agents, ['codex', 'opencode', 'ghost'])).to.deep.equal(['opencode']);
+    it('drops disconnected, unverified, and unknown ids from a selection before launch', () => {
+        expect(QaapParallelAgentDefaults.launchableSelection(agents, ['codex', 'opencode', 'ghost', 'qaiq']))
+            .to.deep.equal(['qaiq']);
     });
 });
