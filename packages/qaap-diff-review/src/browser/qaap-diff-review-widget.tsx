@@ -1247,7 +1247,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     )}
                 </div>
                 {hunk.lines.map((line, lineIndex) => (
-                    <QaapDiffLine key={diffLineKey(line, lineIndex)} line={line} />
+                    <QaapDiffLine key={diffLineKey(line, lineIndex)} line={line} path={selectedFile} />
                 ))}
             </div>
         ));

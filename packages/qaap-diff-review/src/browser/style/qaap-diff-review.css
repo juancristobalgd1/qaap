@@ -1362,3 +1362,47 @@
 .qaap-diff-review-note .qaap-diff-review-inline-btn:hover {
     background: var(--theia-button-secondaryHoverBackground);
 }
+
+/* Added lines that silence a lint / type / test check (eslint-disable, @ts-ignore, it.skip, rule
+   turned off in a config…). Flagged so the user reviews them instead of accepting a fake green. */
+.qaap-agent-changes-suppression-badge {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--theia-ui-font-family, sans-serif);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--theia-editorWarning-foreground);
+    background: color-mix(in srgb, var(--theia-editorWarning-foreground) 14%, transparent);
+}
+
+.qaap-agent-changes-suppression-badge .codicon,
+.qaap-diff-review-suppression-marker .codicon {
+    font-size: 11px;
+}
+
+.qaap-diff-review-line--suppression {
+    box-shadow: inset 3px 0 0 var(--theia-editorWarning-foreground);
+}
+
+.qaap-diff-review-suppression-marker {
+    flex: none;
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 6px 0 8px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-family: var(--theia-ui-font-family, sans-serif);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 18px;
+    white-space: nowrap;
+    color: var(--theia-editorWarning-foreground);
+    background: color-mix(in srgb, var(--theia-editorWarning-foreground) 14%, transparent);
+}

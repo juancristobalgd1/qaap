@@ -27,6 +27,7 @@ const SECRETS_MARKER = '[QAAP secrets]';
 const DESTRUCTIVE_COMMANDS_MARKER = '[QAAP destructive commands]';
 const REPO_MEMORY_MARKER = '[QAAP repo memory]';
 const BOUNDED_EVIDENCE_AUDIT_MARKER = '[QAAP bounded evidence audit]';
+const NO_CHECK_SUPPRESSION_MARKER = '[QAAP no check suppression]';
 
 const WEB_GENERATION_MARKER = '[QAAP web generation quality]';
 const VISUAL_EVIDENCE_MARKER = '[QAAP visual evidence]';
@@ -116,6 +117,26 @@ export function buildAgentDestructiveCommandsPromptBlock(): string {
         + 'and rm -rf on anything outside the workspace (absolute paths, ~, ..).',
         'Never stop a preview or job by process-name matching: it can kill sibling projects. Use the Qaap preview/job stop action, which targets its recorded process group.',
         'When one seems necessary but was not explicitly requested, stop, state the safe alternative (git stash, a targeted rm, a normal push), and let the user decide in the next turn.',
+    ].join('\n');
+}
+
+/**
+ * Agents once silenced lint by sprinkling `eslint-disable` over components, which made a later
+ * `npm run lint` look clean while the problems were still there. Suppressing a check is a decision
+ * only the user can make.
+ */
+export function buildAgentNoCheckSuppressionPromptBlock(): string {
+    return [
+        NO_CHECK_SUPPRESSION_MARKER,
+        'Never make a check pass by silencing it. Unless the user explicitly asks for it in their own message, do not add '
+        + 'eslint-disable / eslint-disable-next-line / eslint-disable-line, @ts-ignore, @ts-expect-error, @ts-nocheck, '
+        + '// prettier-ignore, # noqa, # type: ignore, # pylint: disable, //nolint, @SuppressWarnings, istanbul/c8 ignore, '
+        + 'or skipped/focused tests (it.skip, describe.skip, xit, .only).',
+        'Do not loosen the checks themselves either: no relaxing or disabling rules in ESLint/Prettier/tsconfig/compiler/test configs '
+        + '(e.g. turning a rule off, strict: false, skipLibCheck, adding ignore patterns) to get a green result.',
+        'Fix the underlying issue instead. If a proper fix is out of scope or impossible, leave the check failing and report it in your final message '
+        + '(file, rule, and why) so the user can decide.',
+        'If the user did ask for a suppression, keep it as narrow as possible (one line, one named rule) with a comment explaining why, and mention it in your final message.',
     ].join('\n');
 }
 
@@ -415,6 +436,9 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     if (!prompt.includes(ENGINEERING_CONTRACT_MARKER)) {
         blocks.push(buildAgentEngineeringContractPromptBlock());
+    }
+    if (!prompt.includes(NO_CHECK_SUPPRESSION_MARKER)) {
+        blocks.push(buildAgentNoCheckSuppressionPromptBlock());
     }
     if (isBoundedEvidenceAuditRequest(options.userQuery ?? prompt)
         && !prompt.includes(BOUNDED_EVIDENCE_AUDIT_MARKER)) {

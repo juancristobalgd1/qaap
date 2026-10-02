@@ -14,6 +14,7 @@ import {
     buildAgentEndOfTurnPromptBlock,
     buildAgentEngineeringContractPromptBlock,
     buildAgentHonestReportingPromptBlock,
+    buildAgentNoCheckSuppressionPromptBlock,
     buildAgentPlanningPromptBlock,
     buildAgentReplyLanguagePromptLine,
     buildAgentRepoMemoryPromptBlock,
@@ -58,6 +59,18 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('not the in-browser Theia Coder agent');
         expect(result).to.include('do not refuse with a report-only workaround');
         expect(result).to.include('Fix the bug');
+    });
+
+    it('forbids silencing checks for every coding agent kind', () => {
+        for (const agentId of ['qaiq', 'codex', 'claude-code', 'opencode']) {
+            const result = appendAgentDefaultWorkflowToPrompt('Make lint pass', agentId);
+            expect(result, agentId).to.include('[QAAP no check suppression]');
+        }
+        const block = buildAgentNoCheckSuppressionPromptBlock();
+        for (const token of ['eslint-disable', '@ts-ignore', '@ts-expect-error', '@ts-nocheck', 'tsconfig', 'explicitly asks']) {
+            expect(block).to.include(token);
+        }
+        expect(block).to.include('report it in your final message');
     });
 
     it('leaves shell commands unchanged', () => {

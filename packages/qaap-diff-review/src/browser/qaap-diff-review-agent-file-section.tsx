@@ -16,6 +16,7 @@ import {
     resolveTranscriptCodeLanguage,
     type TranscriptCodeLanguage,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
+import { countAddedCheckSuppressions, detectCheckSuppression } from '../common/qaap-check-suppression';
 import { leadingTruncatePath } from './qaap-diff-review-path';
 import { buildContextSegments, diffLineKey } from './qaap-diff-review-segments';
 
@@ -58,10 +59,15 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
         event.stopPropagation();
         onStageFile(path);
     }, [onStageFile, path]);
+    const suppressionCount = React.useMemo(
+        () => diff && !diff.binary ? countAddedCheckSuppressions(diff.hunks, path) : 0,
+        [diff, path],
+    );
     const fileClass = [
         'qaap-agent-changes-file',
         isNew ? 'qaap-agent-changes-file--new' : '',
         expanded ? '' : 'qaap-agent-changes-file--collapsed',
+        suppressionCount > 0 ? 'qaap-agent-changes-file--suppression' : '',
     ].filter(Boolean).join(' ');
     return (
         <section className={fileClass} data-qaap-review-path={path}>
@@ -83,6 +89,21 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                     {isNew && (
                         <span className='qaap-agent-changes-new-badge'>
                             {nls.localize('qaap/diff/newFile', 'New')}
+                        </span>
+                    )}
+                    {suppressionCount > 0 && (
+                        <span
+                            className='qaap-agent-changes-suppression-badge'
+                            title={suppressionCount === 1
+                                ? nls.localize('qaap/diff/suppressionFileTitleOne', '1 added line silences a lint, type or test check. Review it before accepting.')
+                                : nls.localize(
+                                    'qaap/diff/suppressionFileTitle',
+                                    '{0} added lines silence a lint, type or test check. Review them before accepting.',
+                                    String(suppressionCount),
+                                )}
+                        >
+                            <i className={codicon('warning')} aria-hidden='true' />
+                            {nls.localize('qaap/diff/suppressesCheck', 'Suppresses a check')}
                         </span>
                     )}
                     <span className='qaap-agent-changes-filehdr-stats'>
@@ -198,6 +219,7 @@ const AgentHunk = React.memo(function AgentHunk(props: AgentHunkProps): React.Re
         <QaapDiffLine
             key={diffLineKey(line, offset + lineIndex)}
             line={line}
+            path={path}
             agentStyle={true}
             language={language}
             onStageLine={onStageLine}
@@ -273,11 +295,14 @@ function HighlightedDiffCode(props: {
 /** One unified-diff row; memoized so unchanged lines skip re-render and re-highlighting. */
 export const QaapDiffLine = React.memo(function QaapDiffLine(props: {
     line: QaapGitHunkLine;
+    /** File path, so config-file suppressions (rules turned off in lint/tsconfig) are recognized. */
+    path?: string;
     agentStyle?: boolean;
     language?: TranscriptCodeLanguage;
     onStageLine?: () => void;
 }): React.ReactElement {
-    const { line, agentStyle, language, onStageLine } = props;
+    const { line, path, agentStyle, language, onStageLine } = props;
+    const suppression = line.type === 'add' ? detectCheckSuppression(line.text, path) : undefined;
     const onStageClick = React.useCallback((event: React.MouseEvent) => {
         event.stopPropagation();
         onStageLine?.();
@@ -289,9 +314,10 @@ export const QaapDiffLine = React.memo(function QaapDiffLine(props: {
         'qaap-diff-review-line',
         `qaap-diff-review-line--${line.type}`,
         agentStyle ? 'qaap-diff-review-line--agent' : '',
+        suppression ? 'qaap-diff-review-line--suppression' : '',
     ].filter(Boolean).join(' ');
     return (
-        <div className={lineClass}>
+        <div className={lineClass} data-qaap-suppression={suppression}>
             {canStage && (
                 <button
                     type='button'
@@ -308,6 +334,18 @@ export const QaapDiffLine = React.memo(function QaapDiffLine(props: {
             {agentStyle && language
                 ? <HighlightedDiffCode text={line.text} language={language} />
                 : <span className='qaap-diff-review-code'>{line.text}</span>}
+            {suppression && (
+                <span
+                    className='qaap-diff-review-suppression-marker'
+                    title={nls.localize(
+                        'qaap/diff/suppressionLineTitle',
+                        'This line silences a check instead of fixing it. Accept it only if you asked for it.',
+                    )}
+                >
+                    <i className={codicon('warning')} aria-hidden='true' />
+                    {nls.localize('qaap/diff/suppressesCheck', 'Suppresses a check')}
+                </span>
+            )}
         </div>
     );
 });

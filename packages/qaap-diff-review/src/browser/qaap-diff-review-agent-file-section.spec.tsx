@@ -113,6 +113,33 @@ describe('QaapAgentFileSection', () => {
         expect(host.querySelectorAll('.qaap-agent-changes-line-stage')).to.have.length(0);
     });
 
+    it('marks added lines and the file header when the change silences a check', () => {
+        const diff = {
+            path: 'src/a.ts',
+            binary: false,
+            hunks: [{
+                header: '@@ -1,1 +1,3 @@',
+                lines: [
+                    { type: 'del', oldNumber: 1, text: '// @ts-ignore' },
+                    { type: 'add', newNumber: 1, text: '// eslint-disable-next-line no-console' },
+                    { type: 'add', newNumber: 2, text: 'console.log(x);' },
+                ],
+            }],
+        } as unknown as QaapGitFileDiffResponse;
+        render({ diff });
+        expect(host.querySelector('.qaap-agent-changes-suppression-badge')).to.not.equal(null);
+        const flagged = host.querySelectorAll('.qaap-diff-review-line--suppression');
+        expect(flagged).to.have.length(1);
+        expect(flagged[0].getAttribute('data-qaap-suppression')).to.equal('eslint-disable');
+        expect(flagged[0].querySelector('.qaap-diff-review-suppression-marker')).to.not.equal(null);
+    });
+
+    it('does not flag a clean diff', () => {
+        render({});
+        expect(host.querySelector('.qaap-agent-changes-suppression-badge')).to.equal(null);
+        expect(host.querySelectorAll('.qaap-diff-review-line--suppression')).to.have.length(0);
+    });
+
     it('offers a retry with the failure detail when the diff could not be loaded', () => {
         render({ diff: undefined, errorDetail: 'boom' });
         expect(host.textContent).to.contain('(boom)');
