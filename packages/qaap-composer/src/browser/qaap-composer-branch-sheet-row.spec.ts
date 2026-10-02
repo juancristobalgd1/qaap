@@ -17,6 +17,7 @@ import {
     copyComposerBranchName,
     createComposerBranchSheetRow,
     findComposerBranchSheetRow,
+    updateComposerBranchSheetRowUncommittedChanges,
 } from './qaap-composer-branch-sheet-row';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
@@ -65,6 +66,37 @@ describe('qaap-composer-branch-sheet-row', () => {
         expect(row.querySelector('.theia-mobile-sticky-composer-sheet-branch-menu-btn')).to.not.equal(null);
         expect(row.querySelector('.codicon-check')).to.not.equal(null);
         expect(row.classList.contains('theia-mod-selected')).to.equal(true);
+    });
+
+    it('shows and refreshes the uncommitted file count on the active branch only', () => {
+        const current = createComposerBranchSheetRow({
+            branch: 'feature/work',
+            selected: true,
+            uncommittedChanges: 3,
+            onSelect: () => undefined,
+            onCopy: () => undefined,
+            onDelete: () => undefined,
+        });
+        const other = createComposerBranchSheetRow({
+            branch: 'main',
+            selected: false,
+            onSelect: () => undefined,
+            onCopy: () => undefined,
+            onDelete: () => undefined,
+        });
+        document.body.append(current, other);
+
+        const badge = current.querySelector<HTMLElement>('.theia-mobile-sticky-composer-sheet-branch-changes');
+        expect(badge?.textContent).to.equal('3');
+        expect(badge?.title).to.equal('3 uncommitted changes');
+        expect(other.querySelector('.theia-mobile-sticky-composer-sheet-branch-changes')).to.equal(null);
+
+        updateComposerBranchSheetRowUncommittedChanges(current, 5);
+        expect(current.querySelector('.theia-mobile-sticky-composer-sheet-branch-changes')?.textContent).to.equal('5');
+        expect(current.querySelector<HTMLButtonElement>('.theia-mod-branch-select')?.getAttribute('aria-label'))
+            .to.contain('5 uncommitted changes');
+        updateComposerBranchSheetRowUncommittedChanges(current, 0);
+        expect(current.querySelector('.theia-mobile-sticky-composer-sheet-branch-changes')).to.equal(null);
     });
 
     it('styles the selected composer option with foreground text and a high-contrast check', () => {
