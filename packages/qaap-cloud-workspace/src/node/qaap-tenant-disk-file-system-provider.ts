@@ -66,7 +66,11 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
                 || isRealPathUnder(fsPath, path.join(os.homedir(), '.theia')))) {
             return;
         }
-        const login = this.connections.getCurrentLogin();
+        // Background task / language-server file access does not always arrive through a browser
+        // RPC channel. A dedicated tenant backend has one immutable owner supplied by the
+        // orchestrator, so use that identity only there; shared backends still fail closed.
+        const login = this.connections.getCurrentLogin()
+            || (this.isTenantBackendRuntime() ? process.env.QAAP_TENANT_LOGIN?.trim() : undefined);
         if (!login) {
             throw this.forbidden(fsPath);
         }
