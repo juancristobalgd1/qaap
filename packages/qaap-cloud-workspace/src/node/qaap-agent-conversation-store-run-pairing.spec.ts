@@ -13,10 +13,6 @@
 // agentA with userB. See the mobile-shell counterpart in
 // qaap-run-turn-pairing.spec.ts.
 //
-// Production no longer spawns same-tree peer runs via deliveryMode `'parallel'`
-// (HTTP isolates into a worktree, otherwise the store queues). These specs still
-// exercise the store's sealing path by registering concurrent task refs directly.
-//
 // Same lightweight harness as the neighbouring -parallel-runs spec: disk/SSE/
 // watchdog stubbed out, a fake task runner, no Inversify container.
 

@@ -102,7 +102,7 @@ export {
     QaapMaxConcurrentRunsError,
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
-import { cancelExtracted, cancelQueuedMessageExtracted, countStreamingForksExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted, type QaapConversationRetryOptions } from './qaap-agent-conversation-store-render2';
+import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted, type QaapConversationRetryOptions } from './qaap-agent-conversation-store-render2';
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
@@ -251,10 +251,6 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
 
     getActiveTaskIdsForConversation(conversationId: string): string[] {
         return getActiveTaskIdsForConversationExtracted(this, conversationId);
-    }
-
-    countStreamingForks(parentId: string): number {
-        return countStreamingForksExtracted(this, parentId);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

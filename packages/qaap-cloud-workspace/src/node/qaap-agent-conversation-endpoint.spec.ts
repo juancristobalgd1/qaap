@@ -199,21 +199,23 @@ describe('QaapAgentConversationEndpoint message correlation', () => {
     });
 });
 
-describe('QaapAgentConversationEndpoint isolated parallel delivery', () => {
+describe('QaapAgentConversationEndpoint same-conversation parallel delivery', () => {
 
     function streamingParent(): { id: string; cwd: string; status: string; ownerLogin: string; agentId: string } {
         return { id: 'c1', cwd: '/tmp/project', status: 'streaming', ownerLogin: 'alice', agentId: 'qaiq' };
     }
 
-    function buildEndpoint(options: { worktreeFails?: boolean } = {}): {
+    function buildEndpoint(): {
         endpoint: QaapAgentConversationEndpoint;
         created: Array<Record<string, unknown>>;
-        queuedModes: string[];
+        posted: Array<{ readonly conversationId: string; readonly content: string; readonly deliveryMode: string }>;
+        dispatched: string[];
         worktreeCalls: number;
     } {
         const parent = streamingParent();
         const created: Array<Record<string, unknown>> = [];
-        const queuedModes: string[] = [];
+        const posted: Array<{ readonly conversationId: string; readonly content: string; readonly deliveryMode: string }> = [];
+        const dispatched: string[] = [];
         let worktreeCalls = 0;
         const conversations = new Map<string, typeof parent>([['c1', parent]]);
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
@@ -223,9 +225,16 @@ describe('QaapAgentConversationEndpoint isolated parallel delivery', () => {
             store: {
                 get: (id: string) => conversations.get(id),
                 getActiveTaskIdsForConversation: (id: string) => id === 'c1' ? ['task-1'] : [],
-                countStreamingForks: () => 0,
                 postUserMessage: (...args: unknown[]) => {
-                    queuedModes.push(String(args[args.length - 1]));
+                    posted.push({
+                        conversationId: String(args[0]),
+                        content: String(args[1]),
+                        deliveryMode: String(args[args.length - 1]),
+                    });
+                    return parent;
+                },
+                dispatchQueuedMessage: (_id: string, _queuedId: string, mode: string) => {
+                    dispatched.push(mode);
                     return parent;
                 },
                 create: (request: Record<string, unknown>, owner?: string) => {
@@ -244,18 +253,15 @@ describe('QaapAgentConversationEndpoint isolated parallel delivery', () => {
             worktrees: {
                 create: async (cwd: string, owner?: string) => {
                     worktreeCalls += 1;
-                    if (options.worktreeFails) {
-                        throw new Error('not a git repo');
-                    }
                     return { worktreePath: `${cwd}/.wt-${owner ?? 'anon'}`, branch: 'qaap/worktree/abcd1234' };
                 },
             },
             auth: fakeAuth(),
         });
-        return { endpoint, created, queuedModes, get worktreeCalls() { return worktreeCalls; } };
+        return { endpoint, created, posted, dispatched, get worktreeCalls() { return worktreeCalls; } };
     }
 
-    it('spawns a forked conversation in an isolated worktree when deliveryMode is parallel', async () => {
+    it('posts a parallel task to the current conversation instead of creating a worktree conversation', async () => {
         const h = buildEndpoint();
         const response = fakeRes();
         await (h.endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> })
@@ -265,26 +271,29 @@ describe('QaapAgentConversationEndpoint isolated parallel delivery', () => {
             }, response);
 
         expect(response.statusCode).to.equal(202);
-        expect(h.worktreeCalls).to.equal(1);
-        expect(h.created).to.have.length(1);
-        expect(h.created[0].forkedFromId).to.equal('c1');
-        expect(h.created[0].worktreeBranch).to.equal('qaap/worktree/abcd1234');
-        expect((response.body as { id: string }).id).to.equal('fork-1');
-        expect(h.queuedModes).to.deep.equal([]);
+        expect(h.worktreeCalls).to.equal(0);
+        expect(h.created).to.have.length(0);
+        expect(h.posted).to.deep.equal([{
+            conversationId: 'c1',
+            content: 'do this in parallel',
+            deliveryMode: 'parallel',
+        }]);
+        expect((response.body as { id: string }).id).to.equal('c1');
     });
 
-    it('queues on the parent when the worktree cannot be created', async () => {
-        const h = buildEndpoint({ worktreeFails: true });
+    it('dispatches a queued message as a parallel run on the same conversation', async () => {
+        const h = buildEndpoint();
         const response = fakeRes();
-        await (h.endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> })
-            .handlePostMessage({
-                params: { id: 'c1' },
-                body: { content: 'fallback', deliveryMode: 'parallel' },
+        await (h.endpoint as unknown as { handleDispatchQueuedMessage(req: unknown, res: unknown): Promise<void> })
+            .handleDispatchQueuedMessage({
+                params: { id: 'c1', queuedMessageId: 'pending-1' },
+                body: { deliveryMode: 'parallel' },
             }, response);
 
         expect(response.statusCode).to.equal(202);
+        expect(h.worktreeCalls).to.equal(0);
         expect(h.created).to.have.length(0);
-        expect(h.queuedModes).to.deep.equal(['queue']);
+        expect(h.dispatched).to.deep.equal(['parallel']);
         expect((response.body as { id: string }).id).to.equal('c1');
     });
 });

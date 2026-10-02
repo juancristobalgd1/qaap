@@ -439,23 +439,3 @@ export async function dispatchQueuedFollowUpInParallelExtracted(ctx: MobileProje
         ctx.refreshComposerActivityStack();
     }
 }
-
-export async function startIsolatedRunIfRequestedExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
-    entry: TranscriptFollowUpEntry,): Promise<boolean> {
-    if (ctx.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) !== 'worktree') {
-        return false;
-    }
-    await ctx.host.submitBackgroundAgentTask(project, entry.draft, {
-        openConversation: true,
-        forceVps: true,
-        worktree: true,
-        selectedAgentId: entry.selectedAgentId,
-        modeId: entry.modeId,
-        autoApprove: entry.autoApprove,
-        approvalPolicyId: entry.approvalPolicyId,
-        agentModel: ctx.host.transcriptComposerAgentModel,
-        variables: entry.variables,
-        imagePreviews: entry.imagePreviews,
-    });
-    return true;
-}

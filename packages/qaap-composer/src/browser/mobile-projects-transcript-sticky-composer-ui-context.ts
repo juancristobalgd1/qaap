@@ -93,7 +93,6 @@ export type MobileProjectsTranscriptStickyComposerUiContextMember =
     | 'sendQueuedFollowUpNow'
     | 'setTranscriptComposerChangedFilesExpanded'
     | 'shouldRefetchComposerGitSnapshot'
-    | 'startIsolatedRunIfRequested'
     | 'startPeerRunOrQueue'
     | 'stopOpenComposerAgentLikeComposerStop'
     | 'submitQueuedFollowUpEntry'

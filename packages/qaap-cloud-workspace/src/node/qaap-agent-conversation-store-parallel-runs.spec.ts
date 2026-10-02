@@ -154,7 +154,7 @@ async function waitForPendingDrain(): Promise<void> {
     await new Promise<void>(resolve => setTimeout(resolve, QAAP_COALESCE_WINDOW_MS + 10));
 }
 
-describe('QaapAgentConversationStore never same-tree peer-runs', () => {
+describe('QaapAgentConversationStore in-session parallel runs', () => {
 
     function createStore(): { store: TestConversationStore; runner: TestTaskRunner } {
         const runner = new TestTaskRunner();
@@ -164,20 +164,19 @@ describe('QaapAgentConversationStore never same-tree peer-runs', () => {
         return { store, runner };
     }
 
-    it('queues delivery mode parallel instead of spawning a second agent on the same tree', () => {
+    it('starts a peer run in the same conversation when delivery mode is parallel', () => {
         const { store, runner } = createStore();
 
         store.postUserMessage('c1', 'first');
         const afterSecond = store.postUserMessage('c1', 'second', undefined, undefined, undefined,
             undefined, undefined, undefined, undefined, undefined, 'parallel');
 
-        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
         expect(runner.cancelledIds).to.deep.equal([]);
-        expect(store.activeTaskIds('c1')).to.have.length(1);
+        expect(store.activeTaskIds('c1')).to.have.length(2);
         expect(afterSecond.status).to.equal('streaming');
-        expect(afterSecond.pendingUserMessages).to.have.length(1);
-        expect(afterSecond.pendingUserMessages![0].content).to.equal('second');
-        expect(afterSecond.messages.filter(m => m.role === 'user').map(m => m.content)).to.deep.equal(['first']);
+        expect(afterSecond.pendingUserMessages).to.equal(undefined);
+        expect(afterSecond.messages.filter(m => m.role === 'user').map(m => m.content)).to.deep.equal(['first', 'second']);
     });
 
     it('uses the optimistic client message id to make a retried submit idempotent', () => {
@@ -197,15 +196,18 @@ describe('QaapAgentConversationStore never same-tree peer-runs', () => {
             .to.equal('pending-user-123');
     });
 
-    it('does not 429 when many parallel follow-ups arrive — they queue', () => {
+    it('keeps parallel follow-ups in the same conversation and queues above the run cap', () => {
         const { store } = createStore();
         store.postUserMessage('c1', 'first');
-        for (let i = 0; i < MAX_CONCURRENT_CONVERSATION_RUNS + 2; i++) {
+        for (let i = 0; i < MAX_CONCURRENT_CONVERSATION_RUNS - 1; i++) {
             store.postUserMessage('c1', `run ${i}`, undefined, undefined, undefined,
                 undefined, undefined, undefined, undefined, undefined, 'parallel');
         }
-        expect(store.activeTaskIds('c1')).to.have.length(1);
-        expect(store.get('c1')!.pendingUserMessages).to.have.length(MAX_CONCURRENT_CONVERSATION_RUNS + 2);
+        const overflow = store.postUserMessage('c1', 'one too many', undefined, undefined, undefined,
+            undefined, undefined, undefined, undefined, undefined, 'parallel');
+        expect(store.activeTaskIds('c1')).to.have.length(MAX_CONCURRENT_CONVERSATION_RUNS);
+        expect(overflow.messages.filter(message => message.role === 'user')).to.have.length(MAX_CONCURRENT_CONVERSATION_RUNS);
+        expect(overflow.pendingUserMessages?.map(message => message.content)).to.deep.equal(['one too many']);
     });
 
     it('recovers a stale streaming conversation that has no live run', () => {
@@ -230,21 +232,6 @@ describe('QaapAgentConversationStore never same-tree peer-runs', () => {
         expect(store.activeTaskIds('c1')).to.deep.equal([]);
     });
 
-    it('counts streaming forks of a parent conversation', () => {
-        const { store } = createStore();
-        store.seed({
-            ...idleConversation('child'),
-            forkedFromId: 'c1',
-            status: 'streaming',
-        });
-        store.seed({
-            ...idleConversation('idle-child'),
-            forkedFromId: 'c1',
-            status: 'idle',
-        });
-        expect(store.countStreamingForks('c1')).to.equal(1);
-        expect(store.countStreamingForks('missing')).to.equal(0);
-    });
 });
 
 // ─── Delivery mode: queue (default) ──────────────────────────────────────────
