@@ -3275,7 +3275,9 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-parallel-prompt {
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
   resize: none;
   border-radius: 12px;
   border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.24));
@@ -3299,6 +3301,45 @@ body>.theia-mobile-transcript-files-menu {
   width: max-content;
   max-width: 100%;
   font-size: 12px;
+}
+
+/* Disconnected agents stay visible (so the user knows why) but can never be launched. */
+.theia-mobile-parallel-agent-unavailable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  cursor: not-allowed;
+}
+
+.theia-mobile-parallel-agent-status {
+  font-size: 11px;
+  color: var(--theia-descriptionForeground);
+  white-space: nowrap;
+}
+
+.theia-mobile-parallel-note.theia-mod-availability {
+  padding: 2px 2px 0;
+  font-size: 12px;
+}
+
+/* Desktop: the parallel-runs sheet is a centered modal instead of a full-width top sheet. */
+@media (min-width: 768px) {
+  .theia-mobile-agent-log.theia-mobile-parallel-root {
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+
+  .theia-mobile-parallel-root .theia-mobile-agent-log-sheet.theia-mod-parallel {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 640px;
+    max-height: min(88vh, 720px);
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 12px;
+  }
 }
 
 .theia-qaap-agent-chip-group {
@@ -10316,6 +10357,34 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   justify-content: space-between;
   gap: 12px;
   padding: 4px 12px 6px;
+}
+
+/* Read-only "Build · Request approval" line while a turn runs (controls row is unavailable). */
+.theia-mobile-projects-sticky-composer-run-permissions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 14px 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-projects-sticky-composer-run-permissions[hidden] {
+  display: none;
+}
+
+.theia-mobile-projects-sticky-composer-run-permissions .codicon {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.theia-mobile-projects-sticky-composer-run-permissions-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .theia-mobile-projects-sticky-composer-controls-row button,

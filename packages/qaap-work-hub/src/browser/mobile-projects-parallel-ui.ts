@@ -21,7 +21,7 @@ import {
     type QaapParallelRunVariantDTO,
     type QaapParallelRunVariantStatsDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-parallel-run-client';
-import { filterUiSelectableVpsAgents, fetchAgentModelsForAgent, toQaapCreateAgentTaskQaiqModel, type QaapAgentTaskAgentOption, type QaapCreateAgentTaskQaiqModel, type QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { filterUiSelectableVpsAgents, fetchAgentModelsForAgent, readStoredAgent, toQaapCreateAgentTaskQaiqModel, type QaapAgentTaskAgentOption, type QaapCreateAgentTaskQaiqModel, type QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     agentSupportsModelPicker,
     agentUsesSettingsModelCatalog,
@@ -38,6 +38,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { createAgentBrandChip, createAgentBrandSplitChip, createAgentRowAvatar, createDiffStatsLine, createPickerSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { QaapParallelAgentDefaults } from './mobile-projects-parallel-agent-defaults';
 
 export interface MobileProjectsParallelUiDeps {
     getAgents(): QaapAgentTaskAgentOption[];
@@ -354,8 +355,13 @@ export class MobileProjectsParallelUi {
         this.closeSheet();
         this.selectedAgents.clear();
         this.selectedAgentModels.clear();
-        for (const agent of this.availableAgents().slice(0, 2)) {
-            this.selectedAgents.add(agent.id);
+        // Default only to agents that can launch here: the session's / composer's current agent first.
+        const defaults = QaapParallelAgentDefaults.pickDefaultAgentIds(
+            this.availableAgents(),
+            [summary.agentId, readStoredAgent(summary.cwd)],
+        );
+        for (const agentId of defaults) {
+            this.selectedAgents.add(agentId);
         }
         if (summary.cwd) {
             for (const agentId of this.selectedAgents) {
@@ -463,18 +469,58 @@ export class MobileProjectsParallelUi {
         const run = document.createElement('button');
         run.type = 'button';
         run.className = 'theia-mobile-parallel-run';
-        run.disabled = this.selectedAgents.size === 0;
-        run.textContent = nls.localize('qaap/mobileProjects/parallelRun', 'Run {0} variants', String(this.selectedAgents.size));
         run.addEventListener('click', () => { void this.startParallelRun(project, summary, textarea.value); });
 
         const syncRunButton = (): void => {
-            run.disabled = this.selectedAgents.size === 0;
-            run.textContent = nls.localize('qaap/mobileProjects/parallelRun', 'Run {0} variants', String(this.selectedAgents.size));
+            const launchable = QaapParallelAgentDefaults.launchableSelection(agents, this.selectedAgents);
+            run.disabled = launchable.length === 0;
+            run.textContent = nls.localize('qaap/mobileProjects/parallelRun', 'Run {0} variants', String(launchable.length));
+            run.title = launchable.length === 0
+                ? nls.localize('qaap/mobileProjects/parallelRunNeedsConnectedAgent', 'Select at least one connected agent to run variants.')
+                : '';
         };
 
         this.renderParallelAgentChips(chips, agents, summary.cwd, syncRunButton);
+        syncRunButton();
 
-        body.append(promptLabel, textarea, agentsLabel, chips, run);
+        body.append(promptLabel, textarea, agentsLabel, chips);
+        const availabilityNote = this.createParallelAvailabilityNote(agents);
+        if (availabilityNote) {
+            body.append(availabilityNote);
+        }
+        body.append(run);
+    }
+
+    /** Explains why some agents cannot be selected, or why only one variant is offered. */
+    protected createParallelAvailabilityNote(agents: readonly QaapAgentTaskAgentOption[]): HTMLElement | undefined {
+        const launchable = agents.filter(agent => QaapParallelAgentDefaults.isLaunchable(agent));
+        const disconnected = agents.filter(agent => !QaapParallelAgentDefaults.isLaunchable(agent));
+        let message: string | undefined;
+        if (launchable.length === 0) {
+            message = nls.localize(
+                'qaap/mobileProjects/parallelNoConnectedAgents',
+                'No agent is connected on this workspace. Connect one from the agent picker to run variants.',
+            );
+        } else if (launchable.length === 1 && disconnected.length > 0) {
+            message = nls.localize(
+                'qaap/mobileProjects/parallelOneConnectedAgent',
+                'Only {0} is connected on this workspace. Connect another agent from the agent picker to compare variants.',
+                launchable[0].label,
+            );
+        } else if (disconnected.length > 0) {
+            message = nls.localize(
+                'qaap/mobileProjects/parallelSomeAgentsDisconnected',
+                'Agents marked "Not connected" are skipped until you connect them from the agent picker.',
+            );
+        }
+        if (!message) {
+            return undefined;
+        }
+        const note = document.createElement('div');
+        note.className = 'theia-mobile-parallel-note theia-mod-availability';
+        note.setAttribute('role', 'status');
+        note.textContent = message;
+        return note;
     }
 
     protected renderParallelAgentChips(
@@ -485,6 +531,11 @@ export class MobileProjectsParallelUi {
     ): void {
         chipsHost.replaceChildren();
         for (const agent of agents) {
+            if (!QaapParallelAgentDefaults.isLaunchable(agent)) {
+                this.selectedAgents.delete(agent.id);
+                chipsHost.append(this.createUnavailableParallelAgentChip(agent));
+                continue;
+            }
             const selected = this.selectedAgents.has(agent.id);
             const storedModel = this.selectedAgentModels.get(agent.id);
             const modelLabel = selected && storedModel ? formatQaiqModelSelectionLabel(storedModel) : undefined;
@@ -528,6 +579,30 @@ export class MobileProjectsParallelUi {
                 }));
             }
         }
+    }
+
+    /** Disabled chip + visible status for an agent that is not connected on this workspace. */
+    protected createUnavailableParallelAgentChip(agent: QaapAgentTaskAgentOption): HTMLElement {
+        const status = nls.localize('qaap/mobileProjects/stickyComposerAgentNotConnected', 'Not connected on this workspace');
+        const wrap = document.createElement('span');
+        wrap.className = 'theia-mobile-parallel-agent-unavailable';
+        wrap.dataset.agentId = agent.id;
+        wrap.title = status;
+        const chip = createAgentBrandChip({
+            agentId: agent.id,
+            label: agent.label,
+            selected: false,
+            disabled: true,
+            onClick: () => undefined,
+        });
+        const statusId = `theia-mobile-parallel-agent-status-${agent.id.replace(/[^\w-]/g, '_')}`;
+        chip.setAttribute('aria-describedby', statusId);
+        const statusText = document.createElement('span');
+        statusText.className = 'theia-mobile-parallel-agent-status';
+        statusText.id = statusId;
+        statusText.textContent = nls.localize('qaap/mobileProjects/parallelAgentNotConnected', 'Not connected');
+        wrap.append(chip, statusText);
+        return wrap;
     }
 
     protected async resolveModelsForParallelAgent(
@@ -827,7 +902,8 @@ export class MobileProjectsParallelUi {
     }
 
     protected async startParallelRun(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, prompt: string): Promise<void> {
-        const agents = [...this.selectedAgents];
+        // Never fan out to an agent the catalog reports as not connected on this workspace.
+        const agents = QaapParallelAgentDefaults.launchableSelection(this.availableAgents(), this.selectedAgents);
         if (!summary.cwd || agents.length === 0 || !prompt.trim() || this.busy) {
             return;
         }
