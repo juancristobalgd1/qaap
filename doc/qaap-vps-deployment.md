@@ -14,6 +14,29 @@ single Docker host (Hetzner CX/CPX, Contabo, etc.).
 - One **provider API key** (OpenRouter, Gemini, NVIDIA NIM, OpenAI, Anthropic, or Ollama on
   the host)
 
+## Docker address pools for tenant networks
+
+Tenant workers and backends use a private internal bridge for each tenant. When
+`QAAP_TENANT_EGRESS_PROXY_IMAGE` is not configured, each tenant also gets a third, non-internal
+bridge for direct outbound traffic. Direct egress is enabled only when that proxy image setting is
+unset; with the proxy configured, tenant containers use the proxy and do not join the direct
+egress bridge. `QAAP_TENANT_NETWORK_MODE=none` disables tenant networking.
+
+Docker assigns an address pool to each bridge, so configure enough small subnets on every daemon
+that runs tenant containers. Merge a setting like this into the Docker daemon configuration:
+
+```json
+{
+  "default-address-pools": [
+    { "base": "10.200.0.0/16", "size": 24 }
+  ]
+}
+```
+
+Choose a range that does not overlap the VPS host, VPN, or private network ranges in use, then
+restart Docker before starting Qaap tenant workloads. Without an expanded pool, Docker can exhaust
+its defaults and reject tenant network creation with a non-overlapping IPv4 address-pool error.
+
 ## Quick start
 
 On the VPS:

@@ -42,6 +42,7 @@ const QAAP_CONTAINER_PREFIX = 'qaap-ws-';
 // It also forces containers stranded on the v2 incident network to be recreated on a valid bridge.
 const QAAP_TENANT_NETWORK_PREFIX = 'qaap-net-v3-';
 const QAAP_TENANT_INGRESS_NETWORK_PREFIX = 'qaap-ingress-v1-';
+const QAAP_TENANT_DIRECT_EGRESS_NETWORK_PREFIX = 'qaap-egress-v1-';
 const QAAP_TENANT_EGRESS_PROXY_ALIAS = 'qaap-tenant-egress-proxy';
 const QAAP_TENANT_EGRESS_UPLINK = 'qaap-tenant-egress-uplink';
 const DEFAULT_IMAGE = process.env.QAAP_DOCKER_IMAGE?.trim() || 'node:20-bookworm';
@@ -528,14 +529,19 @@ export class QaapDockerOrchestrator {
         const networkMode = this.getTenantNetworkMode(ownerLogin);
         const networks = networkMode === 'none'
             ? []
-            : [networkMode, ...(this.isBackendPerTenantEnabled() ? [this.backendIngressNetworkNameForTenant(ownerLogin)] : [])];
+            : [
+                networkMode,
+                this.tenantDirectEgressNetworkNameFor(ownerLogin),
+                ...(this.isBackendPerTenantEnabled() ? [this.backendIngressNetworkNameForTenant(ownerLogin)] : []),
+            ];
         for (const networkName of networks) {
             for (const node of nodes) {
                 try {
                     const network = node.docker.getNetwork(networkName);
                     const inspect = await network.inspect() as { Labels?: Record<string, string> };
                     if (inspect.Labels?.['com.qaap.tenant-network'] === 'true'
-                        || inspect.Labels?.['com.qaap.tenant-ingress-network'] === 'true') {
+                        || inspect.Labels?.['com.qaap.tenant-ingress-network'] === 'true'
+                        || inspect.Labels?.['com.qaap.tenant-egress-network'] === 'true') {
                         await network.remove();
                     }
                     break;
@@ -763,6 +769,18 @@ export class QaapDockerOrchestrator {
         return `${QAAP_TENANT_NETWORK_PREFIX}${hash}`;
     }
 
+    protected tenantDirectEgressNetworkNameFor(ownerLogin?: string): string {
+        const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
+        const hash = crypto.createHash('sha256').update(`tenant-direct-egress\u0000${tenant}`).digest('hex').slice(0, 12);
+        return `${QAAP_TENANT_DIRECT_EGRESS_NETWORK_PREFIX}${hash}`;
+    }
+
+    protected tenantDirectEgressNetworkFor(networkMode: string, ownerLogin?: string): string | undefined {
+        return networkMode !== 'none' && Object.keys(this.tenantEgressProxyEnv()).length === 0
+            ? this.tenantDirectEgressNetworkNameFor(ownerLogin)
+            : undefined;
+    }
+
     /** Resolve the only host directory that may be exposed to a tenant container. */
     tenantRootForWorkspace(workspaceUri: string): string {
         return this.tenantTargetForWorkspace(workspaceUri).root;
@@ -866,12 +884,34 @@ export class QaapDockerOrchestrator {
         if (networkMode !== 'none') {
             await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
         }
+        const directEgressNetwork = this.tenantDirectEgressNetworkFor(networkMode, ownerLogin);
+        const tenantEgressNetwork = networkMode === 'none' ? undefined : this.tenantDirectEgressNetworkNameFor(ownerLogin);
+        if (directEgressNetwork) {
+            await this.ensureTenantDirectEgressNetwork(docker, directEgressNetwork, ownerLogin);
+        }
         let container: Dockerode.Container;
         let inspect: Dockerode.ContainerInspectInfo;
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (!this.tenantContainerMatches(inspect, mounts, networkMode) || !(await this.runsCurrentTenantImage(docker, inspect))) {
+            if (tenantEgressNetwork) {
+                if (directEgressNetwork
+                    && !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork)
+                    && this.tenantContainerMatches(inspect, mounts, networkMode)) {
+                    // Upgrade a valid pre-egress worker in place. The internal bridge has no default
+                    // route; Docker selects the newly attached non-internal bridge for outbound traffic.
+                    await docker.getNetwork(directEgressNetwork).connect({ Container: name });
+                    inspect = await container.inspect();
+                } else if (!directEgressNetwork
+                    && this.tenantContainerHasExpectedNetworks(inspect, networkMode, tenantEgressNetwork)
+                    && this.isManagedTenantContainerFor(inspect, ownerLogin)) {
+                    // Remove the direct route immediately when an allowlist proxy is enabled, even
+                    // if a busy worker must continue running with its prior environment for now.
+                    await docker.getNetwork(tenantEgressNetwork).disconnect({ Container: name, Force: true });
+                    inspect = await container.inspect();
+                }
+            }
+            if (!this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork) || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantContainerFor(inspect, ownerLogin)) {
                     throw new Error(`Tenant container ${name} has an unexpected mount or security configuration; refusing to reuse it.`);
                 }
@@ -934,10 +974,15 @@ export class QaapDockerOrchestrator {
                     AutoRemove: false,
                 },
             });
+            if (directEgressNetwork) {
+                // Internal bridges have no default route. Attach the only non-internal network
+                // before start so Docker selects its gateway for outbound tenant traffic.
+                await docker.getNetwork(directEgressNetwork).connect({ Container: name });
+            }
             await container.start();
         }
         inspect = await container.inspect();
-        if (!inspect.State.Running || !this.tenantContainerMatches(inspect, mounts, networkMode)) {
+        if (!inspect.State.Running || !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork)) {
             throw new Error(`Tenant container ${name} did not start with the required isolated configuration.`);
         }
         this.tenantRoots.set(name, mounts.reposRoot);
@@ -1004,6 +1049,11 @@ export class QaapDockerOrchestrator {
             throw new Error('Backend-per-tenant routing requires the isolated tenant bridge so its ingress relay can reach the backend.');
         }
         await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
+        const directEgressNetwork = this.tenantDirectEgressNetworkFor(networkMode, ownerLogin);
+        const tenantEgressNetwork = networkMode === 'none' ? undefined : this.tenantDirectEgressNetworkNameFor(ownerLogin);
+        if (directEgressNetwork) {
+            await this.ensureTenantDirectEgressNetwork(docker, directEgressNetwork, ownerLogin);
+        }
         const ingressNetwork = this.backendIngressNetworkNameForTenant(ownerLogin);
         await this.ensureTenantIngressNetwork(docker, ingressNetwork, ownerLogin);
         const tenantDataRoot = this.normalizeHostPath(resolveQaapTenantUserRoot(ownerLogin));
@@ -1020,7 +1070,24 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)
+            if (tenantEgressNetwork) {
+                if (directEgressNetwork
+                    && !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
+                    && this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)) {
+                    // Upgrade a valid pre-egress backend in place so deploy-time routing changes do
+                    // not interrupt an active agent turn.
+                    await docker.getNetwork(directEgressNetwork).connect({ Container: name });
+                    inspect = await container.inspect();
+                } else if (!directEgressNetwork
+                    && this.tenantContainerHasExpectedNetworks(inspect, networkMode, tenantEgressNetwork)
+                    && this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+                    // Remove the direct route immediately when an allowlist proxy is enabled, even
+                    // if a busy backend must continue running with its prior environment for now.
+                    await docker.getNetwork(tenantEgressNetwork).disconnect({ Container: name, Force: true });
+                    inspect = await container.inspect();
+                }
+            }
+            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
                 || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
                     throw new Error(`Tenant backend ${name} has an unexpected security or mount configuration; refusing to reuse it.`);
@@ -1142,10 +1209,15 @@ export class QaapDockerOrchestrator {
                     AutoRemove: false,
                 },
             });
+            if (directEgressNetwork) {
+                // Keep the internal tenant bridge for backend/worker/relay traffic and add the
+                // tenant-only non-internal bridge for the container's default outbound route.
+                await docker.getNetwork(directEgressNetwork).connect({ Container: name });
+            }
             await container.start();
         }
         inspect = await container.inspect();
-        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)) {
+        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)) {
             throw new Error(`Tenant backend ${name} did not start with the required isolated configuration.`);
         }
         const relayInspect = await this.ensureTenantBackendIngressRelay(
@@ -1591,6 +1663,7 @@ export class QaapDockerOrchestrator {
         tenantDataRoot: string,
         theiaHome: string,
         networkMode: string,
+        directEgressNetwork?: string,
     ): boolean {
         const raw = inspect as Dockerode.ContainerInspectInfo & {
             Config?: { User?: string; Image?: string; Cmd?: string[]; Env?: string[]; WorkingDir?: string; Labels?: Record<string, string> };
@@ -1665,7 +1738,7 @@ export class QaapDockerOrchestrator {
                 '--no-cluster', '--plugins=local-dir:/app/plugins', '--ovsx-router-config=/app/examples/ovsx-router-config.json',
             ].join('\u0000')
             && expectedEnv.every(entry => env.has(entry))
-            && this.tenantContainerHasOnlyNetwork(inspect, networkMode)
+            && this.tenantContainerHasExpectedNetworks(inspect, networkMode, directEgressNetwork)
             && raw.Mounts?.length === expectedMounts.length
             && expectedMounts.every(expected => raw.Mounts?.some(actual =>
                 actual.Destination === expected.destination
@@ -1895,17 +1968,28 @@ export class QaapDockerOrchestrator {
         return hostPath.replace(/\\/g, '/').replace(/\/$/, '');
     }
 
-    protected tenantContainerHasOnlyNetwork(inspect: Dockerode.ContainerInspectInfo, networkMode: string): boolean {
+    protected tenantContainerHasExpectedNetworks(
+        inspect: Dockerode.ContainerInspectInfo,
+        networkMode: string,
+        directEgressNetwork?: string,
+    ): boolean {
         const networks = (inspect as Dockerode.ContainerInspectInfo & {
             NetworkSettings?: { Networks?: Record<string, unknown> };
         }).NetworkSettings?.Networks ?? {};
         const attached = Object.keys(networks);
         return networkMode === 'none'
             ? attached.every(name => name === 'none')
-            : attached.length === 1 && attached[0] === networkMode;
+            : attached.length === (directEgressNetwork ? 2 : 1)
+                && attached.includes(networkMode)
+                && (!directEgressNetwork || attached.includes(directEgressNetwork));
     }
 
-    protected tenantContainerMatches(inspect: Dockerode.ContainerInspectInfo, mounts: QaapTenantMountSet, networkMode: string): boolean {
+    protected tenantContainerMatches(
+        inspect: Dockerode.ContainerInspectInfo,
+        mounts: QaapTenantMountSet,
+        networkMode: string,
+        directEgressNetwork?: string,
+    ): boolean {
         const raw = inspect as Dockerode.ContainerInspectInfo & {
             Config?: { User?: string; Image?: string; Labels?: Record<string, string>; Env?: string[] };
             HostConfig?: {
@@ -1938,7 +2022,7 @@ export class QaapDockerOrchestrator {
             && raw.Config?.User === this.getTenantContainerUser()
             && raw.Config?.Image === this.getTenantImage()
             && expectedEnv.every(entry => env.has(entry))
-            && this.tenantContainerHasOnlyNetwork(inspect, networkMode)
+            && this.tenantContainerHasExpectedNetworks(inspect, networkMode, directEgressNetwork)
             && raw.Mounts?.length === expectedMounts.length
             && expectedMounts.every(expected => raw.Mounts?.some(actual =>
                 actual.Destination === expected.destination
@@ -2028,6 +2112,21 @@ export class QaapDockerOrchestrator {
 
     protected isDockerNotFound(error: unknown): boolean {
         return (error as { statusCode?: number } | undefined)?.statusCode === 404;
+    }
+
+    protected isDockerConflict(error: unknown): boolean {
+        const statusCode = (error as { statusCode?: number } | undefined)?.statusCode;
+        const message = error instanceof Error ? error.message : String(error);
+        return statusCode === 409 || /\bconflict\b/i.test(message);
+    }
+
+    protected warnIfTenantNetworkAddressPoolIsExhausted(networkName: string, error: unknown): void {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/non-overlapping/i.test(message)) {
+            console.warn(`[qaap-docker] Could not create tenant network ${networkName}: Docker could not allocate a non-overlapping address pool. `
+                + 'Configure the Docker daemon default-address-pools (for example base 10.200.0.0/16, size 24). '
+                + `Docker reported: ${message}`);
+        }
     }
 
     protected isDockerAlreadyStopped(error: unknown): boolean {
@@ -2155,9 +2254,9 @@ export class QaapDockerOrchestrator {
 
     protected getTenantNetworkMode(ownerLogin?: string): string {
         // `bridge` is deliberately not accepted: it is a shared Docker network and allows one
-        // tenant worker to probe another worker. The isolated bridge is internal, so external
-        // egress is available only through the configured allowlisting proxy. `none` disables all
-        // network access for deployments that do not need model/package downloads.
+        // tenant worker to probe another worker. The isolated bridge stays internal; direct egress
+        // uses a separate per-tenant bridge only when no allowlisting proxy is configured. `none`
+        // disables all network access for deployments that do not need model/package downloads.
         const mode = process.env.QAAP_TENANT_NETWORK_MODE?.trim().toLowerCase() || 'isolated-bridge';
         if (mode === 'none') {
             return mode;
@@ -2192,21 +2291,32 @@ export class QaapDockerOrchestrator {
             await this.ensureTenantEgressProxyAttached(docker, networkName, ownerLogin);
             return;
         }
-        const network = await docker.createNetwork({
-            Name: networkName,
-            Driver: 'bridge',
-            Internal: true,
-            CheckDuplicate: true,
-            Labels: {
-                'com.qaap.managed': 'true',
-                'com.qaap.tenant-network': 'true',
-                'com.qaap.tenant-network-name': networkName,
-            },
-            // This bridge is internal and unique to one tenant. Its worker, backend, relay and
-            // optional allowlist proxy need intra-tenant connectivity; Internal:true still blocks
-            // their direct Internet egress, and no other tenant is attached to this bridge.
-            Options: { 'com.docker.network.bridge.enable_icc': 'true' },
-        });
+        let network: Dockerode.Network;
+        try {
+            network = await docker.createNetwork({
+                Name: networkName,
+                Driver: 'bridge',
+                Internal: true,
+                CheckDuplicate: true,
+                Labels: {
+                    'com.qaap.managed': 'true',
+                    'com.qaap.tenant-network': 'true',
+                    'com.qaap.tenant-network-name': networkName,
+                },
+                // This bridge is internal and unique to one tenant. Its worker, backend, relay and
+                // optional allowlist proxy need intra-tenant connectivity; Internal:true still blocks
+                // their direct Internet egress, and no other tenant is attached to this bridge.
+                Options: { 'com.docker.network.bridge.enable_icc': 'true' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(networkName, error);
+            if (!this.isDockerConflict(error)) {
+                throw error;
+            }
+            // Another tenant operation won the create race. Inspect its network below and
+            // accept it only if it has this tenant's complete isolation configuration.
+            network = docker.getNetwork(networkName);
+        }
         const inspect = await network.inspect() as {
             Name?: string;
             Driver?: string;
@@ -2218,6 +2328,85 @@ export class QaapDockerOrchestrator {
             throw new Error(`Tenant network ${networkName} was not created with the required isolation configuration.`);
         }
         await this.ensureTenantEgressProxyAttached(docker, networkName, ownerLogin);
+    }
+
+    protected async ensureTenantDirectEgressNetwork(
+        docker: Dockerode,
+        networkName: string,
+        ownerLogin?: string,
+    ): Promise<void> {
+        const tenantLogin = ownerLogin?.trim().toLowerCase() || '__anonymous__';
+        let network: Dockerode.Network;
+        try {
+            network = docker.getNetwork(networkName);
+            const inspect = await network.inspect() as {
+                Name?: string;
+                Driver?: string;
+                Internal?: boolean;
+                Labels?: Record<string, string>;
+                Options?: Record<string, string>;
+            };
+            if (!this.tenantDirectEgressNetworkMatches(inspect, networkName, tenantLogin)) {
+                throw new Error(`Tenant direct egress network ${networkName} has an unexpected configuration.`);
+            }
+            return;
+        } catch (error) {
+            if (!this.isDockerNotFound(error)) {
+                throw error;
+            }
+        }
+        try {
+            network = await docker.createNetwork({
+                Name: networkName,
+                Driver: 'bridge',
+                Internal: false,
+                CheckDuplicate: true,
+                Labels: {
+                    'com.qaap.managed': 'true',
+                    'com.qaap.tenant-egress-network': 'true',
+                    'com.qaap.tenant-login': tenantLogin,
+                },
+                Options: { 'com.docker.network.bridge.enable_icc': 'false' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(networkName, error);
+            if (!this.isDockerConflict(error)) {
+                throw error;
+            }
+            // A concurrent backend or worker may already have created it. The common inspect
+            // and match below validates Docker's network rather than trusting the conflict.
+            network = docker.getNetwork(networkName);
+        }
+        const inspect = await network.inspect() as {
+            Name?: string;
+            Driver?: string;
+            Internal?: boolean;
+            Labels?: Record<string, string>;
+            Options?: Record<string, string>;
+        };
+        if (!this.tenantDirectEgressNetworkMatches(inspect, networkName, tenantLogin)) {
+            throw new Error(`Tenant direct egress network ${networkName} was not created with the required configuration.`);
+        }
+    }
+
+    protected tenantDirectEgressNetworkMatches(
+        network: {
+            Name?: string;
+            Driver?: string;
+            Internal?: boolean;
+            Labels?: Record<string, string>;
+            Options?: Record<string, string>;
+        },
+        networkName: string,
+        ownerLogin: string,
+    ): boolean {
+        return network.Name === networkName
+            && network.Driver === 'bridge'
+            && network.Internal === false
+            && network.Labels?.['com.qaap.managed'] === 'true'
+            && network.Labels?.['com.qaap.tenant-egress-network'] === 'true'
+            && network.Labels?.['com.qaap.tenant-login'] === ownerLogin.toLowerCase()
+            && network.Options?.['com.docker.network.bridge.enable_icc'] === 'false';
     }
 
     protected async ensureTenantIngressNetwork(docker: Dockerode, networkName: string, ownerLogin: string): Promise<void> {
@@ -2240,18 +2429,23 @@ export class QaapDockerOrchestrator {
                 throw error;
             }
         }
-        network = await docker.createNetwork({
-            Name: networkName,
-            Driver: 'bridge',
-            Internal: false,
-            CheckDuplicate: true,
-            Labels: {
-                'com.qaap.managed': 'true',
-                'com.qaap.tenant-ingress-network': 'true',
-                'com.qaap.tenant-login': ownerLogin.toLowerCase(),
-            },
-            Options: { 'com.docker.network.bridge.enable_icc': 'false' },
-        });
+        try {
+            network = await docker.createNetwork({
+                Name: networkName,
+                Driver: 'bridge',
+                Internal: false,
+                CheckDuplicate: true,
+                Labels: {
+                    'com.qaap.managed': 'true',
+                    'com.qaap.tenant-ingress-network': 'true',
+                    'com.qaap.tenant-login': ownerLogin.toLowerCase(),
+                },
+                Options: { 'com.docker.network.bridge.enable_icc': 'false' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(networkName, error);
+            throw error;
+        }
         const inspect = await network.inspect() as {
             Name?: string;
             Driver?: string;
@@ -2422,14 +2616,19 @@ export class QaapDockerOrchestrator {
                 throw error;
             }
         }
-        network = await docker.createNetwork({
-            Name: QAAP_TENANT_EGRESS_UPLINK,
-            Driver: 'bridge',
-            Internal: false,
-            CheckDuplicate: true,
-            Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-egress-uplink': 'true' },
-            Options: { 'com.docker.network.bridge.enable_icc': 'false' },
-        });
+        try {
+            network = await docker.createNetwork({
+                Name: QAAP_TENANT_EGRESS_UPLINK,
+                Driver: 'bridge',
+                Internal: false,
+                CheckDuplicate: true,
+                Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-egress-uplink': 'true' },
+                Options: { 'com.docker.network.bridge.enable_icc': 'false' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(QAAP_TENANT_EGRESS_UPLINK, error);
+            throw error;
+        }
         const inspect = await network.inspect() as {
             Name?: string;
             Driver?: string;
