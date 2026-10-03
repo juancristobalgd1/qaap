@@ -758,8 +758,7 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
     it('repairs the rendered group from expanded-project state on the first project-name click', () => {
         const project = { id: 'shadcn-landing-page', name: 'shadcn-landing-page', status: 'working' } as MobileProjectEntry;
         const expandedIds = new Set<string>();
-        let ctx!: MobileProjectsSessionsSidebarUiContext;
-        ctx = {
+        const ctx: MobileProjectsSessionsSidebarUiContext = {
             host: {
                 sessionsSidebarExpandedProjectIds: expandedIds,
                 agentsHubSelectedProjectId: undefined,
