@@ -25,6 +25,18 @@ import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/comm
 import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2';
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 
+function getCodexDefinition(): typeof QAAP_BUILTIN_AGENT_DEFINITIONS[number] {
+    const codex = QAAP_BUILTIN_AGENT_DEFINITIONS.find(agent => agent.id === 'codex');
+    if (!codex) {
+        throw new Error('The Codex built-in agent definition is missing.');
+    }
+    return codex;
+}
+
+function getCodexTemplate(): string {
+    return getCodexDefinition().template;
+}
+
 describe('resolveQaiqEnvFallbackModel', () => {
 
     it('prefers Gemini, then OpenRouter, then NVIDIA, then Ollama', () => {
@@ -46,15 +58,16 @@ describe('resolveQaiqEnvFallbackModel', () => {
 describe('Codex prompt transport', () => {
 
     it('keeps prompt improvement text out of the Codex subcommand position', () => {
+        const template = getCodexTemplate();
         const result = buildPromptTransportCommand(
-            'codex exec --json {model_flags} {prompt}',
+            template,
             'Rewrite the user prompt below so it is clearer.',
             'codex',
-            { id: 'codex', bin: 'codex', template: 'codex exec --json {model_flags} {prompt}' },
+            { id: 'codex', bin: 'codex', template },
             { model_flags: '-m gpt-5.6-luna' },
         );
 
-        expect(result.command).to.equal('codex exec --json -m gpt-5.6-luna -');
+        expect(result.command).to.equal('codex exec --json -c check_for_update_on_startup=false -m gpt-5.6-luna -');
         expect(result.stdinPrompt).to.contain('Rewrite the user prompt');
         expect(result.command).not.to.contain('the user prompt');
     });
@@ -62,11 +75,11 @@ describe('Codex prompt transport', () => {
     it('uses the stdin marker without putting the prompt into argv', () => {
         const prompt = 'A'.repeat(12_000);
         const result = applyTemplateWithStdinPrompt(
-            'codex exec --json {model_flags} {prompt}',
+            getCodexTemplate(),
             { model_flags: '-m gpt-5.6-luna' },
         );
 
-        expect(result).to.equal('codex exec --json -m gpt-5.6-luna -');
+        expect(result).to.equal('codex exec --json -c check_for_update_on_startup=false -m gpt-5.6-luna -');
         expect(result).not.to.contain(prompt);
     });
 
@@ -87,7 +100,7 @@ describe('Codex prompt transport', () => {
                 id: 'codex',
                 label: 'Codex',
                 bin: 'codex',
-                template: 'codex exec --json {model_flags} {prompt}',
+                template: getCodexTemplate(),
             }]]),
             buildTemplateVars: () => ({ model_flags: '-m gpt-5.6-luna' }),
         };
@@ -117,10 +130,7 @@ describe('agentUsesPlainStdinPrompt', () => {
     it('covers stdin harnesses and leaves shell on argv', () => {
         expect(agentUsesPlainStdinPrompt('cursor', { bin: 'cursor-agent' })).to.equal(true);
         expect(agentUsesPlainStdinPrompt('cursor', { bin: 'agent' })).to.equal(true);
-        expect(agentUsesPlainStdinPrompt('codex', {
-            bin: 'codex',
-            template: 'codex exec --json {model_flags} {prompt}',
-        })).to.equal(true);
+        expect(agentUsesPlainStdinPrompt('codex', getCodexDefinition())).to.equal(true);
         expect(agentUsesPlainStdinPrompt('claude', { bin: 'claude' })).to.equal(true);
         expect(agentUsesPlainStdinPrompt('qaiq', { bin: 'qaiq' })).to.equal(true);
         expect(agentUsesPlainStdinPrompt('shell')).to.equal(false);
@@ -160,10 +170,10 @@ describe('Windows-safe prompt transport', () => {
 
     it('uses - as the Codex / flag-value stdin marker', () => {
         expect(applyTemplateForPromptTransport(
-            'codex exec --json {model_flags} {prompt}',
+            getCodexTemplate(),
             { kind: 'plain-stdin', placeholder: 'dash' },
             { model_flags: '-m gpt-5.6-luna' },
-        )).to.equal('codex exec --json -m gpt-5.6-luna -');
+        )).to.equal('codex exec --json -c check_for_update_on_startup=false -m gpt-5.6-luna -');
         expect(applyTemplateForPromptTransport(
             'hermes --yolo chat -Q -q {prompt}',
             { kind: 'plain-stdin', placeholder: 'dash' },

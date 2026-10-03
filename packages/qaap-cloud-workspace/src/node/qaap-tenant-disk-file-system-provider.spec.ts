@@ -102,6 +102,35 @@ describe('QaapTenantDiskFileSystemProvider', () => {
         });
     });
 
+    it('allows a tenant task to access its repository without browser RPC login context', () => {
+        const keys = ['QAAP_TENANT_BACKEND_MODE', 'QAAP_TENANT_LOGIN', 'QAAP_TENANT_CONFIG_ROOT'] as const;
+        const previous = keys.map(key => process.env[key]);
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_LOGIN = 'alice';
+        process.env.QAAP_TENANT_CONFIG_ROOT = path.join(os.tmpdir(), 'qaap-fs-guard-config-root');
+        try {
+            const registry = new QaapWebsocketAuthRegistry();
+            const provider = createProvider({ ownsPath: ownsTenantPath });
+            (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+            const guard = provider as unknown as { assertAllowed(uri: URI, access?: 'read' | 'write'): void };
+            registry.runWithLogin(undefined, () => {
+                const taskFile = FileUri.create('/workspace/repos/users/alice/acme/demo/task.py');
+                expect(() => guard.assertAllowed(taskFile)).not.to.throw();
+                expect(() => guard.assertAllowed(taskFile, 'write')).not.to.throw();
+                expect(() => guard.assertAllowed(FileUri.create('/workspace/repos/users/bob/acme/demo/task.py')))
+                    .to.throw(/Forbidden workspace path/);
+            });
+        } finally {
+            keys.forEach((key, index) => {
+                if (previous[index] === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = previous[index];
+                }
+            });
+        }
+    });
+
     it('denies managed paths when no login is in scope', () => {
         const provider = createProvider({});
         expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(

@@ -21,7 +21,7 @@ export interface QaapBuiltinAgentDefinition {
  * Niche or ACP-only CLIs (Snow, Kiro, Nanobot, vibe-acp, …) stay in `QAAP_AGENT_COMMANDS`.
  */
 export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
-    { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec --json {model_flags} {prompt}' },
+    { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}' },
     { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {model_flags} -p {prompt}' },
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
     { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
@@ -105,8 +105,8 @@ export function isUiHiddenVpsAgent(agentId: string | undefined): boolean {
  */
 export function resolveQaapCodexTemplate(helpText: string): string {
     return /\bcodex\s+exec\b/.test(helpText) || /^\s+exec\b/m.test(helpText)
-        ? 'codex exec --json {model_flags} {prompt}'
-        : 'codex -q --json {model_flags} {prompt}';
+        ? 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}'
+        : 'codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}';
 }
 
 /** Mention / storage alias for {@link QAAP_BUILTIN_AGENT_DEFINITIONS} ids. */

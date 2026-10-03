@@ -23,6 +23,7 @@ import {
     createUnavailableAgentSheetOption,
     resolveAgentPickerDescription,
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { resolveAgentPickerConnectionDescription } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-instructions';
 import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
@@ -339,13 +340,13 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             content.append(createUnavailableAgentSheetOption({
                 agentId,
                 label,
-                description: nls.localize(
-                    missingQaiqByok
-                        ? 'qaap/agentPicker/descriptionNeedsProviderKey'
-                        : 'qaap/agentPicker/descriptionNotConnected',
-                    missingQaiqByok ? '{0} · API key required' : '{0} · Not connected on this workspace',
-                    agentDescription,
-                ),
+                description: missingQaiqByok
+                    ? nls.localize(
+                        'qaap/agentPicker/descriptionNeedsProviderKey',
+                        '{0} · API key required',
+                        agentDescription,
+                    )
+                    : resolveAgentPickerConnectionDescription(agentId, label, agentDescription),
                 actionLabel: nls.localize(
                     needsApiKey
                         ? 'qaap/agentPicker/addApiKey'

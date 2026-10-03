@@ -99,6 +99,7 @@ export async function openAgentLoginDialogInBackground(
     };
 
     dialog = createQaapAgentLoginDialog({
+        agentId,
         agentLabel: resolveAgentDisplayLabel(agentId),
         onClose: close,
     });

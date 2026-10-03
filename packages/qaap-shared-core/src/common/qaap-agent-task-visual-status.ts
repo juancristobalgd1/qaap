@@ -339,8 +339,7 @@ export function resolveQaapAgentTaskVisualStatus(
         | 'linesAdded'
         | 'linesRemoved'
         | 'lastTurnCancelled'>,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    unread = false,
+    _unread = false,
 ): QaapAgentTaskVisualStatus {
     const state = task.state;
     // isFailedRunSummary also catches turns the agent self-reported as stopped/failed while
@@ -367,13 +366,13 @@ export function resolveQaapAgentTaskVisualStatus(
     if (state === 'running' || summary?.status === 'streaming') {
         return STATUS_BY_ID['running'];
     }
-    if (summary?.status === 'settled') {
-        return STATUS_BY_ID['background'];
-    }
     // The user stopped it: neither a finish nor something that needs them — a neutral glyph, not
     // the unread-reply warning triangle it used to inherit from the "Turn cancelled." message.
     if (state === 'cancelled' || summary?.lastTurnCancelled) {
         return STATUS_BY_ID['cancelled'];
+    }
+    if (summary?.status === 'settled') {
+        return STATUS_BY_ID['background'];
     }
     // Only an explicit input wait or a priority flag needs the user. An unread reply of a run
     // that finished fine keeps its real outcome glyph (completed / PR / changes …); rows convey

@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { resolveAgentLoginDialogSubtitle } from './qaap-agent-login-instructions';
 
 export interface QaapAgentLoginDialogController {
     readonly root: HTMLElement;
@@ -15,6 +16,7 @@ export interface QaapAgentLoginDialogController {
 }
 
 export interface QaapAgentLoginDialogOptions {
+    readonly agentId: string;
     readonly agentLabel: string;
     readonly onClose: () => void;
 }
@@ -79,10 +81,7 @@ export function createQaapAgentLoginDialog(
     content.className = 'theia-mobile-agent-login-dialog-content';
     const subtitle = document.createElement('p');
     subtitle.className = 'theia-mobile-agent-login-dialog-subtitle';
-    subtitle.textContent = nls.localize(
-        'qaap/mobileProjects/agentLoginDialogSubtitle',
-        "Use your own subscription for this provider's models.",
-    );
+    subtitle.textContent = resolveAgentLoginDialogSubtitle(options.agentId);
 
     const challengeHost = document.createElement('div');
     challengeHost.className = 'theia-mobile-agent-login-dialog-challenge';

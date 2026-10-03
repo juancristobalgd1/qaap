@@ -356,6 +356,7 @@ jobs:
             scripts/qaap-verify-launch-readiness.sh
             scripts/qaap-release-config-check.js
             scripts/qaap-verify-auth-api-gate.sh
+            scripts/qaap-vps-post-deploy-user-smoke.sh
           sparse-checkout-cone-mode: false
 
       - name: Verify public endpoint
@@ -413,3 +414,17 @@ jobs:
             "$DEPLOYED"*) echo "OK: serving container runs the exact GHCR source revision." ;;
             *) echo "::error::Deployed build $DEPLOYED does not match GHCR source $EXPECTED."; exit 1 ;;
           esac
+
+      - name: Post-deploy user smoke
+        if: steps.ready.outputs.configured == 'true'
+        env:
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          QAAP_EXPECTED_BUILD: ${{ needs.publish_image.outputs.source_sha }}
+          QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
+          QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
+        run: |
+          # shellcheck source=scripts/qaap-vps-normalize-public-url.sh
+          source ./scripts/qaap-vps-normalize-public-url.sh
+          QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
+          chmod +x ./scripts/qaap-vps-post-deploy-user-smoke.sh
+          ./scripts/qaap-vps-post-deploy-user-smoke.sh "$QAAP_VPS_PUBLIC_URL" "$QAAP_EXPECTED_BUILD"
