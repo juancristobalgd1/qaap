@@ -66,10 +66,6 @@ const WS_PER_MESSAGE_DEFLATE = {
 export class QaapAgentConversationEndpoint implements BackendApplicationContribution {
 
     @inject(QaapAgentConversationStore)
-    protected conversationHasLiveRun(conversationId: string, conv: QaapAgentConversation): boolean {
-        return conv.status === 'streaming' && this.store.getActiveTaskIdsForConversation(conversationId).length > 0;
-    }
-
     protected readonly store: QaapAgentConversationStore;
 
     @inject(QaapConversationWorktreeService)
@@ -77,6 +73,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    protected conversationHasLiveRun(conversationId: string, conv: QaapAgentConversation): boolean {
+        return conv.status === 'streaming' && this.store.getActiveTaskIdsForConversation(conversationId).length > 0;
+    }
 
     @inject(QaapBillingStore) @optional()
     protected readonly billingStore: QaapBillingStore | undefined;
