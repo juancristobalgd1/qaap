@@ -38,6 +38,7 @@ import {
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import {
     bindTranscriptActivityListActions as bindTranscriptActivityListActionsHelper,
+    isAgentMessageFailed,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 
 export function syncRowProcessAccordionExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, row: HTMLElement,
@@ -63,7 +64,7 @@ export function syncRowProcessAccordionExtracted(ctx: MobileProjectsTranscriptMe
         }
         syncMobileProcessAccordionState(accordion, {
             isWorking,
-            isError: ctx.isConversationError(conv),
+            isError: isAgentMessageFailed(conv, message),
             isCancelled: ctx.isAgentMessageCancelled(message),
             elapsedMs,
             turnStartMs,
