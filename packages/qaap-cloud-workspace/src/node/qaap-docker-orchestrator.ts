@@ -1686,7 +1686,7 @@ export class QaapDockerOrchestrator {
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
             && hostConfig.NetworkMode === networkMode
             && ports === null
-            && Object.values(hostConfig.PortBindings ?? {}).every(bindings => !bindings || bindings.length === 0)
+            && Object.values((hostConfig.PortBindings ?? {}) as Record<string, unknown[] | null | undefined>).every(bindings => !bindings || bindings.length === 0)
             && hostConfig.PublishAllPorts !== true;
     }
 
