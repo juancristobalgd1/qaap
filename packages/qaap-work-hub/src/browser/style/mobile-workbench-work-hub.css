@@ -13270,6 +13270,10 @@ body.theia-mod-work-hub-settings-resizing * {
   padding: 16px 18px;
 }
 
+.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card.qaap-harness-card-install-unavailable {
+  grid-template-columns: 32px minmax(0, 1fr);
+}
+
 .theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card.theia-mod-disabled {
   border-color: var(--theia-widget-border, rgba(128, 128, 128, 0.35));
   background: transparent;

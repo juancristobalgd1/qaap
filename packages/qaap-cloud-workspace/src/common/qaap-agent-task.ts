@@ -373,6 +373,8 @@ export interface QaapAgentTaskAllResponse {
     readonly agentConfigured: boolean;
     readonly agents: QaapAgentDescriptor[];
     readonly defaultAgent: string;
+    /** Whether users may install a missing npm-backed CLI in this backend environment. */
+    readonly installSupported?: boolean;
     /** True only when the QAIQ executable was detected on the backend PATH at startup. */
     readonly qaiqInstalled?: boolean;
     readonly qaiqModels?: QaapQaiqModelOption[];

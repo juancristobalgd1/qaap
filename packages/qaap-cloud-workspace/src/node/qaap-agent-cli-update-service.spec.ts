@@ -4,10 +4,13 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
     isInPlaceCliUpdateAllowed,
     QaapAgentCliUpdateService,
     QAAP_ALLOW_IN_PLACE_CLI_UPDATE,
+    TRACKED_AGENT_CLIS,
 } from './qaap-agent-cli-update-service';
 
 class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
@@ -90,12 +93,14 @@ describe('QaapAgentCliUpdateService', () => {
     it('denies in-place updates in production without an escape hatch', async () => {
         process.env.NODE_ENV = 'production';
         delete process.env.QAAP_CLOUD_MODE;
+        process.env.QAAP_AGENT_CLI_UPDATE_CHECK = '1';
         delete process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE];
         expect(isInPlaceCliUpdateAllowed()).to.equal(false);
         const service = new QaapAgentCliUpdateService();
         const result = await service.installUpdate('codex');
         expect(result.ok).to.equal(false);
-        expect(result.message).to.match(/hosted\/production|Rebuild the Qaap image/i);
+        expect(result.message).to.match(/not available on this server.*contact your administrator/i);
+        expect(result.message).not.to.match(/in-place|rebuild/i);
     });
 
     it('still denies in-place updates in production when the legacy override is set', () => {
@@ -124,5 +129,30 @@ describe('QaapAgentCliUpdateService', () => {
         const permissionFailure = await service.installUpdate('codex');
         expect(permissionFailure.ok).to.equal(false);
         expect(permissionFailure.message).to.contain('EACCES: permission denied');
+    });
+});
+
+describe('Dockerfile tracked agent CLI coverage', () => {
+    it('pins every npm-backed tracked harness into the runtime image and smoke checks Copilot', () => {
+        const repositoryRoot = resolve(__dirname, '../../../..');
+        const dockerfile = readFileSync(resolve(repositoryRoot, 'Dockerfile'), 'utf8');
+        const runtimeSmoke = readFileSync(resolve(repositoryRoot, 'scripts/qaap-image-runtime-check.js'), 'utf8');
+        const npmInstall = dockerfile.match(/&& npm install -g \\\r?\n([\s\S]*?)\\\r?\n\s*&& npm install -g bun/)?.[1];
+
+        if (!npmInstall) {
+            throw new Error('Dockerfile global agent npm install block was not found.');
+        }
+        for (const tracked of TRACKED_AGENT_CLIS.filter(cli => !!cli.npmPackage)) {
+            expect(tracked.expectedVersionEnv).to.be.a('string');
+            expect(npmInstall).to.include(`${tracked.npmPackage}@"\${${tracked.expectedVersionEnv}}"`);
+            const versionArg = dockerfile.match(
+                new RegExp(`^ARG ${tracked.expectedVersionEnv}=([0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?)$`, 'm'),
+            );
+            expect(versionArg, `${tracked.id} must have an exact Dockerfile version pin`).not.to.equal(null);
+        }
+        expect(TRACKED_AGENT_CLIS.find(cli => cli.id === 'copilot')?.bins).to.include('copilot');
+        expect(dockerfile).to.include('&& copilot --version');
+        expect(runtimeSmoke).to.include("'copilot'");
+        expect(runtimeSmoke).to.include("spawnSync('copilot', ['--version']");
     });
 });

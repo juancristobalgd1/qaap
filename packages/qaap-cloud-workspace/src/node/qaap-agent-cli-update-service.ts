@@ -56,7 +56,7 @@ interface TrackedAgentCli {
  * CLIs we can version-check for the boot "Update Available" toast.
  * npm-backed agents support in-place update; QAIQ/OpenClaude are git-layered in Docker (updateSupported=false).
  */
-const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
+export const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
     {
         id: 'codex',
         label: 'Codex',
@@ -142,6 +142,10 @@ export class QaapAgentCliUpdateService {
         return isInPlaceCliUpdateAllowed();
     }
 
+    isInstallSupported(): boolean {
+        return this.isUpdateCheckEnabled() && this.isInPlaceCliUpdateAllowed();
+    }
+
     /** Outdated CLIs only — empty when check disabled or everything is current. */
     async listOutdated(): Promise<QaapAgentCliUpdatesResponse> {
         if (!this.isUpdateCheckEnabled()) {
@@ -173,8 +177,7 @@ export class QaapAgentCliUpdateService {
             return {
                 ok: false,
                 id,
-                message: 'In-place CLI updates are disabled on hosted/production deployments. '
-                    + 'Rebuild the Qaap image with updated CLI pins.',
+                message: 'Installation is not available on this server. Please contact your administrator.',
             };
         }
         const tracked = TRACKED_AGENT_CLIS.find(entry => entry.id === id);

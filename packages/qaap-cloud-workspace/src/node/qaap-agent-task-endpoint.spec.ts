@@ -8,6 +8,9 @@ import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 
 class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
+    allForTest(req: Request, res: Response): void {
+        this.handleListAll(req, res);
+    }
     detailForTest(req: Request, res: Response): Promise<void> {
         return this.handleDetail(req, res);
     }
@@ -24,6 +27,40 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
         return this.handleListCliUpdates(req, res);
     }
 }
+
+describe('QaapAgentTaskEndpoint install capability', () => {
+    it('reports the backend install policy to authenticated settings clients', () => {
+        for (const installSupported of [false, true]) {
+            const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+            const authContext = { kind: 'authenticated', userLogin: 'alice' };
+            let payload: unknown;
+            Object.assign(endpoint, {
+                requireAuth: () => authContext,
+                auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+                runner: {
+                    isAgentConfigured: () => true,
+                    isQaiqInstalled: () => false,
+                    listAgents: () => [],
+                    defaultAgent: () => 'shell',
+                    listQaiqModels: () => [],
+                },
+                cliUpdates: { isInstallSupported: () => installSupported },
+            });
+            const response = { json: (body: unknown) => { payload = body; } };
+
+            endpoint.allForTest({ query: {} } as Request, response as unknown as Response);
+
+            expect(payload).to.deep.equal({
+                agentConfigured: true,
+                qaiqInstalled: false,
+                agents: [],
+                defaultAgent: 'shell',
+                qaiqModels: [],
+                installSupported,
+            });
+        }
+    });
+});
 
 describe('QaapAgentTaskEndpoint CLI updates', () => {
     const outdated = { updates: [

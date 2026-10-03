@@ -115,23 +115,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // Cross-project dashboard feed — `/all` and `/stream` are static segments routed before
         // the `/:id` handler below so they never collide with a task id.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/all`, (req, res) => {
-            const ctx = this.requireAuth(req, res);
-            if (!ctx) {
-                return;
-            }
-            if (req.query.refresh === '1' || req.query.refresh === 'true') {
-                this.runner.refreshAgentCatalog();
-            }
-            // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
-            // full task history (with whole prompts) multiplies into tens of MB per call. Live
-            // task groups arrive over the WebSocket snapshot instead.
-            res.json({
-                agentConfigured: this.runner.isAgentConfigured(),
-                qaiqInstalled: this.runner.isQaiqInstalled(),
-                agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
-                defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
-                qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
-            } satisfies QaapAgentTaskAllResponse);
+            this.handleListAll(req, res);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
@@ -406,6 +390,28 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         res.json({ agent: requestedAgent, models });
     }
 
+    protected handleListAll(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        if (req.query.refresh === '1' || req.query.refresh === 'true') {
+            this.runner.refreshAgentCatalog();
+        }
+        // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
+        // full task history (with whole prompts in `command`) multiplies into tens of MB per call. Live
+        // task groups arrive over the WebSocket snapshot instead.
+        const ownerLogin = this.auth.resolveUserLogin(ctx);
+        res.json({
+            agentConfigured: this.runner.isAgentConfigured(),
+            qaiqInstalled: this.runner.isQaiqInstalled(),
+            agents: this.runner.listAgents(ownerLogin),
+            defaultAgent: this.runner.defaultAgent(ownerLogin),
+            qaiqModels: this.runner.listQaiqModels(ownerLogin),
+            installSupported: this.cliUpdates.isInstallSupported(),
+        } satisfies QaapAgentTaskAllResponse);
+    }
+
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
         const authContext = this.requireAuth(req, res);
         if (!authContext) {
@@ -442,8 +448,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.status(403).json({
                 ok: false,
                 id: agentId,
-                message: 'In-place CLI updates are disabled on hosted/production deployments. '
-                    + 'Rebuild the Qaap image with updated CLI pins.',
+                message: 'Installation is not available on this server. Please contact your administrator.',
             });
             return;
         }
