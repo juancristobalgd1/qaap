@@ -1444,6 +1444,7 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
 .theia-mobile-work-hub-sessions-sidebar-project-group {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) .theia-mobile-projects-chats-list,

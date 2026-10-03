@@ -26,23 +26,35 @@ export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSe
     if (!expanded) {
         section.classList.add('theia-mod-collapsed');
     }
-    const toggleExpand = (): void => {
-        const willExpand = section.classList.contains('theia-mod-collapsed');
-        section.classList.toggle('theia-mod-collapsed');
+    const syncExpandedState = (): void => {
+        const isExpanded = ctx.host.sessionsSidebarExpandedProjectIds.has(project.id);
+        section.classList.toggle('theia-mod-collapsed', !isExpanded);
         const chevronBtn = head.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn');
-        chevronBtn?.setAttribute('aria-expanded', String(willExpand));
+        chevronBtn?.setAttribute('aria-expanded', String(isExpanded));
+        chevronBtn?.setAttribute('aria-label', isExpanded
+            ? nls.localize('qaap/sessionsSidebar/collapseProject', 'Collapse {0}', project.name)
+            : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name));
         const folderIcon = head.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-folder');
         if (folderIcon) {
-            folderIcon.classList.toggle('codicon-folder', !willExpand);
-            folderIcon.classList.toggle('codicon-folder-opened', willExpand);
+            folderIcon.classList.toggle('codicon-folder', !isExpanded);
+            folderIcon.classList.toggle('codicon-folder-opened', isExpanded);
         }
-        if (willExpand) {
+    };
+    const setExpanded = (isExpanded: boolean): void => {
+        if (isExpanded) {
             ctx.host.sessionsSidebarExpandedProjectIds.add(project.id);
         } else {
             ctx.host.sessionsSidebarExpandedProjectIds.delete(project.id);
         }
+        syncExpandedState();
     };
-    const head = ctx.createSessionsSidebarProjectRowHead(project, expanded, toggleExpand);
+    const toggleExpand = (): void => {
+        setExpanded(!ctx.host.sessionsSidebarExpandedProjectIds.has(project.id));
+    };
+    const ensureExpanded = (): void => {
+        setExpanded(true);
+    };
+    const head = ctx.createSessionsSidebarProjectRowHead(project, expanded, toggleExpand, ensureExpanded);
     const list = document.createElement('div');
     list.className = 'theia-mobile-projects-chats-list';
     ctx.appendSessionsSidebarConversationItems(list, project, conversations, onActivate, bypassConversationLimit);
@@ -52,7 +64,8 @@ export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSe
 
 export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     expanded: boolean,
-    onToggleExpand: () => void,): HTMLElement {
+    onToggleExpand: () => void,
+    onEnsureExpanded?: () => void,): HTMLElement {
     const row = document.createElement('div');
     row.className = 'theia-mobile-work-hub-sessions-sidebar-project-row-wrap';
     if (project.isCurrent) {
@@ -95,7 +108,11 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     head.append(folder, name);
     head.addEventListener('click', ev => {
         ev.stopPropagation();
-        if (!ctx.host.sessionsSidebarExpandedProjectIds.has(project.id)) {
+        if (onEnsureExpanded) {
+            // The project Set owns expansion state. Reapply it to a possibly stale group
+            // before selecting, then preserve the row's expand-if-collapsed behavior.
+            onEnsureExpanded();
+        } else if (!ctx.host.sessionsSidebarExpandedProjectIds.has(project.id)) {
             onToggleExpand();
         }
         void ctx.selectSessionsSidebarProject(project);

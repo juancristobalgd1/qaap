@@ -12,6 +12,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { renderWorkHubSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-streaming';
 import { mergeSessionsSidebarProjectsExtracted } from './mobile-projects-sessions-sidebar-ui-render';
+import { createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted } from './mobile-projects-sessions-sidebar-ui-timeline';
 
 import { MobileProjectsSessionsSidebarUi, type MobileProjectsSessionsSidebarHost } from './mobile-projects-sessions-sidebar-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -752,6 +753,49 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(hidOverlay).to.equal(true);
 
         row.remove();
+    });
+
+    it('repairs the rendered group from expanded-project state on the first project-name click', () => {
+        const project = { id: 'shadcn-landing-page', name: 'shadcn-landing-page', status: 'working' } as MobileProjectEntry;
+        const expandedIds = new Set<string>();
+        const ctx: MobileProjectsSessionsSidebarUiContext = {
+            host: {
+                sessionsSidebarExpandedProjectIds: expandedIds,
+                agentsHubSelectedProjectId: undefined,
+                cardMenuUi: {
+                    buildProjectOptionsMenu: () => document.createElement('div'),
+                    toggleCardMenu: () => undefined,
+                },
+            },
+            createSessionsSidebarProjectRowHead: (entry: MobileProjectEntry, expanded: boolean, onToggle: () => void, onEnsure?: () => void): HTMLElement =>
+                createSessionsSidebarProjectRowHeadExtracted(ctx as unknown as MobileProjectsSessionsSidebarUiContext, entry, expanded, onToggle, onEnsure),
+            createSessionsSidebarNewAgentControl: () => document.createElement('button'),
+            appendSessionsSidebarConversationItems: () => undefined,
+            selectSessionsSidebarProject: async () => undefined,
+        } as unknown as MobileProjectsSessionsSidebarUiContext;
+        const group = createSessionsSidebarProjectGroupExtracted(ctx, project, [], () => undefined);
+        document.body.append(group);
+
+        // Streaming/default expansion may update the Set after a stale row is mounted.
+        // The project-name click should make the DOM reflect that state immediately.
+        expandedIds.add(project.id);
+        const name = group.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-row') as HTMLButtonElement;
+        name.click();
+
+        expect(group.classList.contains('theia-mod-collapsed')).to.equal(false);
+        expect(group.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn')?.getAttribute('aria-expanded')).to.equal('true');
+        expect(expandedIds.has(project.id)).to.equal(true);
+
+        const chevron = group.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn') as HTMLButtonElement;
+        chevron.click();
+        expect(group.classList.contains('theia-mod-collapsed')).to.equal(true);
+        expect(chevron.getAttribute('aria-expanded')).to.equal('false');
+        expect(expandedIds.has(project.id)).to.equal(false);
+        chevron.click();
+        expect(group.classList.contains('theia-mod-collapsed')).to.equal(false);
+        expect(chevron.getAttribute('aria-expanded')).to.equal('true');
+        expect(expandedIds.has(project.id)).to.equal(true);
+        group.remove();
     });
 
     it('does not mark the selected project row as selected', () => {
