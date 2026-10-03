@@ -24,6 +24,55 @@ import {
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2';
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
+import {
+    classifyAgentConnectionProbe,
+    hasAgentSettingsCredentials,
+    resolveAgentConnectionProbeArgs,
+} from './qaap-agent-task-runner-utils3';
+
+describe('harness connection state', () => {
+    const settingsHarnesses: ReadonlyArray<{ readonly id: string; readonly key: string }> = [
+        { id: 'qaiq', key: 'ai-features.openAiOfficial.openAiApiKey' },
+        { id: 'openclaude', key: 'ai-features.anthropic.AnthropicApiKey' },
+        { id: 'hermes', key: 'ai-features.openrouter.openrouterApiKey' },
+        { id: 'antigravity', key: 'ai-features.google.apiKey' },
+        { id: 'gemini', key: 'ai-features.google.apiKey' },
+    ];
+
+    for (const harness of settingsHarnesses) {
+        it(`reports ${harness.id} disconnected until its tenant API key is saved`, () => {
+            const preferences: Record<string, unknown> = {};
+            const readPreference = (key: string): unknown => preferences[key];
+            expect(hasAgentSettingsCredentials(harness.id, readPreference)).to.equal(false);
+            preferences[harness.key] = 'tenant-api-key';
+            expect(hasAgentSettingsCredentials(harness.id, readPreference)).to.equal(true);
+        });
+    }
+
+    it('checks OpenCode credentials with its provider credential list command', () => {
+        expect(resolveAgentConnectionProbeArgs('opencode')).to.deep.equal(['auth', 'list']);
+        expect(classifyAgentConnectionProbe('opencode', 0, 'anthropic · api key', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('opencode', 0, 'No credentials configured', false)).to.equal('disconnected');
+    });
+
+    it('checks Codex, Claude, and Cursor using their own status commands', () => {
+        expect(resolveAgentConnectionProbeArgs('codex')).to.deep.equal(['login', 'status']);
+        expect(resolveAgentConnectionProbeArgs('claude')).to.deep.equal(['auth', 'status']);
+        expect(resolveAgentConnectionProbeArgs('cursor')).to.deep.equal(['status']);
+        expect(classifyAgentConnectionProbe('codex', 0, 'Logged in using ChatGPT', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('claude', 1, 'Not logged in', false)).to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Authenticated as alice', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('cursor', 0, '{"authenticated":false}', false)).to.equal('disconnected');
+    });
+
+    it('keeps unverified or unsupported authentication state unknown', () => {
+        expect(resolveAgentConnectionProbeArgs('copilot')).to.equal(undefined);
+        expect(resolveAgentConnectionProbeArgs('qwen')).to.equal(undefined);
+        expect(classifyAgentConnectionProbe('codex', 1, 'invalid command', false)).to.equal('unknown');
+        expect(classifyAgentConnectionProbe('codex', null, '', true)).to.equal('unknown');
+        expect(hasAgentSettingsCredentials('opencode', () => 'api-key')).to.equal(undefined);
+    });
+});
 
 describe('resolveQaiqEnvFallbackModel', () => {
 

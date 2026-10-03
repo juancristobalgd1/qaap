@@ -132,7 +132,7 @@ describe('qaap-agent-auth-login', () => {
         expect(resolveAgentLoginCliCommand('codex')).to.equal('codex login --device-auth');
         expect(resolveAgentLoginCliCommand('claude')).to.equal('claude auth login');
         expect(resolveAgentLoginCliCommand('grok')).to.equal('grok login --device-auth');
-        expect(resolveAgentLoginCliCommand('copilot')).to.equal('gh auth login --web');
+        expect(resolveAgentLoginCliCommand('copilot')).to.equal('copilot login --device-code');
         expect(resolveAgentLoginCliCommand('cursor')).to.equal(
             process.platform === 'win32'
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'

@@ -199,31 +199,107 @@ export interface QaapAgentConnectionProbeOptions {
     readonly env?: NodeJS.ProcessEnv;
 }
 
+const SETTINGS_CREDENTIAL_PREFS_BY_AGENT: Readonly<Record<string, readonly string[]>> = {
+    qaiq: [
+        'ai-features.openAiOfficial.openAiApiKey',
+        'ai-features.anthropic.AnthropicApiKey',
+        'ai-features.google.apiKey',
+        'ai-features.openrouter.openrouterApiKey',
+        'ai-features.nvidia.nvidiaApiKey',
+        'ai-features.huggingFace.apiKey',
+        'ai-features.openAiCustom.customOpenAiApiKey',
+    ],
+    openclaude: [
+        'ai-features.openAiOfficial.openAiApiKey',
+        'ai-features.anthropic.AnthropicApiKey',
+        'ai-features.google.apiKey',
+        'ai-features.openrouter.openrouterApiKey',
+        'ai-features.nvidia.nvidiaApiKey',
+        'ai-features.huggingFace.apiKey',
+        'ai-features.openAiCustom.customOpenAiApiKey',
+    ],
+    hermes: ['ai-features.openrouter.openrouterApiKey'],
+    gemini: ['ai-features.google.apiKey'],
+    antigravity: ['ai-features.google.apiKey'],
+};
+
+/** Provider credentials that the background task runner actually injects for Settings-backed harnesses. */
+export function hasAgentSettingsCredentials(agentId: string, readPreference: (key: string) => unknown): boolean | undefined {
+    const preferences = SETTINGS_CREDENTIAL_PREFS_BY_AGENT[agentId.trim().toLowerCase()];
+    if (!preferences) {
+        return undefined;
+    }
+    return preferences.some(key => {
+        const value = readPreference(key);
+        return typeof value === 'string' && value.trim().length > 0;
+    });
+}
+
+/** CLI commands whose exit/output can safely report an authentication state. */
+export function resolveAgentConnectionProbeArgs(agentId: string): readonly string[] | undefined {
+    switch (agentId.trim().toLowerCase()) {
+        case 'codex':
+            return ['login', 'status'];
+        case 'claude':
+            return ['auth', 'status'];
+        case 'cursor':
+            return ['status'];
+        case 'opencode':
+            return ['auth', 'list'];
+        default:
+            return undefined;
+    }
+}
+
+/** Interpret only clear auth output; unsupported commands and ambiguous output stay unknown. */
+export function classifyAgentConnectionProbe(
+    agentId: string,
+    status: number | null,
+    output: string,
+    hasError: boolean,
+): QaapAgentConnectionState {
+    if (hasError || status === null) {
+        return 'unknown';
+    }
+    const sample = output.toLowerCase();
+    if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*false/.test(sample)
+        || /not logged in|not authenticated|logged out|no active login|no credentials|no providers configured|not connected|no authentication information found|sign in required/.test(sample)) {
+        return 'disconnected';
+    }
+    if (status !== 0) {
+        return 'unknown';
+    }
+    if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*true/.test(sample)
+        || /logged in|authenticated|credentials configured|active account/.test(sample)) {
+        return 'connected';
+    }
+    if (agentId.trim().toLowerCase() === 'opencode' && sample.trim().length > 0) {
+        // `opencode auth list` reports saved providers as rows without using the word "authenticated".
+        return 'connected';
+    }
+    return 'unknown';
+}
+
 export function probeAgentConnectionState(
     agentId: string,
     bin = agentId,
     options?: QaapAgentConnectionProbeOptions,
 ): QaapAgentConnectionState {
     const normalized = agentId.trim().toLowerCase();
-    if (normalized !== 'codex') {
+    const args = options?.args ?? resolveAgentConnectionProbeArgs(normalized);
+    if (!args) {
         return 'unknown';
     }
     try {
-        const probe = spawnSync(options?.file ?? bin, options?.args ?? ['login', 'status'], {
+        const probe = spawnSync(options?.file ?? bin, [...args], {
             cwd: options?.cwd,
             env: options?.env,
             encoding: 'utf8',
             timeout: 4000,
             windowsHide: true,
         });
-        const output = `${probe.stdout ?? ''}\n${probe.stderr ?? ''}`.toLowerCase();
-        if (/not logged in|not authenticated|logged out|no active login/.test(output)) {
-            return 'disconnected';
-        }
-        if (probe.error || probe.status === null) {
-            return 'unknown';
-        }
-        return probe.status === 0 ? 'connected' : 'disconnected';
+        const output = `${probe.stdout ?? ''}\n${probe.stderr ?? ''}`;
+        return classifyAgentConnectionProbe(normalized, probe.status, output, !!probe.error);
     } catch {
         return 'unknown';
     }
