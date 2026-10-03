@@ -113,6 +113,14 @@ interface NpmLatestCacheEntry {
     readonly at: number;
 }
 
+interface NpmInstallResult {
+    readonly status: number | null;
+    readonly signal: NodeJS.Signals | null;
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly error?: Error;
+}
+
 /**
  * Probes installed agent CLIs, compares against npm `latest` (or env pins), and can attempt
  * an in-place `npm install -g` for whitelisted packages.
@@ -180,23 +188,19 @@ export class QaapAgentCliUpdateService {
                 message: `${tracked.label} is not updated in-place. Rebuild the Qaap image (or bump QAIQ_REF) to pick up a newer CLI.`,
             };
         }
-        const install = spawnSync(
-            NPM_EXECUTABLE,
-            ['install', '-g', `${tracked.npmPackage}@latest`],
-            {
-                encoding: 'utf8',
-                timeout: NPM_INSTALL_TIMEOUT_MS,
-                env: childProcessEnv(),
-                // Windows npm is a cmd shim and cannot be spawned directly without a shell.
-                shell: process.platform === 'win32',
-            },
-        );
-        if (install.error || (install.status !== null && install.status !== 0)) {
-            const detail = (install.stderr || install.stdout || install.error?.message || 'npm install failed').trim();
+        const install = this.runNpmInstall(tracked.npmPackage);
+        if (install.error || install.status !== 0) {
+            const detail = [
+                install.stderr.trim(),
+                install.stdout.trim(),
+                install.error?.message,
+                install.signal ? `npm install was terminated by ${install.signal}.` : undefined,
+                install.status === null ? 'npm install did not exit normally.' : undefined,
+            ].find(value => !!value) ?? 'npm install failed without a diagnostic.';
             return {
                 ok: false,
                 id: tracked.id,
-                message: detail.slice(0, 500) || `Failed to update ${tracked.label}`,
+                message: `${tracked.label} update failed: ${detail}`.slice(0, 500),
             };
         }
         // Invalidate cached latest so the next list re-probes.
@@ -210,6 +214,20 @@ export class QaapAgentCliUpdateService {
                 ? `${tracked.label} updated to v${probed.version}`
                 : `${tracked.label} update finished`,
         };
+    }
+
+    protected runNpmInstall(npmPackage: string): NpmInstallResult {
+        return spawnSync(
+            NPM_EXECUTABLE,
+            ['install', '-g', `${npmPackage}@latest`],
+            {
+                encoding: 'utf8',
+                timeout: NPM_INSTALL_TIMEOUT_MS,
+                env: childProcessEnv(),
+                // Windows npm is a cmd shim and cannot be spawned directly without a shell.
+                shell: process.platform === 'win32',
+            },
+        );
     }
 
     protected async collectOutdated(): Promise<QaapAgentCliUpdatesResponse> {

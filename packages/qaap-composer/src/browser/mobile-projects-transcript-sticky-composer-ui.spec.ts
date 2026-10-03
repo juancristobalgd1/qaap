@@ -229,7 +229,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(host.transcriptComposerQueueExpanded).to.equal(false);
     });
 
-    it('starts an isolated worktree session instead of a same-tree peer run', async () => {
+    it('starts a peer run in the same transcript when sending a queued message in parallel', async () => {
         const probe = createProbe({ agentWorking: true });
         probe.queue.enqueue(summary.id, { draft: 'keep', selectedAgentId: 'a1' });
         probe.queue.enqueue(summary.id, { draft: 'run me', selectedAgentId: 'a2', modeId: 'm1' });
@@ -237,16 +237,18 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         await probe.ui.sendQueuedFollowUpNow(project, summary, 1);
 
         expect(probe.stopped).to.equal(0);
-        expect(probe.conversationSubmits).to.deep.equal([]);
-        expect(probe.backgroundSubmits).to.deep.equal(['run me']);
-        expect(probe.backgroundOptions[0].worktree).to.equal(true);
-        expect(probe.backgroundOptions[0].openConversation).to.equal(true);
-        expect(probe.backgroundOptions[0].selectedAgentId).to.equal('a2');
-        expect(probe.backgroundOptions[0].modeId).to.equal('m1');
+        expect(probe.conversationSubmits).to.have.length(1);
+        expect(probe.conversationSubmits[0].conversationId).to.equal(summary.id);
+        expect(probe.conversationSubmits[0].draft).to.equal('run me');
+        expect(probe.conversationSubmits[0].options.parallel).to.equal(true);
+        expect(probe.conversationSubmits[0].options.deliveryMode).to.equal('parallel');
+        expect(probe.conversationSubmits[0].options.selectedAgentId).to.equal('a2');
+        expect(probe.conversationSubmits[0].options.modeId).to.equal('m1');
+        expect(probe.backgroundSubmits).to.deep.equal([]);
         expect(probe.queue.peek(summary.id).map(entry => entry.draft)).to.deep.equal(['keep']);
     });
 
-    it('falls back to the queue when the isolated parallel session cannot start', async () => {
+    it('returns a failed parallel send to the queue when the post fails', async () => {
         const probe = createProbe({ agentWorking: true, submitFails: true });
         probe.queue.enqueue(summary.id, { draft: 'run me' });
 
@@ -298,17 +300,16 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(probe.queue.peek(summary.id).map(e => e.draft)).to.deep.equal(['typed too fast']);
     });
 
-    it('routes a concurrent send to an isolated worktree session when "Run in" says so', async () => {
+    it('keeps a parallel follow-up in the current thread even when New Worktree is selected', async () => {
         const probe = createProbe({ agentWorking: true, destination: 'worktree' });
         probe.queue.enqueue(summary.id, { draft: 'isolate me' });
 
         await probe.ui.sendQueuedFollowUpNow(project, summary, 0);
 
-        // Isolation needs its own working tree, which a conversation cannot have — so it runs as
-        // its own session instead of as a peer sharing this one's files.
-        expect(probe.conversationSubmits).to.deep.equal([]);
-        expect(probe.backgroundSubmits).to.deep.equal(['isolate me']);
-        expect(probe.backgroundOptions[0].worktree).to.equal(true);
+        expect(probe.conversationSubmits).to.have.length(1);
+        expect(probe.conversationSubmits[0].conversationId).to.equal(summary.id);
+        expect(probe.conversationSubmits[0].options.deliveryMode).to.equal('parallel');
+        expect(probe.backgroundSubmits).to.deep.equal([]);
     });
 
     it('sends as a normal follow-up (not a peer run) when the agent is idle', async () => {

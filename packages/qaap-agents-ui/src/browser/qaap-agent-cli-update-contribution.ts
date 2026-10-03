@@ -136,7 +136,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         }
 
         this.toast?.setUpdating(true);
-        const result = await requestAgentCliUpdate(info.id).catch((error: unknown) => ({
+        const result = await this.requestUpdate(info).catch((error: unknown) => ({
             ok: false as const,
             id: info.id,
             message: error instanceof Error ? error.message : String(error),
@@ -164,18 +164,28 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             return;
         }
 
-        MobileSnackbar.show(
-            result.message
-            ?? nls.localize('qaap/agentCliUpdate/updateFailed', 'Could not update {0}.', info.label),
-            {
-                kind: 'warning',
-                duration: 5000,
-                position: 'top',
-                actionLabel: nls.localize('qaap/agentCliUpdate/settings', 'Settings'),
-                onAction: () => this.openSettings(),
-            },
-        );
-        // Keep the toast so the user can retry, cancel, or dismiss.
-        this.toast?.setUpdating(false);
+        const detail = result.message?.trim();
+        const message = detail
+            ? nls.localize('qaap/agentCliUpdate/updateFailedDetail', 'Could not update {0}: {1}', info.label, detail)
+            : nls.localize(
+                'qaap/agentCliUpdate/updateFailedRetry',
+                'Could not update {0}. Check server npm access and permissions, then retry.',
+                info.label,
+            );
+        this.showUpdateFailure(info, message);
+    }
+
+    protected requestUpdate(info: QaapAgentCliUpdateInfo): Promise<Awaited<ReturnType<typeof requestAgentCliUpdate>>> {
+        return requestAgentCliUpdate(info.id);
+    }
+
+    protected showUpdateFailure(info: QaapAgentCliUpdateInfo, message: string): void {
+        MobileSnackbar.show(message, {
+            kind: 'warning',
+            duration: 7000,
+            position: 'top',
+            actionLabel: nls.localize('qaap/agentCliUpdate/retry', 'Retry'),
+            onAction: () => void this.runUpdate(info),
+        });
     }
 }

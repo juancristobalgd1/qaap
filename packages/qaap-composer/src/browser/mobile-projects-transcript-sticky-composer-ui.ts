@@ -68,7 +68,7 @@ import { applyTranscriptComposerPrefsExtracted, applyTranscriptComposerPrefsFrom
 import { remountTranscriptStickyComposerExtracted, submitTranscriptComposerDraftExtracted } from './mobile-projects-transcript-sticky-composer-ui-live-status';
 import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtracted, fetchWorkspaceChangedFilesExtracted, hasComposerAgentActivityExtracted, hasComposerCommittableChangesFromGitExtracted, hasComposerFileActivityExtracted, onTranscriptComposerAttachExtracted, openComposerPreviewExtracted, resolveChangedFilesStatsExtracted, resolveComposerActivityFilesForStackExtracted, resolveComposerPreviewRuntimeExtracted, resolveComposerUploadTargetDirExtracted, resolveComposerWorkspaceRootExtracted, resolveTranscriptContextUsageTargetExtracted, resolveTranscriptTheiaChatModelExtracted, resumeComposerPreviewProbeWhenVisibleExtracted, runComposerPreviewHealthCheckExtracted, scheduleComposerPreviewHealthCheckExtracted,scheduleIdleComposerFocusRetentionExtracted, shouldRefetchComposerGitSnapshotExtracted, syncComposerPreviewAvailabilityExtracted, syncTranscriptComposerQuickActionsVisibilityExtracted } from './mobile-projects-transcript-sticky-composer-ui-render';
 import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptionsExtracted, keepAllComposerChangedFilesExtracted, launchComposerDevPreviewExtracted, refreshComposerActivityGitFilesIfNeededExtracted, runComposerCommitActionExtracted, runComposerGitFileActionExtracted, syncComposerGitSnapshotExtracted, undoAllComposerChangedFilesExtracted } from './mobile-projects-transcript-sticky-composer-ui-streaming';
-import { appendRunningGitActionToTranscriptExtracted, applyGitActionTranscriptConversationExtracted, buildComposerActivityFingerprintExtracted, dispatchQueuedFollowUpInParallelExtracted, flushTranscriptFollowUpQueueExtracted, interruptQueuedFollowUpExtracted, isTranscriptFollowUpReadyExtracted, markPendingGitActionFailedExtracted, recordComposerGitActionInTranscriptExtracted, refreshComposerActivityStackExtracted, refreshTranscriptComposerActivityIfNeededExtracted, sendQueuedFollowUpNowExtracted, startIsolatedRunIfRequestedExtracted, syncComposerActivityFingerprintExtracted } from './mobile-projects-transcript-sticky-composer-ui-timeline';
+import { appendRunningGitActionToTranscriptExtracted, applyGitActionTranscriptConversationExtracted, buildComposerActivityFingerprintExtracted, dispatchQueuedFollowUpInParallelExtracted, flushTranscriptFollowUpQueueExtracted, interruptQueuedFollowUpExtracted, isTranscriptFollowUpReadyExtracted, markPendingGitActionFailedExtracted, recordComposerGitActionInTranscriptExtracted, refreshComposerActivityStackExtracted, refreshTranscriptComposerActivityIfNeededExtracted, sendQueuedFollowUpNowExtracted, syncComposerActivityFingerprintExtracted } from './mobile-projects-transcript-sticky-composer-ui-timeline';
 import { mountTranscriptStickyComposerAsyncExtracted } from './mobile-projects-transcript-sticky-composer-ui-tool-pills';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
@@ -568,10 +568,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
-    public async startIsolatedRunIfRequested(project: MobileProjectEntry, entry: TranscriptFollowUpEntry,): Promise<boolean> {
-        return startIsolatedRunIfRequestedExtracted(this, project, entry);
-    }
-
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public async startPeerRunOrQueue(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): Promise<boolean> {
         return startPeerRunOrQueueExtracted(this, project, summary, entry);

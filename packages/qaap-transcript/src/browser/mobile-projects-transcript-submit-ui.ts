@@ -250,10 +250,7 @@ export class MobileProjectsTranscriptSubmitUi {
             widget?: AIChatInputWidget;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
-            /**
-             * Opt into isolated-worktree parallel (a new conversation). Prefer
-             * Alt+Enter or an explicit `deliveryMode: 'parallel'`.
-             */
+            /** Keep a parallel peer run in the same conversation and transcript. */
             parallel?: boolean;
             /**
              * Delivery mode when an agent is already running. Maps to the backend
@@ -270,7 +267,7 @@ export class MobileProjectsTranscriptSubmitUi {
         // able to tell that apart from a completed send, or the message is silently lost (it was
         // already cleared from the composer draft by then). Parallel (peer-run) sends bypass this
         // gate because they are intentionally concurrent with the in-flight POST.
-        const parallel = !!options.parallel;
+        const parallel = !!options.parallel || options.deliveryMode === 'parallel';
         const queueDelivery = options.deliveryMode === 'queue';
         // Queue mirrors must not block each other: several same-session follow-ups can be
         // posted while the agent is still working. Parallel peers also bypass the gate.
@@ -418,8 +415,8 @@ export class MobileProjectsTranscriptSubmitUi {
         const base = await getConversation(summary.id);
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
         // A follow-up on a still-streaming conversation must not cancel the live turn.
-        // Delivery defaults to `'queue'` (backend pendingUserMessages). Explicit parallel
-        // isolation is opted into via Alt+Enter or `deliveryMode: 'parallel'`.
+        // Delivery defaults to `'queue'` (backend pendingUserMessages). Alt+Enter opts into
+        // a peer run that stays in this conversation and transcript.
         if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel && !options.deliveryMode) {
             options.deliveryMode = 'queue';
         }

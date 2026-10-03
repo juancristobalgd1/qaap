@@ -132,7 +132,7 @@ describe('qaap-agent-auth-login', () => {
         expect(resolveAgentLoginCliCommand('codex')).to.equal('codex login --device-auth');
         expect(resolveAgentLoginCliCommand('claude')).to.equal('claude auth login');
         expect(resolveAgentLoginCliCommand('grok')).to.equal('grok login --device-auth');
-        expect(resolveAgentLoginCliCommand('copilot')).to.equal('gh auth login --web');
+        expect(resolveAgentLoginCliCommand('copilot')).to.equal('copilot login --device-code');
         expect(resolveAgentLoginCliCommand('cursor')).to.equal(
             process.platform === 'win32'
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
@@ -163,11 +163,16 @@ describe('qaap-agent-auth-login', () => {
 
     it('agentNeedsSettingsApiKeyPath is true for BYOK agents and false for OAuth or Shell', () => {
         expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);
-        expect(agentNeedsSettingsApiKeyPath('opencode')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('openclaude')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('hermes')).to.equal(true);
         expect(agentNeedsSettingsApiKeyPath('antigravity')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('gemini')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('opencode')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('qwen')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('codex')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('cursor')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('shell')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('not-a-registered-harness')).to.equal(false);
         rememberQaapHostedRuntime(true);
         expect(agentNeedsSettingsApiKeyPath('cursor')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);

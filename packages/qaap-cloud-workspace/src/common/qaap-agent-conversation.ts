@@ -432,10 +432,7 @@ export interface QaapCreateAgentConversationRequest {
      * and the conversation runs there instead of the repository's main working tree.
      */
     readonly worktree?: boolean;
-    /**
-     * Set when this conversation was spawned as an isolated parallel follow-up of another
-     * thread (delivery mode `'parallel'`). Points at the parent conversation id.
-     */
+    /** Set when this conversation was forked from another thread. Points at the parent id. */
     readonly forkedFromId?: string;
     /** Set by the server on worktree conversations — the branch backing the worktree. */
     readonly worktreeBranch?: string;

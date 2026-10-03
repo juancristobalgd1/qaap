@@ -46,18 +46,14 @@ import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snac
 export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     entry: TranscriptFollowUpEntry,): Promise<boolean> {
-    if (await ctx.startIsolatedRunIfRequested(project, entry)) {
-        return true;
-    }
     // Busy Send queues on the server by default. Alt+Enter / Cmd+Enter set
     // entry.deliveryMode to parallel / interrupt.
     const deliveryMode = (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode ?? 'queue';
     if (deliveryMode === 'parallel') {
         try {
-            await ctx.host.submitBackgroundAgentTask(project, entry.draft, {
-                openConversation: true,
-                forceVps: true,
-                worktree: true,
+            const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
+                parallel: true,
+                deliveryMode,
                 selectedAgentId: entry.selectedAgentId,
                 modeId: entry.modeId,
                 autoApprove: entry.autoApprove,
@@ -66,13 +62,13 @@ export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscript
                 variables: entry.variables,
                 imagePreviews: entry.imagePreviews,
             });
-            MobileSnackbar.show(
-                nls.localize(
-                    'qaap/mobileProjects/isolatedParallelStarted',
-                    'Started in an isolated worktree — the current agent keeps working',
-                ),
-                { duration: 2600 },
-            );
+            if (!submitted) {
+                return ctx.queuePeerRunMessage(summary, entry);
+            }
+            MobileSnackbar.show(nls.localize(
+                'qaap/mobileProjects/peerRunStarted',
+                'Started alongside the current task in this conversation',
+            ), { duration: 2600 });
             return true;
         } catch (error) {
             if (!isMaxConcurrentRunsError(error)) {

@@ -26,9 +26,9 @@ export const VISUAL_EVIDENCE_MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 // ─── Concurrency ─────────────────────────────────────────────────────────────
 
 /**
- * How many parallel-run variants may stream at once inside a single conversation when the user
- * explicitly chooses delivery mode `'parallel'`. They run in isolated git worktrees, so this is
- * a capacity target, not just a fan-out guard. Override with `QAAP_MAX_PARALLEL_VARIANTS`.
+ * How many peer runs may stream at once inside a single conversation when the user explicitly
+ * chooses delivery mode `'parallel'`. Further requests stay in the conversation's pending queue.
+ * Override with `QAAP_MAX_PARALLEL_VARIANTS`.
  */
 export const QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION = (() => {
     const parsed = Number.parseInt(process.env.QAAP_MAX_PARALLEL_VARIANTS?.trim() ?? '', 10);
@@ -36,9 +36,8 @@ export const QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION = (() => {
 })();
 
 /**
- * Legacy cap kept for backward compatibility — still used as the hard limit for parallel-run
- * variants. Renamed from `MAX_CONCURRENT_CONVERSATION_RUNS` to clarify it applies to explicit
- * parallel variants, not to queued messages (which are unbounded).
+ * Legacy alias kept for backward compatibility. It applies to explicit in-session parallel
+ * peer runs, not to queued messages (which are unbounded).
  * @deprecated Use {@link QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION}.
  */
 export const MAX_CONCURRENT_CONVERSATION_RUNS = QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION;

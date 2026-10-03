@@ -76,6 +76,8 @@ import {
     listAgents as listAgentsHelper,
     probeAgentBinOnce as probeAgentBinOnceHelper,
     probeAgentConnectionState as probeAgentConnectionStateHelper,
+    hasAgentSettingsCredentials as hasAgentSettingsCredentialsHelper,
+    resolveAgentConnectionProbeArgs as resolveAgentConnectionProbeArgsHelper,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
@@ -572,7 +574,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!candidate) {
             return 'unknown';
         }
-        if (normalized !== 'codex') {
+        const settingsConnected = hasAgentSettingsCredentialsHelper(
+            normalized,
+            this.preferenceReaderForOwner(ownerLogin),
+        );
+        if (typeof settingsConnected === 'boolean') {
+            return settingsConnected ? 'connected' : 'disconnected';
+        }
+        if (!resolveAgentConnectionProbeArgsHelper(normalized)) {
             return 'unknown';
         }
         const now = Date.now();
@@ -608,7 +617,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return 'unknown';
         }
         try {
-            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, ['login', 'status']);
+            const args = resolveAgentConnectionProbeArgsHelper(agentId);
+            if (!args) {
+                return 'unknown';
+            }
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
             const env = {
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),

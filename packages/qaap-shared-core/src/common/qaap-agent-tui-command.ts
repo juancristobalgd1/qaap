@@ -5,7 +5,11 @@
 
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
-import { resolveAgentLoginCliCommand } from './qaap-agent-auth-login';
+import {
+    agentNeedsSettingsApiKeyPath,
+    QAAP_AI_FEATURES_SETTINGS_QUERY,
+    resolveAgentLoginCliCommand,
+} from './qaap-agent-auth-login';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
@@ -30,17 +34,52 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
     return builtin?.bin;
 }
 
+/** A deliberate route for the Work Hub Connect action. */
+export type QaapAgentConnectionFlow =
+    | { readonly kind: 'cli-login'; readonly command: string }
+    | { readonly kind: 'settings-api-key'; readonly settingsQuery: string }
+    | { readonly kind: 'tenant-terminal'; readonly command: string }
+    | { readonly kind: 'hosted-restricted' }
+    | { readonly kind: 'unsupported' };
+
 /**
- * Text to send into the transcript terminal to start an agent connection.
- * Prefer a dedicated device/OAuth command; for harnesses without one, launch the
- * interactive CLI so its own login/onboarding flow is available in the terminal.
- *
- * QAIQ is the only Settings/BYOK harness and therefore remains the sole exception.
+ * Resolve a usable connect route. A hidden terminal is only used for CLIs with a dedicated
+ * login command that prints a device/OAuth challenge. Interactive onboarding stays visible
+ * to the user by returning instructions for the tenant terminal instead of launching a TUI
+ * in an inaccessible staging surface.
  */
+export function resolveAgentConnectionFlow(agentId: string | undefined): QaapAgentConnectionFlow {
+    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    if (!normalized) {
+        return { kind: 'unsupported' };
+    }
+    if (isAgentHiddenOnHostedRuntime(normalized)) {
+        return { kind: 'hosted-restricted' };
+    }
+    const loginCommand = resolveAgentLoginCliCommand(normalized);
+    if (loginCommand) {
+        return { kind: 'cli-login', command: loginCommand };
+    }
+    if (agentNeedsSettingsApiKeyPath(normalized)) {
+        return { kind: 'settings-api-key', settingsQuery: QAAP_AI_FEATURES_SETTINGS_QUERY };
+    }
+    const bin = resolveInteractiveAgentCliBin(normalized);
+    if (!bin) {
+        return { kind: 'unsupported' };
+    }
+    const tenantCommand = normalized === 'opencode'
+        ? 'opencode auth login'
+        : normalized === 'openclaw'
+            ? 'openclaw onboard'
+            : bin;
+    return { kind: 'tenant-terminal', command: tenantCommand };
+}
+
+/** Device/OAuth command to send to the background transcript terminal, when supported. */
 export function resolveInteractiveAgentLoginCommand(agentId: string | undefined): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized || normalized === QAIQ_AGENT_ID || isAgentHiddenOnHostedRuntime(normalized)) {
         return undefined;
     }
-    return resolveAgentLoginCliCommand(normalized) ?? resolveInteractiveAgentCliBin(normalized);
+    return resolveAgentLoginCliCommand(normalized);
 }

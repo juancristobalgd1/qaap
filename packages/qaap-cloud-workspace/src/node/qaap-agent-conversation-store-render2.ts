@@ -39,7 +39,12 @@ import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transc
 import { hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper } from './qaap-agent-conversation-store-helpers';
 
 import { allocateQaapWorktreeOrdinal } from './qaap-worktree-ordinal-allocator';
-import { QAAP_MAX_BATCH_SIZE, QAAP_COALESCE_WINDOW_MS, type PostUserMessageInternalOptions } from './qaap-agent-conversation-store-constants';
+import {
+    QAAP_COALESCE_WINDOW_MS,
+    QAAP_MAX_BATCH_SIZE,
+    QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION,
+    type PostUserMessageInternalOptions,
+} from './qaap-agent-conversation-store-constants';
 import { capturePreTurnCheckpointGate } from './qaap-agent-conversation-store-pre-turn-checkpoint';
 
 /**
@@ -93,20 +98,6 @@ function normalizeConversationCwd(cwd: string): string {
     return process.platform === 'win32'
         ? resolved.replace(/[\\/]+/g, '\\').toLowerCase()
         : resolved;
-}
-
-/**
- * How many isolated parallel children of {@link parentId} are still streaming (or visually
- * settled with a live backend task). Used to cap delivery-mode `'parallel'` spawns.
- */
-export function countStreamingForksExtracted(ctx: QaapAgentConversationStoreContext, parentId: string): number {
-    let count = 0;
-    for (const conv of ctx.conversations.values() as Iterable<QaapAgentConversation>) {
-        if (conv.forkedFromId === parentId && (conv.status === 'streaming' || conv.status === 'settled')) {
-            count++;
-        }
-    }
-    return count;
 }
 
 export function getExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {
@@ -619,9 +610,8 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
             //   Inspired by Cursor "Send after current message" and Claude Code
             //   `pendingMessages` (drained at tool-round boundaries).
             //
-            // - 'parallel': the HTTP layer spawns a NEW conversation in an isolated
-            //   worktree. If that isolation is not available, the store queues instead of
-            //   writing a second agent into this working tree.
+            // - 'parallel': start a peer run in this conversation. The run limit prevents
+            //   unbounded fan-out; messages beyond it stay queued on this conversation.
             //
             // - 'interrupt': cancel the running agent and process the new message
             //   immediately. Inspired by Cursor "Stop & send" and Codex "Steer".
@@ -648,25 +638,25 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
                 }
                 // Status is now idle — fall through to normal processing below.
             } else if (deliveryMode === 'parallel') {
-                // Isolated parallel is created by the HTTP layer (new conversation + worktree).
-                // Reaching the store with `'parallel'` while a run is live means isolation was
-                // unavailable (not a git repo, cap hit, tests) — queue instead of a same-tree
-                // peer run. No IAD writes two agents into one working tree.
-                return ctx.enqueuePendingMessage(
-                    conv,
-                    {
-                        id: randomUUID(),
-                        role: 'user',
-                        content,
-                        createdAt: Date.now(),
-                        ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
-                    },
-                    ctx.resolveTurnAgent(conv, content, agentOverride),
-                    agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv, content, agentOverride))
-                        ? agentModelOverride
-                        : undefined,
-                    internal?.clientMessageId,
-                );
+                if (activeTaskIds.length >= QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION) {
+                    return ctx.enqueuePendingMessage(
+                        conv,
+                        {
+                            id: randomUUID(),
+                            role: 'user',
+                            content,
+                            createdAt: Date.now(),
+                            ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+                        },
+                        ctx.resolveTurnAgent(conv, content, agentOverride),
+                        agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv, content, agentOverride))
+                            ? agentModelOverride
+                            : undefined,
+                        internal?.clientMessageId,
+                    );
+                }
+                // Fall through to the normal message/run path so this peer stays in the same
+                // conversation transcript and session.
             } else {
                 // Default: 'queue' — enqueue the message, don't spawn a peer run.
                 const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);

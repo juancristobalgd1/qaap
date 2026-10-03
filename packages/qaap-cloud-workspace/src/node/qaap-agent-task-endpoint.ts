@@ -404,7 +404,8 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
-        if (!this.requireAuth(req, res)) {
+        const authContext = this.requireAuth(req, res);
+        if (!authContext) {
             return;
         }
         // End users of hosted deployments cannot act on an "Update available" toast (CLIs are
@@ -415,7 +416,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
         try {
             const payload = await this.cliUpdates.listOutdated();
-            res.json(payload);
+            const ownerLogin = this.auth.resolveUserLogin(authContext);
+            res.json({
+                updates: payload.updates.filter(update => this.runner.isAgentEnabled(update.id, ownerLogin)),
+            });
         } catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
         }

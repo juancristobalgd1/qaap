@@ -10,6 +10,28 @@ import {
     QAAP_ALLOW_IN_PLACE_CLI_UPDATE,
 } from './qaap-agent-cli-update-service';
 
+class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
+    result: {
+        readonly status: number | null;
+        readonly signal: NodeJS.Signals | null;
+        readonly stdout: string;
+        readonly stderr: string;
+        readonly error?: Error;
+    } = { status: null, signal: 'SIGTERM', stdout: '', stderr: '' };
+
+    override isUpdateCheckEnabled(): boolean {
+        return true;
+    }
+
+    override isInPlaceCliUpdateAllowed(): boolean {
+        return true;
+    }
+
+    protected override runNpmInstall(): NpmUpdateResultProbe['result'] {
+        return this.result;
+    }
+}
+
 describe('QaapAgentCliUpdateService', () => {
     const originalCheck = process.env.QAAP_AGENT_CLI_UPDATE_CHECK;
     const originalNodeEnv = process.env.NODE_ENV;
@@ -90,5 +112,17 @@ describe('QaapAgentCliUpdateService', () => {
         const result = await service.installUpdate('codex');
         expect(result.ok).to.equal(false);
         expect(result.message).to.match(/UPDATE_CHECK/i);
+    });
+
+    it('treats a signaled npm install as failure and preserves an actionable reason', async () => {
+        const service = new NpmUpdateResultProbe();
+        const result = await service.installUpdate('codex');
+        expect(result.ok).to.equal(false);
+        expect(result.message).to.match(/SIGTERM/);
+
+        service.result = { status: 1, signal: null, stdout: '', stderr: 'EACCES: permission denied' };
+        const permissionFailure = await service.installUpdate('codex');
+        expect(permissionFailure.ok).to.equal(false);
+        expect(permissionFailure.message).to.contain('EACCES: permission denied');
     });
 });
