@@ -162,8 +162,8 @@ services:
       # Set only when DOCKER_HOST points at a rootless daemon. Container uid 0 then maps to the
       # unprivileged host account owning the persistent bind mounts, allowing shared 0700 state.
       QAAP_DOCKER_ROOTLESS: ${QAAP_DOCKER_ROOTLESS:-0}
-      # Never use Docker's shared default bridge for untrusted tenant workers. The backend creates
-      # one managed bridge per tenant (or use `none` with an external egress proxy).
+      # Never use Docker's shared default bridge for untrusted tenant workers. Each tenant gets an
+      # internal bridge; backend-per-tenant mode publishes only through its hardened ingress relay.
       QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-isolated-bridge}
       # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
       # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.

@@ -34,6 +34,8 @@ interface QaapDockerOrchestratorTestAccess {
     tenantContainerMatches(inspect: Dockerode.ContainerInspectInfo, mounts: QaapTenantMountSet, networkMode: string): boolean;
     buildTenantEnvironmentArgs(environment?: NodeJS.ProcessEnv, inheritByName?: boolean): string[];
     getTenantNetworkMode(ownerLogin?: string): string;
+    backendContainerNameForTenant(ownerLogin?: string): string;
+    backendIngressNetworkNameForTenant(ownerLogin?: string): string;
     getTenantContainerUser(): string;
     getTenantImage(): string;
     getTenantMemoryLimit(): number;
@@ -52,6 +54,7 @@ interface QaapDockerOrchestratorTestAccess {
     getDocker(ownerLogin?: string): Promise<Dockerode>;
     createOrValidateTenantContainer(name: string, mounts: QaapTenantMountSet, networkMode: string, ownerLogin?: string): Promise<unknown>;
     createOrValidateTenantBackend(ownerLogin: string, tenantRootHostPath: string): Promise<unknown>;
+    waitForTenantBackendReady(target: unknown): Promise<void>;
 }
 
 function access(instance: QaapDockerOrchestrator): QaapDockerOrchestratorTestAccess {
@@ -103,6 +106,163 @@ class CreateCapturingDockerode {
     }
 }
 
+interface FakePortBinding {
+    HostIp?: string;
+    HostPort?: string;
+}
+
+interface FakeBackendContainerInfo {
+    Id: string;
+    Image: string;
+    State: { Running: boolean };
+    Config: Record<string, unknown>;
+    HostConfig: Record<string, unknown>;
+    NetworkSettings: {
+        Networks: Record<string, Record<string, unknown>>;
+        Ports: Record<string, FakePortBinding[] | null>;
+    };
+    Mounts: Array<{ Source?: string; Destination?: string; RW?: boolean }>;
+}
+
+interface FakeNetworkInfo {
+    Name: string;
+    Driver: string;
+    Internal: boolean;
+    Labels: Record<string, string>;
+    Options: Record<string, string>;
+}
+
+function createFakeTenantBackendDocker(): {
+    readonly docker: Dockerode;
+    readonly created: Array<{ readonly name: string; readonly options: Record<string, unknown>; readonly info: FakeBackendContainerInfo }>;
+    seedManagedBackend(name: string, networkName: string, ports: FakePortBinding[] | null): () => boolean;
+} {
+    const containers = new Map<string, FakeBackendContainerInfo>();
+    const networks = new Map<string, FakeNetworkInfo>();
+    const created: Array<{ readonly name: string; readonly options: Record<string, unknown>; readonly info: FakeBackendContainerInfo }> = [];
+    const missing = (): never => { throw Object.assign(new Error('no such object'), { statusCode: 404 }); };
+
+    const containerHandle = (name: string): Record<string, unknown> => {
+        const info = containers.get(name);
+        if (!info) {
+            return missing();
+        }
+        return {
+            inspect: async (): Promise<FakeBackendContainerInfo> => info,
+            start: async (): Promise<void> => { info.State.Running = true; },
+            remove: async (): Promise<void> => { containers.delete(name); },
+        };
+    };
+
+    const networkHandle = (name: string): Record<string, unknown> => {
+        const info = networks.get(name);
+        if (!info) {
+            return missing();
+        }
+        return {
+            inspect: async (): Promise<FakeNetworkInfo> => info,
+            connect: async (options: { Container: string }): Promise<void> => {
+                const container = containers.get(options.Container);
+                if (!container) {
+                    throw new Error(`unknown container ${options.Container}`);
+                }
+                container.NetworkSettings.Networks[name] = {};
+            },
+        };
+    };
+
+    const docker = {
+        getImage: () => ({ inspect: async () => ({ Id: 'sha256:tenant-image' }) }),
+        getContainer: (name: string) => containerHandle(name),
+        getNetwork: (name: string) => networkHandle(name),
+        createNetwork: async (options: Record<string, unknown>): Promise<Record<string, unknown>> => {
+            const info: FakeNetworkInfo = {
+                Name: options.Name as string,
+                Driver: options.Driver as string,
+                Internal: options.Internal as boolean,
+                Labels: options.Labels as Record<string, string>,
+                Options: options.Options as Record<string, string>,
+            };
+            networks.set(info.Name, info);
+            return networkHandle(info.Name);
+        },
+        createContainer: async (options: Record<string, unknown>): Promise<Record<string, unknown>> => {
+            const hostConfig = options.HostConfig as Record<string, unknown>;
+            const primaryNetwork = String(hostConfig.NetworkMode);
+            const network = networks.get(primaryNetwork);
+            const exposedPorts = options.ExposedPorts as Record<string, unknown> | undefined;
+            const portBindings = hostConfig.PortBindings as Record<string, FakePortBinding[]> | undefined;
+            const ports: Record<string, FakePortBinding[] | null> = {};
+            for (const port of Object.keys(exposedPorts ?? {})) {
+                const bindings = portBindings?.[port];
+                // Docker reports a null mapping when an exposed port is on an internal-only network.
+                ports[port] = network?.Internal === true
+                    ? null
+                    : bindings?.map(binding => ({ HostIp: binding.HostIp, HostPort: '43123' })) ?? null;
+            }
+            const bindMounts = hostConfig.Binds as string[] | undefined;
+            const info: FakeBackendContainerInfo = {
+                Id: String(options.name ?? options.Name).startsWith('qaap-backend-') ? 'backend-id' : 'relay-id',
+                Image: 'sha256:tenant-image',
+                State: { Running: false },
+                Config: {
+                    Image: options.Image,
+                    User: options.User,
+                    WorkingDir: options.WorkingDir,
+                    Cmd: options.Cmd,
+                    Env: options.Env,
+                    Labels: options.Labels,
+                    ExposedPorts: options.ExposedPorts,
+                },
+                HostConfig: { ...hostConfig, PidMode: 'private', IpcMode: 'private' },
+                NetworkSettings: { Networks: { [primaryNetwork]: {} }, Ports: ports },
+                Mounts: (bindMounts ?? []).map(bind => {
+                    // Parse from the right: Windows host paths (C:\\...) contain a colon of their own.
+                    const parts = bind.split(':');
+                    const last = parts[parts.length - 1];
+                    const mode = parts.length > 2 && /^(ro|rw)(,|$)/.test(last) ? parts.pop() : undefined;
+                    const Destination = parts.pop();
+                    const Source = parts.join(':');
+                    return { Source, Destination, RW: mode === undefined || !mode.startsWith('ro') };
+                }),
+            };
+            // Dockerode takes the container name as lowercase `name`; accept `Name` for older call sites.
+            const name = String(options.name ?? options.Name);
+            if (containers.has(name)) {
+                // Docker refuses to create a container whose name is still taken.
+                throw Object.assign(new Error(`Conflict. The container name "/${name}" is already in use`), { statusCode: 409 });
+            }
+            containers.set(name, info);
+            created.push({ name, options, info });
+            return containerHandle(name);
+        },
+    } as unknown as Dockerode;
+
+    return {
+        docker,
+        created,
+        seedManagedBackend: (name, networkName, ports): (() => boolean) => {
+            containers.set(name, {
+                Id: 'stale-backend-id',
+                Image: 'sha256:old-image',
+                State: { Running: true },
+                Config: {
+                    Labels: {
+                        'com.qaap.managed': 'true',
+                        'com.qaap.tenant-backend': 'true',
+                        'com.qaap.tenant-login': 'alice',
+                    },
+                },
+                HostConfig: { NetworkMode: networkName },
+                NetworkSettings: { Networks: { [networkName]: {} }, Ports: { '4873/tcp': ports } },
+                Mounts: [],
+            });
+            // The replacement reuses the same name, so check the stale container itself is gone.
+            return () => containers.get(name)?.Id !== 'stale-backend-id';
+        },
+    };
+}
+
 const ENV_KEYS = [
     'NODE_ENV',
     'QAAP_CLOUD_MODE',
@@ -113,6 +273,8 @@ const ENV_KEYS = [
     'QAAP_DOCKER_REMOTE_REPOS_ROOT',
     'QAAP_DOCKER_REMOTE_WORKTREES_ROOT',
     'QAAP_DOCKER_REMOTE_PARALLEL_ROOT',
+    'QAAP_DOCKER_NODES',
+    'QAAP_DOCKER_PUBLISH_HOST_IP',
     'QAAP_TENANT_NETWORK_MODE',
     'QAAP_TENANT_MEMORY_LIMIT',
     'QAAP_TENANT_CPU_LIMIT',
@@ -616,24 +778,134 @@ describe('QaapDockerOrchestrator', () => {
             expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
         });
 
-        it('runs the tenant backend under Docker init so orphaned dev servers are reaped', async () => {
-            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init');
+        it('rejects backend-per-tenant routing without the isolated tenant bridge', async () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init-none');
             process.env.QAAP_TENANT_NETWORK_MODE = 'none';
             process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
             process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const fakeDocker = new CreateCapturingDockerode();
+            orchestrator.getDocker = async () => fakeDocker as unknown as Dockerode;
+            let thrown: unknown;
+            try {
+                await orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice'));
+            } catch (error) {
+                thrown = error;
+            }
+            expect((thrown as Error | undefined)?.message).to.match(/requires the isolated tenant bridge/);
+            expect(fakeDocker.created).to.have.length(0);
+        });
+
+        it('runs the tenant backend under Docker init so orphaned dev servers are reaped', async () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init');
+            process.env.QAAP_REPOS_ROOT = path.join(specRoot, 'repos');
+            process.env.QAAP_TENANT_NETWORK_MODE = 'isolated-bridge';
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
+            process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            process.env.QAAP_DOCKER_PUBLISH_HOST_IP = '127.0.0.1';
             process.env.QAAP_DOCKER_ROOTLESS = '1';
             process.env.QAAP_TENANT_CONTAINER_UID = '0';
             process.env.QAAP_TENANT_CONTAINER_GID = '0';
-            const fakeDocker = await captureCreate(orchestrator =>
-                orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice')));
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            delete process.env.QAAP_DOCKER_NODES;
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = access(new QaapDockerOrchestrator());
+            orchestrator.docker = fakeDocker.docker;
+            orchestrator.getDocker = async () => fakeDocker.docker;
+            orchestrator.waitForTenantBackendReady = async () => undefined;
+            await orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice'));
 
-            expect(fakeDocker.created).to.have.length(1);
-            expect(fakeDocker.created[0].User).to.equal('0:0');
-            expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
-            expect(fakeDocker.created[0].HostConfig?.CapDrop).to.deep.equal(['ALL']);
-            expect(fakeDocker.created[0].HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
-            expect(fakeDocker.created[0].Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
+            const backends = fakeDocker.created.filter(container => container.name.startsWith('qaap-backend-'));
+            expect(backends).to.have.length(1);
+            const options = backends[0].options as { User?: string; Env?: string[]; HostConfig?: Record<string, unknown> };
+            expect(options.User).to.equal('0:0');
+            expect(options.HostConfig?.Init).to.equal(true);
+            expect(options.HostConfig?.CapDrop).to.deep.equal(['ALL']);
+            expect(options.HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
+            expect(options.Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
         });
+    });
+
+    describe('tenant backend ingress relay', () => {
+
+        function configureBackendIngressEnvironment(): string {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-tenant-ingress');
+            process.env.QAAP_REPOS_ROOT = path.join(specRoot, 'repos');
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
+            process.env.QAAP_TENANT_DOCKER_IMAGE = 'qaap-tenant-ingress-spec:release';
+            process.env.QAAP_TENANT_NETWORK_MODE = 'isolated-bridge';
+            process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            process.env.QAAP_DOCKER_PUBLISH_HOST_IP = '127.0.0.1';
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            delete process.env.QAAP_DOCKER_NODES;
+            return path.join(specRoot, 'repos', 'users', 'alice');
+        }
+
+        function createOrchestratorWithFakeDocker(docker: Dockerode): QaapDockerOrchestrator {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            orchestrator.docker = docker;
+            orchestrator.getDocker = async () => docker;
+            orchestrator.waitForTenantBackendReady = async () => undefined;
+            return orchestrator as unknown as QaapDockerOrchestrator;
+        }
+
+        it('keeps the backend unbound on the internal network and resolves the router target through the relay port', async () => {
+            const root = configureBackendIngressEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            const target = await access(orchestrator).createOrValidateTenantBackend('alice', root) as {
+                containerId: string;
+                containerName: string;
+                host: string;
+                port: number;
+                tenantLogin: string;
+            };
+            const backend = fakeDocker.created.find(container => container.name === target.containerName);
+            const relay = fakeDocker.created.find(container => container.name.startsWith('qaap-ingress-'));
+            expect(backend).to.not.equal(undefined);
+            expect(relay).to.not.equal(undefined);
+            expect(backend?.info.NetworkSettings.Ports['4873/tcp']).to.equal(null);
+            expect(backend?.options.HostConfig && (backend.options.HostConfig as Record<string, unknown>).PortBindings).to.equal(undefined);
+            expect(Object.keys(backend?.info.NetworkSettings.Networks ?? {})).to.deep.equal([
+                access(orchestrator).getTenantNetworkMode('alice'),
+            ]);
+            expect(Object.keys(relay?.info.NetworkSettings.Networks ?? {})).to.have.members([
+                access(orchestrator).getTenantNetworkMode('alice'),
+                access(orchestrator).backendIngressNetworkNameForTenant('alice'),
+            ]);
+            expect(target).to.deep.include({ containerId: 'backend-id', port: 43123, host: '127.0.0.1', tenantLogin: 'alice' });
+            const relayHostConfig = relay?.options.HostConfig as Record<string, unknown> | undefined;
+            expect(relayHostConfig?.CapDrop).to.deep.equal(['ALL']);
+            expect(relayHostConfig?.SecurityOpt).to.deep.equal(['no-new-privileges:true']);
+            expect(relayHostConfig?.ReadonlyRootfs).to.equal(true);
+            expect(relayHostConfig?.PidsLimit).to.be.greaterThan(0);
+            expect(relayHostConfig?.Memory).to.be.greaterThan(0);
+            expect(relayHostConfig?.PortBindings).to.deep.equal({ '4873/tcp': [{ HostIp: '127.0.0.1', HostPort: '' }] });
+        });
+
+        for (const layout of [
+            { description: 'the broken internal v2 layout', networkName: 'qaap-net-v2-legacy', ports: null },
+            { description: 'the legacy v1 network layout', networkName: 'qaap-net-v1-legacy', ports: [{ HostIp: '127.0.0.1', HostPort: '41321' }] },
+        ]) {
+            it(`replaces a managed backend from ${layout.description} without requiring its old port`, async () => {
+                const root = configureBackendIngressEnvironment();
+                const fakeDocker = createFakeTenantBackendDocker();
+                const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+                const staleName = access(orchestrator).backendContainerNameForTenant('alice');
+                const staleRemoved = fakeDocker.seedManagedBackend(staleName, layout.networkName, layout.ports);
+
+                const target = await access(orchestrator).createOrValidateTenantBackend('alice', root) as { containerId: string; port: number };
+
+                expect(staleRemoved()).to.equal(true);
+                expect(target).to.deep.equal({
+                    containerId: 'backend-id',
+                    containerName: staleName,
+                    host: '127.0.0.1',
+                    port: 43123,
+                    tenantLogin: 'alice',
+                });
+            });
+        }
     });
 
     describe('buildTenantEnvironmentArgs', () => {
@@ -798,7 +1070,7 @@ describe('QaapDockerOrchestrator', () => {
 
             const mode = orchestrator.getTenantNetworkMode('alice');
 
-            expect(mode).to.match(/^qaap-net-v2-[0-9a-f]{12}$/);
+            expect(mode).to.match(/^qaap-net-v3-[0-9a-f]{12}$/);
             // Deterministic per tenant login, and distinct between tenants.
             expect(orchestrator.getTenantNetworkMode('alice')).to.equal(mode);
             expect(orchestrator.getTenantNetworkMode('bob')).not.to.equal(mode);
@@ -829,12 +1101,16 @@ describe('QaapDockerOrchestrator', () => {
             const orchestrator = access(new QaapDockerOrchestrator());
             const networkName = orchestrator.getTenantNetworkMode('alice');
             const labels = { 'com.qaap.managed': 'true', 'com.qaap.tenant-network': 'true' };
-            const options = { 'com.docker.network.bridge.enable_icc': 'false' };
+            const options = { 'com.docker.network.bridge.enable_icc': 'true' };
             expect(orchestrator.tenantNetworkMatches({
                 Name: networkName, Driver: 'bridge', Internal: true, Labels: labels, Options: options,
             }, networkName)).to.equal(true);
             expect(orchestrator.tenantNetworkMatches({
                 Name: networkName, Driver: 'bridge', Internal: false, Labels: labels, Options: options,
+            }, networkName)).to.equal(false);
+            expect(orchestrator.tenantNetworkMatches({
+                Name: networkName, Driver: 'bridge', Internal: true, Labels: labels,
+                Options: { 'com.docker.network.bridge.enable_icc': 'false' },
             }, networkName)).to.equal(false);
         });
 
@@ -880,12 +1156,12 @@ describe('QaapDockerOrchestrator', () => {
                 NetworkSettings: {
                     Networks: {
                         'qaap-tenant-egress-uplink': {},
-                        'qaap-net-v2-alice': { Aliases: ['qaap-tenant-egress-proxy'] },
+                        'qaap-net-v3-alice': { Aliases: ['qaap-tenant-egress-proxy'] },
                     },
                 },
             } as unknown as Dockerode.ContainerInspectInfo;
-            expect(orchestrator.tenantEgressProxyMatches(inspect, 'alice', 'qaap-net-v2-alice', 'qaap-tenant-egress:release')).to.equal(true);
-            expect(orchestrator.tenantEgressProxyMatches(inspect, 'alice', 'qaap-net-v2-bob', 'qaap-tenant-egress:release')).to.equal(false);
+            expect(orchestrator.tenantEgressProxyMatches(inspect, 'alice', 'qaap-net-v3-alice', 'qaap-tenant-egress:release')).to.equal(true);
+            expect(orchestrator.tenantEgressProxyMatches(inspect, 'alice', 'qaap-net-v3-bob', 'qaap-tenant-egress:release')).to.equal(false);
             const proxyWithUntrustedNetwork = {
                 ...inspect,
                 NetworkSettings: {
@@ -895,7 +1171,7 @@ describe('QaapDockerOrchestrator', () => {
                     },
                 },
             } as unknown as Dockerode.ContainerInspectInfo;
-            expect(orchestrator.tenantEgressProxyMatches(proxyWithUntrustedNetwork, 'alice', 'qaap-net-v2-alice', 'qaap-tenant-egress:release')).to.equal(false);
+            expect(orchestrator.tenantEgressProxyMatches(proxyWithUntrustedNetwork, 'alice', 'qaap-net-v3-alice', 'qaap-tenant-egress:release')).to.equal(false);
             const currentImageDocker = (id: string): Dockerode => ({
                 getImage: () => ({ inspect: async () => ({ Id: id }) }),
             }) as unknown as Dockerode;

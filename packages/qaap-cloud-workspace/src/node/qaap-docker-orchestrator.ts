@@ -38,7 +38,10 @@ import {
 } from './qaap-tenant-agent-storage-env';
 
 const QAAP_CONTAINER_PREFIX = 'qaap-ws-';
-const QAAP_TENANT_NETWORK_PREFIX = 'qaap-net-v2-';
+// v3 gives same-tenant worker/backend/proxy containers ICC while keeping the bridge Internal:true.
+// It also forces containers stranded on the v2 incident network to be recreated on a valid bridge.
+const QAAP_TENANT_NETWORK_PREFIX = 'qaap-net-v3-';
+const QAAP_TENANT_INGRESS_NETWORK_PREFIX = 'qaap-ingress-v1-';
 const QAAP_TENANT_EGRESS_PROXY_ALIAS = 'qaap-tenant-egress-proxy';
 const QAAP_TENANT_EGRESS_UPLINK = 'qaap-tenant-egress-uplink';
 const DEFAULT_IMAGE = process.env.QAAP_DOCKER_IMAGE?.trim() || 'node:20-bookworm';
@@ -46,6 +49,9 @@ const WORKSPACE_MOUNT = '/workspace';
 const WORKTREES_MOUNT = `${WORKSPACE_MOUNT}/.qaap-worktrees`;
 const PARALLEL_MOUNT = `${WORKSPACE_MOUNT}/.qaap-parallel`;
 const TENANT_BACKEND_PORT = 4873;
+const TENANT_BACKEND_INGRESS_RELAY_MEMORY_CAP = 256 * 1024 ** 2;
+const TENANT_BACKEND_INGRESS_RELAY_CPU_CAP = 500_000_000;
+const TENANT_BACKEND_INGRESS_RELAY_PIDS_CAP = 64;
 const TENANT_BUILD_PREDICTION_TIMEOUT_MS = 1_500;
 const TENANT_IMAGE_BUILD_CACHE_MS = 60_000;
 const TENANT_BACKEND_REPOS_ROOT = '/workspace/repos';
@@ -416,18 +422,21 @@ export class QaapDockerOrchestrator {
         if (!tenant) {
             return;
         }
-        const name = this.backendContainerNameForTenant(ownerLogin);
+        const names = [this.backendIngressRelayNameForTenant(ownerLogin), this.backendContainerNameForTenant(ownerLogin)];
         const nodes = await this.verifiedDockerNodesForTenant(ownerLogin);
         try {
-            for (const node of nodes) {
-                try {
-                    await node.docker.getContainer(name).stop({ t: 10 });
-                    break;
-                } catch (error) {
-                    if (this.isDockerAlreadyStopped(error)) {
+            for (const name of names) {
+                for (const node of nodes) {
+                    try {
+                        await node.docker.getContainer(name).stop({ t: 10 });
                         break;
-                    }
-                    if (!this.isDockerNotFound(error)) {
+                    } catch (error) {
+                        if (this.isDockerAlreadyStopped(error)) {
+                            break;
+                        }
+                        if (this.isDockerNotFound(error)) {
+                            continue;
+                        }
                         throw error;
                     }
                 }
@@ -496,7 +505,7 @@ export class QaapDockerOrchestrator {
         const nodes = await this.verifiedDockerNodesForTenant(ownerLogin);
         const names = [this.containerNameForTenant(ownerLogin)];
         if (this.isBackendPerTenantEnabled()) {
-            names.push(this.backendContainerNameForTenant(ownerLogin));
+            names.push(this.backendIngressRelayNameForTenant(ownerLogin), this.backendContainerNameForTenant(ownerLogin));
         }
         for (const name of names) {
             for (const node of nodes) {
@@ -517,18 +526,22 @@ export class QaapDockerOrchestrator {
         this.tenantBackendConnectionTokens.delete(tenant);
         this.tenantBackendBuilds.delete(tenant);
         const networkMode = this.getTenantNetworkMode(ownerLogin);
-        if (networkMode !== 'none') {
+        const networks = networkMode === 'none'
+            ? []
+            : [networkMode, ...(this.isBackendPerTenantEnabled() ? [this.backendIngressNetworkNameForTenant(ownerLogin)] : [])];
+        for (const networkName of networks) {
             for (const node of nodes) {
                 try {
-                    const network = node.docker.getNetwork(networkMode);
+                    const network = node.docker.getNetwork(networkName);
                     const inspect = await network.inspect() as { Labels?: Record<string, string> };
-                    if (inspect.Labels?.['com.qaap.tenant-network'] === 'true') {
+                    if (inspect.Labels?.['com.qaap.tenant-network'] === 'true'
+                        || inspect.Labels?.['com.qaap.tenant-ingress-network'] === 'true') {
                         await network.remove();
                     }
                     break;
                 } catch (error) {
                     if (!this.isDockerNotFound(error)) {
-                        console.warn(`[qaap-runtime] could not remove tenant network ${networkMode} on ${node.config.id}: ${error instanceof Error ? error.message : String(error)}`);
+                        console.warn(`[qaap-runtime] could not remove tenant network ${networkName} on ${node.config.id}: ${error instanceof Error ? error.message : String(error)}`);
                     }
                 }
             }
@@ -952,6 +965,18 @@ export class QaapDockerOrchestrator {
         return `qaap-backend-${hash}`;
     }
 
+    protected backendIngressRelayNameForTenant(ownerLogin?: string): string {
+        const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
+        const hash = crypto.createHash('sha256').update(`tenant-backend-ingress\u0000${tenant}`).digest('hex').slice(0, 12);
+        return `qaap-ingress-${hash}`;
+    }
+
+    protected backendIngressNetworkNameForTenant(ownerLogin?: string): string {
+        const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
+        const hash = crypto.createHash('sha256').update(`tenant-ingress-network\u0000${tenant}`).digest('hex').slice(0, 12);
+        return `${QAAP_TENANT_INGRESS_NETWORK_PREFIX}${hash}`;
+    }
+
     protected tenantBackendSecret(ownerLogin: string): string {
         const master = process.env.QAAP_TENANT_BACKEND_MASTER_SECRET?.trim();
         if (!master || master.length < 32) {
@@ -975,9 +1000,12 @@ export class QaapDockerOrchestrator {
             throw new Error(`Tenant identity ${ownerLogin} does not match the requested backend root ${tenantRootHostPath}.`);
         }
         const networkMode = this.getTenantNetworkMode(ownerLogin);
-        if (networkMode !== 'none') {
-            await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
+        if (networkMode === 'none') {
+            throw new Error('Backend-per-tenant routing requires the isolated tenant bridge so its ingress relay can reach the backend.');
         }
+        await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
+        const ingressNetwork = this.backendIngressNetworkNameForTenant(ownerLogin);
+        await this.ensureTenantIngressNetwork(docker, ingressNetwork, ownerLogin);
         const tenantDataRoot = this.normalizeHostPath(resolveQaapTenantUserRoot(ownerLogin));
         const theiaHome = path.join(tenantDataRoot, 'theia-home');
         const publishHostIp = this.dockerPublishHostIp(node.config);
@@ -992,7 +1020,7 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)
+            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)
                 || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
                     throw new Error(`Tenant backend ${name} has an unexpected security or mount configuration; refusing to reuse it.`);
@@ -1004,7 +1032,9 @@ export class QaapDockerOrchestrator {
                 // Never recreate under a running agent turn: a deploy would otherwise kill it. Keep
                 // serving the old backend and let the reaper retry once the turns have finished.
                 const runningTarget = inspect.State.Running
-                    ? this.tenantBackendTargetFromInspect(inspect, name, node.config, ownerLogin)
+                    ? await this.inspectTenantBackendIngressRelayTarget(
+                        docker, inspect.Id, name, node.config, ownerLogin, networkMode, ingressNetwork, publishHostIp,
+                    )
                     : undefined;
                 const busy = runningTarget ? await this.fetchTenantBusyStatus(runningTarget) : undefined;
                 if (runningTarget && busy?.busy) {
@@ -1015,6 +1045,7 @@ export class QaapDockerOrchestrator {
                     return runningTarget;
                 }
                 console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin}.`);
+                await this.removeTenantBackendIngressRelay(docker, ownerLogin);
                 await container.remove({ force: true });
                 const recreated = Object.assign(new Error(`Tenant backend ${name} was removed for recreation.`), { statusCode: 404 });
                 throw recreated;
@@ -1093,12 +1124,6 @@ export class QaapDockerOrchestrator {
                         `${dockerTenantDataRoot}:${TENANT_BACKEND_QAAP_HOME_MOUNT}:rw`,
                         `${dockerTheiaHome}:${TENANT_BACKEND_THEIA_HOME_MOUNT}:rw`,
                     ],
-                    PortBindings: {
-                        // Empty HostPort asks Docker for an ephemeral port. A fixed port would make
-                        // two tenants collide; publishing on 0 is not portable across Docker
-                        // Desktop/rootless daemon versions.
-                        [`${TENANT_BACKEND_PORT}/tcp`]: [{ HostIp: publishHostIp, HostPort: '' }],
-                    },
                     Memory: this.getTenantMemoryLimit(),
                     NanoCpus: this.getTenantCpuLimit(),
                     PidsLimit: this.getTenantPidsLimit(),
@@ -1120,20 +1145,24 @@ export class QaapDockerOrchestrator {
             await container.start();
         }
         inspect = await container.inspect();
-        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)) {
+        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)) {
             throw new Error(`Tenant backend ${name} did not start with the required isolated configuration.`);
         }
-        const target = this.tenantBackendTargetFromInspect(inspect, name, node.config, ownerLogin);
+        const relayInspect = await this.ensureTenantBackendIngressRelay(
+            docker, ownerLogin, name, networkMode, ingressNetwork, publishHostIp,
+        );
+        const target = this.tenantBackendTargetFromIngressRelayInspect(relayInspect, inspect.Id, name, node.config, ownerLogin);
         if (!target) {
-            throw new Error(`Tenant backend ${name} has no published port on ${publishHostIp}.`);
+            throw new Error(`Tenant ingress relay for ${name} has no published port on ${publishHostIp}.`);
         }
         await this.waitForTenantBackendReady(target);
         return target;
     }
 
-    protected tenantBackendTargetFromInspect(
+    protected tenantBackendTargetFromIngressRelayInspect(
         inspect: Dockerode.ContainerInspectInfo,
-        name: string,
+        backendContainerId: string,
+        backendName: string,
         config: QaapDockerNodeConfig,
         ownerLogin: string,
     ): QaapTenantBackendTarget | undefined {
@@ -1143,7 +1172,235 @@ export class QaapDockerOrchestrator {
         if (!Number.isInteger(hostPort) || hostPort <= 0) {
             return undefined;
         }
-        return { containerId: inspect.Id, containerName: name, host: this.dockerAdvertiseHost(config), port: hostPort, tenantLogin: ownerLogin };
+        return { containerId: backendContainerId, containerName: backendName, host: this.dockerAdvertiseHost(config), port: hostPort, tenantLogin: ownerLogin };
+    }
+
+    protected tenantBackendIngressRelayCommand(backendName: string): string[] {
+        // Reuse the already-pinned tenant serving image and its Node runtime. The relay has no
+        // mounts or tenant credentials and forwards a single TCP port to this tenant's backend.
+        const script = `const net = require('node:net'); const server = net.createServer(client => { const upstream = net.connect(${TENANT_BACKEND_PORT}, ${JSON.stringify(backendName)}); client.on('error', () => upstream.destroy()); upstream.on('error', () => client.destroy()); client.pipe(upstream); upstream.pipe(client); }); server.listen(${TENANT_BACKEND_PORT}, '0.0.0.0');`;
+        return ['node', '-e', script];
+    }
+
+    protected async inspectTenantBackendIngressRelayTarget(
+        docker: Dockerode,
+        backendContainerId: string,
+        backendName: string,
+        config: QaapDockerNodeConfig,
+        ownerLogin: string,
+        tenantNetwork: string,
+        ingressNetwork: string,
+        publishHostIp: string,
+    ): Promise<QaapTenantBackendTarget | undefined> {
+        try {
+            const relayName = this.backendIngressRelayNameForTenant(ownerLogin);
+            const inspect = await docker.getContainer(relayName).inspect();
+            if (!inspect.State.Running
+                // A stale but correctly-scoped relay is still needed to probe whether the old
+                // backend is serving an active turn before replacing it during a deploy.
+                || !this.tenantBackendIngressRelayMatches(inspect, ownerLogin, backendName, tenantNetwork, ingressNetwork, publishHostIp, false)) {
+                return undefined;
+            }
+            return this.tenantBackendTargetFromIngressRelayInspect(inspect, backendContainerId, backendName, config, ownerLogin);
+        } catch (error) {
+            if (!this.isDockerNotFound(error)) {
+                throw error;
+            }
+            return undefined;
+        }
+    }
+
+    protected async ensureTenantBackendIngressRelay(
+        docker: Dockerode,
+        ownerLogin: string,
+        backendName: string,
+        tenantNetwork: string,
+        ingressNetwork: string,
+        publishHostIp: string,
+    ): Promise<Dockerode.ContainerInspectInfo> {
+        const relayName = this.backendIngressRelayNameForTenant(ownerLogin);
+        let container: Dockerode.Container | undefined;
+        let inspect: Dockerode.ContainerInspectInfo | undefined;
+        try {
+            container = docker.getContainer(relayName);
+            inspect = await container.inspect();
+        } catch (error) {
+            if (!this.isDockerNotFound(error)) {
+                throw error;
+            }
+        }
+
+        if (inspect && container) {
+            const owned = this.isManagedTenantBackendIngressRelayFor(inspect, ownerLogin);
+            const matches = owned
+                && this.tenantBackendIngressRelayMatches(inspect, ownerLogin, backendName, tenantNetwork, ingressNetwork, publishHostIp)
+                && await this.runsCurrentTenantImage(docker, inspect);
+            if (!matches) {
+                if (!owned) {
+                    throw new Error(`Tenant ingress relay ${relayName} has an unexpected image, network, or security configuration.`);
+                }
+                console.warn(`[qaap-docker] Recreating stale tenant ingress relay ${relayName}.`);
+                await container.remove({ force: true });
+                container = undefined;
+                inspect = undefined;
+            }
+        }
+
+        if (inspect && container) {
+            if (!inspect.State.Running) {
+                await container.start();
+            }
+        } else {
+            container = await docker.createContainer({
+                name: relayName,
+                Image: this.getTenantImage(),
+                User: this.getTenantContainerUser(),
+                WorkingDir: '/app',
+                Cmd: this.tenantBackendIngressRelayCommand(backendName),
+                ExposedPorts: { [`${TENANT_BACKEND_PORT}/tcp`]: {} },
+                Labels: {
+                    'com.qaap.managed': 'true',
+                    'com.qaap.tenant-backend-ingress-relay': 'true',
+                    'com.qaap.tenant-name': relayName,
+                    'com.qaap.tenant-login': ownerLogin.toLowerCase(),
+                    'com.qaap.tenant-backend-name': backendName,
+                },
+                HostConfig: {
+                    Init: true,
+                    PortBindings: {
+                        [`${TENANT_BACKEND_PORT}/tcp`]: [{ HostIp: publishHostIp, HostPort: '' }],
+                    },
+                    Memory: this.getTenantBackendIngressRelayMemoryLimit(),
+                    NanoCpus: this.getTenantBackendIngressRelayCpuLimit(),
+                    PidsLimit: this.getTenantBackendIngressRelayPidsLimit(),
+                    SecurityOpt: ['no-new-privileges:true'],
+                    CapDrop: ['ALL'],
+                    ReadonlyRootfs: true,
+                    Tmpfs: { '/tmp': 'rw,noexec,nosuid,nodev,size=16m' },
+                    // Docker must publish on the non-internal ingress network when the relay starts.
+                    // Connect the internal tenant network before start so this is its only other
+                    // interface and its fixed forward destination resolves by Docker DNS.
+                    NetworkMode: ingressNetwork,
+                    AutoRemove: false,
+                },
+            });
+            await docker.getNetwork(tenantNetwork).connect({ Container: relayName });
+            await container.start();
+        }
+
+        inspect = await container.inspect();
+        if (!inspect.State.Running
+            || !this.tenantBackendIngressRelayMatches(inspect, ownerLogin, backendName, tenantNetwork, ingressNetwork, publishHostIp)) {
+            throw new Error(`Tenant ingress relay ${relayName} did not start with the required isolated configuration.`);
+        }
+        return inspect;
+    }
+
+    protected isManagedTenantBackendIngressRelayFor(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string): boolean {
+        const labels = (inspect as Dockerode.ContainerInspectInfo & {
+            Config?: { Labels?: Record<string, string> };
+        }).Config?.Labels ?? {};
+        return labels['com.qaap.managed'] === 'true'
+            && labels['com.qaap.tenant-backend-ingress-relay'] === 'true'
+            && labels['com.qaap.tenant-login'] === ownerLogin.toLowerCase();
+    }
+
+    protected async removeTenantBackendIngressRelay(docker: Dockerode, ownerLogin: string): Promise<void> {
+        const relayName = this.backendIngressRelayNameForTenant(ownerLogin);
+        try {
+            const container = docker.getContainer(relayName);
+            const inspect = await container.inspect();
+            if (!this.isManagedTenantBackendIngressRelayFor(inspect, ownerLogin)) {
+                throw new Error(`Tenant ingress relay ${relayName} is not managed for ${ownerLogin}; refusing to remove it.`);
+            }
+            await container.remove({ force: true });
+        } catch (error) {
+            if (!this.isDockerNotFound(error)) {
+                throw error;
+            }
+        }
+    }
+
+    protected tenantBackendIngressRelayMatches(
+        inspect: Dockerode.ContainerInspectInfo,
+        ownerLogin: string,
+        backendName: string,
+        tenantNetwork: string,
+        ingressNetwork: string,
+        publishHostIp: string,
+        requireCurrentImage: boolean = true,
+    ): boolean {
+        const raw = inspect as Dockerode.ContainerInspectInfo & {
+            Config?: { User?: string; Image?: string; Cmd?: string[]; WorkingDir?: string; Labels?: Record<string, string>; ExposedPorts?: Record<string, unknown> };
+            HostConfig?: {
+                Init?: boolean;
+                Memory?: number;
+                NanoCpus?: number;
+                PidsLimit?: number | null;
+                SecurityOpt?: string[];
+                CapDrop?: string[];
+                CapAdd?: string[];
+                ReadonlyRootfs?: boolean;
+                Tmpfs?: Record<string, string>;
+                NetworkMode?: string;
+                Binds?: string[] | null;
+                PortBindings?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+                PublishAllPorts?: boolean;
+                AutoRemove?: boolean;
+                Privileged?: boolean;
+                PidMode?: string;
+                IpcMode?: string;
+            };
+            NetworkSettings?: {
+                Networks?: Record<string, unknown>;
+                Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+            };
+            Mounts?: Array<unknown>;
+        };
+        const labels = raw.Config?.Labels ?? {};
+        const host = raw.HostConfig ?? {};
+        const boundPorts = raw.NetworkSettings?.Ports?.[`${TENANT_BACKEND_PORT}/tcp`];
+        const bindings = host.PortBindings?.[`${TENANT_BACKEND_PORT}/tcp`];
+        const networks = raw.NetworkSettings?.Networks ?? {};
+        return labels['com.qaap.managed'] === 'true'
+            && labels['com.qaap.tenant-backend-ingress-relay'] === 'true'
+            && labels['com.qaap.tenant-name'] === this.backendIngressRelayNameForTenant(ownerLogin)
+            && labels['com.qaap.tenant-login'] === ownerLogin.toLowerCase()
+            && labels['com.qaap.tenant-backend-name'] === backendName
+            && raw.Config?.User === this.getTenantContainerUser()
+            && (!requireCurrentImage || raw.Config?.Image === this.getTenantImage())
+            && raw.Config?.WorkingDir === '/app'
+            && raw.Config?.Cmd?.join('\u0000') === this.tenantBackendIngressRelayCommand(backendName).join('\u0000')
+            && Object.keys(raw.Config?.ExposedPorts ?? {}).length === 1
+            && raw.Config?.ExposedPorts?.[`${TENANT_BACKEND_PORT}/tcp`] !== undefined
+            && raw.Mounts?.length === 0
+            && (host.Binds?.length ?? 0) === 0
+            && host.Init === true
+            && host.Memory === this.getTenantBackendIngressRelayMemoryLimit()
+            && host.NanoCpus === this.getTenantBackendIngressRelayCpuLimit()
+            && host.PidsLimit === this.getTenantBackendIngressRelayPidsLimit()
+            && host.SecurityOpt?.includes('no-new-privileges:true') === true
+            && host.CapDrop?.includes('ALL') === true
+            && (host.CapAdd?.length ?? 0) === 0
+            && host.ReadonlyRootfs === true
+            && host.Tmpfs?.['/tmp'] === 'rw,noexec,nosuid,nodev,size=16m'
+            && host.Privileged !== true
+            && (!host.PidMode || host.PidMode === 'private')
+            && (!host.IpcMode || host.IpcMode === 'private')
+            && host.NetworkMode === ingressNetwork
+            && host.PublishAllPorts !== true
+            && host.AutoRemove !== true
+            && Object.keys(host.PortBindings ?? {}).length === 1
+            && bindings?.length === 1
+            && bindings[0]?.HostIp === publishHostIp
+            && bindings[0]?.HostPort === ''
+            && boundPorts?.length === 1
+            && boundPorts[0]?.HostIp === publishHostIp
+            && Number.parseInt(boundPorts[0]?.HostPort ?? '', 10) > 0
+            && Object.keys(raw.NetworkSettings?.Ports ?? {}).length === 1
+            && Object.keys(networks).length === 2
+            && networks[tenantNetwork] !== undefined
+            && networks[ingressNetwork] !== undefined;
     }
 
     /**
@@ -1184,7 +1441,20 @@ export class QaapDockerOrchestrator {
             if (!inspect.State.Running || !this.isManagedTenantBackendFor(inspect, ownerLogin)) {
                 return undefined;
             }
-            return this.tenantBackendTargetFromInspect(inspect, name, node.config, ownerLogin);
+            const networkMode = this.getTenantNetworkMode(ownerLogin);
+            if (networkMode === 'none') {
+                return undefined;
+            }
+            return this.inspectTenantBackendIngressRelayTarget(
+                docker,
+                inspect.Id,
+                name,
+                node.config,
+                ownerLogin,
+                networkMode,
+                this.backendIngressNetworkNameForTenant(ownerLogin),
+                this.dockerPublishHostIp(node.config),
+            );
         } catch {
             return undefined;
         }
@@ -1321,7 +1591,6 @@ export class QaapDockerOrchestrator {
         tenantDataRoot: string,
         theiaHome: string,
         networkMode: string,
-        publishHostIp: string,
     ): boolean {
         const raw = inspect as Dockerode.ContainerInspectInfo & {
             Config?: { User?: string; Image?: string; Cmd?: string[]; Env?: string[]; WorkingDir?: string; Labels?: Record<string, string> };
@@ -1338,6 +1607,8 @@ export class QaapDockerOrchestrator {
                 Privileged?: boolean;
                 PidMode?: string;
                 IpcMode?: string;
+                PortBindings?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+                PublishAllPorts?: boolean;
             };
             Mounts?: Array<{ Source?: string; Destination?: string; RW?: boolean }>;
             NetworkSettings?: {
@@ -1380,8 +1651,8 @@ export class QaapDockerOrchestrator {
             'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
             ...this.tenantBackendPublicUrlEnv(),
         ];
-        // Docker keeps the requested empty HostPort in HostConfig, while the allocated ephemeral
-        // port is authoritative in NetworkSettings after the container starts.
+        // The backend must not publish its own port: a Docker internal network deliberately reports
+        // a null mapping. Only the dedicated ingress relay publishes a host port.
         const ports = raw.NetworkSettings?.Ports?.[`${TENANT_BACKEND_PORT}/tcp`];
         return labels['com.qaap.managed'] === 'true'
             && labels['com.qaap.tenant-backend'] === 'true'
@@ -1414,9 +1685,9 @@ export class QaapDockerOrchestrator {
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
             && hostConfig.NetworkMode === networkMode
-            && ports?.length === 1
-            && ports[0]?.HostIp === publishHostIp
-            && Number.parseInt(ports[0]?.HostPort ?? '', 10) > 0;
+            && ports === null
+            && Object.values((hostConfig.PortBindings ?? {}) as Record<string, unknown[] | null | undefined>).every(bindings => !bindings || bindings.length === 0)
+            && hostConfig.PublishAllPorts !== true;
     }
 
     async stopTenantContainer(ownerLogin?: string): Promise<void> {
@@ -1812,6 +2083,18 @@ export class QaapDockerOrchestrator {
         return Number.isInteger(num) && num > 0 ? num : 256;
     }
 
+    protected getTenantBackendIngressRelayMemoryLimit(): number {
+        return Math.min(this.getTenantMemoryLimit(), TENANT_BACKEND_INGRESS_RELAY_MEMORY_CAP);
+    }
+
+    protected getTenantBackendIngressRelayCpuLimit(): number {
+        return Math.min(this.getTenantCpuLimit(), TENANT_BACKEND_INGRESS_RELAY_CPU_CAP);
+    }
+
+    protected getTenantBackendIngressRelayPidsLimit(): number {
+        return Math.min(this.getTenantPidsLimit(), TENANT_BACKEND_INGRESS_RELAY_PIDS_CAP);
+    }
+
     /**
      * The `Config.Image` comparison in the match checks only sees the tag. A locally built serving image
      * (`qaap-theia:local`) keeps its tag across deploys, so also require the container to run the image the
@@ -1919,11 +2202,10 @@ export class QaapDockerOrchestrator {
                 'com.qaap.tenant-network': 'true',
                 'com.qaap.tenant-network-name': networkName,
             },
-            Options: {
-                // There is only one worker attached to this network, and ICC=false adds
-                // defense in depth if an operator later attaches another container.
-                'com.docker.network.bridge.enable_icc': 'false',
-            },
+            // This bridge is internal and unique to one tenant. Its worker, backend, relay and
+            // optional allowlist proxy need intra-tenant connectivity; Internal:true still blocks
+            // their direct Internet egress, and no other tenant is attached to this bridge.
+            Options: { 'com.docker.network.bridge.enable_icc': 'true' },
         });
         const inspect = await network.inspect() as {
             Name?: string;
@@ -1936,6 +2218,70 @@ export class QaapDockerOrchestrator {
             throw new Error(`Tenant network ${networkName} was not created with the required isolation configuration.`);
         }
         await this.ensureTenantEgressProxyAttached(docker, networkName, ownerLogin);
+    }
+
+    protected async ensureTenantIngressNetwork(docker: Dockerode, networkName: string, ownerLogin: string): Promise<void> {
+        let network: Dockerode.Network;
+        try {
+            network = docker.getNetwork(networkName);
+            const inspect = await network.inspect() as {
+                Name?: string;
+                Driver?: string;
+                Internal?: boolean;
+                Labels?: Record<string, string>;
+                Options?: Record<string, string>;
+            };
+            if (!this.tenantIngressNetworkMatches(inspect, networkName, ownerLogin)) {
+                throw new Error(`Tenant ingress network ${networkName} has an unexpected configuration.`);
+            }
+            return;
+        } catch (error) {
+            if (!this.isDockerNotFound(error)) {
+                throw error;
+            }
+        }
+        network = await docker.createNetwork({
+            Name: networkName,
+            Driver: 'bridge',
+            Internal: false,
+            CheckDuplicate: true,
+            Labels: {
+                'com.qaap.managed': 'true',
+                'com.qaap.tenant-ingress-network': 'true',
+                'com.qaap.tenant-login': ownerLogin.toLowerCase(),
+            },
+            Options: { 'com.docker.network.bridge.enable_icc': 'false' },
+        });
+        const inspect = await network.inspect() as {
+            Name?: string;
+            Driver?: string;
+            Internal?: boolean;
+            Labels?: Record<string, string>;
+            Options?: Record<string, string>;
+        };
+        if (!this.tenantIngressNetworkMatches(inspect, networkName, ownerLogin)) {
+            throw new Error(`Tenant ingress network ${networkName} was not created with the required configuration.`);
+        }
+    }
+
+    protected tenantIngressNetworkMatches(
+        network: {
+            Name?: string;
+            Driver?: string;
+            Internal?: boolean;
+            Labels?: Record<string, string>;
+            Options?: Record<string, string>;
+        },
+        networkName: string,
+        ownerLogin: string,
+    ): boolean {
+        return network.Name === networkName
+            && network.Driver === 'bridge'
+            && network.Internal === false
+            && network.Labels?.['com.qaap.managed'] === 'true'
+            && network.Labels?.['com.qaap.tenant-ingress-network'] === 'true'
+            && network.Labels?.['com.qaap.tenant-login'] === ownerLogin.toLowerCase()
+            && network.Options?.['com.docker.network.bridge.enable_icc'] === 'false';
     }
 
     protected tenantEgressProxyEnv(): Record<string, string> {
@@ -2165,7 +2511,7 @@ export class QaapDockerOrchestrator {
             && network.Internal === true
             && network.Labels?.['com.qaap.managed'] === 'true'
             && network.Labels?.['com.qaap.tenant-network'] === 'true'
-            && network.Options?.['com.docker.network.bridge.enable_icc'] === 'false';
+            && network.Options?.['com.docker.network.bridge.enable_icc'] === 'true';
     }
 
     protected parsePositiveInteger(raw: string | undefined, fallback: number): number {
