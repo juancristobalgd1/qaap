@@ -209,6 +209,9 @@ const ALLOWED = [
     /^examples\/playwright\/src\/qaap-menu-bar\.ts$/,
     // Qaap-only Playwright config for the upstream suite in playwright.yml (documented exclusions).
     /^examples\/playwright\/configs\/playwright\.qaap-upstream-ci\.config\.ts$/,
+    // Required mobile Work Hub smoke (qaap-mobile-playwright.yml): fork-only E2E gate.
+    /^examples\/playwright\/configs\/playwright\.qaap-mobile-required\.config\.ts$/,
+    /^examples\/playwright\/src\/tests\/qaap-required-mobile\/[^/]+\.ui-spec\.ts$/,
     // Its webServer command: upstream `theia:start` plus seeded user settings (startupEditor=welcomePage).
     /^examples\/playwright\/configs\/qaap-upstream-ci-theia-start\.js$/,
     // Upstream sample plugins removed in this fork — we ship our own plugin set.
