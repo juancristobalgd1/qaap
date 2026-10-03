@@ -3,6 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import {
     ComposerPromptImproveTimeoutError,
@@ -10,8 +16,13 @@ import {
 } from '../common/qaap-composer-prompt-improve';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('Qaap composer prompt improvement', () => {
+
+    useSuiteJSDOM();
 
     function createContext(prompt: string): {
         readonly context: Parameters<ReturnType<typeof createStickyComposerImprovePromptHandler>>[0];
