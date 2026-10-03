@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
-# Check the newly deployed public entry point and, when configured, a real signed-in user's API.
+# Check the deployed health payload and a real signed-in workspace request.
 set -euo pipefail
 
 BASE_URL="${1:-${QAAP_VPS_PUBLIC_URL:-}}"
 EXPECTED_SHA="${2:-${QAAP_EXPECTED_BUILD:-}}"
-if [[ -z "$BASE_URL" || ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "Usage: $0 <public-base-url> <full-40-character-build-sha>" >&2
+if [[ -z "$BASE_URL" || ! "$EXPECTED_SHA" =~ ^([0-9a-f]{40}|[0-9a-f]{12})$ ]]; then
+    echo "Usage: $0 <public-base-url> <12- or 40-character-build-sha>" >&2
     exit 2
 fi
 
-for command in curl python3 grep; do
+SMOKE_COOKIE="${QAAP_SMOKE_COOKIE:-}"
+if [[ -n "${QAAP_SMOKE_SESSION:-}" ]]; then
+    case "$QAAP_SMOKE_SESSION" in
+        *=*) SMOKE_COOKIE="$QAAP_SMOKE_SESSION" ;;
+        *) SMOKE_COOKIE="qaap_sid=$QAAP_SMOKE_SESSION" ;;
+    esac
+fi
+if [[ -z "$SMOKE_COOKIE" ]]; then
+    echo '::error::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required; refusing deploy without an authenticated workspace smoke.' >&2
+    exit 1
+fi
+
+for command in curl python3; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command not found: $command" >&2
         exit 1
@@ -26,16 +38,42 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! HOME_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-    --max-time 15 "$BASE_URL/")"; then
-    echo '::error::Post-deploy user smoke could not request the home page.' >&2
+if ! HEALTH_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/health.json" \
+    --write-out '%{http_code}' --max-time 15 "$BASE_URL/qaap/api/health")"; then
+    echo '::error::Post-deploy user smoke could not request /qaap/api/health.' >&2
     exit 1
 fi
-if [[ "$HOME_STATUS" != 200 ]]; then
-    echo "::error::Post-deploy user smoke expected home HTTP 200, got ${HOME_STATUS:-<empty>}." >&2
+if [[ "$HEALTH_STATUS" != 200 ]]; then
+    echo "::error::Post-deploy user smoke expected health HTTP 200, got ${HEALTH_STATUS:-<empty>}." >&2
     exit 1
 fi
-echo 'OK: home returned HTTP 200.'
+if ! HEALTH_BUILD="$(python3 - "$TEMP_DIR/health.json" <<'PY'
+import json
+import re
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as health_file:
+        payload = json.load(health_file)
+except (OSError, ValueError):
+    sys.exit(1)
+
+if not isinstance(payload, dict) or payload.get('ok') is not True or payload.get('ready') is not True:
+    sys.exit(1)
+build = payload.get('build')
+if not isinstance(build, str) or not re.fullmatch(r'[0-9a-f]{12}', build):
+    sys.exit(1)
+print(build)
+PY
+)"; then
+    echo '::error::Post-deploy user smoke expected health to report ok=true, ready=true, and a 12-character build SHA.' >&2
+    exit 1
+fi
+if [[ "$HEALTH_BUILD" != "${EXPECTED_SHA:0:12}" ]]; then
+    echo "::error::Post-deploy user smoke expected health build ${EXPECTED_SHA:0:12}, got $HEALTH_BUILD." >&2
+    exit 1
+fi
+echo "OK: health reports deployed build $HEALTH_BUILD."
 
 if ! CONFIG_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/auth-config.json" \
     --write-out '%{http_code}' --max-time 15 "$BASE_URL/qaap/api/auth/config")"; then
@@ -72,17 +110,20 @@ if [[ "$DEPLOYED_SHA" != "${EXPECTED_SHA:0:12}" ]]; then
 fi
 echo "OK: auth/config reports deployed build $DEPLOYED_SHA."
 
-SMOKE_COOKIE="${QAAP_SMOKE_COOKIE:-}"
-if [[ -n "${QAAP_SMOKE_SESSION:-}" ]]; then
-    case "$QAAP_SMOKE_SESSION" in
-        *=*) SMOKE_COOKIE="$QAAP_SMOKE_SESSION" ;;
-        *) SMOKE_COOKIE="qaap_sid=$QAAP_SMOKE_SESSION" ;;
-    esac
-fi
-if [[ -z "$SMOKE_COOKIE" ]]; then
-    echo '::error::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required for the signed-in post-deploy smoke.' >&2
+if ! WORKSPACE_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/workspace-root.html" \
+    --write-out '%{http_code}' --max-time 15 --cookie "$SMOKE_COOKIE" "$BASE_URL/")"; then
+    echo '::error::Signed-in post-deploy smoke could not request the workspace root.' >&2
     exit 1
 fi
+if grep -Fqi 'Tenant backend unavailable' "$TEMP_DIR/workspace-root.html"; then
+    echo '::error::Signed-in workspace root contains "Tenant backend unavailable".' >&2
+    exit 1
+fi
+if [[ "$WORKSPACE_STATUS" != 200 ]]; then
+    echo "::error::Signed-in workspace smoke expected HTTP 200, got ${WORKSPACE_STATUS:-<empty>}." >&2
+    exit 1
+fi
+echo 'OK: signed-in workspace root returned HTTP 200.'
 
 if ! APPROVALS_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
     --max-time 15 --cookie "$SMOKE_COOKIE" "$BASE_URL/qaap/api/agent-approvals")"; then
@@ -94,24 +135,3 @@ if [[ "$APPROVALS_STATUS" != 200 ]]; then
     exit 1
 fi
 echo 'OK: signed-in agent-approvals returned HTTP 200.'
-
-# The approvals route verifies the configured session. Probe the user entry point afterward so a
-# ready public shell cannot mask a failed tenant backend route (for example the known 502 JSON).
-if ! AUTH_HOME_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/auth-home.body" \
-    --write-out '%{http_code}' --max-time 180 --cookie "$SMOKE_COOKIE" "$BASE_URL/")"; then
-    echo '::error::Signed-in post-deploy smoke could not request the home page.' >&2
-    exit 1
-fi
-if [[ "$AUTH_HOME_STATUS" =~ ^5 ]]; then
-    echo "::error::Signed-in post-deploy smoke expected home HTTP 200 after backend startup, got ${AUTH_HOME_STATUS:-<empty>}." >&2
-    exit 1
-fi
-if [[ "$AUTH_HOME_STATUS" != 200 ]]; then
-    echo "::error::Signed-in post-deploy smoke expected home HTTP 200, got ${AUTH_HOME_STATUS:-<empty>}." >&2
-    exit 1
-fi
-if grep -Fq 'Tenant backend unavailable' "$TEMP_DIR/auth-home.body"; then
-    echo '::error::Signed-in post-deploy home returned the Tenant backend unavailable response.' >&2
-    exit 1
-fi
-echo 'OK: signed-in home returned HTTP 200 with the tenant backend available.'

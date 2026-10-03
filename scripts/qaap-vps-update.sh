@@ -113,7 +113,14 @@ refresh_caddy() {
     echo "[qaap-vps-update] validating Caddy configuration"
     docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
     echo "[qaap-vps-update] recreating Caddy to refresh the bind-mounted configuration"
-    docker compose up -d --no-deps --force-recreate caddy
+    QAAP_THEIA_IMAGE="${QAAP_THEIA_IMAGE:?QAAP_THEIA_IMAGE must be fixed before compose up}" \
+        docker compose up -d --no-build --no-deps --force-recreate caddy
+}
+
+record_deploy_switch_time() {
+    if [[ -n "${QAAP_VPS_DEPLOY_STARTED_AT_FILE:-}" ]]; then
+        printf '%s\n' "$(date -u +%s%N)" > "$QAAP_VPS_DEPLOY_STARTED_AT_FILE"
+    fi
 }
 
 # Seeds the rootless tenant daemon through a Theia container that mounts its socket.
@@ -487,7 +494,8 @@ if [[ -n "$IMAGE_REF" ]]; then
     fi
     preload_tenant_image_before_switch
     drain_agent_turns
-    docker compose up -d --no-build
+    record_deploy_switch_time
+    QAAP_THEIA_IMAGE="$IMAGE_REF" docker compose up -d --no-build
     DRAIN_ACTIVE=0
 else
     # Pin source builds to the exact upstream QAIQ commit. CI-built GHCR images already receive
@@ -503,6 +511,10 @@ else
     fi
     echo "[qaap-vps-update] qaiq pinned at ${CACHE_BUST:0:12}"
 
+    # Source builds still use a fixed image name. Compose must never resolve an implicit image
+    # value at the point where `up` can change the serving container.
+    export QAAP_THEIA_IMAGE='qaap-theia:local'
+
     if [[ "$NO_CACHE" -eq 1 ]]; then
         docker compose build --no-cache --build-arg "QAIQ_COMMIT=$CACHE_BUST" --build-arg "CACHE_BUST=$CACHE_BUST" theia
     else
@@ -510,7 +522,8 @@ else
     fi
     preload_tenant_image_before_switch
     drain_agent_turns
-    docker compose up -d
+    record_deploy_switch_time
+    QAAP_THEIA_IMAGE='qaap-theia:local' docker compose up -d --no-build
     DRAIN_ACTIVE=0
 fi
 # Safety net (a no-op when the pre-switch seed succeeded): seed through the new container.

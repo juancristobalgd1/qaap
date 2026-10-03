@@ -302,14 +302,22 @@ jobs:
           QAAP_VPS_HOST: ${{ secrets.QAAP_VPS_HOST }}
           QAAP_VPS_SSH_KEY: ${{ secrets.QAAP_VPS_SSH_KEY }}
           QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
+          QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
         run: |
           if [ -z "$QAAP_VPS_HOST" ] || [ -z "$QAAP_VPS_SSH_KEY" ] || [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
             echo "::error::Configure QAAP_VPS_HOST, QAAP_VPS_SSH_KEY and QAAP_VPS_PUBLIC_URL before releasing."
             exit 1
           fi
+          if [ -z "$QAAP_SMOKE_SESSION" ] && [ -z "$QAAP_SMOKE_COOKIE" ]; then
+            echo "::error::Configure QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE; deploy is blocked without authenticated workspace verification."
+            printf '%s\n\n%s\n' '## VPS deploy blocked' 'QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required. No deployment was started.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Deploy over SSH
+        id: deploy
         if: steps.ready.outputs.configured == 'true'
         uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
         env:
@@ -318,13 +326,17 @@ jobs:
           QAAP_DEPLOY_IMAGE: ${{ needs.publish_image.outputs.image }}
           QAAP_DEPLOY_SHA: ${{ needs.publish_image.outputs.source_sha }}
           QAAP_DEPLOY_BRANCH: ${{ env.QAAP_DEPLOY_BRANCH }}
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
+          QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
           username: ${{ secrets.QAAP_VPS_USER }}
           key: ${{ secrets.QAAP_VPS_SSH_KEY }}
           port: ${{ secrets.QAAP_VPS_SSH_PORT }}
           command_timeout: 80m
-          envs: GHCR_USERNAME,GHCR_TOKEN,QAAP_DEPLOY_IMAGE,QAAP_DEPLOY_SHA,QAAP_DEPLOY_BRANCH
+          capture_stdout: true
+          envs: GHCR_USERNAME,GHCR_TOKEN,QAAP_DEPLOY_IMAGE,QAAP_DEPLOY_SHA,QAAP_DEPLOY_BRANCH,QAAP_VPS_PUBLIC_URL,QAAP_SMOKE_SESSION,QAAP_SMOKE_COOKIE
           script: |
             set -euo pipefail
             REPO_DIR="${{ secrets.QAAP_VPS_REPO_DIR || '/opt/qaap' }}"
@@ -341,90 +353,45 @@ jobs:
               echo "[qaap-vps] preserved dirty worktree in stash: $STASH_NAME"
             fi
             git checkout --detach "$QAAP_DEPLOY_SHA"
-            ./scripts/qaap-vps-update.sh \
-              --branch "$QAAP_DEPLOY_BRANCH" \
-              --revision "$QAAP_DEPLOY_SHA" \
-              --image "$QAAP_DEPLOY_IMAGE"
+            chmod +x ./scripts/qaap-vps-rollback.sh ./scripts/qaap-vps-post-deploy-user-smoke.sh
+            DEPLOY_STATUS=0
+            ./scripts/qaap-vps-rollback.sh \
+              "$QAAP_DEPLOY_BRANCH" \
+              "$QAAP_DEPLOY_SHA" \
+              "$QAAP_DEPLOY_IMAGE" \
+              "$QAAP_VPS_PUBLIC_URL" || DEPLOY_STATUS=$?
+            printf 'QAAP_DEPLOY_EXIT_CODE=%s\n' "$DEPLOY_STATUS"
 
-      - name: Checkout scripts for health-check URL normalize
-        if: steps.ready.outputs.configured == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ needs.publish_image.outputs.source_sha }}
-          sparse-checkout: |
-            scripts/qaap-vps-normalize-public-url.sh
-            scripts/qaap-verify-launch-readiness.sh
-            scripts/qaap-release-config-check.js
-            scripts/qaap-verify-auth-api-gate.sh
-            scripts/qaap-vps-post-deploy-user-smoke.sh
-          sparse-checkout-cone-mode: false
-
-      - name: Verify public endpoint
-        if: steps.ready.outputs.configured == 'true'
+      - name: Write deploy result summary
+        if: always()
         env:
-          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          DEPLOY_OUTPUT: ${{ steps.deploy.outputs.stdout }}
+          READY: ${{ steps.ready.outputs.configured }}
         run: |
-          # shellcheck source=scripts/qaap-vps-normalize-public-url.sh
-          source ./scripts/qaap-vps-normalize-public-url.sh
-          QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
-          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
-            echo "::error::QAAP_VPS_PUBLIC_URL is required to verify the release."
+          if [ "$READY" != true ]; then
+            exit 0
+          fi
+          DEPLOY_STATUS="$(printf '%s\n' "$DEPLOY_OUTPUT" | sed -n 's/^QAAP_DEPLOY_EXIT_CODE=//p' | tail -n 1)"
+          SUMMARY="$(printf '%s\n' "$DEPLOY_OUTPUT" | sed -n '/^QAAP_DEPLOY_SUMMARY_START$/,/^QAAP_DEPLOY_SUMMARY_END$/p' | sed '1d;$d')"
+          if [ -n "$SUMMARY" ]; then
+            printf '%s\n' "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n\n%s\n' '## VPS deploy result unavailable' 'The SSH action did not return its deployment summary; inspect the Deploy over SSH logs.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          for attempt in $(seq 1 24); do
-            if curl -fsS -o /dev/null "$QAAP_VPS_PUBLIC_URL"; then
-              echo "OK: $QAAP_VPS_PUBLIC_URL"
-              chmod +x ./scripts/qaap-verify-launch-readiness.sh ./scripts/qaap-verify-auth-api-gate.sh
-              QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" QAAP_ENV_FILE=/nonexistent.env \
-                ./scripts/qaap-verify-launch-readiness.sh
-              QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" ./scripts/qaap-verify-auth-api-gate.sh
-              exit 0
+          if [ -z "$DEPLOY_STATUS" ]; then
+            echo '::error::SSH completed without returning a deploy status; inspect the Deploy over SSH logs.'
+            exit 1
+          fi
+          if [ "$DEPLOY_STATUS" != 0 ]; then
+            ROLLBACK_MESSAGE="$(printf '%s\n' "$DEPLOY_OUTPUT" | sed -n '/^ROLLED BACK to /p' | tail -n 1)"
+            MANUAL_MESSAGE="$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -F 'MANUAL INTERVENTION NEEDED' | head -n 1 || true)"
+            if [ -n "$ROLLBACK_MESSAGE" ]; then
+              echo "::error::$ROLLBACK_MESSAGE"
+            elif [ -n "$MANUAL_MESSAGE" ]; then
+              echo "::error::$MANUAL_MESSAGE"
+            else
+              echo "::error::VPS deploy verification failed with exit code $DEPLOY_STATUS."
             fi
-            echo "waiting for $QAAP_VPS_PUBLIC_URL ($attempt/24)..."
-            sleep 10
-          done
-          echo "Health check failed for $QAAP_VPS_PUBLIC_URL" >&2
-          exit 1
-
-      - name: Verify deployed build matches pushed commit
-        if: steps.ready.outputs.configured == 'true'
-        env:
-          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
-        run: |
-          # A green "Deploy over SSH" only proves the script ran — NOT that the serving
-          # container is the new build (an image-cache miss, a compose no-op, or a user
-          # testing mid-rebuild all bit us in practice). The backend bakes QAAP_BUILD_SHA
-          # into the image and serves it at /qaap/api/auth/config; assert it is a prefix
-          # of the exact source revision baked into the GHCR image.
-          # shellcheck source=scripts/qaap-vps-normalize-public-url.sh
-          source ./scripts/qaap-vps-normalize-public-url.sh
-          QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
-          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
-            echo "::error::QAAP_VPS_PUBLIC_URL is required to verify the release."
-            exit 1
+            exit "$DEPLOY_STATUS"
           fi
-          DEPLOYED="$(curl -fsS "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build") or "")')"
-          if [[ ! "$DEPLOYED" =~ ^[0-9a-f]{12}$ ]]; then
-            echo "::error::Backend must report the 12-character release SHA."
-            exit 1
-          fi
-          EXPECTED="${{ needs.publish_image.outputs.source_sha }}"
-          echo "deployed=$DEPLOYED expected=$EXPECTED image=${{ needs.publish_image.outputs.image }}"
-          case "$EXPECTED" in
-            "$DEPLOYED"*) echo "OK: serving container runs the exact GHCR source revision." ;;
-            *) echo "::error::Deployed build $DEPLOYED does not match GHCR source $EXPECTED."; exit 1 ;;
-          esac
-
-      - name: Post-deploy user smoke
-        if: steps.ready.outputs.configured == 'true'
-        env:
-          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
-          QAAP_EXPECTED_BUILD: ${{ needs.publish_image.outputs.source_sha }}
-          QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
-          QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
-        run: |
-          # shellcheck source=scripts/qaap-vps-normalize-public-url.sh
-          source ./scripts/qaap-vps-normalize-public-url.sh
-          QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
-          chmod +x ./scripts/qaap-vps-post-deploy-user-smoke.sh
-          ./scripts/qaap-vps-post-deploy-user-smoke.sh "$QAAP_VPS_PUBLIC_URL" "$QAAP_EXPECTED_BUILD"

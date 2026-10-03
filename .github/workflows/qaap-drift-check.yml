@@ -91,6 +91,9 @@ jobs:
       - name: Verify post-deploy image cleanup retention
         run: bash scripts/qaap-vps-image-prune.test.sh
 
+      - name: Verify automatic VPS deploy rollback
+        run: bash scripts/qaap-vps-rollback.test.sh
+
       - name: Verify post-deploy user smoke behavior
         run: bash scripts/qaap-vps-post-deploy-user-smoke.test.sh
 
