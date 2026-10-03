@@ -223,6 +223,10 @@ function createFakeTenantBackendDocker(): {
             };
             // Dockerode takes the container name as lowercase `name`; accept `Name` for older call sites.
             const name = String(options.name ?? options.Name);
+            if (containers.has(name)) {
+                // Docker refuses to create a container whose name is still taken.
+                throw Object.assign(new Error(`Conflict. The container name "/${name}" is already in use`), { statusCode: 409 });
+            }
             containers.set(name, info);
             created.push({ name, options, info });
             return containerHandle(name);
@@ -248,7 +252,8 @@ function createFakeTenantBackendDocker(): {
                 NetworkSettings: { Networks: { [networkName]: {} }, Ports: { '4873/tcp': ports } },
                 Mounts: [],
             });
-            return () => !containers.has(name);
+            // The replacement reuses the same name, so check the stale container itself is gone.
+            return () => containers.get(name)?.Id !== 'stale-backend-id';
         },
     };
 }
