@@ -314,7 +314,8 @@ export function agentNeedsSettingsApiKeyPath(agentId: string | undefined): boole
 const SETTINGS_API_KEY_AGENT_IDS = new Set([
     QAIQ_AGENT_ID,
     OPENCLAUDE_AGENT_ID,
-    'opencode',
+    // OpenCode signs in with its own credential manager (`opencode auth login`) and ships free
+    // models, so it never needs the Settings API-key CTA.
     'hermes',
     'gemini',
     'antigravity',
