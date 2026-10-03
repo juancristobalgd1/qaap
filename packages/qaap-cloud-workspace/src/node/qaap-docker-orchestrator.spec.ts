@@ -894,7 +894,7 @@ describe('QaapDockerOrchestrator', () => {
                         bridge: {},
                     },
                 },
-            } as Dockerode.ContainerInspectInfo;
+            } as unknown as Dockerode.ContainerInspectInfo;
             expect(orchestrator.tenantEgressProxyMatches(proxyWithUntrustedNetwork, 'alice', 'qaap-net-v2-alice', 'qaap-tenant-egress:release')).to.equal(false);
             const currentImageDocker = (id: string): Dockerode => ({
                 getImage: () => ({ inspect: async () => ({ Id: id }) }),
