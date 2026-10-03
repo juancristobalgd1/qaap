@@ -7,8 +7,9 @@ Cloud workspace for Qaap (browser/VPS + optional Electron dev containers).
 When set, Qaap creates or starts a **hardened Docker worker per authenticated tenant** and routes
 agent, preview, deploy, job, and terminal execution through that worker. The worker receives only
 the canonical tenant root as `/workspace`; it is non-root, resource-limited, drops all capabilities,
-uses a read-only root filesystem, is attached to a dedicated tenant network with ICC disabled, and
-is inspected before reuse. Hosted startup refuses the legacy host fallback.
+uses a read-only root filesystem, is attached to a dedicated internal network for same-tenant
+worker/backend/proxy traffic, and is inspected before reuse. Hosted startup refuses the legacy host
+fallback.
 
 ```bash
 export QAAP_CLOUD_MODE=docker
@@ -24,6 +25,13 @@ export QAAP_TENANT_NETWORK_MODE=isolated-bridge
 The shared Docker `bridge`, `host`, `container:<id>` and rootful socket modes are rejected in
 hosting. Set `QAAP_TENANT_NETWORK_MODE=none` only when provider egress is supplied through an
 external proxy.
+
+With backend-per-tenant routing, the worker and Theia backend stay attached only to the tenant's
+internal network. A hardened relay reuses the deployed tenant image, joins that internal network and
+a per-tenant non-internal ingress network, and publishes one ephemeral port on
+`QAAP_DOCKER_PUBLISH_HOST_IP`; it forwards only to that tenant backend's port `4873`. The router uses
+the relay's host-published port because its rootful Compose daemon cannot route to a rootless daemon's
+container IP. Backend-per-tenant mode therefore requires `isolated-bridge`.
 
 Workspace records include `containerRef` (Docker container id).
 

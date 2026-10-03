@@ -76,7 +76,7 @@ describe('Container-per-Tenant Runner (Option A)', () => {
         });
 
         it('assigns each tenant a distinct managed network and rejects the shared bridge', () => {
-            expect(orchestrator.tenantNetworkNameFor('alice')).to.match(/^qaap-net-v2-[a-f0-9]{12}$/);
+            expect(orchestrator.tenantNetworkNameFor('alice')).to.match(/^qaap-net-v3-[a-f0-9]{12}$/);
             expect(orchestrator.tenantNetworkNameFor('alice')).to.not.equal(orchestrator.tenantNetworkNameFor('bob'));
             const previous = process.env.QAAP_TENANT_NETWORK_MODE;
             try {
@@ -177,7 +177,11 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                                 HostConfig: { ...options.HostConfig, PidMode: 'private', IpcMode: 'private' },
                                 // The orchestrator now requires the container to be attached to exactly
                                 // its own tenant network, so the fake reports that attachment.
-                                NetworkSettings: { Networks: { [options.HostConfig.NetworkMode]: {} } },
+                                NetworkSettings: {
+                                    Networks: { [options.HostConfig.NetworkMode]: {} },
+                                    // Workers are docker-exec targets and expose no service ports.
+                                    Ports: {},
+                                },
                                 Mounts: [
                                     { Source: aliceRoot, Destination: '/workspace', RW: true },
                                     { Source: aliceWorktreesRoot, Destination: '/workspace/.qaap-worktrees', RW: true },
@@ -230,8 +234,9 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                 expect(createOptions.HostConfig.Tmpfs).to.deep.equal({ '/tmp': 'rw,exec,nosuid,nodev,size=512m' });
                 expect(createOptions.HostConfig.PidsLimit).to.be.greaterThan(0);
                 expect(networkOptions.Name).to.equal(orchestrator.tenantNetworkNameFor('alice'));
-                expect(networkOptions.Options['com.docker.network.bridge.enable_icc']).to.equal('false');
+                expect(networkOptions.Options['com.docker.network.bridge.enable_icc']).to.equal('true');
                 expect(createOptions.HostConfig.NetworkMode).to.equal(networkOptions.Name);
+                expect(createOptions.HostConfig.PortBindings).to.equal(undefined);
             } finally {
                 process.env = previousEnv;
             }

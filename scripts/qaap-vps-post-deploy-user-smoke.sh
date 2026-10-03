@@ -9,7 +9,7 @@ if [[ -z "$BASE_URL" || ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
     exit 2
 fi
 
-for command in curl python3; do
+for command in curl python3 grep; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command not found: $command" >&2
         exit 1
@@ -80,8 +80,8 @@ if [[ -n "${QAAP_SMOKE_SESSION:-}" ]]; then
     esac
 fi
 if [[ -z "$SMOKE_COOKIE" ]]; then
-    echo '::warning::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is unset; skipping signed-in agent-approvals smoke.' >&2
-    exit 0
+    echo '::error::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required for the signed-in post-deploy smoke.' >&2
+    exit 1
 fi
 
 if ! APPROVALS_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
@@ -94,3 +94,24 @@ if [[ "$APPROVALS_STATUS" != 200 ]]; then
     exit 1
 fi
 echo 'OK: signed-in agent-approvals returned HTTP 200.'
+
+# The approvals route verifies the configured session. Probe the user entry point afterward so a
+# ready public shell cannot mask a failed tenant backend route (for example the known 502 JSON).
+if ! AUTH_HOME_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/auth-home.body" \
+    --write-out '%{http_code}' --max-time 180 --cookie "$SMOKE_COOKIE" "$BASE_URL/")"; then
+    echo '::error::Signed-in post-deploy smoke could not request the home page.' >&2
+    exit 1
+fi
+if [[ "$AUTH_HOME_STATUS" =~ ^5 ]]; then
+    echo "::error::Signed-in post-deploy smoke expected home HTTP 200 after backend startup, got ${AUTH_HOME_STATUS:-<empty>}." >&2
+    exit 1
+fi
+if [[ "$AUTH_HOME_STATUS" != 200 ]]; then
+    echo "::error::Signed-in post-deploy smoke expected home HTTP 200, got ${AUTH_HOME_STATUS:-<empty>}." >&2
+    exit 1
+fi
+if grep -Fq 'Tenant backend unavailable' "$TEMP_DIR/auth-home.body"; then
+    echo '::error::Signed-in post-deploy home returned the Tenant backend unavailable response.' >&2
+    exit 1
+fi
+echo 'OK: signed-in home returned HTTP 200 with the tenant backend available.'
