@@ -49,8 +49,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     const summary = { id: 'c1', cwd: '/tmp/demo' } as unknown as QaapAgentConversationSummaryDTO;
 
     it('preserves the pinned agent only for the project that owns the composer', () => {
-        const composer = Object.create(composerModule.MobileProjectsTranscriptStickyComposerUi.prototype)
-            as InstanceType<typeof composerModule.MobileProjectsTranscriptStickyComposerUi>;
+        const composer = Object.create(composerModule.MobileProjectsTranscriptStickyComposerUi.prototype) as InstanceType<typeof composerModule.MobileProjectsTranscriptStickyComposerUi>;
         Object.assign(composer, {
             host: {
                 transcriptComposerProject: project,
