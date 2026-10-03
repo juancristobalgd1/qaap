@@ -164,7 +164,7 @@ describe('visualVerificationPending summary flag', () => {
         expect(conversationNeedsVisualVerificationEvidence(conv)).to.equal(false);
     });
 
-    it('survives a historical message error that keeps the effective status failed', () => {
+    it('survives a historical message error from an earlier turn without marking the conversation failed', () => {
         const conv = conversation({
             status: 'idle',
             messages: [
@@ -180,7 +180,8 @@ describe('visualVerificationPending summary flag', () => {
             ],
         });
         const summary = toConversationSummary(conv);
-        expect(summary.status).to.equal('failed');
+        // The error belongs to an earlier turn; the latest turn settled cleanly.
+        expect(summary.status).to.equal('idle');
         expect(summary.visualVerificationPending).to.equal(true);
     });
 
