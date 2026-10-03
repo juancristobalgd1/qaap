@@ -553,20 +553,37 @@ export type QaapAgentConversationEvent =
     | { readonly type: 'pending-drained'; readonly conversationId: string; readonly cwd: string; readonly drainedCount: number }
     | { readonly type: 'goal_loop'; readonly conversationId: string; readonly cwd: string; readonly goalLoop?: QaapAgentGoalLoopState };
 
-/** Status exposed to list rows — keeps `failed` when a user turn still carries an error. */
+/**
+ * True when the latest turn (the last user message and everything after it) carries an error.
+ * An error from an earlier turn that a later follow-up already answered cleanly must not keep
+ * the conversation failed forever: rows, the failed badge and "Clear failed runs" would all
+ * treat a working conversation as broken.
+ */
+export function latestConversationTurnHasError(messages: readonly Pick<QaapAgentMessage, 'role' | 'error'>[]): boolean {
+    let start = 0;
+    for (let index = messages.length - 1; index >= 0; index--) {
+        if (messages[index].role === 'user') {
+            start = index;
+            break;
+        }
+    }
+    return messages.slice(start).some(message => !!message.error);
+}
+
+/** Status exposed to list rows — keeps `failed` while the latest turn still carries an error. */
 export function resolveEffectiveConversationStatus(conv: QaapAgentConversation): QaapAgentConversationStatus {
     if (conv.status === 'streaming') {
         return 'streaming';
     }
-    if (conv.status === 'failed' || conv.messages.some(message => !!message.error)) {
+    if (conv.status === 'failed' || latestConversationTurnHasError(conv.messages)) {
         return 'failed';
     }
     return conv.status;
 }
 
 /**
- * Server-side twin of the autopilot trigger: the turn is settled (raw status — a historical
- * message error keeps the *effective* status `failed` forever and must not veto evidence),
+ * Server-side twin of the autopilot trigger: the turn is settled (raw status — an error in the latest
+ * turn keeps the *effective* status `failed` and must not veto evidence),
  * the last reply carries no evidence marker yet, and the agent invoked the capture (or the
  * turn mechanically edited renderable files). No natural-language guessing here.
  */

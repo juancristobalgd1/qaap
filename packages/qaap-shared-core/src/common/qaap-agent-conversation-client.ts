@@ -353,9 +353,24 @@ export interface QaapPendingUserMessageDTO {
     readonly clientMessageId?: string;
 }
 
+/**
+ * True when the latest turn (the last user message and everything after it) carries an error.
+ * Mirrors the server summary so a follow-up that succeeded clears an earlier turn's failure.
+ */
+export function latestConversationTurnHasError(messages: readonly Pick<QaapAgentMessageDTO, 'role' | 'error'>[]): boolean {
+    let start = 0;
+    for (let index = messages.length - 1; index >= 0; index--) {
+        if (messages[index].role === 'user') {
+            start = index;
+            break;
+        }
+    }
+    return messages.slice(start).some(message => !!message.error);
+}
+
 function resolveEffectiveConversationStatus(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO['status'] {
     const effective = resolveTranscriptEffectiveStatus(conv);
-    if (effective === 'failed' || conv.messages.some(message => !!message.error)) {
+    if (effective === 'failed' || latestConversationTurnHasError(conv.messages)) {
         return 'failed';
     }
     if (effective === 'settled') {
