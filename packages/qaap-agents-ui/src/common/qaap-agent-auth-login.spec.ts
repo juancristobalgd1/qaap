@@ -163,11 +163,16 @@ describe('qaap-agent-auth-login', () => {
 
     it('agentNeedsSettingsApiKeyPath is true for BYOK agents and false for OAuth or Shell', () => {
         expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);
-        expect(agentNeedsSettingsApiKeyPath('opencode')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('openclaude')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('hermes')).to.equal(true);
         expect(agentNeedsSettingsApiKeyPath('antigravity')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('gemini')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('opencode')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('qwen')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('codex')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('cursor')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('shell')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('not-a-registered-harness')).to.equal(false);
         rememberQaapHostedRuntime(true);
         expect(agentNeedsSettingsApiKeyPath('cursor')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);

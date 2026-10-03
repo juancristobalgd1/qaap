@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { migrateQaapProductAgentId, QAIQ_AGENT_ID } from './qaap-agent-task-client';
+import { migrateQaapProductAgentId, OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID } from './qaap-agent-task-client';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
@@ -254,9 +254,8 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
             // environments" (its own help). Works in cloud; previously misfiled as BYOK.
             return 'grok login --device-auth';
         case 'copilot':
-            // gh's default is a browser redirect; --web prints the one-time device code, the only
-            // headless-viable path here.
-            return 'gh auth login --web';
+            // Force the device code flow in the tenant container and store Copilot CLI's own token.
+            return 'copilot login --device-code';
         case 'cursor':
             // Localhost OAuth callback cannot complete on a headless VPS.
             if (isAgentHiddenOnHostedRuntime('cursor')) {
@@ -308,13 +307,42 @@ export function agentNeedsSettingsApiKeyPath(agentId: string | undefined): boole
     if (isAgentHiddenOnHostedRuntime(normalized)) {
         return false;
     }
-    return !agentHasCliOAuthLogin(normalized);
+    return SETTINGS_API_KEY_AGENT_IDS.has(normalized);
 }
+
+/** Harnesses whose background task runner consumes credentials from the user's BYOK settings. */
+const SETTINGS_API_KEY_AGENT_IDS = new Set([
+    QAIQ_AGENT_ID,
+    OPENCLAUDE_AGENT_ID,
+    'opencode',
+    'hermes',
+    'gemini',
+    'antigravity',
+]);
 
 export function localizeAddApiKeyInSettingsCta(): string {
     return nls.localize(
         'qaap/agentLogin/addApiKeyInSettings',
         'Add API key in Settings',
+    );
+}
+
+/** Clear instructions for CLIs whose authentication needs interactive input in the tenant terminal. */
+export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string): string {
+    return nls.localize(
+        'qaap/agentLogin/tenantTerminalInstructions',
+        'To connect {0}, open a terminal for this workspace and run `{1}`. Finish the CLI sign-in or API-key setup there, then return to Work Hub and refresh the agent list.',
+        agentLabel,
+        command,
+    );
+}
+
+/** Actionable fallback for custom harnesses that do not have a registered connection flow. */
+export function localizeAgentConnectionUnsupportedMessage(agentLabel: string): string {
+    return nls.localize(
+        'qaap/agentLogin/unsupportedInstructions',
+        'Qaap has no automatic sign-in flow for {0}. Configure its credentials in a terminal inside this tenant workspace, then refresh the agent list and try again.',
+        agentLabel,
     );
 }
 

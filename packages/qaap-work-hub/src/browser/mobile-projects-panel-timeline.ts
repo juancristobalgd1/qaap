@@ -16,10 +16,12 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_AI_FEATURES_SETTINGS_QUERY,
+    localizeAgentConnectionUnsupportedMessage,
     localizeAgentSettingsApiKeyLoginMessage,
+    localizeAgentTenantTerminalLoginMessage,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { resolveAgentConnectionFlow } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import {
-    isAgentHiddenOnHostedRuntime,
     localizeHostedLocalhostOAuthAgentMessage,
 } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
@@ -312,18 +314,33 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
     if (!resolvedAgentId) {
         return;
     }
-    if (isAgentHiddenOnHostedRuntime(resolvedAgentId)) {
+    const connectionFlow = resolveAgentConnectionFlow(resolvedAgentId);
+    if (connectionFlow.kind === 'hosted-restricted') {
         const message = localizeHostedLocalhostOAuthAgentMessage(resolvedAgentId);
         if (ctx.messageService) {
             void ctx.messageService.info(message);
         }
         return;
     }
-    // QAIQ is the only BYOK / Settings-catalog harness. Every other harness connects
-    // through its own CLI flow in the transcript terminal, even when it has no dedicated
-    // `login` subcommand (the interactive CLI owns that onboarding flow).
-    if (resolvedAgentId.toLowerCase() === 'qaiq') {
+    if (connectionFlow.kind === 'settings-api-key') {
         ctx.notifyAgentUsesSettingsApiKey(resolvedAgentId);
+        return;
+    }
+    if (connectionFlow.kind === 'tenant-terminal') {
+        if (ctx.messageService) {
+            void ctx.messageService.info(localizeAgentTenantTerminalLoginMessage(
+                resolveAgentDisplayLabel(resolvedAgentId),
+                connectionFlow.command,
+            ));
+        }
+        return;
+    }
+    if (connectionFlow.kind === 'unsupported') {
+        if (ctx.messageService) {
+            void ctx.messageService.info(localizeAgentConnectionUnsupportedMessage(
+                resolveAgentDisplayLabel(resolvedAgentId),
+            ));
+        }
         return;
     }
     if (!project) {

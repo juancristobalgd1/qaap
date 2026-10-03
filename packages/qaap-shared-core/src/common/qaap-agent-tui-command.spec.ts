@@ -4,7 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from './qaap-agent-tui-command';
+import { QAAP_HARNESS_DEFINITIONS } from './qaap-builtin-agents';
+import { resolveAgentConnectionFlow, resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from './qaap-agent-tui-command';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('resolveInteractiveAgentCliBin', () => {
@@ -47,16 +48,14 @@ describe('resolveInteractiveAgentLoginCommand', () => {
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
                 : 'NO_OPEN_BROWSER=1 cursor-agent login',
         );
-        expect(resolveInteractiveAgentLoginCommand('copilot')).to.equal('gh auth login --web');
+        expect(resolveInteractiveAgentLoginCommand('copilot')).to.equal('copilot login --device-code');
         expect(resolveInteractiveAgentLoginCommand('grok')).to.equal('grok login --device-auth');
     });
 
-    it('falls back to the interactive CLI for non-QAIQ harnesses without a login subcommand', () => {
-        // QAIQ is the only Settings/BYOK exception. Other harnesses own their
-        // onboarding flow inside the interactive CLI terminal.
+    it('does not start an inaccessible TUI as a sign-in flow', () => {
         expect(resolveInteractiveAgentLoginCommand('qaiq')).to.equal(undefined);
-        expect(resolveInteractiveAgentLoginCommand('opencode')).to.equal('opencode');
-        expect(resolveInteractiveAgentLoginCommand('gemini')).to.equal('agy');
+        expect(resolveInteractiveAgentLoginCommand('opencode')).to.equal(undefined);
+        expect(resolveInteractiveAgentLoginCommand('gemini')).to.equal(undefined);
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
 
@@ -64,5 +63,63 @@ describe('resolveInteractiveAgentLoginCommand', () => {
         expect(resolveInteractiveAgentLoginCommand(undefined)).to.equal(undefined);
         expect(resolveInteractiveAgentLoginCommand('')).to.equal(undefined);
         expect(resolveInteractiveAgentLoginCommand('not-an-agent')).to.equal(undefined);
+    });
+});
+
+describe('resolveAgentConnectionFlow', () => {
+    afterEach(() => {
+        rememberQaapHostedRuntime(false);
+    });
+
+    const expectedKinds: Readonly<Record<string, string>> = {
+        qaiq: 'settings-api-key',
+        codex: 'cli-login',
+        claude: 'cli-login',
+        openclaude: 'settings-api-key',
+        grok: 'cli-login',
+        opencode: 'tenant-terminal',
+        hermes: 'settings-api-key',
+        openclaw: 'tenant-terminal',
+        cursor: 'cli-login',
+        antigravity: 'settings-api-key',
+        copilot: 'cli-login',
+        qwen: 'tenant-terminal',
+        kimi: 'tenant-terminal',
+    };
+
+    for (const harness of QAAP_HARNESS_DEFINITIONS) {
+        it(`resolves ${harness.label} to an explicit connection flow`, () => {
+            expect(resolveAgentConnectionFlow(harness.id).kind, harness.id).to.equal(expectedKinds[harness.id]);
+        });
+    }
+
+    it('routes OpenCode to its credential manager in the tenant terminal', () => {
+        expect(resolveAgentConnectionFlow('opencode')).to.deep.equal({
+            kind: 'tenant-terminal',
+            command: 'opencode auth login',
+        });
+    });
+
+    it('routes Copilot through its remote device-code login command', () => {
+        expect(resolveAgentConnectionFlow('copilot')).to.deep.equal({
+            kind: 'cli-login',
+            command: 'copilot login --device-code',
+        });
+    });
+
+    it('maps the Gemini alias to its supported Google API-key settings flow', () => {
+        expect(resolveAgentConnectionFlow('gemini')).to.deep.equal({
+            kind: 'settings-api-key',
+            settingsQuery: 'ai-features',
+        });
+    });
+
+    it('provides no false sign-in route for an unknown harness', () => {
+        expect(resolveAgentConnectionFlow('my-custom-agent')).to.deep.equal({ kind: 'unsupported' });
+    });
+
+    it('blocks browser callback login on hosted runtimes with a clear restricted route', () => {
+        rememberQaapHostedRuntime(true);
+        expect(resolveAgentConnectionFlow('cursor')).to.deep.equal({ kind: 'hosted-restricted' });
     });
 });
