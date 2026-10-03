@@ -394,6 +394,13 @@ describe('QaapTenantBackendProxyContribution', () => {
         it('re-ensures a stale tenant target and retries a signed-in agent approval read', async () => {
             const seen: Seen[] = [];
             let ensureCalls = 0;
+            // The stale target must refuse connections immediately on every OS. 127.0.0.2 is only
+            // loopback on Linux; on macOS it is unrouted and the connect hangs past the test timeout.
+            // A port that was just bound and released on 127.0.0.1 refuses instantly everywhere.
+            const released = net.createServer();
+            await new Promise<void>(resolve => released.listen(0, '127.0.0.1', resolve));
+            const stalePort = (released.address() as net.AddressInfo).port;
+            await new Promise<void>(resolve => released.close(() => resolve()));
             await withTenantAndFront((req, res) => {
                 seen.push({ url: req.url, headers: req.headers });
                 res.writeHead(200, { 'content-type': 'application/json' });
@@ -402,7 +409,7 @@ describe('QaapTenantBackendProxyContribution', () => {
                 authenticated: true,
                 ensureTenantBackend: async target => {
                     ensureCalls++;
-                    return ensureCalls === 1 ? { ...target, host: '127.0.0.2' } : target;
+                    return ensureCalls === 1 ? { ...target, host: '127.0.0.1', port: stalePort } : target;
                 },
             }, async ({ port, originalHits }) => {
                 const response = await request(port, '/qaap/api/agent-approvals', {
