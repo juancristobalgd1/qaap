@@ -210,7 +210,7 @@ describe('qaap-agent-approval-flags', () => {
         expect(JSON.parse(env!)).to.deep.equal({ edit: 'ask', bash: 'ask', webfetch: 'ask', websearch: 'ask' });
     });
 
-    it('approve-for-me without shell/network rules gates only OpenCode shell/network', () => {
+    it('approve-for-me without shell/network rules lets OpenCode run shell and gates only network', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "opencode run --format json 'hi'",
             {
@@ -221,7 +221,8 @@ describe('qaap-agent-approval-flags', () => {
             },
         );
         const env = resolveOpencodePermissionEnv({ command, agentId: 'opencode', autoApprove: true });
-        expect(JSON.parse(env!)).to.deep.equal({ bash: 'ask', webfetch: 'ask', websearch: 'ask' });
+        expect(JSON.parse(env!)).to.deep.equal({ webfetch: 'ask', websearch: 'ask' });
+        expect(JSON.parse(env!)).to.not.have.property('bash');
     });
 
     it('full-access OpenCode and non-OpenCode agents get no OPENCODE_PERMISSION', () => {

@@ -325,7 +325,7 @@ function applyOpencodeApprovalFlags(
  *
  * - Command carries the skip/auto flag (full access, approve-for-me with shell/network) → ungated.
  * - `autoApprove === false` (Request approval) → edits, shell and network all gated.
- * - Otherwise (approve-for-me without shell/network rules) → edits allowed, shell/network gated.
+ * - Otherwise (approve-for-me without shell/network rules) → edits and shell allowed, network gated.
  */
 export function resolveOpencodePermissionEnv(options: {
     readonly command: string;
@@ -338,8 +338,11 @@ export function resolveOpencodePermissionEnv(options: {
     if (/(?:^|\s)--(?:dangerously-skip-permissions|auto|yolo)(?=\s|$)/.test(options.command)) {
         return undefined;
     }
-    const gated = { bash: 'ask', webfetch: 'ask', websearch: 'ask' };
-    return JSON.stringify(options.autoApprove === false ? { edit: 'ask', ...gated } : gated);
+    // Approve for me lets the agent approve its own workspace edits and shell commands (parity with
+    // Codex `--full-auto`); headless `opencode run` rejects every `ask`, so gating bash here made
+    // every OpenCode shell step fail. Only network tools stay gated until a network rule allows them.
+    const network = { webfetch: 'ask', websearch: 'ask' };
+    return JSON.stringify(options.autoApprove === false ? { edit: 'ask', bash: 'ask', ...network } : network);
 }
 
 function stripNonInteractiveApprovalFlags(command: string, agentId: string | undefined): string {
