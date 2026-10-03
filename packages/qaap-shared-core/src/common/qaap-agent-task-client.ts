@@ -8,6 +8,7 @@
  * Keep {@link QAAP_AGENT_TASK_API_PATH} in sync with `@theia/qaap-cloud-workspace`.
  */
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
 import {
     QAAP_HARNESS_DEFINITIONS,
     isUiHiddenVpsAgent,
@@ -573,7 +574,7 @@ export function resolveAgentOptionId(agentId: string | undefined, agents: readon
 
 export async function fetchAgentTaskListAll(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
     const endpoint = options?.forceRefresh ? `${QAAP_AGENT_TASK_API_PATH}/all?refresh=1` : `${QAAP_AGENT_TASK_API_PATH}/all`;
-    const response = await fetch(endpoint, { credentials: 'include', cache: 'no-store' });
+    const response = await fetchQaapGetWithTransientRetry(endpoint, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
         throw new Error(response.statusText);
     }

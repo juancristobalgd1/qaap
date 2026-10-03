@@ -32,11 +32,14 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
     });
 
     it('distinguishes loading and connection failure from an empty history', () => {
-        for (const snapshotState of ['loading', 'error'] as const) {
+        for (const snapshotState of ['loading', 'reconnecting', 'error'] as const) {
             const host = document.createElement('div');
             renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } } as unknown as MobileProjectsSessionsSidebarUiContext, host);
             expect(host.textContent).not.to.contain('No agent sessions');
             expect(host.querySelector('[role="status"]')).not.to.equal(null);
+            if (snapshotState === 'reconnecting') {
+                expect(host.textContent).to.contain('Reconnecting');
+            }
         }
     });
 

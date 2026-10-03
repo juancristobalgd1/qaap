@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
 import { buildConversationListMetrics, type QaapSidebarGitActionKind } from './qaap-agent-conversation-list-metrics';
 import {
@@ -602,8 +603,10 @@ export interface QaapCreateConversationBody {
     readonly worktree?: boolean;
 }
 
-export async function listAllConversationGroups(): Promise<QaapAgentConversationGroupDTO[]> {
-    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/all`, { credentials: 'include' });
+export async function listAllConversationGroups(options?: { readonly onRetry?: () => void }): Promise<QaapAgentConversationGroupDTO[]> {
+    const response = await fetchQaapGetWithTransientRetry(`${QAAP_AGENT_CONVERSATION_API_PATH}/all`, { credentials: 'include' }, {
+        onRetry: options?.onRetry,
+    });
     if (!response.ok) {
         throw new Error(response.statusText);
     }

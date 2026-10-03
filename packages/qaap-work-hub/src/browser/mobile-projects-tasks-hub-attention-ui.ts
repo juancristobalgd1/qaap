@@ -61,7 +61,7 @@ export class MobileProjectsTasksHubAttentionUi {
                 || (!this.host.hubQueryUi.isTasksHubView() && !this.host.hubQueryUi.isHomeHubView())) {
                 return;
             }
-            this.host.cachedAgentApprovals = [];
+            // Keep the last good approval snapshot visible through a transient API outage.
             if (forceRender) {
                 this.host.renderList();
             } else if (this.host.hubQueryUi.isHomeHubView()) {

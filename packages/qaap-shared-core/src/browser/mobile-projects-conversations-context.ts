@@ -62,6 +62,7 @@ export type MobileProjectsConversationsContextMember =
     | 'socket'
     | 'source'
     | 'sseReconnectHandle'
+    | 'sseReconnectAttempt'
     | 'started'
     | 'streamMetrics'
     | 'submitLatencyMarks'

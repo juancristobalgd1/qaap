@@ -18,7 +18,8 @@ import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wir
 import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
 import { goalLoopSummaryFields } from '../common/qaap-agent-goal-loop-labels';
 import { normalizeCwd } from './mobile-projects-active-tasks';
-import { SSE_RECONNECT_DELAY_MS, WS_RECONNECT_MAX_MS } from './mobile-projects-conversations';
+import { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, WS_RECONNECT_MAX_MS } from './mobile-projects-conversations';
+import { resolveQaapRetryBackoffDelayMs } from '@theia/qaap-adapters/lib/common/qaap-retry-backoff';
 import type { ConversationMessageDeltaEvent, ConversationMessageEvent, ConversationServerEvent } from './mobile-projects-conversations';
 import type { BinaryBuffer } from '@theia/core/lib/common/buffer';
 
@@ -109,7 +110,10 @@ export function scheduleWebSocketReconnectExtracted(ctx: MobileProjectsConversat
         if (ctx.wsReconnectHandle !== undefined || typeof WebSocket === 'undefined') {
             return;
         }
-        const delay = Math.min(WS_RECONNECT_MAX_MS, 1_000 * (2 ** ctx.wsReconnectAttempt));
+        const delay = resolveQaapRetryBackoffDelayMs(ctx.wsReconnectAttempt, {
+            baseDelayMs: 1_000,
+            maxDelayMs: WS_RECONNECT_MAX_MS,
+        });
         ctx.wsReconnectAttempt++;
         ctx.wsReconnectHandle = window.setTimeout(() => {
             ctx.wsReconnectHandle = undefined;
@@ -122,11 +126,20 @@ export function scheduleSseReconnectExtracted(ctx: MobileProjectsConversationsCo
             return;
         }
         ctx.closeSse();
+        ctx.lastPrimeFromAllAt = 0;
+        if (ctx.snapshotState !== 'reconnecting') {
+            ctx.snapshotState = 'reconnecting';
+            ctx.emitConversationChange({ kind: 'snapshot' });
+        }
+        const delayMs = resolveQaapRetryBackoffDelayMs(ctx.sseReconnectAttempt++, {
+            baseDelayMs: SSE_RECONNECT_BASE_MS,
+            maxDelayMs: SSE_RECONNECT_MAX_MS,
+        });
         ctx.sseReconnectHandle = window.setTimeout(() => {
             ctx.sseReconnectHandle = undefined;
             ctx.openSseStream();
             void ctx.primeFromAll();
-        }, SSE_RECONNECT_DELAY_MS);
+        }, delayMs);
 }
 
 export function closeWebSocketExtracted(ctx: MobileProjectsConversationsContext): void {

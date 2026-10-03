@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
+
 export const QAAP_AGENT_APPROVAL_API_PATH = '/qaap/api/agent-approvals';
 
 export type QaapAgentApprovalKind = 'tool' | 'prompt';
@@ -33,7 +35,7 @@ export interface QaapAgentApprovalActionResponseDTO {
 
 export async function fetchAgentApprovals(cwd?: string): Promise<QaapAgentApprovalRequestDTO[]> {
     const query = cwd?.trim() ? `?cwd=${encodeURIComponent(cwd)}` : '';
-    const response = await fetch(`${QAAP_AGENT_APPROVAL_API_PATH}${query}`, { credentials: 'include' });
+    const response = await fetchQaapGetWithTransientRetry(`${QAAP_AGENT_APPROVAL_API_PATH}${query}`, { credentials: 'include' });
     if (!response.ok) {
         throw new Error(response.statusText);
     }

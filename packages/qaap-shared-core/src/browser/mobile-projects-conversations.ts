@@ -31,7 +31,8 @@ import { clearReconnectTimersExtracted, closeSseExtracted, closeWebSocketExtract
 export const STREAM_URL = `${QAAP_AGENT_CONVERSATION_API_PATH}/stream`;
 /** Minimum gap between full `/all` primes; live WS/SSE events reconcile state in between. */
 export const PRIME_FROM_ALL_TTL_MS = 20_000;
-export const SSE_RECONNECT_DELAY_MS = 5_000;
+export const SSE_RECONNECT_BASE_MS = 1_000;
+export const SSE_RECONNECT_MAX_MS = 30_000;
 /** Exponential backoff cap for WebSocket reconnects. */
 export const WS_RECONNECT_MAX_MS = 30_000;
 
@@ -109,7 +110,7 @@ export type ConversationServerEvent =
  */
 @injectable()
 export class MobileProjectsConversations {
-    snapshotState: 'loading' | 'ready' | 'error' = 'loading';
+    snapshotState: 'loading' | 'ready' | 'reconnecting' | 'error' = 'loading';
 
     /** Canonical per-thread summaries + lazy documents (AG-UI MessagesSnapshot path). */
     readonly threadStore = new QaapThreadStore();
@@ -135,6 +136,8 @@ export class MobileProjectsConversations {
     public transport: 'ws' | 'sse' | 'none' = 'none';
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */
     public sseReconnectHandle: number | undefined;
+    /** @internal Used by the extracted mobile-projects-conversations-* modules. */
+    public sseReconnectAttempt = 0;
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */
     public wsReconnectHandle: number | undefined;
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */
@@ -462,4 +465,3 @@ export function sortConversations(list: QaapAgentConversationSummaryDTO[]): Qaap
         return b.updatedAt - a.updatedAt;
     });
 }
-

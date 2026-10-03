@@ -68,6 +68,22 @@ describe('qaap-github-auth-client timeouts', () => {
         expect((await rejection(createQaapGithubRepository({ name: 'demo' }))).message).to.contain('took too long');
     });
 
+    it('retries a transient gateway response when loading project sessions', async () => {
+        const clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        let calls = 0;
+        try {
+            nextFetch = async () => calls++ === 0
+                ? new Response('{}', { status: 503 })
+                : new Response('{"sessions":[]}', { status: 200 });
+            const pending = fetchQaapProjectSessions();
+            await clock.tickAsync(1_000);
+            expect((await pending).sessions).to.deep.equal([]);
+            expect(calls).to.equal(2);
+        } finally {
+            clock.restore();
+        }
+    });
+
     it('keeps non-abort network errors unchanged', async () => {
         nextFetch = async () => { throw new TypeError('Failed to fetch'); };
         expect((await rejection(fetchQaapGithubPullRequests())).message).to.equal('Failed to fetch');
