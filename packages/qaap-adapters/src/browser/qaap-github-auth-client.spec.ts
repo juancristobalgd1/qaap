@@ -84,9 +84,20 @@ describe('qaap-github-auth-client timeouts', () => {
         }
     });
 
-    it('keeps non-abort network errors unchanged', async () => {
-        nextFetch = async () => { throw new TypeError('Failed to fetch'); };
-        expect((await rejection(fetchQaapGithubPullRequests())).message).to.equal('Failed to fetch');
+    it('keeps non-abort network errors unchanged after the bounded transient retries', async () => {
+        // A dropped connection is retried with backoff (qaap-transient-get); fake the backoff timers so
+        // the test checks the final error instead of waiting out real retry delays.
+        const clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            let attempts = 0;
+            nextFetch = async () => { attempts++; throw new TypeError('Failed to fetch'); };
+            const pending = rejection(fetchQaapGithubPullRequests());
+            await clock.tickAsync(60_000);
+            expect((await pending).message).to.equal('Failed to fetch');
+            expect(attempts).to.be.greaterThan(1);
+        } finally {
+            clock.restore();
+        }
     });
 
     it('bounds the body read, not only the wait for headers', async () => {
