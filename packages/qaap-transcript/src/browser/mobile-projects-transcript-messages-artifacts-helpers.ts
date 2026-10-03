@@ -132,6 +132,25 @@ export function isConversationError(conv: QaapAgentConversationDTO | undefined):
 
 // ─── Agent message ───────────────────────────────────────────────────────────
 
+/**
+ * True when THIS agent turn failed. A conversation that failed once must not paint every later,
+ * successful turn as "Failed": only the turn carrying the error, or the last agent turn of a
+ * conversation whose status is `failed`, counts.
+ */
+export function isAgentMessageFailed(conv: QaapAgentConversationDTO | undefined, message: QaapAgentMessageDTO | undefined): boolean {
+    if (!message) {
+        return isConversationError(conv);
+    }
+    if (message.error) {
+        return true;
+    }
+    if (conv?.status !== 'failed') {
+        return false;
+    }
+    const lastAgentMessage = [...conv.messages].reverse().find(candidate => candidate.role !== 'user');
+    return lastAgentMessage?.id === message.id;
+}
+
 export function isAgentMessageCancelled(message: QaapAgentMessageDTO | undefined): boolean {
     return message?.traceEvents?.some(event => event.type === 'run_cancelled') ?? false;
 }
