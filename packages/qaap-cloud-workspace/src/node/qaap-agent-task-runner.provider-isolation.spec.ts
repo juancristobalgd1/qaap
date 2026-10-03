@@ -5,8 +5,10 @@
 
 import { expect } from 'chai';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
+import { ComposerPromptImproveTimeoutError } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentCommandTimeoutError } from './qaap-agent-task-runner-utils3';
 
 /**
  * End-to-end credential policy of a QAIQ task through the real runner pipeline: the command flags
@@ -150,6 +152,21 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         expect(spawned?.command).to.contain('--provider openai').and.contain('meta-llama/llama-3.3-70b-instruct:free');
         expect(spawned?.env.OPENROUTER_API_KEY).to.equal('sk-alice-openrouter');
         expect(leakedValues(spawned!.env, [...Object.values(OPERATOR_ENV), 'sk-shared-anthropic'])).to.deep.equal([]);
+    });
+
+    it('converts a timed out Improve Prompt child process to the typed timeout response', async () => {
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        const runner = createRunner();
+        Object.assign(runner, {
+            runOneShotCommand: async () => { throw new QaapAgentCommandTimeoutError(40_000); },
+        });
+        let failure: unknown;
+        try {
+            await runner.improveComposerPrompt({ prompt: 'hola', agentId: 'qaiq', cwd: '/repo', ownerLogin: 'alice' });
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure).to.be.instanceOf(ComposerPromptImproveTimeoutError);
     });
 
     it('local single user: Settings drive the model and win over env, operator env stays available', () => {

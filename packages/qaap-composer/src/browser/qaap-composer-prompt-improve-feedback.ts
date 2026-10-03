@@ -5,7 +5,8 @@
 
 export type ComposerImproveFeedbackKind = 'error' | 'info';
 
-const FEEDBACK_SELECTOR = '.qaap-composer-improve-feedback';
+const FEEDBACK_CLASS = 'qaap-composer-improve-feedback';
+const FEEDBACK_SELECTOR = `.${FEEDBACK_CLASS}`;
 
 export function showComposerImproveFeedback(
     anchor: HTMLElement,
@@ -19,7 +20,7 @@ export function showComposerImproveFeedback(
     let feedback = panel.querySelector<HTMLElement>(FEEDBACK_SELECTOR);
     if (!feedback) {
         feedback = document.createElement('div');
-        feedback.className = FEEDBACK_SELECTOR;
+        feedback.className = FEEDBACK_CLASS;
         feedback.setAttribute('role', 'status');
         feedback.setAttribute('aria-live', 'polite');
         panel.insertBefore(feedback, panel.firstChild);

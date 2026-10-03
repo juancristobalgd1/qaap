@@ -471,6 +471,13 @@ export interface RunOneShotCommandDeps {
     reapAgentProcessGroupAfterExit(child: ChildProcess): void;
 }
 
+export class QaapAgentCommandTimeoutError extends Error {
+    constructor(timeoutMs: number) {
+        super(`Agent call timed out after ${Math.round(timeoutMs / 1000)}s.`);
+        this.name = 'QaapAgentCommandTimeoutError';
+    }
+}
+
 export async function runOneShotCommand(
     command: string,
     cwd: string,
@@ -508,7 +515,7 @@ export async function runOneShotCommand(
         const timer = setTimeout(() => {
             cleanupPromptTempDir();
             deps.killAgentProcessTree(child);
-            reject(new Error(`Agent call timed out after ${Math.round(timeoutMs / 1000)}s.`));
+            reject(new QaapAgentCommandTimeoutError(timeoutMs));
         }, timeoutMs);
         child.stdout?.on('data', (chunk: Buffer | string) => {
             stdout += String(chunk);

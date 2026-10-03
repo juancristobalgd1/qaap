@@ -34,6 +34,7 @@ import {
     type QaapProjectSessionSummary,
 } from '../common/qaap-github-api-types';
 import { rememberQaapHostedRuntime } from '../common/qaap-hosted-runtime';
+import { fetchQaapGetWithTransientRetry } from '../common/qaap-transient-get';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     clearQaapAuthSession,
@@ -86,7 +87,7 @@ async function fetchQaapWithTimeout(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetch(input, { ...init, signal: controller.signal });
+        const response = await fetchQaapGetWithTransientRetry(input, { ...init, signal: controller.signal });
         const body = QAAP_NULL_BODY_STATUSES.has(response.status) ? undefined : await response.arrayBuffer();
         return new Response(body, {
             status: response.status,

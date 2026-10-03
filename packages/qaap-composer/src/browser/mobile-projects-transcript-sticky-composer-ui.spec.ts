@@ -48,6 +48,19 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     const project = { id: 'p1', name: 'demo' } as unknown as MobileProjectEntry;
     const summary = { id: 'c1', cwd: '/tmp/demo' } as unknown as QaapAgentConversationSummaryDTO;
 
+    it('preserves the pinned agent only for the project that owns the composer', () => {
+        const composer = Object.create(composerModule.MobileProjectsTranscriptStickyComposerUi.prototype) as InstanceType<typeof composerModule.MobileProjectsTranscriptStickyComposerUi>;
+        Object.assign(composer, {
+            host: {
+                transcriptComposerProject: project,
+                transcriptComposerPinnedAgentId: 'opencode',
+            },
+        });
+
+        expect(composer.resolvePinnedAgentIdForProject(project)).to.equal('opencode');
+        expect(composer.resolvePinnedAgentIdForProject({ id: 'another-project' } as MobileProjectEntry)).to.equal(undefined);
+    });
+
     it('runs the selected project preview from the empty Agents landing without a conversation', async () => {
         const previewUrl = 'http://localhost:3000/qaap-preview/u-dev-w-demo-p-demo-x-abcdef1234/';
         let refreshed: { root?: string; projectId?: string } = {};

@@ -32,11 +32,14 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
     });
 
     it('distinguishes loading and connection failure from an empty history', () => {
-        for (const snapshotState of ['loading', 'error'] as const) {
+        for (const snapshotState of ['loading', 'reconnecting', 'error'] as const) {
             const host = document.createElement('div');
             renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } } as unknown as MobileProjectsSessionsSidebarUiContext, host);
             expect(host.textContent).not.to.contain('No agent sessions');
             expect(host.querySelector('[role="status"]')).not.to.equal(null);
+            if (snapshotState === 'reconnecting') {
+                expect(host.textContent).to.contain('Reconnecting');
+            }
         }
     });
 
@@ -52,6 +55,8 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
 
     beforeEach(() => {
         document.body.innerHTML = '';
+        // Stored agent picks (per-cwd and global) must not leak from one case into the next.
+        window.localStorage.clear();
         window.requestAnimationFrame = ((callback: FrameRequestCallback): number => {
             callback(0);
             return 1;
@@ -268,6 +273,7 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         const activated: string[] = [];
         const resetFor: string[] = [];
         let composerProjectId: string | undefined;
+        let composerAgentId: string | undefined;
         let surfaceProjectId: string | undefined;
         const host = {
             sessionsSidebar: { hide: () => undefined },
@@ -288,8 +294,10 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
             },
             activeTasks: { getDefaultAgent: () => 'codex' },
             transcriptStickyComposerUi: {
-                resetToProjectComposerDefaults: (entry: MobileProjectEntry) => {
+                resolvePinnedAgentIdForProject: (entry: MobileProjectEntry) => entry.id === cardProject.id ? 'opencode' : undefined,
+                resetToProjectComposerDefaults: (entry: MobileProjectEntry, agentId: string) => {
                     composerProjectId = entry.id;
+                    composerAgentId = agentId;
                 },
             },
             executionSurfaceTabsUi: {
@@ -309,12 +317,13 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(resetFor).to.deep.equal(['card-proj']);
         expect(host.agentsHubSelectedProjectId).to.equal('card-proj');
         expect(composerProjectId).to.equal('card-proj');
+        expect(composerAgentId).to.equal('opencode');
         expect(surfaceProjectId).to.equal('card-proj');
     });
 
     it('openEmptyMobileChatSheet scopes pending transcript sheets to the card project', async () => {
         const cardProject = { id: 'sheet-proj', name: 'Sheet Repo', status: 'idle' } as MobileProjectEntry;
-        let opened: { projectId: string; summaryId: string; cwd: string } | undefined;
+        let opened: { projectId: string; summaryId: string; cwd: string; agentId: string } | undefined;
         const host = {
             sessionsSidebar: { hide: () => undefined },
             shouldUseAgentsHubLanding: () => false,
@@ -324,9 +333,10 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
                 getProjectCwd: () => '/tmp/sheet-repo',
             },
             activeTasks: { getDefaultAgent: () => 'codex' },
+            transcriptStickyComposerUi: { resolvePinnedAgentIdForProject: () => undefined },
             transcriptSheetUi: {
-                openTranscriptSheet: async (entry: MobileProjectEntry, summary: { id: string; cwd: string }) => {
-                    opened = { projectId: entry.id, summaryId: summary.id, cwd: summary.cwd };
+                openTranscriptSheet: async (entry: MobileProjectEntry, summary: { id: string; cwd: string; agentId: string }) => {
+                    opened = { projectId: entry.id, summaryId: summary.id, cwd: summary.cwd, agentId: summary.agentId };
                 },
             },
         } as unknown as MobileProjectsSessionsSidebarHost;
@@ -337,6 +347,7 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(host.agentsHubSelectedProjectId).to.equal('sheet-proj');
         expect(opened?.projectId).to.equal('sheet-proj');
         expect(opened?.cwd).to.equal('/tmp/sheet-repo');
+        expect(opened?.agentId).to.equal('codex');
         expect(opened?.summaryId.startsWith('pending-new-chat-sheet-proj-')).to.equal(true);
     });
 

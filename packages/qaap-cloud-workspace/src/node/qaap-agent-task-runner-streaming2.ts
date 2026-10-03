@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
@@ -21,6 +22,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { resolveBackendInteractionModeSystemInstruction } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
     formatQaiqInteractionFlags,
@@ -28,6 +30,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
+import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { vendorHasByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
@@ -112,8 +115,15 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         const prompt = (request.prompt ?? '').trim();
         const rawCommand = (request.command ?? '').trim();
+        const planMode = request.interactionModeId?.trim().toLowerCase() === 'plan';
         if (!prompt && !rawCommand) {
             throw new Error('A non-empty "command" or "prompt" is required.');
+        }
+        if (planMode && rawCommand) {
+            throw new Error(nls.localize(
+                'qaap/agentTasks/planModeShellDisabled',
+                'Plan mode does not allow shell tasks.',
+            ));
         }
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
@@ -140,6 +150,18 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             }
         }
         const resolvedAgentId = prompt ? ctx.resolveAgentId(prompt, request.agent, ownerLogin) : SHELL_AGENT_ID;
+        if (planMode && resolvedAgentId === SHELL_AGENT_ID) {
+            throw new Error(nls.localize(
+                'qaap/agentTasks/planModeAgentRequired',
+                'Choose an agent with read-only support to use Plan mode.',
+            ));
+        }
+        if (planMode && !canEnforceReadOnlyWorkspace(resolvedAgentId)) {
+            throw new Error(nls.localize(
+                'qaap/agentTasks/planModeAgentUnsupported',
+                'The selected agent cannot be restricted to read-only access in Plan mode.',
+            ));
+        }
         if (
             resolvedAgentId === SHELL_AGENT_ID
             && prompt
@@ -188,7 +210,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             ...(nextQueuePosition !== undefined ? { queuePosition: nextQueuePosition } : {}),
             parentId,
             autoApprove,
-            ...(request.readOnlyWorkspace ? { readOnlyWorkspace: true } : {}),
+            ...(request.readOnlyWorkspace || planMode ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
             ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
             ...((request.userQuery?.trim() || prompt)
@@ -351,12 +373,16 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
                 researchLedger: ctx.readResearchLedger(resolvedCwd),
             }
             : undefined;
-        const agentPrompt = prependAgentTaskContextToPrompt(
+        const promptWithTaskContext = prependAgentTaskContextToPrompt(
             workflowPrompt,
             contextPreamble,
             resolvedCwd ? ctx.readProjectInfo(resolvedCwd) : undefined,
             repoContext,
         );
+        const modeInstruction = resolveBackendInteractionModeSystemInstruction(interactionModeId);
+        const agentPrompt = modeInstruction
+            ? `[Qaap interaction-mode system instruction]\n${modeInstruction}\n\n---\n\n${promptWithTaskContext}`
+            : promptWithTaskContext;
         ctx.assertQaiqConfigured(id, ownerLogin);
         const detected = ctx.detectedAgents.get(id);
         let command: string;

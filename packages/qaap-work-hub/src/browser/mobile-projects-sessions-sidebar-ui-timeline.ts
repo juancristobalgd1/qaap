@@ -5,6 +5,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     readStoredAgent,
     SHELL_AGENT_ID,
+    writeStoredAgent,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
@@ -195,16 +196,21 @@ export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: MobileProjec
 
 export async function openEmptyMobileChatSheetExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): Promise<void> {
     ctx.host.sessionsSidebar?.hide();
+    const cwd = ctx.host.projectsService.getProjectCwd(project);
+    const selectedProjectAgent = ctx.host.transcriptStickyComposerUi.resolvePinnedAgentIdForProject(project);
+    if (cwd && selectedProjectAgent) {
+        writeStoredAgent(cwd, selectedProjectAgent);
+    }
+    const defaultAgent = selectedProjectAgent
+        ?? (cwd ? readStoredAgent(cwd) : undefined)
+        ?? ctx.host.activeTasks?.getDefaultAgent()
+        ?? SHELL_AGENT_ID;
     if (ctx.host.shouldUseAgentsHubLanding() && !ctx.host.isProjectDetailView()) {
         // Card-menu / sidebar "New agent" must scope the idle Agents shell to THIS project.
         // Without activateAgentsHubProject, closeAgentsHubSession falls back to the workspace /
         // pinned project and the new section appears under the wrong repo.
         await ctx.host.activateAgentsHubProject(project);
         ctx.host.resetAgentsHubIdleTranscriptShell(project);
-        const cwd = ctx.host.projectsService.getProjectCwd(project);
-        const defaultAgent = (cwd ? readStoredAgent(cwd) : undefined)
-            ?? ctx.host.activeTasks?.getDefaultAgent()
-            ?? SHELL_AGENT_ID;
         ctx.host.transcriptStickyComposerUi.resetToProjectComposerDefaults(project, defaultAgent);
         ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
         if (ctx.host.visible) {
@@ -216,15 +222,11 @@ export async function openEmptyMobileChatSheetExtracted(ctx: MobileProjectsSessi
     }
     // Non–Agents-hub path: open a pending empty transcript scoped to the card project.
     ctx.host.agentsHubSelectedProjectId = project.id;
-    const cwd = ctx.host.projectsService.getProjectCwd(project);
-    const agentId = (cwd ? readStoredAgent(cwd) : undefined)
-        ?? ctx.host.activeTasks?.getDefaultAgent()
-        ?? SHELL_AGENT_ID;
     const summary: QaapAgentConversationSummaryDTO = {
         id: `pending-new-chat-${project.id}-${Date.now()}`,
         cwd: cwd ?? '',
         workspacePath: cwd,
-        agentId,
+        agentId: defaultAgent,
         title: nls.localize('qaap/mobileProjects/newChatTitle', 'New agent'),
         status: 'idle',
         createdAt: Date.now(),

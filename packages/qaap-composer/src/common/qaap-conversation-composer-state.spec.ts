@@ -9,6 +9,7 @@ import { conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-a
 import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, formatComposerRunPermissionsLabel, formatConversationExecutionSessionMeta, readConversationComposerDraft, readProjectComposerDefaults, writeConversationComposerDraft } from './qaap-conversation-composer-state';
 import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentApprovalPolicy, writeStoredAgentApprovalPolicy } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import { QAAP_BACKEND_INTERACTION_MODES, reconcileComposerModeId, writeStoredComposerMode } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 
 const baseConv = (): QaapAgentConversationDTO => ({
     id: 'conv-1',
@@ -147,6 +148,17 @@ describe('qaap-conversation-composer-state', () => {
         const runtime = applyProjectComposerDefaults(cwd, 'opencode');
         expect(runtime.conversationId).to.be.undefined;
         expect(runtime.agentModel?.modelId).to.equal('project-default');
+    });
+
+    it('restores the selected Plan mode for a fresh composer on the same project', () => {
+        const cwd = '/repo-with-plan-mode';
+        writeStoredComposerMode(cwd, 'plan');
+
+        const runtime = applyProjectComposerDefaults(cwd, 'opencode');
+
+        expect(runtime.modeId).to.equal('plan');
+        expect(reconcileComposerModeId('agent', QAAP_BACKEND_INTERACTION_MODES, cwd)).to.equal('plan');
+        expect(readProjectComposerDefaults('/other-repo', 'opencode').interactionModeId).to.equal(undefined);
     });
 
     it('a summary without approvalPolicyId does not overwrite the stored project policy', () => {

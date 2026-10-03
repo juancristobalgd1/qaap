@@ -288,9 +288,17 @@ export function removeSnapshotExtracted(ctx: MobileProjectsConversationsContext,
 
 export async function primeFromAllExtracted(ctx: MobileProjectsConversationsContext): Promise<void> {
         try {
-            const groups = await listAllConversationGroups();
+            const groups = await listAllConversationGroups({
+                onRetry: () => {
+                    if (ctx.snapshotState !== 'reconnecting') {
+                        ctx.snapshotState = 'reconnecting';
+                        ctx.emitConversationChange({ kind: 'snapshot' });
+                    }
+                },
+            });
             ctx.applyConversationGroups(groups);
         } catch {
+            ctx.lastPrimeFromAllAt = 0;
             if (ctx.snapshotState !== 'ready') {
                 ctx.snapshotState = 'error';
                 ctx.emitConversationChange({ kind: 'snapshot' });
@@ -374,6 +382,11 @@ export function openWebSocketExtracted(ctx: MobileProjectsConversationsContext):
                 if (ctx.transport === 'ws') {
                     ctx.transport = 'none';
                 }
+                ctx.lastPrimeFromAllAt = 0;
+                if (ctx.snapshotState !== 'reconnecting') {
+                    ctx.snapshotState = 'reconnecting';
+                    ctx.emitConversationChange({ kind: 'snapshot' });
+                }
                 ctx.openSseStream();
                 ctx.scheduleWebSocketReconnect();
             });
@@ -405,6 +418,7 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
             source.addEventListener('goal_loop', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('heartbeat', () => ctx.onDidReceiveTransportActivityEmitter.fire());
             source.addEventListener('open', () => {
+                ctx.sseReconnectAttempt = 0;
                 if (ctx.transportWasDisconnected) {
                     ctx.transportWasDisconnected = false;
                     ctx.onDidReconnectTransportEmitter.fire();
@@ -412,6 +426,9 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
                 ctx.schedulePrimeFromAll();
             });
             source.addEventListener('error', () => {
+                if (ctx.source !== source || ctx.transport === 'ws') {
+                    return;
+                }
                 ctx.transportWasDisconnected = true;
                 ctx.scheduleSseReconnect();
             });
@@ -485,4 +502,3 @@ function responseToText(response: TheiaSerializedChatResponse | undefined): stri
         .filter(Boolean)
         .join('\n\n');
 }
-

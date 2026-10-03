@@ -44,7 +44,7 @@ import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
  * autopilot stays as fallback; the shared `[QAAP visual verification]` marker plus the store's
  * in-flight lock keep the two paths from double-attaching.
  *
- * Disabled cleanly when no Chromium binary is resolvable (the frontend path still works).
+ * Missing Chromium settles the requested evidence with a clean unavailable state.
  * Set `QAAP_HEADLESS_VISUAL_CAPTURE=0|false|off` to turn it off explicitly.
  */
 
@@ -386,6 +386,11 @@ export function resolveHeadlessChromiumExecutable(): string | undefined {
     return systemCandidates.find(candidate => fs.existsSync(candidate));
 }
 
+/** Keep browser launch details in server logs; never expose Chromium argv or host paths in chat. */
+export function resolveQaapHeadlessCaptureFailureMessage(_error: unknown): string {
+    return nls.localize('qaap/headlessCapture/previewUnavailable', 'Vista previa no disponible');
+}
+
 /** Same-shape DOM smoke check as the frontend's validateQaapPreviewDocument, run in the page. */
 const PAGE_SMOKE_CHECK = `(() => {
     const issues = [];
@@ -586,10 +591,9 @@ export class QaapHeadlessVisualCaptureService {
         if (!target || agentMessageHasVisualVerificationMarker(target)) {
             return;
         }
-        const message = error instanceof Error ? error.message : String(error);
         await this.store.recordVisualVerificationFailure(
             conversationId,
-            nls.localize('qaap/headlessCapture/failed', 'Headless capture failed: {0}', message),
+            resolveQaapHeadlessCaptureFailureMessage(error),
             target.id,
             false,
         );
@@ -607,23 +611,16 @@ export class QaapHeadlessVisualCaptureService {
         const captureDirective = parseQaapCaptureDirective(target);
         const chromium = resolveHeadlessChromiumExecutable();
         if (!chromium) {
-            if (captureDirective.mode === 'video') {
-                await this.store.recordVisualVerificationFailure(
-                    conversationId,
-                    nls.localize(
-                        'qaap/headlessCapture/videoChromiumRequired',
-                        'Video recording requires a server-side Chromium binary (set QAAP_HEADLESS_CHROMIUM '
-                        + 'or install playwright browsers). Screenshots cannot substitute for [QAAP record].',
-                    ),
-                    target.id,
-                );
-                return;
-            }
             if (!this.chromiumMissingLogged) {
                 this.chromiumMissingLogged = true;
-                console.info('[qaap-headless-visual-capture] no Chromium binary found '
-                    + '(set QAAP_HEADLESS_CHROMIUM or install playwright browsers); leaving capture to the frontend.');
+                console.warn('[qaap-headless-visual-capture] no Chromium binary found; visual evidence is unavailable.');
             }
+            await this.store.recordVisualVerificationFailure(
+                conversationId,
+                resolveQaapHeadlessCaptureFailureMessage(undefined),
+                target.id,
+                false,
+            );
             return;
         }
         const app = resolveHeadlessCaptureAppTarget(conv.cwd);
@@ -936,23 +933,14 @@ export class QaapHeadlessVisualCaptureService {
                         throw new Error('the evidence store rejected the image');
                     }
                     captured.push({ label: step, evidenceId, result });
-                } catch (error) {
-                    skipped.push(nls.localize(
-                        'qaap/headlessCapture/routeFailure',
-                        '`{0}`: {1}',
-                        step,
-                        error instanceof Error ? error.message : String(error),
-                    ));
+                } catch {
+                    skipped.push(step);
                 }
             }
             if (captured.length === 0) {
                 await this.store.recordVisualVerificationFailure(
                     conversationId,
-                    nls.localize(
-                        'qaap/headlessCapture/noRouteCaptured',
-                        'Headless capture reached the dev server but no route could be captured — {0}',
-                        skipped.join('; '),
-                    ),
+                    resolveQaapHeadlessCaptureFailureMessage(undefined),
                     targetAgentMessageId,
                 );
                 return false;
@@ -965,10 +953,10 @@ export class QaapHeadlessVisualCaptureService {
                         ...first.result,
                         status: 'failed',
                         readiness: 'failed',
-                        issues: [...first.result.issues, ...skipped.map(reason => nls.localize(
+                        issues: [...first.result.issues, ...skipped.map(route => nls.localize(
                             'qaap/headlessCapture/couldNotCaptureRoute',
-                            'Could not capture {0}.',
-                            reason,
+                            'Could not capture route {0}.',
+                            route,
                         ))],
                     },
                 };
@@ -1030,13 +1018,8 @@ export class QaapHeadlessVisualCaptureService {
                         requestAnimationFrame(tick);
                     })`);
                     await page.waitForTimeout(800);
-                } catch (error) {
-                    skipped.push(nls.localize(
-                        'qaap/headlessCapture/routeFailure',
-                        '`{0}`: {1}',
-                        step,
-                        error instanceof Error ? error.message : String(error),
-                    ));
+                } catch {
+                    skipped.push(step);
                 }
             }
             await context.close();
@@ -1048,11 +1031,7 @@ export class QaapHeadlessVisualCaptureService {
             if (stepResults.length === 0 || !videoPath) {
                 await this.store.recordVisualVerificationFailure(
                     conversationId,
-                    nls.localize(
-                        'qaap/headlessCapture/noVideoProduced',
-                        'Headless recording reached the dev server but produced no video — {0}',
-                        skipped.join('; ') || nls.localize('qaap/headlessCapture/noRouteLoaded', 'no route loaded'),
-                    ),
+                    resolveQaapHeadlessCaptureFailureMessage(undefined),
                     targetAgentMessageId,
                 );
                 return false;
@@ -1065,10 +1044,10 @@ export class QaapHeadlessVisualCaptureService {
                         ...first.result,
                         status: 'failed',
                         readiness: 'failed',
-                        issues: [...first.result.issues, ...skipped.map(reason => nls.localize(
+                        issues: [...first.result.issues, ...skipped.map(route => nls.localize(
                             'qaap/headlessCapture/couldNotRecordRoute',
-                            'Could not record {0}.',
-                            reason,
+                            'Could not record route {0}.',
+                            route,
                         ))],
                     },
                 };

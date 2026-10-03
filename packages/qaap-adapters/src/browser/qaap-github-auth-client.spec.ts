@@ -68,9 +68,36 @@ describe('qaap-github-auth-client timeouts', () => {
         expect((await rejection(createQaapGithubRepository({ name: 'demo' }))).message).to.contain('took too long');
     });
 
-    it('keeps non-abort network errors unchanged', async () => {
-        nextFetch = async () => { throw new TypeError('Failed to fetch'); };
-        expect((await rejection(fetchQaapGithubPullRequests())).message).to.equal('Failed to fetch');
+    it('retries a transient gateway response when loading project sessions', async () => {
+        const clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        let calls = 0;
+        try {
+            nextFetch = async () => calls++ === 0
+                ? new Response('{}', { status: 503 })
+                : new Response('{"sessions":[]}', { status: 200 });
+            const pending = fetchQaapProjectSessions();
+            await clock.tickAsync(1_000);
+            expect((await pending).sessions).to.deep.equal([]);
+            expect(calls).to.equal(2);
+        } finally {
+            clock.restore();
+        }
+    });
+
+    it('keeps non-abort network errors unchanged after the bounded transient retries', async () => {
+        // A dropped connection is retried with backoff (qaap-transient-get); fake the backoff timers so
+        // the test checks the final error instead of waiting out real retry delays.
+        const clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            let attempts = 0;
+            nextFetch = async () => { attempts++; throw new TypeError('Failed to fetch'); };
+            const pending = rejection(fetchQaapGithubPullRequests());
+            await clock.tickAsync(60_000);
+            expect((await pending).message).to.equal('Failed to fetch');
+            expect(attempts).to.be.greaterThan(1);
+        } finally {
+            clock.restore();
+        }
     });
 
     it('bounds the body read, not only the wait for headers', async () => {

@@ -4,8 +4,12 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { ConfirmDialog } from '@theia/core/lib/browser';
 import type { QaapAgentModelSelection } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
-import { isComposerPromptImproveCancelled } from '../common/qaap-composer-prompt-improve';
+import {
+    isComposerPromptImproveCancelled,
+    isComposerPromptImproveTimeout,
+} from '../common/qaap-composer-prompt-improve';
 import { animateComposerPromptReplace, finalizeComposerPromptReplace } from './qaap-composer-prompt-reveal';
 import type { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import {
@@ -27,6 +31,7 @@ export interface StickyComposerImprovePromptOptions {
     readonly resolveAgentId: () => string;
     readonly resolveAgentModel: () => QaapAgentModelSelection | undefined;
     readonly resolveCwd?: () => string | undefined;
+    readonly confirmImprovedPrompt?: (before: string, after: string) => Promise<boolean>;
 }
 
 interface ActiveComposerImproveRun {
@@ -60,6 +65,37 @@ function restoreComposerPromptAfterCancel(
     promptSnapshot: string,
 ): void {
     finalizeComposerPromptReplace(context.input, promptSnapshot, context.setDraft);
+}
+
+async function confirmImprovedPrompt(before: string, after: string): Promise<boolean> {
+    const comparison = document.createElement('div');
+    for (const section of [
+        {
+            label: nls.localize('qaap/composer/improvePromptBefore', 'Before'),
+            value: before,
+        },
+        {
+            label: nls.localize('qaap/composer/improvePromptAfter', 'After'),
+            value: after,
+        },
+    ]) {
+        const block = document.createElement('section');
+        const heading = document.createElement('strong');
+        heading.textContent = section.label;
+        const text = document.createElement('pre');
+        text.textContent = section.value;
+        text.style.whiteSpace = 'pre-wrap';
+        text.style.overflowWrap = 'anywhere';
+        block.append(heading, text);
+        comparison.appendChild(block);
+    }
+    const accepted = await new ConfirmDialog({
+        title: nls.localize('qaap/composer/improvePromptReviewTitle', 'Review improved prompt'),
+        msg: comparison,
+        ok: nls.localize('qaap/composer/improvePromptAccept', 'Use improved prompt'),
+        cancel: nls.localize('qaap/composer/improvePromptKeepOriginal', 'Keep original'),
+    }).open();
+    return accepted === true;
 }
 
 export function createStickyComposerImprovePromptHandler(
@@ -150,6 +186,10 @@ async function runStickyComposerImprovePrompt(
         if (isRunCancelled()) {
             return;
         }
+        const accepted = await (options.confirmImprovedPrompt ?? confirmImprovedPrompt)(promptSnapshot, improved);
+        if (!accepted || isRunCancelled()) {
+            return;
+        }
         clearComposerImproveFeedback(context.improveBtn);
         await animateComposerPromptReplace(context.input, improved, {
             signal: animationAbort.signal,
@@ -170,7 +210,9 @@ async function runStickyComposerImprovePrompt(
             restoreComposerPromptAfterCancel(context, promptSnapshot);
             return;
         }
-        const message = error instanceof Error && error.message.trim()
+        const message = isComposerPromptImproveTimeout(error)
+            ? nls.localize('qaap/composer/improvePromptTimeout', 'Prompt improvement timed out. Try again.')
+            : error instanceof Error && error.message.trim()
             ? error.message.trim()
             : nls.localize('qaap/composer/improvePromptFailed', 'Could not improve the prompt. Try again.');
         notifyImproveFailure(context.improveBtn, message);

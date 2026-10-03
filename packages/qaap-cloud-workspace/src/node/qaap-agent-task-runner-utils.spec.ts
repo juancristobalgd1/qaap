@@ -371,6 +371,31 @@ describe('other harness prompt transport', () => {
 
     const longPrompt = 'C'.repeat(10_000);
 
+    it('adds Plan instructions to the agent context while preserving the user request', () => {
+        const userPrompt = 'Explain the authentication flow';
+        const ctx = commandCtx('opencode', 'opencode run --format json --dangerously-skip-permissions {prompt}');
+        const result = buildAgentCommandExtracted(
+            ctx as unknown as QaapAgentTaskRunnerContext,
+            userPrompt,
+            'opencode',
+            true,
+            undefined,
+            process.cwd(),
+            undefined,
+            'plan',
+            'full-access',
+            undefined,
+            undefined,
+            true,
+        );
+
+        expect(result.command).not.to.include('--dangerously-skip-permissions');
+        expect(result.stdinPrompt).to.contain('[Qaap interaction-mode system instruction]');
+        expect(result.stdinPrompt).to.contain('The user selected Plan mode.');
+        expect(result.stdinPrompt).to.contain(userPrompt);
+        expect(result.stdinPrompt).not.to.contain('[QAIQ Plan mode]');
+    });
+
     it('sends Claude, OpenCode, Copilot, and QAIQ prompts on stdin', () => {
         const cases: Array<{ id: string; template: string; leading: RegExp }> = [
             { id: 'claude', template: 'claude --print -p {prompt}', leading: /^claude\b/ },

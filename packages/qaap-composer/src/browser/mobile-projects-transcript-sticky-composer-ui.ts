@@ -264,6 +264,13 @@ export class MobileProjectsTranscriptStickyComposerUi {
         public readonly workHub: WorkHubTranscriptBridge,
     ) { }
 
+    /** Preserve the agent already selected for this project when its New agent action is used. */
+    public resolvePinnedAgentIdForProject(project: MobileProjectEntry): string | undefined {
+        return this.host.transcriptComposerProject?.id === project.id
+            ? this.host.transcriptComposerPinnedAgentId
+            : undefined;
+    }
+
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public isComposerBackgroundWorkAllowed(): boolean {
         return isComposerBackgroundWorkAllowedHelper();

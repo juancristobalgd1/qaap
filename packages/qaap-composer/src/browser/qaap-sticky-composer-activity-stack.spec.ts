@@ -279,6 +279,20 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(dropdown!.hidden).to.equal(true);
         });
 
+        it('hides Approve & Commit in Plan mode while preserving the existing commit options menu', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 4, removed: 2 },
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+                hasCommittableChanges: true,
+                hideApproveCommit: true,
+            });
+            document.body.append(host!);
+
+            expect(host!.querySelector('.theia-mobile-sticky-composer-commit-btn')).to.equal(null);
+            expect(host!.querySelector('.theia-mobile-sticky-composer-commit-menu')).to.exist;
+        });
+
         it('portals the commit menu to <body> while open so scroll containers cannot clip it', () => {
             const host = renderStickyComposerChangesPill({
                 diffStats: { added: 1, removed: 0 },

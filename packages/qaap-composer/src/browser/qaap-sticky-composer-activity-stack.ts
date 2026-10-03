@@ -114,6 +114,8 @@ export interface StickyComposerActivityStackOptions {
     onOpenPreview?: () => void;
     /** When set, a commit split-button (primary action + options menu) renders beside the Changes pill. */
     onCommitAction?: (action: QaapGitCommitWorkflowAction) => void;
+    /** Hide only the primary Approve & Commit button while keeping the existing options menu. */
+    hideApproveCommit?: boolean;
     commitBusy?: boolean;
 }
 
@@ -266,6 +268,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         options.agentWorking ? 1 : 0,
         options.commitBusy ? 1 : 0,
         options.onCommitAction ? 1 : 0,
+        options.hideApproveCommit ? 1 : 0,
         options.onRunApp ? 1 : 0,
         options.previewStarting ? 1 : 0,
         options.onOpenPreview ? 1 : 0,
@@ -294,10 +297,14 @@ export function patchStickyComposerChangesPillHost(
         ? files.length
         : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0));
     const hasCommitAction = !!options.onCommitAction && !!options.hasCommittableChanges;
+    const showApproveCommit = hasCommitAction && !options.hideApproveCommit;
     const hasNextActions = !!options.onRunApp || !!options.onOpenPreview;
     const hasChangesMenu = buildChangesMenuItems(options).length > 0;
     const existingCommitGroup = row.querySelector(':scope > .theia-mobile-sticky-composer-commit-group');
     if (!!existingCommitGroup !== hasCommitAction) {
+        return false;
+    }
+    if (!!existingCommitGroup?.querySelector('.theia-mobile-sticky-composer-commit-btn') !== showApproveCommit) {
         return false;
     }
     const existingNextActions = row.querySelector(':scope > .theia-mobile-sticky-composer-next-actions');
@@ -1225,16 +1232,18 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
     // theia-mod-busy drives the animated border beam while the commit workflow runs.
     group.className = `theia-mobile-sticky-composer-commit-group${disabled ? ' theia-mod-busy' : ''}`;
 
-    const commitBtn = document.createElement('button');
-    commitBtn.type = 'button';
-    commitBtn.className = 'theia-mobile-sticky-composer-commit-btn';
-    commitBtn.disabled = disabled;
-    commitBtn.textContent = nls.localize('qaap/mobileProjects/approveAndCommit', 'Approve & Commit');
-    commitBtn.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        options.onCommitAction?.('commit');
-    });
+    const commitBtn = options.hideApproveCommit ? undefined : document.createElement('button');
+    if (commitBtn) {
+        commitBtn.type = 'button';
+        commitBtn.className = 'theia-mobile-sticky-composer-commit-btn';
+        commitBtn.disabled = disabled;
+        commitBtn.textContent = nls.localize('qaap/mobileProjects/approveAndCommit', 'Approve & Commit');
+        commitBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            options.onCommitAction?.('commit');
+        });
+    }
 
     const menuWrap = createStickyComposerSplitMenu(
         group,
@@ -1250,7 +1259,10 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
     const borderBeamBloom = document.createElement('div');
     borderBeamBloom.className = 'qaap-border-beam-bloom';
     borderBeamBloom.setAttribute('aria-hidden', 'true');
-    group.append(commitBtn, menuWrap, borderBeamBloom);
+    if (commitBtn) {
+        group.append(commitBtn);
+    }
+    group.append(menuWrap, borderBeamBloom);
     return group;
 }
 

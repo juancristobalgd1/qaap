@@ -59,4 +59,43 @@ describe('MobileProjectsConversations live summary refresh', () => {
         const result = await conversations.readJson<{ ok: boolean }>(new URI('file:///tmp/session.json'));
         expect(result).to.deep.equal({ ok: true });
     });
+
+    it('backs off SSE reconnects exponentially with jitter and caps repeated failures', () => {
+        const delays: number[] = [];
+        const callbacks: Array<() => void> = [];
+        const originalSetTimeout = window.setTimeout;
+        const originalRandom = Math.random;
+        window.setTimeout = ((handler: TimerHandler, delay?: number): number => {
+            delays.push(delay ?? 0);
+            if (typeof handler === 'function') {
+                callbacks.push(handler as () => void);
+            }
+            return callbacks.length;
+        }) as typeof window.setTimeout;
+        Math.random = () => 0;
+        const context = {
+            transport: 'sse',
+            snapshotState: 'ready',
+            sseReconnectAttempt: 0,
+            sseReconnectHandle: undefined,
+            closeSse: () => undefined,
+            emitConversationChange: () => undefined,
+            openSseStream: () => undefined,
+            primeFromAll: async () => undefined,
+            lastPrimeFromAllAt: 1,
+        } as unknown as MobileProjectsConversationsContext;
+        try {
+            for (let attempt = 0; attempt < 7; attempt++) {
+                streaming.scheduleSseReconnectExtracted(context);
+                callbacks.pop()?.();
+            }
+            expect(delays).to.deep.equal([800, 1_600, 3_200, 6_400, 12_800, 24_000, 24_000]);
+            expect(context.sseReconnectAttempt).to.equal(7);
+            expect(context.snapshotState).to.equal('reconnecting');
+            expect(context.lastPrimeFromAllAt).to.equal(0);
+        } finally {
+            window.setTimeout = originalSetTimeout;
+            Math.random = originalRandom;
+        }
+    });
 });

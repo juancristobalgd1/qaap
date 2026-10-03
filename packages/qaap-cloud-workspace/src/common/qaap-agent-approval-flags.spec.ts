@@ -210,6 +210,31 @@ describe('qaap-agent-approval-flags', () => {
         expect(JSON.parse(env!)).to.deep.equal({ edit: 'ask', bash: 'ask', webfetch: 'ask', websearch: 'ask' });
     });
 
+    it('Plan mode denies OpenCode shell, writes, delegation, and unknown tools while keeping read tools', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "opencode run --format json --dangerously-skip-permissions 'draft a plan'",
+            { agentId: 'opencode', interactionModeId: 'plan', readOnlyWorkspace: true },
+        );
+        expect(command).not.to.include('--dangerously-skip-permissions');
+        const env = resolveOpencodePermissionEnv({
+            command,
+            agentId: 'opencode',
+            autoApprove: true,
+            readOnlyWorkspace: true,
+        });
+        expect(JSON.parse(env!)).to.deep.equal({
+            '*': 'deny',
+            read: 'allow',
+            glob: 'allow',
+            grep: 'allow',
+            list: 'allow',
+            webfetch: 'allow',
+            websearch: 'allow',
+            lsp: 'allow',
+            question: 'allow',
+        });
+    });
+
     it('approve-for-me without shell/network rules lets OpenCode run shell and gates only network', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "opencode run --format json 'hi'",

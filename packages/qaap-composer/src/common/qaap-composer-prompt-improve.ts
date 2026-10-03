@@ -32,6 +32,8 @@ export const COMPOSER_PROMPT_IMPROVER_FALLBACK_ALIASES = [
 ] as const;
 
 export const COMPOSER_PROMPT_IMPROVE_TIMEOUT_MS = 45_000;
+/** Leave time for the backend timeout response to reach the browser before its fallback timeout. */
+export const COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS = 40_000;
 
 /** Build the Theia language-model id from a composer model selection. */
 export function formatAgentModelLanguageModelId(model: QaapAgentModelSelection): string {
@@ -147,6 +149,17 @@ export class ComposerPromptImproveCancelledError extends Error {
     }
 }
 
+export class ComposerPromptImproveTimeoutError extends Error {
+    constructor(message = 'Prompt improvement timed out. Try again.') {
+        super(message);
+        this.name = 'ComposerPromptImproveTimeoutError';
+    }
+}
+
 export function isComposerPromptImproveCancelled(error: unknown): boolean {
     return error instanceof ComposerPromptImproveCancelledError;
+}
+
+export function isComposerPromptImproveTimeout(error: unknown): boolean {
+    return error instanceof ComposerPromptImproveTimeoutError;
 }

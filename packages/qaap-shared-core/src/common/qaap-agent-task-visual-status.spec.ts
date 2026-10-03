@@ -46,12 +46,22 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'interrupted' }).id).to.equal('interrupted');
     });
 
-    it('classifies explicit input waits and priority flags as needs-you', () => {
+    it('classifies explicit input waits as needs-you without treating priority as task status', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'needs-input' }).id).to.equal('needs-you');
         expect(resolveQaapAgentTaskVisualStatus(
             { state: 'idle' },
             { status: 'idle', priority: true, lastMessageRole: 'agent', messageCount: 3 },
-        ).id).to.equal('needs-you');
+        ).id).to.equal('idle');
+    });
+
+    it('keeps a successful completed task green when its conversation is priority-sorted and unread', () => {
+        const status = resolveQaapAgentTaskVisualStatus(
+            { state: 'completed' },
+            { status: 'idle', priority: true, lastMessageRole: 'agent', messageCount: 3 },
+            true,
+        );
+        expect(status).to.include({ id: 'verified', iconClass: 'codicon-pass' });
+        expect(status.color).to.contain('charts-green');
     });
 
     it('keeps the real outcome glyph for an unread reply of a run that finished fine', () => {

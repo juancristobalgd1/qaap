@@ -10,13 +10,16 @@ import * as os from 'os';
 import * as path from 'path';
 import { chromium } from 'playwright-core';
 import {
+    QaapHeadlessVisualCaptureService,
     applyQaapHeadlessRuntimeDiagnostics,
     inspectQaapHeadlessPage,
     qaapHeadlessPublicPreviewLeaseMs,
     resolveHeadlessCaptureAppTarget,
     resolveHeadlessChromiumExecutable,
+    resolveQaapHeadlessCaptureFailureMessage,
     resolveQaapStaticPreviewFile,
 } from './qaap-headless-visual-capture';
+import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
 
 describe('resolveQaapStaticPreviewFile', () => {
     let root: string;
@@ -65,6 +68,37 @@ describe('qaapHeadlessPublicPreviewLeaseMs', () => {
         expect(qaapHeadlessPublicPreviewLeaseMs(undefined)).to.equal(15 * 60_000);
         expect(qaapHeadlessPublicPreviewLeaseMs('1')).to.equal(60_000);
         expect(qaapHeadlessPublicPreviewLeaseMs(String(48 * 60 * 60_000))).to.equal(24 * 60 * 60_000);
+    });
+});
+
+describe('QaapHeadlessVisualCaptureService failure presentation', () => {
+    it('settles failed Chromium launches with a clean message and keeps argv out of the transcript', async () => {
+        const conversation = {
+            id: 'conversation-1',
+            status: 'idle',
+            messages: [{ id: 'agent-1', role: 'agent', content: 'Done. [QAAP capture: /]' }],
+        } as unknown as QaapAgentConversation;
+        let failureMessage = '';
+        const service = Object.create(QaapHeadlessVisualCaptureService.prototype) as QaapHeadlessVisualCaptureService;
+        Object.assign(service, {
+            store: {
+                get: () => conversation,
+                recordVisualVerificationFailure: async (_conversationId: string, message: string) => {
+                    failureMessage = message;
+                    return undefined;
+                },
+            },
+        });
+        const recordFailure = (service as unknown as {
+            recordHeadlessCaptureFailure(conversationId: string, error: unknown): Promise<void>;
+        }).recordHeadlessCaptureFailure.bind(service);
+        const launchError = new Error('browserType.launch: Failed to launch chromium with args: --no-sandbox --disable-gpu');
+
+        await recordFailure(conversation.id, launchError);
+
+        expect(failureMessage).to.equal(resolveQaapHeadlessCaptureFailureMessage(launchError));
+        expect(failureMessage).to.equal('Vista previa no disponible');
+        expect(failureMessage).not.to.contain('--no-sandbox');
     });
 });
 
