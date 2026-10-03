@@ -12,6 +12,7 @@ import {
 } from '@theia/core/shared/inversify';
 import { ChildProcess, spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
     type QaapAgentDescriptor,
@@ -33,6 +34,9 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { prependAgentCliBinToPath, resolveAgentCliPrefixBinDirectory, resolveAgentCliPrefixForEnv } from './qaap-agent-cli-prefix';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import type { QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
@@ -411,8 +415,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public isOnPath(bin: string): boolean {
-        return isOnPathHelper(bin);
+    public isOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): boolean {
+        return isOnPathHelper(bin, env);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -535,6 +539,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** Re-probe CLI harnesses after a local install from the configuration UI. */
     refreshAgentCatalog(): void {
+        this.prependInstalledAgentCliBinToProcessPath();
         this.agentConnectionStates.clear();
         this.detectAgents();
     }
@@ -570,17 +575,19 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         ownerLogin: string | undefined,
         isInstallSupported: (agentId: string) => boolean,
     ): QaapAgentHarnessStatus[] {
+        const pathEnv = { ...process.env };
+        prependAgentCliBinToPath(pathEnv, this.resolveAgentCliPrefix(this.resolveOwnerCwd(ownerLogin)));
         return QAAP_HARNESS_DEFINITIONS.map(definition => {
             const candidate = this.detectedAgents.get(definition.id);
             const installed = candidate
-                ? this.isCandidateAvailable(candidate)
-                : this.isOnPath(definition.bin);
+                ? !candidate.bin || this.isOnPath(candidate.bin, pathEnv)
+                : this.isOnPath(definition.bin, pathEnv);
             return {
                 id: definition.id,
                 installed,
                 enabled: this.isAgentEnabled(definition.id, ownerLogin),
                 connectionState: installed
-                    ? this.agentConnectionState(definition.id, ownerLogin)
+                    ? this.agentConnectionState(definition.id, ownerLogin) ?? 'unknown'
                     : 'unknown',
                 installSupported: isInstallSupported(definition.id),
             };
@@ -650,6 +657,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
             };
+            prependAgentCliBinToPath(env, this.resolveAgentCliPrefix(tenantCwd));
             return probeAgentConnectionStateHelper(agentId, bin, {
                 file: wrapped.file,
                 args: wrapped.args,
@@ -1252,6 +1260,69 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public resolveAgentHome(cwd: string): string {
         return this.tenantSpawn.resolveTenantHome(cwd);
+    }
+
+    protected resolveOwnerCwd(ownerLogin?: string): string {
+        const reposRoot = resolveQaapReposRoot();
+        return ownerLogin?.trim() ? resolveUserReposRoot(reposRoot, ownerLogin) : reposRoot;
+    }
+
+    /**
+     * HOME that owns the per-user harness CLI prefix. A local single-user backend that does not
+     * drop privileges installs under the backend user's own home (the shared agent home may not
+     * exist there); every hosted/dropped-uid case uses the tenant agent home.
+     */
+    protected resolveAgentCliHome(cwd: string): string {
+        if (!isQaapProductionRuntime(process.env)) {
+            let identity: { uid?: number };
+            try {
+                identity = this.resolveAgentSpawnIdentity(cwd);
+            } catch {
+                identity = {};
+            }
+            if (identity.uid === undefined) {
+                return os.homedir();
+            }
+        }
+        return this.resolveAgentHome(cwd);
+    }
+
+    /** @internal npm prefix of the harness CLIs installed for the tenant that owns `cwd`. */
+    public resolveAgentCliPrefix(cwd: string): string {
+        return resolveAgentCliPrefixForEnv(process.env, this.resolveAgentCliHome(cwd));
+    }
+
+    /**
+     * Make backend-wide harness detection see CLIs installed into the default prefix. Only an
+     * existing prefix is added, so a backend (and the IDE terminals it spawns) without per-user
+     * installs keeps its PATH unchanged.
+     */
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public prependInstalledAgentCliBinToProcessPath(): void {
+        const prefix = this.resolveAgentCliPrefix(resolveQaapReposRoot());
+        if (fs.existsSync(resolveAgentCliPrefixBinDirectory(prefix))) {
+            prependAgentCliBinToPath(process.env, prefix);
+        }
+    }
+
+    /** HOME, npm prefix, uid/gid and cache env used by this caller's tenant-scoped npm install. */
+    resolveAgentCliInstallTarget(ownerLogin?: string): QaapAgentCliInstallTarget {
+        const cwd = this.resolveOwnerCwd(ownerLogin);
+        let identity: { uid?: number; gid?: number };
+        try {
+            identity = this.resolveAgentSpawnIdentity(cwd);
+        } catch {
+            // Misconfigured hosted identity: report no uid so the install service refuses honestly.
+            return { home: this.resolveAgentCliHome(cwd), prefix: this.resolveAgentCliPrefix(cwd), uid: 0 };
+        }
+        const { HOME, USER, LOGNAME, ...storageEnv } = this.tenantHomeEnvOverlay(cwd) as Record<string, string | undefined>;
+        return {
+            home: HOME || this.resolveAgentCliHome(cwd),
+            prefix: this.resolveAgentCliPrefix(cwd),
+            ...identity,
+            user: USER || LOGNAME,
+            env: storageEnv,
+        };
     }
 
     /** @see QaapTenantSpawnService.tenantHomeEnvOverlay */

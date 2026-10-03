@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+    buildQaapNpmInstallInvocation,
     isInPlaceCliUpdateAllowed,
     QaapAgentCliUpdateService,
     QAAP_ALLOW_IN_PLACE_CLI_UPDATE,
@@ -33,13 +34,31 @@ class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
     protected override runNpmInstall(): NpmUpdateResultProbe['result'] {
         return this.result;
     }
+
+    protected override isInstallPrefixWritableAsTarget(): boolean {
+        return true;
+    }
+
+    protected override isSetprivAvailable(): boolean {
+        return true;
+    }
+}
+
+class ReadOnlyNpmUpdateProbe extends NpmUpdateResultProbe {
+    protected override isInstallPrefixWritableAsTarget(): boolean {
+        return false;
+    }
 }
 
 describe('QaapAgentCliUpdateService', () => {
+    // A non-root backend may only install for its own uid; a root backend drops to 1001 via setpriv.
+    const agentUid = typeof process.getuid === 'function' && process.getuid() !== 0 ? process.getuid() : 1001;
     const originalCheck = process.env.QAAP_AGENT_CLI_UPDATE_CHECK;
     const originalNodeEnv = process.env.NODE_ENV;
     const originalCloudMode = process.env.QAAP_CLOUD_MODE;
     const originalAllow = process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE];
+    const originalAgentUid = process.env.QAAP_AGENT_UID;
+    const originalAgentGid = process.env.QAAP_AGENT_GID;
 
     afterEach(() => {
         if (originalCheck === undefined) {
@@ -61,6 +80,16 @@ describe('QaapAgentCliUpdateService', () => {
             delete process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE];
         } else {
             process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE] = originalAllow;
+        }
+        if (originalAgentUid === undefined) {
+            delete process.env.QAAP_AGENT_UID;
+        } else {
+            process.env.QAAP_AGENT_UID = originalAgentUid;
+        }
+        if (originalAgentGid === undefined) {
+            delete process.env.QAAP_AGENT_GID;
+        } else {
+            process.env.QAAP_AGENT_GID = originalAgentGid;
         }
     });
 
@@ -90,21 +119,23 @@ describe('QaapAgentCliUpdateService', () => {
         expect(result.message).to.match(/Unknown agent CLI/i);
     });
 
-    it('denies in-place updates in production without an escape hatch', async () => {
+    it('refuses production installs without a configured non-root agent uid', async () => {
         process.env.NODE_ENV = 'production';
         delete process.env.QAAP_CLOUD_MODE;
         process.env.QAAP_AGENT_CLI_UPDATE_CHECK = '1';
+        delete process.env.QAAP_AGENT_UID;
         delete process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE];
         expect(isInPlaceCliUpdateAllowed()).to.equal(false);
         const service = new QaapAgentCliUpdateService();
         const result = await service.installUpdate('codex');
         expect(result.ok).to.equal(false);
-        expect(result.message).to.match(/not available on this server.*contact your administrator/i);
+        expect(result.message).to.match(/configured tenant user/i);
         expect(result.message).not.to.match(/in-place|rebuild/i);
     });
 
     it('still denies in-place updates in production when the legacy override is set', () => {
         process.env.NODE_ENV = 'production';
+        delete process.env.QAAP_AGENT_UID;
         process.env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE] = '1';
         expect(isInPlaceCliUpdateAllowed()).to.equal(false);
     });
@@ -114,21 +145,97 @@ describe('QaapAgentCliUpdateService', () => {
         delete process.env.QAAP_CLOUD_MODE;
         process.env.QAAP_AGENT_CLI_UPDATE_CHECK = '0';
         const service = new QaapAgentCliUpdateService();
-        const result = await service.installUpdate('codex');
+        const result = await service.installUpdate('codex', {
+            home: '/home/qaap-tenants/alice',
+            uid: 1001,
+            gid: 1001,
+        });
         expect(result.ok).to.equal(false);
         expect(result.message).to.match(/UPDATE_CHECK/i);
     });
 
     it('treats a signaled npm install as failure and preserves an actionable reason', async () => {
         const service = new NpmUpdateResultProbe();
-        const result = await service.installUpdate('codex');
+        const target = { home: '/home/qaap-tenants/alice', uid: agentUid, gid: agentUid };
+        const result = await service.installUpdate('codex', target);
         expect(result.ok).to.equal(false);
         expect(result.message).to.match(/SIGTERM/);
 
         service.result = { status: 1, signal: null, stdout: '', stderr: 'EACCES: permission denied' };
-        const permissionFailure = await service.installUpdate('codex');
+        const permissionFailure = await service.installUpdate('codex', target);
         expect(permissionFailure.ok).to.equal(false);
         expect(permissionFailure.message).to.contain('EACCES: permission denied');
+    });
+
+    it('runs lifecycle-enabled npm installs through setpriv into the tenant prefix', () => {
+        const invocation = buildQaapNpmInstallInvocation(
+            '@openai/codex',
+            { prefix: '/home/qaap-tenants/alice/.qaap/cli', uid: 1001, gid: 1001 },
+            { backendUid: 0, platform: 'linux' },
+        );
+        expect(invocation).to.deep.equal({
+            file: 'setpriv',
+            args: [
+                '--reuid', '1001',
+                '--regid', '1001',
+                '--clear-groups',
+                '--',
+                'npm',
+                'install',
+                '-g',
+                '--prefix',
+                '/home/qaap-tenants/alice/.qaap/cli',
+                '--ignore-scripts=false',
+                '@openai/codex@latest',
+            ],
+            shell: false,
+        });
+    });
+
+    it('refuses root-owned and read-only homes before running npm', async () => {
+        const target = { home: '/root/tenant', uid: agentUid, gid: agentUid };
+        const service = new NpmUpdateResultProbe();
+        const rootPathResult = await service.installUpdate('codex', target);
+        expect(rootPathResult.ok).to.equal(false);
+        expect(rootPathResult.message).to.match(/not available|writable tenant home/i);
+
+        process.env.NODE_ENV = 'production';
+        process.env.QAAP_AGENT_UID = String(agentUid);
+        const readOnlyService = new ReadOnlyNpmUpdateProbe();
+        const readOnlyResult = await readOnlyService.installUpdate('codex', {
+            home: '/home/qaap-tenants/alice',
+            uid: agentUid,
+            gid: agentUid,
+        });
+        expect(readOnlyResult.ok).to.equal(false);
+        expect(readOnlyResult.message).to.match(/read-only/i);
+    });
+
+    it('reports harnesses without an installable package honestly instead of as unknown', async () => {
+        process.env.QAAP_AGENT_CLI_UPDATE_CHECK = '1';
+        const service = new NpmUpdateResultProbe();
+        const result = await service.installUpdate('grok', { home: '/home/qaap-tenants/alice', uid: 1001, gid: 1001 });
+        expect(result.ok).to.equal(false);
+        expect(result.message).to.match(/no installable package/i);
+        expect(result.message).not.to.match(/unknown agent cli/i);
+        expect(service.hasInstallablePackage('grok')).to.equal(false);
+        expect(service.hasInstallablePackage('codex')).to.equal(true);
+    });
+
+    it('refuses a non-persistent /tmp prefix in production even when HOME is a tmpfs', async () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.QAAP_CLOUD_MODE;
+        process.env.QAAP_AGENT_CLI_UPDATE_CHECK = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        const service = new NpmUpdateResultProbe();
+        service.result = { status: 0, signal: null, stdout: '', stderr: '' };
+        const tmpPrefix = await service.installUpdate('codex', {
+            home: '/tmp/qaap-home', prefix: '/tmp/qaap-home/.qaap/cli', uid: 1001, gid: 1001,
+        });
+        expect(tmpPrefix.ok).to.equal(false);
+        expect(service.isAgentInstallSupported('codex', {
+            home: '/tmp/qaap-home', prefix: '/tmp/qaap-home/.qaap/cli', uid: 1001, gid: 1001,
+        })).to.equal(false);
     });
 });
 

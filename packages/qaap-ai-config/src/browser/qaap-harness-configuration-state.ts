@@ -15,12 +15,19 @@ export type HarnessCardStatus =
     | 'installed-connection-unknown'
     | 'not-installed';
 
-export type HarnessCardAction = 'loading' | 'toggle' | 'install' | 'install-unavailable' | 'availability-unknown';
+export type HarnessCardAction =
+    | 'loading'
+    | 'toggle'
+    | 'install'
+    | 'install-unavailable'
+    | 'install-no-package'
+    | 'availability-unknown';
 
 export function resolveHarnessCardAction(
     installed: boolean,
     availabilityState: HarnessAvailabilityState,
     installSupported: boolean,
+    installPackageAvailable: boolean = true,
 ): HarnessCardAction {
     if (availabilityState === 'loading') {
         return 'loading';
@@ -31,7 +38,11 @@ export function resolveHarnessCardAction(
     if (availabilityState === 'unavailable') {
         return 'availability-unknown';
     }
-    return installSupported ? 'install' : 'install-unavailable';
+    if (installSupported) {
+        return 'install';
+    }
+    // Packageless harnesses must not read like a server policy that an administrator could lift.
+    return installPackageAvailable ? 'install-unavailable' : 'install-no-package';
 }
 
 export function resolveHarnessCardStatus(

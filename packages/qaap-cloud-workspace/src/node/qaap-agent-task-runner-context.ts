@@ -153,7 +153,7 @@ export interface QaapAgentTaskRunnerContext {
     resolveTaskAgentId(task: QaapAgentTask): string;
     readCustomAgents(): AgentCandidate[];
     parseCustomAgent(entry: unknown, index: number): AgentCandidate[];
-    isOnPath(bin: string): boolean;
+    isOnPath(bin: string, env?: NodeJS.ProcessEnv): boolean;
     isAgentConfigured(): boolean;
     isAgentConnected(agentId: string, ownerLogin?: string): boolean;
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean;
@@ -322,6 +322,8 @@ export interface QaapAgentTaskRunnerContext {
     resolveAgentSpawnIdentity(cwd: string): { uid?: number; gid?: number };
     spawnAgentCommand(command: string, options: QaapSpawnAgentCommandOptions): ChildProcess;
     resolveAgentHome(cwd: string): string;
+    resolveAgentCliPrefix(cwd: string): string;
+    prependInstalledAgentCliBinToProcessPath(): void;
     tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string };
     ensureAgentCwdOwnership(cwd: string): void;
     ensureAgentCwdOwnershipAsync(cwd: string): Promise<void>;

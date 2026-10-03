@@ -302,6 +302,8 @@ export interface QaapAgentHarnessStatus {
     readonly enabled: boolean;
     readonly connectionState: QaapAgentConnectionState;
     readonly installSupported: boolean;
+    /** False when the harness has no installable package at all (vs. installs disabled on this server). */
+    readonly installPackageAvailable?: boolean;
     readonly version?: string;
 }
 

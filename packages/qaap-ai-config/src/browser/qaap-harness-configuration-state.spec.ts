@@ -12,6 +12,12 @@ describe('Qaap harness configuration card action', () => {
         expect(resolveHarnessCardAction(false, 'ready', true)).to.equal('install');
     });
 
+    it('distinguishes harnesses without an installable package from servers that disable installs', () => {
+        expect(resolveHarnessCardAction(false, 'ready', false, false)).to.equal('install-no-package');
+        expect(resolveHarnessCardAction(false, 'ready', false, true)).to.equal('install-unavailable');
+        expect(resolveHarnessCardAction(true, 'ready', false, false)).to.equal('toggle');
+    });
+
     it('shows the harness toggle when installed and waits for status before offering install', () => {
         expect(resolveHarnessCardAction(true, 'ready', false)).to.equal('toggle');
         expect(resolveHarnessCardAction(false, 'loading', true)).to.equal('loading');

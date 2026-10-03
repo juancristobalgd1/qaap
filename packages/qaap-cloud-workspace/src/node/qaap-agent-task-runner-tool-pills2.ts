@@ -41,6 +41,7 @@ import {
     prependPathEntry as prependPathEntryHelper,
 } from './qaap-agent-task-runner-utils';
 import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
+import { prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
 
 export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext, command: string,
         cwd: string,
@@ -227,6 +228,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         } else if (ctx.resolveAgentSpawnIdentity(task.cwd).uid !== undefined) {
             env.HOME = ctx.resolveAgentHome(task.cwd);
         }
+        prependAgentCliBinToPath(env, ctx.resolveAgentCliPrefix(task.cwd));
         // Strip shared provider API keys from process.env so per-user settings
         // are the sole source. Without this, User B's agent would inherit User
         // A's keys (or operator-level keys) from the shared backend process.

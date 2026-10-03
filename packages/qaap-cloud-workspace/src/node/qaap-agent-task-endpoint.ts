@@ -422,12 +422,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             return;
         }
         const ownerLogin = this.auth.resolveUserLogin(ctx);
+        const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
         res.setHeader('Cache-Control', 'no-store');
         res.json({
             harnesses: this.runner.listHarnessStatuses(
                 ownerLogin,
-                agentId => this.cliUpdates.isAgentInstallSupported(agentId),
-            ),
+                agentId => this.cliUpdates.isAgentInstallSupported(agentId, installTarget),
+            ).map(harness => ({ ...harness, installPackageAvailable: this.cliUpdates.hasInstallablePackage(harness.id) })),
         } satisfies QaapAgentHarnessStatusResponse);
     }
 
@@ -436,17 +437,21 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         if (!authContext) {
             return;
         }
-        // End users of hosted deployments cannot act on an "Update available" toast (CLIs are
-        // pinned in the image), so do not surface outdated CLIs where in-place update is denied.
-        if (!this.cliUpdates.isInPlaceCliUpdateAllowed()) {
+        const ownerLogin = this.auth.resolveUserLogin(authContext);
+        const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
+        if (!this.cliUpdates.isInstallSupportedForTarget(installTarget)) {
             res.json({ updates: [] });
             return;
         }
         try {
-            const payload = await this.cliUpdates.listOutdated();
-            const ownerLogin = this.auth.resolveUserLogin(authContext);
+            const payload = await this.cliUpdates.listOutdated(installTarget);
             res.json({
-                updates: payload.updates.filter(update => this.runner.isAgentEnabled(update.id, ownerLogin)),
+                updates: payload.updates
+                    .filter(update => this.runner.isAgentEnabled(update.id, ownerLogin))
+                    .map(update => ({
+                        ...update,
+                        updateSupported: this.cliUpdates.isAgentInstallSupported(update.id, installTarget),
+                    })),
             });
         } catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -454,7 +459,8 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleInstallCliUpdate(req: Request, res: Response): Promise<void> {
-        if (!this.requireAuth(req, res)) {
+        const authContext = this.requireAuth(req, res);
+        if (!authContext) {
             return;
         }
         const agentId = typeof req.params.agentId === 'string' ? req.params.agentId.trim() : '';
@@ -462,17 +468,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"agentId" is required.' });
             return;
         }
-        // Hosted/production: any authenticated tenant must not mutate shared global CLIs.
-        if (!this.cliUpdates.isInPlaceCliUpdateAllowed()) {
-            res.status(403).json({
-                ok: false,
-                id: agentId,
-                message: 'Installation is not available on this server. Please contact your administrator.',
-            });
-            return;
-        }
         try {
-            const result = await this.cliUpdates.installUpdate(agentId);
+            const ownerLogin = this.auth.resolveUserLogin(authContext);
+            const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
+            const result = await this.cliUpdates.installUpdate(agentId, installTarget);
             if (result.ok) {
                 this.runner.refreshAgentCatalog();
             }

@@ -65,6 +65,7 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
             tenantHomeEnvOverlay: undefined,
             detectedAgents: new Map([['qaiq', { id: 'qaiq', label: 'QAIQ', bin: 'qaiq', template: 'qaiq {qaiq_flags} -p {prompt}' }]]),
             resolveAgentSpawnIdentity: () => ({}),
+            resolveAgentCliPrefix: () => '/home/qaap-agent/.qaap/cli',
             readUserSettingsFromDisk: (login?: string) => login === 'alice' ? { ...ALICE_SETTINGS } : { ...SHARED_SETTINGS },
             preferenceService: {
                 get: (key: string) => SHARED_SETTINGS[key],

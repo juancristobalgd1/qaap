@@ -35,6 +35,7 @@ interface HarnessStatus {
     readonly enabled?: boolean;
     readonly connectionState?: HarnessConnectionState;
     readonly installSupported?: boolean;
+    readonly installPackageAvailable?: boolean;
     readonly version?: string;
 }
 
@@ -47,6 +48,7 @@ interface LoadedHarnessStatus {
     readonly enabled: boolean;
     readonly connectionState: HarnessConnectionState;
     readonly installSupported: boolean;
+    readonly installPackageAvailable: boolean;
     readonly version?: string;
 }
 
@@ -129,21 +131,28 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
             installed,
             this.availabilityState,
             harnessStatus?.installSupported === true,
+            harnessStatus?.installPackageAvailable !== false,
         );
         const cardStatus = resolveHarnessCardStatus(installed, this.availabilityState, connectionState);
-        const unavailable = action === 'install-unavailable' || action === 'availability-unknown';
-        const status = action === 'install-unavailable'
+        const installUnavailable = action === 'install-unavailable' || action === 'install-no-package';
+        const unavailable = installUnavailable || action === 'availability-unknown';
+        const status = action === 'install-no-package'
             ? nls.localize(
-                'qaap/aiConfiguration/harnessInstallUnavailable',
-                'Not available on this server yet',
+                'qaap/aiConfiguration/harnessInstallNoPackage',
+                'No installable package for this server yet',
             )
-            : this.renderAvailabilityStatus(cardStatus);
+            : action === 'install-unavailable'
+                ? nls.localize(
+                    'qaap/aiConfiguration/harnessInstallUnavailable',
+                    'Installation is not enabled on this server',
+                )
+                : this.renderAvailabilityStatus(cardStatus);
         const installing = this.installingHarnessIds.has(definition.id);
         const cardClasses = [
             'qaap-harness-card',
             enabled && !unavailable ? undefined : 'theia-mod-disabled',
             installed ? undefined : 'qaap-harness-card-unavailable',
-            action === 'install-unavailable' ? 'qaap-harness-card-install-unavailable' : undefined,
+            installUnavailable ? 'qaap-harness-card-install-unavailable' : undefined,
             installing ? 'qaap-harness-card-installing' : undefined,
         ].filter((className): className is string => className !== undefined);
         return (
@@ -308,12 +317,14 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
         }
         this.installingHarnessIds.add(definition.id);
         this.update();
+        let failureReason: string | undefined;
         try {
             const [result] = await Promise.all([
                 requestAgentCliUpdate(definition.id),
                 new Promise<void>(resolve => setTimeout(resolve, MIN_INSTALL_FEEDBACK_MS)),
             ]);
             if (!result.ok) {
+                failureReason = result.message?.trim() || undefined;
                 throw new Error('Harness installation failed.');
             }
             const disabledIds = readDisabledHarnessIds(this.preferenceService.get(QAAP_DISABLED_HARNESSES_PREF));
@@ -330,11 +341,13 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
             ));
             await this.loadAvailability();
         } catch {
-            this.messageService?.error(nls.localize(
-                'qaap/aiConfiguration/installHarnessFailed',
-                'Could not install {0}. Please try again later or contact your administrator.',
-                definition.label,
-            ));
+            this.messageService?.error(failureReason
+                ? nls.localize('qaap/aiConfiguration/installHarnessFailedReason', 'Could not install {0}: {1}', definition.label, failureReason)
+                : nls.localize(
+                    'qaap/aiConfiguration/installHarnessFailed',
+                    'Could not install {0}. Please try again later or contact your administrator.',
+                    definition.label,
+                ));
         } finally {
             this.installingHarnessIds.delete(definition.id);
             this.update();
@@ -358,6 +371,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                     enabled: harness.enabled === true,
                     connectionState: harness.connectionState ?? 'unknown',
                     installSupported: harness.installSupported === true,
+                    installPackageAvailable: harness.installPackageAvailable !== false,
                     ...(harness.version ? { version: harness.version } : {}),
                 });
             }

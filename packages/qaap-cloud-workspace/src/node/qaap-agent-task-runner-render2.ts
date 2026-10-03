@@ -36,6 +36,7 @@ import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/commo
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
         ctx.recoveryState = 'loading';
+        ctx.prependInstalledAgentCliBinToProcessPath();
         ctx.detectAgents();
         ctx.ensureHelperCli();
         ctx.recoveryReady = ctx.restoreFromDisk();

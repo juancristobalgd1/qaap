@@ -76,6 +76,7 @@ describe('QaapAgentTaskEndpoint harness status', () => {
             requireAuth: () => authContext,
             auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
             runner: {
+                resolveAgentCliInstallTarget: () => ({ home: '/home/qaap-agent', uid: 1001, gid: 1001 }),
                 listHarnessStatuses: (owner: string | undefined, supports: (id: string) => boolean) => {
                     ownerLogin = owner;
                     return [{
@@ -87,7 +88,10 @@ describe('QaapAgentTaskEndpoint harness status', () => {
                     }];
                 },
             },
-            cliUpdates: { isAgentInstallSupported: (id: string) => id === 'codex' },
+            cliUpdates: {
+                isAgentInstallSupported: (id: string, target: { uid?: number }) => id === 'codex' && target.uid === 1001,
+                hasInstallablePackage: (id: string) => id === 'codex',
+            },
         });
         const response = {
             setHeader: (_name: string, value: string) => { cacheControl = value; },
@@ -105,6 +109,7 @@ describe('QaapAgentTaskEndpoint harness status', () => {
                 enabled: false,
                 connectionState: 'disconnected',
                 installSupported: true,
+                installPackageAvailable: true,
             }],
         });
     });
@@ -125,17 +130,22 @@ describe('QaapAgentTaskEndpoint CLI updates', () => {
             requireAuth: () => authContext,
             auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
             runner: {
+                resolveAgentCliInstallTarget: () => ({ home: '/home/alice', uid: 1001, gid: 1001 }),
                 isAgentEnabled: (agentId: string, ownerLogin: string) =>
                     ownerLogin === 'alice' && enabledHarnesses.includes(agentId),
             },
-            cliUpdates: { isInPlaceCliUpdateAllowed: () => allowed, listOutdated: async () => { listed++; return outdated; } },
+            cliUpdates: {
+                isInstallSupportedForTarget: () => allowed,
+                listOutdated: async () => { listed++; return outdated; },
+                isAgentInstallSupported: () => true,
+            },
         });
         const res = { json: (body: unknown) => { payload = body; } } as unknown as Response;
         await endpoint.listCliUpdatesForTest({} as Request, res);
         return { payload, listed };
     }
 
-    it('hides "Update available" from users when in-place updates are not allowed', async () => {
+    it('hides "Update available" when a tenant-prefix install is not supported', async () => {
         expect(await listWith(false)).to.deep.equal({ payload: { updates: [] }, listed: 0 });
     });
 

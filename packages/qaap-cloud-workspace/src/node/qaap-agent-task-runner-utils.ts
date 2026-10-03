@@ -119,10 +119,10 @@ export function resolveExistingExecutablePath(
     return undefined;
 }
 
-export function isOnPath(bin: string): boolean {
+export function isOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): boolean {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     try {
-        const result = spawnSync(cmd, [bin], { encoding: 'utf8', windowsHide: true });
+        const result = spawnSync(cmd, [bin], { encoding: 'utf8', windowsHide: true, env });
         if (result.status !== 0 || result.error) {
             return false;
         }
