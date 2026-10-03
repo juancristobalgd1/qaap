@@ -818,6 +818,16 @@ export class QaapTenantSpawnService {
         if (!configAcl || !rootAcl || !childAcl) {
             throw new Error(`Could not grant agent uid ${uid} access to its private tenant cache at ${root}.`);
         }
+        // Harness state written while agents still ran as root (opencode.db, its log, caches) keeps
+        // root:root 0755/0644 and default ACLs only cover new entries; without this the dropped-uid
+        // agent fails on its own log file (PermissionDenied: FileSystem.open .../opencode.log).
+        for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]) {
+            const dirs = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']);
+            const files = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']);
+            if (!dirs || !files) {
+                throw new Error(`Could not grant agent uid ${uid} access to existing harness state under ${dir}.`);
+            }
+        }
     }
 
     /**

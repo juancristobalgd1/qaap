@@ -199,6 +199,27 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
+    it('re-grants the dropped agent uid on harness state written while agents ran as root', () => {
+        class StorageAclTestService extends TenantBackendAclTestService {
+            grant(configRoot: string, root: string, uid: number): void {
+                this.grantTenantAgentStorageAccess(configRoot, root, uid);
+            }
+        }
+        const service = new StorageAclTestService();
+        const root = '/home/theia/.qaap/.qaap-agent-storage';
+        service.grant('/home/theia/.qaap', root, 1001);
+
+        const finds = service.commands.filter(command => command.file === 'find');
+        // Existing root-owned dirs and files (opencode.db, opencode.log) under cache and data.
+        expect(finds).to.have.length(4);
+        for (const dir of [`${root}/cache`, `${root}/data`]) {
+            const forDir = finds.filter(command => command.args[0] === dir);
+            expect(forDir.map(command => command.args[command.args.indexOf('-type') + 1])).to.deep.equal(['d', 'f']);
+            expect(forDir[0]?.args).to.include.members(['-uid', '0', 'u:1001:rwx,d:u:1001:rwx']);
+            expect(forDir[1]?.args).to.include.members(['-uid', '0', 'u:1001:rwX']);
+        }
+    });
+
     it('refuses tenant agent execution when the image has no non-root uid configured', () => {
         delete process.env.QAAP_AGENT_UID;
         const service = new TenantBackendAclTestService();
