@@ -202,7 +202,7 @@ function createFakeTenantBackendDocker(): {
             }
             const bindMounts = hostConfig.Binds as string[] | undefined;
             const info: FakeBackendContainerInfo = {
-                Id: String(options.Name).startsWith('qaap-backend-') ? 'backend-id' : 'relay-id',
+                Id: String(options.name ?? options.Name).startsWith('qaap-backend-') ? 'backend-id' : 'relay-id',
                 Image: 'sha256:tenant-image',
                 State: { Running: false },
                 Config: {
@@ -221,7 +221,8 @@ function createFakeTenantBackendDocker(): {
                     return { Source, Destination, RW: mode !== 'ro' };
                 }),
             };
-            const name = options.Name as string;
+            // Dockerode takes the container name as lowercase `name`; accept `Name` for older call sites.
+            const name = String(options.name ?? options.Name);
             containers.set(name, info);
             created.push({ name, options, info });
             return containerHandle(name);
@@ -767,23 +768,51 @@ describe('QaapDockerOrchestrator', () => {
             expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
         });
 
-        it('runs the tenant backend under Docker init so orphaned dev servers are reaped', async () => {
-            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init');
+        it('rejects backend-per-tenant routing without the isolated tenant bridge', async () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init-none');
             process.env.QAAP_TENANT_NETWORK_MODE = 'none';
             process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
             process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const fakeDocker = new CreateCapturingDockerode();
+            orchestrator.getDocker = async () => fakeDocker as unknown as Dockerode;
+            let thrown: unknown;
+            try {
+                await orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice'));
+            } catch (error) {
+                thrown = error;
+            }
+            expect((thrown as Error | undefined)?.message).to.match(/requires the isolated tenant bridge/);
+            expect(fakeDocker.created).to.have.length(0);
+        });
+
+        it('runs the tenant backend under Docker init so orphaned dev servers are reaped', async () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-init');
+            process.env.QAAP_REPOS_ROOT = path.join(specRoot, 'repos');
+            process.env.QAAP_TENANT_NETWORK_MODE = 'isolated-bridge';
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
+            process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            process.env.QAAP_DOCKER_PUBLISH_HOST_IP = '127.0.0.1';
             process.env.QAAP_DOCKER_ROOTLESS = '1';
             process.env.QAAP_TENANT_CONTAINER_UID = '0';
             process.env.QAAP_TENANT_CONTAINER_GID = '0';
-            const fakeDocker = await captureCreate(orchestrator =>
-                orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice')));
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            delete process.env.QAAP_DOCKER_NODES;
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = access(new QaapDockerOrchestrator());
+            orchestrator.docker = fakeDocker.docker;
+            orchestrator.getDocker = async () => fakeDocker.docker;
+            orchestrator.waitForTenantBackendReady = async () => undefined;
+            await orchestrator.createOrValidateTenantBackend('alice', path.join(specRoot, 'repos', 'users', 'alice'));
 
-            expect(fakeDocker.created).to.have.length(1);
-            expect(fakeDocker.created[0].User).to.equal('0:0');
-            expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
-            expect(fakeDocker.created[0].HostConfig?.CapDrop).to.deep.equal(['ALL']);
-            expect(fakeDocker.created[0].HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
-            expect(fakeDocker.created[0].Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
+            const backends = fakeDocker.created.filter(container => container.name.startsWith('qaap-backend-'));
+            expect(backends).to.have.length(1);
+            const options = backends[0].options as { User?: string; Env?: string[]; HostConfig?: Record<string, unknown> };
+            expect(options.User).to.equal('0:0');
+            expect(options.HostConfig?.Init).to.equal(true);
+            expect(options.HostConfig?.CapDrop).to.deep.equal(['ALL']);
+            expect(options.HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
+            expect(options.Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
         });
     });
 
