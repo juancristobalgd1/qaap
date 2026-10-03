@@ -60,7 +60,8 @@ export function resolveAgentConnectionFlow(agentId: string | undefined): QaapAge
     if (loginCommand) {
         return { kind: 'cli-login', command: loginCommand };
     }
-    if (agentNeedsSettingsApiKeyPath(normalized)) {
+    // OpenCode's own credential manager is the connect route; BYOK settings only feed its background runner.
+    if (normalized !== 'opencode' && agentNeedsSettingsApiKeyPath(normalized)) {
         return { kind: 'settings-api-key', settingsQuery: QAAP_AI_FEATURES_SETTINGS_QUERY };
     }
     const bin = resolveInteractiveAgentCliBin(normalized);
