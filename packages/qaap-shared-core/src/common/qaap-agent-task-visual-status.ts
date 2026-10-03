@@ -374,10 +374,9 @@ export function resolveQaapAgentTaskVisualStatus(
     if (summary?.status === 'settled') {
         return STATUS_BY_ID['background'];
     }
-    // Only an explicit input wait or a priority flag needs the user. An unread reply of a run
-    // that finished fine keeps its real outcome glyph (completed / PR / changes …); rows convey
-    // "unread" separately with a dot, never with the warning triangle.
-    if (state === 'needs-input' || summary?.priority) {
+    // Only an explicit input wait needs the user. Priority affects sorting, not task outcome.
+    // Unread replies keep their real outcome glyph; rows convey unread state separately with a dot.
+    if (state === 'needs-input') {
         return STATUS_BY_ID['needs-you'];
     }
     if (summary) {
