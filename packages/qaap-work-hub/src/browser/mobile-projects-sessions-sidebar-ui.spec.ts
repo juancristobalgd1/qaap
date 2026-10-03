@@ -55,6 +55,8 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
 
     beforeEach(() => {
         document.body.innerHTML = '';
+        // Stored agent picks (per-cwd and global) must not leak from one case into the next.
+        window.localStorage.clear();
         window.requestAnimationFrame = ((callback: FrameRequestCallback): number => {
             callback(0);
             return 1;
