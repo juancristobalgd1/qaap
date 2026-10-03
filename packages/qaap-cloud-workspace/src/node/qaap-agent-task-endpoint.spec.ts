@@ -6,6 +6,7 @@ import type { Request, Response } from '@theia/core/shared/express';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
+import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 
 class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     allForTest(req: Request, res: Response): void {
@@ -28,6 +29,9 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     }
     listCliUpdatesForTest(req: Request, res: Response): Promise<void> {
         return this.handleListCliUpdates(req, res);
+    }
+    installCliUpdateForTest(req: Request, res: Response): Promise<void> {
+        return this.handleInstallCliUpdate(req, res);
     }
 }
 
@@ -266,5 +270,76 @@ describe('QaapAgentTaskEndpoint queue admission', () => {
             expect(status).to.equal(expectedStatus);
             expect(payload).to.deep.equal({ error: error.message });
         }
+    });
+});
+
+describe('QaapAgentTaskEndpoint CLI install', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+        if (originalNodeEnv === undefined) {
+            delete process.env.NODE_ENV;
+        } else {
+            process.env.NODE_ENV = originalNodeEnv;
+        }
+    });
+
+    async function installWith(
+        result: QaapAgentCliUpdateResult,
+        userLogin: string | undefined,
+    ): Promise<{ status: number; body: unknown; userKeys: Array<string | undefined>; refreshed: number }> {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const userKeys: Array<string | undefined> = [];
+        let refreshed = 0;
+        let status = 200;
+        let body: unknown;
+        const authContext = { kind: 'authenticated', userLogin };
+        Object.assign(endpoint, {
+            requireAuth: () => authContext,
+            auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+            runner: {
+                resolveAgentCliInstallTarget: () => ({ home: '/home/alice', uid: 1001, gid: 1001 }),
+                refreshAgentCatalog: () => { refreshed++; },
+            },
+            cliUpdates: {
+                installUpdate: async (_agentId: string, _target: unknown, options: { userKey?: string }) => {
+                    userKeys.push(options.userKey);
+                    return result;
+                },
+            },
+        });
+        const res = {
+            status(code: number): Response {
+                status = code;
+                return this as unknown as Response;
+            },
+            json(payload: unknown): void {
+                body = payload;
+            },
+        } as unknown as Response;
+        await endpoint.installCliUpdateForTest({ params: { agentId: 'copilot' } } as unknown as Request, res);
+        return { status, body, userKeys, refreshed };
+    }
+
+    it('maps busy, rate-limited, refused and npm failures to distinct status codes', async () => {
+        expect((await installWith({ ok: true, id: 'copilot' }, 'Alice')).status).to.equal(200);
+        expect((await installWith({ ok: false, id: 'copilot', reason: 'busy' }, 'Alice')).status).to.equal(409);
+        expect((await installWith({ ok: false, id: 'copilot', reason: 'rate-limited' }, 'Alice')).status).to.equal(429);
+        expect((await installWith({ ok: false, id: 'copilot', reason: 'refused' }, 'Alice')).status).to.equal(403);
+        expect((await installWith({ ok: false, id: 'copilot', reason: 'failed' }, 'Alice')).status).to.equal(502);
+    });
+
+    it('locks and rate limits per signed-in user and refreshes the catalog only after a successful install', async () => {
+        const installed = await installWith({ ok: true, id: 'copilot' }, 'Alice');
+        expect(installed.userKeys).to.deep.equal(['alice']);
+        expect(installed.refreshed).to.equal(1);
+        expect((await installWith({ ok: false, id: 'copilot', reason: 'busy' }, 'Alice')).refreshed).to.equal(0);
+    });
+
+    it('refuses an install without a signed-in user in production', async () => {
+        process.env.NODE_ENV = 'production';
+        const anonymous = await installWith({ ok: true, id: 'copilot' }, undefined);
+        expect(anonymous.status).to.equal(403);
+        expect(anonymous.userKeys).to.deep.equal([]);
     });
 });

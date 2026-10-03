@@ -34,7 +34,12 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { prependAgentCliBinToPath, resolveAgentCliPrefixBinDirectory, resolveAgentCliPrefixForEnv } from './qaap-agent-cli-prefix';
+import {
+    canExposeAgentCliBinToChild,
+    prependAgentCliBinToPath,
+    resolveAgentCliPrefixBinDirectory,
+    resolveAgentCliPrefixForEnv,
+} from './qaap-agent-cli-prefix';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
@@ -391,7 +396,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readCodexHelp(): string {
-        return readCodexHelpHelper();
+        return readCodexHelpHelper(this.agentDetectionEnv());
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -415,8 +420,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public isOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): boolean {
-        return isOnPathHelper(bin, env);
+    public isOnPath(bin: string, env?: NodeJS.ProcessEnv): boolean {
+        return isOnPathHelper(bin, env ?? this.agentDetectionEnv());
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -539,7 +544,6 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** Re-probe CLI harnesses after a local install from the configuration UI. */
     refreshAgentCatalog(): void {
-        this.prependInstalledAgentCliBinToProcessPath();
         this.agentConnectionStates.clear();
         this.detectAgents();
     }
@@ -657,7 +661,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
             };
-            prependAgentCliBinToPath(env, this.resolveAgentCliPrefix(tenantCwd));
+            const prefix = this.resolveAgentCliPrefix(tenantCwd);
+            if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
+                prependAgentCliBinToPath(env, prefix);
+            }
             return probeAgentConnectionStateHelper(agentId, bin, {
                 file: wrapped.file,
                 args: wrapped.args,
@@ -1293,16 +1300,23 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * Make backend-wide harness detection see CLIs installed into the default prefix. Only an
-     * existing prefix is added, so a backend (and the IDE terminals it spawns) without per-user
-     * installs keeps its PATH unchanged.
+     * PATH used only for in-process harness detection: the backend PATH plus the default CLI prefix
+     * when it exists. `process.env` itself is never changed, so the root backend, IDE terminals and
+     * every privileged helper keep resolving binaries from the image PATH only.
      */
-    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public prependInstalledAgentCliBinToProcessPath(): void {
+    protected agentDetectionEnv(): NodeJS.ProcessEnv {
+        const env = { ...process.env };
         const prefix = this.resolveAgentCliPrefix(resolveQaapReposRoot());
         if (fs.existsSync(resolveAgentCliPrefixBinDirectory(prefix))) {
-            prependAgentCliBinToPath(process.env, prefix);
+            prependAgentCliBinToPath(env, prefix);
         }
+        return env;
+    }
+
+    /** Whether processes spawned for `cwd` run as the tenant (uid drop or tenant container), never as the backend uid. */
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public isTenantPrivilegeDropActive(cwd: string): boolean {
+        return this.tenantSpawn.isContainerIsolationEnabled() || this.resolveAgentSpawnIdentity(cwd).uid !== undefined;
     }
 
     /** HOME, npm prefix, uid/gid and cache env used by this caller's tenant-scoped npm install. */

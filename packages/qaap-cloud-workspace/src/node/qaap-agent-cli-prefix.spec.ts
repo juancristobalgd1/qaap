@@ -4,8 +4,11 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
+    canExposeAgentCliBinToChild,
     prependAgentCliBinToPath,
     resolveAgentCliBinDirectory,
     resolveAgentCliPrefix,
@@ -34,7 +37,7 @@ describe('per-user agent CLI prefix', () => {
         prependAgentCliBinToPath(env, resolveAgentCliPrefix('/home/alice'), 'linux');
 
         expect(env.PATH?.split(path.delimiter)).to.deep.equal([
-            '/home/alice/.qaap/cli/bin',
+            resolveAgentCliBinDirectory('/home/alice', 'linux'),
             '/usr/local/bin',
         ]);
     });
@@ -46,7 +49,7 @@ describe('per-user agent CLI prefix', () => {
 
         const pathEnv: NodeJS.ProcessEnv = { PATH: ['/home/qaap-agent/.qaap/cli/bin', '/usr/local/bin'].join(path.delimiter) };
         prependAgentCliBinToPath(pathEnv, prefix, 'linux');
-        expect(pathEnv.PATH?.split(path.delimiter)).to.deep.equal([`${prefix}/bin`, '/usr/local/bin']);
+        expect(pathEnv.PATH?.split(path.delimiter)).to.deep.equal([path.join(prefix, 'bin'), '/usr/local/bin']);
 
         expect(resolveAgentCliPrefixForEnv({ ...env, QAAP_TENANT_AGENT_STORAGE_ROOT: 'off' }, '/home/qaap-agent'))
             .to.equal(path.join('/home/qaap-agent', '.qaap', 'cli'));
@@ -56,5 +59,26 @@ describe('per-user agent CLI prefix', () => {
     it('uses the npm prefix itself as the executable directory on Windows', () => {
         expect(resolveAgentCliBinDirectory('C:\\Users\\alice', 'win32'))
             .to.equal(path.join('C:\\Users\\alice', '.qaap', 'cli'));
+    });
+
+    it('exposes a tenant-writable prefix to root-launched children only when they run as the tenant', () => {
+        const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-cli-expose-'));
+        try {
+            const prefix = path.join(sandbox, '.qaap', 'cli');
+            fs.mkdirSync(path.join(prefix, 'bin'), { recursive: true });
+            // A non-root backend never gains privileges from the prefix.
+            expect(canExposeAgentCliBinToChild(prefix, () => false, 1000)).to.equal(true);
+            // A root backend with a uid drop: the child resolves the prefix as the tenant.
+            expect(canExposeAgentCliBinToChild(prefix, () => true, 0)).to.equal(true);
+            if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+                // Root without a drop would itself resolve binaries from a directory it does not own.
+                expect(canExposeAgentCliBinToChild(prefix, () => false, 0)).to.equal(false);
+                expect(canExposeAgentCliBinToChild(prefix, () => {
+                    throw new Error('misconfigured identity');
+                }, 0)).to.equal(false);
+            }
+        } finally {
+            fs.rmSync(sandbox, { recursive: true, force: true });
+        }
     });
 });

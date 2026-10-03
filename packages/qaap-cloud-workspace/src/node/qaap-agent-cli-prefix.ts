@@ -5,6 +5,7 @@
 
 import * as path from 'path';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
+import { currentProcessUid, isDirectoryTrustedForUid } from './qaap-trusted-executable';
 
 /** Directory name of the per-user npm prefix inside the tenant agent storage data directory. */
 export const QAAP_AGENT_CLI_STORAGE_DIRNAME = 'qaap-cli';
@@ -36,6 +37,30 @@ export function resolveAgentCliPrefixBinDirectory(prefix: string, platform: Node
 
 export function resolveAgentCliBinDirectory(home: string, platform: NodeJS.Platform = process.platform): string {
     return resolveAgentCliPrefixBinDirectory(resolveAgentCliPrefix(home), platform);
+}
+
+/**
+ * Whether a child may get the tenant CLI prefix on its PATH. Before any uid drop, a root backend
+ * resolves wrapper binaries (`systemd-run`, the rlimit `/bin/sh … exec "$@"`) through that PATH, so a
+ * tenant-writable prefix is only exposed to children that run as the tenant uid, or when the prefix is
+ * trusted by root itself (a local root backend installing into its own home). The backend's own
+ * `process.env.PATH` never receives the prefix.
+ */
+export function canExposeAgentCliBinToChild(
+    prefix: string,
+    runsAsTenantUid: () => boolean,
+    backendUid: number | undefined = currentProcessUid(),
+): boolean {
+    if (backendUid !== 0) {
+        return true;
+    }
+    let dropsPrivileges: boolean;
+    try {
+        dropsPrivileges = runsAsTenantUid();
+    } catch {
+        dropsPrivileges = false;
+    }
+    return dropsPrivileges || isDirectoryTrustedForUid(resolveAgentCliPrefixBinDirectory(prefix), 0);
 }
 
 /** Put the tenant's installed harnesses (npm `prefix`) before image-baked binaries, without duplicating the entry. */

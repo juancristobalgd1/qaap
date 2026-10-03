@@ -20,6 +20,7 @@ import {
 import type { QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { diffSensitiveFiles, hashSensitiveFiles } from './qaap-sensitive-files';
+import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable } from './qaap-trusted-executable';
 
 // ─── Constants (re-exported for the helpers) ─────────────────────────────────
 
@@ -37,9 +38,14 @@ export interface QaapAgentStdinPrompt {
 
 // ─── Agent detection ─────────────────────────────────────────────────────────
 
-export function readCodexHelp(): string {
+export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
+    // Only a codex the backend uid trusts may run here (never a tenant-installed one as root).
+    const codex = resolveTrustedExecutable('codex', env);
+    if (!codex) {
+        return '';
+    }
     try {
-        const topLevel = spawnSync('codex', ['--help'], {
+        const topLevel = spawnSync(codex, ['--help'], {
             encoding: 'utf8',
             timeout: 2_000,
             killSignal: 'SIGTERM',
@@ -49,7 +55,7 @@ export function readCodexHelp(): string {
         if (!/\bcodex\s+exec\b|^\s+exec\b/m.test(topLevelHelp)) {
             return topLevelHelp;
         }
-        const execCommand = spawnSync('codex', ['exec', '--help'], {
+        const execCommand = spawnSync(codex, ['exec', '--help'], {
             encoding: 'utf8',
             timeout: 2_000,
             killSignal: 'SIGTERM',
@@ -119,24 +125,12 @@ export function resolveExistingExecutablePath(
     return undefined;
 }
 
+/**
+ * Whether `bin` resolves on `env`'s PATH. The lookup runs in-process: spawning `which`/`where`
+ * with a tenant-influenced PATH would let a planted `which` run with the backend's privileges.
+ */
 export function isOnPath(bin: string, env: NodeJS.ProcessEnv = process.env): boolean {
-    const cmd = process.platform === 'win32' ? 'where' : 'which';
-    try {
-        const result = spawnSync(cmd, [bin], { encoding: 'utf8', windowsHide: true, env });
-        if (result.status !== 0 || result.error) {
-            return false;
-        }
-        const resolved = resolveExistingExecutablePath((result.stdout ?? '').split(/\r?\n/));
-        if (!resolved) {
-            return false;
-        }
-        if (process.platform !== 'win32') {
-            fs.accessSync(resolved, fs.constants.X_OK);
-        }
-        return true;
-    } catch {
-        return false;
-    }
+    return findExecutableOnPath(bin, readEnvPath(env)) !== undefined;
 }
 
 // ─── String / template utilities ─────────────────────────────────────────────

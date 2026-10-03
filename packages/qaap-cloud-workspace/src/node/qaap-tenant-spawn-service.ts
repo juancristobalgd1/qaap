@@ -29,6 +29,7 @@ import {
 import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
+import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
@@ -142,11 +143,13 @@ export class QaapTenantSpawnService {
         return typeof process.getuid === 'function' && process.getuid() === 0;
     }
 
-    /** Whether `setpriv` (util-linux) exists on PATH — probed once. Overridable in tests. */
+    /**
+     * Whether `setpriv` (util-linux) exists in a trusted system directory — probed once. Overridable
+     * in tests. The backend PATH is not consulted (see {@link resolveSetprivExecutable}).
+     */
     protected isSetprivAvailable(): boolean {
         if (this.setprivAvailable === undefined) {
-            const probe = spawnSync('setpriv', ['--version'], { stdio: 'ignore' });
-            this.setprivAvailable = !probe.error && probe.status === 0;
+            this.setprivAvailable = this.resolveSetprivExecutable() !== undefined;
         }
         return this.setprivAvailable;
     }
@@ -159,25 +162,26 @@ export class QaapTenantSpawnService {
      * make every VPS Preview bootstrap report that its dev terminal was closed too early.
      */
     protected resolveSetprivExecutable(): string | undefined {
-        if (this.setprivExecutable) {
-            return this.setprivExecutable;
+        // Only a root-owned, non-writable setpriv from a system directory: a PATH entry a tenant can
+        // write would let tenant code replace the binary that is supposed to drop root.
+        if (!this.setprivExecutable) {
+            this.setprivExecutable = resolveTrustedSystemExecutable('setpriv');
         }
-        if (!this.isSetprivAvailable()) {
-            return undefined;
-        }
-        const searchDirectories = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
-        for (const directory of searchDirectories) {
-            const candidate = path.resolve(directory, 'setpriv');
-            try {
-                fs.accessSync(candidate, fs.constants.X_OK);
-                this.setprivExecutable = candidate;
-                return candidate;
-            } catch {
-                // Keep searching PATH. isSetprivAvailable already proved the command exists, but a
-                // relative or concurrently changed PATH must still fail closed below.
-            }
-        }
-        return undefined;
+        return this.setprivExecutable;
+    }
+
+    /**
+     * `setpriv` as launched by a root backend: always the absolute trusted path, so neither the spawn
+     * env PATH nor the rlimit wrapper's `exec "$@"` can resolve it to a tenant-planted file. A
+     * non-root backend cannot drop privileges anyway and keeps the plain name.
+     */
+    protected setprivCommand(): string {
+        return this.isBackendRoot() ? this.resolveSetprivExecutable() ?? 'setpriv' : 'setpriv';
+    }
+
+    /** `systemd-run` as launched by a root backend: the absolute trusted path (see {@link setprivCommand}). */
+    protected systemdRunCommand(): string {
+        return this.isBackendRoot() ? resolveTrustedSystemExecutable('systemd-run') ?? 'systemd-run' : 'systemd-run';
     }
 
     /** Linux is the only host platform where this service can install a cgroup/rlimit boundary. */
@@ -193,7 +197,7 @@ export class QaapTenantSpawnService {
     protected isSystemdRunAvailable(): boolean {
         if (this.systemdRunAvailable === undefined) {
             const mode = this.isBackendRoot() ? '--system' : '--user';
-            const probe = spawnSync('systemd-run', [
+            const probe = spawnSync(this.systemdRunCommand(), [
                 mode,
                 '--scope',
                 '--quiet',
@@ -285,7 +289,7 @@ export class QaapTenantSpawnService {
         if (this.isSystemdRunAvailable()) {
             const cpuQuota = `${Math.max(1, Math.round(limits.cpuCores * 100))}%`;
             return {
-                file: 'systemd-run',
+                file: this.systemdRunCommand(),
                 args: [
                     this.isBackendRoot() ? '--system' : '--user',
                     '--scope',
@@ -561,7 +565,7 @@ export class QaapTenantSpawnService {
         }
         const identity = this.resolveSpawnIdentity(cwd);
         this.assertDropIsComplete(identity);
-        const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
+        const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable(), this.setprivCommand());
         const limitedInvocation = this.applyResourceLimits({
             file: invocation.file,
             args: invocation.args ? [...invocation.args] : [],
@@ -580,7 +584,28 @@ export class QaapTenantSpawnService {
 
     /** The single `child_process.spawn` seam — overridable in tests to capture argv without executing. */
     protected launchProcess(file: string, args: string[], options: object): ChildProcess {
-        return spawn(file, args, options as Parameters<typeof spawn>[2]);
+        const spawnOptions = options as Parameters<typeof spawn>[2];
+        return spawn(this.resolveLaunchFile(file, spawnOptions), args, spawnOptions);
+    }
+
+    /**
+     * A root backend resolves a bare executable name (`docker`, `git`, …) only from PATH entries root
+     * trusts. A name found solely in a tenant-writable entry is refused rather than executed as root;
+     * a name found nowhere is passed through so spawn reports ENOENT as before.
+     */
+    protected resolveLaunchFile(file: string, options: { env?: NodeJS.ProcessEnv; shell?: boolean | string }): string {
+        if (!this.isBackendRoot() || options.shell || path.isAbsolute(file) || file.includes('/')) {
+            return file;
+        }
+        const env = options.env ?? process.env;
+        const trusted = resolveTrustedExecutable(file, env, 0);
+        if (trusted) {
+            return trusted;
+        }
+        if (findExecutableOnPath(file, readEnvPath(env))) {
+            throw new Error(`Refusing to run "${file}" as root from a PATH entry that root does not own.`);
+        }
+        return file;
     }
 
     /**
@@ -675,7 +700,7 @@ export class QaapTenantSpawnService {
         const invocation = identity.uid === undefined
             ? { file, args: [...args], shell: false }
             : {
-                file: 'setpriv',
+                file: this.setprivCommand(),
                 args: ['--reuid', String(identity.uid), '--regid', String(identity.gid ?? identity.uid), '--clear-groups', '--', file, ...args],
                 shell: false,
             };
@@ -723,7 +748,7 @@ export class QaapTenantSpawnService {
         }
         const gid = identity.gid ?? identity.uid;
         const limitedInvocation = this.applyResourceLimits({
-            file: 'setpriv',
+            file: this.setprivCommand(),
             args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
             shell: false,
         }, cwd);

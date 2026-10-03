@@ -323,7 +323,7 @@ export interface QaapAgentTaskRunnerContext {
     spawnAgentCommand(command: string, options: QaapSpawnAgentCommandOptions): ChildProcess;
     resolveAgentHome(cwd: string): string;
     resolveAgentCliPrefix(cwd: string): string;
-    prependInstalledAgentCliBinToProcessPath(): void;
+    isTenantPrivilegeDropActive(cwd: string): boolean;
     tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string };
     ensureAgentCwdOwnership(cwd: string): void;
     ensureAgentCwdOwnershipAsync(cwd: string): Promise<void>;

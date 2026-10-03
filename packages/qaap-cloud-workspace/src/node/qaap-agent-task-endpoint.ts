@@ -26,6 +26,8 @@ import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
@@ -458,6 +460,20 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
     }
 
+    /** 409 while another install for the user runs, 429 when rate limited, 403 for policy refusals, 502 for npm failures. */
+    protected cliInstallStatusCode(result: QaapAgentCliUpdateResult): number {
+        if (result.ok) {
+            return 200;
+        }
+        switch (result.reason) {
+            case 'busy': return 409;
+            case 'rate-limited': return 429;
+            case 'refused': return 403;
+            case 'failed': return 502;
+            default: return 400;
+        }
+    }
+
     protected async handleInstallCliUpdate(req: Request, res: Response): Promise<void> {
         const authContext = this.requireAuth(req, res);
         if (!authContext) {
@@ -468,14 +484,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"agentId" is required.' });
             return;
         }
+        const ownerLogin = this.auth.resolveUserLogin(authContext)?.trim();
+        // A hosted install always belongs to a signed-in user: their prefix, their lock, their rate limit.
+        if (!ownerLogin && isQaapProductionRuntime(process.env)) {
+            res.status(403).json({ ok: false, id: agentId, reason: 'refused', message: 'Sign in to install harnesses.' });
+            return;
+        }
         try {
-            const ownerLogin = this.auth.resolveUserLogin(authContext);
             const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
-            const result = await this.cliUpdates.installUpdate(agentId, installTarget);
+            const result = await this.cliUpdates.installUpdate(agentId, installTarget, { userKey: ownerLogin?.toLowerCase() });
             if (result.ok) {
                 this.runner.refreshAgentCatalog();
             }
-            res.status(result.ok ? 200 : 400).json(result);
+            res.status(this.cliInstallStatusCode(result)).json(result);
         } catch (error) {
             res.status(500).json({
                 ok: false,

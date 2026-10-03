@@ -340,7 +340,8 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         svc.linuxResourceLimits = true;
         svc.systemdRun = false;
         svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
-        expect(svc.launches[0].file).to.equal('setpriv');
+        // A root backend launches the trusted absolute setpriv, never a PATH-resolved one.
+        expect(svc.launches[0].file).to.equal(svc.setprivPath);
         expect(svc.launches[0].args).to.deep.equal([
             '--reuid', '1001', '--regid', '1001', '--clear-groups', '--', 'npm', 'run', 'dev',
         ]);
@@ -663,5 +664,52 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin' });
         expect(env.HOME).to.equal(resolveTenantHome('alice'));
         expect(env).not.to.have.property('XDG_CACHE_HOME');
+    });
+});
+
+class LaunchFileProbeService extends QaapTenantSpawnService {
+    backendRoot = true;
+
+    protected override isBackendRoot(): boolean {
+        return this.backendRoot;
+    }
+
+    launchFile(file: string, env: NodeJS.ProcessEnv, shell?: boolean): string {
+        return this.resolveLaunchFile(file, { env, shell });
+    }
+}
+
+describe('QaapTenantSpawnService root launch resolution', () => {
+    /** Needs a directory root does not own, so it cannot run as root. */
+    const posixNonRootIt = process.platform === 'win32' || process.getuid?.() === 0 ? it.skip : it;
+    let sandbox: string;
+
+    beforeEach(() => {
+        sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-launch-file-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(sandbox, { recursive: true, force: true });
+    });
+
+    posixNonRootIt('refuses to run as root a bare command found only in a tenant-writable PATH entry', () => {
+        const tenantBin = path.join(sandbox, '.qaap', 'cli', 'bin');
+        fs.mkdirSync(tenantBin, { recursive: true });
+        const planted = path.join(tenantBin, 'qaap-planted-helper');
+        fs.writeFileSync(planted, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+        const env = { PATH: [tenantBin, '/usr/bin', '/bin'].join(path.delimiter) };
+        const svc = new LaunchFileProbeService();
+
+        expect(() => svc.launchFile('qaap-planted-helper', env)).to.throw(/root does not own/);
+        // A shadowed system tool resolves to the root-owned copy, not the planted one.
+        fs.copyFileSync(planted, path.join(tenantBin, 'sh'));
+        fs.chmodSync(path.join(tenantBin, 'sh'), 0o755);
+        expect(svc.launchFile('sh', env)).to.match(/^\/(usr\/)?bin\/sh$/);
+        // Unknown names keep spawn's own ENOENT; explicit paths, shells and non-root backends are untouched.
+        expect(svc.launchFile('qaap-missing-helper', env)).to.equal('qaap-missing-helper');
+        expect(svc.launchFile('/bin/sh', env)).to.equal('/bin/sh');
+        expect(svc.launchFile('qaap-planted-helper -x', env, true)).to.equal('qaap-planted-helper -x');
+        svc.backendRoot = false;
+        expect(svc.launchFile('qaap-planted-helper', env)).to.equal('qaap-planted-helper');
     });
 });
