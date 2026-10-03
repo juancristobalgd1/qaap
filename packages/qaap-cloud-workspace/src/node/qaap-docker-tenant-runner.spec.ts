@@ -76,7 +76,7 @@ describe('Container-per-Tenant Runner (Option A)', () => {
         });
 
         it('assigns each tenant a distinct managed network and rejects the shared bridge', () => {
-            expect(orchestrator.tenantNetworkNameFor('alice')).to.match(/^qaap-net-[a-f0-9]{12}$/);
+            expect(orchestrator.tenantNetworkNameFor('alice')).to.match(/^qaap-net-v2-[a-f0-9]{12}$/);
             expect(orchestrator.tenantNetworkNameFor('alice')).to.not.equal(orchestrator.tenantNetworkNameFor('bob'));
             const previous = process.env.QAAP_TENANT_NETWORK_MODE;
             try {
@@ -175,6 +175,9 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                                     Labels: options.Labels,
                                 },
                                 HostConfig: { ...options.HostConfig, PidMode: 'private', IpcMode: 'private' },
+                                // The orchestrator now requires the container to be attached to exactly
+                                // its own tenant network, so the fake reports that attachment.
+                                NetworkSettings: { Networks: { [options.HostConfig.NetworkMode]: {} } },
                                 Mounts: [
                                     { Source: aliceRoot, Destination: '/workspace', RW: true },
                                     { Source: aliceWorktreesRoot, Destination: '/workspace/.qaap-worktrees', RW: true },
