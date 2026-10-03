@@ -17,6 +17,9 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     retryForTest(req: Request, res: Response): Promise<void> {
         return this.handleStorageRetry(req, res);
     }
+    harnessStatusesForTest(req: Request, res: Response): void {
+        this.handleListHarnessStatuses(req, res);
+    }
     healthForTest(req: Request, res: Response): void {
         this.handleStorageHealth(req, res);
     }
@@ -59,6 +62,51 @@ describe('QaapAgentTaskEndpoint install capability', () => {
                 installSupported,
             });
         }
+    });
+});
+
+describe('QaapAgentTaskEndpoint harness status', () => {
+    it('returns the full caller-scoped status list, including disabled disconnected harnesses', () => {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const authContext = { kind: 'authenticated', userLogin: 'alice' };
+        let payload: unknown;
+        let ownerLogin: string | undefined;
+        let cacheControl: string | undefined;
+        Object.assign(endpoint, {
+            requireAuth: () => authContext,
+            auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+            runner: {
+                listHarnessStatuses: (owner: string | undefined, supports: (id: string) => boolean) => {
+                    ownerLogin = owner;
+                    return [{
+                        id: 'codex',
+                        installed: true,
+                        enabled: false,
+                        connectionState: 'disconnected',
+                        installSupported: supports('codex'),
+                    }];
+                },
+            },
+            cliUpdates: { isAgentInstallSupported: (id: string) => id === 'codex' },
+        });
+        const response = {
+            setHeader: (_name: string, value: string) => { cacheControl = value; },
+            json: (body: unknown) => { payload = body; },
+        };
+
+        endpoint.harnessStatusesForTest({} as Request, response as unknown as Response);
+
+        expect(ownerLogin).to.equal('alice');
+        expect(cacheControl).to.equal('no-store');
+        expect(payload).to.deep.equal({
+            harnesses: [{
+                id: 'codex',
+                installed: true,
+                enabled: false,
+                connectionState: 'disconnected',
+                installSupported: true,
+            }],
+        });
     });
 });
 

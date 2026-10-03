@@ -13,6 +13,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_AGENT_TASK_API_PATH,
     QaapAgentTaskKind,
+    type QaapAgentHarnessStatusResponse,
     type QaapAgentTaskAllResponse,
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
@@ -85,6 +86,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
             void this.handleListAgentModels(req, res);
+        });
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/harness-status`, (req, res) => {
+            this.handleListHarnessStatuses(req, res);
         });
         // Static `/cli-updates` segments must register before `/:id` below.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, (req, res) => {
@@ -410,6 +414,21 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             qaiqModels: this.runner.listQaiqModels(ownerLogin),
             installSupported: this.cliUpdates.isInstallSupported(),
         } satisfies QaapAgentTaskAllResponse);
+    }
+
+    protected handleListHarnessStatuses(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const ownerLogin = this.auth.resolveUserLogin(ctx);
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+            harnesses: this.runner.listHarnessStatuses(
+                ownerLogin,
+                agentId => this.cliUpdates.isAgentInstallSupported(agentId),
+            ),
+        } satisfies QaapAgentHarnessStatusResponse);
     }
 
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {

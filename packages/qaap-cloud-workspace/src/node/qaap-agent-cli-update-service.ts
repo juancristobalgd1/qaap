@@ -146,6 +146,12 @@ export class QaapAgentCliUpdateService {
         return this.isUpdateCheckEnabled() && this.isInPlaceCliUpdateAllowed();
     }
 
+    /** Whether this harness has a whitelisted npm package and the current server permits installs. */
+    isAgentInstallSupported(agentId: string): boolean {
+        const tracked = TRACKED_AGENT_CLIS.find(entry => entry.id === agentId.trim().toLowerCase());
+        return !!tracked?.npmPackage && this.isUpdateCheckEnabled() && this.isInPlaceCliUpdateAllowed();
+    }
+
     /** Outdated CLIs only — empty when check disabled or everything is current. */
     async listOutdated(): Promise<QaapAgentCliUpdatesResponse> {
         if (!this.isUpdateCheckEnabled()) {

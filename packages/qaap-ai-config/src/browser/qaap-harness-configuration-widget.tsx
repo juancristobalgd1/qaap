@@ -24,12 +24,30 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
 import {
     resolveHarnessCardAction,
+    resolveHarnessCardStatus,
+    type HarnessConnectionState,
     type HarnessAvailabilityState,
 } from './qaap-harness-configuration-state';
 
-interface HarnessAgentResponse {
-    readonly agents?: readonly { readonly id?: string; readonly available?: boolean }[];
+interface HarnessStatus {
+    readonly id?: string;
+    readonly installed?: boolean;
+    readonly enabled?: boolean;
+    readonly connectionState?: HarnessConnectionState;
     readonly installSupported?: boolean;
+    readonly version?: string;
+}
+
+interface HarnessAgentResponse {
+    readonly harnesses?: readonly HarnessStatus[];
+}
+
+interface LoadedHarnessStatus {
+    readonly installed: boolean;
+    readonly enabled: boolean;
+    readonly connectionState: HarnessConnectionState;
+    readonly installSupported: boolean;
+    readonly version?: string;
 }
 
 const MIN_INSTALL_FEEDBACK_MS = 900;
@@ -47,9 +65,8 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
     @inject(MessageService) @optional()
     protected readonly messageService: MessageService | undefined;
 
-    protected availableHarnessIds = new Set<string>();
+    protected harnessStatuses = new Map<string, LoadedHarnessStatus>();
     protected availabilityState: HarnessAvailabilityState = 'loading';
-    protected installSupported = true;
     protected readonly installingHarnessIds = new Set<string>();
 
     @postConstruct()
@@ -105,20 +122,27 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
         disabledIds: readonly string[],
     ): React.ReactNode {
         const enabled = isQaapHarnessEnabled(definition.id, disabledIds);
-        const available = this.availableHarnessIds.has(definition.id);
-        const action = resolveHarnessCardAction(available, this.availabilityState, this.installSupported);
+        const harnessStatus = this.harnessStatuses.get(definition.id);
+        const installed = harnessStatus?.installed === true;
+        const connectionState = harnessStatus?.connectionState ?? 'unknown';
+        const action = resolveHarnessCardAction(
+            installed,
+            this.availabilityState,
+            harnessStatus?.installSupported === true,
+        );
+        const cardStatus = resolveHarnessCardStatus(installed, this.availabilityState, connectionState);
         const unavailable = action === 'install-unavailable' || action === 'availability-unknown';
         const status = action === 'install-unavailable'
             ? nls.localize(
                 'qaap/aiConfiguration/harnessInstallUnavailable',
                 'Not available on this server yet',
             )
-            : this.renderAvailabilityStatus(available);
+            : this.renderAvailabilityStatus(cardStatus);
         const installing = this.installingHarnessIds.has(definition.id);
         const cardClasses = [
             'qaap-harness-card',
             enabled && !unavailable ? undefined : 'theia-mod-disabled',
-            available ? undefined : 'qaap-harness-card-unavailable',
+            installed ? undefined : 'qaap-harness-card-unavailable',
             action === 'install-unavailable' ? 'qaap-harness-card-install-unavailable' : undefined,
             installing ? 'qaap-harness-card-installing' : undefined,
         ].filter((className): className is string => className !== undefined);
@@ -138,7 +162,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                         <span className="qaap-harness-card-bin">{definition.bin}</span>
                     </div>
                     <span
-                        className={`qaap-harness-card-status${available ? ' theia-mod-available' : ''}${installing ? ' qaap-harness-status-installing' : ''}`}
+                        className={`qaap-harness-card-status${cardStatus === 'available' ? ' theia-mod-available' : ''}${installing ? ' qaap-harness-status-installing' : ''}`}
                         aria-live={installing ? 'polite' : undefined}
                     >
                         {installing
@@ -245,16 +269,27 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
         );
     }
 
-    protected renderAvailabilityStatus(available: boolean): string {
-        if (this.availabilityState === 'loading') {
-            return nls.localize('qaap/aiConfiguration/harnessChecking', 'Checking availability…');
+    protected renderAvailabilityStatus(status: ReturnType<typeof resolveHarnessCardStatus>): string {
+        switch (status) {
+            case 'loading':
+                return nls.localize('qaap/aiConfiguration/harnessChecking', 'Checking availability…');
+            case 'availability-unknown':
+                return nls.localize('qaap/aiConfiguration/harnessAvailabilityUnknown', 'Availability unavailable');
+            case 'available':
+                return nls.localize('qaap/aiConfiguration/harnessAvailable', 'Available');
+            case 'installed-disconnected':
+                return nls.localize(
+                    'qaap/aiConfiguration/harnessInstalledNeedsSignIn',
+                    'Installed · sign in required',
+                );
+            case 'installed-connection-unknown':
+                return nls.localize(
+                    'qaap/aiConfiguration/harnessInstalledSignInUnknown',
+                    'Installed · sign-in status unknown',
+                );
+            case 'not-installed':
+                return nls.localize('qaap/aiConfiguration/harnessNotInstalled', 'Not installed');
         }
-        if (this.availabilityState === 'unavailable') {
-            return nls.localize('qaap/aiConfiguration/harnessAvailabilityUnknown', 'Availability unavailable');
-        }
-        return available
-            ? nls.localize('qaap/aiConfiguration/harnessAvailable', 'Available on this workspace')
-            : nls.localize('qaap/aiConfiguration/harnessNotDetected', 'Not detected on this workspace');
     }
 
     protected async toggleHarness(harnessId: string, enabled: boolean): Promise<void> {
@@ -287,7 +322,6 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 withQaapHarnessEnabled(disabledIds, definition.id, false),
                 PreferenceScope.User,
             );
-            this.availableHarnessIds.add(definition.id);
             this.availabilityState = 'ready';
             this.messageService?.info(nls.localize(
                 'qaap/aiConfiguration/harnessInstalled',
@@ -309,17 +343,25 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
 
     protected async loadAvailability(): Promise<void> {
         try {
-            const response = await fetch('/qaap/api/agent-tasks/all', { credentials: 'same-origin' });
+            const response = await fetch('/qaap/api/agent-tasks/harness-status', { credentials: 'same-origin' });
             if (!response.ok) {
                 throw new Error(`Harness availability request failed: ${response.status}`);
             }
             const payload = await response.json() as HarnessAgentResponse;
-            this.installSupported = payload.installSupported !== false;
-            this.availableHarnessIds = new Set(
-                (payload.agents ?? [])
-                    .filter(agent => agent.available !== false && typeof agent.id === 'string')
-                    .map(agent => agent.id!.trim().toLowerCase()),
-            );
+            const harnessStatuses = new Map<string, LoadedHarnessStatus>();
+            for (const harness of payload.harnesses ?? []) {
+                if (typeof harness.id !== 'string') {
+                    continue;
+                }
+                harnessStatuses.set(harness.id.trim().toLowerCase(), {
+                    installed: harness.installed === true,
+                    enabled: harness.enabled === true,
+                    connectionState: harness.connectionState ?? 'unknown',
+                    installSupported: harness.installSupported === true,
+                    ...(harness.version ? { version: harness.version } : {}),
+                });
+            }
+            this.harnessStatuses = harnessStatuses;
             this.availabilityState = 'ready';
         } catch {
             this.availabilityState = 'unavailable';

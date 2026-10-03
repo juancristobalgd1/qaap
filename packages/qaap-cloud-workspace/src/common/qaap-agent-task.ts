@@ -295,6 +295,20 @@ export interface QaapCreateAgentTaskRequest {
 /** A coding agent the runner knows how to invoke. */
 export type QaapAgentConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
 
+/** Installation and per-user state for a harness settings card. */
+export interface QaapAgentHarnessStatus {
+    readonly id: string;
+    readonly installed: boolean;
+    readonly enabled: boolean;
+    readonly connectionState: QaapAgentConnectionState;
+    readonly installSupported: boolean;
+    readonly version?: string;
+}
+
+export interface QaapAgentHarnessStatusResponse {
+    readonly harnesses: readonly QaapAgentHarnessStatus[];
+}
+
 export interface QaapAgentDescriptor {
     /** Stable identifier sent back in {@link QaapCreateAgentTaskRequest.agent}. */
     readonly id: string;

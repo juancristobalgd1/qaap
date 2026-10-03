@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     type QaapAgentDescriptor,
+    type QaapAgentHarnessStatus,
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTask,
@@ -94,6 +95,7 @@ import {
     QAAP_DISABLED_HARNESSES_PREF,
     readDisabledHarnessIds,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
+import { QAAP_HARNESS_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import {
     resolveQaapReposRoot,
@@ -561,6 +563,28 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     connectionState,
                 };
             });
+    }
+
+    /** Complete settings catalog; unlike listAgents this includes disabled and disconnected CLIs. */
+    listHarnessStatuses(
+        ownerLogin: string | undefined,
+        isInstallSupported: (agentId: string) => boolean,
+    ): QaapAgentHarnessStatus[] {
+        return QAAP_HARNESS_DEFINITIONS.map(definition => {
+            const candidate = this.detectedAgents.get(definition.id);
+            const installed = candidate
+                ? this.isCandidateAvailable(candidate)
+                : this.isOnPath(definition.bin);
+            return {
+                id: definition.id,
+                installed,
+                enabled: this.isAgentEnabled(definition.id, ownerLogin),
+                connectionState: installed
+                    ? this.agentConnectionState(definition.id, ownerLogin)
+                    : 'unknown',
+                installSupported: isInstallSupported(definition.id),
+            };
+        });
     }
 
     /** Authentication state for the current tenant's CLI credentials. */
