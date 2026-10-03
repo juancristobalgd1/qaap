@@ -21,6 +21,12 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/\.theia-mobile-work-hub-sessions-sidebar-project-row-wrap\s*\{[^}]*padding:\s*0 var\(--qaap-sessions-row-gutter\)/s);
     });
 
+    it('keeps expanded project groups at their full content height', () => {
+        expect(css).to.match(
+            /\.theia-mobile-work-hub-sessions-sidebar-project-group\s*\{[^}]*flex:\s*0\s+0\s+auto/s,
+        );
+    });
+
     it('fills the selected session pill without an extra horizontal inset', () => {
         expect(css).to.match(
             /\.theia-mobile-projects-task-row\.theia-mod-current::before\s*\{[^}]*inset:\s*0;/s,

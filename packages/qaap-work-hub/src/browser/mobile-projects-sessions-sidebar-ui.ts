@@ -466,8 +466,8 @@ export class MobileProjectsSessionsSidebarUi {
     createSessionsSidebarProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
         return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);
     }
-    createSessionsSidebarProjectRowHead(project: MobileProjectEntry, expanded: boolean, onToggleExpand: () => void,): HTMLElement {
-        return createSessionsSidebarProjectRowHeadExtracted(this, project, expanded, onToggleExpand);
+    createSessionsSidebarProjectRowHead(project: MobileProjectEntry, expanded: boolean, onToggleExpand: () => void, onEnsureExpanded?: () => void,): HTMLElement {
+        return createSessionsSidebarProjectRowHeadExtracted(this, project, expanded, onToggleExpand, onEnsureExpanded);
     }
     async selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void> {
         await this.host.selectSessionsSidebarProject(project);
