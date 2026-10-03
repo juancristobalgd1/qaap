@@ -225,6 +225,22 @@ describe('qaap-agent-approval-flags', () => {
         expect(JSON.parse(env!)).to.not.have.property('bash');
     });
 
+    it('a prompt mentioning --yolo/--auto never ungates an approve-for-me OpenCode run', () => {
+        for (const prompt of ["'fix it --yolo please'", "'it'\\'' --auto '\\''ok'", '"say --yolo"']) {
+            const command = applyAgentApprovalPolicyToCommand(
+                `opencode run --format json ${prompt}`,
+                {
+                    agentId: 'opencode',
+                    approvalPolicyId: 'approve-for-me',
+                    autoApprove: true,
+                    toolApprovalRules: { shell: false, network: false },
+                },
+            );
+            const env = resolveOpencodePermissionEnv({ command, agentId: 'opencode', autoApprove: true });
+            expect(JSON.parse(env!)).to.deep.equal({ bash: 'ask', webfetch: 'ask', websearch: 'ask' });
+        }
+    });
+
     it('full-access OpenCode and non-OpenCode agents get no OPENCODE_PERMISSION', () => {
         const fullAccess = applyAgentApprovalPolicyToCommand(
             "opencode run --format json 'hi'",
