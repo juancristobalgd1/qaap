@@ -8,6 +8,7 @@ import {
     conversationToSummary,
     isFailedRunSummary,
     isLastTurnCancelled,
+    latestConversationTurnHasError,
     looksLikeSelfReportedAgentStopFailure,
     preferQaapConversationSummary,
     type QaapAgentConversationSummaryDTO,
@@ -181,5 +182,41 @@ describe('turn provenance in conversation summaries', () => {
         expect(result.agentModel?.modelId).to.equal('gpt-5.6-sol');
         expect(result.lastTurnAgentId).to.equal('codex');
         expect(result.lastTurnAgentModel?.modelId).to.equal('gpt-5.6-luna');
+    });
+});
+
+describe('latest-turn failure in client summaries', () => {
+    const base = {
+        id: 'conversation-2',
+        cwd: '/workspace/project',
+        agentId: 'opencode',
+        title: 'Isolation check',
+        createdAt: 1,
+        updatedAt: 10,
+    };
+
+    it('does not keep a conversation failed after a clean follow-up', () => {
+        const messages = [
+            { id: 'u1', role: 'user' as const, content: 'first', createdAt: 1 },
+            { id: 'a1', role: 'agent' as const, content: '', createdAt: 2, error: 'Permission denied' },
+            { id: 'u2', role: 'user' as const, content: 'again', createdAt: 3 },
+            { id: 'a2', role: 'agent' as const, content: 'fin', createdAt: 4 },
+        ];
+        expect(latestConversationTurnHasError(messages)).to.equal(false);
+        const summary = conversationToSummary({ ...base, status: 'idle', messages });
+        expect(summary.status).to.not.equal('failed');
+        expect(isFailedRunSummary(summary)).to.equal(false);
+    });
+
+    it('stays failed when the latest turn errored', () => {
+        const summary = conversationToSummary({
+            ...base,
+            status: 'idle',
+            messages: [
+                { id: 'u1', role: 'user', content: 'go', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: '', createdAt: 2, error: 'Agent failed (exit 1).' },
+            ],
+        });
+        expect(summary.status).to.equal('failed');
     });
 });

@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     conversationNeedsVisualVerificationEvidence,
+    latestConversationTurnHasError,
     resolveEffectiveConversationStatus,
     toConversationSummary,
 } from './qaap-agent-conversation';
@@ -63,6 +64,40 @@ describe('resolveEffectiveConversationStatus', () => {
             ],
         }));
         expect(summary.status).to.equal('failed');
+    });
+});
+
+describe('latest-turn failure status', () => {
+    it('clears an earlier turn failure once a later follow-up finished cleanly', () => {
+        const conv = conversation({
+            status: 'idle',
+            messages: [
+                { id: 'u1', role: 'user', content: 'first', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: 'boom', createdAt: 2, error: 'Agent failed (exit 1).' },
+                { id: 'u2', role: 'user', content: 'retry', createdAt: 3 },
+                { id: 'a2', role: 'agent', content: 'fin', createdAt: 4 },
+            ],
+        });
+        expect(latestConversationTurnHasError(conv.messages)).to.equal(false);
+        expect(resolveEffectiveConversationStatus(conv)).to.equal('idle');
+        expect(toConversationSummary(conv).status).to.equal('idle');
+    });
+
+    it('keeps failed while the latest turn itself carries the error', () => {
+        const conv = conversation({
+            status: 'idle',
+            messages: [
+                { id: 'u1', role: 'user', content: 'first', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: 'ok', createdAt: 2 },
+                { id: 'u2', role: 'user', content: 'retry', createdAt: 3 },
+                { id: 'a2', role: 'agent', content: 'boom', createdAt: 4, error: 'Agent failed (exit 1).' },
+            ],
+        });
+        expect(resolveEffectiveConversationStatus(conv)).to.equal('failed');
+    });
+
+    it('keeps an explicitly failed stored status', () => {
+        expect(resolveEffectiveConversationStatus(conversation({ status: 'failed' }))).to.equal('failed');
     });
 });
 
@@ -129,7 +164,7 @@ describe('visualVerificationPending summary flag', () => {
         expect(conversationNeedsVisualVerificationEvidence(conv)).to.equal(false);
     });
 
-    it('survives a historical message error that keeps the effective status failed', () => {
+    it('survives a historical message error from an earlier turn without marking the conversation failed', () => {
         const conv = conversation({
             status: 'idle',
             messages: [
@@ -145,7 +180,8 @@ describe('visualVerificationPending summary flag', () => {
             ],
         });
         const summary = toConversationSummary(conv);
-        expect(summary.status).to.equal('failed');
+        // The error belongs to an earlier turn; the latest turn settled cleanly.
+        expect(summary.status).to.equal('idle');
         expect(summary.visualVerificationPending).to.equal(true);
     });
 
