@@ -165,6 +165,40 @@ After secrets exist:
   runs if the gate is skipped or cancelled. In-flight deploys are not cancelled
   when a newer `master` push starts.
 
+### Verification and automatic rollback
+
+`scripts/qaap-vps-rollback.sh` wraps every CI deploy. It needs `QAAP_SMOKE_SESSION` or
+`QAAP_SMOKE_COOKIE` (a signed-in `name=value` cookie) and refuses to deploy without one.
+
+- **Preflight.** Before changing anything it runs the same gates against the release that is
+  serving now: launch readiness (when the host has Node.js), auth API, health build and the
+  authenticated workspace smoke. An expired smoke credential (HTTP 302/401/403) or a VPS that
+  cannot reach its own public URL blocks the deploy; a healthy release is never rolled back
+  because of it. Renew the secret and re-run.
+- **Rollback target.** The serving image is tagged `qaap-theia:rollback`, and the tenant image is
+  tagged `qaap-tenant:rollback` in the rootless daemon. Image cleanup never removes these tags.
+  If the deploy user reaches the rootless daemon through a different socket path than Theia,
+  set `QAAP_ROOTLESS_DOCKER_HOST`.
+- **Rollback.** If the candidate fails verification, the script drains agent turns, stops the
+  candidate, stops and renames its new `qaap-backend-*` containers, and removes its new tenant
+  and ingress helpers. Volumes are kept. It then checks out the previous repository revision,
+  pins both rollback tags in `.env`, refreshes Caddy, restores Theia and verifies the old build.
+- **External check.** After the VPS checks pass, the runner repeats them from outside: readiness,
+  auth API and the authenticated smoke. If that check fails, a second SSH step runs
+  `qaap-vps-rollback.sh --rollback-only`.
+- **Irreversible migrations.** A release whose data migration cannot be read by the previous
+  release must carry `LABEL ai.qaap.rollback=unsafe`. Its failures report
+  `MANUAL INTERVENTION NEEDED` instead of starting old code on migrated volumes.
+- **Results.** The job output `result` is one of `verified`, `rolled_back`, `blocked` or `manual`
+  (script exit codes 0, 1, 1 and 3). The SSH steps stay green whenever the remote script ran,
+  so read the "Write deploy result summary" step or the job output, not the SSH step status.
+- **Detached runs.** The deploy and the rollback run detached from SSH (`setsid nohup`) under
+  `/run/lock/qaap-deploy.lock`. A cancelled job or a dropped connection cannot stop them halfway.
+  Full logs stay on the VPS in `~/.local/state/qaap-deploy/logs/`.
+- **Bootstrap or hotfix without a target.** Run the workflow manually with
+  `allow_no_rollback` only when no healthy Theia is running. Automatic rollback is then off,
+  and the summary says so.
+
 The GHCR package remains private by default. Keep it private: the runtime image contains the built
 application and source tree. GitHub links the package to this repository through the
 `org.opencontainers.image.source` label.

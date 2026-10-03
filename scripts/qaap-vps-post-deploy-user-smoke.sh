@@ -20,6 +20,10 @@ if [[ -z "$SMOKE_COOKIE" ]]; then
     echo '::error::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required; refusing deploy without an authenticated workspace smoke.' >&2
     exit 1
 fi
+if [[ "$SMOKE_COOKIE" != *=* ]]; then
+    echo '::error::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE must contain a cookie name and value separated by =.' >&2
+    exit 1
+fi
 
 for command in curl python3; do
     if ! command -v "$command" >/dev/null 2>&1; then
@@ -37,6 +41,9 @@ cleanup() {
     esac
 }
 trap cleanup EXIT
+COOKIE_HEADER_FILE="$TEMP_DIR/cookie-header"
+printf 'Cookie: %s\n' "$SMOKE_COOKIE" > "$COOKIE_HEADER_FILE"
+chmod 600 "$COOKIE_HEADER_FILE"
 
 if ! HEALTH_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/health.json" \
     --write-out '%{http_code}' --max-time 15 "$BASE_URL/qaap/api/health")"; then
@@ -111,13 +118,17 @@ fi
 echo "OK: auth/config reports deployed build $DEPLOYED_SHA."
 
 if ! WORKSPACE_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/workspace-root.html" \
-    --write-out '%{http_code}' --max-time 15 --cookie "$SMOKE_COOKIE" "$BASE_URL/")"; then
+    --write-out '%{http_code}' --max-time 15 -H "@$COOKIE_HEADER_FILE" "$BASE_URL/")"; then
     echo '::error::Signed-in post-deploy smoke could not request the workspace root.' >&2
     exit 1
 fi
 if grep -Fqi 'Tenant backend unavailable' "$TEMP_DIR/workspace-root.html"; then
     echo '::error::Signed-in workspace root contains "Tenant backend unavailable".' >&2
     exit 1
+fi
+if [[ "$WORKSPACE_STATUS" == 302 || "$WORKSPACE_STATUS" == 401 || "$WORKSPACE_STATUS" == 403 ]]; then
+    echo "::error::Signed-in workspace smoke received HTTP $WORKSPACE_STATUS; the smoke cookie or session is expired or unauthorized." >&2
+    exit 3
 fi
 if [[ "$WORKSPACE_STATUS" != 200 ]]; then
     echo "::error::Signed-in workspace smoke expected HTTP 200, got ${WORKSPACE_STATUS:-<empty>}." >&2
@@ -126,9 +137,13 @@ fi
 echo 'OK: signed-in workspace root returned HTTP 200.'
 
 if ! APPROVALS_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-    --max-time 15 --cookie "$SMOKE_COOKIE" "$BASE_URL/qaap/api/agent-approvals")"; then
+    --max-time 15 -H "@$COOKIE_HEADER_FILE" "$BASE_URL/qaap/api/agent-approvals")"; then
     echo '::error::Signed-in post-deploy smoke could not request /qaap/api/agent-approvals.' >&2
     exit 1
+fi
+if [[ "$APPROVALS_STATUS" == 302 || "$APPROVALS_STATUS" == 401 || "$APPROVALS_STATUS" == 403 ]]; then
+    echo "::error::Signed-in agent-approvals smoke received HTTP $APPROVALS_STATUS; the smoke cookie or session is expired or unauthorized." >&2
+    exit 3
 fi
 if [[ "$APPROVALS_STATUS" != 200 ]]; then
     echo "::error::Signed-in post-deploy smoke expected agent-approvals HTTP 200, got ${APPROVALS_STATUS:-<empty>}." >&2

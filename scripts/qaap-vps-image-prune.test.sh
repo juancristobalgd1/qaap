@@ -149,4 +149,14 @@ unset FAKE_PS_FAIL
 if grep -q '^host ' "$FAKE_STATE/removed"; then fail 'removed host images although containers could not be listed'; fi
 grep -q 'cannot list containers; skipping' "$FAKE_STATE/output" || fail 'missing skip notice'
 
+# 5) Rollback protection: the tagged previous release survives cleanup even when nothing else keeps it.
+setup_state rollback-tag
+export QAAP_IMAGE_HISTORY_FILE="$TEST_ROOT/history-rollback/image-history" PRE_DEPLOY_IMAGE_ID='sha256:prev'
+printf '%s\n' 'sha256:rb|qaap-theia|rollback|<none>' >> "$FAKE_STATE/host/images"
+run_prune
+grep -q 'sha256:rb|qaap-theia|rollback' "$FAKE_STATE/host/images" || fail 'protected qaap-theia:rollback image removed'
+if grep -q 'qaap-theia:rollback' "$FAKE_STATE/removed"; then fail 'cleanup attempted to remove qaap-theia:rollback'; fi
+grep -q 'retained protected rollback tag qaap-theia:rollback' "$FAKE_STATE/output" || fail 'rollback tag retention was not reported'
+grep -q 'host rm qaap-theia:local' "$FAKE_STATE/removed" || fail 'other qaap-theia tags are no longer pruned'
+
 echo 'qaap-vps-image-prune tests passed'

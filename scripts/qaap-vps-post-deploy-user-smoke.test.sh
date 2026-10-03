@@ -24,7 +24,13 @@ url=''
 while (($#)); do
     case "$1" in
         --output|-o) output="$2"; shift 2 ;;
-        --cookie|-b) cookie="$2"; shift 2 ;;
+        --cookie|-b) echo 'smoke must not pass the cookie in argv' >&2; exit 11 ;;
+        -H|--header)
+            [[ "$2" == @* ]] || { echo 'cookie header must be read from a file' >&2; exit 12; }
+            [[ "$(stat -c '%a' "${2#@}")" == 600 ]] || { echo 'cookie header file must have mode 600' >&2; exit 13; }
+            cookie="$(sed -n 's/^Cookie: //p' "${2#@}")"
+            shift 2
+            ;;
         --write-out|-w) write_out="$2"; shift 2 ;;
         --max-time) shift 2 ;;
         --silent|--show-error|-s|-S) shift ;;
@@ -165,4 +171,24 @@ if "$TEST_ROOT/qaap-vps-post-deploy-user-smoke.sh" https://qaap.example.test "$E
 fi
 grep -q 'expected agent-approvals HTTP 200, got 502' "$TEST_ROOT/approvals-fail.out" || fail 'agent-approvals failure was unclear'
 
-echo 'qaap-vps-post-deploy-user-smoke tests passed (10 scenarios)'
+# An expired or rejected session is a credential problem (exit 3), not a release failure.
+for route in workspace approvals; do
+    reset_case
+    export QAAP_SMOKE_COOKIE='qaap_sid=smoke-session' QAAP_TEST_EXPECT_COOKIE='qaap_sid=smoke-session'
+    if [[ "$route" == workspace ]]; then export QAAP_TEST_WORKSPACE_STATUS=401; else export QAAP_TEST_APPROVALS_STATUS=302; fi
+    status=0
+    "$TEST_ROOT/qaap-vps-post-deploy-user-smoke.sh" https://qaap.example.test "$EXPECTED_SHA" > "$TEST_ROOT/credential-$route.out" 2>&1 || status=$?
+    [[ "$status" == 3 ]] || fail "rejected $route session returned $status instead of credential code 3"
+    grep -q 'expired or unauthorized' "$TEST_ROOT/credential-$route.out" || fail "rejected $route session was not reported as a credential problem"
+done
+
+# A cookie without name=value would make curl read a file path; refuse it before any request.
+reset_case
+export QAAP_SMOKE_COOKIE='not-a-cookie'
+if "$TEST_ROOT/qaap-vps-post-deploy-user-smoke.sh" https://qaap.example.test "$EXPECTED_SHA" > "$TEST_ROOT/bad-cookie.out" 2>&1; then
+    fail 'a cookie without name=value was accepted'
+fi
+grep -q 'separated by =' "$TEST_ROOT/bad-cookie.out" || fail 'malformed cookie failure was unclear'
+[[ ! -s "$QAAP_TEST_URLS" ]] || fail 'smoke made requests with a malformed cookie'
+
+echo 'qaap-vps-post-deploy-user-smoke tests passed (13 scenarios)'

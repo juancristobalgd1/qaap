@@ -45,6 +45,11 @@ prune_qaap_images_in() {
         [[ -n "$repo" ]] || continue
         while IFS='|' read -r id repo_name tag digest; do
             [[ -n "$id" ]] || continue
+            if [[ "$repo_name:$tag" == 'qaap-theia:rollback' || "$repo_name:$tag" == 'qaap-tenant:rollback' ]]; then
+                retained=$((retained + 1))
+                echo "[qaap-vps-update] image cleanup ($label): retained protected rollback tag $repo_name:$tag"
+                continue
+            fi
             if grep -Fxq -- "$id" <<<"$keep_ids" || grep -Fxq -- "$id" <<<"$used_ids"; then
                 retained=$((retained + 1))
                 continue

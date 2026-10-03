@@ -20,6 +20,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow_no_rollback:
+        description: Allow bootstrap or emergency deploys without an existing rollback target
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - master
@@ -294,6 +299,9 @@ jobs:
     permissions:
       contents: read
       packages: read
+    outputs:
+      result: ${{ steps.summary.outputs.result }}
+      reason: ${{ steps.summary.outputs.reason }}
 
     steps:
       - name: Require VPS release configuration
@@ -304,6 +312,7 @@ jobs:
           QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
           QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
           QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
+          QAAP_VPS_ALLOW_NO_ROLLBACK: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_no_rollback && '1' || '0' }}
         run: |
           if [ -z "$QAAP_VPS_HOST" ] || [ -z "$QAAP_VPS_SSH_KEY" ] || [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
             echo "::error::Configure QAAP_VPS_HOST, QAAP_VPS_SSH_KEY and QAAP_VPS_PUBLIC_URL before releasing."
@@ -329,6 +338,7 @@ jobs:
           QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
           QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
           QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
+          QAAP_VPS_ALLOW_NO_ROLLBACK: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_no_rollback && '1' || '0' }}
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
           username: ${{ secrets.QAAP_VPS_USER }}
@@ -336,13 +346,18 @@ jobs:
           port: ${{ secrets.QAAP_VPS_SSH_PORT }}
           command_timeout: 80m
           capture_stdout: true
-          envs: GHCR_USERNAME,GHCR_TOKEN,QAAP_DEPLOY_IMAGE,QAAP_DEPLOY_SHA,QAAP_DEPLOY_BRANCH,QAAP_VPS_PUBLIC_URL,QAAP_SMOKE_SESSION,QAAP_SMOKE_COOKIE
+          envs: GHCR_USERNAME,GHCR_TOKEN,QAAP_DEPLOY_IMAGE,QAAP_DEPLOY_SHA,QAAP_DEPLOY_BRANCH,QAAP_VPS_PUBLIC_URL,QAAP_SMOKE_SESSION,QAAP_SMOKE_COOKIE,QAAP_VPS_ALLOW_NO_ROLLBACK
           script: |
             set -euo pipefail
             REPO_DIR="${{ secrets.QAAP_VPS_REPO_DIR || '/opt/qaap' }}"
-            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
             cd "$REPO_DIR"
+            # A detached deploy from a cancelled run may still be working; never move the checkout under it.
+            if ! flock -n "${QAAP_DEPLOY_LOCK_FILE:-/run/lock/qaap-deploy.lock}" true; then
+              printf '%s\n' 'QAAP_DEPLOY_RESULT=blocked' 'QAAP_DEPLOY_REASON=another VPS deploy or rollback is still running' \
+                'QAAP_DEPLOY_SUMMARY_START' '## VPS deploy blocked' '' 'Another VPS deploy or rollback still holds the deploy lock. No deployment changes were made.' \
+                'QAAP_DEPLOY_SUMMARY_END' 'QAAP_DEPLOY_EXIT_CODE=1'
+              exit 0
+            fi
             git fetch origin
             if [[ -n "$(git status --porcelain)" ]]; then
               # A VPS can contain an operator's in-progress worktree edits. Preserve tracked and
@@ -352,46 +367,141 @@ jobs:
               git stash push --include-untracked --message "$STASH_NAME"
               echo "[qaap-vps] preserved dirty worktree in stash: $STASH_NAME"
             fi
+            PREV_SHA="$(git rev-parse HEAD)"
             git checkout --detach "$QAAP_DEPLOY_SHA"
-            chmod +x ./scripts/qaap-vps-rollback.sh ./scripts/qaap-vps-post-deploy-user-smoke.sh
-            DEPLOY_STATUS=0
-            ./scripts/qaap-vps-rollback.sh \
-              "$QAAP_DEPLOY_BRANCH" \
-              "$QAAP_DEPLOY_SHA" \
-              "$QAAP_DEPLOY_IMAGE" \
-              "$QAAP_VPS_PUBLIC_URL" || DEPLOY_STATUS=$?
-            printf 'QAAP_DEPLOY_EXIT_CODE=%s\n' "$DEPLOY_STATUS"
+            export GHCR_USERNAME GHCR_TOKEN QAAP_VPS_ALLOW_NO_ROLLBACK QAAP_SMOKE_SESSION QAAP_SMOKE_COOKIE
+            # Detached from this SSH session: a cancelled job, timeout or dropped connection cannot
+            # stop a deploy or rollback halfway. The log stays under ~/.local/state/qaap-deploy/logs.
+            # Only result markers reach stdout, so the step output stays small.
+            bash ./scripts/qaap-vps-detached-run.sh "deploy-${QAAP_DEPLOY_SHA:0:12}" bash -c '
+              if ! printf "%s" "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin; then
+                printf "QAAP_DEPLOY_RESULT=blocked\nQAAP_DEPLOY_REASON=GHCR login failed\n\nQAAP_DEPLOY_SUMMARY_START\n## VPS deploy blocked\n\nGHCR login failed. No deployment changes were made.\nQAAP_DEPLOY_SUMMARY_END\n"
+                exit 1
+              fi
+              status=0
+              bash ./scripts/qaap-vps-rollback.sh "$@" || status=$?
+              docker logout ghcr.io >/dev/null 2>&1 || true
+              exit "$status"
+            ' qaap-deploy "$QAAP_DEPLOY_BRANCH" "$QAAP_DEPLOY_SHA" "$QAAP_DEPLOY_IMAGE" "$QAAP_VPS_PUBLIC_URL" "$PREV_SHA"
 
+      # The on-VPS checks reach the public URL from the server itself, which can hide DNS, firewall,
+      # CDN or TLS problems (and hairpin NAT can differ). Re-run the release gates from the runner.
+      - name: Checkout release verification scripts
+        id: external_checkout
+        if: steps.ready.outputs.configured == 'true' && contains(steps.deploy.outputs.stdout, 'QAAP_DEPLOY_RESULT=verified')
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.publish_image.outputs.source_sha }}
+          sparse-checkout: |
+            scripts/qaap-vps-normalize-public-url.sh
+            scripts/qaap-verify-launch-readiness.sh
+            scripts/qaap-release-config-check.js
+            scripts/qaap-verify-auth-api-gate.sh
+            scripts/qaap-vps-post-deploy-user-smoke.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Verify release from outside the VPS
+        id: external
+        if: steps.external_checkout.outcome == 'success'
+        env:
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
+          QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
+          EXPECTED_SHA: ${{ needs.publish_image.outputs.source_sha }}
+        run: |
+          # shellcheck source=scripts/qaap-vps-normalize-public-url.sh
+          source ./scripts/qaap-vps-normalize-public-url.sh
+          BASE_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
+          BASE_URL="${BASE_URL%/}"
+          failure='public URL is empty after normalization'
+          if [ -n "$BASE_URL" ]; then
+            for attempt in $(seq 1 6); do
+              echo "external verification attempt $attempt/6"
+              if ! QAAP_BASE_URL="$BASE_URL" QAAP_ENV_FILE=/nonexistent.env bash ./scripts/qaap-verify-launch-readiness.sh; then
+                failure='launch-readiness gate failed from the runner'
+              elif ! QAAP_BASE_URL="$BASE_URL" bash ./scripts/qaap-verify-auth-api-gate.sh; then
+                failure='auth API gate failed from the runner'
+              elif ! bash ./scripts/qaap-vps-post-deploy-user-smoke.sh "$BASE_URL" "$EXPECTED_SHA"; then
+                failure='build or authenticated workspace smoke failed from the runner'
+              else
+                failure=''
+                break
+              fi
+              sleep 10
+            done
+          fi
+          if [ -n "$failure" ]; then
+            echo "::error::External verification failed: $failure"
+            echo 'passed=false' >> "$GITHUB_OUTPUT"
+            echo "reason=$failure" >> "$GITHUB_OUTPUT"
+          else
+            echo 'passed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Roll back after external verification failure
+        id: external_rollback
+        if: steps.external.outputs.passed == 'false'
+        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
+        env:
+          QAAP_DEPLOY_SHA: ${{ needs.publish_image.outputs.source_sha }}
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
+          QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
+          QAAP_EXTERNAL_REASON: ${{ steps.external.outputs.reason }}
+        with:
+          host: ${{ secrets.QAAP_VPS_HOST }}
+          username: ${{ secrets.QAAP_VPS_USER }}
+          key: ${{ secrets.QAAP_VPS_SSH_KEY }}
+          port: ${{ secrets.QAAP_VPS_SSH_PORT }}
+          command_timeout: 30m
+          capture_stdout: true
+          envs: QAAP_DEPLOY_SHA,QAAP_VPS_PUBLIC_URL,QAAP_SMOKE_SESSION,QAAP_SMOKE_COOKIE,QAAP_EXTERNAL_REASON
+          script: |
+            set -euo pipefail
+            REPO_DIR="${{ secrets.QAAP_VPS_REPO_DIR || '/opt/qaap' }}"
+            cd "$REPO_DIR"
+            export QAAP_SMOKE_SESSION QAAP_SMOKE_COOKIE
+            bash ./scripts/qaap-vps-detached-run.sh "rollback-${QAAP_DEPLOY_SHA:0:12}" \
+              bash ./scripts/qaap-vps-rollback.sh --rollback-only "$QAAP_DEPLOY_SHA" "$QAAP_VPS_PUBLIC_URL" "$QAAP_EXTERNAL_REASON"
+
+      # Source of truth for the release outcome: the "Deploy over SSH" step stays green when the
+      # remote script ran, even if it rolled back. Consumers read jobs.deploy.outputs.result.
       - name: Write deploy result summary
         if: always()
+        id: summary
         env:
           DEPLOY_OUTPUT: ${{ steps.deploy.outputs.stdout }}
+          EXTERNAL_PASSED: ${{ steps.external.outputs.passed }}
+          EXTERNAL_REASON: ${{ steps.external.outputs.reason }}
+          EXTERNAL_ROLLBACK_OUTPUT: ${{ steps.external_rollback.outputs.stdout }}
           READY: ${{ steps.ready.outputs.configured }}
         run: |
           if [ "$READY" != true ]; then
             exit 0
           fi
-          DEPLOY_STATUS="$(printf '%s\n' "$DEPLOY_OUTPUT" | sed -n 's/^QAAP_DEPLOY_EXIT_CODE=//p' | tail -n 1)"
-          SUMMARY="$(printf '%s\n' "$DEPLOY_OUTPUT" | sed -n '/^QAAP_DEPLOY_SUMMARY_START$/,/^QAAP_DEPLOY_SUMMARY_END$/p' | sed '1d;$d')"
+          OUTPUT="$DEPLOY_OUTPUT"
+          if [ "$EXTERNAL_PASSED" = false ]; then
+            printf '%s\n\n%s\n\n' '## External verification failed' "The VPS checks passed, but verification from the GitHub runner failed: $EXTERNAL_REASON. A rollback-only run was started." >> "$GITHUB_STEP_SUMMARY"
+            OUTPUT="$EXTERNAL_ROLLBACK_OUTPUT"
+          fi
+          DEPLOY_RESULT="$(printf '%s\n' "$OUTPUT" | sed -n 's/^QAAP_DEPLOY_RESULT=//p' | tail -n 1)"
+          DEPLOY_REASON="$(printf '%s\n' "$OUTPUT" | sed -n 's/^QAAP_DEPLOY_REASON=//p' | tail -n 1)"
+          DEPLOY_STATUS="$(printf '%s\n' "$OUTPUT" | sed -n 's/^QAAP_DEPLOY_EXIT_CODE=//p' | tail -n 1)"
+          SUMMARY="$(printf '%s\n' "$OUTPUT" | sed -n '/^QAAP_DEPLOY_SUMMARY_START$/,/^QAAP_DEPLOY_SUMMARY_END$/p' | sed '1d;$d')"
+          echo "result=${DEPLOY_RESULT:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "reason=$DEPLOY_REASON" >> "$GITHUB_OUTPUT"
           if [ -n "$SUMMARY" ]; then
             printf '%s\n' "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
           else
-            printf '%s\n\n%s\n' '## VPS deploy result unavailable' 'The SSH action did not return its deployment summary; inspect the Deploy over SSH logs.' >> "$GITHUB_STEP_SUMMARY"
+            printf '%s\n\n%s\n' '## VPS deploy result unavailable' 'The SSH action did not return its deployment summary; inspect the SSH step logs and the VPS log under ~/.local/state/qaap-deploy/logs.' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           if [ -z "$DEPLOY_STATUS" ]; then
-            echo '::error::SSH completed without returning a deploy status; inspect the Deploy over SSH logs.'
+            echo '::error::SSH completed without returning a deploy status; inspect the SSH step logs.'
             exit 1
           fi
-          if [ "$DEPLOY_STATUS" != 0 ]; then
-            ROLLBACK_MESSAGE="$(printf '%s\n' "$DEPLOY_OUTPUT" | sed -n '/^ROLLED BACK to /p' | tail -n 1)"
-            MANUAL_MESSAGE="$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -F 'MANUAL INTERVENTION NEEDED' | head -n 1 || true)"
-            if [ -n "$ROLLBACK_MESSAGE" ]; then
-              echo "::error::$ROLLBACK_MESSAGE"
-            elif [ -n "$MANUAL_MESSAGE" ]; then
-              echo "::error::$MANUAL_MESSAGE"
-            else
-              echo "::error::VPS deploy verification failed with exit code $DEPLOY_STATUS."
-            fi
+          if [ "$DEPLOY_STATUS" != 0 ] || [ "$DEPLOY_RESULT" != verified ]; then
+            echo "::error::VPS deploy result is ${DEPLOY_RESULT:-unknown}: ${DEPLOY_REASON:-deploy did not provide a reason}."
+            if [ "$DEPLOY_STATUS" = 0 ]; then exit 1; fi
             exit "$DEPLOY_STATUS"
           fi

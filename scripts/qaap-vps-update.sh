@@ -48,6 +48,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Pin the image for pre-deploy Compose checks too. Source builds use this stable
+# local tag until the exact build has been created below.
+if [[ -n "$IMAGE_REF" ]]; then
+    export QAAP_THEIA_IMAGE="$IMAGE_REF"
+else
+    export QAAP_THEIA_IMAGE='qaap-theia:local'
+fi
+
 if ! command -v docker >/dev/null; then
     echo "docker not found" >&2
     exit 1
@@ -99,22 +107,6 @@ ensure_caddy_image() {
     fi
     echo "[qaap-vps-update] building Caddy image"
     docker compose build caddy
-}
-
-refresh_caddy() {
-    # Git replaces a checked-out bind-mounted file by inode. A running Caddy container can keep
-    # the old inode, so `docker compose up -d` may leave the previous Caddyfile active even though
-    # the repository contains the new one. Validate the fresh bind mount first, then recreate only
-    # Caddy. `--no-deps` is deliberate: a config refresh must never rebuild the Theia image.
-    if ! docker compose config --services | grep -Fxq caddy; then
-        return 0
-    fi
-
-    echo "[qaap-vps-update] validating Caddy configuration"
-    docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-    echo "[qaap-vps-update] recreating Caddy to refresh the bind-mounted configuration"
-    QAAP_THEIA_IMAGE="${QAAP_THEIA_IMAGE:?QAAP_THEIA_IMAGE must be fixed before compose up}" \
-        docker compose up -d --no-build --no-deps --force-recreate caddy
 }
 
 record_deploy_switch_time() {
@@ -209,6 +201,8 @@ preload_tenant_image_before_switch() {
 # Post-deploy image cleanup (prune_old_qaap_images); sourced so it can be tested with a fake docker.
 # shellcheck source=scripts/qaap-vps-image-prune.sh
 source "$REPO_DIR/scripts/qaap-vps-image-prune.sh"
+# shellcheck source=scripts/qaap-vps-deploy-helpers.sh
+source "$REPO_DIR/scripts/qaap-vps-deploy-helpers.sh"
 
 preserve_legacy_bind_mounts() {
     local container_id="$1"
@@ -298,7 +292,8 @@ run_runtime_state_check() {
             docker_socket_args+=(-v "$docker_socket:$docker_socket")
         fi
     fi
-    printf '%s' "$compose_config" | docker compose run --rm --no-deps -T "${docker_socket_args[@]}" \
+    printf '%s' "$compose_config" | QAAP_THEIA_IMAGE="${QAAP_THEIA_IMAGE:?QAAP_THEIA_IMAGE must be fixed before compose run}" \
+        docker compose run --rm --no-deps -T "${docker_socket_args[@]}" \
         -v "$REPO_DIR/scripts:/tmp/qaap-migration-scripts:ro" \
         theia node /tmp/qaap-migration-scripts/qaap-persist-runtime-state.mjs \
         --check --container-id "$container_id" --compose-config-stdin
@@ -383,69 +378,10 @@ fi
 echo "[qaap-vps-update] commit: $BEFORE"
 
 # Deploy drain: before the control-plane container is replaced, stop it from starting new agent
-# turns (they queue and persist, and resume on the new container) and wait for in-flight turns to
-# finish, so a deploy never cuts a running turn. Tenant backends are separate containers and are
-# protected on their side: a stale backend is not recreated while it reports running turns.
+# turns and wait for in-flight turns to finish. The shared helper is also used by rollback.
 DRAIN_TIMEOUT_SECONDS="${QAAP_DEPLOY_DRAIN_TIMEOUT_SECONDS:-900}"
 DRAIN_ACTIVE=0
-
-drain_request() {
-    # $1 method, $2 runtime sub-path, $3 optional JSON body. Prints the JSON answer; non-zero when the
-    # serving container has no drain endpoint (older image) or is unreachable.
-    docker compose exec -T theia node -e '
-        const [method, path, body] = process.argv.slice(1);
-        const req = require("http").request({
-            host: "127.0.0.1", port: process.env.PORT || 4873, method,
-            path: "/qaap/api/cloud/runtime/" + path,
-            headers: { "content-type": "application/json" }, timeout: 5000,
-        }, res => {
-            let data = "";
-            res.on("data", chunk => data += chunk);
-            res.on("end", () => { if (res.statusCode !== 200) { process.exit(2); } process.stdout.write(data); });
-        });
-        req.on("timeout", () => req.destroy(new Error("timeout")));
-        req.on("error", () => process.exit(1));
-        if (body) { req.write(body); }
-        req.end();
-    ' "$1" "$2" "${3:-}" 2>/dev/null
-}
-
-undo_drain_on_failure() {
-    if [[ "$DRAIN_ACTIVE" -eq 1 ]]; then
-        echo "[qaap-vps-update] deploy failed before the switch; ending agent drain" >&2
-        drain_request POST drain '{"draining":false}' >/dev/null || true
-    fi
-}
 trap undo_drain_on_failure EXIT
-
-drain_agent_turns() {
-    if [[ -z "$(docker compose ps -q theia 2>/dev/null | tr -d '
-')" ]]; then
-        return 0
-    fi
-    local answer running
-    if ! answer="$(drain_request POST drain '{"draining":true}')"; then
-        echo "[qaap-vps-update] serving container has no agent drain endpoint; switching without drain"
-        return 0
-    fi
-    DRAIN_ACTIVE=1
-    local deadline=$((SECONDS + DRAIN_TIMEOUT_SECONDS))
-    while :; do
-        running="$(printf '%s' "$answer" | sed -n 's/.*"runningTasks":\([0-9][0-9]*\).*/\1/p')"
-        if [[ "${running:-0}" -eq 0 ]]; then
-            echo "[qaap-vps-update] no agent turns running; switching"
-            return 0
-        fi
-        if (( SECONDS >= deadline )); then
-            echo "[qaap-vps-update] drain timed out after ${DRAIN_TIMEOUT_SECONDS}s with $running turn(s) running;" \
-                "switching anyway (interrupted turns resume on the new container)" >&2
-            return 0
-        fi
-        echo "[qaap-vps-update] waiting for $running agent turn(s) to finish..."
-        sleep 10
-        answer="$(drain_request GET drain-status)" || answer='{"runningTasks":0}'
-    done
-}
 
 # Image serving before this deploy: retained by the post-deploy cleanup for rollback.
 PRE_DEPLOY_IMAGE_ID=''
