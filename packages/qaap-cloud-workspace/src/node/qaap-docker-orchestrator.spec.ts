@@ -217,8 +217,13 @@ function createFakeTenantBackendDocker(): {
                 HostConfig: { ...hostConfig, PidMode: 'private', IpcMode: 'private' },
                 NetworkSettings: { Networks: { [primaryNetwork]: {} }, Ports: ports },
                 Mounts: (bindMounts ?? []).map(bind => {
-                    const [Source, Destination, mode] = bind.split(':');
-                    return { Source, Destination, RW: mode !== 'ro' };
+                    // Parse from the right: Windows host paths (C:\\...) contain a colon of their own.
+                    const parts = bind.split(':');
+                    const last = parts[parts.length - 1];
+                    const mode = parts.length > 2 && /^(ro|rw)(,|$)/.test(last) ? parts.pop() : undefined;
+                    const Destination = parts.pop();
+                    const Source = parts.join(':');
+                    return { Source, Destination, RW: mode === undefined || !mode.startsWith('ro') };
                 }),
             };
             // Dockerode takes the container name as lowercase `name`; accept `Name` for older call sites.
