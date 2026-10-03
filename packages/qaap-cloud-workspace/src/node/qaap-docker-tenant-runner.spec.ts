@@ -146,12 +146,14 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                 QAAP_TENANT_CONTAINER_ISOLATION: '1',
                 QAAP_TENANT_DOCKER_IMAGE: 'qaap-test-worker:local',
             };
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
             try {
                 let created: any;
                 let createOptions: any;
                 let createCalls = 0;
-                let networkCreated: any;
-                let networkOptions: any;
+                let containerInspect: any;
+                const createdNetworks = new Map<string, any>();
+                const networkOptions: any[] = [];
                 const fakeDocker = {
                     getContainer: (): any => {
                         if (!created) {
@@ -164,53 +166,62 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                     createContainer: async (options: any): Promise<any> => {
                         createCalls += 1;
                         createOptions = options;
+                        containerInspect = {
+                            Id: 'tenant-container-id',
+                            State: { Running: true },
+                            Config: {
+                                User: options.User,
+                                Image: options.Image,
+                                Labels: options.Labels,
+                            },
+                            HostConfig: { ...options.HostConfig, PidMode: 'private', IpcMode: 'private' },
+                            // The orchestrator requires only the tenant network and, when no
+                            // allowlist proxy is configured, that tenant's direct-egress network.
+                            NetworkSettings: {
+                                Networks: { [options.HostConfig.NetworkMode]: {} },
+                                // Workers are docker-exec targets and expose no service ports.
+                                Ports: {},
+                            },
+                            Mounts: [
+                                { Source: aliceRoot, Destination: '/workspace', RW: true },
+                                { Source: aliceWorktreesRoot, Destination: '/workspace/.qaap-worktrees', RW: true },
+                                { Source: aliceParallelRoot, Destination: '/workspace/.qaap-parallel', RW: true },
+                            ],
+                        };
                         created = {
                             start: async (): Promise<void> => undefined,
-                            inspect: async (): Promise<any> => ({
-                                Id: 'tenant-container-id',
-                                State: { Running: true },
-                                Config: {
-                                    User: options.User,
-                                    Image: options.Image,
-                                    Labels: options.Labels,
-                                },
-                                HostConfig: { ...options.HostConfig, PidMode: 'private', IpcMode: 'private' },
-                                // The orchestrator now requires the container to be attached to exactly
-                                // its own tenant network, so the fake reports that attachment.
-                                NetworkSettings: {
-                                    Networks: { [options.HostConfig.NetworkMode]: {} },
-                                    // Workers are docker-exec targets and expose no service ports.
-                                    Ports: {},
-                                },
-                                Mounts: [
-                                    { Source: aliceRoot, Destination: '/workspace', RW: true },
-                                    { Source: aliceWorktreesRoot, Destination: '/workspace/.qaap-worktrees', RW: true },
-                                    { Source: aliceParallelRoot, Destination: '/workspace/.qaap-parallel', RW: true },
-                                ],
-                            }),
+                            inspect: async (): Promise<any> => containerInspect,
                         };
                         return created;
                     },
-                    getNetwork: (): any => {
-                        if (!networkCreated) {
-                            const missing: any = new Error('not found');
-                            missing.statusCode = 404;
-                            throw missing;
-                        }
-                        return networkCreated;
-                    },
+                    // Like dockerode, getNetwork only builds a handle; inspect reports a missing network.
+                    getNetwork: (name: string): any => ({
+                        inspect: async (): Promise<any> => {
+                            const network = createdNetworks.get(name);
+                            if (!network) {
+                                const missing: any = new Error('not found');
+                                missing.statusCode = 404;
+                                throw missing;
+                            }
+                            return network;
+                        },
+                        connect: async (options: { Container: string }): Promise<void> => {
+                            if (created && containerInspect && options.Container) {
+                                containerInspect.NetworkSettings.Networks[name] = {};
+                            }
+                        },
+                    }),
                     createNetwork: async (options: any): Promise<any> => {
-                        networkOptions = options;
-                        networkCreated = {
-                            inspect: async (): Promise<any> => ({
-                                Name: options.Name,
-                                Driver: options.Driver,
-                                Internal: options.Internal,
-                                Labels: options.Labels,
-                                Options: options.Options,
-                            }),
+                        networkOptions.push(options);
+                        const network = {
+                            Name: options.Name,
+                            Driver: options.Driver ?? 'bridge',
+                            Internal: options.Internal === true,
+                            Labels: options.Labels ?? {},
+                            Options: options.Options ?? {},
                         };
-                        return networkCreated;
+                        createdNetworks.set(network.Name, network);
+                        return { inspect: async (): Promise<any> => network };
                     },
                 };
                 (orchestrator as any).docker = fakeDocker;
@@ -233,9 +244,16 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                 expect(createOptions.HostConfig.ReadonlyRootfs).to.equal(true);
                 expect(createOptions.HostConfig.Tmpfs).to.deep.equal({ '/tmp': 'rw,exec,nosuid,nodev,size=512m' });
                 expect(createOptions.HostConfig.PidsLimit).to.be.greaterThan(0);
-                expect(networkOptions.Name).to.equal(orchestrator.tenantNetworkNameFor('alice'));
-                expect(networkOptions.Options['com.docker.network.bridge.enable_icc']).to.equal('true');
-                expect(createOptions.HostConfig.NetworkMode).to.equal(networkOptions.Name);
+                const tenantNetworkOptions = networkOptions.find(options => options.Name === orchestrator.tenantNetworkNameFor('alice'));
+                const directEgressNetworkOptions = networkOptions.find(options => options.Name === (orchestrator as any).tenantDirectEgressNetworkNameFor('alice'));
+                expect(tenantNetworkOptions.Options['com.docker.network.bridge.enable_icc']).to.equal('true');
+                expect(createOptions.HostConfig.NetworkMode).to.equal(tenantNetworkOptions.Name);
+                expect(directEgressNetworkOptions).to.include({ Driver: 'bridge', Internal: false });
+                expect(directEgressNetworkOptions.Labels['com.qaap.tenant-egress-network']).to.equal('true');
+                expect(Object.keys(containerInspect.NetworkSettings.Networks)).to.have.members([
+                    tenantNetworkOptions.Name,
+                    directEgressNetworkOptions.Name,
+                ]);
                 expect(createOptions.HostConfig.PortBindings).to.equal(undefined);
             } finally {
                 process.env = previousEnv;

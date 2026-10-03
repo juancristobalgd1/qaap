@@ -6,6 +6,21 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 
 ## Tenant spawn / terminals (Linux)
 
+### Tenant container network layout and Docker address pools
+
+- **Rule:** tenant workers and backends use a per-tenant internal bridge. When no tenant egress
+  proxy is configured, Qaap also attaches a third, per-tenant non-internal bridge for direct
+  outbound traffic. Direct egress is enabled only when `QAAP_TENANT_EGRESS_PROXY_IMAGE` is unset;
+  when it is configured, containers stay on the internal bridge and use the proxy. Network mode
+  `none` disables tenant networking.
+- **Docker daemon requirement:** configure `default-address-pools` with enough small subnets on
+  every Docker daemon that runs tenant containers. For example, `[{"base":"10.200.0.0/16","size":24}]`.
+  Each per-tenant bridge consumes an address pool; without an expanded pool, Docker may exhaust
+  its defaults and tenant startup fails while creating a network. Ensure the selected range does
+  not overlap the host, VPN, or private network ranges already in use.
+- **Symptoms if broken:** Docker reports that it could not find an available, non-overlapping IPv4
+  address pool while a tenant starts. Qaap logs the `default-address-pools` setting to check.
+
 ### 1. The portable rlimit fallback must exec the real command
 
 - **Rule:** in `packages/qaap-cloud-workspace/src/node/qaap-tenant-spawn-service.ts` (`applyResourceLimits`), the fallback script is `ulimit -v "$1" && ulimit -t "$2" && shift 2 && exec "$@"`. `$0` is the `qaap-resource-limited` label, `$1`/`$2` are the limits, `$3…` is the command. Shift exactly **2**.

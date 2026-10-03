@@ -529,14 +529,19 @@ export class QaapDockerOrchestrator {
         const networkMode = this.getTenantNetworkMode(ownerLogin);
         const networks = networkMode === 'none'
             ? []
-            : [networkMode, ...(this.isBackendPerTenantEnabled() ? [this.backendIngressNetworkNameForTenant(ownerLogin)] : [])];
+            : [
+                networkMode,
+                this.tenantDirectEgressNetworkNameFor(ownerLogin),
+                ...(this.isBackendPerTenantEnabled() ? [this.backendIngressNetworkNameForTenant(ownerLogin)] : []),
+            ];
         for (const networkName of networks) {
             for (const node of nodes) {
                 try {
                     const network = node.docker.getNetwork(networkName);
                     const inspect = await network.inspect() as { Labels?: Record<string, string> };
                     if (inspect.Labels?.['com.qaap.tenant-network'] === 'true'
-                        || inspect.Labels?.['com.qaap.tenant-ingress-network'] === 'true') {
+                        || inspect.Labels?.['com.qaap.tenant-ingress-network'] === 'true'
+                        || inspect.Labels?.['com.qaap.tenant-egress-network'] === 'true') {
                         await network.remove();
                     }
                     break;
@@ -880,6 +885,7 @@ export class QaapDockerOrchestrator {
             await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
         }
         const directEgressNetwork = this.tenantDirectEgressNetworkFor(networkMode, ownerLogin);
+        const tenantEgressNetwork = networkMode === 'none' ? undefined : this.tenantDirectEgressNetworkNameFor(ownerLogin);
         if (directEgressNetwork) {
             await this.ensureTenantDirectEgressNetwork(docker, directEgressNetwork, ownerLogin);
         }
@@ -888,13 +894,22 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (directEgressNetwork
-                && !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork)
-                && this.tenantContainerMatches(inspect, mounts, networkMode)) {
-                // Upgrade a valid pre-egress worker in place. The internal bridge has no default
-                // route; Docker selects the newly attached non-internal bridge for outbound traffic.
-                await docker.getNetwork(directEgressNetwork).connect({ Container: name });
-                inspect = await container.inspect();
+            if (tenantEgressNetwork) {
+                if (directEgressNetwork
+                    && !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork)
+                    && this.tenantContainerMatches(inspect, mounts, networkMode)) {
+                    // Upgrade a valid pre-egress worker in place. The internal bridge has no default
+                    // route; Docker selects the newly attached non-internal bridge for outbound traffic.
+                    await docker.getNetwork(directEgressNetwork).connect({ Container: name });
+                    inspect = await container.inspect();
+                } else if (!directEgressNetwork
+                    && this.tenantContainerHasExpectedNetworks(inspect, networkMode, tenantEgressNetwork)
+                    && this.isManagedTenantContainerFor(inspect, ownerLogin)) {
+                    // Remove the direct route immediately when an allowlist proxy is enabled, even
+                    // if a busy worker must continue running with its prior environment for now.
+                    await docker.getNetwork(tenantEgressNetwork).disconnect({ Container: name, Force: true });
+                    inspect = await container.inspect();
+                }
             }
             if (!this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork) || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantContainerFor(inspect, ownerLogin)) {
@@ -1035,6 +1050,7 @@ export class QaapDockerOrchestrator {
         }
         await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
         const directEgressNetwork = this.tenantDirectEgressNetworkFor(networkMode, ownerLogin);
+        const tenantEgressNetwork = networkMode === 'none' ? undefined : this.tenantDirectEgressNetworkNameFor(ownerLogin);
         if (directEgressNetwork) {
             await this.ensureTenantDirectEgressNetwork(docker, directEgressNetwork, ownerLogin);
         }
@@ -1054,13 +1070,22 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (directEgressNetwork
-                && !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
-                && this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)) {
-                // Upgrade a valid pre-egress backend in place so deploy-time routing changes do
-                // not interrupt an active agent turn.
-                await docker.getNetwork(directEgressNetwork).connect({ Container: name });
-                inspect = await container.inspect();
+            if (tenantEgressNetwork) {
+                if (directEgressNetwork
+                    && !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
+                    && this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)) {
+                    // Upgrade a valid pre-egress backend in place so deploy-time routing changes do
+                    // not interrupt an active agent turn.
+                    await docker.getNetwork(directEgressNetwork).connect({ Container: name });
+                    inspect = await container.inspect();
+                } else if (!directEgressNetwork
+                    && this.tenantContainerHasExpectedNetworks(inspect, networkMode, tenantEgressNetwork)
+                    && this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+                    // Remove the direct route immediately when an allowlist proxy is enabled, even
+                    // if a busy backend must continue running with its prior environment for now.
+                    await docker.getNetwork(tenantEgressNetwork).disconnect({ Container: name, Force: true });
+                    inspect = await container.inspect();
+                }
             }
             if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
                 || !(await this.runsCurrentTenantImage(docker, inspect))) {
@@ -2089,6 +2114,21 @@ export class QaapDockerOrchestrator {
         return (error as { statusCode?: number } | undefined)?.statusCode === 404;
     }
 
+    protected isDockerConflict(error: unknown): boolean {
+        const statusCode = (error as { statusCode?: number } | undefined)?.statusCode;
+        const message = error instanceof Error ? error.message : String(error);
+        return statusCode === 409 || /\bconflict\b/i.test(message);
+    }
+
+    protected warnIfTenantNetworkAddressPoolIsExhausted(networkName: string, error: unknown): void {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/non-overlapping/i.test(message)) {
+            console.warn(`[qaap-docker] Could not create tenant network ${networkName}: Docker could not allocate a non-overlapping address pool. `
+                + 'Configure the Docker daemon default-address-pools (for example base 10.200.0.0/16, size 24). '
+                + `Docker reported: ${message}`);
+        }
+    }
+
     protected isDockerAlreadyStopped(error: unknown): boolean {
         return (error as { statusCode?: number } | undefined)?.statusCode === 304;
     }
@@ -2251,21 +2291,32 @@ export class QaapDockerOrchestrator {
             await this.ensureTenantEgressProxyAttached(docker, networkName, ownerLogin);
             return;
         }
-        const network = await docker.createNetwork({
-            Name: networkName,
-            Driver: 'bridge',
-            Internal: true,
-            CheckDuplicate: true,
-            Labels: {
-                'com.qaap.managed': 'true',
-                'com.qaap.tenant-network': 'true',
-                'com.qaap.tenant-network-name': networkName,
-            },
-            // This bridge is internal and unique to one tenant. Its worker, backend, relay and
-            // optional allowlist proxy need intra-tenant connectivity; Internal:true still blocks
-            // their direct Internet egress, and no other tenant is attached to this bridge.
-            Options: { 'com.docker.network.bridge.enable_icc': 'true' },
-        });
+        let network: Dockerode.Network;
+        try {
+            network = await docker.createNetwork({
+                Name: networkName,
+                Driver: 'bridge',
+                Internal: true,
+                CheckDuplicate: true,
+                Labels: {
+                    'com.qaap.managed': 'true',
+                    'com.qaap.tenant-network': 'true',
+                    'com.qaap.tenant-network-name': networkName,
+                },
+                // This bridge is internal and unique to one tenant. Its worker, backend, relay and
+                // optional allowlist proxy need intra-tenant connectivity; Internal:true still blocks
+                // their direct Internet egress, and no other tenant is attached to this bridge.
+                Options: { 'com.docker.network.bridge.enable_icc': 'true' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(networkName, error);
+            if (!this.isDockerConflict(error)) {
+                throw error;
+            }
+            // Another tenant operation won the create race. Inspect its network below and
+            // accept it only if it has this tenant's complete isolation configuration.
+            network = docker.getNetwork(networkName);
+        }
         const inspect = await network.inspect() as {
             Name?: string;
             Driver?: string;
@@ -2304,18 +2355,28 @@ export class QaapDockerOrchestrator {
                 throw error;
             }
         }
-        network = await docker.createNetwork({
-            Name: networkName,
-            Driver: 'bridge',
-            Internal: false,
-            CheckDuplicate: true,
-            Labels: {
-                'com.qaap.managed': 'true',
-                'com.qaap.tenant-egress-network': 'true',
-                'com.qaap.tenant-login': tenantLogin,
-            },
-            Options: { 'com.docker.network.bridge.enable_icc': 'false' },
-        });
+        try {
+            network = await docker.createNetwork({
+                Name: networkName,
+                Driver: 'bridge',
+                Internal: false,
+                CheckDuplicate: true,
+                Labels: {
+                    'com.qaap.managed': 'true',
+                    'com.qaap.tenant-egress-network': 'true',
+                    'com.qaap.tenant-login': tenantLogin,
+                },
+                Options: { 'com.docker.network.bridge.enable_icc': 'false' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(networkName, error);
+            if (!this.isDockerConflict(error)) {
+                throw error;
+            }
+            // A concurrent backend or worker may already have created it. The common inspect
+            // and match below validates Docker's network rather than trusting the conflict.
+            network = docker.getNetwork(networkName);
+        }
         const inspect = await network.inspect() as {
             Name?: string;
             Driver?: string;
@@ -2368,18 +2429,23 @@ export class QaapDockerOrchestrator {
                 throw error;
             }
         }
-        network = await docker.createNetwork({
-            Name: networkName,
-            Driver: 'bridge',
-            Internal: false,
-            CheckDuplicate: true,
-            Labels: {
-                'com.qaap.managed': 'true',
-                'com.qaap.tenant-ingress-network': 'true',
-                'com.qaap.tenant-login': ownerLogin.toLowerCase(),
-            },
-            Options: { 'com.docker.network.bridge.enable_icc': 'false' },
-        });
+        try {
+            network = await docker.createNetwork({
+                Name: networkName,
+                Driver: 'bridge',
+                Internal: false,
+                CheckDuplicate: true,
+                Labels: {
+                    'com.qaap.managed': 'true',
+                    'com.qaap.tenant-ingress-network': 'true',
+                    'com.qaap.tenant-login': ownerLogin.toLowerCase(),
+                },
+                Options: { 'com.docker.network.bridge.enable_icc': 'false' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(networkName, error);
+            throw error;
+        }
         const inspect = await network.inspect() as {
             Name?: string;
             Driver?: string;
@@ -2550,14 +2616,19 @@ export class QaapDockerOrchestrator {
                 throw error;
             }
         }
-        network = await docker.createNetwork({
-            Name: QAAP_TENANT_EGRESS_UPLINK,
-            Driver: 'bridge',
-            Internal: false,
-            CheckDuplicate: true,
-            Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-egress-uplink': 'true' },
-            Options: { 'com.docker.network.bridge.enable_icc': 'false' },
-        });
+        try {
+            network = await docker.createNetwork({
+                Name: QAAP_TENANT_EGRESS_UPLINK,
+                Driver: 'bridge',
+                Internal: false,
+                CheckDuplicate: true,
+                Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-egress-uplink': 'true' },
+                Options: { 'com.docker.network.bridge.enable_icc': 'false' },
+            });
+        } catch (error) {
+            this.warnIfTenantNetworkAddressPoolIsExhausted(QAAP_TENANT_EGRESS_UPLINK, error);
+            throw error;
+        }
         const inspect = await network.inspect() as {
             Name?: string;
             Driver?: string;

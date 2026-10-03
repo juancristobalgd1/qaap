@@ -51,6 +51,8 @@ interface QaapDockerOrchestratorTestAccess {
     tenantEgressProxyMatches(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string, tenantNetwork: string, image: string): boolean;
     tenantEgressProxyImageIsCurrent(docker: Dockerode, inspect: Dockerode.ContainerInspectInfo, image: string): Promise<boolean>;
     ensureTenantNetwork(docker: Dockerode, networkName: string, ownerLogin?: string): Promise<void>;
+    destroyTenantRuntime(ownerLogin: string): Promise<void>;
+    verifiedDockerNodesForTenant(ownerLogin?: string): Promise<readonly { config: { id: string }; docker: Dockerode }[]>;
     normalizeHostPath(hostPath: string): string;
     runsCurrentTenantImage(docker: Dockerode, inspect: Dockerode.ContainerInspectInfo): Promise<boolean>;
     getDocker(ownerLogin?: string): Promise<Dockerode>;
@@ -140,13 +142,20 @@ function createFakeTenantBackendDocker(): {
     readonly created: Array<{ readonly name: string; readonly options: Record<string, unknown>; readonly info: FakeBackendContainerInfo }>;
     readonly createdNetworks: FakeNetworkInfo[];
     readonly networks: ReadonlyMap<string, FakeNetworkInfo>;
+    readonly networkDisconnects: Array<{ readonly networkName: string; readonly containerName: string }>;
+    readonly networkConnections: Array<{ readonly networkName: string; readonly containerName: string; readonly container: FakeBackendContainerInfo }>;
     seedManagedBackend(name: string, networkName: string, ports: FakePortBinding[] | null): () => boolean;
     detachContainerFromNetwork(containerName: string, networkName: string): void;
+    attachContainerToNetwork(containerName: string, networkName: string): void;
+    conflictOnNextNetworkCreate(networkName: string): void;
 } {
     const containers = new Map<string, FakeBackendContainerInfo>();
     const networks = new Map<string, FakeNetworkInfo>();
     const created: Array<{ readonly name: string; readonly options: Record<string, unknown>; readonly info: FakeBackendContainerInfo }> = [];
     const createdNetworks: FakeNetworkInfo[] = [];
+    const networkDisconnects: Array<{ readonly networkName: string; readonly containerName: string }> = [];
+    const networkConnections: Array<{ readonly networkName: string; readonly containerName: string; readonly container: FakeBackendContainerInfo }> = [];
+    const networkCreateConflicts = new Set<string>();
     const missing = (): never => { throw Object.assign(new Error('no such object'), { statusCode: 404 }); };
 
     const containerHandle = (name: string): Record<string, unknown> => {
@@ -173,10 +182,20 @@ function createFakeTenantBackendDocker(): {
                 if (!container) {
                     throw new Error(`unknown container ${options.Container}`);
                 }
+                networkConnections.push({ networkName: name, containerName: options.Container, container });
                 container.NetworkSettings.Networks[name] = options.EndpointConfig?.Aliases
                     ? { Aliases: options.EndpointConfig.Aliases }
                     : {};
             },
+            disconnect: async (options: { Container: string }): Promise<void> => {
+                const container = containers.get(options.Container);
+                if (!container) {
+                    throw new Error(`unknown container ${options.Container}`);
+                }
+                delete container.NetworkSettings.Networks[name];
+                networkDisconnects.push({ networkName: name, containerName: options.Container });
+            },
+            remove: async (): Promise<void> => { networks.delete(name); },
         };
     };
 
@@ -186,14 +205,17 @@ function createFakeTenantBackendDocker(): {
         getNetwork: (name: string) => networkHandle(name),
         createNetwork: async (options: Record<string, unknown>): Promise<Record<string, unknown>> => {
             const info: FakeNetworkInfo = {
-                Name: options.Name as string,
-                Driver: options.Driver as string,
-                Internal: options.Internal as boolean,
-                Labels: options.Labels as Record<string, string>,
-                Options: options.Options as Record<string, string>,
+                Name: String(options.Name),
+                Driver: typeof options.Driver === 'string' ? options.Driver : 'bridge',
+                Internal: options.Internal === true,
+                Labels: (options.Labels as Record<string, string> | undefined) ?? {},
+                Options: (options.Options as Record<string, string> | undefined) ?? {},
             };
             networks.set(info.Name, info);
             createdNetworks.push(info);
+            if (networkCreateConflicts.delete(info.Name)) {
+                throw Object.assign(new Error(`Conflict. network ${info.Name} already exists`), { statusCode: 409 });
+            }
             return networkHandle(info.Name);
         },
         createContainer: async (options: Record<string, unknown>): Promise<Record<string, unknown>> => {
@@ -261,6 +283,8 @@ function createFakeTenantBackendDocker(): {
         created,
         createdNetworks,
         networks,
+        networkDisconnects,
+        networkConnections,
         seedManagedBackend: (name, networkName, ports): (() => boolean) => {
             containers.set(name, {
                 Id: 'stale-backend-id',
@@ -286,6 +310,13 @@ function createFakeTenantBackendDocker(): {
                 delete container.NetworkSettings.Networks[networkName];
             }
         },
+        attachContainerToNetwork: (containerName, networkName): void => {
+            const container = containers.get(containerName);
+            if (container) {
+                container.NetworkSettings.Networks[networkName] = {};
+            }
+        },
+        conflictOnNextNetworkCreate: (networkName): void => { networkCreateConflicts.add(networkName); },
     };
 }
 
@@ -309,6 +340,7 @@ const ENV_KEYS = [
     'QAAP_TENANT_AGENT_STORAGE_ROOT',
     'QAAP_TENANT_CONFIG_ROOT',
     'QAAP_TENANT_BACKEND_MASTER_SECRET',
+    'QAAP_BACKEND_PER_TENANT',
     'QAAP_TENANT_EGRESS_PROXY_IMAGE',
     'QAAP_TENANT_CONTAINER_UID',
     'QAAP_TENANT_CONTAINER_GID',
@@ -832,6 +864,7 @@ describe('QaapDockerOrchestrator', () => {
             process.env.QAAP_DOCKER_ROOTLESS = '1';
             process.env.QAAP_TENANT_CONTAINER_UID = '0';
             process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            delete process.env.QAAP_BACKEND_PER_TENANT;
             delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
             delete process.env.QAAP_DOCKER_NODES;
             const fakeDocker = createFakeTenantBackendDocker();
@@ -958,6 +991,103 @@ describe('QaapDockerOrchestrator', () => {
             expect(backend?.options.Env).to.include('HTTPS_PROXY=http://qaap-tenant-egress-proxy:3128');
             expect(worker?.options.Env).to.include('HTTPS_PROXY=http://qaap-tenant-egress-proxy:3128');
             expect(fakeDocker.createdNetworks.some(network => network.Name.startsWith('qaap-egress-v1-'))).to.equal(false);
+        });
+
+        it('disconnects an existing worker and backend from direct egress when the allowlist proxy is enabled', async () => {
+            const usersRoot = configureDirectEgressEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            const aliceRoot = path.join(usersRoot, 'alice');
+            await ensureTenant(orchestrator, aliceRoot, 'alice');
+
+            const egressNetwork = orchestrator.tenantDirectEgressNetworkNameFor('alice');
+            const backendName = orchestrator.backendContainerNameForTenant('alice');
+            const workerName = orchestrator.containerNameForTenant('alice');
+            const oldBackend = fakeDocker.created.find(container => container.name === backendName);
+            const oldWorker = fakeDocker.created.find(container => container.name === workerName);
+            expect(Object.keys(oldBackend?.info.NetworkSettings.Networks ?? {})).to.have.members([
+                orchestrator.getTenantNetworkMode('alice'), egressNetwork,
+            ]);
+            expect(Object.keys(oldWorker?.info.NetworkSettings.Networks ?? {})).to.have.members([
+                orchestrator.getTenantNetworkMode('alice'), egressNetwork,
+            ]);
+
+            process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:release';
+            await ensureTenant(orchestrator, aliceRoot, 'alice');
+
+            expect(fakeDocker.networkDisconnects).to.deep.include.members([
+                { networkName: egressNetwork, containerName: backendName },
+                { networkName: egressNetwork, containerName: workerName },
+            ]);
+            expect(oldBackend?.info.NetworkSettings.Networks).not.to.have.property(egressNetwork);
+            expect(oldWorker?.info.NetworkSettings.Networks).not.to.have.property(egressNetwork);
+        });
+
+        it('recreates a worker with the direct-egress network plus a foreign extra network', async () => {
+            const usersRoot = configureDirectEgressEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            const aliceRoot = path.join(usersRoot, 'alice');
+            await ensureTenant(orchestrator, aliceRoot, 'alice');
+
+            const workerName = orchestrator.containerNameForTenant('alice');
+            const oldWorker = fakeDocker.created.find(container => container.name === workerName);
+            const mounts = orchestrator.tenantMountsForRoot(aliceRoot);
+            fakeDocker.attachContainerToNetwork(workerName, 'qaap-foreign-extra');
+            const connectionCount = fakeDocker.networkConnections.length;
+
+            await orchestrator.createOrValidateTenantContainer(
+                workerName, mounts, orchestrator.getTenantNetworkMode('alice'), 'alice',
+            );
+
+            expect(fakeDocker.created.filter(container => container.name === workerName)).to.have.length(2);
+            expect(fakeDocker.networkConnections.slice(connectionCount).some(connection => connection.container === oldWorker?.info)).to.equal(false);
+        });
+
+        it('re-inspects and validates tenant and egress networks after create conflicts', async () => {
+            const usersRoot = configureDirectEgressEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            const tenantNetwork = orchestrator.getTenantNetworkMode('alice');
+            const egressNetwork = orchestrator.tenantDirectEgressNetworkNameFor('alice');
+            fakeDocker.conflictOnNextNetworkCreate(tenantNetwork);
+            fakeDocker.conflictOnNextNetworkCreate(egressNetwork);
+
+            await ensureTenant(orchestrator, path.join(usersRoot, 'alice'), 'alice');
+
+            expect(orchestrator.tenantNetworkMatches(fakeDocker.networks.get(tenantNetwork)!, tenantNetwork)).to.equal(true);
+            expect(orchestrator.tenantDirectEgressNetworkMatches(fakeDocker.networks.get(egressNetwork)!, egressNetwork, 'alice')).to.equal(true);
+        });
+
+        it('does not create a tenant or egress network when tenant network mode is none', async () => {
+            const usersRoot = configureDirectEgressEnvironment();
+            process.env.QAAP_TENANT_NETWORK_MODE = 'none';
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            const aliceRoot = path.join(usersRoot, 'alice');
+            const workerName = orchestrator.containerNameForTenant('alice');
+
+            await orchestrator.createOrValidateTenantContainer(
+                workerName, orchestrator.tenantMountsForRoot(aliceRoot), 'none', 'alice',
+            );
+
+            expect(fakeDocker.createdNetworks).to.have.length(0);
+            expect(fakeDocker.created.find(container => container.name === workerName)?.options.HostConfig)
+                .to.have.property('NetworkMode', 'none');
+        });
+
+        it('removes the owned direct-egress network when destroying a tenant runtime', async () => {
+            const usersRoot = configureDirectEgressEnvironment();
+            process.env.QAAP_BACKEND_PER_TENANT = '1';
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            const egressNetwork = orchestrator.tenantDirectEgressNetworkNameFor('alice');
+            await ensureTenant(orchestrator, path.join(usersRoot, 'alice'), 'alice');
+            orchestrator.verifiedDockerNodesForTenant = async () => [{ config: { id: 'fake' }, docker: fakeDocker.docker }];
+
+            await orchestrator.destroyTenantRuntime('alice');
+
+            expect(fakeDocker.networks.has(egressNetwork)).to.equal(false);
         });
     });
 
