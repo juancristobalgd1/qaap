@@ -121,7 +121,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // Cross-project dashboard feed — `/all` and `/stream` are static segments routed before
         // the `/:id` handler below so they never collide with a task id.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/all`, (req, res) => {
-            this.handleListAll(req, res);
+            void this.handleListAll(req, res);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
@@ -396,7 +396,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         res.json({ agent: requestedAgent, models });
     }
 
-    protected handleListAll(req: Request, res: Response): void {
+    protected async handleListAll(req: Request, res: Response): Promise<void> {
         const ctx = this.requireAuth(req, res);
         if (!ctx) {
             return;
@@ -408,10 +408,14 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // full task history (with whole prompts in `command`) multiplies into tens of MB per call. Live
         // task groups arrive over the WebSocket snapshot instead.
         const ownerLogin = this.auth.resolveUserLogin(ctx);
+        const agents = await this.runner.listAgentsFresh(ownerLogin);
+        if (res.headersSent || res.writableEnded) {
+            return;
+        }
         res.json({
             agentConfigured: this.runner.isAgentConfigured(),
             qaiqInstalled: this.runner.isQaiqInstalled(),
-            agents: this.runner.listAgents(ownerLogin),
+            agents,
             defaultAgent: this.runner.defaultAgent(ownerLogin),
             qaiqModels: this.runner.listQaiqModels(ownerLogin),
             installSupported: this.cliUpdates.isInstallSupported(),

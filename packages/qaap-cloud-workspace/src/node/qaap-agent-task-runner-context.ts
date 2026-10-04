@@ -156,6 +156,7 @@ export interface QaapAgentTaskRunnerContext {
     isOnPath(bin: string, env?: NodeJS.ProcessEnv): boolean;
     isAgentConfigured(): boolean;
     isAgentConnected(agentId: string, ownerLogin?: string): boolean;
+    isAgentConnectedFresh(agentId: string, ownerLogin?: string): Promise<boolean>;
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean;
     listAgents(ownerLogin?: string): QaapAgentDescriptor[];
     defaultAgent(ownerLogin?: string): string;

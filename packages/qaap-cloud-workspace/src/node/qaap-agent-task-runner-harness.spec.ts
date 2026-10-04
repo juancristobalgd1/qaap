@@ -61,6 +61,7 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
             const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
             Object.assign(runner, {
                 agentConnectionStates: new Map(),
+                agentConnectionProbes: new Map(),
                 resolveAgentCliPrefix: () => prefix,
                 detectAgents: () => undefined,
             });
@@ -76,5 +77,83 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
             process.env.PATH = originalPath;
             fs.rmSync(sandbox, { recursive: true, force: true });
         }
+    });
+});
+
+describe('QaapAgentTaskRunner connection probes', () => {
+    type ConnectionState = 'connected' | 'disconnected' | 'unknown' | undefined;
+
+    function createRunner(probe: (agentId: string) => Promise<ConnectionState>): { runner: QaapAgentTaskRunner; probes: string[] } {
+        const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+        const probes: string[] = [];
+        Object.assign(runner, {
+            detectedAgents: new Map<string, AgentCandidate>([
+                ['codex', { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex {prompt}' }],
+                ['claude', { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude {prompt}' }],
+            ]),
+            agentConnectionStates: new Map(),
+            agentConnectionProbes: new Map(),
+            isAgentEnabled: () => true,
+            preferenceReaderForOwner: () => () => undefined,
+            billingStore: undefined,
+            detectAgents: () => undefined,
+            probeAgentConnectionState: (agentId: string) => {
+                probes.push(agentId);
+                return probe(agentId);
+            },
+        });
+        return { runner, probes };
+    }
+
+    it('answers listAgents without waiting for CLI auth probes', () => {
+        const { runner, probes } = createRunner(() => new Promise<ConnectionState>(() => undefined));
+        const agents = runner.listAgents('alice');
+        expect(agents.filter(agent => agent.id !== 'shell').map(agent => `${agent.id}:${agent.connectionState}`).sort()).to.deep.equal(['claude:unknown', 'codex:unknown']);
+        expect(probes.sort()).to.deep.equal(['claude', 'codex']);
+        // A second request joins the in-flight probes instead of spawning again.
+        runner.listAgents('alice');
+        expect(probes).to.have.length(2);
+    });
+
+    it('listAgentsFresh returns settled probe results and stops waiting at the budget', async () => {
+        const { runner } = createRunner(agentId => agentId === 'codex'
+            ? Promise.resolve('disconnected')
+            : new Promise<ConnectionState>(() => undefined));
+        const startedAt = Date.now();
+        const agents = await runner.listAgentsFresh('alice', 50);
+        expect(Date.now() - startedAt).to.be.lessThan(1000);
+        const codex = agents.find(agent => agent.id === 'codex');
+        expect(codex?.connectionState).to.equal('disconnected');
+        expect(codex?.available).to.equal(false);
+        expect(agents.find(agent => agent.id === 'claude')?.connectionState).to.equal('unknown');
+    });
+
+    it('keeps serving the last known state while a stale entry is re-probed', async () => {
+        let next: ConnectionState = 'connected';
+        const { runner, probes } = createRunner(async () => next);
+        expect(await runner.isAgentConnectedFresh('codex', 'alice')).to.equal(true);
+        const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number }> }).agentConnectionStates;
+        states.set('codex:alice', { state: 'connected', at: 0 });
+        next = 'disconnected';
+        expect(runner.isAgentConnected('codex', 'alice')).to.equal(true);
+        expect(await runner.isAgentConnectedFresh('codex', 'alice')).to.equal(false);
+        expect(probes.filter(id => id === 'codex')).to.have.length(2);
+    });
+
+    it('drops a probe answer that a catalog refresh superseded', async () => {
+        let resolveFirst: (state: ConnectionState) => void = () => undefined;
+        const answers: Array<Promise<ConnectionState>> = [
+            new Promise<ConnectionState>(resolve => { resolveFirst = resolve; }),
+            Promise.resolve('connected'),
+        ];
+        const { runner } = createRunner(agentId => agentId === 'codex'
+            ? answers.shift() ?? Promise.resolve('unknown')
+            : new Promise<ConnectionState>(() => undefined));
+        runner.listAgents('alice');
+        runner.refreshAgentCatalog();
+        expect(await runner.isAgentConnectedFresh('codex', 'alice')).to.equal(true);
+        resolveFirst('disconnected');
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(runner.isAgentConnected('codex', 'alice')).to.equal(true);
     });
 });
