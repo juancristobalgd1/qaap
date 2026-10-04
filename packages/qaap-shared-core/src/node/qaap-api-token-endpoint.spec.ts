@@ -3,6 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import {
+    QAAP_TENANT_BACKEND_ASSERTION_HEADER,
+    QAAP_TENANT_BACKEND_MODE_ENV,
+    QAAP_TENANT_BACKEND_SECRET_ENV,
+    QAAP_TENANT_LOGIN_ENV,
+    createQaapTenantBackendAssertion,
+} from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -196,6 +203,36 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
         const forwarded = buildQaapPreviewUpstreamHeaders({ authorization: 'Bearer qaap_pat_secret', accept: 'text/html' }, 'localhost:5173');
         expect(forwarded.authorization).to.equal(undefined);
         expect(buildQaapPreviewUpstreamHeaders({ authorization: 'Bearer app-own-jwt' }, 'localhost:5173').authorization).to.equal('Bearer app-own-jwt');
+    });
+
+    it('in a tenant backend, accepts only the control-plane assertion, never a cookie or API token', () => {
+        const token = (mint(cookie(aliceSession)).body as { token: string }).token;
+        const keys = [QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_BACKEND_SECRET_ENV, QAAP_TENANT_LOGIN_ENV] as const;
+        const saved = keys.map(key => process.env[key]);
+        const secret = 's'.repeat(40);
+        process.env[QAAP_TENANT_BACKEND_MODE_ENV] = '1';
+        process.env[QAAP_TENANT_BACKEND_SECRET_ENV] = secret;
+        process.env[QAAP_TENANT_LOGIN_ENV] = 'alice';
+        try {
+            // Both resolve against the tenant-local stores, which code inside the tenant can write.
+            expect(guard.authenticate({ headers: cookie(aliceSession), method: 'GET', url: '/qaap/api/agent-tasks' }).kind).to.equal('unauthorized');
+            expect(guard.authenticate(taskRequest(token)).kind).to.equal('unauthorized');
+            expect(guard.resolveGithubSession({ headers: cookie(aliceSession) })).to.equal(undefined);
+            const assertion = createQaapTenantBackendAssertion({
+                tenantLogin: 'alice',
+                user: { provider: 'github', login: 'alice', name: 'Alice' },
+                githubAccessToken: 'gh-alice',
+            }, secret);
+            expect(guard.authenticate({ headers: { [QAAP_TENANT_BACKEND_ASSERTION_HEADER]: assertion } }).kind).to.equal('authenticated');
+        } finally {
+            keys.forEach((key, index) => {
+                if (saved[index] === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = saved[index];
+                }
+            });
+        }
     });
 
     it('lists and revokes only the caller\'s own tokens', () => {

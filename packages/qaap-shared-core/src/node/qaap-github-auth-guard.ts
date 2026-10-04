@@ -96,9 +96,10 @@ export class QaapGithubAuthGuard {
     // `http.IncomingMessage` (no Express-specific members) is accepted here too — the dev-preview
     // WebSocket-upgrade and legacy-port paths authenticate raw Node requests, not Express ones.
     authenticate(req: QaapAuthRequest): QaapGithubAuthContext {
-        const tenantBackend = this.authenticateTenantBackend(req);
-        if (tenantBackend) {
-            return tenantBackend;
+        if (this.isTenantBackendMode()) {
+            // Only the control-plane proxy's assertion counts here. The tenant-local stores are
+            // writable from inside the tenant, so a cookie or API token resolved against them is not.
+            return this.authenticateTenantBackend(req) ?? { kind: 'unauthorized' };
         }
         const session = this.resolveGithubSession(req) ?? this.resolveApiTokenSession(req);
         if (session) {
@@ -121,7 +122,7 @@ export class QaapGithubAuthGuard {
      * short-lived HMAC assertion whose tenant is fixed by the container environment.
      */
     protected authenticateTenantBackend(req: Pick<Request, 'headers'>): Extract<QaapGithubAuthContext, { kind: 'authenticated' }> | undefined {
-        if (!/^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '')) {
+        if (!this.isTenantBackendMode()) {
             return undefined;
         }
         const rawHeader = req.headers[QAAP_TENANT_BACKEND_ASSERTION_HEADER];
@@ -143,6 +144,10 @@ export class QaapGithubAuthGuard {
                 user: payload.user,
             },
         };
+    }
+
+    protected isTenantBackendMode(): boolean {
+        return /^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '');
     }
 
     resolveUserLogin(ctx: QaapGithubAuthContext): string | undefined {
@@ -414,6 +419,9 @@ export class QaapGithubAuthGuard {
      * session it was created from, so signing out of that session revokes it as well.
      */
     resolveApiTokenSession(req: QaapAuthRequest): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+        if (this.isTenantBackendMode()) {
+            return undefined;
+        }
         const token = this.readBearerApiToken(req);
         const record = token && this.isApiTokenScope(req) ? this.apiTokens?.resolve(token) : undefined;
         const stored = record ? this.sessions.getSession(record.sessionId) : undefined;
@@ -452,6 +460,9 @@ export class QaapGithubAuthGuard {
 
     /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */
     resolveGithubSession(req: Pick<Request, 'headers'>): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+        if (this.isTenantBackendMode()) {
+            return undefined;
+        }
         const sessionId = this.resolveSessionId(req);
         if (!sessionId) {
             return undefined;
