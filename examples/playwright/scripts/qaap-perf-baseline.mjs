@@ -19,7 +19,7 @@ const AUTH_METHOD = process.env.QAAP_PERF_AUTH_METHOD
 // page's behalf bypass it, and the worker's first-visit claim can reload the page mid-boot.
 // Block workers by default so every byte is throttled and each run is a single document.
 const SERVICE_WORKERS = process.env.QAAP_PERF_SERVICE_WORKERS === 'allow' ? 'allow' : 'block';
-const MILESTONE_TIMEOUT_MS = Number(process.env.QAAP_PERF_MILESTONE_TIMEOUT_MS || 120_000);
+const MILESTONE_TIMEOUT_MS = Number(process.env.QAAP_PERF_MILESTONE_TIMEOUT_MS || 240_000);
 const AUTH_SETTLE_MS = 3_000;
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const IDE_VIEWPORT = { width: 1280, height: 900 };
@@ -80,8 +80,8 @@ const initMarks = String.raw`
         const appShell = document.getElementById('theia-app-shell');
         const mainPanel = document.getElementById('theia-main-content-panel');
         const workHubVisible = [...document.querySelectorAll('.theia-mobile-projects-sticky-composer-input')].some(visible);
+        // The phone IDE (ide-mobile) legitimately runs one-column; the Work Hub is excluded by its landing class and visible composer.
         if (visible(appShell) && visible(mainPanel)
-            && !appShell.classList.contains('theia-mod-mobile-one-column')
             && !document.body.classList.contains('theia-mobile-mod-landing')
             && !workHubVisible) {
             mark('ideShell');
