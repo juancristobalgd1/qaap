@@ -47,22 +47,24 @@ const { 'editor.worker': editorWorkerEntry, 'plugin-worker': pluginWorkerEntry, 
  * concurrently but only evaluated when the ordered `import()` reaches them.
  */
 /**
- * Qaap bundle shims: swap two upstream imports that drag about 2 MB of rarely used JavaScript into
- * startup (evaluated on every load, IDE and Work Hub alike) for same-API modules in
+ * Qaap bundle shims: swap upstream imports that cost startup time on every load, IDE and Work Hub alike, for same-API modules in
  * `@theia/qaap-product/lib/browser/bundle-shims` (see the doc comment of each shim):
  * - `highlight.js` (all 190 languages, only used by the Markdown preview) -> common languages only;
- * - `date-fns/locale` (every locale, looked up by `nls.locale` in ai-chat-ui) -> the reachable ones.
+ * - `date-fns/locale` (every locale, looked up by `nls.locale` in ai-chat-ui) -> the reachable ones;
+ * - `perfect-scrollbar` -> a same-API class that builds startup scrollbars after the splash is hidden
+ *   (each constructor forces layouts; dozens run while widgets attach behind the splash).
  * Exact-specifier match only, so the shims' own deep imports resolve normally.
  */
 const qaapRequire = createRequire(import.meta.url);
 const QAAP_BUNDLE_SHIMS = {
     'highlight.js': '@theia/qaap-product/lib/browser/bundle-shims/qaap-highlight-common',
     'date-fns/locale': '@theia/qaap-product/lib/browser/bundle-shims/qaap-date-fns-locales',
+    'perfect-scrollbar': '@theia/qaap-product/lib/browser/bundle-shims/qaap-deferred-perfect-scrollbar',
 };
 const qaapBundleShimsPlugin = {
     name: 'qaap-bundle-shims',
     setup(build) {
-        build.onResolve({ filter: /^(highlight\.js|date-fns\/locale)$/ }, args => ({
+        build.onResolve({ filter: /^(highlight\.js|date-fns\/locale|perfect-scrollbar)$/ }, args => ({
             path: qaapRequire.resolve(QAAP_BUNDLE_SHIMS[args.path]),
         }));
     },
