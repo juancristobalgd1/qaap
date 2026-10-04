@@ -18,6 +18,8 @@ import { QaapSocketWriteBuffer } from './qaap-socket-write-buffer';
 import { QaapPluginDeployerSecurityParticipant } from './qaap-plugin-deployer-security-participant';
 import { QaapPluginServerImpl } from './qaap-plugin-server-impl';
 import { QaapTerminalEnvironmentContribution } from './qaap-terminal-environment-contribution';
+import { WebsocketEndpoint } from '@theia/core/lib/node/messaging/websocket-endpoint';
+import { QaapWebsocketEndpoint } from './qaap-websocket-endpoint';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
@@ -36,6 +38,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     } else {
         bind(SocketWriteBuffer).to(QaapSocketWriteBuffer);
     }
+    // Compresses the shared RPC socket (plugin metadata with inline grammars) for slow mobile links.
+    bind(QaapWebsocketEndpoint).toSelf().inSingletonScope();
+    rebind(WebsocketEndpoint).toService(QaapWebsocketEndpoint);
 
     // Defense-in-depth for GHSA-mp2f-45pm-3cg9: block untrusted local VSIX/archives at the
     // PluginServer RPC choke point + filter drop-in local-file: entries at deployer start.
