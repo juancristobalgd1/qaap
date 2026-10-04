@@ -54,7 +54,6 @@ describe('resolveInteractiveAgentLoginCommand', () => {
 
     it('does not start an inaccessible TUI as a sign-in flow', () => {
         expect(resolveInteractiveAgentLoginCommand('qaiq')).to.equal(undefined);
-        expect(resolveInteractiveAgentLoginCommand('opencode')).to.equal(undefined);
         expect(resolveInteractiveAgentLoginCommand('gemini')).to.equal(undefined);
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
@@ -77,7 +76,7 @@ describe('resolveAgentConnectionFlow', () => {
         claude: 'cli-login',
         openclaude: 'settings-api-key',
         grok: 'cli-login',
-        opencode: 'tenant-terminal',
+        opencode: 'cli-login',
         hermes: 'settings-api-key',
         openclaw: 'tenant-terminal',
         cursor: 'cli-login',
@@ -93,10 +92,10 @@ describe('resolveAgentConnectionFlow', () => {
         });
     }
 
-    it('routes OpenCode to its credential manager in the tenant terminal', () => {
+    it('routes OpenCode to its headless device-code method instead of the provider picker', () => {
         expect(resolveAgentConnectionFlow('opencode')).to.deep.equal({
-            kind: 'tenant-terminal',
-            command: 'opencode auth login',
+            kind: 'cli-login',
+            command: 'opencode auth login -p openai -m \'ChatGPT Pro/Plus (headless)\'',
         });
     });
 

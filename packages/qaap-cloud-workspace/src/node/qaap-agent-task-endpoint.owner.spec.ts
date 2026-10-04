@@ -42,6 +42,7 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
                 resolveOwnedRepositoryCwd: () => ({ kind: 'ok', cwd: '/repo' }),
                 denyForbidden: () => undefined,
             },
+            cliUpdates: { isInstallSupported: () => false },
             runner: {
                 listForCwd: () => [task],
                 isAgentConfigured: () => true,

@@ -32,6 +32,7 @@ import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model
 import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
+import { resolveTrustedExecutable } from './qaap-trusted-executable';
 
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
@@ -134,8 +135,13 @@ export function logDetectedAgentsExtracted(ctx: QaapAgentTaskRunnerContext): voi
         if (!ctx.detectedAgents.has(QAIQ_AGENT_ID)) {
             return;
         }
+        // Log the version only of a qaiq the backend uid trusts; a tenant-installed one never runs here.
+        const qaiq = resolveTrustedExecutable(QAIQ_AGENT_ID);
+        if (!qaiq) {
+            return;
+        }
         try {
-            const probe = spawnSync('qaiq', ['--version'], { encoding: 'utf8' });
+            const probe = spawnSync(qaiq, ['--version'], { encoding: 'utf8' });
             const line = (probe.stdout || probe.stderr || '').trim().split('\n')[0];
             if (line) {
                 console.log(`[qaap-agent-tasks] qaiq: ${line}`);

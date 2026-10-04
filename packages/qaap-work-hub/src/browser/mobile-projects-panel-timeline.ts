@@ -14,16 +14,7 @@ import {
 import {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import {
-    QAAP_AI_FEATURES_SETTINGS_QUERY,
-    localizeAgentConnectionUnsupportedMessage,
-    localizeAgentSettingsApiKeyLoginMessage,
-    localizeAgentTenantTerminalLoginMessage,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { resolveAgentConnectionFlow } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
-import {
-    localizeHostedLocalhostOAuthAgentMessage,
-} from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
 import { isConversationError } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-artifacts-helpers';
@@ -314,43 +305,16 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
     if (!resolvedAgentId) {
         return;
     }
-    const connectionFlow = resolveAgentConnectionFlow(resolvedAgentId);
-    if (connectionFlow.kind === 'hosted-restricted') {
-        const message = localizeHostedLocalhostOAuthAgentMessage(resolvedAgentId);
-        if (ctx.messageService) {
-            void ctx.messageService.info(message);
-        }
+    if (resolveAgentConnectionFlow(resolvedAgentId).kind !== 'cli-login') {
+        // Settings, tenant-terminal and policy routes need no workspace: the dialog shows the
+        // action or instructions immediately instead of a spinner.
+        void openAgentLoginDialogInBackground(ctx, project, summary, resolvedAgentId);
         return;
     }
-    if (connectionFlow.kind === 'settings-api-key') {
-        ctx.notifyAgentUsesSettingsApiKey(resolvedAgentId);
-        return;
-    }
-    if (connectionFlow.kind === 'tenant-terminal') {
-        if (ctx.messageService) {
-            void ctx.messageService.info(localizeAgentTenantTerminalLoginMessage(
-                resolveAgentDisplayLabel(resolvedAgentId),
-                connectionFlow.command,
-            ));
-        }
-        return;
-    }
-    if (connectionFlow.kind === 'unsupported') {
-        if (ctx.messageService) {
-            void ctx.messageService.info(localizeAgentConnectionUnsupportedMessage(
-                resolveAgentDisplayLabel(resolvedAgentId),
-            ));
-        }
-        return;
-    }
-    if (!project) {
-        return;
-    }
-    if (!summary) {
-        const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
-        if (!cwd) {
-            return;
-        }
+    // Without a project or prepared cwd the dialog still opens and says what is missing (or
+    // resolves the cwd itself): a Connect click must never do nothing.
+    const cwd = project ? ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id) : undefined;
+    if (!summary && project && cwd) {
         const now = Date.now();
         summary = {
             id: `qaap-agent-login:${project.id}:${resolvedAgentId}`,
@@ -374,28 +338,14 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
         summary,
         resolvedAgentId,
         async () => {
+            if (!project) {
+                return false;
+            }
             const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
             ctx.stickyComposerRenderUi?.renderStickyComposer?.();
             return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(resolvedAgentId) === true;
         },
     );
-}
-
-export function notifyAgentUsesSettingsApiKeyExtracted(ctx: MobileProjectsPanelContext, agentId: string): void {
-    const message = localizeAgentSettingsApiKeyLoginMessage(resolveAgentDisplayLabel(agentId));
-    const openSettings = nls.localize('qaap/agentLogin/openSettings', 'Open Settings');
-    const openAiFeatures = (): void => {
-        void ctx.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
-    };
-    if (ctx.messageService) {
-        void ctx.messageService.info(message, openSettings).then(action => {
-            if (action === openSettings) {
-                openAiFeatures();
-            }
-        });
-        return;
-    }
-    openAiFeatures();
 }
 
 export async function onDeleteConversationExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,

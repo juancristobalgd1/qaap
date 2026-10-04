@@ -12,11 +12,13 @@ assert.equal(process.platform, 'linux');
 assert.equal(process.getuid(), 0);
 // Compilation cannot detect a native terminal binary built for the wrong Node ABI.
 require(require.resolve('node-pty', { paths: ['/app/packages/process'] }));
-const requiredHarnesses = ['qaiq', 'openclaude', 'codex', 'claude', 'opencode', 'antigravity'];
+const requiredHarnesses = ['qaiq', 'openclaude', 'codex', 'claude', 'copilot', 'opencode', 'antigravity'];
 for (const harness of requiredHarnesses) {
     const result = spawnSync('sh', ['-lc', `command -v ${harness}`], { encoding: 'utf8', timeout: 10000 });
     assert.equal(result.status, 0, `Required Qaap harness is missing from the runtime image: ${harness}`);
 }
+const copilotVersion = spawnSync('copilot', ['--version'], { encoding: 'utf8', timeout: 10000 });
+assert.equal(copilotVersion.status, 0, 'The Copilot CLI must report its version: ' + copilotVersion.stderr);
 console.log('PASS: bundled coding-agent harnesses: ' + requiredHarnesses.join(', '));
 const python = spawnSync('python3', ['-c', 'import tarfile; assert hasattr(tarfile, "data_filter")'], { encoding: 'utf8', timeout: 10000 });
 assert.equal(python.status, 0, 'The image must support safe backup restore filtering: ' + python.stderr);

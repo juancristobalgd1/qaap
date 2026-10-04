@@ -51,11 +51,18 @@ export interface QaapAgentCliUpdatesResponse {
     readonly updates: readonly QaapAgentCliUpdateInfo[];
 }
 
+/**
+ * Why an install did not succeed: `refused` by server policy, `busy` (another install for the same
+ * user is running), `rate-limited`, or npm itself `failed`.
+ */
+export type QaapAgentCliUpdateFailureReason = 'refused' | 'busy' | 'rate-limited' | 'failed';
+
 export interface QaapAgentCliUpdateResult {
     readonly ok: boolean;
     readonly id: string;
     readonly installedVersion?: string;
     readonly message?: string;
+    readonly reason?: QaapAgentCliUpdateFailureReason;
 }
 
 /** Map of agentId → dismissed latestVersion (persists across reloads; a newer version re-prompts). */

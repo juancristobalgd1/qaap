@@ -5,13 +5,16 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import {
+    localizeAddApiKeyInSettingsCta,
+    localizeAgentSettingsApiKeyLoginMessage,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import type { QaapAgentLoginFlowState } from '../common/qaap-agent-login-flow';
 import { resolveAgentLoginDialogSubtitle } from './qaap-agent-login-instructions';
 
 export interface QaapAgentLoginDialogController {
     readonly root: HTMLElement;
-    setChallenge(challenge: QaapAgentAuthLoginChallenge): void;
-    setConnected(): void;
-    setFailed(message?: string): void;
+    render(state: QaapAgentLoginFlowState): void;
     dispose(): void;
 }
 
@@ -19,6 +22,11 @@ export interface QaapAgentLoginDialogOptions {
     readonly agentId: string;
     readonly agentLabel: string;
     readonly onClose: () => void;
+    /** Sends a pasted authorization code to the CLI's stdin. */
+    readonly onSubmitCode?: (code: string) => void;
+    readonly onRetry?: () => void;
+    readonly onInstall?: () => void;
+    readonly onOpenSettings?: () => void;
 }
 
 function createIcon(className: string): HTMLElement {
@@ -46,11 +54,53 @@ function createStep(number: string, title: string): { readonly root: HTMLElement
     return { root, body };
 }
 
+function createButton(className: string, label: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    return button;
+}
+
+function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'failed' }>, agentLabel: string): string {
+    if (state.message) {
+        return state.message;
+    }
+    switch (state.reason) {
+        case 'timeout':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogTimedOut',
+                '{0} did not show a sign-in link. Its last output is below.',
+                agentLabel,
+            );
+        case 'exited':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogExited',
+                'The {0} sign-in process ended before it connected (exit code {1}).',
+                agentLabel,
+                String(state.exitCode ?? ''),
+            );
+        case 'install-failed':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogInstallFailed',
+                'Could not install {0}.',
+                agentLabel,
+            );
+        default:
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogUnavailable',
+                'Secure sign-in is not available for this workspace.',
+            );
+    }
+}
+
 export function createQaapAgentLoginDialog(
     options: QaapAgentLoginDialogOptions,
 ): QaapAgentLoginDialogController {
     let disposed = false;
-    let currentCode: string | undefined;
+    let renderedSignature: string | undefined;
+    const agentLabel = options.agentLabel;
 
     const root = document.createElement('div');
     root.className = 'theia-mobile-agent-login-dialog-overlay';
@@ -65,11 +115,7 @@ export function createQaapAgentLoginDialog(
     header.className = 'theia-mobile-agent-login-dialog-header';
     const title = document.createElement('h2');
     title.id = 'qaap-agent-login-dialog-title';
-    title.textContent = nls.localize(
-        'qaap/mobileProjects/agentLoginDialogTitle',
-        'Connect {0}',
-        options.agentLabel,
-    );
+    title.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogTitle', 'Connect {0}', agentLabel);
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.className = 'theia-mobile-agent-login-dialog-close codicon codicon-close';
@@ -82,37 +128,26 @@ export function createQaapAgentLoginDialog(
     const subtitle = document.createElement('p');
     subtitle.className = 'theia-mobile-agent-login-dialog-subtitle';
     subtitle.textContent = resolveAgentLoginDialogSubtitle(options.agentId);
-
-    const challengeHost = document.createElement('div');
-    challengeHost.className = 'theia-mobile-agent-login-dialog-challenge';
-    const waiting = document.createElement('div');
-    waiting.className = 'theia-mobile-agent-login-dialog-waiting';
-    waiting.append(createIcon('codicon-loading'), document.createTextNode(nls.localize(
-        'qaap/mobileProjects/agentLoginDialogPreparing',
-        'Preparing secure sign-in…',
-    )));
-    challengeHost.append(waiting);
+    const body = document.createElement('div');
+    body.className = 'theia-mobile-agent-login-dialog-challenge';
 
     const status = document.createElement('div');
     status.className = 'theia-mobile-agent-login-dialog-status';
+    status.setAttribute('role', 'status');
     const statusIcon = createIcon('codicon-loading');
     const statusText = document.createElement('span');
-    statusText.textContent = nls.localize(
-        'qaap/mobileProjects/agentLoginDialogWaiting',
-        'Waiting for {0}',
-        options.agentLabel,
-    );
     status.append(statusIcon, statusText);
 
     const footer = document.createElement('footer');
     footer.className = 'theia-mobile-agent-login-dialog-footer';
+    const actions = document.createElement('div');
+    actions.className = 'theia-mobile-agent-login-dialog-actions';
     const cancelButton = document.createElement('button');
     cancelButton.type = 'button';
     cancelButton.className = 'theia-mobile-agent-login-dialog-cancel';
-    cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogCancel', 'Cancel');
-    footer.append(cancelButton);
+    footer.append(actions, cancelButton);
 
-    content.append(subtitle, challengeHost, status);
+    content.append(subtitle, body, status);
     panel.append(header, content, footer);
     root.append(panel);
     document.body.append(root);
@@ -130,32 +165,46 @@ export function createQaapAgentLoginDialog(
         }
     });
 
-    const setChallenge = (challenge: QaapAgentAuthLoginChallenge): void => {
-        if (disposed) {
-            return;
-        }
-        const signature = `${challenge.url ?? ''}|${challenge.userCode ?? ''}|${challenge.mode}`;
-        if (signature === currentCode) {
-            return;
-        }
-        currentCode = signature;
-        challengeHost.replaceChildren();
+    const setStatus = (kind: 'busy' | 'success' | 'error' | 'none', text = ''): void => {
+        status.hidden = kind === 'none';
+        status.classList.toggle('theia-mod-success', kind === 'success');
+        status.classList.toggle('theia-mod-error', kind === 'error');
+        statusIcon.className = `codicon ${kind === 'success' ? 'codicon-check' : kind === 'error' ? 'codicon-error' : 'codicon-loading'}`;
+        statusText.textContent = text;
+    };
 
-        const first = createStep(
-            '1',
-            nls.localize(
-                'qaap/mobileProjects/agentLoginDialogStepOne',
-                'Open the {0} sign-in flow when prompted.',
-                options.agentLabel,
-            ),
-        );
-        challengeHost.append(first.root);
+    const renderMessage = (text: string): void => {
+        const message = document.createElement('p');
+        message.className = 'theia-mobile-agent-login-dialog-message';
+        message.textContent = text;
+        body.append(message);
+    };
 
-        if (challenge.userCode) {
-            const second = createStep(
-                '2',
-                nls.localize('qaap/mobileProjects/agentLoginDialogStepTwo', 'Copy this code'),
+    const renderChallenge = (challenge: QaapAgentAuthLoginChallenge, submitted: boolean): void => {
+        let step = 0;
+        const nextStep = (text: string) => createStep(String(++step), text);
+        if (challenge.url) {
+            const open = nextStep(nls.localize(
+                'qaap/mobileProjects/agentLoginDialogStepOpen',
+                'Open the {0} sign-in page and approve access.',
+                agentLabel,
+            ));
+            const openButton = document.createElement('button');
+            openButton.type = 'button';
+            openButton.className = 'theia-mobile-agent-login-dialog-url';
+            openButton.append(
+                document.createTextNode(nls.localize('qaap/mobileProjects/agentLoginDialogVerificationPage', 'Verification page')),
+                createIcon('codicon-link-external'),
             );
+            const url = challenge.url;
+            openButton.addEventListener('click', () => {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            });
+            open.body.append(openButton);
+            body.append(open.root);
+        }
+        if (challenge.userCode) {
+            const copy = nextStep(nls.localize('qaap/mobileProjects/agentLoginDialogStepTwo', 'Copy this code'));
             const codeRow = document.createElement('div');
             codeRow.className = 'theia-mobile-agent-login-dialog-code-row';
             const code = document.createElement('code');
@@ -163,14 +212,13 @@ export function createQaapAgentLoginDialog(
             const copyButton = document.createElement('button');
             copyButton.type = 'button';
             copyButton.className = 'theia-mobile-agent-login-dialog-copy codicon codicon-copy';
-            const copyLabel = nls.localize('qaap/mobileProjects/agentLoginDialogCopy', 'Copy code');
-            copyButton.title = copyLabel;
-            copyButton.setAttribute('aria-label', copyLabel);
+            copyButton.title = nls.localize('qaap/mobileProjects/agentLoginDialogCopy', 'Copy code');
+            copyButton.setAttribute('aria-label', copyButton.title);
+            const userCode = challenge.userCode;
             copyButton.addEventListener('click', async () => {
                 try {
-                    await navigator.clipboard.writeText(challenge.userCode!);
-                    copyButton.classList.remove('codicon-copy');
-                    copyButton.classList.add('codicon-check');
+                    await navigator.clipboard.writeText(userCode);
+                    copyButton.classList.replace('codicon-copy', 'codicon-check');
                     copyButton.title = nls.localize('qaap/mobileProjects/agentLoginDialogCopied', 'Copied');
                     copyButton.setAttribute('aria-label', copyButton.title);
                 } catch {
@@ -178,63 +226,141 @@ export function createQaapAgentLoginDialog(
                 }
             });
             codeRow.append(code, copyButton);
-            second.body.append(codeRow);
-            challengeHost.append(second.root);
+            copy.body.append(codeRow);
+            body.append(copy.root);
         }
-
-        const third = createStep(
-            challenge.userCode ? '3' : '2',
-            nls.localize(
+        if (challenge.codeEntry) {
+            const paste = nextStep(nls.localize(
+                'qaap/mobileProjects/agentLoginDialogStepPaste',
+                'Paste the code the sign-in page shows you',
+            ));
+            const form = document.createElement('form');
+            form.className = 'theia-mobile-agent-login-dialog-code-form';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'theia-input theia-mobile-agent-login-dialog-code-input';
+            input.autocomplete = 'off';
+            input.spellcheck = false;
+            input.setAttribute('autocapitalize', 'off');
+            input.setAttribute('aria-label', nls.localize('qaap/mobileProjects/agentLoginDialogCodeInput', 'Authorization code'));
+            input.placeholder = input.getAttribute('aria-label') ?? '';
+            input.disabled = submitted;
+            const submit = document.createElement('button');
+            submit.type = 'submit';
+            submit.className = 'theia-button main theia-mobile-agent-login-dialog-code-submit';
+            submit.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogSubmitCode', 'Submit code');
+            submit.disabled = submitted;
+            form.addEventListener('submit', event => {
+                event.preventDefault();
+                const value = input.value.trim();
+                if (value && options.onSubmitCode) {
+                    options.onSubmitCode(value);
+                }
+            });
+            form.append(input, submit);
+            paste.body.append(form);
+            body.append(paste.root);
+        } else {
+            body.append(nextStep(nls.localize(
                 'qaap/mobileProjects/agentLoginDialogStepThree',
                 'Sign in and finish the verification in the browser.',
-            ),
-        );
-        if (challenge.url) {
-            const openButton = document.createElement('button');
-            openButton.type = 'button';
-            openButton.className = 'theia-mobile-agent-login-dialog-url';
-            openButton.append(
-                document.createTextNode(nls.localize(
-                    'qaap/mobileProjects/agentLoginDialogVerificationPage',
-                    'Verification page',
-                )),
-                createIcon('codicon-link-external'),
-            );
-            openButton.addEventListener('click', () => {
-                window.open(challenge.url, '_blank', 'noopener,noreferrer');
-            });
-            third.body.append(openButton);
+            )).root);
         }
-        challengeHost.append(third.root);
     };
 
-    const setConnected = (): void => {
+    const render = (state: QaapAgentLoginFlowState): void => {
         if (disposed) {
             return;
         }
-        status.classList.add('theia-mod-success');
-        statusIcon.classList.remove('codicon-loading');
-        statusIcon.classList.add('codicon-check');
-        statusText.textContent = nls.localize(
-            'qaap/mobileProjects/agentLoginDialogConnected',
-            '{0} connected',
-            options.agentLabel,
-        );
-        cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogDone', 'Done');
-    };
-
-    const setFailed = (message?: string): void => {
-        if (disposed) {
+        // Re-rendering an unchanged challenge would wipe a half-typed code.
+        const signature = JSON.stringify(state.phase === 'waiting' ? { phase: state.phase } : state);
+        if (signature === renderedSignature) {
             return;
         }
-        status.classList.add('theia-mod-error');
-        statusIcon.classList.remove('codicon-loading');
-        statusIcon.classList.add('codicon-error');
-        statusText.textContent = message || nls.localize(
-            'qaap/mobileProjects/agentLoginDialogFailed',
-            'Could not start secure sign-in.',
-        );
-        cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
+        renderedSignature = signature;
+        body.replaceChildren();
+        actions.replaceChildren();
+        cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogCancel', 'Cancel');
+        switch (state.phase) {
+            case 'preparing':
+                setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogPreparing', 'Preparing secure sign-in…'));
+                break;
+            case 'waiting':
+                setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
+                break;
+            case 'installing':
+                setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogInstalling', 'Installing {0}…', agentLabel));
+                break;
+            case 'install-required':
+                renderMessage(state.message ?? nls.localize(
+                    'qaap/mobileProjects/agentLoginDialogNotInstalled',
+                    '{0} is not installed on this workspace yet. Install it first, then sign in.',
+                    agentLabel,
+                ));
+                if (state.canInstall && options.onInstall) {
+                    actions.append(createButton(
+                        'theia-button main theia-mobile-agent-login-dialog-primary',
+                        nls.localize('qaap/mobileProjects/agentLoginDialogInstall', 'Install {0}', agentLabel),
+                        options.onInstall,
+                    ));
+                }
+                setStatus('none');
+                cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
+                break;
+            case 'settings-api-key':
+                renderMessage(localizeAgentSettingsApiKeyLoginMessage(agentLabel));
+                if (options.onOpenSettings) {
+                    actions.append(createButton(
+                        'theia-button main theia-mobile-agent-login-dialog-primary',
+                        localizeAddApiKeyInSettingsCta(),
+                        options.onOpenSettings,
+                    ));
+                }
+                setStatus('none');
+                cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
+                break;
+            case 'manual':
+                renderMessage(state.message);
+                setStatus('none');
+                cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
+                break;
+            case 'challenge':
+                renderChallenge(state.challenge, false);
+                setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
+                break;
+            case 'code-submitted':
+                renderChallenge(state.challenge, true);
+                setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogVerifyingCode', 'Verifying the code with {0}…', agentLabel));
+                break;
+            case 'connected':
+                setStatus('success', nls.localize('qaap/mobileProjects/agentLoginDialogConnected', '{0} connected', agentLabel));
+                cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogDone', 'Done');
+                break;
+            case 'failed': {
+                setStatus('error', localizeFailure(state, agentLabel));
+                if (state.tail.length) {
+                    const tail = document.createElement('pre');
+                    tail.className = 'theia-mobile-agent-login-dialog-output';
+                    tail.textContent = state.tail.join('\n');
+                    body.append(tail);
+                }
+                if (state.reason === 'install-failed' && options.onInstall) {
+                    actions.append(createButton(
+                        'theia-button main theia-mobile-agent-login-dialog-primary',
+                        nls.localize('qaap/mobileProjects/agentLoginDialogRetry', 'Retry'),
+                        options.onInstall,
+                    ));
+                } else if (options.onRetry) {
+                    actions.append(createButton(
+                        'theia-button main theia-mobile-agent-login-dialog-primary',
+                        nls.localize('qaap/mobileProjects/agentLoginDialogRetry', 'Retry'),
+                        options.onRetry,
+                    ));
+                }
+                cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
+                break;
+            }
+        }
     };
 
     const dispose = (): void => {
@@ -247,5 +373,6 @@ export function createQaapAgentLoginDialog(
         root.remove();
     };
 
-    return { root, setChallenge, setConnected, setFailed, dispose };
+    render({ phase: 'preparing' });
+    return { root, render, dispose };
 }
