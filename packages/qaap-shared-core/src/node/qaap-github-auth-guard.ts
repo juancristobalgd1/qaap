@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import type { Request, Response } from '@theia/core/shared/express';
 import {
     QAAP_AUTH_SESSION_COOKIE,
@@ -24,6 +24,7 @@ import {
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { isRealPathUnder } from './qaap-realpath-guard';
 import {
@@ -71,6 +72,9 @@ export class QaapGithubAuthGuard {
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
 
+    @inject(QaapApiTokenStore) @optional()
+    protected readonly apiTokens: QaapApiTokenStore | undefined;
+
     protected readonly reposRoot = resolveQaapReposRoot();
 
     // Only `req.headers` is ever read on this path (see `authenticateTenantBackend` and
@@ -82,7 +86,7 @@ export class QaapGithubAuthGuard {
         if (tenantBackend) {
             return tenantBackend;
         }
-        const session = this.resolveGithubSession(req);
+        const session = this.resolveGithubSession(req) ?? this.resolveApiTokenSession(req);
         if (session) {
             return {
                 kind: 'authenticated',
@@ -389,6 +393,31 @@ export class QaapGithubAuthGuard {
     protected isProductionRuntime(): boolean {
         const cloudMode = process.env.QAAP_CLOUD_MODE?.trim().toLowerCase();
         return process.env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
+    }
+
+    /**
+     * `Authorization: Bearer qaap_pat_…` from a headless caller. The token acts for the GitHub
+     * session it was created from, so signing out of that session revokes it as well.
+     */
+    resolveApiTokenSession(req: Pick<Request, 'headers'>): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+        const token = this.readBearerApiToken(req);
+        const record = token ? this.apiTokens?.resolve(token) : undefined;
+        const stored = record ? this.sessions.getSession(record.sessionId) : undefined;
+        if (!record || !stored || stored.user.login.toLowerCase() !== record.ownerLogin.toLowerCase()) {
+            return undefined;
+        }
+        return { stored, sessionId: record.sessionId };
+    }
+
+    /** True when the request carries a personal API token (token routes refuse to mint more). */
+    hasBearerApiToken(req: Pick<Request, 'headers'>): boolean {
+        return !!this.readBearerApiToken(req);
+    }
+
+    protected readBearerApiToken(req: Pick<Request, 'headers'>): string | undefined {
+        const header = req.headers.authorization;
+        const match = typeof header === 'string' ? /^Bearer\s+(qaap_pat_\S+)$/i.exec(header.trim()) : undefined;
+        return match?.[1];
     }
 
     /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */

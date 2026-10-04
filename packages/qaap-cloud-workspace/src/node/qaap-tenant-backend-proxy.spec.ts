@@ -51,6 +51,18 @@ describe('QaapTenantBackendProxyContribution', () => {
         expect(headers['x-request-id']).to.equal('request-1');
     });
 
+    it('serves API-token management from the control plane and keeps the token out of tenants', () => {
+        const proxy = createProxy() as unknown as {
+            isControlPlanePath(url: string): boolean;
+            forwardHeaders(headers: Record<string, string>, target: typeof TARGET, assertion: string): Record<string, string | string[]>;
+        };
+        expect(proxy.isControlPlanePath('/qaap/api/auth/api-tokens')).to.equal(true);
+        const headers = proxy.forwardHeaders({ authorization: 'Bearer qaap_pat_secret' }, TARGET, 'tenant-assertion');
+        expect(headers.authorization).to.equal(undefined);
+        // Other Authorization schemes (a preview app's own auth) still pass through.
+        expect(proxy.forwardHeaders({ authorization: 'Basic dXNlcjpwdw==' }, TARGET, 'a').authorization).to.equal('Basic dXNlcjpwdw==');
+    });
+
     it('restores the required upgrade headers only for the tenant WebSocket hop', () => {
         const proxy = createProxy() as unknown as {
             forwardWebSocketHeaders(headers: Record<string, string>, target: typeof TARGET, assertion: string, tenantConnectionToken: string): Record<string, string | string[]>;

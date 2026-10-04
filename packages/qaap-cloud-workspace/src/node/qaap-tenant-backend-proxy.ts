@@ -827,7 +827,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 && lowerKey !== 'host'
                 // The browser's control-plane cookie is not needed after the HMAC assertion is
                 // minted and must not cross the tenant boundary or appear in tenant logs.
-                && lowerKey !== 'cookie') {
+                && lowerKey !== 'cookie'
+                // Same for a personal API token (`Authorization: Bearer qaap_pat_…`).
+                && !(lowerKey === 'authorization' && /^\s*Bearer\s+qaap_pat_/i.test(String(value)))) {
                 headers[key] = value;
             }
         }

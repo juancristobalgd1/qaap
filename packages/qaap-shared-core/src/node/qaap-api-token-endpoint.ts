@@ -1,0 +1,81 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { inject, injectable } from '@theia/core/shared/inversify';
+import type { Application, Request, Response } from '@theia/core/shared/express';
+import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { QAAP_AUTH_API_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { QaapApiTokenStore } from './qaap-api-token-store';
+import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+
+/** Under the auth prefix so the per-tenant proxy serves it from the control plane (token store). */
+export const QAAP_API_TOKENS_PATH = `${QAAP_AUTH_API_PATH}/api-tokens`;
+
+/**
+ * Mint, list and revoke personal API tokens. Only a signed-in browser session may manage tokens:
+ * a token can call the API (e.g. `/api/qaap/agent-tasks`) but never mint or list other tokens.
+ */
+@injectable()
+export class QaapApiTokenEndpoint implements BackendApplicationContribution {
+
+    @inject(QaapApiTokenStore)
+    protected readonly tokens: QaapApiTokenStore;
+
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
+    configure(app: Application): void {
+        app.get(QAAP_API_TOKENS_PATH, (req, res) => this.handleList(req, res));
+        app.post(QAAP_API_TOKENS_PATH, (req, res) => this.handleCreate(req, res));
+        app.delete(`${QAAP_API_TOKENS_PATH}/:id`, (req, res) => this.handleRevoke(req, res));
+    }
+
+    protected handleList(req: Request, res: Response): void {
+        const session = this.requireBrowserSession(req, res);
+        if (session) {
+            res.set('Cache-Control', 'no-store').json({ tokens: this.tokens.list(session.login) });
+        }
+    }
+
+    protected handleCreate(req: Request, res: Response): void {
+        const session = this.requireBrowserSession(req, res);
+        if (!session) {
+            return;
+        }
+        const body = (req.body ?? {}) as { label?: unknown };
+        const created = this.tokens.create(session.login, session.sessionId, typeof body.label === 'string' ? body.label : '');
+        res.set('Cache-Control', 'no-store').status(201).json({ token: created.token, ...created.summary });
+    }
+
+    protected handleRevoke(req: Request, res: Response): void {
+        const session = this.requireBrowserSession(req, res);
+        if (!session) {
+            return;
+        }
+        if (!this.tokens.revoke(session.login, req.params.id)) {
+            res.status(404).json({ error: 'Unknown token.' });
+            return;
+        }
+        res.status(204).end();
+    }
+
+    protected requireBrowserSession(req: Request, res: Response): { readonly login: string; readonly sessionId: string } | undefined {
+        if (this.auth.hasBearerApiToken(req)) {
+            res.status(403).json({ error: 'API tokens cannot manage API tokens; sign in with the browser.' });
+            return undefined;
+        }
+        // Cookie-authenticated mutations: refuse cross-site requests (browsers send Sec-Fetch-Site).
+        if (req.method !== 'GET' && req.headers['sec-fetch-site'] === 'cross-site') {
+            res.status(403).json({ error: 'Cross-site request refused.' });
+            return undefined;
+        }
+        const session = this.auth.resolveGithubSession(req);
+        if (!session) {
+            res.status(401).json({ error: 'Sign in first.' });
+            return undefined;
+        }
+        return { login: session.stored.user.login, sessionId: session.sessionId };
+    }
+}
