@@ -18,6 +18,7 @@ import {
 } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { stripBackendOnlyEnv } from './qaap-child-process-env';
+import { resolveQaapWritableHome } from './qaap-writable-home';
 import { QAAP_HARNESS_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import {
     canExposeAgentCliBinToChild,
@@ -660,7 +661,9 @@ export class QaapAgentCliUpdateService {
                 ? requestedGid
                 : Number.isInteger(configuredGid) && configuredGid > 0 ? configuredGid : uid;
         return {
-            home,
+            // npm writes its cache and logs under HOME: on a read-only HOME (rootless production
+            // `/home/theia`) that fails with `ENOENT … mkdir`, so use a home next to the prefix.
+            home: resolveQaapWritableHome(home, path.dirname(prefix)),
             prefix,
             binDirectory: resolveAgentCliPrefixBinDirectory(prefix),
             uid,

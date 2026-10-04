@@ -580,7 +580,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         isInstallSupported: (agentId: string) => boolean,
     ): QaapAgentHarnessStatus[] {
         const pathEnv = { ...process.env };
-        prependAgentCliBinToPath(pathEnv, this.resolveAgentCliPrefix(this.resolveOwnerCwd(ownerLogin)));
+        const prefix = this.resolveAgentCliPrefix(this.resolveOwnerCwd(ownerLogin));
+        prependAgentCliBinToPath(pathEnv, prefix);
+        const cliBinDirectory = resolveAgentCliPrefixBinDirectory(prefix);
         return QAAP_HARNESS_DEFINITIONS.map(definition => {
             const candidate = this.detectedAgents.get(definition.id);
             const installed = candidate
@@ -594,6 +596,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     ? this.agentConnectionState(definition.id, ownerLogin) ?? 'unknown'
                     : 'unknown',
                 installSupported: isInstallSupported(definition.id),
+                cliBinDirectory,
             };
         });
     }

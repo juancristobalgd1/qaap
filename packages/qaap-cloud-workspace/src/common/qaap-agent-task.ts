@@ -305,6 +305,11 @@ export interface QaapAgentHarnessStatus {
     /** False when the harness has no installable package at all (vs. installs disabled on this server). */
     readonly installPackageAvailable?: boolean;
     readonly version?: string;
+    /**
+     * The user's per-user harness install directory. Terminals do not get it on PATH, so the
+     * Connect flow prepends it to the login command; otherwise a per-user install is "not found".
+     */
+    readonly cliBinDirectory?: string;
 }
 
 export interface QaapAgentHarnessStatusResponse {
