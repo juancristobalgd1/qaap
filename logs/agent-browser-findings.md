@@ -24,9 +24,21 @@ Branch: `fo/agent-browser`
 
 ## Implementation and user verification
 
-Status: the pinned image dependency and its source-level smoke spec are committed. MCP config
-registration, browser-to-preview live updates, tenant-image build, and runtime verification remain
-pending.
+Status: the pinned image dependency and its source-level smoke spec are committed. QAIQ/OpenClaude
+now admits only the dedicated `mcp__qaap_browser__*` namespace; unrelated MCP tools and Theia tools
+remain blocked. MCP config registration, browser-to-preview live updates, tenant-image build, and
+runtime verification remain pending.
+
+Validation so far:
+
+- Image-source test: 1 passing.
+- QAIQ policy Mocha spec: 5 passing.
+- Full `@theia/qaap-cloud-workspace` compile did not complete: referenced Theia/Qaap package outputs
+  are missing in this checkout (the first reported dependency failure was
+  `@theia/core/shared/@theia/application-package/lib/environment`).
+- Full `@theia/qaap-cloud-workspace` spec run could not load the suite because
+  `@theia/qaap-adapters/lib/browser/qaap-preview-widget-uri` has no compiled output. No full-package
+  passing count is claimed.
 
 When implementation is complete, verify from a fresh tenant for each supported harness:
 

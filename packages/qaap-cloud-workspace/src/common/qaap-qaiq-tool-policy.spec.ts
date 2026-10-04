@@ -16,13 +16,15 @@ describe('qaap-qaiq-tool-policy', () => {
 
     it('always includes the read-only web tools in the core allowlist', () => {
         expect(formatQaiqCoreToolsFlag()).to.equal(
-            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch',
+            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch,mcp__qaap_browser__*',
         );
-        expect(resolveQaiqCoreToolNames()).to.include.members(['WebFetch', 'WebSearch']);
+        expect(resolveQaiqCoreToolNames()).to.include.members(['WebFetch', 'WebSearch', 'mcp__qaap_browser__*']);
     });
 
     it('keeps the read-only web tools even when shell is disabled', () => {
-        expect(resolveQaiqCoreToolNames({ shell: false })).to.include.members(['WebFetch', 'WebSearch']);
+        expect(resolveQaiqCoreToolNames({ shell: false })).to.include.members([
+            'WebFetch', 'WebSearch', 'mcp__qaap_browser__*',
+        ]);
     });
 
     it('parses --tools from a spawned command', () => {
@@ -33,7 +35,7 @@ describe('qaap-qaiq-tool-policy', () => {
 
     it('omits Bash when shell is disabled in the core tool list', () => {
         expect(formatQaiqCoreToolsFlag({ shell: false })).to.equal(
-            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch',
+            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch,mcp__qaap_browser__*',
         );
     });
 
@@ -46,6 +48,9 @@ describe('qaap-qaiq-tool-policy', () => {
         expect(isBlockedTheiaTool('qaap_bootstrap_install')).to.equal(true);
         expect(isBlockedTheiaTool('getWorkspaceFileList')).to.equal(true);
         expect(isBlockedTheiaTool('mcp__theia__runTask')).to.equal(true);
+        expect(isBlockedTheiaTool('mcp__qaap_browser__browser_navigate')).to.equal(false);
+        expect(isBlockedHeadlessTool('mcp__qaap_browser__browser_navigate')).to.equal(false);
+        expect(isBlockedTheiaTool('mcp__other__tool')).to.equal(true);
         expect(isBlockedHeadlessTool('Read')).to.equal(false);
     });
 });
