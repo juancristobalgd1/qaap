@@ -84,7 +84,20 @@ export class QaapTerminalFrontendContribution extends TerminalFrontendContributi
         if (shouldDeferTerminalLayoutInit()) {
             return;
         }
-        await super.initializeLayout();
+        await this.preferenceService.ready;
+        // `terminal.grouping.mode` comes from @theia/terminal-manager (see the upstream method).
+        if (this.preferenceService.get('terminal.grouping.mode') === 'tree') {
+            return;
+        }
+        try {
+            // Same layout as upstream, but the backend shell spawn is not awaited (as in upstream
+            // `openActiveWorkspaceTerminal`): the IDE default layout no longer waits for it to reveal.
+            const termWidget = await this.newTerminal({});
+            this.shell.addWidget(termWidget, { area: 'bottom' });
+            termWidget.start().catch(error => console.error('Failed to start the default layout terminal', error));
+        } catch (error) {
+            console.error('Failed to initialize terminal in default layout', error);
+        }
     }
 
     protected createTerminalCommandHandler(execute: (terminal: TerminalWidget) => void): {
