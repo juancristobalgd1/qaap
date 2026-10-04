@@ -5,6 +5,7 @@
 # Regenerate: node scripts/qaap-drift-check.js --write-baseline
 informe-qaap.md # User-requested repository assessment; documentation artifact, not product drift.
 plan-qaap-10.md # User-requested improvement plan; documentation artifact, not product drift.
+logs/agent-browser-findings.md # User-requested implementation findings; documentation artifact, not product drift.
 dev-packages/cli/package.json
 dev-packages/cli/src/download-plugins.ts
 dev-packages/cli/src/test-page.ts
