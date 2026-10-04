@@ -732,7 +732,7 @@ export class QaapTenantSpawnService {
      * repository search/fingerprinting use this seam so they cannot accidentally execute against the
      * host filesystem in Docker mode. The caller must still collect output with strict bounds.
      */
-    wrapArgvForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+    wrapArgvForTenant(cwd: string, file: string, args: readonly string[], environment?: NodeJS.ProcessEnv): { file: string; args: string[] } {
         cwd = this.canonicalizeCwd(cwd);
         this.enforceIsolationPolicy();
         this.prepareTenantIsolation(cwd);
@@ -742,7 +742,7 @@ export class QaapTenantSpawnService {
             if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
                 throw new Error('Refusing to wrap a process without a validated tenant container.');
             }
-            return this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot);
+            return this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot, environment);
         }
         const identity = this.resolveSpawnIdentity(cwd);
         this.assertDropIsComplete(identity);

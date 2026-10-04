@@ -6,7 +6,7 @@ import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-contex
 import { OLLAMA_DEFAULT_HOST } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 // Extracted from qaap-agent-task-runner.ts
 
-import { ChildProcess } from 'child_process';
+import { ChildProcess, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
@@ -42,7 +42,6 @@ import {
 } from './qaap-agent-task-runner-utils';
 import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
 import { canExposeAgentCliBinToChild, prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
-import { ensureQaapAgentBrowserMcpConfiguration } from './qaap-agent-browser-mcp-config';
 
 export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext, command: string,
         cwd: string,
@@ -232,14 +231,32 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         let isolatedAgentSpawn = false;
         try {
             isolatedAgentSpawn = ctx.isTenantPrivilegeDropActive(task.cwd)
-                && !ctx.tenantSpawn.isContainerIsolationEnabled();
+                || /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
         } catch {
             // Bare runner hosts and local desktop mode do not register a tenant-only server.
         }
         if (isolatedAgentSpawn && env.HOME && env.QAAP_HEADLESS_CHROMIUM
             && fs.existsSync(env.QAAP_HEADLESS_CHROMIUM)) {
             try {
-                ensureQaapAgentBrowserMcpConfiguration(env.HOME);
+                // Config files live in tenant-controlled homes. Generate them from a child already
+                // running as the agent (or inside its Docker worker), so symlinks and new files
+                // never turn a backend-root write into an arbitrary write or root-owned state.
+                const bootstrapEnv: NodeJS.ProcessEnv = {
+                    HOME: env.HOME,
+                    PATH: env.PATH,
+                    QAAP_HEADLESS_CHROMIUM: env.QAAP_HEADLESS_CHROMIUM,
+                };
+                const modulePath = path.join(__dirname, 'qaap-agent-browser-mcp-config');
+                const script = `require(${JSON.stringify(modulePath)}).ensureQaapAgentBrowserMcpConfiguration(process.env.HOME);`;
+                const invocation = ctx.tenantSpawn.wrapArgvForTenant(task.cwd, process.execPath, ['-e', script], bootstrapEnv);
+                const result = spawnSync(invocation.file, invocation.args, {
+                    cwd: task.cwd,
+                    env: bootstrapEnv,
+                    stdio: 'ignore',
+                });
+                if (result.error || result.status !== 0) {
+                    throw result.error ?? new Error(`browser MCP bootstrap exited with status ${result.status ?? 'unknown'}`);
+                }
             } catch (error) {
                 console.warn(`[qaap-browser-mcp] could not register the tenant browser MCP: ${error instanceof Error ? error.message : String(error)}`);
             }

@@ -13,4 +13,10 @@ describe('Qaap built-in agent command templates', () => {
         expect(QAAP_BUILTIN_AGENT_DEFINITIONS.find(agent => agent.id === 'codex')?.template)
             .to.contain('-c check_for_update_on_startup=false');
     });
+
+    it('lets Hermes load its persisted MCP server configuration', () => {
+        const template = QAAP_BUILTIN_AGENT_DEFINITIONS.find(agent => agent.id === 'hermes')?.template ?? '';
+        expect(template).not.to.contain('--ignore-user-config');
+        expect(template).to.contain('hermes --yolo --provider nous');
+    });
 });
