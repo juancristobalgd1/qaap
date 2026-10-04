@@ -347,20 +347,11 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     protected async pushCurrentBranch(root: string): Promise<void> {
         try {
             await this.git(root, ['rev-parse', '--abbrev-ref', '@{u}']);
-            await this.git(root, this.pushArgs(['push']));
+            await this.git(root, ['push']);
         } catch {
             const branch = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-            await this.git(root, this.pushArgs(['push', '-u', 'origin', branch]));
+            await this.git(root, ['push', '-u', 'origin', branch]);
         }
-    }
-
-    /**
-     * Hosted git ignores the system config (`GIT_CONFIG_NOSYSTEM`), so name the image's GitHub
-     * credential helper (`git-credential-qaap`, see QaapTenantGitCredential) for the push itself.
-     * The authenticated request that triggered the push has just refreshed that credential.
-     */
-    protected pushArgs(args: string[]): string[] {
-        return isQaapHostedEnvironment() ? ['-c', 'credential.https://github.com.helper=qaap', ...args] : args;
     }
 
     /** Read the local repository author identity without inheriting a host-global Git config. */

@@ -123,10 +123,8 @@ RUN for harness in qaiq openclaude codex claude opencode antigravity; do \
             || { echo "Required Qaap harness is missing: $harness" >&2; exit 1; }; \
     done
 
-# git push / gh inside a tenant project use the signed-in user's GitHub token, which the tenant
-# backend publishes short-lived on its private /tmp tmpfs (QaapTenantGitCredential). Nothing secret
-# is baked in here: the helper answers https://github.com only while that credential is valid, and
-# `gh` is a shim that hands the real binary GH_TOKEN from the same file.
+# `gh` for projects. It carries no credential: agents never receive the user's GitHub token (see
+# doc/qaap-github-token-boundary.md); a user who wants `gh` in a terminal signs it in themselves.
 ARG GH_CLI_VERSION=2.102.0
 ARG GH_CLI_SHA256_AMD64=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
 ARG GH_CLI_SHA256_ARM64=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484
@@ -135,14 +133,9 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "$arch" in amd64) sha="${GH_CLI_SHA256_AMD64}" ;; arm64) sha="${GH_CLI_SHA256_ARM64}" ;; *) echo "Unsupported gh arch: $arch" >&2; exit 1 ;; esac \
     && curl -fsSL -o /tmp/gh.tar.gz "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_${arch}.tar.gz" \
     && echo "${sha}  /tmp/gh.tar.gz" | sha256sum -c - \
-    && mkdir -p /usr/local/lib/qaap-gh \
-    && tar -xzf /tmp/gh.tar.gz -C /usr/local/lib/qaap-gh --strip-components=1 \
+    && tar -xzf /tmp/gh.tar.gz -C /usr/local --strip-components=1 "gh_${GH_CLI_VERSION}_linux_${arch}/bin/gh" \
     && rm /tmp/gh.tar.gz \
-    && /usr/local/lib/qaap-gh/bin/gh --version \
-    && printf '#!/bin/sh\nexec node /app/packages/qaap-shared-core/lib/node/qaap-git-credential-cli.js gh "$@"\n' > /usr/local/bin/gh \
-    && printf '#!/bin/sh\nexec node /app/packages/qaap-shared-core/lib/node/qaap-git-credential-cli.js "$@"\n' > /usr/local/bin/git-credential-qaap \
-    && chmod 0755 /usr/local/bin/gh /usr/local/bin/git-credential-qaap \
-    && git config --system credential.https://github.com.helper qaap
+    && gh --version
 
 WORKDIR /app/examples/browser
 
