@@ -9,7 +9,8 @@ Branch: `fo/agent-browser`
   host-loopback guards unchanged: browser egress must continue to use the tenant network policy.
 - The runtime `Dockerfile` already installs Debian Chromium and the backend uses
   `QAAP_HEADLESS_CHROMIUM=/usr/bin/chromium`. `@theia/qaap-cloud-workspace` depends on
-  `playwright-core`, but the runtime image does not currently install `@playwright/mcp`.
+  `playwright-core`. The image now pins `@playwright/mcp@0.0.83`, checks the CLI and Chromium during
+  image build, and the image smoke check asserts both are present.
 - Agent subprocesses are spawned through `QaapTenantSpawnService`. In tenant-backend mode their
   `HOME` is `/tmp/qaap-home`; cache/data paths can be redirected to the tenant's `.qaap` mount.
   That makes config persistence a separate concern from browser cache persistence and needs to be
@@ -23,7 +24,9 @@ Branch: `fo/agent-browser`
 
 ## Implementation and user verification
 
-Status: investigation only; implementation and runtime verification are pending.
+Status: the pinned image dependency and its source-level smoke spec are committed. MCP config
+registration, browser-to-preview live updates, tenant-image build, and runtime verification remain
+pending.
 
 When implementation is complete, verify from a fresh tenant for each supported harness:
 
