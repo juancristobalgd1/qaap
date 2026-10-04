@@ -347,10 +347,13 @@ export class FrontendGenerator extends AbstractGenerator {
             // Register ASAP - waiting for `load` delays SW activation, which hurts Chromium's
             // "installability" heuristic (the install banner won't appear until the SW controls the page).
             'if(document.readyState!=="loading"){register();}else{document.addEventListener("DOMContentLoaded",register,{once:true});}',
-            // Reload once when a new SW takes over so the page is consistent with cached assets.
+            // Reload once when a new SW replaces a previous one so the page is consistent with cached
+            // assets. An uncontrolled first visit was already loaded from the network; reloading it
+            // when `clients.claim()` fires would boot the whole app twice on a cold load.
+            'var hadController=!!navigator.serviceWorker.controller;',
             'var reloaded=false;',
             'navigator.serviceWorker.addEventListener("controllerchange",function(){',
-            'if(reloaded)return;',
+            'if(reloaded||!hadController)return;',
             'if(window.location.search.indexOf("qaap_oauth=")>=0)return;',
             'reloaded=true;try{location.reload();}catch(_){}});',
             '})();'
