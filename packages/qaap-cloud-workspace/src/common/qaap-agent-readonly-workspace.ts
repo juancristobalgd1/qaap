@@ -30,7 +30,11 @@
  * as a full one.
  */
 
-import { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS, formatQaiqCoreToolsFlag } from './qaap-qaiq-tool-policy';
+import {
+    QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS,
+    QAAP_QAIQ_BROWSER_MCP_TOOLS,
+    formatQaiqCoreToolsFlag,
+} from './qaap-qaiq-tool-policy';
 
 /** How strongly a backend can be held to "do not modify the workspace". */
 export type QaapAgentReadOnlyEnforcement =
@@ -74,6 +78,7 @@ export function formatQaiqReadOnlyFlags(): string {
     const denied = [...QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS.split(','), ...QAAP_QAIQ_READONLY_DENIED_TOOLS];
     return '--dangerously-skip-permissions'
         + ` ${formatQaiqCoreToolsFlag({ shell: false, write: false })}`
+        + ` --allowed-tools ${QAAP_QAIQ_BROWSER_MCP_TOOLS.join(',')}`
         + ` --disallowed-tools ${[...new Set(denied)].join(',')}`;
 }
 

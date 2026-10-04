@@ -65,12 +65,16 @@ export function ensureQaapAgentBrowserMcpConfiguration(home: string): readonly s
     writeJson('.cursor/mcp.json', root => addMcpServer(root, 'mcpServers', server));
     writeJson('.config/opencode/opencode.json', root => {
         const mcp = isRecord(root.mcp) ? root.mcp : {};
-        const servers = isRecord(mcp.servers) ? mcp.servers : {};
-        root.mcp = { ...mcp, servers: { ...servers, [SERVER_NAME]: {
+        const current = { ...mcp };
+        const legacyServers = isRecord(current.servers) ? current.servers : undefined;
+        if (legacyServers && Object.keys(legacyServers).every(name => name === SERVER_NAME)) {
+            delete current.servers;
+        }
+        root.mcp = { ...current, [SERVER_NAME]: {
             type: 'local',
             command: [COMMAND, ...ARGS],
             enabled: true,
-        } } };
+        } };
     });
     appendTomlServer(home, updated);
     appendHermesServer(home, updated);

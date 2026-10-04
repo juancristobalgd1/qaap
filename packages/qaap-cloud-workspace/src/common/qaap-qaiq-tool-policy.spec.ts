@@ -16,14 +16,15 @@ describe('qaap-qaiq-tool-policy', () => {
 
     it('always includes the read-only web tools in the core allowlist', () => {
         expect(formatQaiqCoreToolsFlag()).to.equal(
-            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch,mcp__qaap_browser__*',
+            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch',
         );
-        expect(resolveQaiqCoreToolNames()).to.include.members(['WebFetch', 'WebSearch', 'mcp__qaap_browser__*']);
+        expect(resolveQaiqCoreToolNames()).to.include.members(['WebFetch', 'WebSearch']);
+        expect(resolveQaiqCoreToolNames()).not.to.include('mcp__qaap_browser__*');
     });
 
     it('keeps the read-only web tools even when shell is disabled', () => {
         expect(resolveQaiqCoreToolNames({ shell: false })).to.include.members([
-            'WebFetch', 'WebSearch', 'mcp__qaap_browser__*',
+            'WebFetch', 'WebSearch',
         ]);
     });
 
@@ -35,7 +36,7 @@ describe('qaap-qaiq-tool-policy', () => {
 
     it('omits Bash when shell is disabled in the core tool list', () => {
         expect(formatQaiqCoreToolsFlag({ shell: false })).to.equal(
-            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch,mcp__qaap_browser__*',
+            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch',
         );
     });
 
@@ -50,6 +51,7 @@ describe('qaap-qaiq-tool-policy', () => {
         expect(isBlockedTheiaTool('mcp__theia__runTask')).to.equal(true);
         expect(isBlockedTheiaTool('mcp__qaap_browser__browser_navigate')).to.equal(false);
         expect(isBlockedHeadlessTool('mcp__qaap_browser__browser_navigate')).to.equal(false);
+        expect(isBlockedHeadlessTool('mcp__qaap_browser__browser_run_code_unsafe')).to.equal(true);
         expect(isBlockedTheiaTool('mcp__other__tool')).to.equal(true);
         expect(isBlockedHeadlessTool('Read')).to.equal(false);
     });

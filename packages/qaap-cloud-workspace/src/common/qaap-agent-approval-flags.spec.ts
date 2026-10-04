@@ -38,6 +38,17 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.match(/--allowed-tools\s+[^\s]*\bBash\b/);
     });
 
+    it('pre-approves only the explicit QAIQ browser navigation tools', () => {
+        const command = applyAgentApprovalPolicyToCommand("qaiq --print -p 'browse this page'", {
+            agentId: 'qaiq',
+            approvalPolicyId: 'approve-for-me',
+            autoApprove: true,
+        });
+        expect(command).to.include('mcp__qaap_browser__browser_navigate');
+        expect(command).to.include('mcp__qaap_browser__browser_snapshot');
+        expect(command).not.to.include('mcp__qaap_browser__browser_run_code_unsafe');
+    });
+
     it('approve-for-me strips template acceptEdits before injecting controlled permissions', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --permission-mode acceptEdits --print -p 'hi'",

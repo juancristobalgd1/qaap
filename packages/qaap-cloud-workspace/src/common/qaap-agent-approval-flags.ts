@@ -17,6 +17,7 @@ import { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS } from './qaap-agent-subagent-policy';
 import { formatReadOnlyFlagsForAgent } from './qaap-agent-readonly-workspace';
 import {
     formatQaiqCoreToolsFlag,
+    QAAP_QAIQ_BROWSER_MCP_TOOLS,
 } from './qaap-qaiq-tool-policy';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-conversation';
 
@@ -136,21 +137,23 @@ export function applyAgentApprovalPolicyToCommand(
     command: string,
     options: QaapAgentApprovalFlagOptions,
 ): string {
+    const effectiveId = resolveApprovalAgentId(command, options.agentId);
     if (options.readOnlyWorkspace) {
-        return applyReadOnlyWorkspaceToCommand(command, options.agentId);
+        const readOnlyCommand = applyReadOnlyWorkspaceToCommand(command, options.agentId);
+        return effectiveId === 'qaiq' ? ensureQaiqBrowserAllowedTools(readOnlyCommand) : readOnlyCommand;
     }
     if (shouldUseInteractiveAgentApprovals(options)) {
-        return stripNonInteractiveApprovalFlags(command, options.agentId);
+        const interactiveCommand = stripNonInteractiveApprovalFlags(command, options.agentId);
+        return effectiveId === 'qaiq' ? ensureQaiqBrowserAllowedTools(interactiveCommand) : interactiveCommand;
     }
     if (commandHasAutoApproveFlags(command) && options.approvalPolicyId === 'full-access') {
-        return command;
+        return effectiveId === 'qaiq' ? ensureQaiqBrowserAllowedTools(command) : command;
     }
     const agentId = options.agentId?.trim().toLowerCase();
     const policyId = options.approvalPolicyId ?? 'approve-for-me';
     const rules = resolveEffectiveToolApprovalRules(policyId, options.toolApprovalRules);
-    const effectiveId = resolveApprovalAgentId(command, agentId);
     if (effectiveId === 'qaiq') {
-        return applyQaiqApprovalFlags(command, options, policyId, rules);
+        return ensureQaiqBrowserAllowedTools(applyQaiqApprovalFlags(command, options, policyId, rules));
     }
     if (effectiveId === 'claude') {
         return applyClaudeApprovalFlags(command, policyId, rules);
@@ -165,6 +168,16 @@ export function applyAgentApprovalPolicyToCommand(
         return applyAutoApproveToCommand(command, agentId);
     }
     return command;
+}
+
+function ensureQaiqBrowserAllowedTools(command: string): string {
+    const match = /--allowed-tools\s+([^\s-][^\s]*)/.exec(command);
+    if (match) {
+        const tools = new Set(match[1].split(',').map(tool => tool.trim()).filter(Boolean));
+        QAAP_QAIQ_BROWSER_MCP_TOOLS.forEach(tool => tools.add(tool));
+        return command.replace(match[0], `--allowed-tools ${[...tools].join(',')}`);
+    }
+    return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, `--allowed-tools ${QAAP_QAIQ_BROWSER_MCP_TOOLS.join(',')}`);
 }
 
 /**

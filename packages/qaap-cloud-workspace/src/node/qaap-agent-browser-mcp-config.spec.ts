@@ -32,8 +32,12 @@ describe('Qaap agent browser MCP configuration', () => {
         expect(mcp('.gemini/antigravity/mcp_config.json')).to.have.property('qaap_browser');
         expect(mcp('.cursor/mcp.json')).to.have.property('qaap_browser');
         expect(mcp('.copilot/mcp-config.json').qaap_browser).to.have.property('tools').that.deep.equals(['*']);
-        expect((read('.config/opencode/opencode.json').mcp as { servers: Record<string, unknown> }).servers)
-            .to.have.property('qaap_browser');
+        const opencode = read('.config/opencode/opencode.json').mcp as Record<string, unknown>;
+        expect(opencode.qaap_browser).to.deep.equal({
+            type: 'local',
+            command: ['playwright-mcp', '--headless', '--browser', 'chromium', '--executable-path', '/usr/bin/chromium'],
+            enabled: true,
+        });
         expect(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8')).to.contain('[mcp_servers.qaap_browser]');
         expect(fs.readFileSync(path.join(home, '.hermes/config.yaml'), 'utf8')).to.contain('qaap_browser:');
         expect(updated).to.have.length(8);
@@ -47,5 +51,17 @@ describe('Qaap agent browser MCP configuration', () => {
         expect(JSON.parse(first).mcpServers).to.have.property('personal');
         expect(ensureQaapAgentBrowserMcpConfiguration(home)).to.have.length(0);
         expect(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).to.equal(first);
+    });
+
+    it('migrates the old invalid OpenCode mcp.servers shape', () => {
+        const configPath = path.join(home, '.config/opencode/opencode.json');
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        fs.writeFileSync(configPath, JSON.stringify({ mcp: { servers: { qaap_browser: { command: 'old' } } } }));
+
+        ensureQaapAgentBrowserMcpConfiguration(home);
+
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8')) as { mcp: Record<string, unknown> };
+        expect(config.mcp).not.to.have.property('servers');
+        expect(config.mcp.qaap_browser).to.have.property('type', 'local');
     });
 });

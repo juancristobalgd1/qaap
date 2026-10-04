@@ -33,8 +33,22 @@ export const QAAP_QAIQ_CORE_CODING_TOOLS = [
  */
 export const QAAP_QAIQ_NETWORK_TOOLS = ['WebFetch', 'WebSearch'] as const;
 
-/** Browser MCP tools are safe to use without a separate per-navigation approval. */
-export const QAAP_QAIQ_BROWSER_MCP_TOOLS = ['mcp__qaap_browser__*'] as const;
+/** Navigation tools only; code execution and tools that write named output files stay unavailable. */
+export const QAAP_QAIQ_BROWSER_MCP_TOOLS = [
+    'mcp__qaap_browser__browser_navigate',
+    'mcp__qaap_browser__browser_navigate_back',
+    'mcp__qaap_browser__browser_tabs',
+    'mcp__qaap_browser__browser_snapshot',
+    'mcp__qaap_browser__browser_click',
+    'mcp__qaap_browser__browser_fill_form',
+    'mcp__qaap_browser__browser_type',
+    'mcp__qaap_browser__browser_press_key',
+    'mcp__qaap_browser__browser_wait_for',
+    'mcp__qaap_browser__browser_hover',
+    'mcp__qaap_browser__browser_drag',
+    'mcp__qaap_browser__browser_select_option',
+] as const;
+const ALLOWED_QAIQ_BROWSER_TOOL_NAMES: ReadonlySet<string> = new Set(QAAP_QAIQ_BROWSER_MCP_TOOLS);
 
 /**
  * QAIQ CLI {@code --disallowed-tools} backup list — delegation, skills, plan/worktree noise,
@@ -121,7 +135,8 @@ export function resolveQaiqCoreToolNames(options: QaapQaiqCoreToolsOptions = {})
         .filter(tool => options.shell !== false || tool !== 'Bash')
         .filter(tool => options.write !== false || !QAAP_QAIQ_WORKSPACE_MUTATING_TOOLS.has(tool));
     // Read-only web tools are always available (see QAAP_QAIQ_NETWORK_TOOLS) — not gated by policy.
-    return [...tools, ...QAAP_QAIQ_NETWORK_TOOLS, ...QAAP_QAIQ_BROWSER_MCP_TOOLS];
+    // Browser MCP tools are explicitly granted with --allowed-tools, never a wildcard in --tools.
+    return [...tools, ...QAAP_QAIQ_NETWORK_TOOLS];
 }
 
 /** {@code --tools} allowlist injected on every QAIQ VPS launch. */
@@ -146,7 +161,7 @@ export function isBlockedTheiaTool(toolName: string): boolean {
         return true;
     }
     const lower = normalized.toLowerCase();
-    if (lower.startsWith('mcp__qaap_browser__')) {
+    if (ALLOWED_QAIQ_BROWSER_TOOL_NAMES.has(normalized)) {
         return false;
     }
     if (lower.startsWith('qaap_') || lower.startsWith('mcp__')) {
