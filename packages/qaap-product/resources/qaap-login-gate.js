@@ -18,6 +18,8 @@
 
     /** Set by the boot guard when this page boots into Work Hub (never on the IDE surface). */
     var workHubBootSurface = false;
+    /** Set when the boot guard's own safety timer (not the app) lifted the guard. */
+    var bootGuardLiftedBySafetyNet = false;
 
     /**
      * Mobile Work Hub boot guard — runs before bundle.js so the IDE shell never flashes
@@ -100,6 +102,7 @@
             // Only lift the html boot guard — body classes are owned by @theia/qaap-work-hub and
             // must stay active while Work Hub is the surface (stripping them leaks Explorer).
             window.setTimeout(function () {
+                bootGuardLiftedBySafetyNet = true;
                 document.documentElement.classList.remove('theia-mobile-workhub-boot');
             }, 8000);
         } catch (e) { /* ignore */ }
@@ -110,8 +113,9 @@
      * typeable composer long before bundle.js has downloaded, evaluated and started Theia. Text typed
      * here is kept in sessionStorage and adopted by the real composer when it mounts
      * (`adoptInstantComposerDraft` in @theia/qaap-composer), which also removes this shell. The shell
-     * is removed as well shortly after the app reports `qaap-startup-ready`, and whenever the sign-in
-     * gate or a startup error is shown. Never painted on the IDE surface.
+     * is removed as well shortly after the app reports `qaap-startup-ready`, lifts the Work Hub boot guard
+     * (every app path does, including the IDE fallback) or reveals its shell (Theia hides the splash), and
+     * whenever the sign-in gate or a startup error is shown. Never painted on the IDE surface.
      */
     var INSTANT_SHELL_ID = 'qaap-instant-work-hub';
     var INSTANT_DRAFT_KEY = 'qaap.instantComposer.draft';
@@ -180,6 +184,40 @@
         shell.appendChild(main);
         shell.appendChild(composer);
         document.body.appendChild(shell);
+        watchInstantShellRelease();
+    }
+
+    /**
+     * Releases the instant shell once the app owns the screen, so the overlay can never outlive startup:
+     * the app lifted the Work Hub boot guard (ignoring the guard's own 8 s safety timer), or Theia hid or
+     * removed its splash. Only the root class and the splash are observed, not the whole document.
+     */
+    function watchInstantShellRelease() {
+        if (typeof window.MutationObserver !== 'function') {
+            return;
+        }
+        var splash = document.querySelector('.theia-preload');
+        var observer = new window.MutationObserver(function () {
+            if (!document.getElementById(INSTANT_SHELL_ID)) {
+                observer.disconnect();
+                return;
+            }
+            var guardLiftedByApp = !bootGuardLiftedBySafetyNet
+                && !document.documentElement.classList.contains('theia-mobile-workhub-boot');
+            var splashGone = !!splash && (!splash.isConnected || splash.classList.contains('theia-hidden')
+                || splash.style.display === 'none');
+            if (guardLiftedByApp || splashGone) {
+                observer.disconnect();
+                window.setTimeout(releaseInstantWorkHubShell, INSTANT_SHELL_RELEASE_GRACE_MS);
+            }
+        });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        if (splash) {
+            observer.observe(splash, { attributes: true, attributeFilter: ['class', 'style'] });
+            if (splash.parentNode) {
+                observer.observe(splash.parentNode, { childList: true });
+            }
+        }
     }
 
     function releaseInstantWorkHubShell() {

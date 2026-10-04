@@ -105,6 +105,57 @@ describe('Qaap login gate', () => {
             expect(run.document.getElementById('qaap-instant-work-hub')).to.equal(null);
             clock!.uninstall();
         });
+
+        describe('release when the app owns the screen without reporting startup-ready', () => {
+            let clock: InstalledClock | undefined;
+
+            afterEach(() => {
+                clock?.uninstall();
+                clock = undefined;
+            });
+
+            function startSignedIn(): LoginGateRun {
+                return start(signedInSession, 'http://localhost:3000/', {
+                    ...SIGNED_IN,
+                    bodyHtml: '<div class="theia-preload"></div>',
+                    beforeRun: window => { clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] }); },
+                });
+            }
+
+            /** Lets the MutationObserver callback (a microtask) run. */
+            const observed = (): Promise<void> => Promise.resolve();
+            const shell = (run: LoginGateRun): HTMLElement | null => run.document.getElementById('qaap-instant-work-hub');
+
+            it('is released after the app lifts the Work Hub boot guard (IDE fallback included)', async () => {
+                const run = startSignedIn();
+                run.document.documentElement.classList.remove('theia-mobile-workhub-boot');
+                await observed();
+                expect(shell(run)).to.not.equal(null);
+                clock!.tick(1500);
+                expect(shell(run)).to.equal(null);
+            });
+
+            it('is released after Theia removes its splash', async () => {
+                const run = startSignedIn();
+                run.document.querySelector('.theia-preload')!.remove();
+                await observed();
+                clock!.tick(1500);
+                expect(shell(run)).to.equal(null);
+            });
+
+            it('survives the boot guard safety timer, then goes once Theia hides the splash', async () => {
+                const run = startSignedIn();
+                clock!.tick(8000);
+                await observed();
+                clock!.tick(5000);
+                expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(false);
+                expect(shell(run)).to.not.equal(null);
+                run.document.querySelector('.theia-preload')!.classList.add('theia-hidden');
+                await observed();
+                clock!.tick(1500);
+                expect(shell(run)).to.equal(null);
+            });
+        });
     });
 
     describe('GitHub OAuth callback', () => {
