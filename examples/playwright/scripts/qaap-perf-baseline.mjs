@@ -9,6 +9,8 @@ import path from 'node:path';
 const BASE_URL = process.env.QAAP_PERF_URL || 'https://161.97.69.219.sslip.io/';
 const OUTPUT = process.env.QAAP_PERF_OUTPUT || '/workspace/logs/perf-2s.md';
 const PHASE = process.env.QAAP_PERF_PHASE || 'baseline';
+/** `ide` runs on a desktop viewport; `ide-mobile` opens the IDE surface on the same 375×812 phone as the Work Hub. */
+const isIdeMode = mode => mode === 'ide' || mode === 'ide-mobile';
 const MODES = (process.env.QAAP_PERF_MODES || 'work-hub,ide').split(',').map(mode => mode.trim()).filter(Boolean);
 const BUILD_SHA = process.env.QAAP_PERF_BUILD_SHA || 'not specified';
 const AUTH_METHOD = process.env.QAAP_PERF_AUTH_METHOD
@@ -176,7 +178,7 @@ async function configureNetwork(page) {
 }
 
 async function waitForMilestone(page, mode) {
-    const target = mode === 'work-hub' ? 'firstUsableComposer' : 'ideShell';
+    const target = isIdeMode(mode) ? 'ideShell' : 'firstUsableComposer';
     await page.waitForFunction(({ target }) => {
         const marks = window.__qaapPerfMarks || {};
         return marks[target] !== undefined || marks.loginGate !== undefined;
@@ -272,7 +274,7 @@ async function captureNavigation(browser, mode, navigation) {
         contextOptions.storageState = process.env.QAAP_PERF_STORAGE_STATE;
     }
     const context = await browser.newContext(contextOptions);
-    const ideSessionSeed = mode === 'ide' ? "sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');\n" : '';
+    const ideSessionSeed = isIdeMode(mode) ? "sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');\n" : '';
     await context.addInitScript(`${ideSessionSeed}${initMarks}`);
 
     const page = await context.newPage();
@@ -447,7 +449,7 @@ function renderSelector(interaction, key = 'selector') {
 }
 
 function renderRun(run) {
-    const readyKey = run.mode === 'work-hub' ? 'firstUsableComposer' : 'ideShell';
+    const readyKey = isIdeMode(run.mode) ? 'ideShell' : 'firstUsableComposer';
     const marks = run.metrics.marks;
     const milestone = marks[readyKey];
     const status = milestone !== undefined ? 'ready' : run.loginRequired ? 'login required' : 'not reached';
@@ -465,7 +467,7 @@ function renderRun(run) {
         `- Time to instant shell composer: ${fmtMs(marks.instantComposerTypeable)}`,
         `- Agent selector open → list: ${renderSelector(run.interaction)}`,
         `- Agent selector open → list once idle: ${renderSelector(run.interaction, 'idleSelector')}`,
-        `- Time to IDE shell: ${fmtMs(run.mode === 'ide' ? milestone : undefined)}`,
+        `- Time to IDE shell: ${fmtMs(isIdeMode(run.mode) ? milestone : undefined)}`,
         `- Navigation TTFB / DOMContentLoaded / load: ${fmtMs(navigation.responseStartMs)} / ${fmtMs(navigation.domContentLoadedMs)} / ${fmtMs(navigation.loadMs)}`,
         `- Navigation transfer / decoded: ${navigation.transferSize ?? '—'} / ${navigation.decodedBodySize ?? '—'} bytes`,
         `- DOM state: ${safeText(JSON.stringify(run.metrics.documentState))}`,
@@ -517,9 +519,9 @@ function findHeadlessShell(root) {
 }
 
 async function main() {
-    const validModes = new Set(['work-hub', 'ide']);
+    const validModes = new Set(['work-hub', 'ide', 'ide-mobile']);
     if (!MODES.length || MODES.some(mode => !validModes.has(mode))) {
-        throw new Error(`QAAP_PERF_MODES must contain work-hub and/or ide; received: ${MODES.join(', ')}`);
+        throw new Error(`QAAP_PERF_MODES must contain work-hub, ide and/or ide-mobile; received: ${MODES.join(', ')}`);
     }
     const browser = await chromium.launch(resolveLaunchOptions());
     const results = [];
@@ -546,9 +548,9 @@ async function main() {
         '|---|---|---:|---:|---:|---:|---:|---:|---:|---|',
         ...results.map(run => {
             const marks = run.metrics.marks;
-            const expected = run.mode === 'work-hub' ? marks.firstUsableComposer : marks.ideShell;
+            const expected = isIdeMode(run.mode) ? marks.ideShell : marks.firstUsableComposer;
             const outcome = expected !== undefined ? 'ready' : run.loginRequired ? 'auth gate; startup not measurable' : 'milestone not reached';
-            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'work-hub' ? marks.composerTypeable : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.mode === 'work-hub' ? renderSelector(run.interaction, 'idleSelector') : '—'} | ${run.documentLoads} | ${outcome} |`;
+            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'work-hub' ? marks.composerTypeable : undefined)} | ${fmtMs(isIdeMode(run.mode) ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.mode === 'work-hub' ? renderSelector(run.interaction, 'idleSelector') : '—'} | ${run.documentLoads} | ${outcome} |`;
         }),
         '',
         ...results.map(renderRun),
