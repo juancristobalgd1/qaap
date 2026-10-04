@@ -12,7 +12,7 @@ import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile, type QaapG
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import type { QaapGithubStoredSession } from '@theia/qaap-shared-core/lib/node/qaap-github-session-store';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
-import { QaapHostedGitPush, type QaapHostedGitPushRequest } from './qaap-hosted-git-push';
+import { QaapHostedGitPush, type QaapHostedGitPushRequest } from '@theia/qaap-shared-core/lib/node/qaap-hosted-git-push';
 
 /** Create the symlink fixture when the host permits it; Windows may require Developer Mode. */
 function createDirectoryLinkIfSupported(target: string, linkPath: string): boolean {

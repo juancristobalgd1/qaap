@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapHostedGitPush, type QaapHostedGitPushRequest } from './qaap-hosted-git-push';
+import type { QaapSealedGitRunOptions } from './qaap-sealed-github-git';
 
 const TOKEN = 'gho_secretTokenForSpec123';
 
@@ -24,9 +25,9 @@ class LocalHostedGitPush extends QaapHostedGitPush {
         return 'file';
     }
 
-    protected override runGit(args: string[], env: NodeJS.ProcessEnv): Promise<string> {
+    protected override runGit(args: string[], env: NodeJS.ProcessEnv, options?: QaapSealedGitRunOptions): Promise<string> {
         this.calls.push({ args, env });
-        return super.runGit(args, env);
+        return super.runGit(args, env, options);
     }
 }
 

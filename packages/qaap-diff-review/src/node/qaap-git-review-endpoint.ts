@@ -33,7 +33,7 @@ import {
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
-import { QaapHostedGitPush, type QaapHostedGitPushRequest } from './qaap-hosted-git-push';
+import { QaapHostedGitPush, type QaapHostedGitPushRequest } from '@theia/qaap-shared-core/lib/node/qaap-hosted-git-push';
 
 interface QaapHostedPushTarget {
     readonly branch: string;
