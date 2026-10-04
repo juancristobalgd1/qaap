@@ -28,9 +28,12 @@ Status: the pinned image dependency and its source-level smoke spec are committe
 now admits only the dedicated `mcp__qaap_browser__*` namespace; unrelated MCP tools and Theia tools
 remain blocked. Agent launch now idempotently registers `qaap_browser` for Claude Code, Codex,
 OpenCode, OpenClaude, Gemini CLI, Antigravity, Copilot CLI, Cursor, Hermes, and QAIQ. The config
-bootstrap writes to the process HOME; tenant backend HOME is currently `/tmp/qaap-home`, so config
-survival across tenant container recreation is not established and remains an open requirement.
-Browser-to-preview live updates, tenant-image build, and runtime verification remain pending.
+bootstrap writes to the process HOME. In tenant backend mode, Qaap links `.claude.json` and each
+harness config directory (including `.claude`, `.codex`, `.gemini`, `.copilot`, `.cursor`, `.hermes`
+and `.config`) from `/tmp/qaap-home` into
+`/home/theia/.qaap/.qaap-agent-storage/home`, so newly registered MCP config is stored on the
+tenant's persistent mount. A fresh-container persistence check is still pending. Browser-to-preview
+live updates, tenant-image build, and runtime verification remain pending.
 
 Validation so far:
 
