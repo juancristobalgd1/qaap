@@ -29,10 +29,14 @@ import {
 import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
+import { QaapTenantPersistentHome, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
+
+/** Agent HOME inside a tenant backend container: the private `/tmp` tmpfs (read-only rootfs). */
+export const QAAP_TENANT_BACKEND_HOME = '/tmp/qaap-home';
 
 /** HOME/USER/LOGNAME for a tenant child plus, inside tenant containers, cache/data relocation vars. */
 export type QaapTenantHomeEnvOverlay = { HOME?: string; USER?: string; LOGNAME?: string } & Record<string, string>;
@@ -765,7 +769,9 @@ export class QaapTenantSpawnService {
             // The tenant image has a read-only rootfs. /tmp is a private per-container tmpfs, so
             // keep agent CLI configuration writable there while caches/data use the tenant mount.
             const user = this.isBackendRoot() ? 'qaap-agent' : 'theia';
-            return { HOME: '/tmp/qaap-home', USER: user, LOGNAME: user, ...this.tenantAgentStorageEnv() };
+            const storageEnv = this.tenantAgentStorageEnv();
+            this.ensurePersistentTenantBackendHome(QAAP_TENANT_BACKEND_HOME);
+            return { HOME: QAAP_TENANT_BACKEND_HOME, USER: user, LOGNAME: user, ...storageEnv };
         }
         if (this.isContainerIsolationEnabled()) {
             // The host-side per-uid HOME is not mounted into a tenant worker. Passing it through
@@ -810,6 +816,39 @@ export class QaapTenantSpawnService {
     }
 
     protected readonly preparedAgentStorageRoots = new Set<string>();
+    protected readonly persistentTenantHomes = new Set<string>();
+
+    /**
+     * Link the CLI credential entries of the tmpfs HOME to the tenant's disk-backed storage, once
+     * per backend process (the tmpfs only resets together with the container). The login terminal,
+     * the auth probe and agent turns all resolve HOME through this overlay, so a sign-in survives a
+     * backend restart, an idle stop and a redeploy. Skipped when the operator disabled the storage.
+     */
+    protected ensurePersistentTenantBackendHome(home: string): void {
+        if (this.persistentTenantHomes.has(home)) {
+            return;
+        }
+        const root = QaapTenantAgentStorageEnv.resolveRoot(process.env, QaapTenantAgentStorageEnv.defaultTenantBackendRoot(process.env));
+        if (!root || !this.preparedAgentStorageRoots.has(root)) {
+            return;
+        }
+        try {
+            const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
+            const owner = identity?.uid !== undefined && identity.uid > 0
+                ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
+                : undefined;
+            this.linkPersistentTenantHome(home, QaapTenantAgentStorageEnv.homeDir(root), owner);
+            this.persistentTenantHomes.add(home);
+        } catch (error) {
+            console.warn(`[qaap-security] could not persist agent sign-in state of ${home}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /** Overridable in tests. */
+    protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): void {
+        QaapTenantPersistentHome.link(home, persistentHome, owner);
+    }
 
     /**
      * Create the storage directories (0700) in this container so the first tool that uses them does
@@ -820,7 +859,7 @@ export class QaapTenantSpawnService {
             return;
         }
         try {
-            for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]) {
+            for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
                 fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
             }
             fs.chmodSync(root, 0o700);
@@ -839,7 +878,7 @@ export class QaapTenantSpawnService {
     protected grantTenantAgentStorageAccess(configRoot: string, root: string, uid: number): void {
         const configAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, configRoot]);
         const rootAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx`, root]);
-        const childAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]);
+        const childAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]);
         if (!configAcl || !rootAcl || !childAcl) {
             throw new Error(`Could not grant agent uid ${uid} access to its private tenant cache at ${root}.`);
         }

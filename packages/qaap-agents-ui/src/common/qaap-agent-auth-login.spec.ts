@@ -138,9 +138,12 @@ describe('qaap-agent-auth-login', () => {
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
                 : 'NO_OPEN_BROWSER=1 cursor-agent login',
         );
-        // BYOK / no login subcommand — routed to Settings, never a bare TUI.
+        expect(resolveAgentLoginCliCommand('openclaude')).to.equal('openclaude auth login');
+        expect(resolveAgentLoginCliCommand('hermes')).to.equal('hermes auth add nous --type oauth --no-browser');
+        // Antigravity runs on Gemini CLI: "Login with Google" preselected, NO_BROWSER prints the link.
+        expect(resolveAgentLoginCliCommand('antigravity')).to.match(/NO_BROWSER/);
+        // QAIQ is the only Settings API-key harness — never a bare TUI.
         expect(resolveAgentLoginCliCommand('qaiq')).to.equal(undefined);
-        expect(resolveAgentLoginCliCommand('antigravity')).to.equal(undefined);
         expect(resolveAgentLoginCliCommand('opencode')).to.equal('opencode auth login -p openai -m \'ChatGPT Pro/Plus (headless)\'');
     });
 
@@ -156,18 +159,20 @@ describe('qaap-agent-auth-login', () => {
         expect(agentHasCliOAuthLogin('opencode')).to.equal(true);
         // BYOK / Settings-catalog agents — no terminal sign-in, no proactive entry.
         expect(agentHasCliOAuthLogin('qaiq')).to.equal(false);
-        // antigravity's `ag` has no login at all (it needs the Antigravity desktop app), so BYOK.
-        expect(agentHasCliOAuthLogin('antigravity')).to.equal(false);
+        // Antigravity signs in with Google through Gemini CLI; OpenClaude and Hermes have their own logins.
+        expect(agentHasCliOAuthLogin('antigravity')).to.equal(true);
+        expect(agentHasCliOAuthLogin('openclaude')).to.equal(true);
+        expect(agentHasCliOAuthLogin('hermes')).to.equal(true);
         expect(agentHasCliOAuthLogin(undefined)).to.equal(false);
         expect(agentHasCliOAuthLogin('')).to.equal(false);
     });
 
-    it('agentNeedsSettingsApiKeyPath is true for BYOK agents and false for OAuth or Shell', () => {
+    it('agentNeedsSettingsApiKeyPath is true for QAIQ only', () => {
         expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);
-        expect(agentNeedsSettingsApiKeyPath('openclaude')).to.equal(true);
-        expect(agentNeedsSettingsApiKeyPath('hermes')).to.equal(true);
-        expect(agentNeedsSettingsApiKeyPath('antigravity')).to.equal(true);
-        expect(agentNeedsSettingsApiKeyPath('gemini')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('openclaude')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('hermes')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('antigravity')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('gemini')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('opencode')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('qwen')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('codex')).to.equal(false);

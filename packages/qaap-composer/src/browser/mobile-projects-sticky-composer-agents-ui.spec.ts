@@ -96,6 +96,19 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         expect(ui.isAgentConnected('missing')).to.equal(false);
     });
 
+    it('does not report a harness whose auth probe has not answered yet as connected', () => {
+        const host = createHost();
+        // `/all?refresh=1` answers with `unknown` while `claude auth status` is still running.
+        host.stickyComposerBackendAgents = [
+            { id: 'claude', label: 'Claude Code', available: true, connectionState: 'unknown' },
+            { id: 'grok', label: 'Grok Build', available: true },
+        ];
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        expect(ui.isAgentConnected('claude')).to.equal(false);
+        expect(ui.isAgentConnected('grok')).to.equal(false);
+    });
+
     describe('loadComposerAgentPickerCatalog', () => {
         type PickerAgents = readonly { readonly id: string; readonly available?: boolean }[];
 

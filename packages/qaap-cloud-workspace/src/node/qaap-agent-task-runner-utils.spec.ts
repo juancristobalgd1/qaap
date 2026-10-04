@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -26,18 +27,50 @@ import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2'
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 import {
     classifyAgentConnectionProbe,
+    GEMINI_CLI_CONNECTION_PROBE_SCRIPT,
     hasAgentSettingsCredentials,
+    resolveAgentConnectionProbe,
     resolveAgentConnectionProbeArgs,
 } from './qaap-agent-task-runner-utils3';
 
 describe('harness connection state', () => {
     const settingsHarnesses: ReadonlyArray<{ readonly id: string; readonly key: string }> = [
         { id: 'qaiq', key: 'ai-features.openAiOfficial.openAiApiKey' },
-        { id: 'openclaude', key: 'ai-features.anthropic.AnthropicApiKey' },
-        { id: 'hermes', key: 'ai-features.openrouter.openrouterApiKey' },
-        { id: 'antigravity', key: 'ai-features.google.apiKey' },
-        { id: 'gemini', key: 'ai-features.google.apiKey' },
     ];
+
+    it('never reports a sign-in harness connected because of a Settings API key', () => {
+        for (const id of ['openclaude', 'hermes', 'antigravity', 'gemini']) {
+            expect(hasAgentSettingsCredentials(id, () => 'tenant-api-key'), id).to.equal(undefined);
+        }
+    });
+
+    it('probes OpenClaude, Hermes and Gemini CLI with their own sign-in state', () => {
+        expect(resolveAgentConnectionProbe('openclaude', 'openclaude')).to.deep.equal({ file: 'openclaude', args: ['auth', 'status'] });
+        // Real `openclaude auth status` output of a signed-out 0.31.0.
+        expect(classifyAgentConnectionProbe('openclaude', 0, '{\n  "loggedIn": false,\n  "authMethod": "none"\n}', false)).to.equal('disconnected');
+        expect(resolveAgentConnectionProbe('hermes', 'hermes')).to.deep.equal({ file: 'hermes', args: ['auth', 'status', 'nous'] });
+        expect(classifyAgentConnectionProbe('hermes', 0, 'nous: logged out', false)).to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('hermes', 0, 'nous: logged in', false)).to.equal('connected');
+        expect(resolveAgentConnectionProbe('antigravity', '/usr/local/bin/gemini')).to.deep.equal({
+            file: 'sh',
+            args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT],
+        });
+        // The community `ag`/`antigravity` CLI has no sign-in of its own.
+        expect(resolveAgentConnectionProbe('antigravity', 'antigravity')).to.equal(undefined);
+    });
+
+    it('reads Gemini CLI sign-in from the credential file in HOME', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-gemini-probe-'));
+        const run = (): string => execFileSync('sh', ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT], { env: { ...process.env, HOME: home } }).toString();
+        try {
+            expect(classifyAgentConnectionProbe('antigravity', 0, run(), false)).to.equal('disconnected');
+            fs.mkdirSync(path.join(home, '.gemini'));
+            fs.writeFileSync(path.join(home, '.gemini', 'oauth_creds.json'), '{"refresh_token":"x"}');
+            expect(classifyAgentConnectionProbe('antigravity', 0, run(), false)).to.equal('connected');
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
 
     for (const harness of settingsHarnesses) {
         it(`reports ${harness.id} disconnected until its tenant API key is saved`, () => {

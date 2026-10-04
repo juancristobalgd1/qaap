@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { migrateQaapProductAgentId, OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID } from './qaap-agent-task-client';
+import { migrateQaapProductAgentId, QAIQ_AGENT_ID } from './qaap-agent-task-client';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
@@ -45,17 +45,20 @@ const AUTH_URL_POLICIES: readonly AuthUrlPolicy[] = [
     // OpenCode's "ChatGPT Pro/Plus (headless)" method prints the same Codex device page.
     { agents: ['codex', 'opencode'], hostname: 'auth.openai.com', path: /^\/(?:codex\/device|device|oauth|authorize)(?:\/|$)/i },
     { agents: ['codex'], hostname: 'chatgpt.com', path: /^\/(?:auth|oauth)(?:\/|$)/i },
-    // Claude Code 2.1.x prints `https://claude.com/cai/oauth/authorize?code=true&…`.
-    { agents: ['claude'], hostname: 'claude.com', path: /^\/(?:cai\/)?oauth\/authorize(?:\/|$)/i },
-    { agents: ['claude'], hostname: 'claude.ai', path: /^\/oauth\/authorize(?:\/|$)/i },
-    { agents: ['claude'], hostname: 'console.anthropic.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
-    { agents: ['claude'], hostname: 'platform.claude.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
+    // Claude Code 2.1.x and OpenClaude (`openclaude auth login`) print `https://claude.com/cai/oauth/authorize?code=true&…`.
+    { agents: ['claude', 'openclaude'], hostname: 'claude.com', path: /^\/(?:cai\/)?oauth\/authorize(?:\/|$)/i },
+    { agents: ['claude', 'openclaude'], hostname: 'claude.ai', path: /^\/oauth\/authorize(?:\/|$)/i },
+    { agents: ['claude', 'openclaude'], hostname: 'console.anthropic.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
+    { agents: ['claude', 'openclaude'], hostname: 'platform.claude.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
     { agents: ['copilot'], hostname: 'github.com', path: /^\/login\/(?:device|oauth|authorize)(?:\/|$)/i },
     // Cursor Agent prints `https://cursor.com/loginDeepControl?challenge=…&uuid=…` and polls for the result.
     { agents: ['cursor'], hostname: 'cursor.com', path: /^\/(?:loginDeepControl|auth|login|oauth|device|authorize)(?:\/|$)/i },
     { agents: ['cursor'], hostname: 'cursor.sh', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
     { agents: ['cursor'], hostname: 'authenticator.cursor.sh', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
+    // Gemini CLI "Login with Google" (NO_BROWSER) prints `accounts.google.com/o/oauth2/v2/auth?…`.
     { agents: ['gemini', 'antigravity'], hostname: 'accounts.google.com', path: /^\/(?:o\/oauth2|signin\/oauth|device)(?:\/|$)/i },
+    // Hermes 0.19 `auth add nous --type oauth` prints `portal.nousresearch.com/manage-subscription?user_code=…`.
+    { agents: ['hermes'], hostname: 'portal.nousresearch.com', path: /^\/(?:manage-subscription|device|oauth|activate)(?:\/|$)/i },
     // Grok 1.0.x `login --device-auth` prints `https://accounts.x.ai/oauth2/device?user_code=…`.
     { agents: ['grok'], hostname: 'accounts.x.ai', path: /^\/oauth2\/device(?:\/|$)/i },
     { agents: ['grok'], hostname: 'auth.x.ai', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
@@ -312,12 +315,39 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
                 : 'NO_OPEN_BROWSER=1 cursor-agent login';
         }
-        // QAIQ, OpenClaude and Hermes run on Settings API keys. Antigravity's `ag` has no login at
-        // all (it talks to a running Antigravity desktop app) and the runner's Gemini fallback reads
-        // GEMINI_API_KEY, so both go to Settings too.
+        case 'openclaude':
+            // OpenClaude 0.31 (the QAIQ image build too) prints the same `claude.com/cai/oauth/authorize`
+            // link as Claude Code, then `Paste code here if prompted >`.
+            return 'openclaude auth login';
+        case 'hermes':
+            // Hermes 0.19 removed `hermes login`; the Nous Portal device-code sign-in prints
+            // `portal.nousresearch.com/manage-subscription?user_code=…` plus the code and polls.
+            return 'hermes auth add nous --type oauth --no-browser';
+        case 'antigravity':
+        case 'gemini':
+            // The harness runs on Gemini CLI, which has no login subcommand: its interactive start
+            // signs in. With "Login with Google" preselected and NO_BROWSER it prints an
+            // `accounts.google.com` link and `Enter the authorization code:` instead of a picker.
+            return resolveGeminiCliLoginCommand();
+        // QAIQ is the only harness that runs on Settings API keys.
         default:
             return undefined;
     }
+}
+
+/** Selects Gemini CLI's "Login with Google" in `~/.gemini/settings.json`, keeping other settings. */
+const GEMINI_CLI_SELECT_GOOGLE_LOGIN_SCRIPT = 'const fs=require("fs"),path=require("path"),file=path.join(require("os").homedir(),".gemini","settings.json");'
+    + 'let settings={};try{settings=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}'
+    + 'settings.security={...settings.security,auth:{...(settings.security||{}).auth,selectedType:"oauth-personal"}};'
+    + 'fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(settings,null,2))';
+
+function resolveGeminiCliLoginCommand(): string {
+    const runtimeProcess = (globalThis as typeof globalThis & {
+        process?: { readonly platform?: string };
+    }).process;
+    return runtimeProcess?.platform === 'win32'
+        ? '$env:NO_BROWSER=\'true\'; gemini'
+        : `node -e '${GEMINI_CLI_SELECT_GOOGLE_LOGIN_SCRIPT}' && NO_BROWSER=true gemini`;
 }
 
 /**
@@ -335,7 +365,8 @@ export const QAAP_AI_FEATURES_SETTINGS_QUERY = 'ai-features';
 
 /**
  * True when the agent signs in with a Settings API key rather than a CLI OAuth / device-code
- * flow. Hosted-blocked localhost-OAuth agents (Cursor) stay out of this path.
+ * flow. Product rule: only QAIQ uses an API key; every other harness gets a sign-in, or a clear
+ * message when its CLI has none — never an "Add API key" action.
  */
 export function agentNeedsSettingsApiKeyPath(agentId: string | undefined): boolean {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
@@ -351,12 +382,6 @@ export function agentNeedsSettingsApiKeyPath(agentId: string | undefined): boole
 /** Harnesses whose background task runner consumes credentials from the user's BYOK settings. */
 const SETTINGS_API_KEY_AGENT_IDS = new Set([
     QAIQ_AGENT_ID,
-    OPENCLAUDE_AGENT_ID,
-    // OpenCode signs in with its own credential manager (`opencode auth login`) and ships free
-    // models, so it never needs the Settings API-key CTA.
-    'hermes',
-    'gemini',
-    'antigravity',
 ]);
 
 export function localizeAddApiKeyInSettingsCta(): string {

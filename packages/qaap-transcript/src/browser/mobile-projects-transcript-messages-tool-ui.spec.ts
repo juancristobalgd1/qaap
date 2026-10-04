@@ -24,6 +24,7 @@ import {
     ensureTranscriptToolSpeculativePlaceholderExtracted,
 } from './mobile-projects-transcript-messages-tool-ui-streaming';
 import { patchTranscriptToolResultStreamBodyExtracted } from './mobile-projects-transcript-messages-tool-ui-timeline';
+import { createTranscriptAgentAuthLoginCardExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -31,6 +32,29 @@ disableImportJSDOM();
 describe('mobile-projects-transcript-messages-tool-ui', () => {
 
     useSuiteJSDOM();
+
+    describe('agent auth-login card', () => {
+        const noop = (): void => undefined;
+        const card = (agentId: string): HTMLElement => createTranscriptAgentAuthLoginCardExtracted(
+            {} as MobileProjectsTranscriptMessagesToolUiContext,
+            { mode: 'api_key' },
+            { agentId, onOpenAgentSignIn: noop, onOpenAiFeaturesSettings: noop },
+        );
+
+        it('offers Settings for a QAIQ API-key error', () => {
+            const qaiq = card('qaiq');
+            expect(qaiq.querySelector('.codicon-settings-gear')).to.not.equal(null);
+            expect(qaiq.querySelector('.codicon-terminal')).to.equal(null);
+        });
+
+        it('offers the CLI sign-in, never Add API key, for every other harness', () => {
+            for (const agentId of ['claude', 'openclaude', 'hermes', 'antigravity']) {
+                const other = card(agentId);
+                expect(other.querySelector('.codicon-settings-gear'), agentId).to.equal(null);
+                expect(other.querySelector('.codicon-terminal'), agentId).to.not.equal(null);
+            }
+        });
+    });
 
     describe('formatTranscriptExecutionTime', () => {
         it('formats sub-second durations as milliseconds', () => {

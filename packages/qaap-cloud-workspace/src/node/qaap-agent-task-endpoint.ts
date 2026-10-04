@@ -22,7 +22,7 @@ import {
     ComposerPromptImproveTimeoutError,
     type QaapImproveComposerPromptRequestBody,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
-import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS, QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
@@ -420,14 +420,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         if (!ctx) {
             return;
         }
-        if (req.query.refresh === '1' || req.query.refresh === 'true') {
+        const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+        if (refresh) {
             this.runner.refreshAgentCatalog();
         }
         // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
         // full task history (with whole prompts in `command`) multiplies into tens of MB per call. Live
         // task groups arrive over the WebSocket snapshot instead.
         const ownerLogin = this.auth.resolveUserLogin(ctx);
-        const agents = await this.runner.listAgentsFresh(ownerLogin);
+        // An explicit refresh (the Connect dialog confirming a sign-in) needs the probe's real
+        // answer; the regular picker load answers within the short default budget.
+        const agents = await (refresh
+            ? this.runner.listAgentsFresh(ownerLogin, QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS)
+            : this.runner.listAgentsFresh(ownerLogin));
         if (res.headersSent || res.writableEnded) {
             return;
         }
