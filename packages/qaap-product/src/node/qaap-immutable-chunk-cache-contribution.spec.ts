@@ -81,6 +81,16 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         expect(sync).to.not.include('patchFrontendChunkImports');
     });
 
+    it('requires fresh compressed JS and CSS entry assets in frontend builds', () => {
+        const sync = fs.readFileSync(
+            path.resolve(__dirname, '../../../../examples/browser/scripts/copy-frontend-static.mjs'),
+            'utf8',
+        );
+        expect(sync).to.include("const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.css']");
+        expect(sync).to.include('Required pre-compressed frontend assets are missing or stale');
+        expect(sync).to.include('fs.renameSync(temporaryGzPath, gzPath)');
+    });
+
     it('resolves packaged legal HTML from the qaap-product resources tree', () => {
         const legalDir = resolveQaapLegalPagesDir();
         expect(path.basename(legalDir)).to.equal('legal');

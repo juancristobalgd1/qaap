@@ -2,7 +2,7 @@
 /**
  * Syncs generated frontend static files into lib/frontend (Qaap login gate + index.html)
  * and creates .gz companion files for large JS/CSS assets so the Express server can serve
- * pre-compressed content (37 MB bundle.js → ~9 MB gzipped).
+ * pre-compressed content without spending CPU compressing each response.
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */
 import fs from 'node:fs';
@@ -189,9 +189,9 @@ if (fs.existsSync(media)) {
 }
 
 // Pre-compress large assets so the Express server (serveGzipped) can serve .gz directly.
-// This converts the 37 MB bundle.js into ~9 MB — a critical mobile performance win.
 const GZIP_EXTS = /\.(js|css|wasm|svg|html|json)$/i;
 const GZIP_MIN_BYTES = 1024; // skip tiny files where gzip overhead isn't worth it
+const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.css'];
 // Level 9 costs several times the CPU of level 6 for ~1-2% smaller output: only worth it
 // for production bundles. Development builds (`npm run bundle`) use level 6. serveGzipped
 // falls back to the uncompressed file when no .gz companion exists, so either is safe.
@@ -209,11 +209,20 @@ async function gzipFile(filePath) {
         const gzMtime = fs.statSync(gzPath).mtimeMs;
         if (gzMtime >= srcMtime) { return; } // already up-to-date
     }
-    await pipeline(
-        fs.createReadStream(filePath),
-        createGzip({ level: GZIP_LEVEL }),
-        fs.createWriteStream(gzPath)
-    );
+    const temporaryGzPath = `${gzPath}.${process.pid}.tmp`;
+    try {
+        await pipeline(
+            fs.createReadStream(filePath),
+            createGzip({ level: GZIP_LEVEL }),
+            fs.createWriteStream(temporaryGzPath)
+        );
+        fs.renameSync(temporaryGzPath, gzPath);
+    } catch (error) {
+        if (fs.existsSync(temporaryGzPath)) {
+            fs.unlinkSync(temporaryGzPath);
+        }
+        throw error;
+    }
 }
 
 const gzipTargets = fs.readdirSync(libFrontend)
@@ -224,6 +233,20 @@ const gzipResults = await Promise.allSettled(gzipTargets.map(gzipFile));
 const failed = gzipResults.filter(r => r.status === 'rejected');
 if (failed.length) {
     console.warn('[qaap] gzip failed for some files:', failed.map(r => r.reason).join(', '));
+}
+
+const missingRequiredGzip = REQUIRED_GZIP_ASSETS.filter(asset => {
+    const sourcePath = path.join(libFrontend, asset);
+    if (!fs.existsSync(sourcePath) || fs.statSync(sourcePath).size < GZIP_MIN_BYTES) {
+        return false;
+    }
+    const gzPath = `${sourcePath}.gz`;
+    return !fs.existsSync(gzPath)
+        || fs.statSync(gzPath).size === 0
+        || fs.statSync(gzPath).mtimeMs < fs.statSync(sourcePath).mtimeMs;
+});
+if (missingRequiredGzip.length) {
+    throw new Error(`[qaap] Required pre-compressed frontend assets are missing or stale: ${missingRequiredGzip.join(', ')}`);
 }
 
 const compressed = gzipTargets.filter((_, i) => gzipResults[i].status === 'fulfilled');
