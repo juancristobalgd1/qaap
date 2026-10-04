@@ -29,7 +29,7 @@ import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
-import { listNativeAgentModels } from './qaap-agent-native-models';
+import { listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -43,6 +43,8 @@ const SSE_HEARTBEAT_MS = 25_000;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
 const WS_PING_MS = 25_000;
 const WS_PATH = `${QAAP_AGENT_TASK_API_PATH}/ws`;
+/** How long the picker's model request waits for a cold native CLI model discovery. */
+const QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS = 1_200;
 
 /** Header carrying the helper-CLI token when an agent calls back to spawn a sub-task. */
 const HELPER_TOKEN_HEADER = 'x-qaap-task-token';
@@ -389,11 +391,28 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // A freshly-created hosted runner can briefly have an empty detected-agent cache even
         // though the native catalog is already available. Keep the read-only picker endpoint
         // useful during that window instead of turning a valid native harness into `models: []`.
+        // Give a cold CLI model discovery (`cursor-agent models`) a moment; past the budget the
+        // curated catalog answers and the discovered one is cached for the next request.
+        await this.withinBudget(prepareNativeAgentModels(agent), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
+        if (res.headersSent || res.writableEnded) {
+            return;
+        }
         const runnerModels = this.runner.listModelsForAgent(agent, login);
         const nativeModels = listNativeAgentModels(agent);
         const models = runnerModels.length > 0 ? runnerModels : nativeModels;
         res.setHeader('Cache-Control', 'no-store');
         res.json({ agent: requestedAgent, models });
+    }
+
+    protected async withinBudget(work: Promise<unknown>, budgetMs: number): Promise<void> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+            work.then(() => undefined, () => undefined),
+            new Promise<void>(resolve => {
+                timer = setTimeout(resolve, budgetMs);
+            }),
+        ]);
+        clearTimeout(timer);
     }
 
     protected async handleListAll(req: Request, res: Response): Promise<void> {
