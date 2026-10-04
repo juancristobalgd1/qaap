@@ -142,6 +142,37 @@ describe('qaap-hosted-git-push', function (): void {
             expect(fs.existsSync(scratch)).to.equal(false);
         });
 
+        it('passes the orchestrator egress proxy to the sealed push and keeps TLS verification on', async () => {
+            const saved = { HTTPS_PROXY: process.env.HTTPS_PROXY, NO_PROXY: process.env.NO_PROXY, GIT_SSL_NO_VERIFY: process.env.GIT_SSL_NO_VERIFY };
+            process.env.HTTPS_PROXY = 'http://qaap-egress-proxy:3128';
+            process.env.NO_PROXY = 'localhost,127.0.0.1,::1';
+            process.env.GIT_SSL_NO_VERIFY = '1';
+            try {
+                const push = new LocalHostedGitPush();
+                await push.push({
+                    objectsDirectory: path.join(project, '.git', 'objects'),
+                    url: `file://${remote}`,
+                    sha: git(project, 'rev-parse', 'HEAD'),
+                    ref: 'refs/heads/main',
+                    token: TOKEN,
+                });
+                const pushCall = push.calls.find(call => call.args.includes('push'))!;
+                expect(pushCall.env.HTTPS_PROXY).to.equal('http://qaap-egress-proxy:3128');
+                expect(pushCall.env.NO_PROXY).to.equal('localhost,127.0.0.1,::1');
+                expect(pushCall.env.GIT_SSL_NO_VERIFY).to.equal(undefined);
+                expect(pushCall.args).to.include('http.proxy=http://qaap-egress-proxy:3128');
+                expect(pushCall.args).to.include('http.sslVerify=true');
+            } finally {
+                for (const [key, value] of Object.entries(saved)) {
+                    if (value === undefined) {
+                        delete process.env[key];
+                    } else {
+                        process.env[key] = value;
+                    }
+                }
+            }
+        });
+
         it('answers credentials only from the token env, for this one push', async () => {
             const push = new LocalHostedGitPush();
             await push.push({

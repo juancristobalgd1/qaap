@@ -26,6 +26,12 @@ export interface QaapHostedGitPushRequest {
 const PUSH_TIMEOUT_MS = 5 * 60 * 1000;
 const PUSH_MAX_BUFFER = 4 * 1024 * 1024;
 const TOKEN_ENV = 'QAAP_GIT_PUSH_TOKEN';
+/**
+ * Egress proxy variables the orchestrator sets on this backend container (`tenantEgressProxyEnv`):
+ * with a tenant egress proxy the tenant has no direct route to github.com. Agents cannot change
+ * this backend's environment, so passing them on is safe.
+ */
+const PROXY_ENV_KEYS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy'] as const;
 
 /**
  * Pushes a hosted project to GitHub with the user's token without the agent uid ever being able to
@@ -66,6 +72,7 @@ export class QaapHostedGitPush {
                 '-c', 'core.hooksPath=/dev/null',
                 '-c', 'protocol.allow=never',
                 '-c', `protocol.${this.allowedProtocol()}.allow=always`,
+                ...this.transportConfig(),
                 '-c', 'credential.helper=',
                 '-c', `credential.helper=!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$${TOKEN_ENV}"; }; f`,
                 'push', '--porcelain', request.url, `${request.sha}:${request.ref}`,
@@ -112,7 +119,16 @@ export class QaapHostedGitPush {
         return 'https';
     }
 
-    /** No inherited git configuration, prompts or helpers; `HOME` is the private scratch directory. */
+    /** TLS verification on and the proxy pinned to this backend's own egress proxy, if any. */
+    protected transportConfig(): string[] {
+        const proxy = (process.env.HTTPS_PROXY || process.env.https_proxy || '').trim();
+        return ['-c', 'http.sslVerify=true', ...(proxy ? ['-c', `http.proxy=${proxy}`] : [])];
+    }
+
+    /**
+     * No inherited git configuration, prompts or helpers; `HOME` is the private scratch directory.
+     * Only `PATH`, the locale and the orchestrator's egress proxy variables are inherited.
+     */
     protected baseEnv(scratch: string): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = {
             HOME: scratch,
@@ -121,7 +137,7 @@ export class QaapHostedGitPush {
             GIT_CONFIG_GLOBAL: '/dev/null',
             GIT_TERMINAL_PROMPT: '0',
         };
-        for (const key of ['PATH', 'LANG', 'LC_ALL']) {
+        for (const key of ['PATH', 'LANG', 'LC_ALL', ...PROXY_ENV_KEYS]) {
             const value = process.env[key];
             if (value) {
                 env[key] = value;
