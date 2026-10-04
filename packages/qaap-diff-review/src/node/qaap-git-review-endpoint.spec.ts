@@ -74,7 +74,36 @@ class TestableGitReviewEndpoint extends QaapGitReviewEndpoint {
     parseWorktreePathsForBranchForTest(porcelain: string, branch: string): string[] {
         return this.parseWorktreePathsForBranch(porcelain, branch);
     }
+
+    pushArgsForTest(args: string[]): string[] {
+        return this.pushArgs(args);
+    }
 }
+
+describe('qaap-git-review-endpoint push credentials', () => {
+    const saved = { QAAP_CLOUD_MODE: process.env.QAAP_CLOUD_MODE, NODE_ENV: process.env.NODE_ENV };
+    beforeEach(() => {
+        delete process.env.NODE_ENV;
+    });
+    afterEach(() => {
+        for (const [key, value] of Object.entries(saved)) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    });
+
+    it('names the tenant GitHub credential helper only for hosted pushes', () => {
+        const endpoint = new TestableGitReviewEndpoint();
+        process.env.QAAP_CLOUD_MODE = 'local';
+        expect(endpoint.pushArgsForTest(['push'])).to.deep.equal(['push']);
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        expect(endpoint.pushArgsForTest(['push', '-u', 'origin', 'b'])).to.deep.equal(
+            ['-c', 'credential.https://github.com.helper=qaap', 'push', '-u', 'origin', 'b']);
+    });
+});
 
 describe('qaap-git-review-endpoint computeFileDiff', function (): void {
     // git subprocess churn � allow slack on slow CI runners.

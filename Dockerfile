@@ -140,9 +140,9 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && rm /tmp/gh.tar.gz \
     && /usr/local/lib/qaap-gh/bin/gh --version \
     && printf '#!/bin/sh\nexec node /app/packages/qaap-shared-core/lib/node/qaap-git-credential-cli.js gh "$@"\n' > /usr/local/bin/gh \
-    && chmod 0755 /usr/local/bin/gh \
-    && git config --system credential.https://github.com.helper \
-        '!node /app/packages/qaap-shared-core/lib/node/qaap-git-credential-cli.js'
+    && printf '#!/bin/sh\nexec node /app/packages/qaap-shared-core/lib/node/qaap-git-credential-cli.js "$@"\n' > /usr/local/bin/git-credential-qaap \
+    && chmod 0755 /usr/local/bin/gh /usr/local/bin/git-credential-qaap \
+    && git config --system credential.https://github.com.helper qaap
 
 WORKDIR /app/examples/browser
 
