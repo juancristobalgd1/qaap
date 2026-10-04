@@ -65,7 +65,7 @@ interface XtermPausedResizeHolder {
     readonly term?: {
         readonly _core?: {
             readonly _renderService?: {
-                readonly _pausedResizeTask?: { clear(): void };
+                readonly _pausedResizeTask?: { set(task: () => void): void };
             };
         };
     };
@@ -79,11 +79,13 @@ interface XtermPausedResizeHolder {
  * is paused, so that call becomes an idle task `() => this._renderer.value.handleResize(...)`
  * which xterm never cancels. Once the core is disposed, `_renderer.value` is undefined and the
  * task threw "Cannot read properties of undefined (reading 'handleResize')" every time the agent
- * login dialog closed. Call after `terminal.dispose()`; nothing can render afterwards.
+ * login dialog closed. xterm 5.3 `DebouncedIdleTask` has no `clear()` (only `set`, which empties
+ * the queue first, and `flush`), so the pending closure is replaced by a no-op.
+ * Call after `terminal.dispose()`; nothing can render afterwards.
  */
 export function cancelDisposedTerminalPausedResize(terminal: TerminalWidget): void {
     try {
-        (terminal as unknown as XtermPausedResizeHolder).term?._core?._renderService?._pausedResizeTask?.clear();
+        (terminal as unknown as XtermPausedResizeHolder).term?._core?._renderService?._pausedResizeTask?.set(() => undefined);
     } catch {
         // Another xterm version without this task has nothing to cancel.
     }

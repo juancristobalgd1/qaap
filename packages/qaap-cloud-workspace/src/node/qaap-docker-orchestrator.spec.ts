@@ -336,6 +336,12 @@ const ENV_KEYS = [
     'QAAP_TENANT_MEMORY_LIMIT',
     'QAAP_TENANT_CPU_LIMIT',
     'QAAP_TENANT_PIDS_LIMIT',
+    'QAAP_TENANT_MEMORY_LIMIT_OVERRIDES',
+    'QAAP_TENANT_CPU_LIMIT_OVERRIDES',
+    'QAAP_TENANT_MEMORY_LIMIT_MAX',
+    'QAAP_TENANT_CPU_LIMIT_MAX',
+    'QAAP_TENANT_PIDS_LIMIT_OVERRIDES',
+    'QAAP_TENANT_PIDS_LIMIT_MAX',
     'QAAP_TENANT_TMPFS_SIZE',
     'QAAP_TENANT_AGENT_STORAGE_ROOT',
     'QAAP_TENANT_CONFIG_ROOT',
@@ -682,6 +688,25 @@ describe('QaapDockerOrchestrator', () => {
             const inspect = withPatchedHostConfig(buildMatchingInspect(orchestrator), { Memory: orchestrator.getTenantMemoryLimit() + 1 });
 
             expect(orchestrator.tenantContainerMatches(inspect, mounts, networkMode)).to.equal(false);
+        });
+
+        it('expects the per-login raised limits only for that login', () => {
+            process.env.QAAP_TENANT_NETWORK_MODE = 'none';
+            process.env.QAAP_TENANT_MEMORY_LIMIT = String(4 * 1024 ** 3);
+            process.env.QAAP_TENANT_MEMORY_LIMIT_OVERRIDES = 'Alice=12g';
+            process.env.QAAP_TENANT_CPU_LIMIT_OVERRIDES = 'alice=4';
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const withLogin = (login: string, memory: number, cpus: number): Dockerode.ContainerInspectInfo => {
+                const inspect = withPatchedHostConfig(buildMatchingInspect(orchestrator), { Memory: memory, NanoCpus: cpus });
+                const raw = inspect as unknown as { Config: { Labels: Record<string, string> } };
+                raw.Config.Labels = { ...raw.Config.Labels, 'com.qaap.tenant-login': login };
+                return inspect;
+            };
+
+            expect(orchestrator.tenantContainerMatches(withLogin('alice', 12 * 1024 ** 3, 4e9), mounts, networkMode)).to.equal(true);
+            expect(orchestrator.tenantContainerMatches(withLogin('alice', 4 * 1024 ** 3, 2e9), mounts, networkMode)).to.equal(false);
+            expect(orchestrator.tenantContainerMatches(withLogin('bob', 4 * 1024 ** 3, 2e9), mounts, networkMode)).to.equal(true);
+            expect(orchestrator.tenantContainerMatches(withLogin('bob', 12 * 1024 ** 3, 4e9), mounts, networkMode)).to.equal(false);
         });
 
         it('rejects a container with a different CPU limit', () => {
