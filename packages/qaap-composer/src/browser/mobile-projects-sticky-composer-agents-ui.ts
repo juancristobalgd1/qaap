@@ -33,6 +33,7 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
+import { readPersistedAgentCatalog, writePersistedAgentCatalog } from './qaap-persisted-agent-catalog';
 
 export interface MobileProjectsStickyComposerAgentsHost {
     stickyComposerPinnedAgentId: string | undefined;
@@ -255,6 +256,9 @@ export class MobileProjectsStickyComposerAgentsUi {
                 }
             }
             this.host.stickyComposerBackendAgents = pickerAgents;
+            if (pickerAgents.length > 0) {
+                writePersistedAgentCatalog(pickerAgents);
+            }
             this.host.stickyComposerQaiqModels = snapshot.qaiqModels;
             const resolved = this.reconcileStickyComposerPinnedAgent(
                 this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
@@ -315,9 +319,14 @@ export class MobileProjectsStickyComposerAgentsUi {
         renderAgentPickerLoadError(chrome.list, onRetry);
     }
 
-    /** Catalog from the last successful sticky-composer refresh (empty until one completed). */
+    /**
+     * Catalog from the last successful sticky-composer refresh; before one completed on this page,
+     * the catalog persisted by an earlier page (empty when there is none).
+     */
     getLoadedStickyComposerAgents(): readonly QaapAgentTaskAgentOption[] {
-        return this.host.stickyComposerBackendAgents;
+        return this.host.stickyComposerBackendAgents.length > 0
+            ? this.host.stickyComposerBackendAgents
+            : readPersistedAgentCatalog();
     }
 
     /**

@@ -14,6 +14,7 @@ import { writeStoredAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsStickyComposerAgentsUi, type MobileProjectsStickyComposerAgentsHost } from './mobile-projects-sticky-composer-agents-ui';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
+import { readPersistedAgentCatalog, writePersistedAgentCatalog } from './qaap-persisted-agent-catalog';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -176,6 +177,48 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
             await flush();
             expect(renders).to.have.length(1);
             expect(errors).to.equal(1);
+        });
+    });
+
+    describe('persisted agent catalog', () => {
+
+        it('paints a fresh page picker from the catalog the last refresh persisted', async () => {
+            const earlier = createHost();
+            earlier.loadBackendAgentSnapshot = async () => ({
+                agents: [{ id: 'codex', label: 'Codex', available: true, connectionState: 'connected' }],
+                agentConfigured: true,
+                qaiqInstalled: false,
+                qaiqModels: [],
+            });
+            await new MobileProjectsStickyComposerAgentsUi(earlier).refreshStickyComposerAgents(project);
+
+            const fresh = createHost();
+            fresh.stickyComposerBackendAgents = [];
+            const loaded = new MobileProjectsStickyComposerAgentsUi(fresh).getLoadedStickyComposerAgents();
+
+            expect(loaded.map(agent => agent.id)).to.include('codex');
+            expect(loaded.find(agent => agent.id === 'codex')?.connectionState).to.equal('connected');
+        });
+
+        it('prefers the catalog loaded on this page over the persisted one', () => {
+            writePersistedAgentCatalog([{ id: 'stale', label: 'Stale', available: true }]);
+            const ui = new MobileProjectsStickyComposerAgentsUi(createHost());
+
+            expect(ui.getLoadedStickyComposerAgents().map(agent => agent.id)).to.deep.equal(['copilot']);
+        });
+
+        it('drops malformed entries and unreadable values', () => {
+            window.localStorage.setItem('qaap.composer.agentCatalog.v1', JSON.stringify([
+                { id: 'codex', label: 'Codex', available: true, extra: 'ignored' },
+                { id: '', label: 'Empty', available: true },
+                { id: 'bad-state', label: 'Bad', available: true, connectionState: 'maybe' },
+                { id: 'no-flag', label: 'No flag' },
+                'codex',
+            ]));
+            expect(readPersistedAgentCatalog()).to.deep.equal([{ id: 'codex', label: 'Codex', available: true }]);
+
+            window.localStorage.setItem('qaap.composer.agentCatalog.v1', '{not json');
+            expect(readPersistedAgentCatalog()).to.deep.equal([]);
         });
     });
 });
