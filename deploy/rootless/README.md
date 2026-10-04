@@ -20,6 +20,13 @@ OAuth, the beta allowlist, and backend-per-tenant isolation enabled.
 - `br_netfilter` is loaded; `qaap-rootless.conf` is installed at
   `/etc/modules-load.d/qaap-rootless.conf` so this survives host reboot.
 
+- Tenants reach the host loopback through slirp4netns (`10.0.2.2` -> `127.0.0.1`).
+  `scripts/qaap-vps-update.sh` installs `qaap-tenant-loopback-guard.{sh,service,timer}`
+  so UID 1000 can reach only the tenant relay on `127.0.0.1:14873`, DNS and
+  established flows on loopback. See "Tenant host loopback guard" in
+  `doc/qaap-ci-invariants.md`. Run host loopback checks such as the `curl` below
+  as root, not as `ubuntu`.
+
 Re-check all mappings, socket permissions and network addresses before using
 this overlay on another machine. Never substitute the privileged rootful socket
 for the rootless socket used by the application.

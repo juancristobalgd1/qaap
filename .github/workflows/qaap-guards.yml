@@ -75,6 +75,10 @@ jobs:
       # The VPS launch gate must accept the SETUID/SETGID agent-uid drop and nothing more.
       - name: Tenant backend isolation check regression
         run: node --test scripts/qaap-tenant-backend-isolation-check.test.js
+      # Fails if the VPS deploy stops installing the rootless tenant host-loopback guard or the
+      # allow-list widens (doc/qaap-ci-invariants.md, "Tenant host loopback guard").
+      - name: Tenant host loopback guard regression
+        run: bash scripts/qaap-tenant-loopback-guard.test.sh
       - name: Required mobile E2E workflow regression
         run: node --test scripts/qaap-mobile-required-ci.test.js
 
