@@ -297,6 +297,61 @@ run_runtime_state_check() {
         --check --container-id "$container_id" --compose-config-stdin
 }
 
+# Rootless tenants reach the host loopback through slirp4netns (10.0.2.2 -> 127.0.0.1) as the
+# rootless UID; without this guard they reached the unauthenticated control plane on :4873.
+# Installs deploy/rootless/qaap-tenant-loopback-guard.* (allow-list: tenant relay, DNS, replies)
+# as a boot-time unit plus a re-assert timer. Idempotent; fails the deploy if a rootless daemon
+# exists but cannot be guarded. QAAP_TENANT_LOOPBACK_GUARD=0 skips it with a warning.
+ensure_tenant_loopback_guard() {
+    local mode="${QAAP_TENANT_LOOPBACK_GUARD:-auto}"
+    local guard_uid="${QAAP_TENANT_LOOPBACK_UID:-1000}"
+    local source="$REPO_DIR/deploy/rootless"
+    local unit_dir="${QAAP_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+    local bin="${QAAP_TENANT_LOOPBACK_GUARD_BIN:-/usr/local/sbin/qaap-tenant-loopback-guard}"
+    local defaults="${QAAP_TENANT_LOOPBACK_GUARD_DEFAULTS:-/etc/default/qaap-tenant-loopback-guard}"
+    local socket="${QAAP_ROOTLESS_DOCKER_SOCKET:-/run/user/$guard_uid/docker.sock}"
+    local -a sudo=()
+    case "$mode" in
+        0|false)
+            echo "[qaap-vps-update] WARNING: QAAP_TENANT_LOOPBACK_GUARD=$mode; tenants may reach host loopback services" >&2
+            return 0
+            ;;
+        auto)
+            if [[ ! -S "$socket" ]]; then
+                echo "[qaap-vps-update] no rootless Docker socket at $socket; tenant loopback guard not needed"
+                return 0
+            fi
+            ;;
+        1|true) ;;
+        *)
+            echo "QAAP_TENANT_LOOPBACK_GUARD must be auto, 1 or 0: $mode" >&2
+            exit 1
+            ;;
+    esac
+    if [[ "$(id -u)" != 0 ]]; then
+        if ! command -v sudo >/dev/null || ! sudo -n true 2>/dev/null; then
+            echo "[qaap-vps-update] installing the tenant loopback guard needs root (or passwordless sudo)" >&2
+            exit 1
+        fi
+        sudo=(sudo -n)
+    fi
+    echo "[qaap-vps-update] installing tenant loopback guard for UID $guard_uid"
+    "${sudo[@]}" install -D -m 0755 "$source/qaap-tenant-loopback-guard.sh" "$bin"
+    "${sudo[@]}" install -D -m 0644 "$source/qaap-tenant-loopback-guard.service" "$unit_dir/qaap-tenant-loopback-guard.service"
+    "${sudo[@]}" install -D -m 0644 "$source/qaap-tenant-loopback-guard.timer" "$unit_dir/qaap-tenant-loopback-guard.timer"
+    # Operator-owned settings: written once, never overwritten (e.g. extra relay ports).
+    if [[ ! -e "$defaults" ]]; then
+        printf 'QAAP_TENANT_LOOPBACK_UID=%s\nQAAP_TENANT_LOOPBACK_ALLOW_TCP=%s\n' \
+            "$guard_uid" "${QAAP_TENANT_LOOPBACK_ALLOW_TCP-14873}" | "${sudo[@]}" tee "$defaults" >/dev/null
+    fi
+    "${sudo[@]}" systemctl daemon-reload
+    "${sudo[@]}" systemctl enable qaap-tenant-loopback-guard.service qaap-tenant-loopback-guard.timer
+    # The unit's apply verifies itself, so a guard that cannot be enforced fails the deploy here.
+    "${sudo[@]}" systemctl restart qaap-tenant-loopback-guard.service
+    "${sudo[@]}" systemctl start qaap-tenant-loopback-guard.timer
+    "${sudo[@]}" sh -c 'set -a; . "$1"; exec "$2" check' qaap-tenant-loopback-guard "$defaults" "$bin"
+}
+
 echo "[qaap-vps-update] repo: $REPO_DIR"
 echo "[qaap-vps-update] branch: $BRANCH"
 
@@ -357,7 +412,8 @@ undo_drain_on_failure() {
 trap undo_drain_on_failure EXIT
 
 drain_agent_turns() {
-    if [[ -z "$(docker compose ps -q theia 2>/dev/null | tr -d '')" ]]; then
+    if [[ -z "$(docker compose ps -q theia 2>/dev/null | tr -d '
+')" ]]; then
         return 0
     fi
     local answer running
@@ -396,6 +452,8 @@ fi
 # this from the environment for the QAAP_BUILD_SHA build arg.
 export QAAP_BUILD_SHA="$BEFORE"
 
+# Guard the host loopback before anything else changes, so a failed release still leaves it closed.
+ensure_tenant_loopback_guard
 # Fail before replacing the old container if runtime state is still in its writable layer.
 run_runtime_state_check
 ensure_caddy_image

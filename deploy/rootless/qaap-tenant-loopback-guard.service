@@ -1,0 +1,21 @@
+# Installed by scripts/qaap-vps-update.sh as /etc/systemd/system/qaap-tenant-loopback-guard.service.
+# Blocks rootless tenant containers (slirp4netns host loopback, 10.0.2.2) from host loopback
+# services except the tenant relay. See doc/qaap-ci-invariants.md ("Tenant host loopback guard").
+[Unit]
+Description=Qaap: block rootless tenant access to host loopback services
+# Firewall-style ordering: in place before networking and therefore before the lingering
+# rootless Docker user service (user@.service runs after network.target). After ufw so the
+# jump is inserted ahead of ufw's "-o lo -j ACCEPT".
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target shutdown.target
+After=local-fs.target ufw.service
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/qaap-tenant-loopback-guard
+ExecStart=/usr/local/sbin/qaap-tenant-loopback-guard apply
+
+[Install]
+WantedBy=multi-user.target
