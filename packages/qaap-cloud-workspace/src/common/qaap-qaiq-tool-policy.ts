@@ -5,8 +5,8 @@
 
 /**
  * QAIQ is a Claude Code / OpenClaude CLI — not the in-browser Theia {@code Coder} agent.
- * VPS runs expose only the built-in coding tools below; Coder skills, IDE functions, and MCP
- * mounts are never available.
+ * VPS runs expose the built-in coding tools below plus the dedicated Qaap browser MCP namespace;
+ * Coder skills and IDE functions are never available.
  */
 
 /** Built-in Claude Code tools QAIQ may use on VPS (no delegation, no IDE bridge).
@@ -32,6 +32,9 @@ export const QAAP_QAIQ_CORE_CODING_TOOLS = [
  * no internet access). SSRF exposure of these tools is controlled separately at the CLI guardrail.
  */
 export const QAAP_QAIQ_NETWORK_TOOLS = ['WebFetch', 'WebSearch'] as const;
+
+/** Browser MCP tools are safe to use without a separate per-navigation approval. */
+export const QAAP_QAIQ_BROWSER_MCP_TOOLS = ['mcp__qaap_browser__*'] as const;
 
 /**
  * QAIQ CLI {@code --disallowed-tools} backup list — delegation, skills, plan/worktree noise,
@@ -118,7 +121,7 @@ export function resolveQaiqCoreToolNames(options: QaapQaiqCoreToolsOptions = {})
         .filter(tool => options.shell !== false || tool !== 'Bash')
         .filter(tool => options.write !== false || !QAAP_QAIQ_WORKSPACE_MUTATING_TOOLS.has(tool));
     // Read-only web tools are always available (see QAAP_QAIQ_NETWORK_TOOLS) — not gated by policy.
-    return [...tools, ...QAAP_QAIQ_NETWORK_TOOLS];
+    return [...tools, ...QAAP_QAIQ_NETWORK_TOOLS, ...QAAP_QAIQ_BROWSER_MCP_TOOLS];
 }
 
 /** {@code --tools} allowlist injected on every QAIQ VPS launch. */
@@ -143,6 +146,9 @@ export function isBlockedTheiaTool(toolName: string): boolean {
         return true;
     }
     const lower = normalized.toLowerCase();
+    if (lower.startsWith('mcp__qaap_browser__')) {
+        return false;
+    }
     if (lower.startsWith('qaap_') || lower.startsWith('mcp__')) {
         return true;
     }
