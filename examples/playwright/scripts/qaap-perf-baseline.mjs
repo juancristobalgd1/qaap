@@ -192,7 +192,14 @@ async function captureNavigation(browser, mode, navigation) {
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120_000 });
     const loginRequired = await waitForMilestone(page, mode);
 
-    const metrics = await page.evaluate(() => ({
+    const metrics = await page.evaluate(() => {
+        const visible = element => {
+            if (!(element instanceof HTMLElement)) return false;
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
+        };
+        return {
         marks: { ...(window.__qaapPerfMarks || {}) },
         navigation: performance.getEntriesByType('navigation').map(entry => ({
             domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd),
@@ -226,7 +233,8 @@ async function captureNavigation(browser, mode, navigation) {
                 }),
             ideShellVisible: !!document.querySelector('#theia-app-shell #theia-main-content-panel'),
         },
-    }));
+        };
+    });
     const requestMetadata = [...network.responses.values()];
     const byUrl = new Map(requestMetadata.map(response => [response.url, response]));
     const resources = metrics.resources.map(resource => ({ ...resource, ...byUrl.get(resource.name) }));
