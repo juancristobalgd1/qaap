@@ -296,14 +296,187 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             available: agent.available !== false && agent.connectionState !== 'disconnected',
         });
     }
-    if (agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id))) {
-        renderAgentPickerSkeleton(chrome.list);
+    // Agent rows never wait for model catalogs: each one is a backend CLI probe that can take
+    // seconds. Paint the rows with whatever models are known, then repaint once all arrived
+    // (stored-model labels and model search results depend on them).
+    const missingModels = agentEntries.some(entry => entry.available !== false
+        && agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id));
+    const paintAgentList = (): void => {
+        const searchResults = buildAgentPickerSearchResults(agentEntries, chrome.searchInput.value);
+        const content = document.createDocumentFragment();
+        const appendAgent = (entry: QaapAgentPickerSearchEntry): void => {
+            const { id: agentId, label } = entry;
+            const agentDescription = resolveAgentPickerDescription(agentId, label);
+            if (entry.available === false) {
+                const agent = options.agents.find(candidate => candidate.id.toLowerCase() === agentId.toLowerCase());
+                const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
+                    && !!ctx.host.readPreference
+                    && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference?.(key));
+                const needsApiKey = missingQaiqByok
+                    || (agent?.available === true && agentNeedsSettingsApiKeyPath(agentId));
+                content.append(createUnavailableAgentSheetOption({
+                    agentId,
+                    label,
+                    description: missingQaiqByok
+                        ? nls.localize(
+                            'qaap/agentPicker/descriptionNeedsProviderKey',
+                            '{0} · API key required',
+                            agentDescription,
+                        )
+                        : resolveAgentPickerConnectionDescription(agentId, label, agentDescription),
+                    actionLabel: nls.localize(
+                        needsApiKey
+                            ? 'qaap/agentPicker/addApiKey'
+                            : 'qaap/agentPicker/connect',
+                        needsApiKey ? 'Add API key' : 'Connect',
+                    ),
+                    onAction: () => {
+                        if (needsApiKey) {
+                            options.onOpenAiFeaturesSettings?.(agentId);
+                        } else {
+                            options.onProactiveLogin?.(agentId, options.project);
+                        }
+                    },
+                }));
+                return;
+            }
+            const hasModels = agentSupportsModelPicker(agentId);
+            const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
+            const storedModel = options.cwd
+                ? ensureStoredAgentModel(options.cwd, agentId, entry.models)
+                : undefined;
+            let displayLabel = label;
+            if (storedModel?.modelId && agentSelected) {
+                displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
+            }
+            const primary = createAgentSheetOptionButton({
+                agentId,
+                label: displayLabel,
+                description: agentDescription,
+                selected: agentSelected,
+                submenuChevron: hasModels ? 'forward' : undefined,
+                onSelect: () => {
+                    void activateAgentPickerEntry({
+                        agentId,
+                        supportsModels: hasModels,
+                        cachedModels: chrome.modelsByAgent.get(agentId),
+                        loadModels: async () => {
+                            const resolved = await ctx.resolveModelsForAgentPickerSafe(agentId);
+                            if (resolved.loadFailed) {
+                                chrome.modelLoadFailedByAgent.set(agentId, true);
+                            } else {
+                                chrome.modelLoadFailedByAgent.delete(agentId);
+                            }
+                            return resolved.models;
+                        },
+                        onLoading: () => {
+                            // Invalidate any in-flight agents-list render so it cannot replace
+                            // this activation skeleton and race the drill-down navigation.
+                            chrome.sheet.dataset.agentPickerRenderGeneration = String(
+                                Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1,
+                            );
+                            renderAgentPickerSkeleton(chrome.list, 5);
+                        },
+                        onModelsResolved: models => chrome.modelsByAgent.set(agentId, models),
+                        onShowModels: () => {
+                            if (chrome.searchInput.value
+                                && !(chrome.modelsByAgent.get(agentId) ?? [])
+                                    .some(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value))) {
+                                chrome.searchInput.value = '';
+                            }
+                            void ctx.renderComposerAgentPicker(chrome, {
+                                ...options,
+                                view: 'models',
+                                modelPickerAgentId: agentId,
+                            });
+                        },
+                        onSelectDirect: () => options.onSelectAgent(agentId),
+                    });
+                },
+            });
+            // A detected/connected harness is ready to use, so keep its row clean. The
+            // connect/configure action is rendered by the unavailable branch above only
+            // when the backend reports that the harness still needs setup.
+            content.append(primary);
+        };
+
+        for (const entry of searchResults.directAgents) {
+            appendAgent(entry);
+        }
+        for (const [groupIndex, group] of searchResults.modelGroups.entries()) {
+            const section = document.createElement('section');
+            section.className = 'theia-qaap-agent-sheet-inline-model-group';
+            section.dataset.agentId = group.agent.id;
+            const heading = document.createElement('div');
+            heading.className = 'theia-qaap-agent-sheet-inline-model-group-heading';
+            const agentHeading = createAgentBrandChip({
+                agentId: group.agent.id,
+                label: group.agent.label,
+            });
+            agentHeading.id = `qaap-agent-model-group-${renderGeneration}-${groupIndex}`;
+            const description = document.createElement('span');
+            description.className = 'theia-qaap-agent-sheet-inline-model-group-description';
+            description.textContent = resolveAgentPickerDescription(group.agent.id, group.agent.label);
+            heading.append(agentHeading, description);
+            section.setAttribute('aria-labelledby', agentHeading.id);
+            section.append(heading);
+            const storedModel = readStoredAgentModel(options.cwd, group.agent.id);
+            const agentSelected = isStickyComposerAgentSelected(
+                group.agent.id,
+                options.selectedAgentId,
+                options.cwd,
+            );
+            for (const model of group.models) {
+                section.append(createAgentPickerInlineModelButton({
+                    agentId: group.agent.id,
+                    model,
+                    selected: agentSelected && isSameAgentModel(storedModel, model),
+                    onSelect: options.onSelectAgent,
+                }));
+            }
+            content.append(section);
+        }
+        const resultCount = searchResults.directAgents.length
+            + searchResults.modelGroups.reduce((count, group) => count + group.models.length, 0);
+        if (agentEntries.length > 0 && resultCount === 0) {
+            content.append(ctx.createAgentPickerNoResultsHint());
+        } else if (agentEntries.length === 0) {
+            const hint = document.createElement('p');
+            hint.className = 'theia-qaap-agent-sheet-empty-models';
+            const agentConfigured = ctx.host.activeTasks?.isAgentConfigured() ?? false;
+            hint.textContent = readQaapHostedRuntime()
+                ? (agentConfigured
+                    ? localizeHostedComposerNoAgentsFilteredMessage()
+                    : localizeHostedComposerNoAgentsMessage())
+                : agentConfigured
+                ? nls.localize(
+                    'qaap/mobileProjects/stickyComposerNoAgentsFiltered',
+                    'Agents were detected on the server but none are selectable in this composer. Restart the backend after installing CLIs (cursor-agent, qaiq, codex, claude, …).',
+                )
+                : nls.localize(
+                    'qaap/mobileProjects/stickyComposerNoAgents',
+                    'No agents are available. Install a VPS agent CLI on PATH (cursor-agent, qaiq, codex, claude) or set QAAP_AGENT_COMMAND, then restart the backend.',
+                );
+            content.append(hint);
+        }
+        replaceAgentPickerLoading(chrome.list, content);
+        const resultButtons = chrome.list.querySelectorAll<HTMLElement>(
+            '.theia-qaap-agent-sheet-option, .theia-qaap-agent-sheet-inline-model',
+        );
+        wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
+        window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));
+    };
+    if (missingModels) {
+        for (const entry of agentEntries) {
+            (entry as { models: readonly QaapQaiqModelOption[] }).models = chrome.modelsByAgent.get(entry.id) ?? [];
+        }
+        paintAgentList();
     }
     await Promise.all(agentEntries.map(async entry => {
         let models = chrome.modelsByAgent.get(entry.id);
         if (models === undefined) {
             if (entry.available !== false && agentSupportsModelPicker(entry.id)) {
-                const resolved = await ctx.resolveModelsForAgentPickerSafe(entry.id);
+                const resolved = await resolveAgentPickerModelsOnce(ctx, chrome, entry.id);
                 models = resolved.models;
                 if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
                     if (resolved.loadFailed) {
@@ -324,168 +497,33 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
         return;
     }
+    paintAgentList();
+}
 
-    const searchResults = buildAgentPickerSearchResults(agentEntries, chrome.searchInput.value);
-    const content = document.createDocumentFragment();
-    const appendAgent = (entry: QaapAgentPickerSearchEntry): void => {
-        const { id: agentId, label } = entry;
-        const agentDescription = resolveAgentPickerDescription(agentId, label);
-        if (entry.available === false) {
-            const agent = options.agents.find(candidate => candidate.id.toLowerCase() === agentId.toLowerCase());
-            const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
-                && !!ctx.host.readPreference
-                && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference?.(key));
-            const needsApiKey = missingQaiqByok
-                || (agent?.available === true && agentNeedsSettingsApiKeyPath(agentId));
-            content.append(createUnavailableAgentSheetOption({
-                agentId,
-                label,
-                description: missingQaiqByok
-                    ? nls.localize(
-                        'qaap/agentPicker/descriptionNeedsProviderKey',
-                        '{0} · API key required',
-                        agentDescription,
-                    )
-                    : resolveAgentPickerConnectionDescription(agentId, label, agentDescription),
-                actionLabel: nls.localize(
-                    needsApiKey
-                        ? 'qaap/agentPicker/addApiKey'
-                        : 'qaap/agentPicker/connect',
-                    needsApiKey ? 'Add API key' : 'Connect',
-                ),
-                onAction: () => {
-                    if (needsApiKey) {
-                        options.onOpenAiFeaturesSettings?.(agentId);
-                    } else {
-                        options.onProactiveLogin?.(agentId, options.project);
-                    }
-                },
-            }));
-            return;
-        }
-        const hasModels = agentSupportsModelPicker(agentId);
-        const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
-        const storedModel = options.cwd
-            ? ensureStoredAgentModel(options.cwd, agentId, entry.models)
-            : undefined;
-        let displayLabel = label;
-        if (storedModel?.modelId && agentSelected) {
-            displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
-        }
-        const primary = createAgentSheetOptionButton({
-            agentId,
-            label: displayLabel,
-            description: agentDescription,
-            selected: agentSelected,
-            submenuChevron: hasModels ? 'forward' : undefined,
-            onSelect: () => {
-                void activateAgentPickerEntry({
-                    agentId,
-                    supportsModels: hasModels,
-                    cachedModels: chrome.modelsByAgent.get(agentId),
-                    loadModels: async () => {
-                        const resolved = await ctx.resolveModelsForAgentPickerSafe(agentId);
-                        if (resolved.loadFailed) {
-                            chrome.modelLoadFailedByAgent.set(agentId, true);
-                        } else {
-                            chrome.modelLoadFailedByAgent.delete(agentId);
-                        }
-                        return resolved.models;
-                    },
-                    onLoading: () => {
-                        // Invalidate any in-flight agents-list render so it cannot replace
-                        // this activation skeleton and race the drill-down navigation.
-                        chrome.sheet.dataset.agentPickerRenderGeneration = String(
-                            Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1,
-                        );
-                        renderAgentPickerSkeleton(chrome.list, 5);
-                    },
-                    onModelsResolved: models => chrome.modelsByAgent.set(agentId, models),
-                    onShowModels: () => {
-                        if (chrome.searchInput.value
-                            && !(chrome.modelsByAgent.get(agentId) ?? [])
-                                .some(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value))) {
-                            chrome.searchInput.value = '';
-                        }
-                        void ctx.renderComposerAgentPicker(chrome, {
-                            ...options,
-                            view: 'models',
-                            modelPickerAgentId: agentId,
-                        });
-                    },
-                    onSelectDirect: () => options.onSelectAgent(agentId),
-                });
-            },
-        });
-        // A detected/connected harness is ready to use, so keep its row clean. The
-        // connect/configure action is rendered by the unavailable branch above only
-        // when the backend reports that the harness still needs setup.
-        content.append(primary);
-    };
+const agentPickerModelLoads = new WeakMap<ComposerAgentPickerChrome, Map<string, Promise<AgentPickerModelLoad>>>();
+type AgentPickerModelLoad = { readonly models: QaapQaiqModelOption[]; readonly loadFailed: boolean };
 
-    for (const entry of searchResults.directAgents) {
-        appendAgent(entry);
+/** One model-catalog request per agent and open picker, shared by re-renders (e.g. search typing) while it is in flight. */
+function resolveAgentPickerModelsOnce(
+    ctx: MobileProjectsStickyComposerSheetsUiContext,
+    chrome: ComposerAgentPickerChrome,
+    agentId: string,
+): Promise<AgentPickerModelLoad> {
+    let loads = agentPickerModelLoads.get(chrome);
+    if (!loads) {
+        loads = new Map();
+        agentPickerModelLoads.set(chrome, loads);
     }
-    for (const [groupIndex, group] of searchResults.modelGroups.entries()) {
-        const section = document.createElement('section');
-        section.className = 'theia-qaap-agent-sheet-inline-model-group';
-        section.dataset.agentId = group.agent.id;
-        const heading = document.createElement('div');
-        heading.className = 'theia-qaap-agent-sheet-inline-model-group-heading';
-        const agentHeading = createAgentBrandChip({
-            agentId: group.agent.id,
-            label: group.agent.label,
+    let load = loads.get(agentId);
+    if (!load) {
+        const started = ctx.resolveModelsForAgentPickerSafe(agentId);
+        load = started;
+        loads.set(agentId, started);
+        void started.then(() => {
+            if (loads?.get(agentId) === started) {
+                loads.delete(agentId);
+            }
         });
-        agentHeading.id = `qaap-agent-model-group-${renderGeneration}-${groupIndex}`;
-        const description = document.createElement('span');
-        description.className = 'theia-qaap-agent-sheet-inline-model-group-description';
-        description.textContent = resolveAgentPickerDescription(group.agent.id, group.agent.label);
-        heading.append(agentHeading, description);
-        section.setAttribute('aria-labelledby', agentHeading.id);
-        section.append(heading);
-        const storedModel = readStoredAgentModel(options.cwd, group.agent.id);
-        const agentSelected = isStickyComposerAgentSelected(
-            group.agent.id,
-            options.selectedAgentId,
-            options.cwd,
-        );
-        for (const model of group.models) {
-            section.append(createAgentPickerInlineModelButton({
-                agentId: group.agent.id,
-                model,
-                selected: agentSelected && isSameAgentModel(storedModel, model),
-                onSelect: options.onSelectAgent,
-            }));
-        }
-        content.append(section);
     }
-    const resultCount = searchResults.directAgents.length
-        + searchResults.modelGroups.reduce((count, group) => count + group.models.length, 0);
-    if (agentEntries.length > 0 && resultCount === 0) {
-        content.append(ctx.createAgentPickerNoResultsHint());
-    } else if (agentEntries.length === 0) {
-        const hint = document.createElement('p');
-        hint.className = 'theia-qaap-agent-sheet-empty-models';
-        const agentConfigured = ctx.host.activeTasks?.isAgentConfigured() ?? false;
-        hint.textContent = readQaapHostedRuntime()
-            ? (agentConfigured
-                ? localizeHostedComposerNoAgentsFilteredMessage()
-                : localizeHostedComposerNoAgentsMessage())
-            : agentConfigured
-            ? nls.localize(
-                'qaap/mobileProjects/stickyComposerNoAgentsFiltered',
-                'Agents were detected on the server but none are selectable in this composer. Restart the backend after installing CLIs (cursor-agent, qaiq, codex, claude, …).',
-            )
-            : nls.localize(
-                'qaap/mobileProjects/stickyComposerNoAgents',
-                'No agents are available. Install a VPS agent CLI on PATH (cursor-agent, qaiq, codex, claude) or set QAAP_AGENT_COMMAND, then restart the backend.',
-            );
-        content.append(hint);
-    }
-    replaceAgentPickerLoading(chrome.list, content);
-    const resultButtons = chrome.list.querySelectorAll<HTMLElement>(
-        '.theia-qaap-agent-sheet-option, .theia-qaap-agent-sheet-inline-model',
-    );
-    wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
-    window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));
+    return load;
 }

@@ -221,17 +221,28 @@ async function measureComposerAndSelector(page) {
     if (!await button.isEnabled({ timeout: 2_000 }).catch(() => false)) {
         return { typeable, selector: { status: 'agent button not available' } };
     }
+    const selector = await timeSelectorOpen(page, button);
+    // A second open once the main thread is idle separates the picker's own cost from startup contention.
+    await page.evaluate(() => new Promise(resolve => requestIdleCallback(() => resolve(undefined), { timeout: 15_000 })));
+    await page.waitForTimeout(500);
+    const idleSelector = await timeSelectorOpen(page, button);
+    return { typeable, selector, idleSelector };
+}
+
+async function timeSelectorOpen(page, button) {
     await page.evaluate(() => { window.__qaapSelectorProbe = { startedAt: performance.now() }; });
     const clickError = await button.click({ timeout: 5_000 }).then(() => undefined, error => error);
     if (clickError) {
         const blocker = /<[^>]+> (?:from <[^>]+> subtree )?intercepts pointer events/.exec(clickError.message);
-        return { typeable, selector: { status: `agent button not clickable${blocker ? `: ${blocker[0]}` : ''}` } };
+        return { status: `agent button not clickable${blocker ? `: ${blocker[0]}` : ''}` };
     }
     const handle = await page.waitForFunction(SELECTOR_PROBE, undefined, { timeout: SELECTOR_TIMEOUT_MS, polling: 16 })
         .catch(() => undefined);
     const selector = handle ? await handle.jsonValue() : { status: `no list within ${SELECTOR_TIMEOUT_MS / 1000} s` };
     await page.keyboard.press('Escape').catch(() => undefined);
-    return { typeable, selector };
+    await page.waitForFunction(() => !document.querySelector('.theia-qaap-agent-sheet-option'), undefined, { timeout: 3_000 })
+        .catch(() => undefined);
+    return selector;
 }
 
 async function captureNavigation(browser, mode, navigation) {
@@ -407,8 +418,8 @@ async function measureMode(browser, mode) {
     return [cold, warm];
 }
 
-function renderSelector(interaction) {
-    const selector = interaction?.selector;
+function renderSelector(interaction, key = 'selector') {
+    const selector = interaction?.[key];
     if (!selector) {
         return '—';
     }
@@ -434,6 +445,7 @@ function renderRun(run) {
         `- Time to first enabled Work Hub control: ${fmtMs(marks.workHubInteractive)}`,
         `- Time to typeable Work Hub composer: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}${run.interaction ? ` (typing ${run.interaction.typeable ? 'accepted' : 'rejected'})` : ''}`,
         `- Agent selector open → list: ${renderSelector(run.interaction)}`,
+        `- Agent selector open → list once idle: ${renderSelector(run.interaction, 'idleSelector')}`,
         `- Time to IDE shell: ${fmtMs(run.mode === 'ide' ? milestone : undefined)}`,
         `- Navigation TTFB / DOMContentLoaded / load: ${fmtMs(navigation.responseStartMs)} / ${fmtMs(navigation.domContentLoadedMs)} / ${fmtMs(navigation.loadMs)}`,
         `- Navigation transfer / decoded: ${navigation.transferSize ?? '—'} / ${navigation.decodedBodySize ?? '—'} bytes`,
@@ -510,13 +522,13 @@ async function main() {
         '',
         `Network: ${NETWORK === '4g' ? '4G emulation (150 ms RTT, 1.6 Mbps down)' : 'unthrottled'}`,
         '',
-        '| Mode | Navigation | Logo | Composer typeable | IDE workbench | Selector open → list | Document loads | Outcome |',
-        '|---|---|---:|---:|---:|---:|---:|---|',
+        '| Mode | Navigation | Logo | Composer typeable | IDE workbench | Selector open → list | Selector once idle | Document loads | Outcome |',
+        '|---|---|---:|---:|---:|---:|---:|---:|---|',
         ...results.map(run => {
             const marks = run.metrics.marks;
             const expected = run.mode === 'work-hub' ? marks.composerTypeable : marks.ideShell;
             const outcome = expected !== undefined ? 'ready' : run.loginRequired ? 'auth gate; startup not measurable' : 'milestone not reached';
-            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.documentLoads} | ${outcome} |`;
+            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.mode === 'work-hub' ? renderSelector(run.interaction, 'idleSelector') : '—'} | ${run.documentLoads} | ${outcome} |`;
         }),
         '',
         ...results.map(renderRun),
