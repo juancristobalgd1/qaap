@@ -56,6 +56,7 @@ examples/playwright/scripts/qaap-composer-activity-stack.spec.mjs
 examples/playwright/scripts/qaap-export-auth-state.mjs
 examples/playwright/scripts/qaap-flow-eval.mjs
 examples/playwright/scripts/qaap-nova-standard-qa-eval.mjs
+examples/playwright/scripts/qaap-perf-baseline.mjs
 examples/playwright/scripts/qaap-rioja-e2e-eval.mjs
 examples/playwright/scripts/qaap-rioja-e2e-shared.mjs
 examples/playwright/scripts/qaap-rioja-ui-flow-eval.mjs
