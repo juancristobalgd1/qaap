@@ -14,10 +14,6 @@ import {
 import {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import {
-    QAAP_AI_FEATURES_SETTINGS_QUERY,
-    localizeAgentSettingsApiKeyLoginMessage,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { resolveAgentConnectionFlow } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
@@ -350,23 +346,6 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
             return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(resolvedAgentId) === true;
         },
     );
-}
-
-export function notifyAgentUsesSettingsApiKeyExtracted(ctx: MobileProjectsPanelContext, agentId: string): void {
-    const message = localizeAgentSettingsApiKeyLoginMessage(resolveAgentDisplayLabel(agentId));
-    const openSettings = nls.localize('qaap/agentLogin/openSettings', 'Open Settings');
-    const openAiFeatures = (): void => {
-        void ctx.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
-    };
-    if (ctx.messageService) {
-        void ctx.messageService.info(message, openSettings).then(action => {
-            if (action === openSettings) {
-                openAiFeatures();
-            }
-        });
-        return;
-    }
-    openAiFeatures();
 }
 
 export async function onDeleteConversationExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,
