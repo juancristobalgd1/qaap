@@ -65,6 +65,7 @@ import {
 } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
@@ -131,6 +132,9 @@ const SKIP_AUTH_DEV_USER = {
 export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
+
+    @inject(QaapApiTokenStore) @optional()
+    protected readonly apiTokens: QaapApiTokenStore | undefined;
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
@@ -378,7 +382,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             const user = await fetchGithubUser(accessToken);
             const previousSessionId = this.auth.resolveSessionId(req);
             if (previousSessionId) {
-                this.sessions.deleteSession(previousSessionId);
+                this.endSession(previousSessionId);
             }
             const sessionId = this.sessions.createSession({ accessToken, user });
             this.setSessionCookie(res, sessionId);
@@ -444,9 +448,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected handleSignOut(req: Request, res: Response): void {
-        this.sessions.deleteSession(this.auth.resolveSessionId(req));
+        this.endSession(this.auth.resolveSessionId(req));
         this.clearSessionCookie(res);
         res.json({ ok: true });
+    }
+
+    /** Deletes a GitHub session and the personal API tokens acting for it. */
+    protected endSession(sessionId: string | undefined): void {
+        this.sessions.deleteSession(sessionId);
+        this.apiTokens?.revokeForSession(sessionId);
     }
 
     protected async handleGithubRepositories(req: Request, res: Response): Promise<void> {

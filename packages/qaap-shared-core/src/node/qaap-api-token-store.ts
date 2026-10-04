@@ -94,6 +94,27 @@ export class QaapApiTokenStore {
         return !!entry && this.getStore().delete(entry[0]);
     }
 
+    /** Deletes every token acting for `sessionId` (sign-out, replaced session). Returns how many. */
+    revokeForSession(sessionId: string | undefined): number {
+        if (!sessionId) {
+            return 0;
+        }
+        return this.getStore().list<QaapApiTokenRecord>()
+            .filter(([key, record]) => record.sessionId === sessionId && this.getStore().delete(key))
+            .length;
+    }
+
+    /**
+     * Deletes the owner's tokens whose GitHub session no longer exists (signed out elsewhere, removed
+     * from the store), so they stop counting toward {@link QAAP_API_TOKEN_MAX_PER_USER} and are not
+     * listed as live. A dead token never authenticates either way. Returns how many were deleted.
+     */
+    revokeWithoutSession(ownerLogin: string, hasSession: (sessionId: string) => boolean, now = Date.now()): number {
+        return this.ownedEntries(ownerLogin, now)
+            .filter(([key, record]) => !hasSession(record.sessionId) && this.getStore().delete(key))
+            .length;
+    }
+
     /** The owner's live tokens; expired ones met on the way are deleted. */
     protected ownedEntries(ownerLogin: string, now = Date.now()): ReadonlyArray<readonly [string, QaapApiTokenRecord]> {
         const owner = ownerLogin.toLowerCase();

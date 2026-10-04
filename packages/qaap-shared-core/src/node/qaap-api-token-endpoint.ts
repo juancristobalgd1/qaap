@@ -9,6 +9,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QAAP_AUTH_API_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QAAP_API_TOKEN_MAX_PER_USER, QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapGithubSessionStore } from './qaap-github-session-store';
 
 /** Under the auth prefix so the per-tenant proxy serves it from the control plane (token store). */
 export const QAAP_API_TOKENS_PATH = `${QAAP_AUTH_API_PATH}/api-tokens`;
@@ -25,6 +26,9 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    @inject(QaapGithubSessionStore)
+    protected readonly sessions: QaapGithubSessionStore;
 
     configure(app: Application): void {
         app.get(QAAP_API_TOKENS_PATH, (req, res) => this.handleList(req, res));
@@ -90,6 +94,7 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
             res.status(401).json({ error: 'Sign in first.' });
             return undefined;
         }
+        this.tokens.revokeWithoutSession(session.stored.user.login, sessionId => !!this.sessions.getSession(sessionId));
         return { login: session.stored.user.login, sessionId: session.sessionId };
     }
 }

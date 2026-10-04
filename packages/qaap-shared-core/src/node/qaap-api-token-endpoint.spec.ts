@@ -20,6 +20,7 @@ import { QaapApiTokenEndpoint } from './qaap-api-token-endpoint';
 import { QAAP_API_TOKEN_MAX_PER_USER, QaapApiTokenStore } from './qaap-api-token-store';
 import { buildQaapPreviewUpstreamHeaders } from './qaap-dev-preview-forward-headers';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 
 interface RecordedResponse {
@@ -49,6 +50,7 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
     let authStoreDir: string;
     let sessions: QaapGithubSessionStore;
     let guard: QaapGithubAuthGuard;
+    let tokens: QaapApiTokenStore;
     let endpoint: QaapApiTokenEndpoint;
     let aliceSession: string;
 
@@ -62,11 +64,11 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
         process.env.QAAP_AUTH_STORE_PATH = path.join(authStoreDir, 'sessions.json');
         delete process.env.QAAP_SQLITE_STORE_PATH;
         sessions = new QaapGithubSessionStore();
-        const tokens = new QaapApiTokenStore();
+        tokens = new QaapApiTokenStore();
         guard = new QaapGithubAuthGuard();
         Object.assign(guard, { sessions, apiTokens: tokens });
         endpoint = new QaapApiTokenEndpoint();
-        Object.assign(endpoint, { tokens, auth: guard });
+        Object.assign(endpoint, { tokens, auth: guard, sessions });
         aliceSession = sessions.createSession({
             accessToken: 'gh-alice',
             user: { provider: 'github', login: 'alice', name: 'Alice' },
@@ -258,5 +260,33 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
         const revoked: RecordedResponse = { statusCode: 200, body: undefined };
         endpoint['handleRevoke']({ method: 'DELETE', headers: cookie(bobSession), params: { id: aliceToken.id } } as unknown as Request, fakeResponse(revoked));
         expect(revoked.statusCode).to.equal(404);
+    });
+
+    it('deletes a session\'s tokens on sign-out and drops dead ones from the list and the cap', () => {
+        const listLabels = (sessionId: string): string[] => {
+            const listed: RecordedResponse = { statusCode: 200, body: undefined };
+            endpoint['handleList']({ method: 'GET', headers: cookie(sessionId) } as unknown as Request, fakeResponse(listed));
+            return (listed.body as { tokens: Array<{ label: string }> }).tokens.map(entry => entry.label);
+        };
+        const laptop = sessions.createSession({ accessToken: 'gh-alice-2', user: { provider: 'github', login: 'alice', name: 'Alice' } });
+        mint(cookie(aliceSession), 'from browser A');
+        mint(cookie(laptop), 'from laptop');
+
+        // Sign-out of the laptop deletes its token, not just the session it pointed to.
+        const oauth = new QaapGithubOauthEndpoint();
+        Object.assign(oauth, { sessions, auth: guard, apiTokens: tokens });
+        oauth['handleSignOut']({ headers: cookie(laptop) } as unknown as Request,
+            { setHeader: () => undefined, json: () => undefined } as unknown as Response);
+        expect(tokens.list('alice').map(entry => entry.label)).to.deep.equal(['from browser A']);
+
+        // A session removed another way (other backend, expiry): its tokens are pruned when the owner manages tokens.
+        const tablet = sessions.createSession({ accessToken: 'gh-alice-3', user: { provider: 'github', login: 'alice', name: 'Alice' } });
+        for (let i = tokens.list('alice').length; i < QAAP_API_TOKEN_MAX_PER_USER; i++) {
+            mint(cookie(tablet), `tablet ${i}`);
+        }
+        expect(mint(cookie(aliceSession)).statusCode).to.equal(409);
+        sessions.deleteSession(tablet);
+        expect(listLabels(aliceSession)).to.deep.equal(['from browser A']);
+        expect(mint(cookie(aliceSession), 'after prune').statusCode).to.equal(201);
     });
 });
