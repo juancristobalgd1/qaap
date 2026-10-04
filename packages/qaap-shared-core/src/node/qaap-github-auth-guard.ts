@@ -49,7 +49,14 @@ export type QaapResolvedRepositoryCwd =
     | { readonly kind: 'denied' };
 
 export type QaapGithubAuthContext =
-    | { readonly kind: 'authenticated'; readonly session: QaapGithubStoredSession; readonly sessionId: string; readonly userLogin: string }
+    | {
+        readonly kind: 'authenticated';
+        readonly session: QaapGithubStoredSession;
+        readonly sessionId: string;
+        readonly userLogin: string;
+        /** Set when a personal API token (not the browser session) authenticated the request. */
+        readonly apiTokenId?: string;
+    }
     | { readonly kind: 'skip'; readonly userLogin: string }
     | { readonly kind: 'unauthorized' };
 
@@ -101,13 +108,24 @@ export class QaapGithubAuthGuard {
             // writable from inside the tenant, so a cookie or API token resolved against them is not.
             return this.authenticateTenantBackend(req) ?? { kind: 'unauthorized' };
         }
-        const session = this.resolveGithubSession(req) ?? this.resolveApiTokenSession(req);
+        const session = this.resolveGithubSession(req);
         if (session) {
             return {
                 kind: 'authenticated',
                 session: session.stored,
                 sessionId: session.sessionId,
                 userLogin: session.stored.user.login,
+            };
+        }
+        const tokenSession = this.resolveApiTokenSession(req);
+        if (tokenSession) {
+            this.logApiTokenUse(req, tokenSession.stored.user.login, tokenSession.tokenId);
+            return {
+                kind: 'authenticated',
+                session: tokenSession.stored,
+                sessionId: tokenSession.sessionId,
+                userLogin: tokenSession.stored.user.login,
+                apiTokenId: tokenSession.tokenId,
             };
         }
         if (this.isSkipAuthEnabled()) {
@@ -418,7 +436,7 @@ export class QaapGithubAuthGuard {
      * `Authorization: Bearer qaap_pat_…` from a headless caller. The token acts for the GitHub
      * session it was created from, so signing out of that session revokes it as well.
      */
-    resolveApiTokenSession(req: QaapAuthRequest): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+    resolveApiTokenSession(req: QaapAuthRequest): { stored: QaapGithubStoredSession; sessionId: string; tokenId: string } | undefined {
         if (this.isTenantBackendMode()) {
             return undefined;
         }
@@ -428,7 +446,24 @@ export class QaapGithubAuthGuard {
         if (!record || !stored || stored.user.login.toLowerCase() !== record.ownerLogin.toLowerCase()) {
             return undefined;
         }
-        return { stored, sessionId: record.sessionId };
+        return { stored, sessionId: record.sessionId, tokenId: record.id };
+    }
+
+    /** Requests already audited, so a handler that authenticates twice logs one `api_token_use`. */
+    protected readonly auditedApiTokenRequests = new WeakSet<object>();
+
+    /** Audit trail for a leaked token: which token id acted, as whom, on which route. Never the secret. */
+    protected logApiTokenUse(req: QaapAuthRequest, userLogin: string, tokenId: string): void {
+        if (this.auditedApiTokenRequests.has(req)) {
+            return;
+        }
+        this.auditedApiTokenRequests.add(req);
+        this.logSecurityEvent('api_token_use', {
+            userLogin,
+            tokenId,
+            method: req.method,
+            path: (req.originalUrl ?? req.url ?? '').split('?')[0],
+        });
     }
 
     /**

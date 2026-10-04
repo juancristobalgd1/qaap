@@ -289,4 +289,24 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
         expect(listLabels(aliceSession)).to.deep.equal(['from browser A']);
         expect(mint(cookie(aliceSession), 'after prune').statusCode).to.equal(201);
     });
+
+    it('audits token create, use and revoke by token id, never the secret', () => {
+        const events: Array<{ event: string; detail: Record<string, unknown> }> = [];
+        guard.logSecurityEvent = (event, detail) => events.push({ event, detail });
+
+        const created = mint(cookie(aliceSession)).body as { token: string; id: string };
+        const request = taskRequest(created.token, '/qaap/api/agent-tasks?limit=5');
+        const ctx = guard.authenticate(request);
+        guard.authenticate(request); // a handler that authenticates twice
+        expect(ctx.kind === 'authenticated' && ctx.apiTokenId).to.equal(created.id);
+        const browser = guard.authenticate({ headers: cookie(aliceSession), method: 'GET', url: '/qaap/api/agent-tasks' });
+        expect(browser.kind === 'authenticated' && browser.apiTokenId).to.equal(undefined);
+        const recorded: RecordedResponse = { statusCode: 200, body: undefined };
+        endpoint['handleRevoke']({ method: 'DELETE', headers: cookie(aliceSession), params: { id: created.id } } as unknown as Request, fakeResponse(recorded));
+
+        expect(events.map(entry => entry.event)).to.deep.equal(['api_token_create', 'api_token_use', 'api_token_revoke']);
+        expect(events.every(entry => entry.detail.tokenId === created.id && entry.detail.userLogin === 'alice')).to.equal(true);
+        expect(events[1].detail).to.include({ method: 'GET', path: '/qaap/api/agent-tasks' });
+        expect(JSON.stringify(events)).to.not.contain(created.token.slice('qaap_pat_'.length));
+    });
 });

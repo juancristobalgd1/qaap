@@ -455,8 +455,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     /** Deletes a GitHub session and the personal API tokens acting for it. */
     protected endSession(sessionId: string | undefined): void {
+        const login = sessionId ? this.sessions.getSession(sessionId)?.user.login : undefined;
         this.sessions.deleteSession(sessionId);
-        this.apiTokens?.revokeForSession(sessionId);
+        const revoked = this.apiTokens?.revokeForSession(sessionId) ?? 0;
+        if (revoked > 0) {
+            this.auth.logSecurityEvent('api_token_revoke', { userLogin: login, count: revoked, reason: 'sign_out' });
+        }
     }
 
     protected async handleGithubRepositories(req: Request, res: Response): Promise<void> {

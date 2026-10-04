@@ -55,6 +55,12 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
             res.status(409).json({ error: `At most ${QAAP_API_TOKEN_MAX_PER_USER} API tokens; revoke one first.` });
             return;
         }
+        this.auth.logSecurityEvent('api_token_create', {
+            userLogin: session.login,
+            tokenId: created.summary.id,
+            label: created.summary.label,
+            expiresAt: new Date(created.summary.expiresAt).toISOString(),
+        });
         res.set('Cache-Control', 'no-store').status(201).json({ token: created.token, ...created.summary });
     }
 
@@ -67,6 +73,7 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
             res.status(404).json({ error: 'Unknown token.' });
             return;
         }
+        this.auth.logSecurityEvent('api_token_revoke', { userLogin: session.login, tokenId: req.params.id });
         res.status(204).end();
     }
 
@@ -94,7 +101,10 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
             res.status(401).json({ error: 'Sign in first.' });
             return undefined;
         }
-        this.tokens.revokeWithoutSession(session.stored.user.login, sessionId => !!this.sessions.getSession(sessionId));
+        const pruned = this.tokens.revokeWithoutSession(session.stored.user.login, sessionId => !!this.sessions.getSession(sessionId));
+        if (pruned > 0) {
+            this.auth.logSecurityEvent('api_token_revoke', { userLogin: session.stored.user.login, count: pruned, reason: 'session_ended' });
+        }
         return { login: session.stored.user.login, sessionId: session.sessionId };
     }
 }
