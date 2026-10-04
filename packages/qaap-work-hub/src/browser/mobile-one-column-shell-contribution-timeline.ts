@@ -196,7 +196,11 @@ export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContribut
     // network, and waiting for it made the avatar switch look like a lost click. The existing
     // workspace is already enough to show the classic IDE; preparation can continue in the
     // background and may still reload/open the correct project when the hub has one selected.
-    const selectedProjectId = ctx.projectsPanel?.getAgentsHubSelectedProjectId?.();
+    // Root the IDE on the project the hub SHOWS. The raw selection is unset until the user picks a
+    // project explicitly; the hub then shows the open workspace, pinned or first project, and
+    // passing undefined made the plan close the workspace ("No Folder Opened").
+    const selectedProjectId = ctx.projectsPanel?.resolveShellProject()?.id
+        ?? ctx.projectsPanel?.getAgentsHubSelectedProjectId();
     ctx.ideFallback.openDesktopIde();
     try {
         await ctx.prepareDesktopIdeWorkspaceFromHub(selectedProjectId);
