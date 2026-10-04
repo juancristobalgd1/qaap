@@ -100,6 +100,19 @@ function patchIndexForFreshAssets(indexPath, buildHash) {
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
+const ENTRY_BUILD_MARKER = /\bQAAP_ENTRY_BUILD(\s*=\s*)"[^"]*"/g;
+
+function stampEntryBuild(filePath, buildHash) {
+    if (!fs.existsSync(filePath)) {
+        return;
+    }
+    const source = fs.readFileSync(filePath, 'utf8');
+    const stamped = source.replace(ENTRY_BUILD_MARKER, `QAAP_ENTRY_BUILD$1"${buildHash}"`);
+    if (stamped !== source) {
+        fs.writeFileSync(filePath, stamped, 'utf8');
+    }
+}
+
 /**
  * Code-split chunks are content-addressed (`chunk-<hash>.js`) and served `immutable`, so their
  * bytes must never change after esbuild hashed them and their imports must stay bare. Never
@@ -182,6 +195,12 @@ patchIndexForFreshAssets(libIndex, BUILD_HASH);
 // on the same fingerprint so either server gets a coherent bundle graph.
 patchIndexForLoginGate(srcIndex);
 patchIndexForFreshAssets(srcIndex, BUILD_HASH);
+// The service worker keys its caches by build and tells pages which build it serves; both the
+// worker and its registration script in index.html are generated before bundling, so they carry
+// an empty marker until here. Rewrite (not just fill) it: src-gen survives rebuilds.
+for (const file of [libIndex, srcIndex, srcServiceWorker, path.join(libFrontend, 'service-worker.js')]) {
+    stampEntryBuild(file, BUILD_HASH);
+}
 
 const media = path.join(root, 'media');
 if (fs.existsSync(media)) {

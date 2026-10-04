@@ -76,6 +76,13 @@ interface PwaManifestConfig {
 
 export class FrontendGenerator extends AbstractGenerator {
 
+    /**
+     * Variable holding the entry bundle fingerprint in the generated service worker and in its
+     * registration script. Generated empty; the post-bundle step rewrites `<marker>="<sha256>"`
+     * once the entry bundle exists (generation runs before bundling).
+     */
+    static readonly ENTRY_BUILD_MARKER = 'QAAP_ENTRY_BUILD';
+
     /** Browser/OS chrome color when `prefers-color-scheme: dark` (VS Code editor background). */
     protected static readonly PWA_THEME_COLOR_DARK = '#1e1e1e';
     /** Browser/OS chrome color when `prefers-color-scheme: light`. */
@@ -309,21 +316,18 @@ export class FrontendGenerator extends AbstractGenerator {
     }
 
     /**
-     * Cache-busting version used in the SW cache keys.  We prefer the package version + a
-     * `BUILD_VERSION` env var (set by CI) so each deployment invalidates the previous shell cache.
-     * Development builds without `BUILD_VERSION` stamp a unique id on each generate so local
-     * rebuilds evict `qaap-runtime-*` / `qaap-shell-*` caches even when the package version is unchanged.
+     * Build id used in the SW cache keys. `BUILD_VERSION` (set by CI) wins. Without it the service
+     * worker falls back at runtime to the entry bundle fingerprint that the post-bundle step stamps
+     * into {@link FrontendGenerator.ENTRY_BUILD_MARKER}, so every distinct bundle still gets its own
+     * caches. Development builds add a generate-time stamp for the case where nothing gets stamped.
      */
-    protected resolveServiceWorkerVersion(): string {
+    protected resolveServiceWorkerBuildVersion(): string {
+        return process.env.BUILD_VERSION?.trim() || process.env.VERCEL_GIT_COMMIT_SHA?.trim() || '';
+    }
+
+    protected resolveServiceWorkerPackageVersion(): string {
         const pkgVersion = (this.pck.pck as { version?: string }).version ?? '0.0.0';
-        const buildId = process.env.BUILD_VERSION?.trim() || process.env.VERCEL_GIT_COMMIT_SHA?.trim();
-        if (buildId) {
-            return `${pkgVersion}+${buildId}`;
-        }
-        if (this.options.mode === 'development') {
-            return `${pkgVersion}+dev-${Date.now()}`;
-        }
-        return pkgVersion;
+        return this.options.mode === 'development' ? `${pkgVersion}+dev-${Date.now()}` : pkgVersion;
     }
 
     /**
@@ -337,9 +341,28 @@ export class FrontendGenerator extends AbstractGenerator {
         const js = [
             '(function(){',
             'if(!(\'serviceWorker\' in navigator))return;',
+            // Fingerprint of the entry bundle this page loads; stamped after bundling (empty if never stamped).
+            `var ${FrontendGenerator.ENTRY_BUILD_MARKER}="";`,
             'var swUrl="./service-worker.js";',
+            'var hadController=!!navigator.serviceWorker.controller;',
+            // `activating`: this page asked a worker to take over; `userReload`: the user accepted the update prompt.
+            'var activating=false,userReload=false,reloaded=false;',
+            // Ask a worker which entry build it serves (empty when unknown or on timeout).
+            'var askBuild=function(worker,cb){var done=false;var finish=function(b){if(!done){done=true;cb(b||"");}};',
+            'try{var ch=new MessageChannel();ch.port1.onmessage=function(e){finish(e.data&&e.data.entryBuild);};',
+            'worker.postMessage({type:"QAAP_SW_BUILD"},[ch.port2]);setTimeout(function(){finish("");},3000);}catch(_){finish("");}};',
+            // Never force a reload on an open tab: publish an update the product UI can offer to the user.
+            'var announce=function(apply){window.__qaapServiceWorkerUpdate={apply:apply};',
+            'try{window.dispatchEvent(new CustomEvent("qaap-service-worker-update"));}catch(_){}};',
+            'var offer=function(worker){askBuild(worker,function(build){',
+            // This page already runs the waiting worker\'s build (e.g. it was just reloaded): activate silently.
+            `if(build&&build===${FrontendGenerator.ENTRY_BUILD_MARKER}){activating=true;worker.postMessage({type:"SKIP_WAITING"});return;}`,
+            'announce(function(){userReload=true;activating=true;worker.postMessage({type:"SKIP_WAITING"});});});};',
             'var register=function(){',
             'navigator.serviceWorker.register(swUrl,{scope:"./"}).then(function(reg){',
+            'if(reg.waiting&&navigator.serviceWorker.controller){offer(reg.waiting);}',
+            'reg.addEventListener("updatefound",function(){var w=reg.installing;if(!w)return;',
+            'w.addEventListener("statechange",function(){if(w.state==="installed"&&navigator.serviceWorker.controller){offer(w);}});});',
             // Periodically poll for updates so long-lived IDE sessions pick up new builds.
             'try{setInterval(function(){reg.update().catch(function(){});},60*60*1000);}catch(_){}}',
             ').catch(function(err){console.warn("[pwa] service worker registration failed (likely insecure context)",err&&err.message||err);});',
@@ -347,15 +370,16 @@ export class FrontendGenerator extends AbstractGenerator {
             // Register ASAP - waiting for `load` delays SW activation, which hurts Chromium's
             // "installability" heuristic (the install banner won't appear until the SW controls the page).
             'if(document.readyState!=="loading"){register();}else{document.addEventListener("DOMContentLoaded",register,{once:true});}',
-            // Reload once when a new SW replaces a previous one so the page is consistent with cached
-            // assets. An uncontrolled first visit was already loaded from the network; reloading it
-            // when `clients.claim()` fires would boot the whole app twice on a cold load.
-            'var hadController=!!navigator.serviceWorker.controller;',
-            'var reloaded=false;',
             'navigator.serviceWorker.addEventListener("controllerchange",function(){',
-            'if(reloaded||!hadController)return;',
-            'if(window.location.search.indexOf("qaap_oauth=")>=0)return;',
-            'reloaded=true;try{location.reload();}catch(_){}});',
+            // An uncontrolled first visit was already loaded from the network; reloading it when
+            // `clients.claim()` fires would boot the whole app twice on a cold load.
+            'if(!hadController){hadController=true;return;}',
+            'if(userReload){if(reloaded||window.location.search.indexOf("qaap_oauth=")>=0)return;reloaded=true;try{location.reload();}catch(_){}return;}',
+            'if(activating)return;',
+            // Another tab activated a newer worker. Offer a reload only if this page runs a different build.
+            'var c=navigator.serviceWorker.controller;if(!c)return;',
+            `askBuild(c,function(build){if(!build||build!==${FrontendGenerator.ENTRY_BUILD_MARKER}){announce(function(){location.reload();});}});`,
+            '});',
             '})();'
         ].join('');
         return `\n  <script type="text/javascript">${js}</script>`;
@@ -364,21 +388,27 @@ export class FrontendGenerator extends AbstractGenerator {
     /**
      * Body of the service worker. Hand-written vanilla JS (NOT bundled), targeting modern evergreen
      * browsers. Strategy:
+     *  - Caches are keyed by build: `BUILD_VERSION`, else the entry bundle fingerprint.
      *  - Precache a tiny app shell (HTML, manifest, icons, login gate) on `install`.
+     *  - The first worker activates at once; an update waits until the page activates it (silently
+     *    when that page already runs the new build, otherwise after the user accepts a reload prompt).
      *  - Navigation requests: network-first, fall back to cached shell when offline (SPA behaviour).
-     *  - Application code (`bundle.js`, webpack chunks, `bundle.css`): network-first, cache as offline fallback.
+     *  - Fingerprinted application code (`chunk-<hash>.js|css`, `bundle.*?qaap-build=<sha256>`):
+     *    cache-first across every build's cache, stored once and only when the server marks it immutable.
+     *  - Other JS/CSS is left to the network and the HTTP cache.
      *  - Other static assets (workers, fonts, media, icons, wasm): stale-while-revalidate.
      *  - Everything else (WebSocket upgrades, plugin endpoints, file streaming, auth, APIs, sourcemaps,
      *    non-GET, Range requests) is passed through to the network untouched.
-     *  - Old version caches are evicted on `activate`.
-     *  - `SKIP_WAITING` message lets the page request immediate activation when the user agrees.
+     *  - Caches of other builds are evicted on `activate`, or, while windows of an older build are
+     *    still open, once every one of those windows has closed or reloaded.
      */
     protected compileServiceWorker(): string {
         const cachePrefix = this.pck.props.frontend.config.applicationName
             ?.toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-+|-+$/g, '') || 'theia';
-        const version = this.resolveServiceWorkerVersion();
+        const buildVersion = this.resolveServiceWorkerBuildVersion();
+        const packageVersion = this.resolveServiceWorkerPackageVersion();
         const appIcon = this.pck.props.frontend.config.applicationIcon?.trim();
         const pwaIcons = this.getPwaManifestConfig()?.icons ?? [];
         const shellExtras = new Set<string>([
@@ -398,19 +428,29 @@ export class FrontendGenerator extends AbstractGenerator {
  * Auto-generated PWA service worker. Edit \`FrontendGenerator.compileServiceWorker\` instead.
  *
  * Caching strategy summary:
+ *   - caches are keyed by build (BUILD_VERSION, else the entry bundle fingerprint).
  *   - install: precache the app shell (index.html, manifest, branding icons).
- *   - activate: evict caches that don't match the current version.
+ *   - activate: evict other builds' caches once no window of an older build is open.
  *   - navigations: network-first with an offline fallback to the cached shell.
- *   - application code (js/css): network-first so a redeploy is always served consistently.
+ *   - fingerprinted js/css: cache-first, written once, only when served as immutable.
+ *   - other js/css: network (HTTP cache), never copied into Cache Storage.
  *   - other static assets (wasm/fonts/media/icons): stale-while-revalidate, same-origin only.
  *   - non-GET, Range requests, WebSocket-adjacent and plugin/file/api endpoints: pass-through.
  */
 'use strict';
 
-const VERSION = ${JSON.stringify(version)};
+// Rewritten after bundling with the sha256 fingerprint of the entry bundle (empty until then).
+const ${FrontendGenerator.ENTRY_BUILD_MARKER} = "";
+const ENTRY_BUILD = /^[a-f0-9]{64}$/.test(${FrontendGenerator.ENTRY_BUILD_MARKER}) ? ${FrontendGenerator.ENTRY_BUILD_MARKER} : '';
+const BUILD_VERSION = ${JSON.stringify(buildVersion)};
+const PACKAGE_VERSION = ${JSON.stringify(packageVersion)};
+const VERSION = PACKAGE_VERSION + (BUILD_VERSION ? '+' + BUILD_VERSION : ENTRY_BUILD ? '+' + ENTRY_BUILD.slice(0, 16) : '');
 const PREFIX = ${JSON.stringify(cachePrefix)};
 const SHELL_CACHE = PREFIX + '-shell-' + VERSION;
 const RUNTIME_CACHE = PREFIX + '-runtime-' + VERSION;
+// Not build-scoped: remembers which windows still need the caches of older builds.
+const META_CACHE = PREFIX + '-sw-meta';
+const RETAINED_CLIENTS_KEY = './__sw-retained-clients';
 const SHELL_ASSETS = ${shellList};
 
 // Endpoints that must never be served from cache. These are dynamic, websocket-adjacent, plugin
@@ -431,16 +471,15 @@ const BYPASS_PATHS = [
     /\\.map$/
 ];
 
-// Application code: bundle.js, webpack chunks and bundle.css. Served network-first so a fresh
-// deploy is always picked up as a consistent whole.
-const SCRIPT_EXT = /\\.(?:js|css)(?:$|\\?)/i;
+// Content-addressed code-split chunks, emitted next to index.html.
+const HASHED_CHUNK = /^chunk-[A-Z0-9]+\\.(?:js|css)$/;
+// Entry assets fingerprinted with the build hash stamped into index.html.
+const FINGERPRINTED_ENTRY = /^(?:bundle\\.js|bundle\\.css|qaap-login-gate\\.js)$/;
+const ENTRY_FINGERPRINT_QUERY = /^\\?qaap-build=[a-f0-9]{64}$/;
 // Immutable-ish assets: safe to serve stale while revalidating.
 const ASSET_EXT = /\\.(?:woff2?|ttf|otf|eot|svg|png|jpg|jpeg|gif|webp|ico|wasm)(?:$|\\?)/i;
 
 self.addEventListener('install', event => {
-    // Take over as soon as installed so a redeployed build reaches open tabs without
-    // waiting for every tab to close (otherwise stale assets linger for the whole session).
-    self.skipWaiting();
     event.waitUntil((async () => {
         const cache = await caches.open(SHELL_CACHE);
         await Promise.all(SHELL_ASSETS.map(async url => {
@@ -451,15 +490,24 @@ self.addEventListener('install', event => {
                 console.warn('[sw] failed to precache', url, err);
             }
         }));
+        // First install: take over at once. An update waits: open tabs keep their own build until
+        // the page activates it (see the registration script), instead of being reloaded under the user.
+        if (!self.registration.active) {
+            await self.skipWaiting();
+        }
     })());
 });
 
 self.addEventListener('activate', event => {
     event.waitUntil((async () => {
-        const names = await caches.keys();
-        await Promise.all(names
-            .filter(name => name.startsWith(PREFIX + '-') && name !== SHELL_CACHE && name !== RUNTIME_CACHE)
-            .map(name => caches.delete(name)));
+        const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        if (windows.length) {
+            // Windows opened on an older build may still lazy-load its chunks: keep its caches
+            // until every one of them has closed or reloaded.
+            await retainOtherBuildCachesFor(windows.map(client => client.id));
+        } else {
+            await deleteOtherBuildCaches();
+        }
         if (self.registration.navigationPreload) {
             try { await self.registration.navigationPreload.enable(); } catch (_) { /* not supported */ }
         }
@@ -472,6 +520,8 @@ self.addEventListener('message', event => {
     if (!data) return;
     if (data === 'SKIP_WAITING' || data.type === 'SKIP_WAITING') {
         self.skipWaiting();
+    } else if (data.type === 'QAAP_SW_BUILD' && event.ports && event.ports[0]) {
+        event.ports[0].postMessage({ entryBuild: ENTRY_BUILD, version: VERSION });
     }
 });
 
@@ -488,32 +538,44 @@ self.addEventListener('fetch', event => {
 
     if (req.mode === 'navigate' || (req.destination === '' && req.headers.get('accept')?.includes('text/html'))) {
         event.respondWith(handleNavigate(event));
+        event.waitUntil(releaseRetainedCaches().catch(() => {}));
         return;
     }
-    if (SCRIPT_EXT.test(url.pathname)) {
-        event.respondWith(networkFirst(req));
+    if (isFingerprinted(url)) {
+        event.respondWith(cacheFirst(event));
         return;
     }
     if (ASSET_EXT.test(url.pathname)) {
-        event.respondWith(staleWhileRevalidate(req));
+        event.respondWith(staleWhileRevalidate(event));
     }
 });
 
-// Network-first for application code. A stale bundle.js references webpack chunk names that a
-// newer deploy no longer serves; that mismatch fails chunk loading and hangs the IDE on the
-// splash screen forever. The cache is only an offline fallback here.
-async function networkFirst(req) {
-    const cache = await caches.open(RUNTIME_CACHE);
-    try {
-        const res = await fetch(req);
-        if (res && res.ok && (res.type === 'basic' || res.type === 'default')) {
-            cache.put(req, res.clone()).catch(() => {});
-        }
-        return res;
-    } catch (_) {
-        const cached = await cache.match(req);
-        return cached || new Response('', { status: 504, statusText: 'Gateway Timeout' });
+function isFingerprinted(url) {
+    const scopePath = new URL(self.registration.scope).pathname;
+    if (!url.pathname.startsWith(scopePath)) return false;
+    const name = url.pathname.slice(scopePath.length);
+    if (HASHED_CHUNK.test(name)) return !url.search;
+    return FINGERPRINTED_ENTRY.test(name) && ENTRY_FINGERPRINT_QUERY.test(url.search);
+}
+
+function isStorable(res) {
+    return !!res && res.ok && (res.type === 'basic' || res.type === 'default');
+}
+
+// Cache-first for content-addressed code. The lookup spans every build's cache so a window still
+// on the previous build keeps loading the chunks it already used after a deploy removed them from
+// the server. Only responses the server marks immutable are stored (an outdated entry fingerprint
+// is revalidated by the server and must not be pinned), and each URL is written once.
+async function cacheFirst(event) {
+    const req = event.request;
+    const cached = await caches.match(req);
+    if (cached) return cached;
+    const res = await fetch(req);
+    if (isStorable(res) && /(?:^|[,\\s])immutable(?:$|[,\\s])/i.test(res.headers.get('cache-control') || '')) {
+        const copy = res.clone();
+        event.waitUntil(caches.open(RUNTIME_CACHE).then(cache => cache.put(req, copy)).catch(() => {}));
     }
+    return res;
 }
 
 async function handleNavigate(event) {
@@ -529,16 +591,65 @@ async function handleNavigate(event) {
     }
 }
 
-async function staleWhileRevalidate(req) {
+function sameRepresentation(a, b) {
+    const etag = a.headers.get('etag');
+    if (etag) return etag === b.headers.get('etag');
+    const modified = a.headers.get('last-modified');
+    return !!modified && modified === b.headers.get('last-modified');
+}
+
+async function staleWhileRevalidate(event) {
+    const req = event.request;
     const cache = await caches.open(RUNTIME_CACHE);
     const cached = await cache.match(req);
-    const network = fetch(req).then(res => {
-        if (res && res.ok && (res.type === 'basic' || res.type === 'default')) {
-            cache.put(req, res.clone()).catch(() => {});
+    const network = fetch(req).then(async res => {
+        // Revalidation that returns the bytes already cached must not rewrite the entry.
+        if (isStorable(res) && !(cached && sameRepresentation(cached, res))) {
+            await cache.put(req, res.clone()).catch(() => {});
         }
         return res;
     }).catch(() => undefined);
-    return cached || (await network) || new Response('', { status: 504, statusText: 'Gateway Timeout' });
+    if (cached) {
+        event.waitUntil(network);
+        return cached;
+    }
+    return (await network) || new Response('', { status: 504, statusText: 'Gateway Timeout' });
+}
+
+function isOtherBuildCache(name) {
+    return name.startsWith(PREFIX + '-') && name !== SHELL_CACHE && name !== RUNTIME_CACHE && name !== META_CACHE;
+}
+
+async function deleteOtherBuildCaches() {
+    const names = await caches.keys();
+    await Promise.all(names.filter(isOtherBuildCache).map(name => caches.delete(name)));
+}
+
+async function readRetainedClients() {
+    const res = await (await caches.open(META_CACHE)).match(RETAINED_CLIENTS_KEY);
+    if (!res) return [];
+    try {
+        const ids = await res.json();
+        return Array.isArray(ids) ? ids : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+async function retainOtherBuildCachesFor(clientIds) {
+    const ids = [...new Set([...(await readRetainedClients()), ...clientIds])];
+    const meta = await caches.open(META_CACHE);
+    await meta.put(RETAINED_CLIENTS_KEY, new Response(JSON.stringify(ids), { headers: { 'Content-Type': 'application/json' } }));
+}
+
+// Called on navigations: once no window that was open at activation remains, drop older builds.
+async function releaseRetainedCaches() {
+    const retained = await readRetainedClients();
+    if (!retained.length) return;
+    const open = new Set((await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).map(client => client.id));
+    if (retained.some(id => open.has(id))) return;
+    await deleteOtherBuildCaches();
+    await (await caches.open(META_CACHE)).delete(RETAINED_CLIENTS_KEY);
 }
 
 // Web Push (Qaap): show notifications when the tab is in the background.

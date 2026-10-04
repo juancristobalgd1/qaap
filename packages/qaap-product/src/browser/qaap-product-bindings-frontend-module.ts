@@ -21,6 +21,7 @@ import { QaapGettingStartedWidget } from './qaap-getting-started-widget';
 import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
+import { QaapServiceWorkerUpdateContribution } from './qaap-service-worker-update-contribution';
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
 import { rebindQaapPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-preferences-contribution';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
@@ -37,6 +38,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
 
     bind(QaapWorkspaceSafetyDefaultsContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapWorkspaceSafetyDefaultsContribution);
+
+    bind(QaapServiceWorkerUpdateContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapServiceWorkerUpdateContribution);
 
     bind(QaapPluginCompatibilityPreferenceContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapPluginCompatibilityPreferenceContribution);
