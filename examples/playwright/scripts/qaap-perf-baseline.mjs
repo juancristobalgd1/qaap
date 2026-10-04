@@ -11,6 +11,10 @@ const MODES = (process.env.QAAP_PERF_MODES || 'work-hub,ide').split(',').map(mod
 const BUILD_SHA = process.env.QAAP_PERF_BUILD_SHA || 'not specified';
 const AUTH_METHOD = process.env.QAAP_PERF_AUTH_METHOD
     || (process.env.QAAP_PERF_STORAGE_STATE ? 'Playwright storage state (QAAP_PERF_STORAGE_STATE)' : 'not specified');
+// CDP throttling is attached to the page target only; fetches a service worker makes on the
+// page's behalf bypass it, and the worker's first-visit claim can reload the page mid-boot.
+// Block workers by default so every byte is throttled and each run is a single document.
+const SERVICE_WORKERS = process.env.QAAP_PERF_SERVICE_WORKERS === 'allow' ? 'allow' : 'block';
 const MILESTONE_TIMEOUT_MS = Number(process.env.QAAP_PERF_MILESTONE_TIMEOUT_MS || 120_000);
 const AUTH_SETTLE_MS = 3_000;
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
@@ -171,7 +175,7 @@ async function captureNavigation(browser, mode, navigation) {
     const contextOptions = {
         ...(isIde ? devices['Desktop Chrome'] : devices['Pixel 7']),
         viewport: isIde ? IDE_VIEWPORT : MOBILE_VIEWPORT,
-        serviceWorkers: 'allow',
+        serviceWorkers: SERVICE_WORKERS,
     };
     if (process.env.QAAP_PERF_STORAGE_STATE) {
         contextOptions.storageState = process.env.QAAP_PERF_STORAGE_STATE;
@@ -181,6 +185,8 @@ async function captureNavigation(browser, mode, navigation) {
     await context.addInitScript(`${ideSessionSeed}${initMarks}`);
 
     const page = await context.newPage();
+    const documentLoads = { count: 0 };
+    page.on('domcontentloaded', () => documentLoads.count++);
     const consoleMessages = [];
     page.on('console', message => {
         const text = message.text();
@@ -249,15 +255,17 @@ async function captureNavigation(browser, mode, navigation) {
         resources,
         rpcTimings: network.rpcTimings.sort((a, b) => b.durationMs - a.durationMs),
         consoleMessages,
+        documentLoads: documentLoads.count,
     };
 
-    return { result, context, page, network };
+    return { result, context, page, network, documentLoads };
 }
 
 async function measureMode(browser, mode) {
-    const { result: cold, context, page, network } = await captureNavigation(browser, mode, 'cold');
+    const { result: cold, context, page, network, documentLoads } = await captureNavigation(browser, mode, 'cold');
     const consoleMessages = [...cold.consoleMessages];
     await page.waitForTimeout(1_000);
+    documentLoads.count = 0;
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 120_000 });
     const loginRequired = await waitForMilestone(page, mode);
     const metrics = await page.evaluate(() => ({
@@ -323,6 +331,7 @@ async function measureMode(browser, mode) {
         resources,
         rpcTimings: network.rpcTimings.sort((a, b) => b.durationMs - a.durationMs),
         consoleMessages,
+        documentLoads: documentLoads.count,
     };
     await network.cdp.detach();
     await context.close();
@@ -340,6 +349,7 @@ function renderRun(run) {
         '',
         `- Emulation: ${run.device}; viewport: ${run.viewport.width}×${run.viewport.height}; throttling: 4G (150 ms RTT, 1.6 Mbps down, 750 Kbps up).`,
         `- Result: ${status}`,
+        `- Document loads: ${run.documentLoads}${run.documentLoads > 1 ? ' — the page reloaded during the run; marks are relative to the last document and understate the real time' : ''}`,
         `- Time to logo: ${fmtMs(marks.logo)}`,
         `- Time to first interactive Work Hub screen: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}`,
         `- Time to IDE shell: ${fmtMs(run.mode === 'ide' ? milestone : undefined)}`,
@@ -383,26 +393,23 @@ async function main() {
         `Endpoint: ${BASE_URL}`, 
         `Build: ${BUILD_SHA}`,
         `Authentication: ${AUTH_METHOD}`,
+        `Service workers: ${SERVICE_WORKERS === 'block' ? 'blocked (every request throttled; HTTP cache only on warm reload)' : 'allowed (worker fetches bypass CDP throttling; numbers are optimistic)'}`,
         '',
-        '| Mode | Navigation | Logo | Work Hub usable | IDE shell | Outcome |',
-        '|---|---|---:|---:|---:|---|',
+        '| Mode | Navigation | Logo | Work Hub usable | IDE shell | Document loads | Outcome |',
+        '|---|---|---:|---:|---:|---:|---|',
         ...results.map(run => {
             const marks = run.metrics.marks;
             const expected = run.mode === 'work-hub' ? marks.workHubInteractive : marks.ideShell;
             const outcome = expected !== undefined ? 'ready' : run.loginRequired ? 'auth gate; startup not measurable' : 'milestone not reached';
-            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${outcome} |`;
+            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.documentLoads} | ${outcome} |`;
         }),
         '',
         ...results.map(renderRun),
     ].join('\n');
 
     await fs.mkdir(path.dirname(OUTPUT), { recursive: true });
-    if (PHASE !== 'baseline') {
-        const existing = await fs.readFile(OUTPUT, 'utf8').catch(() => '');
-        await fs.writeFile(OUTPUT, `${existing}\n\n${section}\n`, 'utf8');
-    } else {
-        await fs.writeFile(OUTPUT, `${section}\n`, 'utf8');
-    }
+    // Always append: a later run must never erase the measurements it is compared against.
+    await fs.appendFile(OUTPUT, `\n\n${section}\n`, 'utf8');
     console.log(`Saved ${PHASE} performance measurements to ${OUTPUT}`);
 }
 
