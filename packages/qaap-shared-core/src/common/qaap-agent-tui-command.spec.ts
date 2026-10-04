@@ -109,7 +109,10 @@ describe('resolveAgentConnectionFlow', () => {
     it('signs the Gemini alias in with Google through Gemini CLI, never with an API key', () => {
         const flow = resolveAgentConnectionFlow('gemini');
         expect(flow.kind).to.equal('cli-login');
-        expect(flow.kind === 'cli-login' && flow.command).to.match(/selectedType:"oauth-personal".*&& NO_BROWSER=true gemini$/);
+        // The tenant terminal is POSIX; on a Windows desktop the same flow runs in PowerShell.
+        expect(flow.kind === 'cli-login' && flow.command).to.match(process.platform === 'win32'
+            ? /\$env:NO_BROWSER='true'; gemini$/
+            : /selectedType:"oauth-personal".*&& NO_BROWSER=true gemini$/);
     });
 
     it('offers the Settings API-key route to QAIQ only', () => {
