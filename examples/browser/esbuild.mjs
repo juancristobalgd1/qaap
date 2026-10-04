@@ -8,6 +8,7 @@ import { exposeModulePlugin } from '@theia/bundle-plugin';
 import esbuild from 'esbuild';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,6 +46,28 @@ const { 'editor.worker': editorWorkerEntry, 'plugin-worker': pluginWorkerEntry, 
  * chunks (modulePreloadPlugin below): preloaded modules are fetched and parsed
  * concurrently but only evaluated when the ordered `import()` reaches them.
  */
+/**
+ * Qaap bundle shims: swap two upstream imports that drag about 2 MB of rarely used JavaScript into
+ * startup (evaluated on every load, IDE and Work Hub alike) for same-API modules in
+ * `@theia/qaap-product/lib/browser/bundle-shims` (see the doc comment of each shim):
+ * - `highlight.js` (all 190 languages, only used by the Markdown preview) -> common languages only;
+ * - `date-fns/locale` (every locale, looked up by `nls.locale` in ai-chat-ui) -> the reachable ones.
+ * Exact-specifier match only, so the shims' own deep imports resolve normally.
+ */
+const qaapRequire = createRequire(import.meta.url);
+const QAAP_BUNDLE_SHIMS = {
+    'highlight.js': '@theia/qaap-product/lib/browser/bundle-shims/qaap-highlight-common',
+    'date-fns/locale': '@theia/qaap-product/lib/browser/bundle-shims/qaap-date-fns-locales',
+};
+const qaapBundleShimsPlugin = {
+    name: 'qaap-bundle-shims',
+    setup(build) {
+        build.onResolve({ filter: /^(highlight\.js|date-fns\/locale)$/ }, args => ({
+            path: qaapRequire.resolve(QAAP_BUNDLE_SHIMS[args.path]),
+        }));
+    },
+};
+
 const esmDiInteropPlugin = {
     name: 'qaap-esm-di-interop',
     setup(build) {
@@ -284,7 +307,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin],
+    plugins: [qaapBundleShimsPlugin, esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin],
 };
 const workerOptions = {
     ...browserOptions,
