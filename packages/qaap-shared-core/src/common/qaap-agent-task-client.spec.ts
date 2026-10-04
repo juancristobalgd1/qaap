@@ -6,6 +6,8 @@
 import { expect } from 'chai';
 import { buildCreateAgentTaskBody, extractBackendAgentMention, hashString, isOpencodeAgent, isQaiqAgent, usesStructuredAgentTranscript, isStickyComposerAgentSelected, isTheiaCoderMention, stripNonCoderAgentMention, normalizeBackendAgentId, migrateLegacyBackendAgentId, migrateStoredComposerAgentId, QAIQ_AGENT_ID, mergeAgentTaskAgentOptions, mergeComposerAgentPickerOptions, listQaapComposerPickerAgents, migrateQaapProductAgentId, QAAP_PRIMARY_AGENT_ID, reconcileSelectedAgent, reconcileStickyComposerAgent, resolveAgentOptionId, resolveBackendAgentForTurn, resolveExplicitAgentForSubmit, resolveQaapAgentMentionToken, normalizeOpenCodeModelOptions, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
+import { QAAP_HARNESS_DEFINITIONS } from './qaap-builtin-agents';
+import { QAAP_DEFAULT_DISABLED_HARNESS_IDS } from './qaap-harness-preferences';
 
 describe('qaap-agent-task-client', () => {
     afterEach(() => {
@@ -108,6 +110,22 @@ describe('qaap-agent-task-client', () => {
         const codex = agents.find(agent => agent.id === 'codex');
         expect(codex?.available).to.equal(false);
         expect(agents.find(agent => agent.id === 'qaiq')?.available).to.equal(true);
+    });
+
+    it('listQaapComposerPickerAgents lists every defined harness under the default preference', () => {
+        const detected = ['qaiq', 'antigravity', 'claude', 'codex', 'openclaude', 'opencode']
+            .map(id => ({ id, label: id, available: true }));
+        const agents = listQaapComposerPickerAgents(detected, [...QAAP_DEFAULT_DISABLED_HARNESS_IDS]);
+        expect(agents.map(agent => agent.id).sort()).to.deep.equal(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort());
+        for (const id of ['grok', 'copilot', 'cursor', 'hermes']) {
+            expect(agents.find(agent => agent.id === id)?.available, id).to.equal(false);
+        }
+    });
+
+    it('listQaapComposerPickerAgents keeps hosted-restricted Cursor listed but not selectable', () => {
+        rememberQaapHostedRuntime(true);
+        const agents = listQaapComposerPickerAgents([{ id: 'cursor', label: 'Cursor Agent', available: true }]);
+        expect(agents.find(agent => agent.id === 'cursor')?.available).to.equal(false);
     });
 
     it('listQaapComposerPickerAgents honors harnesses disabled in AI Configuration', () => {
