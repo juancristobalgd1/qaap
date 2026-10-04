@@ -71,6 +71,8 @@ const BROTLI_CONTENT_TYPES: Record<string, string> = {
     '.wasm': 'application/wasm',
     '.svg': 'image/svg+xml',
     '.json': 'application/json',
+    '.ttf': 'font/ttf',
+    '.eot': 'application/vnd.ms-fontobject',
 };
 
 /**

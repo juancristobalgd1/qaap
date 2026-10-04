@@ -68,6 +68,10 @@ describe('QaapFrontendStaticServer brotli', () => {
             expect(qaapBrotliCandidatePath('/chunk-ABC123.css', false)).to.equal('/chunk-ABC123.css');
             expect(qaapBrotliCandidatePath('/editor.worker.js', false)).to.equal('/editor.worker.js');
             expect(qaapBrotliCandidatePath('/vscode-oniguruma.wasm', false)).to.equal('/vscode-oniguruma.wasm');
+            expect(qaapBrotliCandidatePath('/chunk-ABC123.ttf', false)).to.equal('/chunk-ABC123.ttf');
+            expect(qaapBrotliCandidatePath('/chunk-ABC123.eot', false)).to.equal('/chunk-ABC123.eot');
+            // woff/woff2 are compressed formats already: never a .br lookup.
+            expect(qaapBrotliCandidatePath('/chunk-ABC123.woff2', false)).to.equal(undefined);
         });
 
         it('rejects nested, queried, traversing and non-compressible paths', () => {

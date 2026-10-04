@@ -210,6 +210,9 @@ if (fs.existsSync(media)) {
 // Pre-compress large assets so the backend serves them without compressing per response:
 // `.br` (QaapFrontendStaticServer, when the client accepts brotli) and `.gz` (core serveGzipped).
 const GZIP_EXTS = /\.(js|css|wasm|svg|html|json)$/i;
+// Stylesheet fonts emitted as `chunk-<hash>.ttf|eot` (esbuild.mjs) are uncompressed sfnt: brotli only,
+// since core's serveGzipped never looks up their `.gz`. woff/woff2 are compressed already.
+const BROTLI_ONLY_EXTS = /\.(ttf|eot)$/i;
 const GZIP_MIN_BYTES = 1024; // skip tiny files where gzip overhead isn't worth it
 const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.css'];
 // Level 9 costs several times the CPU of level 6 for ~1-2% smaller output: only worth it
@@ -228,7 +231,8 @@ function createBrotli(filePath, size) {
         params: {
             [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
             [zlibConstants.BROTLI_PARAM_SIZE_HINT]: size,
-            [zlibConstants.BROTLI_PARAM_MODE]: /\.wasm$/i.test(filePath) ? zlibConstants.BROTLI_MODE_GENERIC : zlibConstants.BROTLI_MODE_TEXT,
+            [zlibConstants.BROTLI_PARAM_MODE]: BROTLI_ONLY_EXTS.test(filePath) ? zlibConstants.BROTLI_MODE_FONT
+                : /\.wasm$/i.test(filePath) ? zlibConstants.BROTLI_MODE_GENERIC : zlibConstants.BROTLI_MODE_TEXT,
         },
     });
 }
@@ -265,9 +269,14 @@ const gzipTargets = fs.readdirSync(libFrontend)
     .filter(f => GZIP_EXTS.test(f))
     .map(f => path.join(libFrontend, f));
 
+const brotliTargets = [
+    ...gzipTargets,
+    ...fs.readdirSync(libFrontend).filter(f => BROTLI_ONLY_EXTS.test(f)).map(f => path.join(libFrontend, f)),
+];
+
 const [gzipResults, brotliResults] = await Promise.all([
     Promise.allSettled(gzipTargets.map(gzipFile)),
-    Promise.allSettled(gzipTargets.map(brotliFile)),
+    Promise.allSettled(brotliTargets.map(brotliFile)),
 ]);
 const failed = [...gzipResults, ...brotliResults].filter(r => r.status === 'rejected');
 if (failed.length) {
