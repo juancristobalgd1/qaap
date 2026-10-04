@@ -11,11 +11,11 @@ import { BackendApplicationServer, BackendApplicationPath, EarlyExpressMiddlewar
 
 /**
  * esbuild emits content-addressed frontend chunks as `chunk-<hash>.(js|css)`, optionally followed
- * by a `.map` sourcemap suffix and/or a precompressed `.gz` suffix. Any file matching this pattern
+ * by a `.map` sourcemap suffix and/or a precompressed `.gz` / `.br` suffix. Any file matching this pattern
  * is safe to cache forever: a content change always produces a new hash, so the old URL is never
  * reused for different bytes.
  */
-const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(js|css)(\.map)?(\.gz)?$/;
+const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(js|css)(\.map)?(\.gz|\.br)?$/;
 
 /** @internal Exported for unit tests only. Accepts URL paths and filesystem paths alike. */
 export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
@@ -61,6 +61,44 @@ export function qaapIsCurrentFrontendEntryAssetRequest(requestUrl: string, curre
 /** @internal Exported for unit tests only. Reads the entry fingerprint stamped into index.html. */
 export function qaapReadFrontendEntryBuildHash(indexHtml: string): string | undefined {
     return /[?&]qaap-build=([a-f0-9]{64})(?![a-f0-9])/.exec(indexHtml)?.[1];
+}
+
+/** Content types of the frontend assets the build pre-compresses with brotli (`<file>.br`). */
+const BROTLI_CONTENT_TYPES: Record<string, string> = {
+    '.js': 'text/javascript',
+    '.css': 'text/css',
+    '.wasm': 'application/wasm',
+    '.svg': 'image/svg+xml',
+    '.json': 'application/json',
+};
+
+/**
+ * @internal Exported for unit tests only. URL path of a top-level frontend asset that may have a
+ * pre-compressed `.br` sibling, or `undefined`. `url` is `req.url` after the early entry-fingerprint
+ * normalization and possibly after core's `serveGzipped` appended `.gz` (pass `gzipped`).
+ */
+export function qaapBrotliCandidatePath(url: string, gzipped: boolean): string | undefined {
+    const assetUrl = gzipped && url.endsWith('.gz') ? url.slice(0, -'.gz'.length) : url;
+    // A remaining query would make the .br lookup ambiguous; keep the default handling.
+    if (!assetUrl.startsWith('/') || /[?#\\]/.test(assetUrl)) {
+        return undefined;
+    }
+    let decoded: string;
+    try {
+        decoded = decodeURIComponent(assetUrl);
+    } catch {
+        return undefined;
+    }
+    // Only files directly under lib/frontend are pre-compressed by the build.
+    if (decoded.lastIndexOf('/') !== 0 || decoded === '/' || decoded.includes('\0')) {
+        return undefined;
+    }
+    return BROTLI_CONTENT_TYPES[path.posix.extname(decoded).toLowerCase()] ? decoded : undefined;
+}
+
+/** @internal Exported for unit tests only. Base name of a served file without its pre-compression suffix. */
+export function qaapUncompressedBaseName(filePath: string): string {
+    return path.basename(filePath).replace(/\.(gz|br)$/, '');
 }
 
 /** @internal Exported for unit tests only. */
@@ -116,6 +154,10 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
     }
 
     configure(app: express.Application): void {
+        const frontendDir = path.join(BackendApplicationPath, 'lib', 'frontend');
+        // Registered after core's serveGzipped routes and after the early middleware (where the
+        // isolated preview host is answered), so only the IDE origin's own static files get here.
+        app.use((req, res, next) => this.serveBrotli(req, res, next, frontendDir));
         const legalDir = resolveQaapLegalPagesDir();
         app.use('/legal', express.static(legalDir, {
             index: false,
@@ -124,14 +166,49 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
                 res.setHeader('X-Content-Type-Options', 'nosniff');
             },
         }));
-        const frontendDir = path.join(BackendApplicationPath, 'lib', 'frontend');
         app.use(express.static(frontendDir, {
             setHeaders: (res, filePath) => this.setStaticHeaders(res, filePath, frontendDir),
         }));
     }
 
+    /**
+     * Serves the build's `<asset>.br` sibling when the client accepts brotli. Caddy passes an
+     * already-encoded response through, so phones get brotli instead of gzip. Falls back to the
+     * gzip/raw handling whenever the `.br` file is missing.
+     */
+    protected async serveBrotli(req: express.Request, res: express.Response, next: express.NextFunction, frontendDir: string): Promise<void> {
+        const assetPath = await this.brotliAssetPath(req, res, frontendDir);
+        if (assetPath) {
+            req.url = assetPath + '.br';
+            res.set('Content-Encoding', 'br');
+            res.set('Content-Type', BROTLI_CONTENT_TYPES[path.posix.extname(assetPath).toLowerCase()]);
+        }
+        next();
+    }
+
+    protected async brotliAssetPath(req: express.Request, res: express.Response, frontendDir: string): Promise<string | undefined> {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+            return undefined;
+        }
+        const assetPath = qaapBrotliCandidatePath(req.url, res.get('Content-Encoding') === 'gzip');
+        if (!assetPath || req.acceptsEncodings('br') !== 'br') {
+            return undefined;
+        }
+        const brotliPath = path.join(frontendDir, assetPath + '.br');
+        return path.dirname(brotliPath) === frontendDir && await this.isFile(brotliPath) ? assetPath : undefined;
+    }
+
+    protected async isFile(filePath: string): Promise<boolean> {
+        try {
+            return (await fs.promises.stat(filePath)).isFile();
+        } catch {
+            return false;
+        }
+    }
+
     protected setStaticHeaders(res: express.Response, filePath: string, frontendDir: string): void {
-        const base = path.basename(filePath);
+        // Pre-compressed siblings (`.gz`, `.br`) carry the headers of the file they encode.
+        const base = qaapUncompressedBaseName(filePath);
         const topLevel = path.dirname(filePath) === frontendDir;
         // serveGzipped picks the `.gz` sibling from Accept-Encoding; shared caches must key on it,
         // especially for the year-long public entries below.

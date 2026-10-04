@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Syncs generated frontend static files into lib/frontend (Qaap login gate + index.html)
- * and creates .gz companion files for large JS/CSS assets so the Express server can serve
+ * and creates .gz and .br companion files for large JS/CSS assets so the Express server can serve
  * pre-compressed content without spending CPU compressing each response.
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */
@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { createGzip } from 'node:zlib';
+import { constants as zlibConstants, createBrotliCompress, createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
 
@@ -207,7 +207,8 @@ if (fs.existsSync(media)) {
     fs.cpSync(media, path.join(libFrontend, 'media'), { recursive: true });
 }
 
-// Pre-compress large assets so the Express server (serveGzipped) can serve .gz directly.
+// Pre-compress large assets so the backend serves them without compressing per response:
+// `.br` (QaapFrontendStaticServer, when the client accepts brotli) and `.gz` (core serveGzipped).
 const GZIP_EXTS = /\.(js|css|wasm|svg|html|json)$/i;
 const GZIP_MIN_BYTES = 1024; // skip tiny files where gzip overhead isn't worth it
 const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.css'];
@@ -218,40 +219,59 @@ const PRODUCTION = process.argv.includes('--production')
     || process.argv.some((arg, i, argv) => arg === '--mode=production' || (arg === '--mode' && argv[i + 1] === 'production'))
     || process.env.NODE_ENV === 'production';
 const GZIP_LEVEL = PRODUCTION ? 9 : 6;
+// Brotli 11 is ~15-20% smaller than gzip 9 on these bundles but slow to compress: production
+// only. Quality 5 still beats gzip 6 at a similar cost. Missing .br falls back to .gz.
+const BROTLI_QUALITY = PRODUCTION ? 11 : 5;
 
-async function gzipFile(filePath) {
+function createBrotli(filePath, size) {
+    return createBrotliCompress({
+        params: {
+            [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
+            [zlibConstants.BROTLI_PARAM_SIZE_HINT]: size,
+            [zlibConstants.BROTLI_PARAM_MODE]: /\.wasm$/i.test(filePath) ? zlibConstants.BROTLI_MODE_GENERIC : zlibConstants.BROTLI_MODE_TEXT,
+        },
+    });
+}
+
+async function precompressFile(filePath, suffix, createCompressor) {
     const stat = fs.statSync(filePath);
     if (stat.size < GZIP_MIN_BYTES) { return; }
-    const gzPath = filePath + '.gz';
+    const compressedPath = filePath + suffix;
     const srcMtime = stat.mtimeMs;
-    if (fs.existsSync(gzPath)) {
-        const gzMtime = fs.statSync(gzPath).mtimeMs;
-        if (gzMtime >= srcMtime) { return; } // already up-to-date
+    if (fs.existsSync(compressedPath)) {
+        const compressedMtime = fs.statSync(compressedPath).mtimeMs;
+        if (compressedMtime >= srcMtime) { return; } // already up-to-date
     }
-    const temporaryGzPath = `${gzPath}.${process.pid}.tmp`;
+    const temporaryPath = `${compressedPath}.${process.pid}.tmp`;
     try {
         await pipeline(
             fs.createReadStream(filePath),
-            createGzip({ level: GZIP_LEVEL }),
-            fs.createWriteStream(temporaryGzPath)
+            createCompressor(filePath, stat.size),
+            fs.createWriteStream(temporaryPath)
         );
-        fs.renameSync(temporaryGzPath, gzPath);
+        fs.renameSync(temporaryPath, compressedPath);
     } catch (error) {
-        if (fs.existsSync(temporaryGzPath)) {
-            fs.unlinkSync(temporaryGzPath);
+        if (fs.existsSync(temporaryPath)) {
+            fs.unlinkSync(temporaryPath);
         }
         throw error;
     }
 }
 
+const gzipFile = filePath => precompressFile(filePath, '.gz', () => createGzip({ level: GZIP_LEVEL }));
+const brotliFile = filePath => precompressFile(filePath, '.br', createBrotli);
+
 const gzipTargets = fs.readdirSync(libFrontend)
-    .filter(f => GZIP_EXTS.test(f) && !f.endsWith('.gz'))
+    .filter(f => GZIP_EXTS.test(f))
     .map(f => path.join(libFrontend, f));
 
-const gzipResults = await Promise.allSettled(gzipTargets.map(gzipFile));
-const failed = gzipResults.filter(r => r.status === 'rejected');
+const [gzipResults, brotliResults] = await Promise.all([
+    Promise.allSettled(gzipTargets.map(gzipFile)),
+    Promise.allSettled(gzipTargets.map(brotliFile)),
+]);
+const failed = [...gzipResults, ...brotliResults].filter(r => r.status === 'rejected');
 if (failed.length) {
-    console.warn('[qaap] gzip failed for some files:', failed.map(r => r.reason).join(', '));
+    console.warn('[qaap] pre-compression failed for some files:', failed.map(r => r.reason).join(', '));
 }
 
 const missingRequiredGzip = REQUIRED_GZIP_ASSETS.filter(asset => {
@@ -259,10 +279,12 @@ const missingRequiredGzip = REQUIRED_GZIP_ASSETS.filter(asset => {
     if (!fs.existsSync(sourcePath) || fs.statSync(sourcePath).size < GZIP_MIN_BYTES) {
         return false;
     }
-    const gzPath = `${sourcePath}.gz`;
-    return !fs.existsSync(gzPath)
-        || fs.statSync(gzPath).size === 0
-        || fs.statSync(gzPath).mtimeMs < fs.statSync(sourcePath).mtimeMs;
+    return ['.gz', '.br'].some(suffix => {
+        const compressedPath = `${sourcePath}${suffix}`;
+        return !fs.existsSync(compressedPath)
+            || fs.statSync(compressedPath).size === 0
+            || fs.statSync(compressedPath).mtimeMs < fs.statSync(sourcePath).mtimeMs;
+    });
 });
 if (missingRequiredGzip.length) {
     throw new Error(`[qaap] Required pre-compressed frontend assets are missing or stale: ${missingRequiredGzip.join(', ')}`);
@@ -273,9 +295,10 @@ if (compressed.length) {
     const sizes = compressed.map(f => {
         const orig = fs.statSync(f).size;
         const gz = fs.existsSync(f + '.gz') ? fs.statSync(f + '.gz').size : orig;
-        return `${path.basename(f)}: ${(orig / 1e6).toFixed(1)} MB → ${(gz / 1e6).toFixed(1)} MB`;
+        const br = fs.existsSync(f + '.br') ? fs.statSync(f + '.br').size : gz;
+        return `${path.basename(f)}: ${(orig / 1e6).toFixed(1)} MB → gz ${(gz / 1e6).toFixed(1)} MB, br ${(br / 1e6).toFixed(1)} MB`;
     });
-    console.log('[qaap] gzipped:', sizes.join(', '));
+    console.log('[qaap] pre-compressed:', sizes.join(', '));
 }
 
 // Stale code-split chunks are pruned by esbuild.mjs (qaap-prune-stale-chunks) right after the

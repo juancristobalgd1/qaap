@@ -18,7 +18,7 @@ import {
 
 describe('qaap-immutable-chunk-cache-contribution patterns', () => {
 
-    it('matches hashed chunk js/css assets, including .map and .gz suffixes', () => {
+    it('matches hashed chunk js/css assets, including .map, .gz and .br suffixes', () => {
         const samples = [
             '/chunk-ABCD1234.js',
             '/chunk-ABCD1234.css',
@@ -27,6 +27,8 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
             '/chunk-ABCD1234.js.gz',
             '/chunk-ABCD1234.css.gz',
             '/chunk-ABCD1234.js.map.gz',
+            '/chunk-ABCD1234.js.br',
+            '/chunk-ABCD1234.css.br',
             '/chunk-A1B2C3D4.js',
         ];
         for (const sample of samples) {
@@ -123,7 +125,9 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         );
         expect(sync).to.include("const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.css']");
         expect(sync).to.include('Required pre-compressed frontend assets are missing or stale');
-        expect(sync).to.include('fs.renameSync(temporaryGzPath, gzPath)');
+        expect(sync).to.include("['.gz', '.br'].some(suffix");
+        expect(sync).to.include('fs.renameSync(temporaryPath, compressedPath)');
+        expect(sync).to.include("precompressFile(filePath, '.br', createBrotli)");
     });
 
     it('resolves packaged legal HTML from the qaap-product resources tree', () => {
