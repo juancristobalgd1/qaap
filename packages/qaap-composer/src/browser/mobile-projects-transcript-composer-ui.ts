@@ -293,13 +293,13 @@ export class MobileProjectsTranscriptComposerUi {
             this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
         }
         const loadAgentCatalog = (): void => {
-            this.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
             this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
-            void this.ensureTranscriptComposerAgentsLoaded(project, { force: true }).then(agents => {
-                if (this.host.transcriptComposerAgentSheet !== chrome.sheet) {
-                    return;
-                }
-                void this.host.stickyComposerSheetsUi.renderComposerAgentPicker(chrome, {
+            this.host.stickyComposerAgentsUi.loadComposerAgentPickerCatalog(chrome, {
+                cached: this.host.transcriptComposerBackendAgents,
+                load: () => this.ensureTranscriptComposerAgentsLoaded(project, { force: true }),
+                isCurrent: () => this.host.transcriptComposerAgentSheet === chrome.sheet,
+                onError: () => this.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog),
+                render: agents => void this.host.stickyComposerSheetsUi.renderComposerAgentPicker(chrome, {
                 view: 'agents',
                 cwd,
                 agents,
@@ -345,11 +345,7 @@ export class MobileProjectsTranscriptComposerUi {
                         void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                     }
                     : undefined,
-                });
-            }).catch(() => {
-                if (this.host.transcriptComposerAgentSheet === chrome.sheet) {
-                    this.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog);
-                }
+                }),
             });
         };
         loadAgentCatalog();
