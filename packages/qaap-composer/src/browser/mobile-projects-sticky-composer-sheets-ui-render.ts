@@ -233,13 +233,13 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
             scheduleStickyComposerPopoverPosition(chrome.sheet, anchor, ctx.agentPopoverAlign);
         }
         const loadAgentCatalog = (): void => {
-            ctx.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
             ctx.syncAgentPickerPopoverPosition(chrome.sheet);
-            void ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }).then(agents => {
-                if (ctx.host.stickyComposerAgentSheet !== chrome.sheet) {
-                    return;
-                }
-                void ctx.renderComposerAgentPicker(chrome, {
+            ctx.host.stickyComposerAgentsUi.loadComposerAgentPickerCatalog(chrome, {
+                cached: ctx.host.stickyComposerAgentsUi.getLoadedStickyComposerAgents(),
+                load: () => ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }),
+                isCurrent: () => ctx.host.stickyComposerAgentSheet === chrome.sheet,
+                onError: () => ctx.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog),
+                render: agents => void ctx.renderComposerAgentPicker(chrome, {
                 view: 'agents',
                 cwd,
                 agents,
@@ -278,11 +278,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                         void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                     }
                     : undefined,
-                });
-            }).catch(() => {
-                if (ctx.host.stickyComposerAgentSheet === chrome.sheet) {
-                    ctx.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog);
-                }
+                }),
             });
         };
         loadAgentCatalog();
@@ -326,13 +322,13 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: MobileProjectsSti
                 'Pick who should design the variant, then a model if available. The task starts right after.',
             );
         const loadAgentCatalog = (): void => {
-            ctx.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
             ctx.syncAgentPickerPopoverPosition(chrome.sheet);
-            void ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }).then(agents => {
-                if (ctx.host.stickyComposerAgentSheet !== chrome.sheet) {
-                    return;
-                }
-                void ctx.renderComposerAgentPicker(chrome, {
+            ctx.host.stickyComposerAgentsUi.loadComposerAgentPickerCatalog(chrome, {
+                cached: ctx.host.stickyComposerAgentsUi.getLoadedStickyComposerAgents(),
+                load: () => ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }),
+                isCurrent: () => ctx.host.stickyComposerAgentSheet === chrome.sheet,
+                onError: () => ctx.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog),
+                render: agents => void ctx.renderComposerAgentPicker(chrome, {
                     view: 'agents',
                     cwd,
                     agents,
@@ -374,11 +370,7 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: MobileProjectsSti
                             void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
                         : undefined,
-                });
-            }).catch(() => {
-                if (ctx.host.stickyComposerAgentSheet === chrome.sheet) {
-                    ctx.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog);
-                }
+                }),
             });
         };
         loadAgentCatalog();

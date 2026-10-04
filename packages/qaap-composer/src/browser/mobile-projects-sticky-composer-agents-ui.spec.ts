@@ -13,6 +13,7 @@ import { expect } from 'chai';
 import { writeStoredAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsStickyComposerAgentsUi, type MobileProjectsStickyComposerAgentsHost } from './mobile-projects-sticky-composer-agents-ui';
+import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -92,5 +93,89 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         expect(ui.isAgentConnected('codex')).to.equal(true);
         expect(ui.isAgentConnected('opencode')).to.equal(false);
         expect(ui.isAgentConnected('missing')).to.equal(false);
+    });
+
+    describe('loadComposerAgentPickerCatalog', () => {
+        type PickerAgents = readonly { readonly id: string; readonly available?: boolean }[];
+
+        function createChrome(): ComposerAgentPickerChrome {
+            return {
+                list: document.createElement('div'),
+                header: document.createElement('div'),
+            } as unknown as ComposerAgentPickerChrome;
+        }
+
+        const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+        it('paints the cached catalog before the backend answers and skips an unchanged refresh', async () => {
+            const ui = new MobileProjectsStickyComposerAgentsUi(createHost());
+            const renders: PickerAgents[] = [];
+            let finishLoad: (agents: PickerAgents) => void = () => undefined;
+            const cached = [{ id: 'codex', label: 'Codex', available: true }];
+            ui.loadComposerAgentPickerCatalog(createChrome(), {
+                cached,
+                load: () => new Promise(resolve => { finishLoad = resolve as (agents: PickerAgents) => void; }),
+                isCurrent: () => true,
+                render: agents => renders.push(agents),
+                onError: () => expect.fail('cached catalog must not show the error state'),
+            });
+
+            expect(renders).to.have.length(1);
+            expect(renders[0].map(agent => agent.id)).to.include('codex');
+            finishLoad(ui.getComposerAgentPickerAgents(cached));
+            await flush();
+            expect(renders).to.have.length(1);
+        });
+
+        it('repaints a changed catalog unless the user drilled into a model list', async () => {
+            const cached = [{ id: 'codex', label: 'Codex', available: true }];
+            const refreshed = [{ id: 'codex', label: 'Codex', available: false, connectionState: 'disconnected' as const }];
+            for (const drilledDown of [false, true]) {
+                const ui = new MobileProjectsStickyComposerAgentsUi(createHost());
+                const chrome = createChrome();
+                const renders: PickerAgents[] = [];
+                ui.loadComposerAgentPickerCatalog(chrome, {
+                    cached,
+                    load: async () => {
+                        chrome.header.classList.toggle('theia-mod-drilldown', drilledDown);
+                        return ui.getComposerAgentPickerAgents(refreshed);
+                    },
+                    isCurrent: () => true,
+                    render: agents => renders.push(agents),
+                    onError: () => undefined,
+                });
+                await flush();
+                expect(renders, String(drilledDown)).to.have.length(drilledDown ? 1 : 2);
+            }
+        });
+
+        it('shows the skeleton without a cache and the retry state only when nothing is painted', async () => {
+            const ui = new MobileProjectsStickyComposerAgentsUi(createHost());
+            const chrome = createChrome();
+            const renders: PickerAgents[] = [];
+            let errors = 0;
+            ui.loadComposerAgentPickerCatalog(chrome, {
+                cached: [],
+                load: () => Promise.reject(new Error('offline')),
+                isCurrent: () => true,
+                render: agents => renders.push(agents),
+                onError: () => { errors++; },
+            });
+            expect(chrome.list.childElementCount).to.be.greaterThan(0);
+            await flush();
+            expect(renders).to.have.length(0);
+            expect(errors).to.equal(1);
+
+            ui.loadComposerAgentPickerCatalog(createChrome(), {
+                cached: [{ id: 'codex', label: 'Codex', available: true }],
+                load: () => Promise.reject(new Error('offline')),
+                isCurrent: () => true,
+                render: agents => renders.push(agents),
+                onError: () => { errors++; },
+            });
+            await flush();
+            expect(renders).to.have.length(1);
+            expect(errors).to.equal(1);
+        });
     });
 });

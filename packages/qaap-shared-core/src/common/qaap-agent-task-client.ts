@@ -706,7 +706,9 @@ export function listQaapComposerPickerAgents(
         }
     }
     for (const definition of QAAP_HARNESS_DEFINITIONS) {
-        if (!isQaapHarnessEnabled(definition.id, disabled) || isUiHiddenVpsAgent(definition.id)) {
+        // Hosted-restricted harnesses (Cursor on a cloud workspace) stay listed as unavailable:
+        // their connect action explains the restriction instead of hiding the runtime silently.
+        if (!isQaapHarnessEnabled(definition.id, disabled)) {
             continue;
         }
         if (!merged.has(definition.id)) {

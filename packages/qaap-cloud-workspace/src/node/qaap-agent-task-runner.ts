@@ -12,9 +12,11 @@ import {
 } from '@theia/core/shared/inversify';
 import { ChildProcess, spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
     type QaapAgentDescriptor,
+    type QaapAgentHarnessStatus,
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTask,
@@ -32,6 +34,14 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import {
+    canExposeAgentCliBinToChild,
+    prependAgentCliBinToPath,
+    resolveAgentCliPrefixBinDirectory,
+    resolveAgentCliPrefixForEnv,
+} from './qaap-agent-cli-prefix';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import type { QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
@@ -94,6 +104,7 @@ import {
     QAAP_DISABLED_HARNESSES_PREF,
     readDisabledHarnessIds,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
+import { QAAP_HARNESS_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import {
     resolveQaapReposRoot,
@@ -152,6 +163,11 @@ import {
     type AgentCandidate,
     type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
+
+/** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
+export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
+/** How long the picker catalog waits for stale auth probes before answering with last known states. */
+export const QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS = 1_200;
 
 /**
  * Runs background tasks on the VPS as detached-from-tab child processes. A task keeps running
@@ -285,6 +301,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     protected readonly probedAgentBins = new Set<string>();
     /** Short-lived, per-tenant auth probe cache; Connect invalidates it through refreshAgentCatalog. */
     protected readonly agentConnectionStates = new Map<string, { readonly state: QaapAgentDescriptor['connectionState']; readonly at: number }>();
+    /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
+    protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
@@ -385,7 +403,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readCodexHelp(): string {
-        return readCodexHelpHelper();
+        return readCodexHelpHelper(this.agentDetectionEnv());
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -409,8 +427,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public isOnPath(bin: string): boolean {
-        return isOnPathHelper(bin);
+    public isOnPath(bin: string, env?: NodeJS.ProcessEnv): boolean {
+        return isOnPathHelper(bin, env ?? this.agentDetectionEnv());
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -534,6 +552,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** Re-probe CLI harnesses after a local install from the configuration UI. */
     refreshAgentCatalog(): void {
         this.agentConnectionStates.clear();
+        this.agentConnectionProbes.clear();
         this.detectAgents();
     }
 
@@ -563,11 +582,71 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             });
     }
 
-    /** Authentication state for the current tenant's CLI credentials. */
+    /**
+     * {@link listAgents} after giving the stale auth probes up to `budgetMs` to settle. The probes
+     * run in parallel off the event loop; whatever is still pending keeps its last known state
+     * and lands in the cache for the next request.
+     */
+    async listAgentsFresh(ownerLogin?: string, budgetMs = QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS): Promise<QaapAgentDescriptor[]> {
+        const pending = listAgentsHelper(this.detectedAgents)
+            .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
+            .map(agent => this.refreshAgentConnectionState(agent.id, ownerLogin))
+            .filter((probe): probe is Promise<QaapAgentDescriptor['connectionState']> => !!probe);
+        if (pending.length > 0) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            await Promise.race([
+                Promise.all(pending),
+                new Promise<void>(resolve => {
+                    timer = setTimeout(resolve, budgetMs);
+                }),
+            ]);
+            clearTimeout(timer);
+        }
+        return this.listAgents(ownerLogin);
+    }
+
+    /** Complete settings catalog; unlike listAgents this includes disabled and disconnected CLIs. */
+    listHarnessStatuses(
+        ownerLogin: string | undefined,
+        isInstallSupported: (agentId: string) => boolean,
+    ): QaapAgentHarnessStatus[] {
+        const pathEnv = { ...process.env };
+        const prefix = this.resolveAgentCliPrefix(this.resolveOwnerCwd(ownerLogin));
+        prependAgentCliBinToPath(pathEnv, prefix);
+        const cliBinDirectory = resolveAgentCliPrefixBinDirectory(prefix);
+        return QAAP_HARNESS_DEFINITIONS.map(definition => {
+            const candidate = this.detectedAgents.get(definition.id);
+            const installed = candidate
+                ? !candidate.bin || this.isOnPath(candidate.bin, pathEnv)
+                : this.isOnPath(definition.bin, pathEnv);
+            return {
+                id: definition.id,
+                installed,
+                enabled: this.isAgentEnabled(definition.id, ownerLogin),
+                connectionState: installed
+                    ? this.agentConnectionState(definition.id, ownerLogin) ?? 'unknown'
+                    : 'unknown',
+                installSupported: isInstallSupported(definition.id),
+                cliBinDirectory,
+            };
+        });
+    }
+
+    /** Authentication state for the current tenant's CLI credentials (last known; never blocks). */
     isAgentConnected(agentId: string, ownerLogin?: string): boolean {
         return this.agentConnectionState(agentId, ownerLogin) === 'connected';
     }
 
+    /** Like {@link isAgentConnected}, but waits for a stale auth probe to finish first. */
+    async isAgentConnectedFresh(agentId: string, ownerLogin?: string): Promise<boolean> {
+        await this.refreshAgentConnectionState(agentId, ownerLogin);
+        return this.isAgentConnected(agentId, ownerLogin);
+    }
+
+    /**
+     * Last known auth state. A missing or stale entry starts an asynchronous probe and answers with
+     * the previous state (`unknown` the first time) instead of spawning the CLI synchronously.
+     */
     protected agentConnectionState(agentId: string, ownerLogin?: string): QaapAgentDescriptor['connectionState'] {
         const normalized = agentId.trim().toLowerCase();
         const candidate = this.detectedAgents.get(normalized);
@@ -584,16 +663,52 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!resolveAgentConnectionProbeArgsHelper(normalized)) {
             return 'unknown';
         }
-        const now = Date.now();
-        const owner = ownerLogin?.trim().toLowerCase() ?? '';
-        const cacheKey = `${normalized}:${owner}`;
-        const cached = this.agentConnectionStates.get(cacheKey);
-        if (cached && now - cached.at < 15_000) {
-            return cached.state;
+        void this.refreshAgentConnectionState(normalized, ownerLogin);
+        return this.agentConnectionStates.get(this.agentConnectionCacheKey(normalized, ownerLogin))?.state ?? 'unknown';
+    }
+
+    /**
+     * Start (or join) the auth probe for a CLI-login harness whose cached state is missing or older
+     * than {@link QAAP_AGENT_CONNECTION_STATE_TTL_MS}. Returns undefined when nothing needs probing.
+     */
+    protected refreshAgentConnectionState(
+        agentId: string,
+        ownerLogin?: string,
+    ): Promise<QaapAgentDescriptor['connectionState']> | undefined {
+        const normalized = agentId.trim().toLowerCase();
+        const candidate = this.detectedAgents.get(normalized);
+        if (!candidate || !resolveAgentConnectionProbeArgsHelper(normalized)) {
+            return undefined;
         }
-        const state = this.probeAgentConnectionState(normalized, candidate.bin ?? normalized, ownerLogin);
-        this.agentConnectionStates.set(cacheKey, { state, at: now });
-        return state;
+        if (typeof hasAgentSettingsCredentialsHelper(normalized, this.preferenceReaderForOwner(ownerLogin)) === 'boolean') {
+            return undefined;
+        }
+        const cacheKey = this.agentConnectionCacheKey(normalized, ownerLogin);
+        const cached = this.agentConnectionStates.get(cacheKey);
+        if (cached && Date.now() - cached.at < QAAP_AGENT_CONNECTION_STATE_TTL_MS) {
+            return undefined;
+        }
+        const inFlight = this.agentConnectionProbes.get(cacheKey);
+        if (inFlight) {
+            return inFlight;
+        }
+        const probe = this.probeAgentConnectionState(normalized, candidate.bin ?? normalized, ownerLogin)
+            .catch((): QaapAgentDescriptor['connectionState'] => 'unknown')
+            .then(state => {
+                // refreshAgentCatalog() may have dropped this probe meanwhile; never let a
+                // pre-Connect answer overwrite the cache of the probe that replaced it.
+                if (this.agentConnectionProbes.get(cacheKey) === probe) {
+                    this.agentConnectionProbes.delete(cacheKey);
+                    this.agentConnectionStates.set(cacheKey, { state, at: Date.now() });
+                }
+                return state;
+            });
+        this.agentConnectionProbes.set(cacheKey, probe);
+        return probe;
+    }
+
+    protected agentConnectionCacheKey(agentId: string, ownerLogin?: string): string {
+        return `${agentId.trim().toLowerCase()}:${ownerLogin?.trim().toLowerCase() ?? ''}`;
     }
 
     /**
@@ -602,11 +717,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * VPS that always reports the operator container as logged out even after the tenant completed
      * device authentication.
      */
-    protected probeAgentConnectionState(
+    protected async probeAgentConnectionState(
         agentId: string,
         bin: string,
         ownerLogin?: string,
-    ): QaapAgentDescriptor['connectionState'] {
+    ): Promise<QaapAgentDescriptor['connectionState']> {
         const owner = ownerLogin?.trim();
         if (!owner) {
             return probeAgentConnectionStateHelper(agentId, bin);
@@ -626,7 +741,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
             };
-            return probeAgentConnectionStateHelper(agentId, bin, {
+            const prefix = this.resolveAgentCliPrefix(tenantCwd);
+            if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
+                prependAgentCliBinToPath(env, prefix);
+            }
+            return await probeAgentConnectionStateHelper(agentId, bin, {
                 file: wrapped.file,
                 args: wrapped.args,
                 cwd: tenantCwd,
@@ -1228,6 +1347,76 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public resolveAgentHome(cwd: string): string {
         return this.tenantSpawn.resolveTenantHome(cwd);
+    }
+
+    protected resolveOwnerCwd(ownerLogin?: string): string {
+        const reposRoot = resolveQaapReposRoot();
+        return ownerLogin?.trim() ? resolveUserReposRoot(reposRoot, ownerLogin) : reposRoot;
+    }
+
+    /**
+     * HOME that owns the per-user harness CLI prefix. A local single-user backend that does not
+     * drop privileges installs under the backend user's own home (the shared agent home may not
+     * exist there); every hosted/dropped-uid case uses the tenant agent home.
+     */
+    protected resolveAgentCliHome(cwd: string): string {
+        if (!isQaapProductionRuntime(process.env)) {
+            let identity: { uid?: number };
+            try {
+                identity = this.resolveAgentSpawnIdentity(cwd);
+            } catch {
+                identity = {};
+            }
+            if (identity.uid === undefined) {
+                return os.homedir();
+            }
+        }
+        return this.resolveAgentHome(cwd);
+    }
+
+    /** @internal npm prefix of the harness CLIs installed for the tenant that owns `cwd`. */
+    public resolveAgentCliPrefix(cwd: string): string {
+        return resolveAgentCliPrefixForEnv(process.env, this.resolveAgentCliHome(cwd));
+    }
+
+    /**
+     * PATH used only for in-process harness detection: the backend PATH plus the default CLI prefix
+     * when it exists. `process.env` itself is never changed, so the root backend, IDE terminals and
+     * every privileged helper keep resolving binaries from the image PATH only.
+     */
+    protected agentDetectionEnv(): NodeJS.ProcessEnv {
+        const env = { ...process.env };
+        const prefix = this.resolveAgentCliPrefix(resolveQaapReposRoot());
+        if (fs.existsSync(resolveAgentCliPrefixBinDirectory(prefix))) {
+            prependAgentCliBinToPath(env, prefix);
+        }
+        return env;
+    }
+
+    /** Whether processes spawned for `cwd` run as the tenant (uid drop or tenant container), never as the backend uid. */
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public isTenantPrivilegeDropActive(cwd: string): boolean {
+        return this.tenantSpawn.isContainerIsolationEnabled() || this.resolveAgentSpawnIdentity(cwd).uid !== undefined;
+    }
+
+    /** HOME, npm prefix, uid/gid and cache env used by this caller's tenant-scoped npm install. */
+    resolveAgentCliInstallTarget(ownerLogin?: string): QaapAgentCliInstallTarget {
+        const cwd = this.resolveOwnerCwd(ownerLogin);
+        let identity: { uid?: number; gid?: number };
+        try {
+            identity = this.resolveAgentSpawnIdentity(cwd);
+        } catch {
+            // Misconfigured hosted identity: report no uid so the install service refuses honestly.
+            return { home: this.resolveAgentCliHome(cwd), prefix: this.resolveAgentCliPrefix(cwd), uid: 0 };
+        }
+        const { HOME, USER, LOGNAME, ...storageEnv } = this.tenantHomeEnvOverlay(cwd) as Record<string, string | undefined>;
+        return {
+            home: HOME || this.resolveAgentCliHome(cwd),
+            prefix: this.resolveAgentCliPrefix(cwd),
+            ...identity,
+            user: USER || LOGNAME,
+            env: storageEnv,
+        };
     }
 
     /** @see QaapTenantSpawnService.tenantHomeEnvOverlay */

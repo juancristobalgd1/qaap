@@ -186,6 +186,7 @@
   .theia-mobile-open-repo-panel.theia-mod-clone,
   .theia-mobile-projects-sticky-composer-attach-menu,
   .theia-mobile-agent-login-dialog-content,
+  .theia-mobile-agent-login-dialog-output,
   .qaap-project-bootstrap-log-content,
   .theia-mobile-transcript-app-picker-list {
     min-height: 0;

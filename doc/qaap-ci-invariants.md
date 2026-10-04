@@ -21,6 +21,50 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 - **Symptoms if broken:** Docker reports that it could not find an available, non-overlapping IPv4
   address pool while a tenant starts. Qaap logs the `default-address-pools` setting to check.
 
+### Tenant host loopback guard (rootless Docker, VPS)
+
+- **Rule:** every VPS deploy installs and verifies the tenant host-loopback guard before switching
+  containers (`ensure_tenant_loopback_guard` in `scripts/qaap-vps-update.sh`). Loopback traffic
+  owned by the rootless Docker UID (`QAAP_TENANT_LOOPBACK_UID`, 1000 on the VPS) to `127.0.0.0/8`
+  or `::1` may only continue established flows (replies from rootlesskit port-driver listeners),
+  reach the tenant relay on `127.0.0.1:14873` (`QAAP_TENANT_LOOPBACK_ALLOW_TCP`) and the host stub
+  resolver on port 53. Everything else is rejected. Never add `4873` (or any control-plane port) to
+  the allow-list.
+- **Why:** rootless Docker runs with `--net=slirp4netns` and host loopback enabled, so a tenant's
+  `http://10.0.2.2:<port>` becomes a host connection from UID 1000 to `127.0.0.1:<port>`. The main
+  backend listens on `127.0.0.1:4873` with `QAAP_SKIP_AUTH=true` behind Caddy: tenants reached it
+  without authentication (found in production, Oct 2026).
+- **Why an allow-list and not `--disable-host-loopback`:** disabling slirp4netns host loopback
+  would close the whole path, but tenants still need the relay at `10.0.2.2:14873`, which is
+  provisioned on the host outside this repository and has no other address reachable from slirp4netns.
+  Moving it (e.g. to a non-loopback host address) is a separate VPS change. Until then the
+  allow-list fails closed for every new loopback service. If the relay moves, set
+  `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true` for the rootless daemon and keep this
+  guard as defense in depth.
+- **How:** `deploy/rootless/qaap-tenant-loopback-guard.sh` (installed as
+  `/usr/local/sbin/qaap-tenant-loopback-guard`) atomically rewrites the `QAAP_TENANT_LOOPBACK`
+  chain with `iptables-restore --noflush` and keeps its jump as the **first** `OUTPUT` rule, ahead
+  of ufw's `-o lo -j ACCEPT`. `qaap-tenant-loopback-guard.service` applies it at boot, before
+  `network-pre.target` (and therefore before the lingering rootless Docker user service).
+  `qaap-tenant-loopback-guard.timer` re-applies it every minute to repair firewall reloads.
+  Settings live in `/etc/default/qaap-tenant-loopback-guard`, written once and never overwritten
+  by deploys. The guard is installed when `/run/user/<uid>/docker.sock` exists
+  (`QAAP_TENANT_LOOPBACK_GUARD=auto`). Use `1` to force it and `0` to skip it with a warning. If a
+  rootless daemon exists and the guard cannot be applied, the deploy fails.
+- **Side effect:** the rootless UID is also the `ubuntu` operator account, so its own loopback
+  clients (`curl 127.0.0.1:4873`, `ssh -L` as `ubuntu`) are rejected as well. Run host checks as
+  root (the deploy user) or through `docker compose exec`.
+- **Coexistence:** the hand-installed `qaap-tenant-host-guard` unit (single 4873 REJECT) stays;
+  both rules reject 4873 and do not conflict. Rollback: `systemctl disable --now
+  qaap-tenant-loopback-guard.timer`, then `qaap-tenant-loopback-guard remove`.
+- **Symptoms if broken:** from inside a tenant, `curl http://10.0.2.2:4873/qaap/api/auth/config`
+  answers instead of failing with "connection refused". On the host,
+  `qaap-tenant-loopback-guard check` fails. If tenants lose DNS or the relay, check the allow-list in
+  `/etc/default/qaap-tenant-loopback-guard` and the `journalctl -u qaap-tenant-loopback-guard`.
+- **Guard:** `scripts/qaap-tenant-loopback-guard.test.sh` runs in the required `qaap-guards` job.
+  It fails if the deploy workflow stops running `qaap-vps-update.sh`, if that script stops
+  installing, enabling or verifying the guard before the switch, or if the allow-list changes.
+
 ### 1. The portable rlimit fallback must exec the real command
 
 - **Rule:** in `packages/qaap-cloud-workspace/src/node/qaap-tenant-spawn-service.ts` (`applyResourceLimits`), the fallback script is `ulimit -v "$1" && ulimit -t "$2" && shift 2 && exec "$@"`. `$0` is the `qaap-resource-limited` label, `$1`/`$2` are the limits, `$3…` is the command. Shift exactly **2**.

@@ -55,6 +55,7 @@ LABEL org.opencontainers.image.source="https://github.com/juancristobalgd1/qaap"
 ARG QAIQ_REPO=https://github.com/juancristobalgd1/qaiq.git
 ARG CODEX_CLI_VERSION=0.144.5
 ARG CLAUDE_CODE_VERSION=2.1.261
+ARG COPILOT_CLI_VERSION=1.0.91
 ARG ANTIGRAVITY_CLI_VERSION=0.1.1
 ARG OPENCODE_CLI_VERSION=1.18.28
 
@@ -78,11 +79,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm install -g \
         @openai/codex@"${CODEX_CLI_VERSION}" \
         @anthropic-ai/claude-code@"${CLAUDE_CODE_VERSION}" \
+        @github/copilot@"${COPILOT_CLI_VERSION}" \
         @sanchaymittal/antigravity-cli@"${ANTIGRAVITY_CLI_VERSION}" \
         opencode-ai@"${OPENCODE_CLI_VERSION}" \
     && npm install -g bun \
     && codex --version \
     && claude --version \
+    && copilot --version \
     && opencode --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \

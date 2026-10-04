@@ -185,11 +185,14 @@ export interface QaapAgentSpawnInvocation {
  * - Drop + no `setpriv` (e.g. local dev on macOS) → fall back to Node's `{ uid, gid }` drop, which
  *   keeps supplementary groups (pre-existing behavior; cross-tenant reads are still blocked by the
  *   0700 tenant trees).
+ *
+ * `setprivFile` is the executable to launch; a root backend passes its absolute trusted path.
  */
 export function buildAgentSpawnInvocation(
     command: string,
     identity: { readonly uid?: number; readonly gid?: number },
     setprivAvailable: boolean,
+    setprivFile: string = 'setpriv',
 ): QaapAgentSpawnInvocation {
     if (identity.uid === undefined) {
         return { file: command, options: { shell: true } };
@@ -197,7 +200,7 @@ export function buildAgentSpawnInvocation(
     const gid = identity.gid ?? identity.uid;
     if (setprivAvailable) {
         return {
-            file: 'setpriv',
+            file: setprivFile,
             args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', '/bin/sh', '-c', command],
             options: { shell: false },
         };
