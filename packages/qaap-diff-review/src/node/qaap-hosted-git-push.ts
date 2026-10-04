@@ -91,8 +91,12 @@ export class QaapHostedGitPush {
         if (!/^refs\/heads\/(?!-)(?!.*(?:\.\.|@\{|\/\.|\/\/|\.lock(?:\/|$)|\.$|\/$))[A-Za-z0-9._/+-]+$/.test(request.ref)) {
             throw new Error('Hosted push needs a valid branch ref.');
         }
-        // Git splits the alternates variable on `:`.
-        if (!path.isAbsolute(request.objectsDirectory) || /[:\n\r]/.test(request.objectsDirectory)) {
+        // Git splits the alternates variable on the platform path delimiter (`:` on POSIX, `;` on
+        // Windows). A Windows drive prefix such as `C:` is the one colon an absolute path may carry.
+        const objectsDirectoryBody = process.platform === 'win32'
+            ? request.objectsDirectory.replace(/^[A-Za-z]:(?=[\\/])/, '')
+            : request.objectsDirectory;
+        if (!path.isAbsolute(request.objectsDirectory) || /[:;\n\r]/.test(objectsDirectoryBody)) {
             throw new Error('Hosted push needs the absolute objects directory of the repository.');
         }
         if (!request.token || /[\s]/.test(request.token)) {

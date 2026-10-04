@@ -363,7 +363,9 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
         await endpoint.pushCurrentBranchForTest(repo, auth);
 
         expect(endpoint.pushes).to.have.length(1);
-        expect(endpoint.pushes[0]).to.deep.equal({
+        // Windows may hand back the temp dir as an 8.3 short name (RUNNER~1), so compare real paths.
+        const pushed = { ...endpoint.pushes[0], objectsDirectory: fs.realpathSync(endpoint.pushes[0].objectsDirectory) };
+        expect(pushed).to.deep.equal({
             objectsDirectory: path.join(fs.realpathSync(repo), '.git', 'objects'),
             url: 'https://github.com/acme/widget.git',
             sha: run(['rev-parse', 'HEAD']),
