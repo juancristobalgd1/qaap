@@ -20,7 +20,10 @@ import {
     type QaapGitFileDiffResponse,
     type QaapGitIdentity,
     type QaapGitPrReadiness,
+    type QaapGitPushDestination,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { formatCommitFeedback } from '../common/qaap-commit-feedback';
 import { splitRepoRelativePath } from './qaap-diff-review-path';
 import { QaapAgentFileSection, QaapDiffLine } from './qaap-diff-review-agent-file-section';
 import { diffLineKey } from './qaap-diff-review-segments';
@@ -925,6 +928,13 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 if (!response.ok) {
                     const body = await response.json().catch(() => ({})) as { error?: string };
                     throw new Error(body.error ?? `commit workflow failed (${response.status})`);
+                }
+                const result = await response.json().catch(() => ({})) as { branch?: string; pushedTo?: QaapGitPushDestination };
+                if (result.pushedTo) {
+                    MobileSnackbar.show(
+                        formatCommitFeedback(nls.localize('qaap/diffReview/commitDone', 'Changes committed'), result.branch, undefined, result.pushedTo),
+                        { kind: 'success', duration: 3200 },
+                    );
                 }
                 if (action === 'commit-create-pr') {
                     await this.openCreatePullRequest();

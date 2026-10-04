@@ -32,4 +32,10 @@ describe('formatCommitFeedback', () => {
         expect(formatCommitFeedback(fallback, 'main', { files: 1, insertions: 10, deletions: 0 }))
             .to.equal('Committed to main (+10 −0)');
     });
+
+    it('names the GitHub repository and branch a hosted push went to', () => {
+        const pushedTo = { repository: 'acme/widget', branch: 'feature/x', url: 'https://github.com/acme/widget.git' };
+        expect(formatCommitFeedback(fallback, 'feature/x', { files: 1, insertions: 2, deletions: 1 }, pushedTo))
+            .to.equal('Committed to feature/x (+2 −1) · pushed to acme/widget:feature/x');
+    });
 });

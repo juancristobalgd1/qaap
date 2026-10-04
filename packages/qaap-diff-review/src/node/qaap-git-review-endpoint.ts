@@ -25,6 +25,7 @@ import {
     type QaapGitBranchesResponse,
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
+    type QaapGitPushDestination,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import {
     QaapTenantProcessExecutor,
@@ -39,7 +40,12 @@ interface QaapHostedPushTarget {
     readonly remote: string;
     readonly setUpstream: boolean;
     readonly request: Omit<QaapHostedGitPushRequest, 'token'>;
+    readonly destination: QaapGitPushDestination;
 }
+
+/** GitHub owner and repository names as they appear in a project's clone path. */
+const GITHUB_OWNER_SEGMENT = /^[A-Za-z0-9-]+$/;
+const GITHUB_REPO_SEGMENT = /^[A-Za-z0-9_.-]+$/;
 
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -328,10 +334,8 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             await this.git(root, ['add', '-A']);
             await this.git(root, ['commit', '-m', message]);
             const stat = await this.readLastCommitStat(root);
-            if (this.shouldPush(action)) {
-                await this.pushCurrentBranch(root, this.auth.authenticate(req));
-            }
-            res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root), stat });
+            const pushedTo = this.shouldPush(action) ? await this.pushCurrentBranch(root, this.auth.authenticate(req)) : undefined;
+            res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root), stat, ...(pushedTo ? { pushedTo } : {}) });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
@@ -355,7 +359,8 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             || action === 'commit-create-pr';
     }
 
-    protected async pushCurrentBranch(root: string, auth?: QaapGithubAuthContext): Promise<void> {
+    /** Pushes the current branch; returns where a hosted push went so the client can show it. */
+    protected async pushCurrentBranch(root: string, auth?: QaapGithubAuthContext): Promise<QaapGitPushDestination | undefined> {
         // Hosted: the GitHub token stays in this backend (QaapHostedGitPush); agents never see it.
         if (auth?.kind === 'authenticated' && auth.session.user.provider === 'github' && auth.session.accessToken
             && this.hostedPush && isQaapHostedEnvironment()) {
@@ -363,7 +368,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             if (target) {
                 await this.hostedPush.push({ ...target.request, token: auth.session.accessToken });
                 await this.recordHostedPush(root, target);
-                return;
+                return target.destination;
             }
         }
         try {
@@ -373,11 +378,17 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             const branch = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
             await this.git(root, ['push', '-u', 'origin', branch]);
         }
+        return undefined;
     }
 
     /**
      * Where a hosted push of the current branch goes, read with the usual agent-uid git (no token).
      * `undefined` (plain push, as before) for a detached HEAD or a remote that is not GitHub.
+     *
+     * Agents write `.git/config`, so nothing in it may choose where the user's token pushes: the URL
+     * is the project's own repository, rebuilt from where its clone lives
+     * (`{reposRoot}/users/{login}/{owner}/{repo}`), and the ref is the current local branch. A GitHub
+     * push remote naming any other repository is refused, and `branch.*.merge` is ignored.
      */
     protected async resolveHostedPushTarget(root: string, auth: QaapGithubAuthContext): Promise<QaapHostedPushTarget | undefined> {
         const branch = await this.readCurrentBranch(root);
@@ -387,26 +398,82 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         const configuredRemote = await this.readGitConfig(root, `branch.${branch}.remote`);
         const configuredMerge = await this.readGitConfig(root, `branch.${branch}.merge`);
         const remote = configuredRemote ?? 'origin';
-        const ref = configuredMerge ?? `refs/heads/${branch}`;
-        if (!/^[\w.-]+$/.test(remote) || remote.startsWith('.') || !ref.startsWith('refs/heads/')) {
+        if (!/^[\w.-]+$/.test(remote) || remote.startsWith('.')) {
             return undefined;
         }
-        const url = this.hostedPush.toGithubHttpsUrl(await this.git(root, ['remote', 'get-url', '--push', remote]));
-        if (!url) {
+        const remoteUrl = this.hostedPush.toGithubHttpsUrl(await this.git(root, ['remote', 'get-url', '--push', remote]));
+        if (!remoteUrl) {
             return undefined;
         }
+        const ref = `refs/heads/${branch}`;
         const sha = (await this.git(root, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim();
         const commonDir = (await this.git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
         const objectsDirectory = path.join(commonDir, 'objects');
         if (!this.auth.ownsWorkspacePath(auth, objectsDirectory)) {
             throw new Error('The repository stores its objects outside your workspace.');
         }
+        const project = this.resolveProjectRepository(auth, root, commonDir);
+        if (!project) {
+            throw new Error('Hosted push only goes to the project\'s own GitHub repository, and this checkout is not a project clone.');
+        }
+        const url = `https://github.com/${project.owner}/${project.repo}.git`;
+        if (remoteUrl.toLowerCase() !== url.toLowerCase()) {
+            throw new Error(`The push remote "${remote}" points to ${remoteUrl}, not to this project's repository ${url}. Hosted push only goes to the project's own repository.`);
+        }
         return {
             branch,
             remote,
-            setUpstream: !configuredRemote || !configuredMerge,
+            setUpstream: !configuredRemote || configuredMerge !== ref,
             request: { objectsDirectory, url, sha, ref },
+            destination: { repository: `${project.owner}/${project.repo}`, branch, url },
         };
+    }
+
+    /**
+     * The GitHub `owner/repo` of the project whose objects a hosted push reads: the common git dir must
+     * be `.git` of the caller's canonical clone `{userRoot}/{owner}/{repo}`, compared as real paths.
+     * A checkout inside the caller's repos tree must belong to that same clone, so a `.git` file
+     * cannot lend another project's objects and URL; a worktree outside the tree is tied to its
+     * main clone by the common dir.
+     */
+    protected resolveProjectRepository(auth: QaapGithubAuthContext, root: string, commonDir: string): { owner: string; repo: string } | undefined {
+        const userRoot = this.auth.userWorkspaceRoot(auth);
+        const realUserRoot = userRoot ? this.realPathOrUndefined(userRoot) : undefined;
+        const realCommonDir = this.realPathOrUndefined(commonDir);
+        const realRoot = this.realPathOrUndefined(root);
+        if (!realUserRoot || !realCommonDir || !realRoot) {
+            return undefined;
+        }
+        const segments = path.relative(realUserRoot, realCommonDir).split(path.sep);
+        if (segments.length !== 3 || segments[2] !== '.git') {
+            return undefined;
+        }
+        const [owner, repo] = segments;
+        if (!GITHUB_OWNER_SEGMENT.test(owner) || !GITHUB_REPO_SEGMENT.test(repo) || repo === '.' || repo === '..') {
+            return undefined;
+        }
+        const projectPath = this.auth.repositoryWorkspacePath(auth, owner, repo);
+        const realProjectPath = projectPath ? this.realPathOrUndefined(projectPath) : undefined;
+        if (!realProjectPath || realProjectPath !== path.dirname(realCommonDir)) {
+            return undefined;
+        }
+        if (this.isPathInside(realRoot, realUserRoot) && !this.isPathInside(realRoot, realProjectPath)) {
+            return undefined;
+        }
+        return { owner, repo };
+    }
+
+    protected realPathOrUndefined(target: string): string | undefined {
+        try {
+            return fs.realpathSync.native(target);
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected isPathInside(target: string, parent: string): boolean {
+        const relative = path.relative(parent, target);
+        return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
     }
 
     /** What `git push -u` records locally: the remote-tracking ref and, the first time, the upstream. */

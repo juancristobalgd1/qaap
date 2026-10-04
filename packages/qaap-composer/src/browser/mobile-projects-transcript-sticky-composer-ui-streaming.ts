@@ -19,6 +19,7 @@ import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
     type QaapGitCommitWorkflowAction,
+    type QaapGitPushDestination,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
@@ -457,6 +458,7 @@ export async function runComposerCommitActionExtracted(ctx: MobileProjectsTransc
         const result = await response.json().catch(() => ({})) as {
             branch?: string;
             stat?: { files: number; insertions: number; deletions: number };
+            pushedTo?: QaapGitPushDestination;
         };
         if (action === 'commit-create-pr' && ctx.host.commands) {
             try {
@@ -478,6 +480,7 @@ export async function runComposerCommitActionExtracted(ctx: MobileProjectsTransc
                 nls.localize('qaap/mobileProjects/stickyComposerCommitDone', 'Changes committed'),
                 result.branch,
                 result.stat,
+                result.pushedTo,
             ),
             { kind: 'success', duration: 2400 },
         );

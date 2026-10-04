@@ -180,6 +180,12 @@ export class QaapGithubAuthGuard {
         return login ? resolveUserReposRoot(this.reposRoot, login) : undefined;
     }
 
+    /** The caller's canonical clone of `owner/repo` ({@link resolveRepositoryWorkspacePath}), or `undefined` without a login. */
+    repositoryWorkspacePath(ctx: QaapGithubAuthContext, owner: string, repo: string): string | undefined {
+        const login = this.resolveUserLogin(ctx);
+        return login ? resolveRepositoryWorkspacePath(this.reposRoot, login, owner, repo) : undefined;
+    }
+
     ownsWorkspacePath(ctx: QaapGithubAuthContext, targetPath: string): boolean {
         if (ctx.kind === 'skip') {
             return true;

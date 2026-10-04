@@ -8,7 +8,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile, type QaapGitPushDestination } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import type { QaapGithubStoredSession } from '@theia/qaap-shared-core/lib/node/qaap-github-session-store';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
@@ -298,7 +298,7 @@ class HostedPushGitReviewEndpoint extends QaapGitReviewEndpoint {
     readonly agentGitCalls: string[][] = [];
     readonly pushes: QaapHostedGitPushRequest[] = [];
 
-    constructor() {
+    constructor(userRoot: string) {
         super();
         const hostedPush = new QaapHostedGitPush();
         hostedPush.push = async request => {
@@ -306,7 +306,11 @@ class HostedPushGitReviewEndpoint extends QaapGitReviewEndpoint {
         };
         Object.assign(this, {
             hostedPush,
-            auth: { ownsWorkspacePath: () => true } as unknown as QaapGithubAuthGuard,
+            auth: {
+                ownsWorkspacePath: () => true,
+                userWorkspaceRoot: () => userRoot,
+                repositoryWorkspacePath: (_auth: QaapGithubAuthContext, owner: string, name: string) => path.join(userRoot, owner, name),
+            } as unknown as QaapGithubAuthGuard,
         });
     }
 
@@ -315,7 +319,7 @@ class HostedPushGitReviewEndpoint extends QaapGitReviewEndpoint {
         return Promise.resolve(execFileSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } }));
     }
 
-    pushCurrentBranchForTest(root: string, auth: QaapGithubAuthContext): Promise<void> {
+    pushCurrentBranchForTest(root: string, auth: QaapGithubAuthContext): Promise<QaapGitPushDestination | undefined> {
         return this.pushCurrentBranch(root, auth);
     }
 }
@@ -324,6 +328,8 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
     this.timeout(20_000);
     const TOKEN = 'gho_hostedPushSpecToken';
     const saved = { QAAP_CLOUD_MODE: process.env.QAAP_CLOUD_MODE, NODE_ENV: process.env.NODE_ENV };
+    let base: string;
+    let userRoot: string;
     let repo: string;
     const auth: QaapGithubAuthContext = {
         kind: 'authenticated',
@@ -336,7 +342,11 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
     beforeEach(() => {
         delete process.env.NODE_ENV;
         process.env.QAAP_CLOUD_MODE = 'docker';
-        repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-hosted-push-endpoint-'));
+        base = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-hosted-push-endpoint-'));
+        // The project's canonical clone: {reposRoot}/users/{login}/{owner}/{repo}.
+        userRoot = path.join(base, 'users', 'octo');
+        repo = path.join(userRoot, 'acme', 'widget');
+        fs.mkdirSync(repo, { recursive: true });
         run(['init', '--quiet', '-b', 'main']);
         run(['config', 'user.email', 'spec@qaap.test']);
         run(['config', 'user.name', 'Spec']);
@@ -348,7 +358,7 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
     });
 
     afterEach(() => {
-        fs.rmSync(repo, { recursive: true, force: true });
+        fs.rmSync(base, { recursive: true, force: true });
         for (const [key, value] of Object.entries(saved)) {
             if (value === undefined) {
                 delete process.env[key];
@@ -359,9 +369,10 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
     });
 
     it('pushes through the root backend: agent-uid git never pushes and never sees the token', async () => {
-        const endpoint = new HostedPushGitReviewEndpoint();
-        await endpoint.pushCurrentBranchForTest(repo, auth);
+        const endpoint = new HostedPushGitReviewEndpoint(userRoot);
+        const destination = await endpoint.pushCurrentBranchForTest(repo, auth);
 
+        expect(destination).to.deep.equal({ repository: 'acme/widget', branch: 'feature/x', url: 'https://github.com/acme/widget.git' });
         expect(endpoint.pushes).to.have.length(1);
         // Windows may hand back the temp dir as an 8.3 short name (RUNNER~1), so compare real paths.
         const pushed = { ...endpoint.pushes[0], objectsDirectory: fs.realpathSync.native(endpoint.pushes[0].objectsDirectory) };
@@ -383,7 +394,7 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
 
     it('keeps the plain push for a remote that is not GitHub', async () => {
         run(['remote', 'set-url', 'origin', path.join(repo, 'nowhere.git')]);
-        const endpoint = new HostedPushGitReviewEndpoint();
+        const endpoint = new HostedPushGitReviewEndpoint(userRoot);
         let error: unknown;
         try {
             await endpoint.pushCurrentBranchForTest(repo, auth);
@@ -393,5 +404,52 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
         expect(error).to.be.instanceOf(Error);
         expect(endpoint.pushes).to.have.length(0);
         expect(endpoint.agentGitCalls.some(args => args[0] === 'push')).to.equal(true);
+    });
+
+    async function expectRefusedPush(endpoint: HostedPushGitReviewEndpoint, message: RegExp): Promise<void> {
+        let error: unknown;
+        try {
+            await endpoint.pushCurrentBranchForTest(repo, auth);
+        } catch (caught) {
+            error = caught;
+        }
+        expect(error).to.be.instanceOf(Error);
+        expect((error as Error).message).to.match(message);
+        expect(endpoint.pushes).to.have.length(0);
+        expect(endpoint.agentGitCalls.some(args => args[0] === 'push')).to.equal(false);
+    }
+
+    it('refuses a push URL an agent pointed at another GitHub repository', async () => {
+        run(['config', 'remote.origin.pushurl', 'https://github.com/victim-org/payroll.git']);
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot), /victim-org\/payroll.*acme\/widget/);
+    });
+
+    it('pushes to the current branch name whatever branch.<name>.merge says', async () => {
+        run(['config', 'branch.feature/x.remote', 'origin']);
+        run(['config', 'branch.feature/x.merge', 'refs/heads/main']);
+        const endpoint = new HostedPushGitReviewEndpoint(userRoot);
+        await endpoint.pushCurrentBranchForTest(repo, auth);
+
+        expect(endpoint.pushes.map(request => request.ref)).to.deep.equal(['refs/heads/feature/x']);
+        expect(run(['config', '--get', 'branch.feature/x.merge'])).to.equal('refs/heads/feature/x');
+    });
+
+    it('refuses a project whose .git borrows another clone and its GitHub remote', async () => {
+        const other = path.join(userRoot, 'victim-org', 'payroll');
+        fs.mkdirSync(other, { recursive: true });
+        execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: other });
+        execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/victim-org/payroll.git'], { cwd: other });
+        execFileSync('git', ['-c', 'user.email=a@b.test', '-c', 'user.name=A', 'commit', '--quiet', '--allow-empty', '-m', 'x'], { cwd: other });
+        execFileSync('git', ['checkout', '--quiet', '-b', 'feature/x'], { cwd: other });
+        fs.rmSync(path.join(repo, '.git'), { recursive: true, force: true });
+        fs.writeFileSync(path.join(repo, '.git'), `gitdir: ${path.join(other, '.git')}\n`);
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot), /project's own GitHub repository/);
+    });
+
+    it('refuses a repository that is not one of the caller\'s project clones', async () => {
+        const stray = path.join(base, 'stray');
+        fs.renameSync(repo, stray);
+        repo = stray;
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot), /project's own GitHub repository/);
     });
 });
