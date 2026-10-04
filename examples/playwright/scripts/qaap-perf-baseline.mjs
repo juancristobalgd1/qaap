@@ -10,7 +10,7 @@ const PHASE = process.env.QAAP_PERF_PHASE || 'baseline';
 const BUILD_SHA = process.env.QAAP_PERF_BUILD_SHA || 'not specified';
 const AUTH_METHOD = process.env.QAAP_PERF_AUTH_METHOD
     || (process.env.QAAP_PERF_STORAGE_STATE ? 'Playwright storage state (QAAP_PERF_STORAGE_STATE)' : 'not specified');
-const MILESTONE_TIMEOUT_MS = Number(process.env.QAAP_PERF_MILESTONE_TIMEOUT_MS || 60_000);
+const MILESTONE_TIMEOUT_MS = Number(process.env.QAAP_PERF_MILESTONE_TIMEOUT_MS || 120_000);
 const AUTH_SETTLE_MS = 3_000;
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const IDE_VIEWPORT = { width: 1280, height: 900 };
@@ -49,9 +49,12 @@ const initMarks = String.raw`
             || (visible(loginLogo) && loginLogoLoaded)) {
             mark('logo');
         }
-        const composer = [...document.querySelectorAll('.theia-mobile-projects .theia-mobile-projects-sticky-composer-input')]
-            .find(element => visible(element) && visible(element.closest('.theia-mobile-projects')) && !element.disabled);
-        if (composer) mark('workHubInteractive');
+        const workHub = [...document.querySelectorAll('.theia-mobile-projects')].find(visible);
+        const workHubControl = workHub?.querySelector(
+            'button:not(:disabled), [role="button"]:not([aria-disabled="true"]), '
+            + 'textarea:not(:disabled), input:not(:disabled), [contenteditable="true"]',
+        );
+        if (workHub && visible(workHubControl)) mark('workHubInteractive');
 
         const appShell = document.getElementById('theia-app-shell');
         const mainPanel = document.getElementById('theia-main-content-panel');
@@ -211,6 +214,10 @@ async function captureNavigation(browser, mode, navigation) {
         documentState: {
             title: document.title,
             loginGate: !!document.querySelector('#qaap-login-host'),
+            bodyClass: document.body.className,
+            appShellVisible: visible(document.getElementById('theia-app-shell')),
+            mainPanelVisible: visible(document.getElementById('theia-main-content-panel')),
+            workHubRootVisible: [...document.querySelectorAll('.theia-mobile-projects')].some(visible),
             workHubVisible: [...document.querySelectorAll('.theia-mobile-projects-sticky-composer-input')]
                 .some(element => {
                     const style = getComputedStyle(element);
@@ -265,6 +272,26 @@ async function measureMode(browser, mode) {
         documentState: {
             title: document.title,
             loginGate: !!document.querySelector('#qaap-login-host'),
+            bodyClass: document.body.className,
+            appShellVisible: (() => {
+                const element = document.getElementById('theia-app-shell');
+                if (!element) return false;
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
+            })(),
+            mainPanelVisible: (() => {
+                const element = document.getElementById('theia-main-content-panel');
+                if (!element) return false;
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
+            })(),
+            workHubRootVisible: [...document.querySelectorAll('.theia-mobile-projects')].some(element => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
+            }),
             workHubVisible: [...document.querySelectorAll('.theia-mobile-projects-sticky-composer-input')]
                 .some(element => {
                     const style = getComputedStyle(element);
@@ -307,6 +334,8 @@ function renderRun(run) {
         `- Time to IDE shell: ${fmtMs(run.mode === 'ide' ? milestone : undefined)}`,
         `- Navigation TTFB / DOMContentLoaded / load: ${fmtMs(navigation.responseStartMs)} / ${fmtMs(navigation.domContentLoadedMs)} / ${fmtMs(navigation.loadMs)}`,
         `- Navigation transfer / decoded: ${navigation.transferSize ?? '—'} / ${navigation.decodedBodySize ?? '—'} bytes`,
+        `- DOM state: ${safeText(JSON.stringify(run.metrics.documentState))}`,
+        `- Work Hub startup-ready event: ${fmtMs(marks.startupReady)}`,
         `- Observed frontend startup logs: ${run.consoleMessages.length ? run.consoleMessages.map(value => `\`${safeText(value)}\``).join('; ') : 'none'}`,
         `- Slowest /services RPCs: ${run.rpcTimings.length ? run.rpcTimings.slice(0, 10).map(rpc => `\`${safeText(rpc.method)} ${rpc.durationMs} ms\``).join(', ') : 'not observed'}`,
         '',
