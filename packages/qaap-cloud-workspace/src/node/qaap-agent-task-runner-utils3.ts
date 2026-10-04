@@ -281,6 +281,13 @@ export function classifyAgentConnectionProbe(
 }
 
 /**
+ * Upper bound for one CLI auth probe. Claude Code 2.1 is a 245 MB native binary that, behind the
+ * tenant wrapper (setpriv/rlimits or `docker exec`), regularly needs more than the former 4 s on a
+ * loaded VPS; a timeout only ever yields `unknown`, never a usable answer.
+ */
+export const QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS = 10_000;
+
+/**
  * Asynchronous auth probe. Never use a synchronous spawn here: the picker catalog, the settings
  * API and every other request share the backend event loop, and a few 4 s CLI probes behind the
  * tenant wrapper stalled them for tens of seconds.
@@ -301,7 +308,7 @@ export function probeAgentConnectionState(
                 cwd: options?.cwd,
                 env: options?.env,
                 encoding: 'utf8',
-                timeout: 4000,
+                timeout: QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS,
                 windowsHide: true,
             }, (error, stdout, stderr) => {
                 const output = `${stdout ?? ''}\n${stderr ?? ''}`;

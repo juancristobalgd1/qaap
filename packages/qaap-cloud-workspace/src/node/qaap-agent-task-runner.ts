@@ -168,6 +168,11 @@ import {
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
 /** How long the picker catalog waits for stale auth probes before answering with last known states. */
 export const QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS = 1_200;
+/**
+ * How long an explicit catalog refresh (`/all?refresh=1`, polled by the Connect dialog) waits for
+ * the auth probes. It must outlast a probe: answering `unknown` early made the dialog guess.
+ */
+export const QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS = 12_000;
 
 /**
  * Runs background tasks on the VPS as detached-from-tab child processes. A task keeps running

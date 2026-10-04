@@ -295,7 +295,12 @@ export class MobileProjectsStickyComposerAgentsUi {
         }
     }
 
-    /** Returns whether the backend catalog now considers one harness connected. */
+    /**
+     * Returns whether the backend catalog confirmed one harness as signed in. The login dialog
+     * polls this to finish, so only an affirmative auth probe counts: `unknown` (probe still
+     * running or timed out) once closed the dialog and killed the CLI before the user could
+     * paste the authorization code, leaving the harness disconnected.
+     */
     isAgentConnected(agentId: string | undefined): boolean {
         const normalizedAgentId = agentId?.trim().toLowerCase();
         if (!normalizedAgentId) {
@@ -304,7 +309,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         const agent = this.host.stickyComposerBackendAgents.find(
             candidate => candidate.id.trim().toLowerCase() === normalizedAgentId,
         );
-        return agent?.available === true && agent.connectionState !== 'disconnected';
+        return agent?.available === true && agent.connectionState === 'connected';
     }
 
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {

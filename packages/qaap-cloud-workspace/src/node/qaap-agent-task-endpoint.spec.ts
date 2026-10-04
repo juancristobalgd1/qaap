@@ -4,6 +4,8 @@
 import { expect } from 'chai';
 import type { Request, Response } from '@theia/core/shared/express';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import { QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS } from './qaap-agent-task-runner';
+import { QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS } from './qaap-agent-task-runner-utils3';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
@@ -66,6 +68,37 @@ describe('QaapAgentTaskEndpoint install capability', () => {
                 installSupported,
             });
         }
+    });
+});
+
+describe('QaapAgentTaskEndpoint catalog refresh', () => {
+    it('waits for the real auth probe on an explicit refresh and keeps the short budget otherwise', async () => {
+        const budgets: Array<number | undefined> = [];
+        let refreshed = 0;
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const authContext = { kind: 'authenticated', userLogin: 'alice' };
+        Object.assign(endpoint, {
+            requireAuth: () => authContext,
+            auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+            runner: {
+                isAgentConfigured: () => true,
+                isQaiqInstalled: () => false,
+                refreshAgentCatalog: () => { refreshed++; },
+                listAgentsFresh: async (_owner: string, budgetMs?: number) => { budgets.push(budgetMs); return []; },
+                defaultAgent: () => 'shell',
+                listQaiqModels: () => [],
+            },
+            cliUpdates: { isInstallSupported: () => false },
+        });
+        const response = { json: () => undefined };
+
+        await endpoint.allForTest({ query: {} } as Request, response as unknown as Response);
+        await endpoint.allForTest({ query: { refresh: '1' } } as unknown as Request, response as unknown as Response);
+
+        expect(refreshed).to.equal(1);
+        expect(budgets[0]).to.equal(undefined);
+        expect(budgets[1]).to.equal(QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS);
+        expect(QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS).to.be.greaterThan(QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS);
     });
 });
 
