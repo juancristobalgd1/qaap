@@ -229,8 +229,20 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         } else if (ctx.resolveAgentSpawnIdentity(task.cwd).uid !== undefined) {
             env.HOME = ctx.resolveAgentHome(task.cwd);
         }
-        if (env.HOME) {
-            ensureQaapAgentBrowserMcpConfiguration(env.HOME);
+        let isolatedAgentSpawn = false;
+        try {
+            isolatedAgentSpawn = ctx.isTenantPrivilegeDropActive(task.cwd)
+                && !ctx.tenantSpawn.isContainerIsolationEnabled();
+        } catch {
+            // Bare runner hosts and local desktop mode do not register a tenant-only server.
+        }
+        if (isolatedAgentSpawn && env.HOME && env.QAAP_HEADLESS_CHROMIUM
+            && fs.existsSync(env.QAAP_HEADLESS_CHROMIUM)) {
+            try {
+                ensureQaapAgentBrowserMcpConfiguration(env.HOME);
+            } catch (error) {
+                console.warn(`[qaap-browser-mcp] could not register the tenant browser MCP: ${error instanceof Error ? error.message : String(error)}`);
+            }
         }
         // The tenant prefix reaches the agent's PATH only when the agent runs as the tenant (or the
         // prefix is root-trusted): a root-level wrapper must never resolve a tenant-planted binary.

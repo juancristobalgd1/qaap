@@ -4,6 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
 import { ComposerPromptImproveTimeoutError } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
@@ -63,6 +66,8 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         Object.assign(runner, {
             helperApiUrl: '',
             tenantHomeEnvOverlay: undefined,
+            isTenantPrivilegeDropActive: () => false,
+            tenantSpawn: { isContainerIsolationEnabled: () => false },
             detectedAgents: new Map([['qaiq', { id: 'qaiq', label: 'QAIQ', bin: 'qaiq', template: 'qaiq {qaiq_flags} -p {prompt}' }]]),
             resolveAgentSpawnIdentity: () => ({}),
             resolveAgentCliPrefix: () => '/home/qaap-agent/.qaap/cli',
@@ -104,6 +109,31 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         expect(env.OPENAI_API_KEY).to.equal('sk-alice-openrouter');
         expect(env.ANTHROPIC_API_KEY).to.equal(undefined);
         expect(leakedValues(env, [...Object.values(OPERATOR_ENV), 'sk-shared-anthropic'])).to.deep.equal([]);
+    });
+
+    it('leaves a local user HOME untouched when no tenant privilege drop is active', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-browser-local-home-'));
+        const previousHome = process.env.HOME;
+        const previousChromium = process.env.QAAP_HEADLESS_CHROMIUM;
+        process.env.HOME = home;
+        process.env.QAAP_HEADLESS_CHROMIUM = '/usr/bin/chromium';
+        try {
+            const { env } = run('alice');
+            expect(env.HOME).to.equal(home);
+            expect(fs.readdirSync(home)).to.deep.equal([]);
+        } finally {
+            if (previousHome === undefined) {
+                delete process.env.HOME;
+            } else {
+                process.env.HOME = previousHome;
+            }
+            if (previousChromium === undefined) {
+                delete process.env.QAAP_HEADLESS_CHROMIUM;
+            } else {
+                process.env.QAAP_HEADLESS_CHROMIUM = previousChromium;
+            }
+            fs.rmSync(home, { recursive: true, force: true });
+        }
     });
 
     it('never forwards the tenant backend authentication secret to the agent spawn env', () => {
