@@ -59,6 +59,7 @@ ARG COPILOT_CLI_VERSION=1.0.91
 ARG ANTIGRAVITY_CLI_VERSION=0.1.1
 ARG GEMINI_CLI_VERSION=0.62.0
 ARG OPENCODE_CLI_VERSION=1.18.28
+ARG PLAYWRIGHT_MCP_VERSION=0.0.83
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -84,11 +85,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @sanchaymittal/antigravity-cli@"${ANTIGRAVITY_CLI_VERSION}" \
         @google/gemini-cli@"${GEMINI_CLI_VERSION}" \
         opencode-ai@"${OPENCODE_CLI_VERSION}" \
+        @playwright/mcp@"${PLAYWRIGHT_MCP_VERSION}" \
     && npm install -g bun \
     && codex --version \
     && claude --version \
     && copilot --version \
     && opencode --version \
+    && playwright-mcp --help >/dev/null \
+    && chromium --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \
     && gemini --version \

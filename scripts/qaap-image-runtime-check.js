@@ -20,6 +20,10 @@ for (const harness of requiredHarnesses) {
 const copilotVersion = spawnSync('copilot', ['--version'], { encoding: 'utf8', timeout: 10000 });
 assert.equal(copilotVersion.status, 0, 'The Copilot CLI must report its version: ' + copilotVersion.stderr);
 console.log('PASS: bundled coding-agent harnesses: ' + requiredHarnesses.join(', '));
+const browserMcp = spawnSync('playwright-mcp', ['--help'], { encoding: 'utf8', timeout: 10000 });
+assert.equal(browserMcp.status, 0, 'The Playwright MCP CLI must be installed: ' + browserMcp.stderr);
+assert.ok(fs.existsSync('/usr/bin/chromium'), 'Headless Chromium must be installed at /usr/bin/chromium');
+console.log('PASS: Playwright MCP CLI and tenant Chromium are installed');
 const python = spawnSync('python3', ['-c', 'import tarfile; assert hasattr(tarfile, "data_filter")'], { encoding: 'utf8', timeout: 10000 });
 assert.equal(python.status, 0, 'The image must support safe backup restore filtering: ' + python.stderr);
 const root = fs.mkdtempSync('/tmp/qaap-image-smoke-');
