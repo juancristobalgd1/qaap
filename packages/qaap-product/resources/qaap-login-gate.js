@@ -16,6 +16,9 @@
         document.documentElement.setAttribute('lang', 'en');
     })();
 
+    /** Set by the boot guard when this page boots into Work Hub (never on the IDE surface). */
+    var workHubBootSurface = false;
+
     /**
      * Mobile Work Hub boot guard — runs before bundle.js so the IDE shell never flashes
      * behind the Agents chat while layout + workspace restore finish loading.
@@ -92,6 +95,7 @@
                 (document.head || document.documentElement).appendChild(style);
             }
             document.documentElement.classList.add('theia-mobile-workhub-boot');
+            workHubBootSurface = true;
             // Safety net: never leave the shell hidden if the hub fails to mount for any reason.
             // Only lift the html boot guard — body classes are owned by @theia/qaap-work-hub and
             // must stay active while Work Hub is the surface (stripping them leaks Explorer).
@@ -100,6 +104,127 @@
             }, 8000);
         } catch (e) { /* ignore */ }
     })();
+
+    /**
+     * Instant Work Hub shell — painted by this small pre-bundle script so the Work Hub surface has a
+     * typeable composer long before bundle.js has downloaded, evaluated and started Theia. Text typed
+     * here is kept in sessionStorage and adopted by the real composer when it mounts
+     * (`adoptInstantComposerDraft` in @theia/qaap-composer), which also removes this shell. The shell
+     * is removed as well shortly after the app reports `qaap-startup-ready`, and whenever the sign-in
+     * gate or a startup error is shown. Never painted on the IDE surface.
+     */
+    var INSTANT_SHELL_ID = 'qaap-instant-work-hub';
+    var INSTANT_DRAFT_KEY = 'qaap.instantComposer.draft';
+    var INSTANT_SHELL_RELEASE_GRACE_MS = 1500;
+
+    function paintInstantWorkHubShell() {
+        if (!workHubBootSurface || !document.body || document.getElementById(INSTANT_SHELL_ID)
+            || document.getElementById('qaap-login-host') || document.getElementById('qaap-startup-error')) {
+            return;
+        }
+        injectInstantShellStyles();
+        var shell = document.createElement('div');
+        shell.id = INSTANT_SHELL_ID;
+        shell.setAttribute('aria-busy', 'true');
+
+        var header = document.createElement('header');
+        header.className = 'qaap-instant-header';
+        var logo = document.createElement('img');
+        logo.src = logoUrl();
+        logo.alt = '';
+        logo.width = 22;
+        logo.height = 22;
+        var title = document.createElement('span');
+        title.textContent = appName();
+        header.appendChild(logo);
+        header.appendChild(title);
+
+        var main = document.createElement('main');
+        main.className = 'qaap-instant-body';
+        var status = document.createElement('p');
+        status.className = 'qaap-instant-status';
+        status.setAttribute('role', 'status');
+        status.textContent = 'Starting your workspace…';
+        main.appendChild(status);
+
+        var composer = document.createElement('div');
+        composer.className = 'qaap-instant-composer';
+        var input = document.createElement('textarea');
+        input.className = 'qaap-instant-composer-input';
+        input.rows = 1;
+        input.placeholder = 'Message an agent';
+        input.setAttribute('aria-label', 'Message an agent');
+        try {
+            input.value = window.sessionStorage.getItem(INSTANT_DRAFT_KEY) || '';
+        } catch (e) { /* storage may be unavailable */ }
+        input.addEventListener('input', function () {
+            try {
+                if (input.value) {
+                    window.sessionStorage.setItem(INSTANT_DRAFT_KEY, input.value);
+                } else {
+                    window.sessionStorage.removeItem(INSTANT_DRAFT_KEY);
+                }
+            } catch (e) { /* storage may be unavailable */ }
+        });
+        var send = document.createElement('button');
+        send.type = 'button';
+        send.className = 'qaap-instant-composer-send';
+        send.disabled = true;
+        send.setAttribute('aria-label', 'Start');
+        send.title = 'Available once your workspace is ready';
+        send.textContent = '↑';
+        composer.appendChild(input);
+        composer.appendChild(send);
+
+        shell.appendChild(header);
+        shell.appendChild(main);
+        shell.appendChild(composer);
+        document.body.appendChild(shell);
+    }
+
+    function releaseInstantWorkHubShell() {
+        var shell = document.getElementById(INSTANT_SHELL_ID);
+        if (shell) {
+            shell.remove();
+        }
+    }
+
+    function paintInstantWorkHubShellWhenReady() {
+        if (document.body) {
+            paintInstantWorkHubShell();
+        } else {
+            document.addEventListener('DOMContentLoaded', paintInstantWorkHubShell, { once: true });
+        }
+    }
+
+    window.addEventListener('qaap-startup-ready', function () {
+        window.setTimeout(releaseInstantWorkHubShell, INSTANT_SHELL_RELEASE_GRACE_MS);
+    });
+
+    function injectInstantShellStyles() {
+        if (document.getElementById('qaap-instant-work-hub-styles')) {
+            return;
+        }
+        var style = document.createElement('style');
+        style.id = 'qaap-instant-work-hub-styles';
+        style.textContent = [
+            '#qaap-instant-work-hub{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;',
+            'background:#f5f5f5;color:#1a1a1a;font-family:system-ui,-apple-system,sans-serif}',
+            '.qaap-instant-header{display:flex;align-items:center;gap:8px;min-height:48px;padding:env(safe-area-inset-top) 16px 0;',
+            'box-sizing:border-box;font-size:15px;font-weight:600}',
+            '.qaap-instant-body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}',
+            '.qaap-instant-status{margin:0;font-size:13px;opacity:.6}',
+            '.qaap-instant-composer{display:flex;align-items:flex-end;gap:8px;width:100%;max-width:760px;margin:0 auto;',
+            'box-sizing:border-box;padding:12px 12px calc(12px + env(safe-area-inset-bottom))}',
+            '.qaap-instant-composer-input{flex:1;min-height:44px;max-height:40vh;resize:none;box-sizing:border-box;padding:11px 14px;',
+            'border:1px solid rgba(127,127,127,.35);border-radius:14px;background:#fff;color:inherit;font:inherit;font-size:16px;line-height:1.35}',
+            '.qaap-instant-composer-send{flex:none;width:44px;height:44px;border:none;border-radius:50%;background:#1a1a1a;color:#fff;',
+            'font-size:18px;opacity:.35}',
+            '@media (prefers-color-scheme:dark){#qaap-instant-work-hub{background:#1e1e1e;color:#f5f5f5}',
+            '.qaap-instant-composer-input{background:#2a2a2a}.qaap-instant-composer-send{background:#f5f5f5;color:#1a1a1a}}'
+        ].join('');
+        (document.head || document.documentElement).appendChild(style);
+    }
 
     var SIGNED_IN_SUFFIX = 'qaap.auth.signedIn';
     var PROVIDER_SUFFIX = 'qaap.auth.provider';
@@ -319,6 +444,7 @@
         if (document.getElementById('qaap-login-host') ||
             document.getElementById('qaap-startup-error')) { return; }
 
+        releaseInstantWorkHubShell();
         var name = appName();
         var msg = kind === 'bundle'
             ? 'The application bundle could not load. Check your connection.'
@@ -404,6 +530,7 @@
             return;
         }
         window.__qaapBundleLoading = true;
+        paintInstantWorkHubShellWhenReady();
         var script = document.createElement('script');
         // The frontend builds as ES modules (esbuild code-splitting); the
         // browser resolves and parallel-loads the shared chunks itself.
@@ -474,6 +601,7 @@
     }
 
     function showGate() {
+        releaseInstantWorkHubShell();
         injectStyles();
         document.body.classList.add('qaap-login-active');
 
@@ -912,6 +1040,7 @@
         resumeAfterOAuthOrSession();
     } else if (isSignedIn()) {
         speculativePreloadBundle();
+        paintInstantWorkHubShellWhenReady();
         verifyStoredSessionThenLoad();
     } else {
         // Probe auth config and session in parallel (cold tenant containers make each

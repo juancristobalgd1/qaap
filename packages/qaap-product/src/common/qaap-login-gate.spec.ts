@@ -55,6 +55,58 @@ describe('Qaap login gate', () => {
         expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
     });
 
+    describe('instant Work Hub shell', () => {
+        const SIGNED_IN = { localStorage: { 'theia:/:qaap.auth.signedIn': 'true' } };
+        const signedInSession: LoginGateResponder = pathname =>
+            pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : undefined;
+
+        it('paints a typeable composer before the auth round-trip and keeps what is typed', () => {
+            const run = start(() => undefined, 'http://localhost:3000/#/workspace/demo', SIGNED_IN);
+            // Synchronous: painted by the gate script itself, before any fetch has answered.
+            const input = run.document.querySelector<HTMLTextAreaElement>('#qaap-instant-work-hub textarea');
+            expect(input).to.not.equal(null);
+            expect(input!.disabled).to.equal(false);
+            input!.value = 'fix the login bug';
+            input!.dispatchEvent(new run.window.Event('input'));
+            expect(run.window.sessionStorage.getItem('qaap.instantComposer.draft')).to.equal('fix the login bug');
+        });
+
+        it('is never painted on the IDE surface', async () => {
+            const run = start(signedInSession, 'http://localhost:3000/#/workspace/demo', {
+                ...SIGNED_IN,
+                beforeRun: window => window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1'),
+            });
+            await run.bundleAppended;
+            expect(run.document.getElementById('qaap-instant-work-hub')).to.equal(null);
+        });
+
+        it('paints once a skip-auth lab authorizes the bundle', async () => {
+            const run = start(pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined);
+            await run.bundleAppended;
+            expect(run.document.getElementById('qaap-instant-work-hub')).to.not.equal(null);
+        });
+
+        it('gives way to the sign-in gate when the stored session is stale', async () => {
+            const run = start(() => undefined, 'http://localhost:3000/', SIGNED_IN);
+            expect(run.document.getElementById('qaap-instant-work-hub')).to.not.equal(null);
+            await run.waitFor(() => !!run.document.getElementById('qaap-login-host'), 'sign-in gate');
+            expect(run.document.getElementById('qaap-instant-work-hub')).to.equal(null);
+        });
+
+        it('is released shortly after the app reports startup-ready', async () => {
+            let clock: InstalledClock | undefined;
+            const run = start(signedInSession, 'http://localhost:3000/', {
+                ...SIGNED_IN,
+                beforeRun: window => { clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] }); },
+            });
+            run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+            expect(run.document.getElementById('qaap-instant-work-hub')).to.not.equal(null);
+            clock!.tick(1500);
+            expect(run.document.getElementById('qaap-instant-work-hub')).to.equal(null);
+            clock!.uninstall();
+        });
+    });
+
     describe('GitHub OAuth callback', () => {
         it('stores the session, strips the OAuth marker from the URL and loads the bundle', async () => {
             const run = start(

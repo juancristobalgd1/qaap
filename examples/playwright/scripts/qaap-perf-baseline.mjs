@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const BASE_URL = process.env.QAAP_PERF_URL || 'https://161.97.69.219.sslip.io/';
-const OUTPUT = process.env.QAAP_PERF_OUTPUT || '/workspace/logs/perf-baseline.md';
+const OUTPUT = process.env.QAAP_PERF_OUTPUT || '/workspace/logs/perf-2s.md';
 const PHASE = process.env.QAAP_PERF_PHASE || 'baseline';
 const MODES = (process.env.QAAP_PERF_MODES || 'work-hub,ide').split(',').map(mode => mode.trim()).filter(Boolean);
 const BUILD_SHA = process.env.QAAP_PERF_BUILD_SHA || 'not specified';
@@ -64,9 +64,13 @@ const initMarks = String.raw`
             + 'textarea:not(:disabled), input:not(:disabled), [contenteditable="true"]',
         );
         if (workHub && visible(workHubControl)) mark('workHubInteractive');
+        const instantComposer = [...document.querySelectorAll('#qaap-instant-work-hub textarea')]
+            .find(element => visible(element) && !element.disabled && !element.readOnly);
+        if (instantComposer) mark('instantComposerTypeable');
         const composer = [...document.querySelectorAll('textarea.theia-mobile-projects-sticky-composer-input')]
             .find(element => visible(element) && !element.disabled && !element.readOnly);
         if (composer) mark('composerTypeable');
+        if (instantComposer || composer) mark('firstUsableComposer');
         if (document.querySelector('.theia-mobile-projects')) mark('workHubInDom');
         if (document.querySelector('textarea.theia-mobile-projects-sticky-composer-input')) mark('composerInDom');
         if (marks.logo !== undefined && !visible(splash)) mark('splashHidden');
@@ -172,7 +176,7 @@ async function configureNetwork(page) {
 }
 
 async function waitForMilestone(page, mode) {
-    const target = mode === 'work-hub' ? 'composerTypeable' : 'ideShell';
+    const target = mode === 'work-hub' ? 'firstUsableComposer' : 'ideShell';
     await page.waitForFunction(({ target }) => {
         const marks = window.__qaapPerfMarks || {};
         return marks[target] !== undefined || marks.loginGate !== undefined;
@@ -210,26 +214,35 @@ const SELECTOR_PROBE = String.raw`
  * separately: a skeleton is feedback, not a usable list.
  */
 async function measureComposerAndSelector(page) {
-    const composer = page.locator('textarea.theia-mobile-projects-sticky-composer-input:visible').first();
+    const instantComposer = page.locator('#qaap-instant-work-hub textarea:visible').first();
+    const realComposer = page.locator('textarea.theia-mobile-projects-sticky-composer-input:visible').first();
+    const composer = await instantComposer.count() ? instantComposer : realComposer;
     let typeable = false;
+    let composerKind;
     try {
         const previous = await composer.inputValue({ timeout: 2_000 });
+        composerKind = await composer.evaluate(element => element.closest('#qaap-instant-work-hub') ? 'instant' : 'Theia');
         await composer.fill(`${previous}q`, { timeout: 2_000 });
         typeable = (await composer.inputValue()) === `${previous}q`;
         await composer.fill(previous);
     } catch {
         typeable = false;
     }
+    const realComposerReady = await realComposer.waitFor({ state: 'visible', timeout: MILESTONE_TIMEOUT_MS })
+        .then(() => true, () => false);
     const button = page.locator('.theia-mobile-projects-sticky-composer-agent:visible').first();
+    await page.waitForFunction(() => [...document.querySelectorAll('.theia-mobile-projects-sticky-composer-agent')]
+        .some(element => element instanceof HTMLButtonElement && !element.disabled), undefined,
+    { timeout: SELECTOR_TIMEOUT_MS }).catch(() => undefined);
     if (!await button.isEnabled({ timeout: 2_000 }).catch(() => false)) {
-        return { typeable, selector: { status: 'agent button not available' } };
+        return { typeable, composerKind, realComposerReady, selector: { status: 'agent button not available' } };
     }
     const selector = await timeSelectorOpen(page, button);
     // A second open once the main thread is idle separates the picker's own cost from startup contention.
     await page.evaluate(() => new Promise(resolve => requestIdleCallback(() => resolve(undefined), { timeout: 15_000 })));
     await page.waitForTimeout(500);
     const idleSelector = await timeSelectorOpen(page, button);
-    return { typeable, selector, idleSelector };
+    return { typeable, composerKind, realComposerReady, selector, idleSelector };
 }
 
 async function timeSelectorOpen(page, button) {
@@ -317,6 +330,7 @@ async function captureNavigation(browser, mode, navigation) {
                     const rect = element.getBoundingClientRect();
                     return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
                 }),
+            instantComposerVisible: [...document.querySelectorAll('#qaap-instant-work-hub textarea')].some(visible),
             ideShellVisible: !!document.querySelector('#theia-app-shell #theia-main-content-panel'),
         },
         };
@@ -433,7 +447,7 @@ function renderSelector(interaction, key = 'selector') {
 }
 
 function renderRun(run) {
-    const readyKey = run.mode === 'work-hub' ? 'composerTypeable' : 'ideShell';
+    const readyKey = run.mode === 'work-hub' ? 'firstUsableComposer' : 'ideShell';
     const marks = run.metrics.marks;
     const milestone = marks[readyKey];
     const status = milestone !== undefined ? 'ready' : run.loginRequired ? 'login required' : 'not reached';
@@ -446,7 +460,9 @@ function renderRun(run) {
         `- Document loads: ${run.documentLoads}${run.documentLoads > 1 ? ' — the page reloaded during the run; marks are relative to the last document and understate the real time' : ''}`,
         `- Time to logo: ${fmtMs(marks.logo)}`,
         `- Time to first enabled Work Hub control: ${fmtMs(marks.workHubInteractive)}`,
-        `- Time to typeable Work Hub composer: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}${run.interaction ? ` (typing ${run.interaction.typeable ? 'accepted' : 'rejected'})` : ''}`,
+        `- Time to first usable Work Hub composer: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}${run.interaction ? ` (typing ${run.interaction.typeable ? 'accepted' : 'rejected'} via ${run.interaction.composerKind || 'unknown'})` : ''}`,
+        `- Time to real Theia composer: ${fmtMs(marks.composerTypeable)}${run.interaction ? ` (visible at selector check: ${run.interaction.realComposerReady ? 'yes' : 'no'})` : ''}`,
+        `- Time to instant shell composer: ${fmtMs(marks.instantComposerTypeable)}`,
         `- Agent selector open → list: ${renderSelector(run.interaction)}`,
         `- Agent selector open → list once idle: ${renderSelector(run.interaction, 'idleSelector')}`,
         `- Time to IDE shell: ${fmtMs(run.mode === 'ide' ? milestone : undefined)}`,
@@ -526,13 +542,13 @@ async function main() {
         '',
         `Network: ${NETWORK === '4g' ? '4G emulation (150 ms RTT, 1.6 Mbps down)' : 'unthrottled'}`,
         '',
-        '| Mode | Navigation | Logo | Composer typeable | IDE workbench | Selector open → list | Selector once idle | Document loads | Outcome |',
-        '|---|---|---:|---:|---:|---:|---:|---:|---|',
+        '| Mode | Navigation | Logo | First usable composer | Theia composer | IDE workbench | Selector open → list | Selector once idle | Document loads | Outcome |',
+        '|---|---|---:|---:|---:|---:|---:|---:|---:|---|',
         ...results.map(run => {
             const marks = run.metrics.marks;
-            const expected = run.mode === 'work-hub' ? marks.composerTypeable : marks.ideShell;
+            const expected = run.mode === 'work-hub' ? marks.firstUsableComposer : marks.ideShell;
             const outcome = expected !== undefined ? 'ready' : run.loginRequired ? 'auth gate; startup not measurable' : 'milestone not reached';
-            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.mode === 'work-hub' ? renderSelector(run.interaction, 'idleSelector') : '—'} | ${run.documentLoads} | ${outcome} |`;
+            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'work-hub' ? marks.composerTypeable : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.mode === 'work-hub' ? renderSelector(run.interaction, 'idleSelector') : '—'} | ${run.documentLoads} | ${outcome} |`;
         }),
         '',
         ...results.map(renderRun),

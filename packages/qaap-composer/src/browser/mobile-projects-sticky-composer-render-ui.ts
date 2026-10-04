@@ -78,6 +78,7 @@ import {
     removeMcpServer,
 } from '../common/qaap-mcp-plugin-install';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
+import { adoptInstantComposerDraft } from './qaap-instant-composer-handoff';
 import {
     readStoredComposerUntilDone,
     resolveComposerUntilDoneForSubmit,
@@ -383,6 +384,10 @@ export class MobileProjectsStickyComposerRenderUi {
                         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(shellProject!);
                     }
                     this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(this.host.stickyComposerHost, shellProject!, shellSummary!, chatHost!);
+                    const textarea = this.host.stickyComposerHost.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
+                    if (textarea) {
+                        adoptInstantComposerDraft(textarea);
+                    }
                 } else {
                     this.host.transcriptComposerSendRefresh?.();
                     this.host.transcriptStickyComposerUi.syncTranscriptComposerQuickActionsVisibility(
@@ -696,6 +701,12 @@ export class MobileProjectsStickyComposerRenderUi {
         }
         this.host.stickyComposerHost.append(column);
         this.host.updateWorkingPillChrome();
+        if (showComposer) {
+            const textarea = column.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
+            if (textarea) {
+                adoptInstantComposerDraft(textarea);
+            }
+        }
         const becameMounted = showComposer && !this.reposComposerMounted;
         this.reposComposerMounted = showComposer;
         if (becameMounted && focusEligibleBeforeMount) {
