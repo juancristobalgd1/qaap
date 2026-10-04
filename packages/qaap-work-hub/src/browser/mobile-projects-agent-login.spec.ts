@@ -85,7 +85,8 @@ describe('Work Hub harness connection actions', () => {
         globalThis.fetch = originalFetch!;
     });
 
-    for (const agentId of ['qaiq', 'openclaude', 'hermes', 'antigravity']) {
+    // Product rule: QAIQ is the only harness that signs in with an API key.
+    for (const agentId of ['qaiq']) {
         it(`opens the dialog with "Add API key in Settings" for ${agentId} immediately, without a workspace`, async () => {
             const openedSettings: string[] = [];
 
@@ -109,6 +110,25 @@ describe('Work Hub harness connection actions', () => {
             settled.actions[0].click();
             expect(openedSettings).to.deep.equal([QAAP_AI_FEATURES_SETTINGS_QUERY]);
             expect(connectDialogs(), 'the Settings link replaces the dialog').to.have.length(0);
+        });
+    }
+
+    for (const agentId of ['openclaude', 'hermes', 'antigravity']) {
+        it(`never offers an API key for ${agentId}: Connect is a sign-in, not a Settings link`, async () => {
+            const openedSettings: string[] = [];
+
+            openAgentSignInTerminalExtracted(createWorkspacelessContext(openedSettings), agentId);
+
+            const shown = readConnectDialog();
+            expect(shown.title).to.match(/^Connect /);
+            expect(shown.message).not.to.match(/API key/i);
+            expect(shown.actions.map(button => button.textContent)).not.to.include('Add API key in Settings');
+
+            await new Promise(resolve => setTimeout(resolve, 0));
+            const settled = readConnectDialog();
+            expect(settled.message).not.to.match(/API key/i);
+            expect(settled.actions.map(button => button.textContent)).not.to.include('Add API key in Settings');
+            expect(openedSettings, 'Settings is never opened for a sign-in harness').to.deep.equal([]);
         });
     }
 
