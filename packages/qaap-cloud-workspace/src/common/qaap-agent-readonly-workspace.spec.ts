@@ -11,7 +11,6 @@ import {
     resolveAgentReadOnlyEnforcement,
 } from './qaap-agent-readonly-workspace';
 import { isBlockedHeadlessTool, resolveQaiqCoreToolNames } from './qaap-qaiq-tool-policy';
-import { isBlockedHeadlessTool } from './qaap-qaiq-tool-policy';
 
 /** The templates the runner actually builds, before approval flags are applied. */
 const QAIQ_TEMPLATE = "qaiq --print --output-format stream-json --verbose --dangerously-skip-permissions -p 'judge this'";
