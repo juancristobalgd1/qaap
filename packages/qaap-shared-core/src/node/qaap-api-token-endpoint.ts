@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import type { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QAAP_AUTH_API_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { QaapApiTokenStore } from './qaap-api-token-store';
+import { QAAP_API_TOKEN_MAX_PER_USER, QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 
 /** Under the auth prefix so the per-tenant proxy serves it from the control plane (token store). */
@@ -44,8 +44,13 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
         if (!session) {
             return;
         }
-        const body = (req.body ?? {}) as { label?: unknown };
-        const created = this.tokens.create(session.login, session.sessionId, typeof body.label === 'string' ? body.label : '');
+        const body = (req.body ?? {}) as { label?: unknown; expiresInDays?: unknown };
+        const created = this.tokens.create(session.login, session.sessionId, typeof body.label === 'string' ? body.label : '',
+            typeof body.expiresInDays === 'number' ? body.expiresInDays : undefined);
+        if (!created) {
+            res.status(409).json({ error: `At most ${QAAP_API_TOKEN_MAX_PER_USER} API tokens; revoke one first.` });
+            return;
+        }
         res.set('Cache-Control', 'no-store').status(201).json({ token: created.token, ...created.summary });
     }
 
@@ -66,8 +71,11 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
             res.status(403).json({ error: 'API tokens cannot manage API tokens; sign in with the browser.' });
             return undefined;
         }
-        // Cookie-authenticated mutations: refuse cross-site requests (browsers send Sec-Fetch-Site).
-        if (req.method !== 'GET' && req.headers['sec-fetch-site'] === 'cross-site') {
+        // Cookie-authenticated mutations come from the Qaap page itself. `same-site` is refused too:
+        // sibling subdomains (e.g. previews of user apps) send the session cookie. Browsers always
+        // send Sec-Fetch-Site; curl with a copied cookie does not.
+        const fetchSite = req.headers['sec-fetch-site'];
+        if (req.method !== 'GET' && fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
             res.status(403).json({ error: 'Cross-site request refused.' });
             return undefined;
         }

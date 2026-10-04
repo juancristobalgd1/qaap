@@ -10,7 +10,8 @@ import * as path from 'path';
 import type { Request, Response } from '@theia/core/shared/express';
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { QaapApiTokenEndpoint } from './qaap-api-token-endpoint';
-import { QaapApiTokenStore } from './qaap-api-token-store';
+import { QAAP_API_TOKEN_MAX_PER_USER, QaapApiTokenStore } from './qaap-api-token-store';
+import { buildQaapPreviewUpstreamHeaders } from './qaap-dev-preview-forward-headers';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 
@@ -80,6 +81,8 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
 
     const cookie = (sessionId: string): Record<string, string> => ({ cookie: `qaap_sid=${encodeURIComponent(sessionId)}` });
     const bearer = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` });
+    const taskRequest = (token: string, url = '/qaap/api/agent-tasks/all'): { headers: Record<string, string>; url: string } =>
+        ({ headers: bearer(token), url });
 
     function mint(headers: Record<string, string>, label = 'ci'): RecordedResponse {
         const recorded: RecordedResponse = { statusCode: 200, body: undefined };
@@ -93,7 +96,7 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
         const token = (created.body as { token: string }).token;
         expect(token).to.match(/^qaap_pat_/);
 
-        const ctx = guard.authenticate({ headers: bearer(token) });
+        const ctx = guard.authenticate(taskRequest(token));
         expect(ctx.kind).to.equal('authenticated');
         expect(guard.resolveUserLogin(ctx)).to.equal('alice');
         // The secret is never persisted, only its hash.
@@ -102,24 +105,68 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
     });
 
     it('rejects unknown, revoked and signed-out tokens', () => {
-        expect(guard.authenticate({ headers: bearer('qaap_pat_unknown') }).kind).to.equal('unauthorized');
+        expect(guard.authenticate(taskRequest('qaap_pat_unknown')).kind).to.equal('unauthorized');
 
         const token = (mint(cookie(aliceSession)).body as { token: string; id: string });
         const recorded: RecordedResponse = { statusCode: 200, body: undefined };
         endpoint['handleRevoke']({ method: 'DELETE', headers: cookie(aliceSession), params: { id: token.id } } as unknown as Request, fakeResponse(recorded));
         expect(recorded.statusCode).to.equal(204);
-        expect(guard.authenticate({ headers: bearer(token.token) }).kind).to.equal('unauthorized');
+        expect(guard.authenticate(taskRequest(token.token)).kind).to.equal('unauthorized');
 
         const second = (mint(cookie(aliceSession)).body as { token: string }).token;
         sessions.deleteSession(aliceSession);
-        expect(guard.authenticate({ headers: bearer(second) }).kind).to.equal('unauthorized');
+        expect(guard.authenticate(taskRequest(second)).kind).to.equal('unauthorized');
     });
 
     it('never lets a token mint tokens, and refuses cross-site or anonymous minting', () => {
         const token = (mint(cookie(aliceSession)).body as { token: string }).token;
         expect(mint(bearer(token)).statusCode).to.equal(403);
         expect(mint({ ...cookie(aliceSession), 'sec-fetch-site': 'cross-site' }).statusCode).to.equal(403);
+        // A sibling subdomain (e.g. a user app preview) is same-site and carries the cookie.
+        expect(mint({ ...cookie(aliceSession), 'sec-fetch-site': 'same-site' }).statusCode).to.equal(403);
+        expect(mint({ ...cookie(aliceSession), 'sec-fetch-site': 'same-origin' }).statusCode).to.equal(201);
         expect(mint({}).statusCode).to.equal(401);
+    });
+
+    it('only authenticates plain HTTP agent-task requests', () => {
+        const token = (mint(cookie(aliceSession)).body as { token: string }).token;
+        expect(guard.authenticate(taskRequest(token, '/qaap/api/agent-tasks')).kind).to.equal('authenticated');
+        expect(guard.authenticate(taskRequest(token, '/qaap/api/agent-tasks/abc-123/resume?x=1')).kind).to.equal('authenticated');
+        for (const url of ['/services', '/qaap/api/auth/api-tokens', '/qaap/api/github/repos', '/qaap/api/agent-tasks-evil',
+            '/qaap/api/agent-tasks/../github/repos', '/qaap/api/agent-tasks/%2e%2e/github', '']) {
+            expect(guard.authenticate(taskRequest(token, url)).kind, url).to.equal('unauthorized');
+        }
+        expect(guard.authenticate({ headers: bearer(token) }).kind).to.equal('unauthorized');
+        expect(guard.authenticate({ headers: { ...bearer(token), upgrade: 'websocket' }, url: '/qaap/api/agent-tasks/stream' }).kind)
+            .to.equal('unauthorized');
+        // The browser session keeps its full scope.
+        expect(guard.authenticate({ headers: cookie(aliceSession), url: '/services' }).kind).to.equal('authenticated');
+    });
+
+    it('expires tokens (30 days by default, at most 90) and caps live tokens per user', () => {
+        const tokens = new QaapApiTokenStore();
+        const now = Date.now();
+        const day = 24 * 60 * 60 * 1000;
+        const created = tokens.create('alice', aliceSession, 'short', 2, now)!;
+        expect(created.summary.expiresAt).to.equal(now + 2 * day);
+        expect(tokens.resolve(created.token, now + day)?.ownerLogin).to.equal('alice');
+        expect(tokens.resolve(created.token, now + 2 * day)).to.equal(undefined);
+        expect(tokens.resolve(created.token, now)).to.equal(undefined); // deleted on expiry
+        expect(tokens.create('alice', aliceSession, 'default', undefined, now)!.summary.expiresAt).to.equal(now + 30 * day);
+        expect(tokens.create('alice', aliceSession, 'long', 400, now)!.summary.expiresAt).to.equal(now + 90 * day);
+
+        for (let i = tokens.list('alice', now).length; i < QAAP_API_TOKEN_MAX_PER_USER; i++) {
+            expect(tokens.create('alice', aliceSession, `t${i}`, undefined, now)).to.not.equal(undefined);
+        }
+        expect(tokens.create('alice', aliceSession, 'one too many', undefined, now)).to.equal(undefined);
+        expect(mint(cookie(aliceSession)).statusCode).to.equal(409);
+        expect(tokens.create('bob', 'bob-session', 'other user', undefined, now)).to.not.equal(undefined);
+    });
+
+    it('never forwards a token to a previewed dev server', () => {
+        const forwarded = buildQaapPreviewUpstreamHeaders({ authorization: 'Bearer qaap_pat_secret', accept: 'text/html' }, 'localhost:5173');
+        expect(forwarded.authorization).to.equal(undefined);
+        expect(buildQaapPreviewUpstreamHeaders({ authorization: 'Bearer app-own-jwt' }, 'localhost:5173').authorization).to.equal('Bearer app-own-jwt');
     });
 
     it('lists and revokes only the caller\'s own tokens', () => {

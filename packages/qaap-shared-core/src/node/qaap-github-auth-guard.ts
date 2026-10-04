@@ -24,6 +24,7 @@ import {
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task-client';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { isRealPathUnder } from './qaap-realpath-guard';
@@ -67,6 +68,12 @@ export type QaapSecurityEventAction =
     | 'agent_task'
     | 'workspace_path';
 
+/** Raw Node requests (WebSocket upgrade, preview ports) carry `url`; Express ones also `originalUrl`. */
+export type QaapAuthRequest = Pick<Request, 'headers'> & { readonly url?: string; readonly originalUrl?: string };
+
+/** The only API a personal API token can call (agent tasks; see `isApiTokenScope`). */
+export const QAAP_API_TOKEN_SCOPE_PATH = QAAP_AGENT_TASK_API_PATH;
+
 /** Shared GitHub session resolution and multi-tenant ownership checks for Qaap HTTP endpoints. */
 @injectable()
 export class QaapGithubAuthGuard {
@@ -85,7 +92,7 @@ export class QaapGithubAuthGuard {
     // `resolveGithubSession` → `resolveSessionId` → `readSessionIdFromCookie`), so a plain
     // `http.IncomingMessage` (no Express-specific members) is accepted here too — the dev-preview
     // WebSocket-upgrade and legacy-port paths authenticate raw Node requests, not Express ones.
-    authenticate(req: Pick<Request, 'headers'>): QaapGithubAuthContext {
+    authenticate(req: QaapAuthRequest): QaapGithubAuthContext {
         const tenantBackend = this.authenticateTenantBackend(req);
         if (tenantBackend) {
             return tenantBackend;
@@ -407,14 +414,29 @@ export class QaapGithubAuthGuard {
      * `Authorization: Bearer qaap_pat_…` from a headless caller. The token acts for the GitHub
      * session it was created from, so signing out of that session revokes it as well.
      */
-    resolveApiTokenSession(req: Pick<Request, 'headers'>): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+    resolveApiTokenSession(req: QaapAuthRequest): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
         const token = this.readBearerApiToken(req);
-        const record = token ? this.apiTokens?.resolve(token) : undefined;
+        const record = token && this.isApiTokenScope(req) ? this.apiTokens?.resolve(token) : undefined;
         const stored = record ? this.sessions.getSession(record.sessionId) : undefined;
         if (!record || !stored || stored.user.login.toLowerCase() !== record.ownerLogin.toLowerCase()) {
             return undefined;
         }
         return { stored, sessionId: record.sessionId };
+    }
+
+    /**
+     * A personal API token is for headless agent tasks only: plain HTTP requests under
+     * {@link QAAP_API_TOKEN_SCOPE_PATH}. Everything else (IDE RPC/terminal WebSockets, files, GitHub
+     * repository/PR actions, settings with provider keys, billing) still needs the browser session.
+     */
+    protected isApiTokenScope(req: QaapAuthRequest): boolean {
+        if (req.headers.upgrade) {
+            return false;
+        }
+        const pathname = (req.originalUrl ?? req.url ?? '').split('?')[0];
+        const segments = pathname.split('/').slice(1);
+        return (pathname === QAAP_API_TOKEN_SCOPE_PATH || pathname.startsWith(`${QAAP_API_TOKEN_SCOPE_PATH}/`))
+            && segments.every(segment => /^[\w.-]*$/.test(segment) && segment !== '.' && segment !== '..');
     }
 
     /** True when the request carries a personal API token (token routes refuse to mint more). */
