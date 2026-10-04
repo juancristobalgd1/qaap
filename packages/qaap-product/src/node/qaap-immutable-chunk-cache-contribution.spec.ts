@@ -8,9 +8,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     qaapGetVersionedFrontendEntryAssetPath,
+    qaapIsCurrentFrontendEntryAssetRequest,
     qaapIsImmutableHashedChunkPath,
     qaapIsVersionedFrontendEntryAssetRequest,
     qaapNormalizeVersionedFrontendEntryAssetRequest,
+    qaapReadFrontendEntryBuildHash,
     resolveQaapLegalPagesDir,
 } from './qaap-immutable-chunk-cache-contribution';
 
@@ -81,6 +83,23 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         const unrelatedRequest = { url: '/bundle.js?qaap-build=old', originalUrl: '/bundle.js?qaap-build=old' };
         qaapNormalizeVersionedFrontendEntryAssetRequest(unrelatedRequest);
         expect(unrelatedRequest.url).to.equal('/bundle.js?qaap-build=old');
+    });
+
+    it('treats only the fingerprint of the build on disk as immutable', () => {
+        const current = 'b'.repeat(64);
+        const previous = 'c'.repeat(64);
+        expect(qaapIsCurrentFrontendEntryAssetRequest(`/bundle.js?qaap-build=${current}`, current)).to.equal(true);
+        expect(qaapIsCurrentFrontendEntryAssetRequest(`/bundle.js?qaap-build=${previous}`, current)).to.equal(false);
+        expect(qaapIsCurrentFrontendEntryAssetRequest(`/bundle.js?qaap-build=${current}`, undefined)).to.equal(false);
+        expect(qaapIsCurrentFrontendEntryAssetRequest(`/bundle.js?qaap-build=${current}&x=1`, current)).to.equal(false);
+    });
+
+    it('reads the entry fingerprint stamped into index.html', () => {
+        const hash = 'd'.repeat(64);
+        const html = `<link href="./bundle.css?qaap-build=${hash}"><script src="./bundle.js?qaap-build=${hash}"></script>`;
+        expect(qaapReadFrontendEntryBuildHash(html)).to.equal(hash);
+        expect(qaapReadFrontendEntryBuildHash('<script src="./bundle.js?qaap-build=musyt2zo"></script>')).to.equal(undefined);
+        expect(qaapReadFrontendEntryBuildHash(`<script src="./bundle.js?qaap-build=${hash}0"></script>`)).to.equal(undefined);
     });
 
     it('keeps immutable chunk bytes untouched in the frontend static sync', () => {

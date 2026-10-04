@@ -46,6 +46,23 @@ export function qaapIsVersionedFrontendEntryAssetRequest(requestUrl: string): bo
     return qaapGetVersionedFrontendEntryAssetPath(requestUrl) !== undefined;
 }
 
+/**
+ * @internal Exported for unit tests only. True only when the request carries the fingerprint of the
+ * build currently on disk: a client holding an older index (deploy race, offline shell) must not
+ * cache today's bytes for a year under yesterday's URL.
+ */
+export function qaapIsCurrentFrontendEntryAssetRequest(requestUrl: string, currentBuildHash: string | undefined): boolean {
+    if (!currentBuildHash || !qaapIsVersionedFrontendEntryAssetRequest(requestUrl)) {
+        return false;
+    }
+    return new URL(requestUrl, 'http://qaap.local').searchParams.get('qaap-build') === currentBuildHash;
+}
+
+/** @internal Exported for unit tests only. Reads the entry fingerprint stamped into index.html. */
+export function qaapReadFrontendEntryBuildHash(indexHtml: string): string | undefined {
+    return /[?&]qaap-build=([a-f0-9]{64})(?![a-f0-9])/.exec(indexHtml)?.[1];
+}
+
 /** @internal Exported for unit tests only. */
 export function qaapNormalizeVersionedFrontendEntryAssetRequest(request: { url: string; originalUrl?: string }): void {
     const assetPath = qaapGetVersionedFrontendEntryAssetPath(request.originalUrl || request.url);
@@ -86,6 +103,8 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
     @inject(EarlyExpressMiddleware)
     protected readonly earlyMiddleware: EarlyExpressMiddleware;
 
+    protected entryBuildHashCache: { indexMtimeMs: number; buildHash: string | undefined } | undefined;
+
     initialize(): void {
         this.earlyMiddleware.handlers.push((req, _res, next) => {
             // The core gzip handler appends `.gz` to req.url. Remove the validated query
@@ -114,6 +133,9 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
     protected setStaticHeaders(res: express.Response, filePath: string, frontendDir: string): void {
         const base = path.basename(filePath);
         const topLevel = path.dirname(filePath) === frontendDir;
+        // serveGzipped picks the `.gz` sibling from Accept-Encoding; shared caches must key on it,
+        // especially for the year-long public entries below.
+        res.vary('Accept-Encoding');
         if (base === 'service-worker.js') {
             // The service worker controls a wider scope than its own location and must not be
             // cached by the browser for long — users would otherwise be stuck on stale workers.
@@ -131,12 +153,30 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
             // esbuild only ever emits hashed chunks at the top level of
             // lib/frontend — nested lookalikes are not content-addressed.
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        } else if (topLevel && qaapIsVersionedFrontendEntryAssetRequest(
+        } else if (topLevel && qaapIsCurrentFrontendEntryAssetRequest(
             (res.req as express.Request | undefined)?.originalUrl ?? '',
+            this.currentEntryBuildHash(frontendDir),
         )) {
             // serveGzipped rewrites req.url to the .gz sibling before static serving.
             // originalUrl still identifies the fingerprinted entry URL in the index.
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+    }
+
+    /** Fingerprint of the entry assets on disk, re-read whenever index.html is rewritten by a build. */
+    protected currentEntryBuildHash(frontendDir: string): string | undefined {
+        const indexPath = path.join(frontendDir, 'index.html');
+        try {
+            const indexMtimeMs = fs.statSync(indexPath).mtimeMs;
+            if (this.entryBuildHashCache?.indexMtimeMs !== indexMtimeMs) {
+                this.entryBuildHashCache = {
+                    indexMtimeMs,
+                    buildHash: qaapReadFrontendEntryBuildHash(fs.readFileSync(indexPath, 'utf8')),
+                };
+            }
+            return this.entryBuildHashCache.buildHash;
+        } catch {
+            return undefined;
         }
     }
 }
