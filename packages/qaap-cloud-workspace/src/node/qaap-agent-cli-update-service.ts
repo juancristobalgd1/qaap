@@ -136,9 +136,11 @@ export const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
     {
         id: 'antigravity',
         label: 'Antigravity CLI',
-        bins: ['antigravity', 'agy', 'ag'],
-        npmPackage: '@sanchaymittal/antigravity-cli',
-        expectedVersionEnv: 'ANTIGRAVITY_CLI_VERSION',
+        // The Antigravity harness runs on Gemini CLI: it signs in with Google from the Connect
+        // dialog. The community `antigravity`/`ag` CLI needs a running Antigravity desktop app.
+        bins: ['gemini', 'agy'],
+        npmPackage: '@google/gemini-cli',
+        expectedVersionEnv: 'GEMINI_CLI_VERSION',
     },
     {
         id: 'qaiq',

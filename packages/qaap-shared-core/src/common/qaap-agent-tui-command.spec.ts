@@ -54,7 +54,7 @@ describe('resolveInteractiveAgentLoginCommand', () => {
 
     it('does not start an inaccessible TUI as a sign-in flow', () => {
         expect(resolveInteractiveAgentLoginCommand('qaiq')).to.equal(undefined);
-        expect(resolveInteractiveAgentLoginCommand('gemini')).to.equal(undefined);
+        expect(resolveInteractiveAgentLoginCommand('qwen')).to.equal(undefined);
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
 
@@ -74,13 +74,13 @@ describe('resolveAgentConnectionFlow', () => {
         qaiq: 'settings-api-key',
         codex: 'cli-login',
         claude: 'cli-login',
-        openclaude: 'settings-api-key',
+        openclaude: 'cli-login',
         grok: 'cli-login',
         opencode: 'cli-login',
-        hermes: 'settings-api-key',
+        hermes: 'cli-login',
         openclaw: 'tenant-terminal',
         cursor: 'cli-login',
-        antigravity: 'settings-api-key',
+        antigravity: 'cli-login',
         copilot: 'cli-login',
         qwen: 'tenant-terminal',
         kimi: 'tenant-terminal',
@@ -106,11 +106,20 @@ describe('resolveAgentConnectionFlow', () => {
         });
     });
 
-    it('maps the Gemini alias to its supported Google API-key settings flow', () => {
-        expect(resolveAgentConnectionFlow('gemini')).to.deep.equal({
-            kind: 'settings-api-key',
-            settingsQuery: 'ai-features',
-        });
+    it('signs the Gemini alias in with Google through Gemini CLI, never with an API key', () => {
+        const flow = resolveAgentConnectionFlow('gemini');
+        expect(flow.kind).to.equal('cli-login');
+        // The tenant terminal is POSIX; on a Windows desktop the same flow runs in PowerShell.
+        expect(flow.kind === 'cli-login' && flow.command).to.match(process.platform === 'win32'
+            ? /\$env:NO_BROWSER='true'; gemini$/
+            : /selectedType:"oauth-personal".*&& NO_BROWSER=true gemini$/);
+    });
+
+    it('offers the Settings API-key route to QAIQ only', () => {
+        const apiKeyHarnesses = QAAP_HARNESS_DEFINITIONS
+            .filter(harness => resolveAgentConnectionFlow(harness.id).kind === 'settings-api-key')
+            .map(harness => harness.id);
+        expect(apiKeyHarnesses).to.deep.equal(['qaiq']);
     });
 
     it('provides no false sign-in route for an unknown harness', () => {

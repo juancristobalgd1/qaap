@@ -27,6 +27,7 @@ services:
         CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-0.144.5}
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.261}
         ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-0.1.1}
+        GEMINI_CLI_VERSION: ${GEMINI_CLI_VERSION:-0.62.0}
         OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-1.18.28}
     ports:
       # Not world-reachable. Public traffic should hit Caddy on :443.
@@ -82,6 +83,7 @@ services:
       CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
       OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-}
       ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-}
+      GEMINI_CLI_VERSION: ${GEMINI_CLI_VERSION:-}
       QAAP_QAIQ_MIN_VERSION: ${QAAP_QAIQ_MIN_VERSION:-}
       # Cursor-like same-session queue: one follow-up per drained turn, short coalesce.
       QAAP_MAX_BATCH_SIZE: ${QAAP_MAX_BATCH_SIZE:-1}

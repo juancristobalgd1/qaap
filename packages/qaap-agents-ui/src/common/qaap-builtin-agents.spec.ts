@@ -21,7 +21,7 @@ describe('qaap-builtin-agents', () => {
     it('pins Hermes model flags before chat and ignores a stale user config.yaml', () => {
         const hermes = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'hermes');
         expect(hermes?.template).to.equal(
-            'hermes --yolo --ignore-user-config --provider openrouter {model_flags} chat -Q -q {prompt}',
+            'hermes --yolo --ignore-user-config --provider nous {model_flags} chat -Q -q {prompt}',
         );
     });
 });
