@@ -7,8 +7,10 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+    qaapGetVersionedFrontendEntryAssetPath,
     qaapIsImmutableHashedChunkPath,
     qaapIsVersionedFrontendEntryAssetRequest,
+    qaapNormalizeVersionedFrontendEntryAssetRequest,
     resolveQaapLegalPagesDir,
 } from './qaap-immutable-chunk-cache-contribution';
 
@@ -52,6 +54,7 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         const hash = 'a'.repeat(64);
         for (const asset of ['bundle.js', 'bundle.css', 'qaap-login-gate.js']) {
             expect(qaapIsVersionedFrontendEntryAssetRequest(`/${asset}?qaap-build=${hash}`), asset).to.equal(true);
+            expect(qaapGetVersionedFrontendEntryAssetPath(`/${asset}?qaap-build=${hash}`), asset).to.equal(`/${asset}`);
         }
         const samples = [
             `/bundle.js?qaap-build=${'a'.repeat(63)}`,
@@ -64,7 +67,20 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         ];
         for (const sample of samples) {
             expect(qaapIsVersionedFrontendEntryAssetRequest(sample), sample).to.equal(false);
+            expect(qaapGetVersionedFrontendEntryAssetPath(sample), sample).to.equal(undefined);
         }
+    });
+
+    it('strips only the fingerprint query from the URL used by the gzip handler', () => {
+        const originalUrl = `/bundle.js?qaap-build=${'a'.repeat(64)}`;
+        const request = { url: originalUrl, originalUrl };
+        qaapNormalizeVersionedFrontendEntryAssetRequest(request);
+        expect(request.url).to.equal('/bundle.js');
+        expect(request.originalUrl).to.equal(originalUrl);
+
+        const unrelatedRequest = { url: '/bundle.js?qaap-build=old', originalUrl: '/bundle.js?qaap-build=old' };
+        qaapNormalizeVersionedFrontendEntryAssetRequest(unrelatedRequest);
+        expect(unrelatedRequest.url).to.equal('/bundle.js?qaap-build=old');
     });
 
     it('keeps immutable chunk bytes untouched in the frontend static sync', () => {

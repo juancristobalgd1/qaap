@@ -5,9 +5,9 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import * as express from '@theia/core/shared/express';
-import { BackendApplicationServer, BackendApplicationPath } from '@theia/core/lib/node';
+import { BackendApplicationServer, BackendApplicationPath, EarlyExpressMiddleware } from '@theia/core/lib/node';
 
 /**
  * esbuild emits content-addressed frontend chunks as `chunk-<hash>.(js|css)`, optionally followed
@@ -23,18 +23,35 @@ export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
 }
 
 /** @internal Exported for unit tests only. */
-export function qaapIsVersionedFrontendEntryAssetRequest(requestUrl: string): boolean {
+export function qaapGetVersionedFrontendEntryAssetPath(requestUrl: string): string | undefined {
     let url: URL;
     try {
         url = new URL(requestUrl, 'http://qaap.local');
     } catch {
-        return false;
+        return undefined;
     }
     if (!['/bundle.js', '/bundle.css', '/qaap-login-gate.js'].includes(url.pathname)) {
-        return false;
+        return undefined;
     }
     const buildHashes = url.searchParams.getAll('qaap-build');
-    return buildHashes.length === 1 && /^[a-f0-9]{64}$/.test(buildHashes[0]);
+    if (buildHashes.length !== 1 || !/^[a-f0-9]{64}$/.test(buildHashes[0])
+        || url.searchParams.toString() !== `qaap-build=${buildHashes[0]}`) {
+        return undefined;
+    }
+    return url.pathname;
+}
+
+/** @internal Exported for unit tests only. */
+export function qaapIsVersionedFrontendEntryAssetRequest(requestUrl: string): boolean {
+    return qaapGetVersionedFrontendEntryAssetPath(requestUrl) !== undefined;
+}
+
+/** @internal Exported for unit tests only. */
+export function qaapNormalizeVersionedFrontendEntryAssetRequest(request: { url: string; originalUrl?: string }): void {
+    const assetPath = qaapGetVersionedFrontendEntryAssetPath(request.originalUrl || request.url);
+    if (assetPath) {
+        request.url = assetPath;
+    }
 }
 
 /** Directory of standalone Terms / Privacy HTML served at `/legal/*`. */
@@ -65,6 +82,19 @@ export function resolveQaapLegalPagesDir(): string {
  */
 @injectable()
 export class QaapFrontendStaticServer implements BackendApplicationServer {
+
+    @inject(EarlyExpressMiddleware)
+    protected readonly earlyMiddleware: EarlyExpressMiddleware;
+
+    initialize(): void {
+        this.earlyMiddleware.handlers.push((req, _res, next) => {
+            // The core gzip handler appends `.gz` to req.url. Remove the validated query
+            // there so bundle.js?qaap-build=<hash> resolves its bundle.js.gz sibling;
+            // originalUrl remains intact for cache headers and tenant routing.
+            qaapNormalizeVersionedFrontendEntryAssetRequest(req);
+            next();
+        });
+    }
 
     configure(app: express.Application): void {
         const legalDir = resolveQaapLegalPagesDir();
