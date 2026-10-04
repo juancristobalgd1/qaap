@@ -81,8 +81,8 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
 
     const cookie = (sessionId: string): Record<string, string> => ({ cookie: `qaap_sid=${encodeURIComponent(sessionId)}` });
     const bearer = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` });
-    const taskRequest = (token: string, url = '/qaap/api/agent-tasks/all'): { headers: Record<string, string>; url: string } =>
-        ({ headers: bearer(token), url });
+    const taskRequest = (token: string, url = '/qaap/api/agent-tasks', method = 'GET'): { headers: Record<string, string>; url: string; method: string } =>
+        ({ headers: bearer(token), url, method });
 
     function mint(headers: Record<string, string>, label = 'ci'): RecordedResponse {
         const recorded: RecordedResponse = { statusCode: 200, body: undefined };
@@ -128,16 +128,45 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
         expect(mint({}).statusCode).to.equal(401);
     });
 
-    it('only authenticates plain HTTP agent-task requests', () => {
+    it('only authenticates create, list, read and cancel of agent tasks', () => {
         const token = (mint(cookie(aliceSession)).body as { token: string }).token;
-        expect(guard.authenticate(taskRequest(token, '/qaap/api/agent-tasks')).kind).to.equal('authenticated');
-        expect(guard.authenticate(taskRequest(token, '/qaap/api/agent-tasks/abc-123/resume?x=1')).kind).to.equal('authenticated');
-        for (const url of ['/services', '/qaap/api/auth/api-tokens', '/qaap/api/github/repos', '/qaap/api/agent-tasks-evil',
-            '/qaap/api/agent-tasks/../github/repos', '/qaap/api/agent-tasks/%2e%2e/github', '']) {
-            expect(guard.authenticate(taskRequest(token, url)).kind, url).to.equal('unauthorized');
+        const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+        for (const [method, url] of [
+            ['GET', '/qaap/api/agent-tasks'],
+            ['POST', '/qaap/api/agent-tasks'],
+            ['GET', `/qaap/api/agent-tasks/${id}?x=1`],
+            ['POST', `/qaap/api/agent-tasks/${id}/cancel`],
+        ]) {
+            expect(guard.authenticate(taskRequest(token, url, method)).kind, `${method} ${url}`).to.equal('authenticated');
+        }
+        for (const [method, url] of [
+            // The rest of the agent-task API runs CLIs, warms or deletes the project, or streams everything.
+            ['POST', '/qaap/api/agent-tasks/cli-updates/codex'],
+            ['GET', '/qaap/api/agent-tasks/cli-updates'],
+            ['POST', '/qaap/api/agent-tasks/warm'],
+            ['DELETE', '/qaap/api/agent-tasks/project'],
+            ['GET', '/qaap/api/agent-tasks/stream'],
+            ['GET', '/qaap/api/agent-tasks/all'],
+            ['GET', '/qaap/api/agent-tasks/harness-status'],
+            ['POST', `/qaap/api/agent-tasks/${id}/retry`],
+            ['POST', `/qaap/api/agent-tasks/${id}/resume`],
+            ['POST', `/qaap/api/agent-tasks/${id}/reorder`],
+            ['DELETE', `/qaap/api/agent-tasks/${id}`],
+            ['HEAD', '/qaap/api/agent-tasks'],
+            ['GET', '/qaap/api/agent-tasks/'],
+            ['GET', '/QAAP/api/agent-tasks'],
+            ['GET', '/services'],
+            ['GET', '/qaap/api/auth/api-tokens'],
+            ['GET', '/qaap/api/github/repos'],
+            ['GET', '/qaap/api/agent-tasks-evil'],
+            ['GET', '/qaap/api/agent-tasks/../github/repos'],
+            ['GET', '/qaap/api/agent-tasks/%2e%2e/github'],
+            ['GET', ''],
+        ]) {
+            expect(guard.authenticate(taskRequest(token, url, method)).kind, `${method} ${url}`).to.equal('unauthorized');
         }
         expect(guard.authenticate({ headers: bearer(token) }).kind).to.equal('unauthorized');
-        expect(guard.authenticate({ headers: { ...bearer(token), upgrade: 'websocket' }, url: '/qaap/api/agent-tasks/stream' }).kind)
+        expect(guard.authenticate({ headers: { ...bearer(token), upgrade: 'websocket' }, method: 'GET', url: '/qaap/api/agent-tasks' }).kind)
             .to.equal('unauthorized');
         // The browser session keeps its full scope.
         expect(guard.authenticate({ headers: cookie(aliceSession), url: '/services' }).kind).to.equal('authenticated');

@@ -68,10 +68,17 @@ export type QaapSecurityEventAction =
     | 'workspace_path';
 
 /** Raw Node requests (WebSocket upgrade, preview ports) carry `url`; Express ones also `originalUrl`. */
-export type QaapAuthRequest = Pick<Request, 'headers'> & { readonly url?: string; readonly originalUrl?: string };
+export type QaapAuthRequest = Pick<Request, 'headers'> & { readonly method?: string; readonly url?: string; readonly originalUrl?: string };
 
-/** The only API a personal API token can call (agent tasks; see `isApiTokenScope`). */
-export const QAAP_API_TOKEN_SCOPE_PATH = QAAP_AGENT_TASK_API_PATH;
+const AGENT_TASK_ID_SEGMENT = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+
+/** The only routes a personal API token can call (see `isApiTokenScope`). Task ids are UUIDs. */
+export const QAAP_API_TOKEN_ROUTES: ReadonlyArray<{ readonly method: string; readonly path: RegExp }> = [
+    { method: 'POST', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}$`) },
+    { method: 'GET', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}$`) },
+    { method: 'GET', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}/${AGENT_TASK_ID_SEGMENT}$`) },
+    { method: 'POST', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}/${AGENT_TASK_ID_SEGMENT}/cancel$`) },
+];
 
 /** Shared GitHub session resolution and multi-tenant ownership checks for Qaap HTTP endpoints. */
 @injectable()
@@ -417,18 +424,19 @@ export class QaapGithubAuthGuard {
     }
 
     /**
-     * A personal API token is for headless agent tasks only: plain HTTP requests under
-     * {@link QAAP_API_TOKEN_SCOPE_PATH}. Everything else (IDE RPC/terminal WebSockets, files, GitHub
-     * repository/PR actions, settings with provider keys, billing) still needs the browser session.
+     * A personal API token is for headless agent tasks only: plain HTTP requests matching
+     * {@link QAAP_API_TOKEN_ROUTES} (create, list, read and cancel a task). Everything else, including
+     * the rest of the agent-task API (CLI updates, warm-up, project deletion, retry/resume, the event
+     * stream) and IDE RPC/terminal WebSockets, files, GitHub repository/PR actions, settings with
+     * provider keys and billing, still needs the browser session.
      */
     protected isApiTokenScope(req: QaapAuthRequest): boolean {
         if (req.headers.upgrade) {
             return false;
         }
+        const method = req.method?.toUpperCase();
         const pathname = (req.originalUrl ?? req.url ?? '').split('?')[0];
-        const segments = pathname.split('/').slice(1);
-        return (pathname === QAAP_API_TOKEN_SCOPE_PATH || pathname.startsWith(`${QAAP_API_TOKEN_SCOPE_PATH}/`))
-            && segments.every(segment => /^[\w.-]*$/.test(segment) && segment !== '.' && segment !== '..');
+        return QAAP_API_TOKEN_ROUTES.some(route => route.method === method && route.path.test(pathname));
     }
 
     /** True when the request carries a personal API token (token routes refuse to mint more). */
