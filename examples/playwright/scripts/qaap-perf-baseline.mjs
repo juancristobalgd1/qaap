@@ -7,6 +7,9 @@ import path from 'node:path';
 const BASE_URL = process.env.QAAP_PERF_URL || 'https://161.97.69.219.sslip.io/';
 const OUTPUT = process.env.QAAP_PERF_OUTPUT || '/workspace/logs/perf-baseline.md';
 const PHASE = process.env.QAAP_PERF_PHASE || 'baseline';
+const BUILD_SHA = process.env.QAAP_PERF_BUILD_SHA || 'not specified';
+const AUTH_METHOD = process.env.QAAP_PERF_AUTH_METHOD
+    || (process.env.QAAP_PERF_STORAGE_STATE ? 'Playwright storage state (QAAP_PERF_STORAGE_STATE)' : 'not specified');
 const MILESTONE_TIMEOUT_MS = Number(process.env.QAAP_PERF_MILESTONE_TIMEOUT_MS || 60_000);
 const AUTH_SETTLE_MS = 3_000;
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
@@ -331,9 +334,11 @@ async function main() {
 
     const date = new Date().toISOString();
     const section = [
-        `## ${PHASE === 'after' ? 'After changes' : 'Baseline'} — ${date}`,
+        `## ${PHASE === 'baseline' ? 'Baseline' : PHASE} — ${date}`,
         '',
         `Endpoint: ${BASE_URL}`, 
+        `Build: ${BUILD_SHA}`,
+        `Authentication: ${AUTH_METHOD}`,
         '',
         '| Mode | Navigation | Logo | Work Hub usable | IDE shell | Outcome |',
         '|---|---|---:|---:|---:|---|',
@@ -348,7 +353,7 @@ async function main() {
     ].join('\n');
 
     await fs.mkdir(path.dirname(OUTPUT), { recursive: true });
-    if (PHASE === 'after') {
+    if (PHASE !== 'baseline') {
         const existing = await fs.readFile(OUTPUT, 'utf8').catch(() => '');
         await fs.writeFile(OUTPUT, `${existing}\n\n${section}\n`, 'utf8');
     } else {
