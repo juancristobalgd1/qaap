@@ -39,6 +39,14 @@ Validation so far:
 - Full `@theia/qaap-cloud-workspace` spec run could not load the suite because
   `@theia/qaap-adapters/lib/browser/qaap-preview-widget-uri` has no compiled output. No full-package
   passing count is claimed.
+- A fresh root `npm run compile` attempt under Node 22.13.1 also stopped before Qaap packages:
+  `@theia/filesystem` could not resolve
+  `@theia/core/shared/@theia/application-package/lib/environment`. This environment initially had
+  no Node/npm; Node 22.13.1 was unpacked under `/tmp` for verification. The full workspace spec suite
+  was not run.
+- `node --test scripts/qaap-agent-browser-image.test.mjs`: 1 passing.
+- `node scripts/qaap-drift-check.js`: passed after adding this user-requested findings log to the
+  documented drift baseline.
 
 When implementation is complete, verify from a fresh tenant for each supported harness:
 
