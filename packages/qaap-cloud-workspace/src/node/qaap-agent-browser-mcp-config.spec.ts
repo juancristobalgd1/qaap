@@ -53,6 +53,25 @@ describe('Qaap agent browser MCP configuration', () => {
         expect(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).to.equal(first);
     });
 
+    it('updates persistent config through its symlink and does not follow a planted temp symlink', () => {
+        const persistentHome = path.join(home, 'persistent-home');
+        fs.mkdirSync(persistentHome, { recursive: true });
+        const persistentConfig = path.join(persistentHome, '.claude.json');
+        fs.writeFileSync(persistentConfig, JSON.stringify({ mcpServers: { personal: { command: 'personal-mcp' } } }));
+        const configLink = path.join(home, '.claude.json');
+        fs.symlinkSync(persistentConfig, configLink);
+        const victim = path.join(home, 'victim.txt');
+        fs.writeFileSync(victim, 'leave this alone');
+        fs.symlinkSync(victim, `${configLink}.${process.pid}.tmp`);
+
+        ensureQaapAgentBrowserMcpConfiguration(home);
+
+        expect(fs.lstatSync(configLink).isSymbolicLink()).to.equal(true);
+        expect(JSON.parse(fs.readFileSync(persistentConfig, 'utf8')).mcpServers).to.have.property('qaap_browser');
+        expect(JSON.parse(fs.readFileSync(persistentConfig, 'utf8')).mcpServers).to.have.property('personal');
+        expect(fs.readFileSync(victim, 'utf8')).to.equal('leave this alone');
+    });
+
     it('migrates the old invalid OpenCode mcp.servers shape', () => {
         const configPath = path.join(home, '.config/opencode/opencode.json');
         fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -63,5 +82,17 @@ describe('Qaap agent browser MCP configuration', () => {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8')) as { mcp: Record<string, unknown> };
         expect(config.mcp).not.to.have.property('servers');
         expect(config.mcp.qaap_browser).to.have.property('type', 'local');
+    });
+
+    it('adds Hermes MCP at the existing YAML mapping indentation', () => {
+        const configPath = path.join(home, '.hermes/config.yaml');
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        fs.writeFileSync(configPath, 'mcp_servers:\n    personal:\n        command: personal-mcp\n');
+
+        ensureQaapAgentBrowserMcpConfiguration(home);
+
+        const config = fs.readFileSync(configPath, 'utf8');
+        expect(config).to.match(/^    qaap_browser:\n      command: playwright-mcp\n      args:\n/m);
+        expect(config).to.contain('    personal:\n        command: personal-mcp');
     });
 });

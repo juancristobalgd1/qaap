@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import * as fs from 'fs';
+import { randomUUID } from 'crypto';
 import * as path from 'path';
 
 const SERVER_NAME = 'qaap_browser';
@@ -18,7 +19,7 @@ export function ensureQaapAgentBrowserMcpConfiguration(home: string): readonly s
     const server = { command: COMMAND, args: ARGS };
     const updated: string[] = [];
     const writeJson = (relativePath: string, update: (root: Record<string, unknown>) => void): void => {
-        const filePath = path.join(home, relativePath);
+        const filePath = resolveConfigFilePath(home, relativePath);
         let root: Record<string, unknown> = {};
         try {
             const existing = fs.readFileSync(filePath, 'utf8');
@@ -83,7 +84,7 @@ export function ensureQaapAgentBrowserMcpConfiguration(home: string): readonly s
 
 function appendTomlServer(home: string, updated: string[]): void {
     const relativePath = '.codex/config.toml';
-    const filePath = path.join(home, relativePath);
+    const filePath = resolveConfigFilePath(home, relativePath);
     const header = `[mcp_servers.${SERVER_NAME}]`;
     let content: string;
     try {
@@ -105,7 +106,7 @@ function appendTomlServer(home: string, updated: string[]): void {
 
 function appendHermesServer(home: string, updated: string[]): void {
     const relativePath = '.hermes/config.yaml';
-    const filePath = path.join(home, relativePath);
+    const filePath = resolveConfigFilePath(home, relativePath);
     let content: string;
     try {
         content = fs.readFileSync(filePath, 'utf8');
@@ -115,17 +116,26 @@ function appendHermesServer(home: string, updated: string[]): void {
         }
         content = '';
     }
-    if (content.includes(`${SERVER_NAME}:`)) {
+    const existingEntry = /^([ \t]+)qaap_browser:\s*$/m.exec(content);
+    if (existingEntry) {
         return;
     }
-    const entry = `${SERVER_NAME}:\n    command: ${COMMAND}\n    args:\n${ARGS.map(arg => `      - ${JSON.stringify(arg)}`).join('\n')}\n`;
+    const formatEntry = (indent: string): string => `${indent}${SERVER_NAME}:\n`
+        + `${indent}  command: ${COMMAND}\n`
+        + `${indent}  args:\n`
+        + `${ARGS.map(arg => `${indent}    - ${JSON.stringify(arg)}`).join('\n')}\n`;
     let next: string;
-    if (/^mcp_servers:\s*\{\s*\}\s*$/m.test(content)) {
-        next = content.replace(/^mcp_servers:\s*\{\s*\}\s*$/m, `mcp_servers:\n  ${entry.trimEnd().replace(/\n/g, '\n  ')}`);
-    } else if (/^mcp_servers:\s*$/m.test(content)) {
-        next = content.replace(/^mcp_servers:\s*$/m, `mcp_servers:\n  ${entry.trimEnd().replace(/\n/g, '\n  ')}`);
+    const emptySection = /^mcp_servers:\s*\{\s*\}\s*$/m;
+    const heading = /^mcp_servers:\s*$/m;
+    const headingMatch = heading.exec(content);
+    if (emptySection.test(content)) {
+        next = content.replace(emptySection, `mcp_servers:\n${formatEntry('  ').trimEnd()}`);
+    } else if (headingMatch) {
+        const following = content.slice(headingMatch.index + headingMatch[0].length);
+        const childIndent = /^[ \t]+(?=\S)/m.exec(following)?.[0] ?? '  ';
+        next = content.replace(heading, `${headingMatch[0]}\n${formatEntry(childIndent).trimEnd()}`);
     } else {
-        next = `${content.trimEnd()}${content.trim() ? '\n\n' : ''}mcp_servers:\n  ${entry.trimEnd().replace(/\n/g, '\n  ')}\n`;
+        next = `${content.trimEnd()}${content.trim() ? '\n\n' : ''}mcp_servers:\n${formatEntry('  ')}`;
     }
     writePrivateFile(filePath, next);
     updated.push(relativePath);
@@ -133,9 +143,29 @@ function appendHermesServer(home: string, updated: string[]): void {
 
 function writePrivateFile(filePath: string, content: string): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-    const temporary = `${filePath}.${process.pid}.tmp`;
-    fs.writeFileSync(temporary, content, { mode: 0o600 });
+    const temporary = `${filePath}.${randomUUID()}.tmp`;
+    const descriptor = fs.openSync(temporary, 'wx', 0o600);
+    try {
+        fs.writeFileSync(descriptor, content, 'utf8');
+    } finally {
+        fs.closeSync(descriptor);
+    }
     fs.renameSync(temporary, filePath);
+}
+
+/** Write through the persistent-home symlink rather than replacing the link in tmpfs HOME. */
+function resolveConfigFilePath(home: string, relativePath: string): string {
+    const filePath = path.join(home, relativePath);
+    try {
+        if (fs.lstatSync(filePath).isSymbolicLink()) {
+            return fs.realpathSync(filePath);
+        }
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw error;
+        }
+    }
+    return filePath;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

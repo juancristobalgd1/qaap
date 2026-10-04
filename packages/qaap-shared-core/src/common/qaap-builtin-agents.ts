@@ -26,14 +26,11 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
     { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
     { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --dangerously-skip-permissions {model_flags} {prompt}' },
-    // `--model` is a top-level Hermes flag (`hermes --model <slug> chat`). Putting it after
-    // `chat` is accepted by argparse, but a stale ~/.hermes/config.yaml still supplies the
-    // main/auxiliary model when `{model_flags}` is empty — including dead OpenRouter `:free`
-    // slugs such as `poolside/laguna-m.1:free`. `--ignore-user-config` keeps Work Hub on the
-    // picker (or Hermes's silent default) while still loading credentials from `.env`.
+    // Hermes loads ~/.hermes/config.yaml for its configured MCP servers, including Qaap's browser.
+    // The user's saved model is honored when the picker does not supply an explicit model flag.
     // `--provider nous`: Hermes signs in to the Nous Portal from the Connect dialog (device code);
     // only QAIQ runs on Settings API keys. Nous serves the same `org/model` picker slugs.
-    { id: 'hermes', label: 'Hermes', bin: 'hermes', template: 'hermes --yolo --ignore-user-config --provider nous {model_flags} chat -Q -q {prompt}' },
+    { id: 'hermes', label: 'Hermes', bin: 'hermes', template: 'hermes --yolo --provider nous {model_flags} chat -Q -q {prompt}' },
     { id: 'openclaw', label: 'OpenClaw', bin: 'openclaw', template: 'openclaw agent --local --message {prompt}' },
     { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}' },
     { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', template: 'agy -p {prompt}' },

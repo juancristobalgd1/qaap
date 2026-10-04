@@ -136,6 +136,47 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         }
     });
 
+    it('registers the browser from a tenant-wrapped process, not from the backend process', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-browser-tenant-home-'));
+        const calls: { cwd: string; file: string; args: readonly string[]; env?: NodeJS.ProcessEnv }[] = [];
+        const runner = createRunner();
+        Object.assign(runner, {
+            tenantHomeEnvOverlay: () => ({ HOME: home }),
+            isTenantPrivilegeDropActive: () => true,
+            tenantSpawn: {
+                isContainerIsolationEnabled: () => true,
+                wrapArgvForTenant: (cwd: string, file: string, args: readonly string[], env?: NodeJS.ProcessEnv) => {
+                    calls.push({ cwd, file, args, env });
+                    return { file, args: [...args] };
+                },
+            },
+        });
+        const previousChromium = process.env.QAAP_HEADLESS_CHROMIUM;
+        process.env.QAAP_HEADLESS_CHROMIUM = process.execPath;
+        const task = {
+            id: 'browser-bootstrap', title: 'browser bootstrap', agentId: 'qaiq', command: 'qaiq -p browse',
+            cwd: '/repo', state: 'running', createdAt: 0,
+        } as QaapAgentTask;
+        try {
+            runner.buildChildEnv(task);
+
+            expect(calls).to.have.length(1);
+            expect(calls[0].cwd).to.equal(task.cwd);
+            expect(calls[0].file).to.equal(process.execPath);
+            expect(calls[0].args.join(' ')).to.contain('ensureQaapAgentBrowserMcpConfiguration');
+            expect(calls[0].env).to.deep.include({ HOME: home, QAAP_HEADLESS_CHROMIUM: process.execPath });
+            expect(calls[0].env).not.to.have.property('QAAP_TENANT_BACKEND_SECRET');
+            expect(fs.existsSync(path.join(home, '.claude.json'))).to.equal(true);
+        } finally {
+            if (previousChromium === undefined) {
+                delete process.env.QAAP_HEADLESS_CHROMIUM;
+            } else {
+                process.env.QAAP_HEADLESS_CHROMIUM = previousChromium;
+            }
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
+
     it('never forwards the tenant backend authentication secret to the agent spawn env', () => {
         process.env.QAAP_CLOUD_MODE = 'docker';
         const { env } = run('alice');
