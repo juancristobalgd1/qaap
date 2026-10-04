@@ -74,6 +74,15 @@ describe('QaapFrontendStaticServer brotli', () => {
             expect(qaapBrotliCandidatePath('/chunk-ABC123.woff2', false)).to.equal(undefined);
         });
 
+        it('ignores the cache-busting query of a hashed stylesheet font', () => {
+            expect(qaapBrotliCandidatePath('/chunk-B3TTTKGI.ttf?721d4c0a96379d0c13d3d5596893c348', false)).to.equal('/chunk-B3TTTKGI.ttf');
+            expect(qaapBrotliCandidatePath('/chunk-FMJ3VJ65.eot?v=4.7.0', false)).to.equal('/chunk-FMJ3VJ65.eot');
+            expect(qaapBrotliCandidatePath('/chunk-FMJ3VJ65.eot?%23iefix&v=4.7.0', false)).to.equal('/chunk-FMJ3VJ65.eot');
+            // Unhashed and nested files keep rejecting queries.
+            expect(qaapBrotliCandidatePath('/codicon.ttf?v=1', false)).to.equal(undefined);
+            expect(qaapBrotliCandidatePath('/nested/chunk-B3TTTKGI.ttf?v=1', false)).to.equal(undefined);
+        });
+
         it('rejects nested, queried, traversing and non-compressible paths', () => {
             for (const url of [
                 '/',

@@ -81,7 +81,13 @@ const BROTLI_CONTENT_TYPES: Record<string, string> = {
  * normalization and possibly after core's `serveGzipped` appended `.gz` (pass `gzipped`).
  */
 export function qaapBrotliCandidatePath(url: string, gzipped: boolean): string | undefined {
-    const assetUrl = gzipped && url.endsWith('.gz') ? url.slice(0, -'.gz'.length) : url;
+    let assetUrl = gzipped && url.endsWith('.gz') ? url.slice(0, -'.gz'.length) : url;
+    // Stylesheet font URLs keep their package's cache-busting query (`chunk-<hash>.ttf?<md5>`,
+    // `?v=4.7.0`). A content-addressed chunk is the same bytes whatever the query says.
+    const queryStart = assetUrl.indexOf('?');
+    if (queryStart > 0 && qaapIsImmutableHashedChunkPath(assetUrl.slice(0, queryStart))) {
+        assetUrl = assetUrl.slice(0, queryStart);
+    }
     // A remaining query would make the .br lookup ambiguous; keep the default handling.
     if (!assetUrl.startsWith('/') || /[?#\\]/.test(assetUrl)) {
         return undefined;
