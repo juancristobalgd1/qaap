@@ -73,10 +73,16 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
         }
         // Cookie-authenticated mutations come from the Qaap page itself. `same-site` is refused too:
         // sibling subdomains (e.g. previews of user apps) send the session cookie. Browsers always
-        // send Sec-Fetch-Site; curl with a copied cookie does not.
+        // send Sec-Fetch-Site; curl with a copied cookie does not. Older browsers (Safari < 16.4) do
+        // not either, so a POST without it must be JSON: a cross-site page can only send that after
+        // a CORS preflight, which this endpoint never grants. A form post is text/plain or urlencoded.
         const fetchSite = req.headers['sec-fetch-site'];
         if (req.method !== 'GET' && fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
             res.status(403).json({ error: 'Cross-site request refused.' });
+            return undefined;
+        }
+        if (req.method === 'POST' && fetchSite === undefined && !/^application\/json\s*(?:;|$)/i.test(req.headers['content-type'] ?? '')) {
+            res.status(415).json({ error: 'Send the request as application/json.' });
             return undefined;
         }
         const session = this.auth.resolveGithubSession(req);

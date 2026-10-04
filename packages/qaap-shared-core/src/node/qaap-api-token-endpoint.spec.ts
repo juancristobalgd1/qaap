@@ -91,9 +91,10 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
     const taskRequest = (token: string, url = '/qaap/api/agent-tasks', method = 'GET'): { headers: Record<string, string>; url: string; method: string } =>
         ({ headers: bearer(token), url, method });
 
-    function mint(headers: Record<string, string>, label = 'ci'): RecordedResponse {
+    function mint(headers: Record<string, string>, label = 'ci', contentType = 'application/json'): RecordedResponse {
         const recorded: RecordedResponse = { statusCode: 200, body: undefined };
-        endpoint['handleCreate']({ method: 'POST', headers, body: { label } } as unknown as Request, fakeResponse(recorded));
+        const allHeaders = contentType ? { 'content-type': contentType, ...headers } : headers;
+        endpoint['handleCreate']({ method: 'POST', headers: allHeaders, body: { label } } as unknown as Request, fakeResponse(recorded));
         return recorded;
     }
 
@@ -133,6 +134,16 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
         expect(mint({ ...cookie(aliceSession), 'sec-fetch-site': 'same-site' }).statusCode).to.equal(403);
         expect(mint({ ...cookie(aliceSession), 'sec-fetch-site': 'same-origin' }).statusCode).to.equal(201);
         expect(mint({}).statusCode).to.equal(401);
+    });
+
+    it('refuses a non-JSON mint from a browser that sends no Sec-Fetch-Site (cross-site form post)', () => {
+        // Safari < 16.4: a cross-site <form enctype="text/plain"> carries the cookie and no Sec-Fetch-Site.
+        expect(mint(cookie(aliceSession), 'csrf', 'text/plain').statusCode).to.equal(415);
+        expect(mint(cookie(aliceSession), 'csrf', 'application/x-www-form-urlencoded').statusCode).to.equal(415);
+        expect(mint(cookie(aliceSession), 'csrf', '').statusCode).to.equal(415);
+        expect(mint(cookie(aliceSession), 'curl', 'application/json; charset=utf-8').statusCode).to.equal(201);
+        // A modern browser on the Qaap page itself sends Sec-Fetch-Site: same-origin.
+        expect(mint({ ...cookie(aliceSession), 'sec-fetch-site': 'same-origin' }, 'page', 'text/plain').statusCode).to.equal(201);
     });
 
     it('only authenticates create, list, read and cancel of agent tasks', () => {
