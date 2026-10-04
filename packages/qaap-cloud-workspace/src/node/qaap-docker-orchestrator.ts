@@ -966,7 +966,7 @@ export class QaapDockerOrchestrator {
                     ],
                     Memory: this.getTenantMemoryLimitFor(ownerLogin),
                     NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
-                    PidsLimit: this.getTenantPidsLimit(),
+                    PidsLimit: this.getTenantPidsLimitFor(ownerLogin),
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
                     ReadonlyRootfs: true,
@@ -1194,7 +1194,7 @@ export class QaapDockerOrchestrator {
                     ],
                     Memory: this.getTenantMemoryLimitFor(ownerLogin),
                     NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
-                    PidsLimit: this.getTenantPidsLimit(),
+                    PidsLimit: this.getTenantPidsLimitFor(ownerLogin),
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
                     // The backend needs only credential switching so setpriv can drop each agent
@@ -1747,7 +1747,7 @@ export class QaapDockerOrchestrator {
                 && actual.RW === true) === true)
             && hostConfig.Memory === this.getTenantMemoryLimitFor(ownerLogin)
             && hostConfig.NanoCpus === this.getTenantCpuLimitFor(ownerLogin)
-            && hostConfig.PidsLimit === this.getTenantPidsLimit()
+            && hostConfig.PidsLimit === this.getTenantPidsLimitFor(ownerLogin)
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.CapAdd?.includes('SETUID') === true
@@ -2031,7 +2031,7 @@ export class QaapDockerOrchestrator {
                 && actual.RW === true) === true)
             && hostConfig.Memory === this.getTenantMemoryLimitFor(labels['com.qaap.tenant-login'])
             && hostConfig.NanoCpus === this.getTenantCpuLimitFor(labels['com.qaap.tenant-login'])
-            && hostConfig.PidsLimit === this.getTenantPidsLimit()
+            && hostConfig.PidsLimit === this.getTenantPidsLimitFor(labels['com.qaap.tenant-login'])
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.ReadonlyRootfs === true
@@ -2190,6 +2190,10 @@ export class QaapDockerOrchestrator {
         const raw = process.env.QAAP_TENANT_PIDS_LIMIT?.trim();
         const num = raw ? Number.parseInt(raw, 10) : Number.NaN;
         return Number.isInteger(num) && num > 0 ? num : 256;
+    }
+
+    protected getTenantPidsLimitFor(ownerLogin: string | undefined): number {
+        return QaapTenantResourceOverrides.pidsLimit(ownerLogin, this.getTenantPidsLimit());
     }
 
     protected getTenantBackendIngressRelayMemoryLimit(): number {

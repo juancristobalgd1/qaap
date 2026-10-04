@@ -32,5 +32,9 @@ describe('QaapTenantResourceOverrides (per-login tenant limits)', () => {
         expect(QaapTenantResourceOverrides.memoryBytes('alice', base, { QAAP_TENANT_MEMORY_LIMIT_OVERRIDES: 'alice=lots' })).to.equal(base);
         expect(QaapTenantResourceOverrides.nanoCpus('alice', 2e9, { QAAP_TENANT_CPU_LIMIT_OVERRIDES: 'alice=64' })).to.equal(8e9);
         expect(QaapTenantResourceOverrides.nanoCpus('alice', 2e9, { QAAP_TENANT_CPU_LIMIT_OVERRIDES: 'alice=-1' })).to.equal(2e9);
+        expect(QaapTenantResourceOverrides.pidsLimit('alice', 256, { QAAP_TENANT_PIDS_LIMIT_OVERRIDES: 'alice=1024' })).to.equal(1024);
+        expect(QaapTenantResourceOverrides.pidsLimit('alice', 256, { QAAP_TENANT_PIDS_LIMIT_OVERRIDES: 'alice=100000' })).to.equal(4096);
+        expect(QaapTenantResourceOverrides.pidsLimit('alice', 256, { QAAP_TENANT_PIDS_LIMIT_OVERRIDES: 'alice=64' })).to.equal(256);
+        expect(QaapTenantResourceOverrides.pidsLimit('bob', 256, { QAAP_TENANT_PIDS_LIMIT_OVERRIDES: 'alice=1024' })).to.equal(256);
     });
 });

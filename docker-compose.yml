@@ -154,11 +154,13 @@ services:
       QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
       # Per-login raises for users who build large projects (e.g. Qaap itself) in a project:
-      # "alice=8g,bob=6g" / "alice=4". Capped by the *_MAX values; never below the defaults above.
+      # "alice=8g,bob=6g" / "alice=4" / "alice=1024". Capped by the *_MAX values; never below the defaults above.
       QAAP_TENANT_MEMORY_LIMIT_OVERRIDES: ${QAAP_TENANT_MEMORY_LIMIT_OVERRIDES:-}
       QAAP_TENANT_CPU_LIMIT_OVERRIDES: ${QAAP_TENANT_CPU_LIMIT_OVERRIDES:-}
+      QAAP_TENANT_PIDS_LIMIT_OVERRIDES: ${QAAP_TENANT_PIDS_LIMIT_OVERRIDES:-}
       QAAP_TENANT_MEMORY_LIMIT_MAX: ${QAAP_TENANT_MEMORY_LIMIT_MAX:-16g}
       QAAP_TENANT_CPU_LIMIT_MAX: ${QAAP_TENANT_CPU_LIMIT_MAX:-8}
+      QAAP_TENANT_PIDS_LIMIT_MAX: ${QAAP_TENANT_PIDS_LIMIT_MAX:-4096}
       # Size of each tenant container's /tmp tmpfs (holds the tenant HOME). Charged to the tenant memory
       # limit, so values above half of QAAP_TENANT_MEMORY_LIMIT are ignored. Package caches and agent
       # databases are kept on the tenant's disk-backed data mount instead (QAAP_TENANT_AGENT_STORAGE_ROOT=off
