@@ -13270,6 +13270,10 @@ body.theia-mod-work-hub-settings-resizing * {
   padding: 16px 18px;
 }
 
+.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card.qaap-harness-card-install-unavailable {
+  grid-template-columns: 32px minmax(0, 1fr);
+}
+
 .theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card.theia-mod-disabled {
   border-color: var(--theia-widget-border, rgba(128, 128, 128, 0.35));
   background: transparent;
@@ -14790,6 +14794,63 @@ body.theia-mod-work-hub-settings-resizing * {
   border-color: var(--theia-focusBorder, var(--theia-focus-border));
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
   outline: none;
+}
+
+.theia-mobile-agent-login-dialog-footer {
+  gap: 8px;
+}
+
+.theia-mobile-agent-login-dialog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.theia-mobile-agent-login-dialog-primary {
+  min-height: 34px;
+  margin: 0;
+}
+
+.theia-mobile-agent-login-dialog-message {
+  margin: 0 0 12px;
+  color: var(--theia-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.theia-mobile-agent-login-dialog-output {
+  max-height: 160px;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--theia-widget-border, var(--theia-editorWidget-border));
+  border-radius: 8px;
+  background: var(--theia-terminal-background, var(--theia-editor-background));
+  color: var(--theia-terminal-foreground, var(--theia-foreground));
+  font-family: var(--theia-codeFontFamily, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.theia-mobile-agent-login-dialog-code-form {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.theia-mobile-agent-login-dialog-code-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  font-family: var(--theia-codeFontFamily, monospace);
+  /* 16px keeps iOS Safari from zooming the dialog when the field gains focus. */
+  font-size: 16px;
+}
+
+.theia-mobile-agent-login-dialog-code-submit {
+  flex: 0 0 auto;
+  min-height: 34px;
+  margin: 0;
 }
 
 @keyframes qaap-agent-login-dialog-spin {

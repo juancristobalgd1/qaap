@@ -21,6 +21,12 @@ export interface QaapAgentAuthLoginChallenge {
      * `api_key` — missing/invalid API key (Settings / BYOK).
      */
     readonly mode: 'session' | 'api_key';
+    /**
+     * The CLI is blocked on a prompt for the code the sign-in page shows after approval
+     * (Claude Code `Paste code here if prompted >`, Gemini `Enter the authorization code:`).
+     * The dialog must offer an input whose value is written to the CLI's stdin.
+     */
+    readonly codeEntry?: boolean;
 }
 
 const AUTH_URL_RE = /https?:\/\/[^\s<>"'`)\]|,]+/gi;
@@ -36,18 +42,42 @@ interface AuthUrlPolicy {
  * substring such as `oauth`, a query parameter, or a parent-looking subdomain.
  */
 const AUTH_URL_POLICIES: readonly AuthUrlPolicy[] = [
-    { agents: ['codex'], hostname: 'auth.openai.com', path: /^\/(?:codex\/device|device|oauth|authorize)(?:\/|$)/i },
+    // OpenCode's "ChatGPT Pro/Plus (headless)" method prints the same Codex device page.
+    { agents: ['codex', 'opencode'], hostname: 'auth.openai.com', path: /^\/(?:codex\/device|device|oauth|authorize)(?:\/|$)/i },
     { agents: ['codex'], hostname: 'chatgpt.com', path: /^\/(?:auth|oauth)(?:\/|$)/i },
+    // Claude Code 2.1.x prints `https://claude.com/cai/oauth/authorize?code=true&…`.
+    { agents: ['claude'], hostname: 'claude.com', path: /^\/(?:cai\/)?oauth\/authorize(?:\/|$)/i },
     { agents: ['claude'], hostname: 'claude.ai', path: /^\/oauth\/authorize(?:\/|$)/i },
     { agents: ['claude'], hostname: 'console.anthropic.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
     { agents: ['claude'], hostname: 'platform.claude.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
     { agents: ['copilot'], hostname: 'github.com', path: /^\/login\/(?:device|oauth|authorize)(?:\/|$)/i },
-    { agents: ['cursor'], hostname: 'cursor.com', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
+    // Cursor Agent prints `https://cursor.com/loginDeepControl?challenge=…&uuid=…` and polls for the result.
+    { agents: ['cursor'], hostname: 'cursor.com', path: /^\/(?:loginDeepControl|auth|login|oauth|device|authorize)(?:\/|$)/i },
     { agents: ['cursor'], hostname: 'cursor.sh', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
     { agents: ['cursor'], hostname: 'authenticator.cursor.sh', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
     { agents: ['gemini', 'antigravity'], hostname: 'accounts.google.com', path: /^\/(?:o\/oauth2|signin\/oauth|device)(?:\/|$)/i },
+    // Grok 1.0.x `login --device-auth` prints `https://accounts.x.ai/oauth2/device?user_code=…`.
+    { agents: ['grok'], hostname: 'accounts.x.ai', path: /^\/oauth2\/device(?:\/|$)/i },
     { agents: ['grok'], hostname: 'auth.x.ai', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
     { agents: ['copilot'], hostname: 'login.microsoftonline.com', path: /^\/[^/]+\/oauth2\/(?:v2\.0\/)?authorize(?:\/|$)/i },
+];
+
+/** Prompts of CLIs that wait for the user to paste back the code shown after approval. */
+const CODE_ENTRY_PROMPT_PATTERNS: readonly RegExp[] = [
+    /\bpaste\s+(?:the\s+)?(?:authorization\s+)?code\s+here\b/i,
+    /\benter\s+the\s+authori[sz]ation\s+code\b/i,
+];
+
+/**
+ * Final lines of a successful CLI login. Only unambiguous past-tense confirmations: a prompt
+ * such as "Waiting for authorization…" must never count as connected.
+ */
+const LOGIN_SUCCESS_PATTERNS: readonly RegExp[] = [
+    /\blog(?:ged)?\s*in\s+successful(?:ly)?\b/i,
+    /\bsuccessfully\s+(?:logged|signed)\s+in\b/i,
+    /\b(?:logged|signed)\s+in\s+(?:successfully|as\s+\S+)/i,
+    /\bauthentication\s+(?:successful|complete)\b/i,
+    /\bauthenticated\s+as\s+\S+/i,
 ];
 
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
@@ -201,11 +231,19 @@ export function extractAgentAuthLoginChallenge(
         return undefined;
     }
     const resolvedMode = mode ?? 'session';
+    const codeEntry = matchesAny(sample, CODE_ENTRY_PROMPT_PATTERNS);
     return {
         mode: resolvedMode,
         ...(urls[0] ? { url: urls[0] } : {}),
         ...(userCode ? { userCode } : {}),
+        ...(codeEntry ? { codeEntry } : {}),
     };
+}
+
+/** True when the login CLI reported that the sign-in completed. */
+export function isAgentLoginSuccessOutput(output: string | undefined): boolean {
+    const sample = (output ?? '').trim();
+    return !!sample && matchesAny(sample, LOGIN_SUCCESS_PATTERNS);
 }
 
 /** User-facing copy for auth failures — session login vs Settings API key. */
@@ -239,44 +277,44 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
     if (!normalized) {
         return undefined;
     }
-    // Commands audited against the installed CLIs (Aug 2026, `<bin> login --help`). In a headless
-    // cloud workspace the classic OAuth redirect-to-localhost cannot complete — the callback lands
-    // on the user's machine, not the server — so only device-code / paste flows work. Prefer the
-    // device-code flag wherever the CLI offers one.
+    // Commands verified against the CLIs the image installs (Oct 2026, captured under a PTY): each
+    // prints a link / device code within seconds and finishes without a localhost callback, which
+    // can never reach a headless VPS.
     switch (normalized) {
         case 'codex':
             return 'codex login --device-auth';
         case 'claude':
-            // Claude Code's own login is device/console paste; no flag needed.
+            // 2.1.x prints `claude.com/cai/oauth/authorize?…` then `Paste code here if prompted >`.
             return 'claude auth login';
         case 'grok':
-            // grok login --device-auth: "device-code authentication for headless/remote
-            // environments" (its own help). Works in cloud; previously misfiled as BYOK.
+            // Prints `accounts.x.ai/oauth2/device?user_code=…` and the code on its own line.
             return 'grok login --device-auth';
         case 'copilot':
-            // Force the device code flow in the tenant container and store Copilot CLI's own token.
+            // `To authenticate, visit https://github.com/login/device and enter code XXXX-XXXX`.
             return 'copilot login --device-code';
-        case 'cursor':
-            // Localhost OAuth callback cannot complete on a headless VPS.
+        case 'opencode':
+            // The bare `opencode auth login` opens a provider picker nobody can drive from a phone.
+            // The headless ChatGPT method prints `auth.openai.com/codex/device` + `Enter code:`.
+            return 'opencode auth login -p openai -m \'ChatGPT Pro/Plus (headless)\'';
+        case 'cursor': {
+            // Prints `cursor.com/loginDeepControl?challenge=…&uuid=…` and polls cursor's API for
+            // the result (no localhost callback). Hosted runtimes still hide Cursor by policy.
             if (isAgentHiddenOnHostedRuntime('cursor')) {
                 return undefined;
             }
-            // Prints a URL instead of opening a browser. Completes on desktop.
             // This common module is bundled into the browser, where Node's `process` is not
             // defined. Keep the optional platform probe guarded so merely opening the picker
-            // cannot crash the whole modal; the backend still receives the platform-specific
-            // command when Node is available.
+            // cannot crash the whole modal.
             const runtimeProcess = (globalThis as typeof globalThis & {
                 process?: { readonly platform?: string };
             }).process;
             return runtimeProcess?.platform === 'win32'
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
                 : 'NO_OPEN_BROWSER=1 cursor-agent login';
-        case QAIQ_AGENT_ID:
-            // QAIQ is BYOK / Settings — no CLI OAuth login command.
-            return undefined;
-        // gemini / antigravity (`agy`) expose no login subcommand — `agy` just launches the TUI,
-        // which is the dead end users hit. Treat them as BYOK so the UI points to Settings instead.
+        }
+        // QAIQ, OpenClaude and Hermes run on Settings API keys. Antigravity's `ag` has no login at
+        // all (it talks to a running Antigravity desktop app) and the runner's Gemini fallback reads
+        // GEMINI_API_KEY, so both go to Settings too.
         default:
             return undefined;
     }

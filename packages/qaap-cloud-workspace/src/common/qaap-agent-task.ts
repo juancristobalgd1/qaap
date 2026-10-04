@@ -295,6 +295,27 @@ export interface QaapCreateAgentTaskRequest {
 /** A coding agent the runner knows how to invoke. */
 export type QaapAgentConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
 
+/** Installation and per-user state for a harness settings card. */
+export interface QaapAgentHarnessStatus {
+    readonly id: string;
+    readonly installed: boolean;
+    readonly enabled: boolean;
+    readonly connectionState: QaapAgentConnectionState;
+    readonly installSupported: boolean;
+    /** False when the harness has no installable package at all (vs. installs disabled on this server). */
+    readonly installPackageAvailable?: boolean;
+    readonly version?: string;
+    /**
+     * The user's per-user harness install directory. Terminals do not get it on PATH, so the
+     * Connect flow prepends it to the login command; otherwise a per-user install is "not found".
+     */
+    readonly cliBinDirectory?: string;
+}
+
+export interface QaapAgentHarnessStatusResponse {
+    readonly harnesses: readonly QaapAgentHarnessStatus[];
+}
+
 export interface QaapAgentDescriptor {
     /** Stable identifier sent back in {@link QaapCreateAgentTaskRequest.agent}. */
     readonly id: string;
@@ -373,6 +394,8 @@ export interface QaapAgentTaskAllResponse {
     readonly agentConfigured: boolean;
     readonly agents: QaapAgentDescriptor[];
     readonly defaultAgent: string;
+    /** Whether users may install a missing npm-backed CLI in this backend environment. */
+    readonly installSupported?: boolean;
     /** True only when the QAIQ executable was detected on the backend PATH at startup. */
     readonly qaiqInstalled?: boolean;
     readonly qaiqModels?: QaapQaiqModelOption[];

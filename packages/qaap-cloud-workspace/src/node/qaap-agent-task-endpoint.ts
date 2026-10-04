@@ -13,6 +13,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_AGENT_TASK_API_PATH,
     QaapAgentTaskKind,
+    type QaapAgentHarnessStatusResponse,
     type QaapAgentTaskAllResponse,
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
@@ -25,6 +26,8 @@ import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
@@ -86,6 +89,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
             void this.handleListAgentModels(req, res);
         });
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/harness-status`, (req, res) => {
+            this.handleListHarnessStatuses(req, res);
+        });
         // Static `/cli-updates` segments must register before `/:id` below.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, (req, res) => {
             void this.handleListCliUpdates(req, res);
@@ -115,23 +121,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // Cross-project dashboard feed — `/all` and `/stream` are static segments routed before
         // the `/:id` handler below so they never collide with a task id.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/all`, (req, res) => {
-            const ctx = this.requireAuth(req, res);
-            if (!ctx) {
-                return;
-            }
-            if (req.query.refresh === '1' || req.query.refresh === 'true') {
-                this.runner.refreshAgentCatalog();
-            }
-            // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
-            // full task history (with whole prompts) multiplies into tens of MB per call. Live
-            // task groups arrive over the WebSocket snapshot instead.
-            res.json({
-                agentConfigured: this.runner.isAgentConfigured(),
-                qaiqInstalled: this.runner.isQaiqInstalled(),
-                agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
-                defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
-                qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
-            } satisfies QaapAgentTaskAllResponse);
+            this.handleListAll(req, res);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
@@ -406,30 +396,87 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         res.json({ agent: requestedAgent, models });
     }
 
+    protected handleListAll(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        if (req.query.refresh === '1' || req.query.refresh === 'true') {
+            this.runner.refreshAgentCatalog();
+        }
+        // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
+        // full task history (with whole prompts in `command`) multiplies into tens of MB per call. Live
+        // task groups arrive over the WebSocket snapshot instead.
+        const ownerLogin = this.auth.resolveUserLogin(ctx);
+        res.json({
+            agentConfigured: this.runner.isAgentConfigured(),
+            qaiqInstalled: this.runner.isQaiqInstalled(),
+            agents: this.runner.listAgents(ownerLogin),
+            defaultAgent: this.runner.defaultAgent(ownerLogin),
+            qaiqModels: this.runner.listQaiqModels(ownerLogin),
+            installSupported: this.cliUpdates.isInstallSupported(),
+        } satisfies QaapAgentTaskAllResponse);
+    }
+
+    protected handleListHarnessStatuses(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const ownerLogin = this.auth.resolveUserLogin(ctx);
+        const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+            harnesses: this.runner.listHarnessStatuses(
+                ownerLogin,
+                agentId => this.cliUpdates.isAgentInstallSupported(agentId, installTarget),
+            ).map(harness => ({ ...harness, installPackageAvailable: this.cliUpdates.hasInstallablePackage(harness.id) })),
+        } satisfies QaapAgentHarnessStatusResponse);
+    }
+
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
         const authContext = this.requireAuth(req, res);
         if (!authContext) {
             return;
         }
-        // End users of hosted deployments cannot act on an "Update available" toast (CLIs are
-        // pinned in the image), so do not surface outdated CLIs where in-place update is denied.
-        if (!this.cliUpdates.isInPlaceCliUpdateAllowed()) {
+        const ownerLogin = this.auth.resolveUserLogin(authContext);
+        const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
+        if (!this.cliUpdates.isInstallSupportedForTarget(installTarget)) {
             res.json({ updates: [] });
             return;
         }
         try {
-            const payload = await this.cliUpdates.listOutdated();
-            const ownerLogin = this.auth.resolveUserLogin(authContext);
+            const payload = await this.cliUpdates.listOutdated(installTarget);
             res.json({
-                updates: payload.updates.filter(update => this.runner.isAgentEnabled(update.id, ownerLogin)),
+                updates: payload.updates
+                    .filter(update => this.runner.isAgentEnabled(update.id, ownerLogin))
+                    .map(update => ({
+                        ...update,
+                        updateSupported: this.cliUpdates.isAgentInstallSupported(update.id, installTarget),
+                    })),
             });
         } catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
         }
     }
 
+    /** 409 while another install for the user runs, 429 when rate limited, 403 for policy refusals, 502 for npm failures. */
+    protected cliInstallStatusCode(result: QaapAgentCliUpdateResult): number {
+        if (result.ok) {
+            return 200;
+        }
+        switch (result.reason) {
+            case 'busy': return 409;
+            case 'rate-limited': return 429;
+            case 'refused': return 403;
+            case 'failed': return 502;
+            default: return 400;
+        }
+    }
+
     protected async handleInstallCliUpdate(req: Request, res: Response): Promise<void> {
-        if (!this.requireAuth(req, res)) {
+        const authContext = this.requireAuth(req, res);
+        if (!authContext) {
             return;
         }
         const agentId = typeof req.params.agentId === 'string' ? req.params.agentId.trim() : '';
@@ -437,22 +484,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"agentId" is required.' });
             return;
         }
-        // Hosted/production: any authenticated tenant must not mutate shared global CLIs.
-        if (!this.cliUpdates.isInPlaceCliUpdateAllowed()) {
-            res.status(403).json({
-                ok: false,
-                id: agentId,
-                message: 'In-place CLI updates are disabled on hosted/production deployments. '
-                    + 'Rebuild the Qaap image with updated CLI pins.',
-            });
+        const ownerLogin = this.auth.resolveUserLogin(authContext)?.trim();
+        // A hosted install always belongs to a signed-in user: their prefix, their lock, their rate limit.
+        if (!ownerLogin && isQaapProductionRuntime(process.env)) {
+            res.status(403).json({ ok: false, id: agentId, reason: 'refused', message: 'Sign in to install harnesses.' });
             return;
         }
         try {
-            const result = await this.cliUpdates.installUpdate(agentId);
+            const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
+            const result = await this.cliUpdates.installUpdate(agentId, installTarget, { userKey: ownerLogin?.toLowerCase() });
             if (result.ok) {
                 this.runner.refreshAgentCatalog();
             }
-            res.status(result.ok ? 200 : 400).json(result);
+            res.status(this.cliInstallStatusCode(result)).json(result);
         } catch (error) {
             res.status(500).json({
                 ok: false,

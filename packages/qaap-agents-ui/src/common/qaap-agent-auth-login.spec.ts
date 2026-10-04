@@ -141,7 +141,7 @@ describe('qaap-agent-auth-login', () => {
         // BYOK / no login subcommand — routed to Settings, never a bare TUI.
         expect(resolveAgentLoginCliCommand('qaiq')).to.equal(undefined);
         expect(resolveAgentLoginCliCommand('antigravity')).to.equal(undefined);
-        expect(resolveAgentLoginCliCommand('opencode')).to.equal(undefined);
+        expect(resolveAgentLoginCliCommand('opencode')).to.equal('opencode auth login -p openai -m \'ChatGPT Pro/Plus (headless)\'');
     });
 
     it('agentHasCliOAuthLogin is true only for CLI OAuth agents, false for BYOK/Settings', () => {
@@ -152,10 +152,11 @@ describe('qaap-agent-auth-login', () => {
         expect(agentHasCliOAuthLogin('copilot')).to.equal(true);
         // grok has a real device-code login — corrected from BYOK after auditing its CLI.
         expect(agentHasCliOAuthLogin('grok')).to.equal(true);
+        // OpenCode's headless ChatGPT method is a device-code login.
+        expect(agentHasCliOAuthLogin('opencode')).to.equal(true);
         // BYOK / Settings-catalog agents — no terminal sign-in, no proactive entry.
         expect(agentHasCliOAuthLogin('qaiq')).to.equal(false);
-        expect(agentHasCliOAuthLogin('opencode')).to.equal(false);
-        // antigravity's `agy` only launches the TUI — no login, so BYOK.
+        // antigravity's `ag` has no login at all (it needs the Antigravity desktop app), so BYOK.
         expect(agentHasCliOAuthLogin('antigravity')).to.equal(false);
         expect(agentHasCliOAuthLogin(undefined)).to.equal(false);
         expect(agentHasCliOAuthLogin('')).to.equal(false);

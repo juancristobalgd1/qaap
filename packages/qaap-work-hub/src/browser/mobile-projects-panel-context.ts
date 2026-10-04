@@ -98,7 +98,6 @@ export type MobileProjectsPanelContextMember =
     | 'missionControlHubUi'
     | 'mobileIdeViewPicker'
     | 'navigateHubTab'
-    | 'notifyAgentUsesSettingsApiKey'
     | 'notifyWorkspaceHubBottomBarRefresh'
     | 'onBootstrapPreviewOpened'
     | 'onCancelConversation'
