@@ -39,6 +39,14 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
 
     protected override ensureTenantAgentStorage(root: string): void {
         this.storagePrepared.push(root);
+        this.preparedAgentStorageRoots.add(root);
+    }
+
+    /** Persistent HOME links the service requested (never touches the real filesystem in tests). */
+    linkedHomes: Array<{ home: string; persistentHome: string; owner?: { uid: number; gid: number } }> = [];
+
+    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): void {
+        this.linkedHomes.push({ home, persistentHome, ...(owner ? { owner } : {}) });
     }
 
     protected override isBackendRoot(): boolean {
@@ -624,6 +632,36 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         expect(env.YARN_GLOBAL_FOLDER).to.equal(`${root}/data/yarn-berry`);
         expect(env).not.to.have.property('YARN_CACHE_FOLDER');
         expect(svc.storagePrepared).to.deep.equal([root]);
+    });
+
+    it('links the CLI sign-in state of the tmpfs HOME to the disk-backed storage once', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_CONFIG_ROOT = '/home/theia/.qaap';
+        delete process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+        const originalAgentUid = process.env.QAAP_AGENT_UID;
+        process.env.QAAP_AGENT_UID = '1001';
+        try {
+            const svc = new TestTenantSpawnService();
+            svc.backendRoot = true;
+            svc.resolveProcessEnv(tenantCwd, {});
+            svc.resolveProcessEnv(tenantCwd, {});
+            expect(svc.linkedHomes).to.deep.equal([{
+                home: '/tmp/qaap-home',
+                persistentHome: '/home/theia/.qaap/.qaap-agent-storage/home',
+                owner: { uid: 1001, gid: 1001 },
+            }]);
+
+            process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = 'off';
+            const disabled = new TestTenantSpawnService();
+            disabled.resolveProcessEnv(tenantCwd, {});
+            expect(disabled.linkedHomes).to.deep.equal([]);
+        } finally {
+            if (originalAgentUid === undefined) {
+                delete process.env.QAAP_AGENT_UID;
+            } else {
+                process.env.QAAP_AGENT_UID = originalAgentUid;
+            }
+        }
     });
 
     it('honours an explicit agent storage root and an explicit opt-out', () => {

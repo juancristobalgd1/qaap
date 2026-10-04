@@ -25,6 +25,9 @@ export const QAAP_TENANT_AGENT_STORAGE_CACHE_DIRNAME = 'cache';
 /** Persistent agent data sub-directory (`XDG_DATA_HOME`: opencode.db and similar harness state). */
 export const QAAP_TENANT_AGENT_STORAGE_DATA_DIRNAME = 'data';
 
+/** Sign-in state of agent CLIs, linked from the tmpfs HOME (see `QaapTenantPersistentHome`). */
+export const QAAP_TENANT_AGENT_STORAGE_HOME_DIRNAME = 'home';
+
 /**
  * Environment that redirects heavy, non-secret data away from the tenant HOME.
  *
@@ -70,6 +73,11 @@ export namespace QaapTenantAgentStorageEnv {
     /** Data directory below `root`. */
     export function dataDir(root: string): string {
         return path.posix.join(root, QAAP_TENANT_AGENT_STORAGE_DATA_DIRNAME);
+    }
+
+    /** Persistent HOME entries (agent credentials) below `root`. */
+    export function homeDir(root: string): string {
+        return path.posix.join(root, QAAP_TENANT_AGENT_STORAGE_HOME_DIRNAME);
     }
 
     /** The child-process environment variables for `root`. */
