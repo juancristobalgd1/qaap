@@ -25,12 +25,19 @@ describe('qaap-work-surface-reload (F5 same-tab surface contract)', () => {
     const LOGIN_GATE_PATH = path.join(__dirname, '..', '..', '..', 'qaap-product', 'resources', 'qaap-login-gate.js');
 
     let disableJSDOM: (() => void) | undefined;
+    const globalStorage = global as unknown as { sessionStorage?: Storage };
+    let previousGlobalSessionStorage: Storage | undefined;
 
     before(() => {
         disableJSDOM = enableJSDOM();
+        // Other specs replace the global `sessionStorage` with stubs; the module reads the global,
+        // so point it at the jsdom storage this suite clears.
+        previousGlobalSessionStorage = globalStorage.sessionStorage;
+        globalStorage.sessionStorage = window.sessionStorage;
     });
 
     after(() => {
+        globalStorage.sessionStorage = previousGlobalSessionStorage;
         disableJSDOM?.();
         disableJSDOM = undefined;
     });

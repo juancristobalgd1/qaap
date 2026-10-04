@@ -16,12 +16,18 @@ disableImportJSDOM();
 describe('qaap-deferred-perfect-scrollbar', () => {
 
     let disableJSDOM: (() => void) | undefined;
+    const globalEvents = global as unknown as { CustomEvent: typeof CustomEvent };
+    let nodeCustomEvent: typeof CustomEvent;
 
     before(() => {
         disableJSDOM = enableJSDOM();
+        // perfect-scrollbar fires `new CustomEvent(...)`; Node's own global would be rejected by jsdom elements.
+        nodeCustomEvent = globalEvents.CustomEvent;
+        globalEvents.CustomEvent = window.CustomEvent;
     });
 
     after(() => {
+        globalEvents.CustomEvent = nodeCustomEvent;
         disableJSDOM?.();
         disableJSDOM = undefined;
     });

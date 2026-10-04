@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-/// <reference types="highlight.js" />
-// The reference loads the package's ambient `highlight.js/lib/*` module declarations.
+import type {} from 'highlight.js';
+// The type-only import loads the package's ambient `highlight.js/lib/*` module declarations.
 
 import hljs = require('highlight.js/lib/core');
 import bash = require('highlight.js/lib/languages/bash');
