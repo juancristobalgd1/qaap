@@ -60,6 +60,35 @@ function markTerminalRestorable(terminal: TerminalWidget): void {
     }
 }
 
+/** The xterm 5 internals that keep a deferred resize alive after the terminal is disposed. */
+interface XtermPausedResizeHolder {
+    readonly term?: {
+        readonly _core?: {
+            readonly _renderService?: {
+                readonly _pausedResizeTask?: { clear(): void };
+            };
+        };
+    };
+}
+
+/**
+ * Drops the resize xterm deferred while the terminal was paused (not intersecting the viewport).
+ *
+ * Disposing the WebGL addon (first step of `TerminalWidgetImpl.dispose`) swaps in a DOM renderer
+ * and calls `RenderService.handleResize`. For a terminal parked in the hidden staging host xterm
+ * is paused, so that call becomes an idle task `() => this._renderer.value.handleResize(...)`
+ * which xterm never cancels. Once the core is disposed, `_renderer.value` is undefined and the
+ * task threw "Cannot read properties of undefined (reading 'handleResize')" every time the agent
+ * login dialog closed. Call after `terminal.dispose()`; nothing can render afterwards.
+ */
+export function cancelDisposedTerminalPausedResize(terminal: TerminalWidget): void {
+    try {
+        (terminal as unknown as XtermPausedResizeHolder).term?._core?._renderService?._pausedResizeTask?.clear();
+    } catch {
+        // Another xterm version without this task has nothing to cancel.
+    }
+}
+
 /** Persists terminal widget state before a same-tab reload (F5). */
 export function markTranscriptTerminalRestorable(terminal: TerminalWidget): void {
     markTerminalRestorable(terminal);
@@ -194,6 +223,7 @@ export async function createTranscriptTerminalSurface(
             if (!terminal.isDisposed) {
                 terminal.dispose();
             }
+            cancelDisposedTerminalPausedResize(terminal);
             mountHost.remove();
             stagingHost?.remove();
             transcriptTerminalStagingHosts.delete(surface);

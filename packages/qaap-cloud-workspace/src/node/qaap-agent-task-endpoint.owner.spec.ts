@@ -50,6 +50,8 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
                 refreshAgentCatalog: () => undefined,
                 resolveHelperTokenOwner: () => undefined,
                 listAgents: record('listAgents', []),
+                // `/all` lists agents through the probe-budgeted variant; it must stay owner-scoped too.
+                listAgentsFresh: record('listAgents', Promise.resolve([])),
                 defaultAgent: record('defaultAgent', 'qaiq'),
                 listQaiqModels: record('listQaiqModels', []),
                 listModelsForAgent: record('listModelsForAgent', [{ modelId: 'm' }]),

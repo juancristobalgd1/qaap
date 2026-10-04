@@ -315,6 +315,53 @@ export class MobileProjectsStickyComposerAgentsUi {
         renderAgentPickerLoadError(chrome.list, onRetry);
     }
 
+    /** Catalog from the last successful sticky-composer refresh (empty until one completed). */
+    getLoadedStickyComposerAgents(): readonly QaapAgentTaskAgentOption[] {
+        return this.host.stickyComposerBackendAgents;
+    }
+
+    /**
+     * Fill an agent picker. A previously loaded catalog is painted immediately and refreshed in the
+     * background (only repainted when it changed and the user is still on the agent list); without
+     * one the skeleton stays until the backend answers. Status probes on the backend can take
+     * seconds, so the first paint must never wait for them when a catalog is already known.
+     */
+    loadComposerAgentPickerCatalog(
+        chrome: ComposerAgentPickerChrome,
+        options: {
+            /** Last catalog this composer loaded; empty means nothing is known yet. */
+            readonly cached: readonly QaapAgentTaskAgentOption[];
+            readonly load: () => Promise<readonly QaapAgentTaskAgentOption[]>;
+            readonly isCurrent: () => boolean;
+            readonly render: (agents: readonly QaapAgentTaskAgentOption[]) => void;
+            readonly onError: () => void;
+        },
+    ): void {
+        const cached = options.cached.length > 0
+            ? this.getComposerAgentPickerAgents(options.cached)
+            : undefined;
+        if (cached) {
+            options.render(cached);
+        } else {
+            this.showComposerAgentPickerLoading(chrome);
+        }
+        void options.load().then(agents => {
+            if (!options.isCurrent()) {
+                return;
+            }
+            if (cached && (chrome.header.classList.contains('theia-mod-drilldown')
+                || composerAgentCatalogSignature(agents) === composerAgentCatalogSignature(cached))) {
+                return;
+            }
+            options.render(agents);
+        }).catch(() => {
+            // A stale-but-painted catalog stays usable; only an empty picker needs the retry state.
+            if (options.isCurrent() && !cached) {
+                options.onError();
+            }
+        });
+    }
+
     async ensureStickyComposerAgentsLoaded(
         project: MobileProjectEntry,
         options?: { force?: boolean },
@@ -353,4 +400,9 @@ export class MobileProjectsStickyComposerAgentsUi {
             });
         });
     }
+}
+
+/** Stable identity of what an agent picker row shows, used to skip no-op background repaints. */
+function composerAgentCatalogSignature(agents: readonly QaapAgentTaskAgentOption[]): string {
+    return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState]));
 }

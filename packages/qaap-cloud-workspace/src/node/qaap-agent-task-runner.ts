@@ -164,6 +164,11 @@ import {
     type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
 
+/** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
+export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
+/** How long the picker catalog waits for stale auth probes before answering with last known states. */
+export const QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS = 1_200;
+
 /**
  * Runs background tasks on the VPS as detached-from-tab child processes. A task keeps running
  * after the browser tab is closed or the phone is locked, because it lives in the backend
@@ -296,6 +301,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     protected readonly probedAgentBins = new Set<string>();
     /** Short-lived, per-tenant auth probe cache; Connect invalidates it through refreshAgentCatalog. */
     protected readonly agentConnectionStates = new Map<string, { readonly state: QaapAgentDescriptor['connectionState']; readonly at: number }>();
+    /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
+    protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
@@ -545,6 +552,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** Re-probe CLI harnesses after a local install from the configuration UI. */
     refreshAgentCatalog(): void {
         this.agentConnectionStates.clear();
+        this.agentConnectionProbes.clear();
         this.detectAgents();
     }
 
@@ -574,6 +582,29 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             });
     }
 
+    /**
+     * {@link listAgents} after giving the stale auth probes up to `budgetMs` to settle. The probes
+     * run in parallel off the event loop; whatever is still pending keeps its last known state
+     * and lands in the cache for the next request.
+     */
+    async listAgentsFresh(ownerLogin?: string, budgetMs = QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS): Promise<QaapAgentDescriptor[]> {
+        const pending = listAgentsHelper(this.detectedAgents)
+            .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
+            .map(agent => this.refreshAgentConnectionState(agent.id, ownerLogin))
+            .filter((probe): probe is Promise<QaapAgentDescriptor['connectionState']> => !!probe);
+        if (pending.length > 0) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            await Promise.race([
+                Promise.all(pending),
+                new Promise<void>(resolve => {
+                    timer = setTimeout(resolve, budgetMs);
+                }),
+            ]);
+            clearTimeout(timer);
+        }
+        return this.listAgents(ownerLogin);
+    }
+
     /** Complete settings catalog; unlike listAgents this includes disabled and disconnected CLIs. */
     listHarnessStatuses(
         ownerLogin: string | undefined,
@@ -601,11 +632,21 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         });
     }
 
-    /** Authentication state for the current tenant's CLI credentials. */
+    /** Authentication state for the current tenant's CLI credentials (last known; never blocks). */
     isAgentConnected(agentId: string, ownerLogin?: string): boolean {
         return this.agentConnectionState(agentId, ownerLogin) === 'connected';
     }
 
+    /** Like {@link isAgentConnected}, but waits for a stale auth probe to finish first. */
+    async isAgentConnectedFresh(agentId: string, ownerLogin?: string): Promise<boolean> {
+        await this.refreshAgentConnectionState(agentId, ownerLogin);
+        return this.isAgentConnected(agentId, ownerLogin);
+    }
+
+    /**
+     * Last known auth state. A missing or stale entry starts an asynchronous probe and answers with
+     * the previous state (`unknown` the first time) instead of spawning the CLI synchronously.
+     */
     protected agentConnectionState(agentId: string, ownerLogin?: string): QaapAgentDescriptor['connectionState'] {
         const normalized = agentId.trim().toLowerCase();
         const candidate = this.detectedAgents.get(normalized);
@@ -622,16 +663,52 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!resolveAgentConnectionProbeArgsHelper(normalized)) {
             return 'unknown';
         }
-        const now = Date.now();
-        const owner = ownerLogin?.trim().toLowerCase() ?? '';
-        const cacheKey = `${normalized}:${owner}`;
-        const cached = this.agentConnectionStates.get(cacheKey);
-        if (cached && now - cached.at < 15_000) {
-            return cached.state;
+        void this.refreshAgentConnectionState(normalized, ownerLogin);
+        return this.agentConnectionStates.get(this.agentConnectionCacheKey(normalized, ownerLogin))?.state ?? 'unknown';
+    }
+
+    /**
+     * Start (or join) the auth probe for a CLI-login harness whose cached state is missing or older
+     * than {@link QAAP_AGENT_CONNECTION_STATE_TTL_MS}. Returns undefined when nothing needs probing.
+     */
+    protected refreshAgentConnectionState(
+        agentId: string,
+        ownerLogin?: string,
+    ): Promise<QaapAgentDescriptor['connectionState']> | undefined {
+        const normalized = agentId.trim().toLowerCase();
+        const candidate = this.detectedAgents.get(normalized);
+        if (!candidate || !resolveAgentConnectionProbeArgsHelper(normalized)) {
+            return undefined;
         }
-        const state = this.probeAgentConnectionState(normalized, candidate.bin ?? normalized, ownerLogin);
-        this.agentConnectionStates.set(cacheKey, { state, at: now });
-        return state;
+        if (typeof hasAgentSettingsCredentialsHelper(normalized, this.preferenceReaderForOwner(ownerLogin)) === 'boolean') {
+            return undefined;
+        }
+        const cacheKey = this.agentConnectionCacheKey(normalized, ownerLogin);
+        const cached = this.agentConnectionStates.get(cacheKey);
+        if (cached && Date.now() - cached.at < QAAP_AGENT_CONNECTION_STATE_TTL_MS) {
+            return undefined;
+        }
+        const inFlight = this.agentConnectionProbes.get(cacheKey);
+        if (inFlight) {
+            return inFlight;
+        }
+        const probe = this.probeAgentConnectionState(normalized, candidate.bin ?? normalized, ownerLogin)
+            .catch((): QaapAgentDescriptor['connectionState'] => 'unknown')
+            .then(state => {
+                // refreshAgentCatalog() may have dropped this probe meanwhile; never let a
+                // pre-Connect answer overwrite the cache of the probe that replaced it.
+                if (this.agentConnectionProbes.get(cacheKey) === probe) {
+                    this.agentConnectionProbes.delete(cacheKey);
+                    this.agentConnectionStates.set(cacheKey, { state, at: Date.now() });
+                }
+                return state;
+            });
+        this.agentConnectionProbes.set(cacheKey, probe);
+        return probe;
+    }
+
+    protected agentConnectionCacheKey(agentId: string, ownerLogin?: string): string {
+        return `${agentId.trim().toLowerCase()}:${ownerLogin?.trim().toLowerCase() ?? ''}`;
     }
 
     /**
@@ -640,11 +717,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * VPS that always reports the operator container as logged out even after the tenant completed
      * device authentication.
      */
-    protected probeAgentConnectionState(
+    protected async probeAgentConnectionState(
         agentId: string,
         bin: string,
         ownerLogin?: string,
-    ): QaapAgentDescriptor['connectionState'] {
+    ): Promise<QaapAgentDescriptor['connectionState']> {
         const owner = ownerLogin?.trim();
         if (!owner) {
             return probeAgentConnectionStateHelper(agentId, bin);
@@ -668,7 +745,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
             }
-            return probeAgentConnectionStateHelper(agentId, bin, {
+            return await probeAgentConnectionStateHelper(agentId, bin, {
                 file: wrapped.file,
                 args: wrapped.args,
                 cwd: tenantCwd,

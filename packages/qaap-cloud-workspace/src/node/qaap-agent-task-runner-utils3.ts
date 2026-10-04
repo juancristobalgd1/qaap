@@ -5,7 +5,7 @@
 
 // Pure + DI helpers extracted from QaapAgentTaskRunner (batch 3).
 
-import { spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
+import { execFile, spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
@@ -280,29 +280,41 @@ export function classifyAgentConnectionProbe(
     return 'unknown';
 }
 
+/**
+ * Asynchronous auth probe. Never use a synchronous spawn here: the picker catalog, the settings
+ * API and every other request share the backend event loop, and a few 4 s CLI probes behind the
+ * tenant wrapper stalled them for tens of seconds.
+ */
 export function probeAgentConnectionState(
     agentId: string,
     bin = agentId,
     options?: QaapAgentConnectionProbeOptions,
-): QaapAgentConnectionState {
+): Promise<QaapAgentConnectionState> {
     const normalized = agentId.trim().toLowerCase();
     const args = options?.args ?? resolveAgentConnectionProbeArgs(normalized);
     if (!args) {
-        return 'unknown';
+        return Promise.resolve('unknown');
     }
-    try {
-        const probe = spawnSync(options?.file ?? bin, [...args], {
-            cwd: options?.cwd,
-            env: options?.env,
-            encoding: 'utf8',
-            timeout: 4000,
-            windowsHide: true,
-        });
-        const output = `${probe.stdout ?? ''}\n${probe.stderr ?? ''}`;
-        return classifyAgentConnectionProbe(normalized, probe.status, output, !!probe.error);
-    } catch {
-        return 'unknown';
-    }
+    return new Promise<QaapAgentConnectionState>(resolve => {
+        try {
+            execFile(options?.file ?? bin, [...args], {
+                cwd: options?.cwd,
+                env: options?.env,
+                encoding: 'utf8',
+                timeout: 4000,
+                windowsHide: true,
+            }, (error, stdout, stderr) => {
+                const output = `${stdout ?? ''}\n${stderr ?? ''}`;
+                // A non-zero exit is still a readable answer ("Not logged in" exits 1); only a
+                // spawn failure, a timeout or a signal makes the probe inconclusive.
+                const exitCode = typeof error?.code === 'number' ? error.code : undefined;
+                const failed = !!error && (exitCode === undefined || !!error.killed || !!error.signal);
+                resolve(classifyAgentConnectionProbe(normalized, failed ? null : exitCode ?? 0, output, failed));
+            });
+        } catch {
+            resolve('unknown');
+        }
+    });
 }
 
 // ─── DI: recordTaskLatencyMark ───────────────────────────────────────────────

@@ -9,8 +9,8 @@ import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailab
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 
 class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
-    allForTest(req: Request, res: Response): void {
-        this.handleListAll(req, res);
+    allForTest(req: Request, res: Response): Promise<void> {
+        return this.handleListAll(req, res);
     }
     detailForTest(req: Request, res: Response): Promise<void> {
         return this.handleDetail(req, res);
@@ -36,7 +36,7 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
 }
 
 describe('QaapAgentTaskEndpoint install capability', () => {
-    it('reports the backend install policy to authenticated settings clients', () => {
+    it('reports the backend install policy to authenticated settings clients', async () => {
         for (const installSupported of [false, true]) {
             const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
             const authContext = { kind: 'authenticated', userLogin: 'alice' };
@@ -47,7 +47,7 @@ describe('QaapAgentTaskEndpoint install capability', () => {
                 runner: {
                     isAgentConfigured: () => true,
                     isQaiqInstalled: () => false,
-                    listAgents: () => [],
+                    listAgentsFresh: async () => [],
                     defaultAgent: () => 'shell',
                     listQaiqModels: () => [],
                 },
@@ -55,7 +55,7 @@ describe('QaapAgentTaskEndpoint install capability', () => {
             });
             const response = { json: (body: unknown) => { payload = body; } };
 
-            endpoint.allForTest({ query: {} } as Request, response as unknown as Response);
+            await endpoint.allForTest({ query: {} } as Request, response as unknown as Response);
 
             expect(payload).to.deep.equal({
                 agentConfigured: true,

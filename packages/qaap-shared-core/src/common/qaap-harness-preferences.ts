@@ -6,15 +6,13 @@
 /** User preference containing the Work Hub harness ids that are disabled. */
 export const QAAP_DISABLED_HARNESSES_PREF = 'ai-features.harness.disabledAgents';
 
-export const QAAP_DEFAULT_DISABLED_HARNESS_IDS: readonly string[] = [
-    'copilot',
-    'cursor',
-    'grok',
-    'hermes',
-    'kimi',
-    'openclaw',
-    'qwen',
-];
+/**
+ * No harness is disabled by default: every entry of `QAAP_HARNESS_DEFINITIONS` must reach the
+ * Work Hub picker with a Connect / Install / API-key action. The backend task runner never sees
+ * this frontend-only schema default, so a non-empty list also made the picker and the runner
+ * disagree. Users can still disable harnesses explicitly in AI Configuration.
+ */
+export const QAAP_DEFAULT_DISABLED_HARNESS_IDS: readonly string[] = [];
 
 export function readDisabledHarnessIds(value: unknown): string[] {
     if (!Array.isArray(value)) {
