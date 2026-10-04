@@ -33,14 +33,14 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
     }
 
     protected handleList(req: Request, res: Response): void {
-        const session = this.requireBrowserSession(req, res);
+        const session = this.requireAuthenticatedBrowserSession(req, res);
         if (session) {
             res.set('Cache-Control', 'no-store').json({ tokens: this.tokens.list(session.login) });
         }
     }
 
     protected handleCreate(req: Request, res: Response): void {
-        const session = this.requireBrowserSession(req, res);
+        const session = this.requireAuthenticatedBrowserSession(req, res);
         if (!session) {
             return;
         }
@@ -55,7 +55,7 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
     }
 
     protected handleRevoke(req: Request, res: Response): void {
-        const session = this.requireBrowserSession(req, res);
+        const session = this.requireAuthenticatedBrowserSession(req, res);
         if (!session) {
             return;
         }
@@ -66,7 +66,7 @@ export class QaapApiTokenEndpoint implements BackendApplicationContribution {
         res.status(204).end();
     }
 
-    protected requireBrowserSession(req: Request, res: Response): { readonly login: string; readonly sessionId: string } | undefined {
+    protected requireAuthenticatedBrowserSession(req: Request, res: Response): { readonly login: string; readonly sessionId: string } | undefined {
         if (this.auth.hasBearerApiToken(req)) {
             res.status(403).json({ error: 'API tokens cannot manage API tokens; sign in with the browser.' });
             return undefined;
