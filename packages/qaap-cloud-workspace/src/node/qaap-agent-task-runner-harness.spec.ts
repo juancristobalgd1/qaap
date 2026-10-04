@@ -43,6 +43,7 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
             enabled: false,
             connectionState: 'disconnected',
             installSupported: true,
+            cliBinDirectory: aliceBin,
         });
         expect(statuses.find(status => status.id === 'qaiq')?.installed).to.equal(true);
     });

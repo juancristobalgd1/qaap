@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv; shell?: boolean } }
 
@@ -299,7 +300,8 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         svc.linuxResourceLimits = true;
         svc.systemdRun = true;
         svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
-        expect(svc.launches[0].file).to.equal('systemd-run');
+        // A root backend launches the absolute, root-owned systemd-run so a tenant PATH cannot shadow it.
+        expect(svc.launches[0].file).to.equal(resolveTrustedSystemExecutable('systemd-run') ?? 'systemd-run');
         expect(svc.launches[0].args).to.include('--system');
         expect(svc.launches[0].args).not.to.include('--user');
     });
