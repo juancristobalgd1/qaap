@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+/// <reference types="highlight.js" />
+
 /**
  * Startup-size replacement for `highlight.js`, wired in by the bundle-shim alias in
  * `examples/browser/esbuild.mjs`. Upstream `@theia/preview` imports the full `highlight.js` entry,

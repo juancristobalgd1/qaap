@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+/// <reference types="highlight.js" />
+// The reference loads the package's ambient `highlight.js/lib/*` module declarations.
+
 import hljs = require('highlight.js/lib/core');
 import bash = require('highlight.js/lib/languages/bash');
 import c = require('highlight.js/lib/languages/c');
@@ -43,43 +46,53 @@ import yaml = require('highlight.js/lib/languages/yaml');
 type QaapHighlightLanguage = Parameters<typeof hljs.registerLanguage>[1];
 
 /**
+ * The `highlight.js` 10 typings declare a default export for each language file, but the CommonJS files assign the
+ * language function to `module.exports`, which is what `import = require` returns at runtime.
+ */
+type QaapHighlightLanguageModule = QaapHighlightLanguage | { default: QaapHighlightLanguage };
+
+function languageOf(languageModule: QaapHighlightLanguageModule): QaapHighlightLanguage {
+    return typeof languageModule === 'function' ? languageModule : languageModule.default;
+}
+
+/**
  * The common languages registered by `qaap-highlight-common` (the startup-size `highlight.js` shim),
  * keyed by their `highlight.js/lib/languages/*` file name.
  */
 export const QAAP_HIGHLIGHT_LANGUAGES: ReadonlyArray<[string, QaapHighlightLanguage]> = [
-    ['bash', bash],
-    ['c', c],
-    ['cpp', cpp],
-    ['csharp', csharp],
-    ['css', css],
-    ['diff', diff],
-    ['dockerfile', dockerfile],
-    ['go', go],
-    ['ini', ini],
-    ['java', java],
-    ['javascript', javascript],
-    ['json', json],
-    ['kotlin', kotlin],
-    ['less', less],
-    ['lua', lua],
-    ['makefile', makefile],
-    ['markdown', markdown],
-    ['objectivec', objectivec],
-    ['perl', perl],
-    ['php', php],
-    ['php-template', phpTemplate],
-    ['plaintext', plaintext],
-    ['python', python],
-    ['python-repl', pythonRepl],
-    ['r', r],
-    ['ruby', ruby],
-    ['rust', rust],
-    ['scss', scss],
-    ['shell', shell],
-    ['sql', sql],
-    ['swift', swift],
-    ['typescript', typescript],
-    ['vbnet', vbnet],
-    ['xml', xml],
-    ['yaml', yaml],
+    ['bash', languageOf(bash)],
+    ['c', languageOf(c)],
+    ['cpp', languageOf(cpp)],
+    ['csharp', languageOf(csharp)],
+    ['css', languageOf(css)],
+    ['diff', languageOf(diff)],
+    ['dockerfile', languageOf(dockerfile)],
+    ['go', languageOf(go)],
+    ['ini', languageOf(ini)],
+    ['java', languageOf(java)],
+    ['javascript', languageOf(javascript)],
+    ['json', languageOf(json)],
+    ['kotlin', languageOf(kotlin)],
+    ['less', languageOf(less)],
+    ['lua', languageOf(lua)],
+    ['makefile', languageOf(makefile)],
+    ['markdown', languageOf(markdown)],
+    ['objectivec', languageOf(objectivec)],
+    ['perl', languageOf(perl)],
+    ['php', languageOf(php)],
+    ['php-template', languageOf(phpTemplate)],
+    ['plaintext', languageOf(plaintext)],
+    ['python', languageOf(python)],
+    ['python-repl', languageOf(pythonRepl)],
+    ['r', languageOf(r)],
+    ['ruby', languageOf(ruby)],
+    ['rust', languageOf(rust)],
+    ['scss', languageOf(scss)],
+    ['shell', languageOf(shell)],
+    ['sql', languageOf(sql)],
+    ['swift', languageOf(swift)],
+    ['typescript', languageOf(typescript)],
+    ['vbnet', languageOf(vbnet)],
+    ['xml', languageOf(xml)],
+    ['yaml', languageOf(yaml)],
 ];
