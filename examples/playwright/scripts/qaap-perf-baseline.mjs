@@ -67,6 +67,9 @@ const initMarks = String.raw`
         const composer = [...document.querySelectorAll('textarea.theia-mobile-projects-sticky-composer-input')]
             .find(element => visible(element) && !element.disabled && !element.readOnly);
         if (composer) mark('composerTypeable');
+        if (document.querySelector('.theia-mobile-projects')) mark('workHubInDom');
+        if (document.querySelector('textarea.theia-mobile-projects-sticky-composer-input')) mark('composerInDom');
+        if (marks.logo !== undefined && !visible(splash)) mark('splashHidden');
 
         const appShell = document.getElementById('theia-app-shell');
         const mainPanel = document.getElementById('theia-main-content-panel');
@@ -451,6 +454,7 @@ function renderRun(run) {
         `- Navigation transfer / decoded: ${navigation.transferSize ?? '—'} / ${navigation.decodedBodySize ?? '—'} bytes`,
         `- DOM state: ${safeText(JSON.stringify(run.metrics.documentState))}`,
         `- Work Hub startup-ready event: ${fmtMs(marks.startupReady)}`,
+        `- Work Hub root / composer in DOM / splash hidden: ${fmtMs(marks.workHubInDom)} / ${fmtMs(marks.composerInDom)} / ${fmtMs(marks.splashHidden)}`,
         `- Observed frontend startup logs: ${run.consoleMessages.length ? run.consoleMessages.map(value => `\`${safeText(value)}\``).join('; ') : 'none'}`,
         `- Slowest /services RPCs: ${run.rpcTimings.length ? run.rpcTimings.slice(0, 10).map(rpc => `\`${safeText(rpc.method)} ${rpc.durationMs} ms\``).join(', ') : 'not observed'}`,
         '',
