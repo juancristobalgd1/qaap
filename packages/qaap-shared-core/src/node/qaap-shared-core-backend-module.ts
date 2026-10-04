@@ -16,6 +16,7 @@ import { QaapGithubWorkspaceJobRegistry } from './qaap-github-workspace-jobs';
 import { QaapApiTokenEndpoint } from './qaap-api-token-endpoint';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
+import { QaapLegacyGitCredentialCleanup } from './qaap-legacy-git-credential-cleanup';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapProductionBootGuardContribution } from './qaap-production-boot-guard';
 
@@ -26,6 +27,8 @@ export default new ContainerModule(bind => {
     bind(QaapApiTokenStore).toSelf().inSingletonScope();
     bind(QaapApiTokenEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapApiTokenEndpoint);
+    bind(QaapLegacyGitCredentialCleanup).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapLegacyGitCredentialCleanup);
     bind(QaapGithubAuthGuard).toSelf().inSingletonScope();
     bind(QaapGithubInboxHub).toSelf().inSingletonScope();
     bind(QaapGithubInboxEndpoint).toSelf().inSingletonScope();
