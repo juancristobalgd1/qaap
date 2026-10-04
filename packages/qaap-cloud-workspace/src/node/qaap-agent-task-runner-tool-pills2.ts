@@ -42,6 +42,7 @@ import {
 } from './qaap-agent-task-runner-utils';
 import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
 import { canExposeAgentCliBinToChild, prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
+import { ensureQaapAgentBrowserMcpConfiguration } from './qaap-agent-browser-mcp-config';
 
 export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext, command: string,
         cwd: string,
@@ -227,6 +228,9 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             Object.assign(env, ctx.tenantHomeEnvOverlay(task.cwd));
         } else if (ctx.resolveAgentSpawnIdentity(task.cwd).uid !== undefined) {
             env.HOME = ctx.resolveAgentHome(task.cwd);
+        }
+        if (env.HOME) {
+            ensureQaapAgentBrowserMcpConfiguration(env.HOME);
         }
         // The tenant prefix reaches the agent's PATH only when the agent runs as the tenant (or the
         // prefix is root-trusted): a root-level wrapper must never resolve a tenant-planted binary.

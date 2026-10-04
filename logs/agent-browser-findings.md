@@ -26,13 +26,24 @@ Branch: `fo/agent-browser`
 
 Status: the pinned image dependency and its source-level smoke spec are committed. QAIQ/OpenClaude
 now admits only the dedicated `mcp__qaap_browser__*` namespace; unrelated MCP tools and Theia tools
-remain blocked. MCP config registration, browser-to-preview live updates, tenant-image build, and
-runtime verification remain pending.
+remain blocked. Agent launch now idempotently registers `qaap_browser` for Claude Code, Codex,
+OpenCode, OpenClaude, Gemini CLI, Antigravity, Copilot CLI, Cursor, Hermes, and QAIQ. The config
+bootstrap writes to the process HOME; tenant backend HOME is currently `/tmp/qaap-home`, so config
+survival across tenant container recreation is not established and remains an open requirement.
+Browser-to-preview live updates, tenant-image build, and runtime verification remain pending.
 
 Validation so far:
 
 - Image-source test: 1 passing.
 - QAIQ policy Mocha spec: 5 passing.
+- Browser MCP config spec: 2 passing. It validates config registration, preservation of unrelated
+  Claude MCP entries, and idempotency.
+- `npm run compile --workspace @theia/qaap-cloud-workspace` failed because workspace build outputs
+  are missing (first relevant errors include `@theia/qaap-shared-core` and `@theia/qaap-adapters`).
+  Compiling `@theia/qaap-adapters` separately also failed because upstream Theia and
+  `qaap-element-inspector` outputs are absent.
+- Full `npm test --workspace @theia/qaap-cloud-workspace` stopped before collecting specs because
+  `@theia/qaap-shared-core/lib/common/qaap-preview-identity` is missing. 0 full-package specs ran.
 - Full `@theia/qaap-cloud-workspace` compile did not complete: referenced Theia/Qaap package outputs
   are missing in this checkout (the first reported dependency failure was
   `@theia/core/shared/@theia/application-package/lib/environment`).
