@@ -117,7 +117,8 @@ export class QaapHostedGitPush {
         const env: NodeJS.ProcessEnv = {
             HOME: scratch,
             GIT_CONFIG_NOSYSTEM: '1',
-            GIT_CONFIG_GLOBAL: os.devNull,
+            // Git for Windows maps the literal /dev/null to NUL itself; it cannot read os.devNull (\\.\nul).
+            GIT_CONFIG_GLOBAL: '/dev/null',
             GIT_TERMINAL_PROMPT: '0',
         };
         for (const key of ['PATH', 'LANG', 'LC_ALL']) {
