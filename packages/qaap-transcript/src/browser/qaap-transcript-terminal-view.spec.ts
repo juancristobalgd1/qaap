@@ -8,6 +8,8 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Widget as LuminoWidget } from '@lumino/widgets';
 import type { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import {
@@ -20,12 +22,17 @@ import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-js
 
 disableImportJSDOM();
 
-/** Mirrors xterm 5.3 `DebouncedIdleTask`: the queued closure runs later unless cleared. */
+/**
+ * Mirrors xterm 5.3 `DebouncedIdleTask` exactly: `set` replaces the queued closure, `flush` runs it,
+ * and there is no `clear()`. The queued closure runs later unless replaced.
+ */
 class FakeIdleTask {
     protected handle: ReturnType<typeof setTimeout> | undefined;
     constructor(protected readonly errors: unknown[]) { }
     set(task: () => void): void {
-        this.clear();
+        if (this.handle !== undefined) {
+            clearTimeout(this.handle);
+        }
         this.handle = setTimeout(() => {
             this.handle = undefined;
             try {
@@ -35,11 +42,8 @@ class FakeIdleTask {
             }
         }, 0);
     }
-    clear(): void {
-        if (this.handle !== undefined) {
-            clearTimeout(this.handle);
-            this.handle = undefined;
-        }
+    flush(): void {
+        // Not reached by these specs.
     }
 }
 
@@ -115,6 +119,15 @@ describe('qaap-transcript-terminal-view', () => {
         } finally {
             frameHost.requestAnimationFrame = originalRequestAnimationFrame;
         }
+    });
+
+    it('the fake idle task matches the DebouncedIdleTask of the xterm bundle the IDE ships', () => {
+        const terminalPackage = path.dirname(require.resolve('@theia/terminal/package.json'));
+        const bundle = fs.readFileSync(require.resolve('xterm/lib/xterm.js', { paths: [terminalPackage] }), 'utf8');
+        const debouncedIdleTask = /DebouncedIdleTask=class\{(.*?)\}\}/.exec(bundle)?.[1];
+        expect(debouncedIdleTask, 'DebouncedIdleTask not found in the xterm bundle').to.be.a('string');
+        const methods = [...debouncedIdleTask!.matchAll(/(?:^|\})(\w+)\(/g)].map(match => match[1]).sort();
+        expect(methods).to.deep.equal(Object.getOwnPropertyNames(FakeIdleTask.prototype).sort());
     });
 
     it('ignores terminals without xterm internals', () => {
