@@ -155,7 +155,7 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         process.env.QAAP_HEADLESS_CHROMIUM = process.execPath;
         const task = {
             id: 'browser-bootstrap', title: 'browser bootstrap', agentId: 'qaiq', command: 'qaiq -p browse',
-            cwd: '/repo', state: 'running', createdAt: 0,
+            cwd: home, state: 'running', createdAt: 0,
         } as QaapAgentTask;
         try {
             runner.buildChildEnv(task);
