@@ -27,6 +27,7 @@ import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qa
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { isRealPathUnder } from './qaap-realpath-guard';
+import { QaapTenantGitCredential } from './qaap-tenant-git-credential';
 import {
     QAAP_TENANT_BACKEND_ASSERTION_HEADER,
     QAAP_TENANT_BACKEND_MODE_ENV,
@@ -75,6 +76,9 @@ export class QaapGithubAuthGuard {
     @inject(QaapApiTokenStore) @optional()
     protected readonly apiTokens: QaapApiTokenStore | undefined;
 
+    @inject(QaapTenantGitCredential) @optional()
+    protected readonly gitCredential: QaapTenantGitCredential | undefined;
+
     protected readonly reposRoot = resolveQaapReposRoot();
 
     // Only `req.headers` is ever read on this path (see `authenticateTenantBackend` and
@@ -119,6 +123,10 @@ export class QaapGithubAuthGuard {
         );
         if (!payload) {
             return undefined;
+        }
+        // The user is active right now: keep `git push` / `gh` in their project working.
+        if (payload.user.provider === 'github') {
+            this.gitCredential?.remember(payload.tenantLogin, payload.githubAccessToken);
         }
         return {
             kind: 'authenticated',

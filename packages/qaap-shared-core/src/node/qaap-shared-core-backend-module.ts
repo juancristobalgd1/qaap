@@ -17,6 +17,7 @@ import { QaapApiTokenEndpoint } from './qaap-api-token-endpoint';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
+import { QaapTenantGitCredential } from './qaap-tenant-git-credential';
 import { QaapProductionBootGuardContribution } from './qaap-production-boot-guard';
 
 export default new ContainerModule(bind => {
@@ -26,6 +27,7 @@ export default new ContainerModule(bind => {
     bind(QaapApiTokenStore).toSelf().inSingletonScope();
     bind(QaapApiTokenEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapApiTokenEndpoint);
+    bind(QaapTenantGitCredential).toSelf().inSingletonScope();
     bind(QaapGithubAuthGuard).toSelf().inSingletonScope();
     bind(QaapGithubInboxHub).toSelf().inSingletonScope();
     bind(QaapGithubInboxEndpoint).toSelf().inSingletonScope();
