@@ -31,6 +31,7 @@ import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
+import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
 import {
     QAAP_TENANT_AGENT_STORAGE_DIRNAME,
     QAAP_TENANT_AGENT_STORAGE_ROOT_ENV,
@@ -963,8 +964,8 @@ export class QaapDockerOrchestrator {
                         `${dockerMounts.worktreesRoot}:${WORKTREES_MOUNT}:rw`,
                         `${dockerMounts.parallelRoot}:${PARALLEL_MOUNT}:rw`,
                     ],
-                    Memory: this.getTenantMemoryLimit(),
-                    NanoCpus: this.getTenantCpuLimit(),
+                    Memory: this.getTenantMemoryLimitFor(ownerLogin),
+                    NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
                     PidsLimit: this.getTenantPidsLimit(),
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
@@ -1191,8 +1192,8 @@ export class QaapDockerOrchestrator {
                         `${dockerTenantDataRoot}:${TENANT_BACKEND_QAAP_HOME_MOUNT}:rw`,
                         `${dockerTheiaHome}:${TENANT_BACKEND_THEIA_HOME_MOUNT}:rw`,
                     ],
-                    Memory: this.getTenantMemoryLimit(),
-                    NanoCpus: this.getTenantCpuLimit(),
+                    Memory: this.getTenantMemoryLimitFor(ownerLogin),
+                    NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
                     PidsLimit: this.getTenantPidsLimit(),
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
@@ -1744,8 +1745,8 @@ export class QaapDockerOrchestrator {
                 actual.Destination === expected.destination
                 && this.normalizeDockerMountPath(actual.Source ?? '') === this.normalizeDockerMountPath(expected.source)
                 && actual.RW === true) === true)
-            && hostConfig.Memory === this.getTenantMemoryLimit()
-            && hostConfig.NanoCpus === this.getTenantCpuLimit()
+            && hostConfig.Memory === this.getTenantMemoryLimitFor(ownerLogin)
+            && hostConfig.NanoCpus === this.getTenantCpuLimitFor(ownerLogin)
             && hostConfig.PidsLimit === this.getTenantPidsLimit()
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
@@ -2028,8 +2029,8 @@ export class QaapDockerOrchestrator {
                 actual.Destination === expected.destination
                 && this.normalizeDockerMountPath(actual.Source ?? '') === this.normalizeDockerMountPath(expected.source)
                 && actual.RW === true) === true)
-            && hostConfig.Memory === this.getTenantMemoryLimit()
-            && hostConfig.NanoCpus === this.getTenantCpuLimit()
+            && hostConfig.Memory === this.getTenantMemoryLimitFor(labels['com.qaap.tenant-login'])
+            && hostConfig.NanoCpus === this.getTenantCpuLimitFor(labels['com.qaap.tenant-login'])
             && hostConfig.PidsLimit === this.getTenantPidsLimit()
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
@@ -2139,6 +2140,11 @@ export class QaapDockerOrchestrator {
         return Number.isInteger(num) && num > 0 ? num : 2 * 1024 * 1024 * 1024;
     }
 
+    /** The default, raised for `ownerLogin` by `QAAP_TENANT_MEMORY_LIMIT_OVERRIDES` (see QaapTenantResourceOverrides). */
+    protected getTenantMemoryLimitFor(ownerLogin: string | undefined): number {
+        return QaapTenantResourceOverrides.memoryBytes(ownerLogin, this.getTenantMemoryLimit());
+    }
+
     /**
      * Mount options of the tenant `/tmp` tmpfs (which also holds the tenant HOME). The size comes
      * from `QAAP_TENANT_TMPFS_SIZE` (`<n>[k|m|g]`, default 512m). Values that are malformed or not
@@ -2174,6 +2180,10 @@ export class QaapDockerOrchestrator {
         const raw = process.env.QAAP_TENANT_CPU_LIMIT?.trim();
         const num = raw ? Number.parseFloat(raw) : Number.NaN;
         return Number.isFinite(num) && num > 0 ? Math.floor(num * 1e9) : 2 * 1e9;
+    }
+
+    protected getTenantCpuLimitFor(ownerLogin: string | undefined): number {
+        return QaapTenantResourceOverrides.nanoCpus(ownerLogin, this.getTenantCpuLimit());
     }
 
     protected getTenantPidsLimit(): number {
