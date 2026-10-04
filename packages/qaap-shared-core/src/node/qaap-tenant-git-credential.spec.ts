@@ -71,7 +71,7 @@ describe('QaapTenantGitCredential (git push / gh inside a tenant project)', () =
         expect(lookup).to.deep.equal({ kind: 'valid', record: { login: 'alice', token: 'gho_alice', expiresAt: 1_000 + 3_600_000 } });
         if (process.platform !== 'win32') {
             expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
-            expect(fs.statSync(path.dirname(file)).mode & 0o777).to.equal(0o700);
+            expect(fs.statSync(path.dirname(file)).mode & 0o777).to.equal(0o711);
         }
         expect(QaapGitCredentialFile.read(file, 1_000 + 3_600_000).kind).to.equal('expired');
         // Throttled within a minute, extended afterwards.
@@ -82,6 +82,29 @@ describe('QaapTenantGitCredential (git push / gh inside a tenant project)', () =
         // A new token (re-login) replaces the old one at once.
         credential.remember('alice', 'gho_new', 71_000);
         expect((QaapGitCredentialFile.read(file, 72_000) as { record: { token: string } }).record.token).to.equal('gho_new');
+    });
+
+    it('never writes through an entry another process planted at the credential directory', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        // An agent (another uid, same /tmp) plants a symlink where the backend publishes: a root
+        // backend following it would chmod/chown the target (e.g. /etc) to the agent.
+        const victim = path.join(dir, 'victim');
+        fs.mkdirSync(victim, { mode: 0o755 });
+        fs.symlinkSync(victim, path.dirname(file));
+        credential.remember('alice', 'gho_alice', 1_000);
+        expect(fs.lstatSync(path.dirname(file)).isDirectory()).to.equal(true);
+        expect(fs.statSync(victim).mode & 0o777).to.equal(0o755);
+        expect(fs.readdirSync(victim)).to.deep.equal([]);
+        expect(QaapGitCredentialFile.read(file, 2_000).kind).to.equal('valid');
+        expect(fs.readdirSync(dir).filter(name => name.startsWith('cred.stale-'))).to.have.length(1);
+
+        // A plain file in the way is moved aside as well, never deleted or written into.
+        fs.rmSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(path.dirname(file), 'planted');
+        credential.remember('alice', 'gho_other', 2_000);
+        expect((QaapGitCredentialFile.read(file, 3_000) as { record: { token: string } }).record.token).to.equal('gho_other');
     });
 
     it('publishes nothing when disabled', () => {

@@ -111,16 +111,61 @@ export class QaapTenantGitCredential {
 
     protected write(file: string, record: QaapGitCredentialRecord): void {
         const owner = this.resolveOwner();
-        const directory = path.dirname(file);
-        fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-        fs.chmodSync(directory, 0o700);
-        const temporary = `${file}.${process.pid}.tmp`;
-        fs.writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 });
-        if (owner) {
-            fs.chownSync(directory, owner.uid, owner.gid);
-            fs.chownSync(temporary, owner.uid, owner.gid);
+        const directory = this.preparePrivateDirectory(path.dirname(file));
+        const temporary = path.join(directory, `${path.basename(file)}.${process.pid}.tmp`);
+        fs.rmSync(temporary, { force: true });
+        const descriptor = fs.openSync(temporary, 'wx', 0o600);
+        try {
+            if (owner) {
+                fs.fchownSync(descriptor, owner.uid, owner.gid);
+            }
+            fs.writeSync(descriptor, JSON.stringify(record));
+        } finally {
+            fs.closeSync(descriptor);
         }
         fs.renameSync(temporary, file);
+    }
+
+    /**
+     * The credential directory lives in the world-writable `/tmp` that agent processes (another uid)
+     * write to as well. A root backend must never chmod, chown or write through an entry they could
+     * have planted there (a symlink to `/etc` would hand them root), so only a real directory owned by
+     * the backend itself is used. Anything else at that path is moved aside — never followed, never
+     * deleted recursively — and the directory is created afresh. `0711`: agents can open the one file
+     * they own inside it, but cannot add, remove or swap entries.
+     */
+    protected preparePrivateDirectory(directory: string): string {
+        const self = process.getuid?.();
+        const parent = path.dirname(directory);
+        fs.mkdirSync(parent, { recursive: true });
+        if (self === 0) {
+            const parentStat = fs.lstatSync(parent);
+            if (!parentStat.isDirectory() || parentStat.uid !== 0 || ((parentStat.mode & 0o002) && !(parentStat.mode & 0o1000))) {
+                throw new Error(`refusing to publish the git credential under ${parent}: not a root-owned or sticky directory`);
+            }
+        }
+        const isPrivate = (candidate: fs.Stats | undefined): boolean => !!candidate && candidate.isDirectory() && (self === undefined || candidate.uid === self);
+        let stat = this.lstatIfExists(directory);
+        if (stat && !isPrivate(stat)) {
+            fs.renameSync(directory, `${directory}.stale-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+            stat = undefined;
+        }
+        if (!stat) {
+            fs.mkdirSync(directory, { mode: 0o711 });
+            if (!isPrivate(this.lstatIfExists(directory))) {
+                throw new Error(`refusing to publish the git credential: ${directory} is not a private directory`);
+            }
+        }
+        fs.chmodSync(directory, 0o711);
+        return directory;
+    }
+
+    protected lstatIfExists(file: string): fs.Stats | undefined {
+        try {
+            return fs.lstatSync(file);
+        } catch {
+            return undefined;
+        }
     }
 
     protected scheduleExpiry(file: string, ttl: number): void {
