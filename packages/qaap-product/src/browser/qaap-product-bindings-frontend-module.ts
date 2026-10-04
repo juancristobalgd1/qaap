@@ -22,6 +22,8 @@ import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { QaapServiceWorkerUpdateContribution } from './qaap-service-worker-update-contribution';
+import { QaapLazyJsonSchemaDataStore } from './qaap-lazy-json-schema-data-store';
+import { JsonSchemaDataStore } from '@theia/core/lib/browser/json-schema-store';
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
 import { rebindQaapPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-preferences-contribution';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
@@ -50,6 +52,10 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
 
     bind(QaapAiPreferenceBrandingStartup).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAiPreferenceBrandingStartup);
+
+    // Startup rewrites the preference schemas once per contribution; serialize them only when read.
+    bind(QaapLazyJsonSchemaDataStore).toSelf().inSingletonScope();
+    rebind(JsonSchemaDataStore).toService(QaapLazyJsonSchemaDataStore);
 
     bind(QaapTextmateRegistry).toSelf().inSingletonScope();
     rebind(TextmateRegistry).toService(QaapTextmateRegistry);
