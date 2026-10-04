@@ -6,8 +6,10 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
+import { QaapHostedGitPush } from './qaap-hosted-git-push';
 
 export default new ContainerModule(bind => {
+    bind(QaapHostedGitPush).toSelf().inSingletonScope();
     bind(QaapGitReviewEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapGitReviewEndpoint);
 });

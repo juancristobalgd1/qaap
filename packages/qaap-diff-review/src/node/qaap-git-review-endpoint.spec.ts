@@ -9,7 +9,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import type { QaapGithubAuthContext, QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import type { QaapGithubStoredSession } from '@theia/qaap-shared-core/lib/node/qaap-github-session-store';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
+import { QaapHostedGitPush, type QaapHostedGitPushRequest } from './qaap-hosted-git-push';
 
 /** Create the symlink fixture when the host permits it; Windows may require Developer Mode. */
 function createDirectoryLinkIfSupported(target: string, linkPath: string): boolean {
@@ -287,5 +290,106 @@ describe('qaap-git-review-endpoint deleteLocalBranch', function (): void {
         git(['branch', 'feature/plain'], repo);
         await endpoint.deleteLocalBranchForTest(repo, 'feature/plain');
         expect(git(['branch', '--list', 'feature/plain'], repo).trim()).to.equal('');
+    });
+});
+
+/** Hosted mode with agent-uid git replaced by a recorded local git, and a recorded hosted push. */
+class HostedPushGitReviewEndpoint extends QaapGitReviewEndpoint {
+    readonly agentGitCalls: string[][] = [];
+    readonly pushes: QaapHostedGitPushRequest[] = [];
+
+    constructor() {
+        super();
+        const hostedPush = new QaapHostedGitPush();
+        hostedPush.push = async request => {
+            this.pushes.push(request);
+        };
+        Object.assign(this, {
+            hostedPush,
+            auth: { ownsWorkspacePath: () => true } as unknown as QaapGithubAuthGuard,
+        });
+    }
+
+    protected override git(root: string, args: string[]): Promise<string> {
+        this.agentGitCalls.push(args);
+        return Promise.resolve(execFileSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } }));
+    }
+
+    pushCurrentBranchForTest(root: string, auth: QaapGithubAuthContext): Promise<void> {
+        return this.pushCurrentBranch(root, auth);
+    }
+}
+
+describe('qaap-git-review-endpoint hosted push', function (): void {
+    this.timeout(20_000);
+    const TOKEN = 'gho_hostedPushSpecToken';
+    const saved = { QAAP_CLOUD_MODE: process.env.QAAP_CLOUD_MODE, NODE_ENV: process.env.NODE_ENV };
+    let repo: string;
+    const auth: QaapGithubAuthContext = {
+        kind: 'authenticated',
+        sessionId: 'tenant-backend:octo',
+        userLogin: 'octo',
+        session: { accessToken: TOKEN, user: { login: 'octo', provider: 'github' } as QaapGithubStoredSession['user'] },
+    };
+    const run = (args: string[]): string => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+
+    beforeEach(() => {
+        delete process.env.NODE_ENV;
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-hosted-push-endpoint-'));
+        run(['init', '--quiet', '-b', 'main']);
+        run(['config', 'user.email', 'spec@qaap.test']);
+        run(['config', 'user.name', 'Spec']);
+        run(['remote', 'add', 'origin', 'git@github.com:acme/widget.git']);
+        fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+        run(['add', 'a.txt']);
+        run(['commit', '--quiet', '-m', 'one']);
+        run(['checkout', '--quiet', '-b', 'feature/x']);
+    });
+
+    afterEach(() => {
+        fs.rmSync(repo, { recursive: true, force: true });
+        for (const [key, value] of Object.entries(saved)) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    });
+
+    it('pushes through the root backend: agent-uid git never pushes and never sees the token', async () => {
+        const endpoint = new HostedPushGitReviewEndpoint();
+        await endpoint.pushCurrentBranchForTest(repo, auth);
+
+        expect(endpoint.pushes).to.have.length(1);
+        expect(endpoint.pushes[0]).to.deep.equal({
+            objectsDirectory: path.join(fs.realpathSync(repo), '.git', 'objects'),
+            url: 'https://github.com/acme/widget.git',
+            sha: run(['rev-parse', 'HEAD']),
+            ref: 'refs/heads/feature/x',
+            token: TOKEN,
+        });
+        for (const args of endpoint.agentGitCalls) {
+            expect(args).not.to.include('push');
+            expect(args.join(' ')).not.to.contain(TOKEN);
+        }
+        // Same local state as `git push -u origin feature/x`.
+        expect(run(['rev-parse', 'refs/remotes/origin/feature/x'])).to.equal(run(['rev-parse', 'HEAD']));
+        expect(run(['config', '--get', 'branch.feature/x.merge'])).to.equal('refs/heads/feature/x');
+    });
+
+    it('keeps the plain push for a remote that is not GitHub', async () => {
+        run(['remote', 'set-url', 'origin', path.join(repo, 'nowhere.git')]);
+        const endpoint = new HostedPushGitReviewEndpoint();
+        let error: unknown;
+        try {
+            await endpoint.pushCurrentBranchForTest(repo, auth);
+        } catch (caught) {
+            error = caught;
+        }
+        expect(error).to.be.instanceOf(Error);
+        expect(endpoint.pushes).to.have.length(0);
+        expect(endpoint.agentGitCalls.some(args => args[0] === 'push')).to.equal(true);
     });
 });

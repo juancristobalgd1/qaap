@@ -31,7 +31,15 @@ import {
     type QaapTenantProcessExecutor as QaapTenantProcessExecutorContract,
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapHostedGitPush, type QaapHostedGitPushRequest } from './qaap-hosted-git-push';
+
+interface QaapHostedPushTarget {
+    readonly branch: string;
+    readonly remote: string;
+    readonly setUpstream: boolean;
+    readonly request: Omit<QaapHostedGitPushRequest, 'token'>;
+}
 
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -84,6 +92,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     /** Bound by qaap-cloud-workspace; optional so the mobile shell remains usable in local Theia. */
     @inject(QaapTenantProcessExecutor) @optional()
     protected readonly tenantProcess: QaapTenantProcessExecutorContract | undefined;
+
+    @inject(QaapHostedGitPush) @optional()
+    protected readonly hostedPush: QaapHostedGitPush | undefined;
 
     protected readonly changedFilesSnapshots = new Map<string, QaapGitChangedFilesSnapshot>();
 
@@ -318,7 +329,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             await this.git(root, ['commit', '-m', message]);
             const stat = await this.readLastCommitStat(root);
             if (this.shouldPush(action)) {
-                await this.pushCurrentBranch(root);
+                await this.pushCurrentBranch(root, this.auth.authenticate(req));
             }
             res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root), stat });
         } catch (error) {
@@ -344,13 +355,75 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             || action === 'commit-create-pr';
     }
 
-    protected async pushCurrentBranch(root: string): Promise<void> {
+    protected async pushCurrentBranch(root: string, auth?: QaapGithubAuthContext): Promise<void> {
+        // Hosted: the GitHub token stays in this backend (QaapHostedGitPush); agents never see it.
+        if (auth?.kind === 'authenticated' && auth.session.user.provider === 'github' && auth.session.accessToken
+            && this.hostedPush && isQaapHostedEnvironment()) {
+            const target = await this.resolveHostedPushTarget(root, auth);
+            if (target) {
+                await this.hostedPush.push({ ...target.request, token: auth.session.accessToken });
+                await this.recordHostedPush(root, target);
+                return;
+            }
+        }
         try {
             await this.git(root, ['rev-parse', '--abbrev-ref', '@{u}']);
             await this.git(root, ['push']);
         } catch {
             const branch = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
             await this.git(root, ['push', '-u', 'origin', branch]);
+        }
+    }
+
+    /**
+     * Where a hosted push of the current branch goes, read with the usual agent-uid git (no token).
+     * `undefined` (plain push, as before) for a detached HEAD or a remote that is not GitHub.
+     */
+    protected async resolveHostedPushTarget(root: string, auth: QaapGithubAuthContext): Promise<QaapHostedPushTarget | undefined> {
+        const branch = await this.readCurrentBranch(root);
+        if (!branch || !this.hostedPush) {
+            return undefined;
+        }
+        const configuredRemote = await this.readGitConfig(root, `branch.${branch}.remote`);
+        const configuredMerge = await this.readGitConfig(root, `branch.${branch}.merge`);
+        const remote = configuredRemote ?? 'origin';
+        const ref = configuredMerge ?? `refs/heads/${branch}`;
+        if (!/^[\w.-]+$/.test(remote) || remote.startsWith('.') || !ref.startsWith('refs/heads/')) {
+            return undefined;
+        }
+        const url = this.hostedPush.toGithubHttpsUrl(await this.git(root, ['remote', 'get-url', '--push', remote]));
+        if (!url) {
+            return undefined;
+        }
+        const sha = (await this.git(root, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim();
+        const commonDir = (await this.git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
+        const objectsDirectory = path.join(commonDir, 'objects');
+        if (!this.auth.ownsWorkspacePath(auth, objectsDirectory)) {
+            throw new Error('The repository stores its objects outside your workspace.');
+        }
+        return {
+            branch,
+            remote,
+            setUpstream: !configuredRemote || !configuredMerge,
+            request: { objectsDirectory, url, sha, ref },
+        };
+    }
+
+    /** What `git push -u` records locally: the remote-tracking ref and, the first time, the upstream. */
+    protected async recordHostedPush(root: string, target: QaapHostedPushTarget): Promise<void> {
+        const remoteBranch = target.request.ref.slice('refs/heads/'.length);
+        await this.git(root, ['update-ref', `refs/remotes/${target.remote}/${remoteBranch}`, target.request.sha]);
+        if (target.setUpstream) {
+            await this.git(root, ['config', `branch.${target.branch}.remote`, target.remote]);
+            await this.git(root, ['config', `branch.${target.branch}.merge`, target.request.ref]);
+        }
+    }
+
+    protected async readGitConfig(root: string, key: string): Promise<string | undefined> {
+        try {
+            return (await this.git(root, ['config', '--get', key])).trim() || undefined;
+        } catch {
+            return undefined;
         }
     }
 
