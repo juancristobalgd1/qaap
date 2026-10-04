@@ -169,7 +169,7 @@ async function waitForMilestone(page, mode) {
 async function captureNavigation(browser, mode, navigation) {
     const isIde = mode === 'ide';
     const contextOptions = {
-        ...devices['Pixel 7'],
+        ...(isIde ? devices['Desktop Chrome'] : devices['Pixel 7']),
         viewport: isIde ? IDE_VIEWPORT : MOBILE_VIEWPORT,
         serviceWorkers: 'allow',
     };
@@ -242,6 +242,7 @@ async function captureNavigation(browser, mode, navigation) {
     const result = {
         mode,
         navigation,
+        device: isIde ? 'Desktop Chrome' : 'Pixel 7 mobile',
         viewport: contextOptions.viewport,
         loginRequired,
         metrics,
@@ -315,6 +316,7 @@ async function measureMode(browser, mode) {
     const warm = {
         mode,
         navigation: 'warm reload',
+        device: cold.device,
         viewport: cold.viewport,
         loginRequired: loginRequired || cold.loginRequired,
         metrics,
@@ -336,7 +338,7 @@ function renderRun(run) {
     const lines = [
         `### ${run.mode} — ${run.navigation}`,
         '',
-        `- Viewport: ${run.viewport.width}×${run.viewport.height}; throttling: 4G (150 ms RTT, 1.6 Mbps down, 750 Kbps up).`,
+        `- Emulation: ${run.device}; viewport: ${run.viewport.width}×${run.viewport.height}; throttling: 4G (150 ms RTT, 1.6 Mbps down, 750 Kbps up).`,
         `- Result: ${status}`,
         `- Time to logo: ${fmtMs(marks.logo)}`,
         `- Time to first interactive Work Hub screen: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}`,
