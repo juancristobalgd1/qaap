@@ -10,7 +10,8 @@ import {
     formatReadOnlyFlagsForAgent,
     resolveAgentReadOnlyEnforcement,
 } from './qaap-agent-readonly-workspace';
-import { resolveQaiqCoreToolNames } from './qaap-qaiq-tool-policy';
+import { isBlockedHeadlessTool, resolveQaiqCoreToolNames } from './qaap-qaiq-tool-policy';
+import { isBlockedHeadlessTool } from './qaap-qaiq-tool-policy';
 
 /** The templates the runner actually builds, before approval flags are applied. */
 const QAIQ_TEMPLATE = "qaiq --print --output-format stream-json --verbose --dangerously-skip-permissions -p 'judge this'";
@@ -154,5 +155,14 @@ describe('resolveQaiqCoreToolNames write scope', () => {
     it('keeps the shell scope independent of the write scope', () => {
         expect(resolveQaiqCoreToolNames({ write: false })).to.include('Bash');
         expect(resolveQaiqCoreToolNames({ shell: false })).to.include('Write');
+    });
+});
+
+describe('QAIQ browser tool boundary', () => {
+    it('blocks unsafe MCP code execution while allowing the named navigation tools', () => {
+        expect(isBlockedHeadlessTool('mcp__qaap_browser__browser_navigate')).to.equal(false);
+        expect(isBlockedHeadlessTool('mcp__qaap_browser__browser_snapshot')).to.equal(false);
+        expect(isBlockedHeadlessTool('mcp__qaap_browser__browser_run_code_unsafe')).to.equal(true);
+        expect(resolveQaiqCoreToolNames()).not.to.include('mcp__qaap_browser__*');
     });
 });

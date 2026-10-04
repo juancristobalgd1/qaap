@@ -7,7 +7,7 @@ import { QaapBashReadOnlyClassifier } from '@theia/qaap-shared-core/lib/common/q
 import { findQaiqDestructiveCommandGuardDenial } from './qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
 import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
-import { parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
+import { parseQaiqCoreTools, QAAP_QAIQ_BROWSER_MCP_TOOLS } from './qaap-qaiq-tool-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 const VERIFICATION_SUBAGENT_TYPE = 'verification';
@@ -208,6 +208,9 @@ function resolvePresetAutoAction(
     // Headless-blocked tools bypass useful stdio control once running — deny even in bypassPermissions.
     if (toolName && isBlockedHeadlessTool(toolName)) {
         return 'deny';
+    }
+    if (QAAP_QAIQ_BROWSER_MCP_TOOLS.includes(toolName as typeof QAAP_QAIQ_BROWSER_MCP_TOOLS[number])) {
+        return 'allow';
     }
     // Agent is allowed only for subagent_type="verification"; all other subagent types are denied.
     if (toolName && isNonVerificationAgentCall(toolName, request)) {
