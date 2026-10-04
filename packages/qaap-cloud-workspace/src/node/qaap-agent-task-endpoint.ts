@@ -430,7 +430,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const ownerLogin = this.auth.resolveUserLogin(ctx);
         // An explicit refresh (the Connect dialog confirming a sign-in) needs the probe's real
         // answer; the regular picker load answers within the short default budget.
-        const agents = await this.runner.listAgentsFresh(ownerLogin, refresh ? QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS : undefined);
+        const agents = await (refresh
+            ? this.runner.listAgentsFresh(ownerLogin, QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS)
+            : this.runner.listAgentsFresh(ownerLogin));
         if (res.headersSent || res.writableEnded) {
             return;
         }

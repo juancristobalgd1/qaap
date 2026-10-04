@@ -199,6 +199,10 @@ export interface QaapAgentConnectionProbeOptions {
     readonly env?: NodeJS.ProcessEnv;
 }
 
+/**
+ * Only QAIQ authenticates with Settings API keys. Every other harness signs in with its own CLI
+ * (OpenClaude, Hermes and Gemini/Antigravity included) and reports its state through an auth probe.
+ */
 const SETTINGS_CREDENTIAL_PREFS_BY_AGENT: Readonly<Record<string, readonly string[]>> = {
     qaiq: [
         'ai-features.openAiOfficial.openAiApiKey',
@@ -209,18 +213,6 @@ const SETTINGS_CREDENTIAL_PREFS_BY_AGENT: Readonly<Record<string, readonly strin
         'ai-features.huggingFace.apiKey',
         'ai-features.openAiCustom.customOpenAiApiKey',
     ],
-    openclaude: [
-        'ai-features.openAiOfficial.openAiApiKey',
-        'ai-features.anthropic.AnthropicApiKey',
-        'ai-features.google.apiKey',
-        'ai-features.openrouter.openrouterApiKey',
-        'ai-features.nvidia.nvidiaApiKey',
-        'ai-features.huggingFace.apiKey',
-        'ai-features.openAiCustom.customOpenAiApiKey',
-    ],
-    hermes: ['ai-features.openrouter.openrouterApiKey'],
-    gemini: ['ai-features.google.apiKey'],
-    antigravity: ['ai-features.google.apiKey'],
 };
 
 /** Provider credentials that the background task runner actually injects for Settings-backed harnesses. */
@@ -241,14 +233,37 @@ export function resolveAgentConnectionProbeArgs(agentId: string): readonly strin
         case 'codex':
             return ['login', 'status'];
         case 'claude':
+        case 'openclaude':
+            // `{"loggedIn": true|false, …}`; exits 1 when signed out.
             return ['auth', 'status'];
         case 'cursor':
             return ['status'];
         case 'opencode':
             return ['auth', 'list'];
+        case 'hermes':
+            // `nous: logged in` / `nous: logged out` (the Nous Portal device-code sign-in).
+            return ['auth', 'status', 'nous'];
         default:
             return undefined;
     }
+}
+
+/**
+ * Gemini CLI has no status command. "Login with Google" stores `~/.gemini/oauth_creds.json`; the
+ * Connect command also selects `oauth-personal`, so the file is what makes `gemini -p` usable.
+ */
+export const GEMINI_CLI_CONNECTION_PROBE_SCRIPT = 'test -s "$HOME/.gemini/oauth_creds.json" && echo "logged in" || echo "not logged in"';
+
+/** Executable + argv that report one harness's sign-in state, for the executable it runs as. */
+export function resolveAgentConnectionProbe(agentId: string, bin: string): { readonly file: string; readonly args: readonly string[] } | undefined {
+    const normalized = agentId.trim().toLowerCase();
+    if (normalized === 'antigravity' || normalized === 'gemini') {
+        // The community `antigravity`/`ag` CLI talks to a running Antigravity desktop app and has
+        // no sign-in of its own; only the Gemini CLI fallback can be signed in on a server.
+        return path.basename(bin) === 'gemini' ? { file: 'sh', args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT] } : undefined;
+    }
+    const args = resolveAgentConnectionProbeArgs(normalized);
+    return args ? { file: bin, args } : undefined;
 }
 
 /** Interpret only clear auth output; unsupported commands and ambiguous output stay unknown. */

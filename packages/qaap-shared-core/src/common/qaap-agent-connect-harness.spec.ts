@@ -73,6 +73,30 @@ const CAPTURED_LOGIN_OUTPUT: Readonly<Record<string, string>> = {
         + '&uuid=c3f765db-62db-4432-99e6-a169b16cecba&mode=login&redirectTarget=cli&supportsSelectedTeamLogin=true',
         'Press q to show a QR code to log in from another device.',
     ].join('\n'),
+    // @gitlawb/openclaude 0.31.0 — `openclaude auth login` (banner trimmed)
+    openclaude: [
+        'openclaude v0.31.0',
+        'Opening browser to sign in…',
+        'If the browser didn\'t open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e'
+        + '&response_type=code&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback',
+        'Paste code here if prompted >',
+    ].join('\n'),
+    // hermes-agent 0.19.0 — `hermes auth add nous --type oauth --no-browser`
+    hermes: [
+        'Starting Hermes login via Nous Portal...',
+        'Portal: https://portal.nousresearch.com',
+        'To continue:',
+        '  1. Open: https://portal.nousresearch.com/manage-subscription?user_code=WLL7-R8DW',
+        '  2. If prompted, enter code: WLL7-R8DW',
+        'Waiting for approval (polling every 1s)...',
+    ].join('\n'),
+    // @google/gemini-cli 0.62.0 — the Antigravity Connect command (`oauth-personal` + `NO_BROWSER=true gemini`)
+    antigravity: [
+        'Please visit the following URL to authorize the application:',
+        'https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=https%3A%2F%2Fcodeassist.google.com%2Fauthcode&access_type=offline'
+        + '&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform&response_type=code',
+        'Enter the authorization code:',
+    ].join('\n'),
 };
 
 /** What the dialog must offer for each captured output. */
@@ -83,6 +107,9 @@ const EXPECTED_CHALLENGES: Readonly<Record<string, Omit<QaapAgentAuthLoginChalle
     copilot: { urlPrefix: 'https://github.com/login/device', userCode: '3AA4-2306' },
     opencode: { urlPrefix: 'https://auth.openai.com/codex/device', userCode: 'CYSI-G0C2B' },
     cursor: { urlPrefix: 'https://cursor.com/loginDeepControl?challenge=' },
+    openclaude: { urlPrefix: 'https://claude.com/cai/oauth/authorize?code=true', codeEntry: true },
+    hermes: { urlPrefix: 'https://portal.nousresearch.com/manage-subscription?user_code=WLL7-R8DW', userCode: 'WLL7-R8DW' },
+    antigravity: { urlPrefix: 'https://accounts.google.com/o/oauth2/v2/auth?', codeEntry: true },
 };
 
 /**
@@ -93,13 +120,13 @@ const EXPECTED_CONNECT_PATHS: Readonly<Record<string, QaapAgentConnectionFlow['k
     qaiq: 'settings-api-key',
     codex: 'cli-login',
     claude: 'cli-login',
-    openclaude: 'settings-api-key',
+    openclaude: 'cli-login',
     grok: 'cli-login',
     opencode: 'cli-login',
-    hermes: 'settings-api-key',
+    hermes: 'cli-login',
     openclaw: 'tenant-terminal',
     cursor: 'cli-login',
-    antigravity: 'settings-api-key',
+    antigravity: 'cli-login',
     copilot: 'cli-login',
     qwen: 'tenant-terminal',
     kimi: 'tenant-terminal',
@@ -128,8 +155,9 @@ describe('harness connect paths', () => {
         }
     });
 
-    it('routes the Gemini alias to Settings: the installed Antigravity CLI has no login', () => {
-        expect(resolveAgentConnectionFlow('gemini').kind).to.equal('settings-api-key');
+    it('signs the Gemini alias in with Google like Antigravity: only QAIQ uses an API key', () => {
+        expect(resolveAgentConnectionFlow('gemini')).to.deep.equal(resolveAgentConnectionFlow('antigravity'));
+        expect(resolveAgentConnectionFlow('gemini').kind).to.equal('cli-login');
     });
 
     it('keeps Cursor behind the hosted-runtime policy with explicit instructions', () => {
@@ -148,6 +176,8 @@ describe('harness login commands', () => {
         cursor: process.platform === 'win32'
             ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
             : 'NO_OPEN_BROWSER=1 cursor-agent login',
+        openclaude: 'openclaude auth login',
+        hermes: 'hermes auth add nous --type oauth --no-browser',
     };
     for (const [agentId, command] of Object.entries(commands)) {
         it(`runs the verified headless login for ${agentId}`, () => {

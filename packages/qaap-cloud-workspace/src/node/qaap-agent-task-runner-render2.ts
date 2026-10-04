@@ -155,11 +155,14 @@ export function resolveAntigravityBinExtracted(ctx: QaapAgentTaskRunnerContext):
         if (ctx.isOnPath('agy')) {
             return 'agy';
         }
-        if (ctx.isOnPath('antigravity')) {
-            return 'antigravity';
-        }
+        // Gemini CLI before the community `antigravity`/`ag` CLI: the latter drives a running
+        // Antigravity desktop app and can never sign in on a server, while Gemini CLI signs in
+        // with the same Google account ("Login with Google") from the Connect dialog.
         if (ctx.isOnPath('gemini')) {
             return 'gemini';
+        }
+        if (ctx.isOnPath('antigravity')) {
+            return 'antigravity';
         }
         return undefined;
 }

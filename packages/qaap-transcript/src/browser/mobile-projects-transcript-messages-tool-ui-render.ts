@@ -4,6 +4,7 @@ import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-pro
 import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
+    agentNeedsSettingsApiKeyPath,
     localizeAddApiKeyInSettingsCta,
     type QaapAgentAuthLoginChallenge,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
@@ -228,10 +229,14 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
         },): HTMLElement {
         const card = document.createElement('div');
         card.className = 'theia-mobile-agent-auth-login-card';
+        // Only QAIQ runs on Settings API keys. Any other harness whose CLI complained about a key
+        // ("Invalid API key · Please run /login") is fixed by signing in, never by adding a key.
+        const apiKeyFix = challenge.mode === 'api_key'
+            && (!options?.agentId || agentNeedsSettingsApiKeyPath(options.agentId));
 
         const hint = document.createElement('p');
         hint.className = 'theia-mobile-agent-auth-login-hint';
-        if (challenge.mode === 'api_key') {
+        if (apiKeyFix) {
             hint.textContent = nls.localize(
                 'qaap/mobileProjects/authLoginApiKeyHint',
                 'Add or refresh the API key in Settings, then retry.',
@@ -315,7 +320,7 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
             card.append(urlLine);
         }
 
-        if (challenge.mode === 'api_key' && options?.onOpenAiFeaturesSettings) {
+        if (apiKeyFix && options?.onOpenAiFeaturesSettings) {
             const settingsBtn = document.createElement('button');
             settingsBtn.type = 'button';
             settingsBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-settings-gear';
@@ -328,7 +333,7 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
             actions.append(settingsBtn);
         }
 
-        if (options?.onOpenAgentSignIn && challenge.mode !== 'api_key') {
+        if (options?.onOpenAgentSignIn && !apiKeyFix) {
             const terminalBtn = document.createElement('button');
             terminalBtn.type = 'button';
             terminalBtn.className = 'theia-mobile-agent-auth-login-action codicon codicon-terminal';

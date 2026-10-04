@@ -30,6 +30,7 @@ export const QAAP_PERSISTENT_HOME_DIRECTORIES: readonly string[] = [
 /** Single files at the HOME root that hold account state (Claude Code writes through the link). */
 export const QAAP_PERSISTENT_HOME_FILES: readonly string[] = [
     '.claude.json',
+    '.openclaude.json',
 ];
 
 /** Optional owner applied to created entries when the backend runs as root and drops agents to a uid. */

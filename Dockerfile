@@ -57,6 +57,7 @@ ARG CODEX_CLI_VERSION=0.144.5
 ARG CLAUDE_CODE_VERSION=2.1.261
 ARG COPILOT_CLI_VERSION=1.0.91
 ARG ANTIGRAVITY_CLI_VERSION=0.1.1
+ARG GEMINI_CLI_VERSION=0.62.0
 ARG OPENCODE_CLI_VERSION=1.18.28
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -81,6 +82,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @anthropic-ai/claude-code@"${CLAUDE_CODE_VERSION}" \
         @github/copilot@"${COPILOT_CLI_VERSION}" \
         @sanchaymittal/antigravity-cli@"${ANTIGRAVITY_CLI_VERSION}" \
+        @google/gemini-cli@"${GEMINI_CLI_VERSION}" \
         opencode-ai@"${OPENCODE_CLI_VERSION}" \
     && npm install -g bun \
     && codex --version \
@@ -89,6 +91,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && opencode --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \
+    && gemini --version \
     && python3 -c "import tarfile; assert hasattr(tarfile, 'data_filter')"
 RUN setpriv --version >/dev/null && setfacl --version >/dev/null
 

@@ -87,7 +87,7 @@ import {
     probeAgentBinOnce as probeAgentBinOnceHelper,
     probeAgentConnectionState as probeAgentConnectionStateHelper,
     hasAgentSettingsCredentials as hasAgentSettingsCredentialsHelper,
-    resolveAgentConnectionProbeArgs as resolveAgentConnectionProbeArgsHelper,
+    resolveAgentConnectionProbe as resolveAgentConnectionProbeHelper,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
@@ -665,7 +665,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (typeof settingsConnected === 'boolean') {
             return settingsConnected ? 'connected' : 'disconnected';
         }
-        if (!resolveAgentConnectionProbeArgsHelper(normalized)) {
+        if (!resolveAgentConnectionProbeHelper(normalized, candidate.bin ?? normalized)) {
             return 'unknown';
         }
         void this.refreshAgentConnectionState(normalized, ownerLogin);
@@ -682,7 +682,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     ): Promise<QaapAgentDescriptor['connectionState']> | undefined {
         const normalized = agentId.trim().toLowerCase();
         const candidate = this.detectedAgents.get(normalized);
-        if (!candidate || !resolveAgentConnectionProbeArgsHelper(normalized)) {
+        if (!candidate || !resolveAgentConnectionProbeHelper(normalized, candidate.bin ?? normalized)) {
             return undefined;
         }
         if (typeof hasAgentSettingsCredentialsHelper(normalized, this.preferenceReaderForOwner(ownerLogin)) === 'boolean') {
@@ -727,9 +727,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         bin: string,
         ownerLogin?: string,
     ): Promise<QaapAgentDescriptor['connectionState']> {
+        const probe = resolveAgentConnectionProbeHelper(agentId, bin);
+        if (!probe) {
+            return 'unknown';
+        }
         const owner = ownerLogin?.trim();
         if (!owner) {
-            return probeAgentConnectionStateHelper(agentId, bin);
+            return probeAgentConnectionStateHelper(agentId, probe.file, { args: probe.args });
         }
 
         const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
@@ -737,11 +741,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return 'unknown';
         }
         try {
-            const args = resolveAgentConnectionProbeArgsHelper(agentId);
-            if (!args) {
-                return 'unknown';
-            }
-            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
             const env = {
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
