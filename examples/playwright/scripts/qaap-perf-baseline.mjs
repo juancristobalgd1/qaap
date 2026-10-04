@@ -222,7 +222,11 @@ async function measureComposerAndSelector(page) {
         return { typeable, selector: { status: 'agent button not available' } };
     }
     await page.evaluate(() => { window.__qaapSelectorProbe = { startedAt: performance.now() }; });
-    await button.click({ timeout: 5_000 });
+    const clickError = await button.click({ timeout: 5_000 }).then(() => undefined, error => error);
+    if (clickError) {
+        const blocker = /<[^>]+> (?:from <[^>]+> subtree )?intercepts pointer events/.exec(clickError.message);
+        return { typeable, selector: { status: `agent button not clickable${blocker ? `: ${blocker[0]}` : ''}` } };
+    }
     const handle = await page.waitForFunction(SELECTOR_PROBE, undefined, { timeout: SELECTOR_TIMEOUT_MS, polling: 16 })
         .catch(() => undefined);
     const selector = handle ? await handle.jsonValue() : { status: `no list within ${SELECTOR_TIMEOUT_MS / 1000} s` };
