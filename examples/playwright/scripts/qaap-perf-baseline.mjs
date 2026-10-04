@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { chromium, devices } from '@playwright/test';
+import { existsSync, readdirSync } from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 const BASE_URL = process.env.QAAP_PERF_URL || 'https://161.97.69.219.sslip.io/';
@@ -19,6 +21,8 @@ const MILESTONE_TIMEOUT_MS = Number(process.env.QAAP_PERF_MILESTONE_TIMEOUT_MS |
 const AUTH_SETTLE_MS = 3_000;
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const IDE_VIEWPORT = { width: 1280, height: 900 };
+const NETWORK = process.env.QAAP_PERF_NETWORK === 'none' ? 'none' : '4g';
+const SELECTOR_TIMEOUT_MS = Number(process.env.QAAP_PERF_SELECTOR_TIMEOUT_MS || 30_000);
 const FOUR_G = {
     offline: false,
     latency: 150,
@@ -60,6 +64,9 @@ const initMarks = String.raw`
             + 'textarea:not(:disabled), input:not(:disabled), [contenteditable="true"]',
         );
         if (workHub && visible(workHubControl)) mark('workHubInteractive');
+        const composer = [...document.querySelectorAll('textarea.theia-mobile-projects-sticky-composer-input')]
+            .find(element => visible(element) && !element.disabled && !element.readOnly);
+        if (composer) mark('composerTypeable');
 
         const appShell = document.getElementById('theia-app-shell');
         const mainPanel = document.getElementById('theia-main-content-panel');
@@ -103,7 +110,9 @@ function parseRpcFrame(raw) {
 async function configureNetwork(page) {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Network.enable');
-    await cdp.send('Network.emulateNetworkConditions', FOUR_G);
+    if (NETWORK === '4g') {
+        await cdp.send('Network.emulateNetworkConditions', FOUR_G);
+    }
     const requests = new Map();
     const responses = new Map();
     const rpcCalls = new Map();
@@ -160,7 +169,7 @@ async function configureNetwork(page) {
 }
 
 async function waitForMilestone(page, mode) {
-    const target = mode === 'work-hub' ? 'workHubInteractive' : 'ideShell';
+    const target = mode === 'work-hub' ? 'composerTypeable' : 'ideShell';
     await page.waitForFunction(({ target }) => {
         const marks = window.__qaapPerfMarks || {};
         return marks[target] !== undefined || marks.loginGate !== undefined;
@@ -168,6 +177,57 @@ async function waitForMilestone(page, mode) {
     const gateVisible = await page.locator('#qaap-login-host').isVisible().catch(() => false);
     if (gateVisible) await page.waitForTimeout(AUTH_SETTLE_MS);
     return gateVisible;
+}
+
+const SELECTOR_PROBE = String.raw`
+(() => {
+    const visible = element => {
+        if (!(element instanceof HTMLElement)) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
+    };
+    const probe = window.__qaapSelectorProbe;
+    if (probe.skeletonMs === undefined && [...document.querySelectorAll('.theia-qaap-agent-sheet-skeleton')].some(visible)) {
+        probe.skeletonMs = Math.round(performance.now() - probe.startedAt);
+    }
+    if ([...document.querySelectorAll('.theia-qaap-agent-sheet-load-error')].some(visible)) {
+        return { status: 'load error', ms: Math.round(performance.now() - probe.startedAt), skeletonMs: probe.skeletonMs };
+    }
+    const options = [...document.querySelectorAll('.theia-qaap-agent-sheet-option')].filter(visible);
+    return options.length
+        ? { status: 'list', ms: Math.round(performance.now() - probe.startedAt), skeletonMs: probe.skeletonMs, options: options.length }
+        : undefined;
+})()
+`;
+
+/**
+ * Types into the composer (proves it accepts input, then restores it) and times the agent/model
+ * selector from the click until its first agent row is visible. The skeleton time is reported
+ * separately: a skeleton is feedback, not a usable list.
+ */
+async function measureComposerAndSelector(page) {
+    const composer = page.locator('textarea.theia-mobile-projects-sticky-composer-input:visible').first();
+    let typeable = false;
+    try {
+        const previous = await composer.inputValue({ timeout: 2_000 });
+        await composer.fill(`${previous}q`, { timeout: 2_000 });
+        typeable = (await composer.inputValue()) === `${previous}q`;
+        await composer.fill(previous);
+    } catch {
+        typeable = false;
+    }
+    const button = page.locator('.theia-mobile-projects-sticky-composer-agent:visible').first();
+    if (!await button.isEnabled({ timeout: 2_000 }).catch(() => false)) {
+        return { typeable, selector: { status: 'agent button not available' } };
+    }
+    await page.evaluate(() => { window.__qaapSelectorProbe = { startedAt: performance.now() }; });
+    await button.click({ timeout: 5_000 });
+    const handle = await page.waitForFunction(SELECTOR_PROBE, undefined, { timeout: SELECTOR_TIMEOUT_MS, polling: 16 })
+        .catch(() => undefined);
+    const selector = handle ? await handle.jsonValue() : { status: `no list within ${SELECTOR_TIMEOUT_MS / 1000} s` };
+    await page.keyboard.press('Escape').catch(() => undefined);
+    return { typeable, selector };
 }
 
 async function captureNavigation(browser, mode, navigation) {
@@ -198,6 +258,7 @@ async function captureNavigation(browser, mode, navigation) {
     const network = await configureNetwork(page);
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120_000 });
     const loginRequired = await waitForMilestone(page, mode);
+    const interaction = mode === 'work-hub' && !loginRequired ? await measureComposerAndSelector(page) : undefined;
 
     const metrics = await page.evaluate(() => {
         const visible = element => {
@@ -251,6 +312,7 @@ async function captureNavigation(browser, mode, navigation) {
         device: isIde ? 'Desktop Chrome' : 'Pixel 7 mobile',
         viewport: contextOptions.viewport,
         loginRequired,
+        interaction,
         metrics,
         resources,
         rpcTimings: network.rpcTimings.sort((a, b) => b.durationMs - a.durationMs),
@@ -266,8 +328,10 @@ async function measureMode(browser, mode) {
     const consoleMessages = [...cold.consoleMessages];
     await page.waitForTimeout(1_000);
     documentLoads.count = 0;
+    network.rpcTimings.length = 0;
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 120_000 });
     const loginRequired = await waitForMilestone(page, mode);
+    const interaction = mode === 'work-hub' && !loginRequired ? await measureComposerAndSelector(page) : undefined;
     const metrics = await page.evaluate(() => ({
         marks: { ...(window.__qaapPerfMarks || {}) },
         navigation: performance.getEntriesByType('navigation').map(entry => ({
@@ -327,6 +391,7 @@ async function measureMode(browser, mode) {
         device: cold.device,
         viewport: cold.viewport,
         loginRequired: loginRequired || cold.loginRequired,
+        interaction,
         metrics,
         resources,
         rpcTimings: network.rpcTimings.sort((a, b) => b.durationMs - a.durationMs),
@@ -338,8 +403,19 @@ async function measureMode(browser, mode) {
     return [cold, warm];
 }
 
+function renderSelector(interaction) {
+    const selector = interaction?.selector;
+    if (!selector) {
+        return '—';
+    }
+    const skeleton = selector.skeletonMs === undefined ? '' : `; skeleton after ${fmtMs(selector.skeletonMs)}`;
+    return selector.ms === undefined
+        ? selector.status
+        : `${fmtMs(selector.ms)} (${selector.status}${selector.options ? `, ${selector.options} rows` : ''}${skeleton})`;
+}
+
 function renderRun(run) {
-    const readyKey = run.mode === 'work-hub' ? 'workHubInteractive' : 'ideShell';
+    const readyKey = run.mode === 'work-hub' ? 'composerTypeable' : 'ideShell';
     const marks = run.metrics.marks;
     const milestone = marks[readyKey];
     const status = milestone !== undefined ? 'ready' : run.loginRequired ? 'login required' : 'not reached';
@@ -347,11 +423,13 @@ function renderRun(run) {
     const lines = [
         `### ${run.mode} — ${run.navigation}`,
         '',
-        `- Emulation: ${run.device}; viewport: ${run.viewport.width}×${run.viewport.height}; throttling: 4G (150 ms RTT, 1.6 Mbps down, 750 Kbps up).`,
+        `- Emulation: ${run.device}; viewport: ${run.viewport.width}×${run.viewport.height}; throttling: ${NETWORK === '4g' ? '4G (150 ms RTT, 1.6 Mbps down, 750 Kbps up)' : 'none (real link)'}.`,
         `- Result: ${status}`,
         `- Document loads: ${run.documentLoads}${run.documentLoads > 1 ? ' — the page reloaded during the run; marks are relative to the last document and understate the real time' : ''}`,
         `- Time to logo: ${fmtMs(marks.logo)}`,
-        `- Time to first interactive Work Hub screen: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}`,
+        `- Time to first enabled Work Hub control: ${fmtMs(marks.workHubInteractive)}`,
+        `- Time to typeable Work Hub composer: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}${run.interaction ? ` (typing ${run.interaction.typeable ? 'accepted' : 'rejected'})` : ''}`,
+        `- Agent selector open → list: ${renderSelector(run.interaction)}`,
         `- Time to IDE shell: ${fmtMs(run.mode === 'ide' ? milestone : undefined)}`,
         `- Navigation TTFB / DOMContentLoaded / load: ${fmtMs(navigation.responseStartMs)} / ${fmtMs(navigation.domContentLoadedMs)} / ${fmtMs(navigation.loadMs)}`,
         `- Navigation transfer / decoded: ${navigation.transferSize ?? '—'} / ${navigation.decodedBodySize ?? '—'} bytes`,
@@ -371,12 +449,43 @@ function renderRun(run) {
     return lines.join('\n');
 }
 
+/**
+ * Playwright's default browser cache is `~/.cache/ms-playwright`. Sandboxes that keep their
+ * browsers and the shared libraries chromium needs elsewhere (no root to apt-get them) set
+ * QAAP_PERF_CHROMIUM_PATH / QAAP_PERF_CHROMIUM_LIB_DIR, or keep them under
+ * `~/.cache/playwright` and `~/.cache/chromium-runtime`.
+ */
+function resolveLaunchOptions() {
+    const options = { headless: true };
+    const home = os.homedir();
+    const executable = process.env.QAAP_PERF_CHROMIUM_PATH
+        || (existsSync(chromium.executablePath()) ? undefined : findHeadlessShell(path.join(home, '.cache', 'playwright')));
+    if (executable) {
+        options.executablePath = executable;
+    }
+    const runtime = process.env.QAAP_PERF_CHROMIUM_LIB_DIR || path.join(home, '.cache', 'chromium-runtime');
+    const libDirs = [path.join(runtime, 'usr', 'lib', 'x86_64-linux-gnu'), path.join(runtime, 'lib', 'x86_64-linux-gnu'), runtime]
+        .filter(dir => existsSync(dir));
+    if (libDirs.length) {
+        options.env = { ...process.env, LD_LIBRARY_PATH: [...libDirs, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') };
+    }
+    return options;
+}
+
+function findHeadlessShell(root) {
+    const revision = existsSync(root)
+        ? (readdirSync(root).filter(name => name.startsWith('chromium_headless_shell-')).sort().pop())
+        : undefined;
+    const candidate = revision && path.join(root, revision, 'chrome-headless-shell-linux64', 'chrome-headless-shell');
+    return candidate && existsSync(candidate) ? candidate : undefined;
+}
+
 async function main() {
     const validModes = new Set(['work-hub', 'ide']);
     if (!MODES.length || MODES.some(mode => !validModes.has(mode))) {
         throw new Error(`QAAP_PERF_MODES must contain work-hub and/or ide; received: ${MODES.join(', ')}`);
     }
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch(resolveLaunchOptions());
     const results = [];
     try {
         for (const mode of MODES) {
@@ -395,13 +504,15 @@ async function main() {
         `Authentication: ${AUTH_METHOD}`,
         `Service workers: ${SERVICE_WORKERS === 'block' ? 'blocked (every request throttled; HTTP cache only on warm reload)' : 'allowed (worker fetches bypass CDP throttling; numbers are optimistic)'}`,
         '',
-        '| Mode | Navigation | Logo | Work Hub usable | IDE shell | Document loads | Outcome |',
-        '|---|---|---:|---:|---:|---:|---|',
+        `Network: ${NETWORK === '4g' ? '4G emulation (150 ms RTT, 1.6 Mbps down)' : 'unthrottled'}`,
+        '',
+        '| Mode | Navigation | Logo | Composer typeable | IDE workbench | Selector open → list | Document loads | Outcome |',
+        '|---|---|---:|---:|---:|---:|---:|---|',
         ...results.map(run => {
             const marks = run.metrics.marks;
-            const expected = run.mode === 'work-hub' ? marks.workHubInteractive : marks.ideShell;
+            const expected = run.mode === 'work-hub' ? marks.composerTypeable : marks.ideShell;
             const outcome = expected !== undefined ? 'ready' : run.loginRequired ? 'auth gate; startup not measurable' : 'milestone not reached';
-            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.documentLoads} | ${outcome} |`;
+            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'ide' ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.documentLoads} | ${outcome} |`;
         }),
         '',
         ...results.map(renderRun),
@@ -413,4 +524,11 @@ async function main() {
     console.log(`Saved ${PHASE} performance measurements to ${OUTPUT}`);
 }
 
-await main();
+main().catch(error => {
+    // A top-level rejection only printed "Error at line 416"; say what failed and how to fix it.
+    console.error(`qaap-perf-baseline failed: ${error?.message?.split('\n')[0] ?? error}`);
+    if (/Executable doesn't exist|error while loading shared libraries/.test(String(error?.message))) {
+        console.error('Set QAAP_PERF_CHROMIUM_PATH and QAAP_PERF_CHROMIUM_LIB_DIR, or run `npx playwright install --with-deps chromium`.');
+    }
+    process.exitCode = 1;
+});
