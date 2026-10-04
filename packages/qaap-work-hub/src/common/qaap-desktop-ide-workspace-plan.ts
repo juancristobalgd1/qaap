@@ -20,7 +20,9 @@ export interface QaapDesktopIdeHubProject {
  * When opening the classic IDE from Work Hub:
  * - a selected/pinned hub project → open that repository;
  * - one hub project → open that repository in the IDE;
- * - several with none selected → show the IDE without a repository root so the user picks one later.
+ * - several with none selected but one of them already open → keep that repository (closing it is
+ *   what left the IDE on "No Folder Opened" while Work Hub showed the project);
+ * - several with none selected and a repository outside the hub open → show the IDE without a root.
  */
 export function planDesktopIdeWorkspaceOpen(
     projects: readonly QaapDesktopIdeHubProject[],
@@ -37,6 +39,10 @@ export function planDesktopIdeWorkspaceOpen(
         return { kind: 'open-project', projectIndex: 0 };
     }
     if (projects.length > 1) {
+        const currentIndex = currentCwd ? projects.findIndex(project => project.cwd === currentCwd) : -1;
+        if (currentIndex >= 0) {
+            return { kind: 'open-project', projectIndex: currentIndex };
+        }
         if (currentCwd && !isQaapWorkspaceContainerPath(currentCwd)) {
             return { kind: 'reload-empty' };
         }
