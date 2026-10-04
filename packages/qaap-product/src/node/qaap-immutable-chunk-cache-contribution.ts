@@ -22,6 +22,21 @@ export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
     return HASHED_CHUNK_FILE_PATTERN.test(path.posix.basename(filePath.replace(/\\/g, '/')));
 }
 
+/** @internal Exported for unit tests only. */
+export function qaapIsVersionedFrontendEntryAssetRequest(requestUrl: string): boolean {
+    let url: URL;
+    try {
+        url = new URL(requestUrl, 'http://qaap.local');
+    } catch {
+        return false;
+    }
+    if (!['/bundle.js', '/bundle.css', '/qaap-login-gate.js'].includes(url.pathname)) {
+        return false;
+    }
+    const buildHashes = url.searchParams.getAll('qaap-build');
+    return buildHashes.length === 1 && /^[a-f0-9]{64}$/.test(buildHashes[0]);
+}
+
 /** Directory of standalone Terms / Privacy HTML served at `/legal/*`. */
 export function resolveQaapLegalPagesDir(): string {
     const candidates = [
@@ -45,8 +60,8 @@ export function resolveQaapLegalPagesDir(): string {
  * {@link BackendApplicationServer} is bound yet (`if (!container.isBound(...))`), so this binding
  * is the sanctioned seam to own frontend static serving. It replicates the generated defaults
  * (service worker / manifest / shell HTML must never be cached long-term) and adds the
- * chunk-immutable branch: `Cache-Control: public, max-age=31536000, immutable` for hashed chunks,
- * while `bundle.js` and other non-hashed assets keep the default revalidated behavior.
+ * chunk-immutable branch: `Cache-Control: public, max-age=31536000, immutable` for hashed chunks
+ * and content-fingerprinted entry URLs, while unversioned assets keep the default behavior.
  */
 @injectable()
 export class QaapFrontendStaticServer implements BackendApplicationServer {
@@ -85,6 +100,12 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
         } else if (topLevel && qaapIsImmutableHashedChunkPath(base)) {
             // esbuild only ever emits hashed chunks at the top level of
             // lib/frontend — nested lookalikes are not content-addressed.
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (topLevel && qaapIsVersionedFrontendEntryAssetRequest(
+            (res.req as express.Request | undefined)?.originalUrl ?? '',
+        )) {
+            // serveGzipped rewrites req.url to the .gz sibling before static serving.
+            // originalUrl still identifies the fingerprinted entry URL in the index.
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
     }

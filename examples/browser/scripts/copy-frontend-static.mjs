@@ -7,6 +7,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
@@ -37,7 +38,6 @@ if (!copyIfExists(srcIndex, libIndex)) {
 
 const BUNDLE_SCRIPT = '<script type="text/javascript" src="./bundle.js" charset="utf-8"></script>';
 const GATE_SCRIPT = '<script type="text/javascript" src="./qaap-login-gate.js" charset="utf-8"></script>';
-const BUILD_VERSION = Date.now().toString(36);
 
 function patchIndexForLoginGate(indexPath) {
     if (!fs.existsSync(indexPath) || !fs.existsSync(path.join(libFrontend, 'qaap-login-gate.js'))) {
@@ -55,7 +55,26 @@ function patchIndexForLoginGate(indexPath) {
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
-function patchIndexForFreshAssets(indexPath) {
+function computeFrontendBuildHash() {
+    const assets = ['bundle.js', 'bundle.css', 'qaap-login-gate.js'];
+    const hash = createHash('sha256');
+    for (const asset of assets) {
+        const assetPath = path.join(libFrontend, asset);
+        if (!fs.existsSync(assetPath)) {
+            if (asset === 'qaap-login-gate.js') {
+                continue;
+            }
+            throw new Error(`[qaap] Cannot fingerprint frontend assets: ${asset} is missing`);
+        }
+        hash.update(asset);
+        hash.update('\0');
+        hash.update(fs.readFileSync(assetPath));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+
+function patchIndexForFreshAssets(indexPath, buildHash) {
     const bundleCss = path.join(libFrontend, 'bundle.css');
     const bundleJs = path.join(libFrontend, 'bundle.js');
     if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss) || !fs.existsSync(bundleJs)) {
@@ -70,13 +89,13 @@ function patchIndexForFreshAssets(indexPath) {
     }
     html = html.replace(
         /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
-        `./bundle.css?qaap-build=${BUILD_VERSION}`,
+        `./bundle.css?qaap-build=${buildHash}`,
     ).replace(
         /\.\/bundle\.js(?:\?[^"'\s>]*)?/g,
-        `./bundle.js?qaap-build=${BUILD_VERSION}`,
+        `./bundle.js?qaap-build=${buildHash}`,
     ).replace(
         /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
-        `./qaap-login-gate.js?qaap-build=${BUILD_VERSION}`,
+        `./qaap-login-gate.js?qaap-build=${buildHash}`,
     );
     fs.writeFileSync(indexPath, html, 'utf8');
 }
@@ -136,17 +155,6 @@ function verifyFrontendChunkGraph() {
 // Fail before stamping index.html: a stamped shell pointing at a broken bundle is what a
 // browser would pick up on the next reload.
 verifyFrontendChunkGraph();
-patchIndexForLoginGate(libIndex);
-// The development browser can retain generated assets across reloads. Give the
-// non-hashed entry points (CSS, JS bundle, login gate) a build version so the new
-// visual contract is fetched as one coherent build. Chunks below the bundle are
-// content-hashed and need no stamp (see verifyFrontendChunkGraph).
-patchIndexForFreshAssets(libIndex);
-// `theia start` serves the generated source index directly in development, while
-// the bundled/static server serves lib/frontend/index.html. Keep both entry points
-// versioned so a browser cannot bypass the fresh bundle through the dev server.
-patchIndexForLoginGate(srcIndex);
-patchIndexForFreshAssets(srcIndex);
 copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 // Service worker must sit at the same scope as index.html so it can control the whole app.
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));
@@ -162,6 +170,18 @@ try {
 } catch {
     console.warn('[qaap] @theia/qaap-product not found — skipping qaap-login-gate.js / legal pages');
 }
+
+patchIndexForLoginGate(libIndex);
+// Fingerprint all entry assets as one build so CSS, the login gate, and the JS
+// entry point are cached together. The index stays revalidated, and esbuild
+// chunks remain independently content-addressed.
+const BUILD_HASH = computeFrontendBuildHash();
+patchIndexForFreshAssets(libIndex, BUILD_HASH);
+// `theia start` serves the generated source index directly in development, while
+// the bundled/static server serves lib/frontend/index.html. Keep both entry points
+// on the same fingerprint so either server gets a coherent bundle graph.
+patchIndexForLoginGate(srcIndex);
+patchIndexForFreshAssets(srcIndex, BUILD_HASH);
 
 const media = path.join(root, 'media');
 if (fs.existsSync(media)) {

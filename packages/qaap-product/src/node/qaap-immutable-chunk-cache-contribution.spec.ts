@@ -6,7 +6,11 @@
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { qaapIsImmutableHashedChunkPath, resolveQaapLegalPagesDir } from './qaap-immutable-chunk-cache-contribution';
+import {
+    qaapIsImmutableHashedChunkPath,
+    qaapIsVersionedFrontendEntryAssetRequest,
+    resolveQaapLegalPagesDir,
+} from './qaap-immutable-chunk-cache-contribution';
 
 describe('qaap-immutable-chunk-cache-contribution patterns', () => {
 
@@ -44,6 +48,25 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         }
     });
 
+    it('matches only fingerprinted top-level frontend entry asset requests', () => {
+        const hash = 'a'.repeat(64);
+        for (const asset of ['bundle.js', 'bundle.css', 'qaap-login-gate.js']) {
+            expect(qaapIsVersionedFrontendEntryAssetRequest(`/${asset}?qaap-build=${hash}`), asset).to.equal(true);
+        }
+        const samples = [
+            `/bundle.js?qaap-build=${'a'.repeat(63)}`,
+            `/bundle.js?qaap-build=${'A'.repeat(64)}`,
+            `/bundle.js?qaap-build=${hash}&qaap-build=${hash}`,
+            `/bundle.js?qaap-build=${hash}&other=1`,
+            `/chunk-ABCD1234.js?qaap-build=${hash}`,
+            `/nested/bundle.js?qaap-build=${hash}`,
+            '/bundle.js',
+        ];
+        for (const sample of samples) {
+            expect(qaapIsVersionedFrontendEntryAssetRequest(sample), sample).to.equal(false);
+        }
+    });
+
     it('keeps immutable chunk bytes untouched in the frontend static sync', () => {
         // A query stamp written into a chunk after esbuild hashed it makes one immutable URL
         // carry different bytes per build and duplicates the module graph after a rebuild.
@@ -52,6 +75,8 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
             'utf8',
         );
         expect(sync).to.include('verifyFrontendChunkGraph();');
+        expect(sync).to.include("createHash('sha256')");
+        expect(sync).to.not.include('Date.now().toString(36)');
         expect(sync).to.not.match(/\$2\?qaap-build=/);
         expect(sync).to.not.include('patchFrontendChunkImports');
     });
