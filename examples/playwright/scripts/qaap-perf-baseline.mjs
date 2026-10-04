@@ -7,6 +7,7 @@ import path from 'node:path';
 const BASE_URL = process.env.QAAP_PERF_URL || 'https://161.97.69.219.sslip.io/';
 const OUTPUT = process.env.QAAP_PERF_OUTPUT || '/workspace/logs/perf-baseline.md';
 const PHASE = process.env.QAAP_PERF_PHASE || 'baseline';
+const MODES = (process.env.QAAP_PERF_MODES || 'work-hub,ide').split(',').map(mode => mode.trim()).filter(Boolean);
 const BUILD_SHA = process.env.QAAP_PERF_BUILD_SHA || 'not specified';
 const AUTH_METHOD = process.env.QAAP_PERF_AUTH_METHOD
     || (process.env.QAAP_PERF_STORAGE_STATE ? 'Playwright storage state (QAAP_PERF_STORAGE_STATE)' : 'not specified');
@@ -359,10 +360,14 @@ function renderRun(run) {
 }
 
 async function main() {
+    const validModes = new Set(['work-hub', 'ide']);
+    if (!MODES.length || MODES.some(mode => !validModes.has(mode))) {
+        throw new Error(`QAAP_PERF_MODES must contain work-hub and/or ide; received: ${MODES.join(', ')}`);
+    }
     const browser = await chromium.launch({ headless: true });
     const results = [];
     try {
-        for (const mode of ['work-hub', 'ide']) {
+        for (const mode of MODES) {
             results.push(...await measureMode(browser, mode));
         }
     } finally {
