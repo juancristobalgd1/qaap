@@ -14,13 +14,23 @@ describe('planDesktopIdeWorkspaceOpen', () => {
         )).to.deep.equal({ kind: 'open-project', projectIndex: 0 });
     });
 
-    it('reloads to an empty IDE when several projects exist and a repo is already open', () => {
+    it('keeps the open hub project when several projects exist and none is selected', () => {
         expect(planDesktopIdeWorkspaceOpen(
             [
                 { id: 'a', cwd: '/workspace/repos/users/alice/acme/a' },
                 { id: 'b', cwd: '/workspace/repos/users/alice/acme/b' },
             ],
-            '/workspace/repos/users/alice/acme/a',
+            '/workspace/repos/users/alice/acme/b',
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
+    });
+
+    it('reloads to an empty IDE when several projects exist and a repo outside the hub is open', () => {
+        expect(planDesktopIdeWorkspaceOpen(
+            [
+                { id: 'a', cwd: '/workspace/repos/users/alice/acme/a' },
+                { id: 'b', cwd: '/workspace/repos/users/alice/acme/b' },
+            ],
+            '/workspace/repos/users/alice/acme/other',
         )).to.deep.equal({ kind: 'reload-empty' });
     });
 
