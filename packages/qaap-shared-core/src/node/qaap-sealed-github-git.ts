@@ -160,7 +160,9 @@ export class QaapSealedGithubGit {
                 reject(new Error('Git operation cancelled: the request was closed.'));
                 return;
             }
-            const output = options.stdoutHandle ? fs.createWriteStream('', { fd: options.stdoutHandle, autoClose: false }) : undefined;
+            const output = options.stdoutHandle;
+            // Chunks are appended in order; a failed write fails the call.
+            let written: Promise<unknown> = Promise.resolve();
             const child = spawn('git', args, { env, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
             let stdout = '';
             let stderr = '';
@@ -174,10 +176,9 @@ export class QaapSealedGithubGit {
                 options.signal?.removeEventListener('abort', onAbort);
                 if (error) {
                     child.kill();
-                    output?.end();
                     reject(error);
                 } else if (output) {
-                    output.end(() => resolve(''));
+                    written.then(() => resolve(''), reject);
                 } else {
                     resolve(stdout);
                 }
@@ -185,9 +186,12 @@ export class QaapSealedGithubGit {
             const onAbort = (): void => finish(new Error('Git operation cancelled: the request was closed.'));
             const timer = setTimeout(() => finish(new Error('Git operation timed out.')), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
             options.signal?.addEventListener('abort', onAbort, { once: true });
-            output?.on('error', error => finish(error));
             if (output) {
-                child.stdout?.pipe(output, { end: false });
+                child.stdout?.on('data', (chunk: Buffer) => {
+                    written = written.then(() => output.write(chunk));
+                    // Settled by `finish`; until then a failure must not count as unhandled.
+                    written.catch(() => undefined);
+                });
             } else {
                 child.stdout?.on('data', chunk => {
                     stdout += String(chunk);
@@ -202,6 +206,8 @@ export class QaapSealedGithubGit {
                 options.onStderr?.(text);
             });
             if (options.input !== undefined) {
+                // A git that exits before reading all of stdin fails through `close`, not EPIPE.
+                child.stdin?.on('error', () => undefined);
                 child.stdin?.end(options.input);
             }
             child.on('error', error => finish(error));
