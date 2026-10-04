@@ -30,6 +30,12 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
             '/chunk-ABCD1234.js.br',
             '/chunk-ABCD1234.css.br',
             '/chunk-A1B2C3D4.js',
+            '/chunk-ABCD1234.woff2',
+            '/chunk-ABCD1234.woff',
+            '/chunk-ABCD1234.ttf',
+            '/chunk-ABCD1234.ttf.br',
+            '/chunk-ABCD1234.eot',
+            '/chunk-ABCD1234.svg',
         ];
         for (const sample of samples) {
             expect(qaapIsImmutableHashedChunkPath(sample), sample).to.equal(true);

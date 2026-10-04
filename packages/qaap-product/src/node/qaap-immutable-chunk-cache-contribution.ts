@@ -11,11 +11,12 @@ import { BackendApplicationServer, BackendApplicationPath, EarlyExpressMiddlewar
 
 /**
  * esbuild emits content-addressed frontend chunks as `chunk-<hash>.(js|css)`, optionally followed
- * by a `.map` sourcemap suffix and/or a precompressed `.gz` / `.br` suffix. Any file matching this pattern
+ * by a `.map` sourcemap suffix and/or a precompressed `.gz` / `.br` suffix, and the stylesheet fonts
+ * as `chunk-<hash>.(woff2|woff|ttf|eot|svg)` (examples/browser/esbuild.mjs `assetNames`). Any file matching this pattern
  * is safe to cache forever: a content change always produces a new hash, so the old URL is never
  * reused for different bytes.
  */
-const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(js|css)(\.map)?(\.gz|\.br)?$/;
+const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(?:(?:js|css)(?:\.map)?|woff2?|ttf|eot|svg)(?:\.gz|\.br)?$/;
 
 /** @internal Exported for unit tests only. Accepts URL paths and filesystem paths alike. */
 export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {

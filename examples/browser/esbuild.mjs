@@ -112,7 +112,7 @@ const CHUNK_HASH_EPOCH = '/* qaap-chunk-epoch: 2 */';
  */
 const FRONTEND_OUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'frontend');
 const CHUNK_MANIFEST = path.join(FRONTEND_OUT_DIR, '..', '.qaap-frontend-chunks.json');
-const PRUNABLE_CHUNK = /^chunk-[A-Z0-9]+\.(?:js|css)(?:\.map)?(?:\.gz)?$/;
+const PRUNABLE_CHUNK = /^chunk-[A-Z0-9]+\.(?:(?:js|css)(?:\.map)?|woff2?|ttf|eot|svg)(?:\.gz|\.br)?$/;
 
 function readPreviousChunkGeneration() {
     try {
@@ -134,7 +134,7 @@ function pruneStaleFrontendChunks(metafile) {
     let removed = 0;
     let failed = 0;
     for (const name of fs.readdirSync(FRONTEND_OUT_DIR)) {
-        if (!PRUNABLE_CHUNK.test(name) || keep.has(name.replace(/\.gz$/, ''))) {
+        if (!PRUNABLE_CHUNK.test(name) || keep.has(name.replace(/\.(?:gz|br)$/, ''))) {
             continue;
         }
         try {
@@ -299,17 +299,39 @@ const modulePreloadPlugin = {
     },
 };
 
+/**
+ * Stylesheet fonts as files, not data URLs. Upstream inlines every asset (`dataurl`), so bundle.css
+ * carried each icon font in all of its formats as base64 (font-awesome alone: 1.4 MB, codicons
+ * twice): ~70% of the stylesheet's brotli bytes, all on the cold critical path of both surfaces.
+ * As `chunk-<hash>.<ext>` files the browser fetches only the one woff2 it uses, when it first
+ * renders a glyph, and the backend caches them as immutable. SVG *fonts* (only used by long-gone
+ * iOS Safari) are emitted as files too; small SVG icons stay inlined.
+ */
+const FONT_LOADERS = { '.woff2': 'file', '.woff': 'file', '.ttf': 'file', '.eot': 'file' };
+const SVG_FONT = /[\\/](?:fonts?|webfonts?)[\\/][^\\/]+\.svg$|webfont\.svg$/;
+const svgFontFilePlugin = {
+    name: 'qaap-svg-font-file',
+    setup(build) {
+        build.onLoad({ filter: SVG_FONT }, async args => ({
+            contents: await fs.promises.readFile(args.path),
+            loader: 'file',
+        }));
+    },
+};
+
 const mainOptions = {
     ...browserOptions,
     entryPoints: mainEntryPoints,
     format: 'esm',
     splitting: true,
     chunkNames: 'chunk-[hash]',
+    assetNames: 'chunk-[hash]',
+    loader: { ...browserOptions.loader, ...FONT_LOADERS },
     metafile: true,
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [qaapBundleShimsPlugin, esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin],
+    plugins: [qaapBundleShimsPlugin, esmDiInteropPlugin, lazyCssPlugin, svgFontFilePlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin],
 };
 const workerOptions = {
     ...browserOptions,
