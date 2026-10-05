@@ -67,10 +67,7 @@ export function ensureQaapAgentBrowserMcpConfiguration(home: string): readonly s
         } catch {
             // The file will be created below.
         }
-        fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-        const temporary = `${filePath}.${process.pid}.tmp`;
-        fs.writeFileSync(temporary, content, { mode: 0o600 });
-        fs.renameSync(temporary, filePath);
+        writePrivateFile(filePath, content);
         updated.push(relativePath);
     };
     const addMcpServer = (root: Record<string, unknown>, key: string, serverConfig: unknown): void => {

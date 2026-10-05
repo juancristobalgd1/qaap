@@ -72,6 +72,21 @@ describe('Qaap agent browser MCP configuration', () => {
         expect(fs.readFileSync(victim, 'utf8')).to.equal('leave this alone');
     });
 
+    it('does not follow a planted temporary symlink when replacing a regular config', () => {
+        const configPath = path.join(home, '.claude.json');
+        fs.writeFileSync(configPath, JSON.stringify({ mcpServers: { personal: { command: 'personal-mcp' } } }));
+        const victim = path.join(home, 'victim.txt');
+        fs.writeFileSync(victim, 'leave this alone');
+        fs.symlinkSync(victim, `${configPath}.${process.pid}.tmp`);
+
+        ensureQaapAgentBrowserMcpConfiguration(home);
+
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8')) as { mcpServers: Record<string, unknown> };
+        expect(config.mcpServers).to.have.property('qaap_browser');
+        expect(config.mcpServers).to.have.property('personal');
+        expect(fs.readFileSync(victim, 'utf8')).to.equal('leave this alone');
+    });
+
     it('migrates the old invalid OpenCode mcp.servers shape', () => {
         const configPath = path.join(home, '.config/opencode/opencode.json');
         fs.mkdirSync(path.dirname(configPath), { recursive: true });
