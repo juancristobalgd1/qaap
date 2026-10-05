@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -43,6 +43,8 @@ const DEFAULT_MAX_TRANSFER_BYTES = 4 * 1024 * 1024 * 1024;
 /** Two fetches at the per-operation cap. */
 const DEFAULT_SCRATCH_BUDGET_BYTES = 2 * DEFAULT_MAX_TRANSFER_BYTES;
 const WATCH_INTERVAL_MS = 500;
+/** How long a killed git gets to exit on SIGTERM before SIGKILL. */
+const KILL_GRACE_MS = 5_000;
 const SCRATCH_PREFIXES = ['qaap-fetch-', 'qaap-push-'] as const;
 /** Older than any sealed command can run, so only a crashed backend leaves such a scratch directory. */
 const STALE_SCRATCH_MS = 60 * 60 * 1000;
@@ -295,6 +297,26 @@ export class QaapSealedGithubGit {
         return env;
     }
 
+    /**
+     * Kills `child` and resolves once it has exited (SIGKILL after {@link KILL_GRACE_MS}). A git still
+     * writing or holding files open would make removing its scratch fail (ENOTEMPTY, Windows EPERM).
+     */
+    protected stopChild(child: ChildProcess): Promise<void> {
+        // No pid: the spawn failed and no `exit` will follow.
+        if (child.pid === undefined || typeof child.exitCode === 'number' || typeof child.signalCode === 'string') {
+            return Promise.resolve();
+        }
+        return new Promise(resolve => {
+            const escalate = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS);
+            const done = (): void => {
+                clearTimeout(escalate);
+                resolve();
+            };
+            child.once('exit', done);
+            child.kill();
+        });
+    }
+
     /** Runs git as this backend's uid. Errors carry git's stderr, which never contains the token. */
     protected runGit(args: string[], env: NodeJS.ProcessEnv, options: QaapSealedGitRunOptions = {}): Promise<string> {
         return new Promise((resolve, reject) => {
@@ -322,8 +344,8 @@ export class QaapSealedGithubGit {
                 clearInterval(watcher);
                 options.signal?.removeEventListener('abort', onAbort);
                 if (error) {
-                    child.kill();
-                    reject(error);
+                    // Reject only once git has exited: callers remove the scratch and bundle right after.
+                    this.stopChild(child).then(() => reject(error));
                 } else if (output) {
                     written.then(() => resolve(''), reject);
                 } else {

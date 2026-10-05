@@ -39,8 +39,10 @@ class LocalHostedGitPush extends QaapHostedGitPush {
     }
 }
 
+/** Fixture git; auto maintenance stays in the foreground so nothing writes under `base` once it returns. */
 function git(cwd: string, ...args: string[]): string {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } }).trim();
+    const foreground = ['-c', 'maintenance.autoDetach=false', '-c', 'gc.autoDetach=false'];
+    return execFileSync('git', [...foreground, ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } }).trim();
 }
 
 describe('qaap-hosted-git-push', function (): void {
