@@ -110,6 +110,16 @@ export function resolveQaiqControlRequestAutoDecision(
     if (findQaiqDevServerGuardDenial(request)) {
         return { action: 'deny' };
     }
+    const toolName = request.toolName?.trim() ?? '';
+    if (toolName.startsWith('mcp__qaap_browser__')) {
+        // Navigation and page interaction never need per-call approval. Keep this an exact
+        // allowlist: Playwright's unsafe code runner and file-output tools remain denied.
+        return {
+            action: QAAP_QAIQ_BROWSER_MCP_TOOLS.includes(toolName as typeof QAAP_QAIQ_BROWSER_MCP_TOOLS[number])
+                ? 'allow'
+                : 'deny',
+        };
+    }
     const readOnly = classifyReadOnlyShellRequest(command, request, options);
     if (readOnly?.allowed) {
         return { action: 'allow', reason: 'read-only-shell', detail: readOnly.detail };
@@ -208,9 +218,6 @@ function resolvePresetAutoAction(
     // Headless-blocked tools bypass useful stdio control once running — deny even in bypassPermissions.
     if (toolName && isBlockedHeadlessTool(toolName)) {
         return 'deny';
-    }
-    if (QAAP_QAIQ_BROWSER_MCP_TOOLS.includes(toolName as typeof QAAP_QAIQ_BROWSER_MCP_TOOLS[number])) {
-        return 'allow';
     }
     // Agent is allowed only for subagent_type="verification"; all other subagent types are denied.
     if (toolName && isNonVerificationAgentCall(toolName, request)) {
