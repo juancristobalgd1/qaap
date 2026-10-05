@@ -28,10 +28,14 @@ describe('Qaap login gate', () => {
     }
 
     it('loads only the mobile Work Hub entry on mobile and leaves desktop on the desktop entry', async () => {
+        const signedIn = { localStorage: { 'theia:/:qaap.auth.signedIn': 'true' } };
+        const signedInSession: LoginGateResponder = pathname =>
+            pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : undefined;
         const mobile = start(
-            pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+            signedInSession,
             'http://localhost:3000/',
             {
+                ...signedIn,
                 beforeRun: window => {
                     window.matchMedia = (query: string): MediaQueryList => ({
                         matches: query === '(max-width: 767px), (pointer: coarse)',
@@ -48,10 +52,14 @@ describe('Qaap login gate', () => {
         );
         const mobileScript = (await mobile.bundleAppended).script;
         expect(new URL(mobileScript.src).pathname).to.equal('/bundle.mobile.js');
-        expect(mobile.document.querySelector('link[rel="modulepreload"]')?.getAttribute('href')).to.equal(mobileScript.src);
+        const mobilePreload = mobile.document.querySelector('link[rel="modulepreload"]')?.getAttribute('href');
+        expect(mobilePreload).to.not.equal(undefined);
+        expect(new URL(mobilePreload!, mobile.window.location.href).href).to.equal(mobileScript.src);
 
         const desktop = start(
-            pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+            signedInSession,
+            'http://localhost:3000/',
+            signedIn,
         );
         const desktopScript = (await desktop.bundleAppended).script;
         expect(new URL(desktopScript.src).pathname).to.equal('/bundle.js');
