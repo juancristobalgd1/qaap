@@ -319,6 +319,61 @@ const modulePreloadPlugin = {
 };
 
 /**
+ * Build-log breakdown of what each entry's cold load costs per package (raw JS bytes of every
+ * chunk reachable from the entry, from the metafile), plus what the phone entry still shares
+ * with the desktop one. Diagnostics only: shows which IDE packages still reach phones.
+ */
+const ENTRY_PACKAGE_REPORT_LIMIT = 25;
+
+function entryPackageBytes(metafile, entryName) {
+    const outputs = metafile.outputs;
+    const start = Object.keys(outputs).find(output => path.basename(output) === entryName);
+    const bytes = new Map();
+    const seen = new Set();
+    const queue = start ? [start] : [];
+    while (queue.length) {
+        const output = queue.shift();
+        if (seen.has(output) || !outputs[output] || !output.endsWith('.js')) {
+            continue;
+        }
+        seen.add(output);
+        for (const [input, { bytesInOutput }] of Object.entries(outputs[output].inputs)) {
+            const match = /node_modules[\\/]((?:@[^\\/]+[\\/])?[^\\/]+)/.exec(input) ?? /packages[\\/]([^\\/]+)/.exec(input);
+            const name = match ? match[1].replace(/\\/g, '/') : '(app)';
+            bytes.set(name, (bytes.get(name) ?? 0) + bytesInOutput);
+        }
+        queue.push(...outputs[output].imports.filter(imported => !imported.external).map(imported => imported.path));
+    }
+    return bytes;
+}
+
+function reportEntryPackages(metafile) {
+    const desktop = entryPackageBytes(metafile, 'bundle.js');
+    const mobile = entryPackageBytes(metafile, 'bundle.mobile.js');
+    const megabytes = value => `${(value / 1e6).toFixed(2)} MB`;
+    const top = [...mobile.entries()].sort((a, b) => b[1] - a[1]).slice(0, ENTRY_PACKAGE_REPORT_LIMIT);
+    console.log(`[qaap] phone entry packages (top ${ENTRY_PACKAGE_REPORT_LIMIT} of ${mobile.size}, raw): ${top.map(([name, size]) => `${name} ${megabytes(size)}`).join(', ')}`);
+    const dropped = [...desktop.entries()].filter(([name]) => !mobile.has(name)).sort((a, b) => b[1] - a[1]);
+    console.log(`[qaap] desktop-only packages (${dropped.length}, raw): ${dropped.map(([name, size]) => `${name} ${megabytes(size)}`).join(', ')}`);
+}
+
+const entryPackageReportPlugin = {
+    name: 'qaap-entry-package-report',
+    setup(build) {
+        build.onEnd(result => {
+            if (result.errors.length || !result.metafile) {
+                return;
+            }
+            try {
+                reportEntryPackages(result.metafile);
+            } catch (error) {
+                console.warn('[qaap] entry package report skipped:', error);
+            }
+        });
+    },
+};
+
+/**
  * Stylesheet fonts as files, not data URLs. Upstream inlines every asset (`dataurl`), so bundle.css
  * carried each icon font in all of its formats as base64 (font-awesome alone: 1.4 MB, codicons
  * twice): ~70% of the stylesheet's brotli bytes, all on the cold critical path of both surfaces.
@@ -350,7 +405,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [qaapBundleShimsPlugin, esmDiInteropPlugin, lazyCssPlugin, svgFontFilePlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin],
+    plugins: [qaapBundleShimsPlugin, esmDiInteropPlugin, lazyCssPlugin, svgFontFilePlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, entryPackageReportPlugin],
 };
 const workerOptions = {
     ...browserOptions,
