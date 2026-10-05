@@ -96,13 +96,13 @@ class FakeDockerode {
  * flow at the post-start inspect so no test depends on a real daemon.
  */
 class CreateCapturingDockerode {
-    readonly created: Array<{ HostConfig?: Record<string, unknown>; Env?: string[]; User?: string }> = [];
+    readonly created: Array<{ HostConfig?: Record<string, unknown>; Env?: string[]; User?: string; Healthcheck?: { Test?: string[] } }> = [];
 
     getContainer(_name: string): unknown {
         return { inspect: async () => { throw Object.assign(new Error('no such container'), { statusCode: 404 }); } };
     }
 
-    async createContainer(options: { HostConfig?: Record<string, unknown>; Env?: string[]; User?: string }): Promise<unknown> {
+    async createContainer(options: { HostConfig?: Record<string, unknown>; Env?: string[]; User?: string; Healthcheck?: { Test?: string[] } }): Promise<unknown> {
         this.created.push(options);
         return {
             start: async () => undefined,
@@ -859,6 +859,15 @@ describe('QaapDockerOrchestrator', () => {
 
             expect(fakeDocker.created).to.have.length(1);
             expect(fakeDocker.created[0].HostConfig?.Init).to.equal(true);
+        });
+
+        it('disables the image backend healthcheck on the tenant worker, which runs no backend', async () => {
+            const root = path.join(os.tmpdir(), 'qaap-orchestrator-spec-health', 'repos', 'users', 'alice');
+            const fakeDocker = await captureCreate(orchestrator =>
+                orchestrator.createOrValidateTenantContainer('qaap-tenant-spec', orchestrator.tenantMountsForRoot(root), 'none', 'alice'));
+
+            expect(fakeDocker.created).to.have.length(1);
+            expect(fakeDocker.created[0].Healthcheck).to.deep.equal({ Test: ['NONE'] });
         });
 
         it('rejects backend-per-tenant routing without the isolated tenant bridge', async () => {

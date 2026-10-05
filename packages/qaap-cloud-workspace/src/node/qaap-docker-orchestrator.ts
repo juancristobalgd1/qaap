@@ -940,6 +940,10 @@ export class QaapDockerOrchestrator {
                 OpenStdin: true,
                 WorkingDir: WORKSPACE_MOUNT,
                 Cmd: ['/bin/bash'],
+                // The image HEALTHCHECK probes the Theia backend on :4873, which never runs in a
+                // worker (it only hosts exec'd shells and dev servers), so the inherited check
+                // reported every working tenant as unhealthy. Tenant backends keep the image check.
+                Healthcheck: { Test: ['NONE'] },
                 User: user,
                 Env: [
                     `HOME=${this.getTenantContainerHome()}`,
