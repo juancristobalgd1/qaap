@@ -29,6 +29,8 @@ export interface QaapSealedGitRunOptions {
     readonly maxBytes?: number;
     /** Polled while git runs; its total size counts against {@link maxBytes}. */
     readonly watchDirectory?: string;
+    /** Polled while git runs: the whole sealed scratch root must stay within {@link QaapSealedGithubGit.scratchBudgetBytes}. */
+    readonly budgetDirectory?: string;
 }
 
 /** `https://[user@]github.com/`, `ssh://git@github.com[:22]/` or `git@github.com:`, then `<owner>/<repo>[.git][/]`. */
@@ -38,6 +40,8 @@ const MAX_STDOUT = 4 * 1024 * 1024;
 const TOKEN_ENV = 'QAAP_GIT_PUSH_TOKEN';
 /** Default for `QAAP_SEALED_GIT_MAX_BYTES`: what one sealed fetch may download, and the bundle it may write. */
 const DEFAULT_MAX_TRANSFER_BYTES = 4 * 1024 * 1024 * 1024;
+/** Two fetches at the per-operation cap. */
+const DEFAULT_SCRATCH_BUDGET_BYTES = 2 * DEFAULT_MAX_TRANSFER_BYTES;
 const WATCH_INTERVAL_MS = 500;
 const SCRATCH_PREFIXES = ['qaap-fetch-', 'qaap-push-'] as const;
 /** Older than any sealed command can run, so only a crashed backend leaves such a scratch directory. */
@@ -240,6 +244,28 @@ export class QaapSealedGithubGit {
         return total;
     }
 
+    /**
+     * `QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES`, default 8 GiB: what every sealed git of this backend may
+     * keep in {@link scratchRoot} together (R4-1).
+     */
+    protected scratchBudgetBytes(): number {
+        const configured = Number(process.env.QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES);
+        return Number.isSafeInteger(configured) && configured > 0 ? configured : DEFAULT_SCRATCH_BUDGET_BYTES;
+    }
+
+    /** Fails when the scratch root already holds the whole budget, so a new transfer would not fit. */
+    protected async assertScratchBudget(): Promise<void> {
+        const budget = this.scratchBudgetBytes();
+        if (await this.directorySize(await this.ensureScratchRoot()) >= budget) {
+            throw this.scratchBudgetError(budget);
+        }
+    }
+
+    protected scratchBudgetError(budget: number): Error {
+        return new Error(`Hosted GitHub transfers on this backend already use the ${budget}-byte budget for their scratch space `
+            + '(QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES). Try again when another transfer has finished.');
+    }
+
     protected transferLimitError(maxBytes: number): Error {
         return new Error(`The repository is larger than the ${maxBytes}-byte limit for a hosted fetch (QAAP_SEALED_GIT_MAX_BYTES).`);
     }
@@ -307,12 +333,23 @@ export class QaapSealedGithubGit {
             const onAbort = (): void => finish(new Error('Git operation cancelled: the request was closed.'));
             const timer = setTimeout(() => finish(new Error('Git operation timed out.')), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
             const watchDirectory = options.watchDirectory;
-            const watcher = watchDirectory && maxBytes !== undefined ? setInterval(() => {
-                this.directorySize(watchDirectory).then(size => {
-                    if (size > maxBytes) {
-                        finish(this.transferLimitError(maxBytes));
-                    }
-                }, () => undefined);
+            const budgetDirectory = options.budgetDirectory;
+            const budget = this.scratchBudgetBytes();
+            const watcher = (watchDirectory && maxBytes !== undefined) || budgetDirectory ? setInterval(() => {
+                if (watchDirectory && maxBytes !== undefined) {
+                    this.directorySize(watchDirectory).then(size => {
+                        if (size > maxBytes) {
+                            finish(this.transferLimitError(maxBytes));
+                        }
+                    }, () => undefined);
+                }
+                if (budgetDirectory) {
+                    this.directorySize(budgetDirectory).then(size => {
+                        if (size > budget) {
+                            finish(this.scratchBudgetError(budget));
+                        }
+                    }, () => undefined);
+                }
             }, WATCH_INTERVAL_MS) : undefined;
             options.signal?.addEventListener('abort', onAbort, { once: true });
             if (output) {

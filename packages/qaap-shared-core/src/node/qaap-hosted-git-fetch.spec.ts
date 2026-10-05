@@ -203,6 +203,104 @@ describe('qaap-hosted-git-fetch', function (): void {
         const scratch = fetcher.calls[0].args[fetcher.calls[0].args.length - 1];
         expect(fs.existsSync(scratch)).to.equal(false);
     });
+    /** Sets the given variables for one spec and restores them afterwards. */
+    async function withEnv<T>(values: Record<string, string>, run: () => Promise<T>): Promise<T> {
+        const saved = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
+        Object.assign(process.env, values);
+        try {
+            return await run();
+        } finally {
+            for (const [key, value] of Object.entries(saved)) {
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            }
+        }
+    }
+
+    async function errorOf(run: () => Promise<unknown>): Promise<unknown> {
+        try {
+            await run();
+        } catch (caught) {
+            return caught;
+        }
+        return undefined;
+    }
+
+    describe('backend-wide limits (R4-1)', () => {
+        /** Holds every fetch at its first git call until `release`. */
+        class GatedHostedGitFetch extends LocalHostedGitFetch {
+            release: () => void;
+            protected gate = new Promise<void>(resolve => this.release = resolve);
+            started = 0;
+
+            protected override async runGit(args: string[], env: NodeJS.ProcessEnv, options?: QaapSealedGitRunOptions): Promise<string> {
+                if (args[0] === 'init') {
+                    this.started++;
+                    await this.gate;
+                }
+                return super.runGit(args, env, options);
+            }
+        }
+
+        it('runs at most QAAP_SEALED_GIT_MAX_CONCURRENT_FETCHES sealed fetches at once and refuses the next one', async () => {
+            await withEnv({ QAAP_SEALED_GIT_MAX_CONCURRENT_FETCHES: '2', QAAP_SEALED_GIT_SCRATCH_ROOT: path.join(base, 'scratch') }, async () => {
+                const fetcher = new GatedHostedGitFetch();
+                const bundle = (name: string): string => path.join(base, `${name}.bundle`);
+                const running = [fetcher.fetchBundle({ url, bundleFile: bundle('one'), bundleRoot: base }), fetcher.fetchBundle({ url, bundleFile: bundle('two'), bundleRoot: base })];
+                while (fetcher.started < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                // An accepted third fetch would wait at the gate: give it 5 s to be refused instead.
+                const refused = await Promise.race([
+                    errorOf(() => fetcher.fetchBundle({ url, bundleFile: bundle('three'), bundleRoot: base })),
+                    new Promise(resolve => setTimeout(() => resolve('accepted'), 5_000)),
+                ]);
+                expect(String(refused)).to.match(/2 hosted fetches are already running.*QAAP_SEALED_GIT_MAX_CONCURRENT_FETCHES/);
+                expect(fetcher.started).to.equal(2);
+                expect(fs.existsSync(bundle('three'))).to.equal(false);
+                fetcher.release();
+                await Promise.all(running);
+                // Finished (and failed) fetches free their slot.
+                await errorOf(() => fetcher.fetchBundle({ url: fileUrl(path.join(base, 'missing.git')), bundleFile: bundle('four'), bundleRoot: base }));
+                await fetcher.fetchBundle({ url, bundleFile: bundle('five'), bundleRoot: base });
+                expect(fs.existsSync(bundle('five'))).to.equal(true);
+            });
+        });
+
+        it('refuses to start a fetch while the sealed scratch already uses QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES', async () => {
+            const scratchRoot = path.join(base, 'scratch');
+            fs.mkdirSync(path.join(scratchRoot, 'qaap-fetch-other'), { recursive: true, mode: 0o700 });
+            fs.chmodSync(scratchRoot, 0o700);
+            fs.writeFileSync(path.join(scratchRoot, 'qaap-fetch-other', 'pack'), Buffer.alloc(64 * 1024));
+            await withEnv({ QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES: String(32 * 1024), QAAP_SEALED_GIT_SCRATCH_ROOT: scratchRoot }, async () => {
+                const fetcher = new LocalHostedGitFetch();
+                const bundleFile = path.join(base, 'budget.bundle');
+                const error = await errorOf(() => fetcher.fetchBundle({ url, token: TOKEN, bundleFile, bundleRoot: base }));
+                expect(String(error)).to.match(/32768-byte budget.*QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES/);
+                expect(fetcher.calls).to.deep.equal([]);
+                expect(fs.existsSync(bundleFile)).to.equal(false);
+            });
+        });
+
+        it('stops a fetch that pushes the whole sealed scratch over its budget, even below the per-fetch cap', async () => {
+            fs.writeFileSync(path.join(upstream, 'big.bin'), crypto.randomBytes(512 * 1024));
+            git(upstream, 'add', 'big.bin');
+            git(upstream, 'commit', '--quiet', '-m', 'big');
+            git(upstream, 'push', '--quiet', remote, 'main');
+            await withEnv({ QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES: String(256 * 1024), QAAP_SEALED_GIT_SCRATCH_ROOT: path.join(base, 'scratch') }, async () => {
+                const fetcher = new LocalHostedGitFetch();
+                const bundleFile = path.join(base, 'budget.bundle');
+                const error = await errorOf(() => fetcher.fetchBundle({ url, token: TOKEN, bundleFile, bundleRoot: base }));
+                expect(String(error)).to.match(/262144-byte budget/);
+                expect(fs.existsSync(bundleFile)).to.equal(false);
+                expect(fs.readdirSync(path.join(base, 'scratch'))).to.deep.equal([]);
+            });
+        });
+    });
+
     /** Swaps the bundle's directory for a symlink to `elsewhere` just before the open, as an agent racing the backend would (R3-2). */
     class RacedHostedGitFetch extends LocalHostedGitFetch {
         constructor(protected readonly parent: string, protected readonly elsewhere: string) {

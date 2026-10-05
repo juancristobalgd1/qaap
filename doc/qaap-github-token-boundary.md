@@ -68,6 +68,11 @@ The token is used by:
      `QaapHostedGitPush`. The bundle is removed afterwards.
   4. In hosted mode the endpoint's tenant `runGit` refuses a token, and `runTenantGit` takes no extra
      environment.
+  5. Disk and concurrency limits fail the open with an explicit error: each fetch is capped at
+     `QAAP_SEALED_GIT_MAX_BYTES` (4 GiB) of scratch and of bundle, at most
+     `QAAP_SEALED_GIT_MAX_CONCURRENT_FETCHES` (2) sealed fetches run per backend (a further one is
+     refused, not queued), and the whole sealed scratch root may hold at most
+     `QAAP_SEALED_GIT_SCRATCH_BUDGET_BYTES` (8 GiB), checked before and polled during each fetch.
 
 ### Permission assumptions (N3b)
 

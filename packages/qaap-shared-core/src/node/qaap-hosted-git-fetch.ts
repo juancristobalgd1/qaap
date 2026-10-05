@@ -37,6 +37,7 @@ export interface QaapHostedGitFetchResult {
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const MAX_HAVES = 512;
+const DEFAULT_MAX_CONCURRENT_FETCHES = 2;
 /** `O_NOFOLLOW_ANY` in darwin's `sys/fcntl.h`; not exposed by `fs.constants`. */
 const O_NOFOLLOW_ANY_DARWIN = 0x20000000;
 
@@ -53,8 +54,37 @@ const O_NOFOLLOW_ANY_DARWIN = 0x20000000;
 @injectable()
 export class QaapHostedGitFetch extends QaapSealedGithubGit {
 
+    /** Sealed fetches of this backend (a singleton) running now. */
+    protected runningFetches = 0;
+
+    /**
+     * Fails at once, without queueing, when {@link maxConcurrentFetches} are already running, or when
+     * the sealed scratch already holds its whole budget (R4-1). Each fetch is also capped on its own
+     * (`QAAP_SEALED_GIT_MAX_BYTES`).
+     */
     async fetchBundle(request: QaapHostedGitFetchRequest, options: QaapSealedGitRunOptions = {}): Promise<QaapHostedGitFetchResult> {
         this.assertValidRequest(request);
+        const limit = this.maxConcurrentFetches();
+        if (this.runningFetches >= limit) {
+            throw new Error(`${limit} hosted fetches are already running on this backend (QAAP_SEALED_GIT_MAX_CONCURRENT_FETCHES). `
+                + 'Try again when one has finished.');
+        }
+        this.runningFetches++;
+        try {
+            await this.assertScratchBudget();
+            return await this.fetchBundleInScratch(request, options);
+        } finally {
+            this.runningFetches--;
+        }
+    }
+
+    /** `QAAP_SEALED_GIT_MAX_CONCURRENT_FETCHES`, default 2. */
+    protected maxConcurrentFetches(): number {
+        const configured = Number(process.env.QAAP_SEALED_GIT_MAX_CONCURRENT_FETCHES);
+        return Number.isSafeInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_CONCURRENT_FETCHES;
+    }
+
+    protected async fetchBundleInScratch(request: QaapHostedGitFetchRequest, options: QaapSealedGitRunOptions): Promise<QaapHostedGitFetchResult> {
         const scratch = await this.createScratch('qaap-fetch-');
         try {
             const gitDir = path.join(scratch, 'repo.git');
@@ -80,10 +110,14 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
             // A hostile or huge repository must not fill this backend's disk: the scratch is watched while
             // git downloads, measured once more when it is done, and the bundle is capped the same way.
             const maxBytes = this.maxTransferBytes();
+            const scratchRoot = path.dirname(scratch);
             await withToken(['fetch', '--progress', '--no-tags', '--no-write-fetch-head', request.url, '+refs/heads/*:refs/heads/*', '+refs/tags/*:refs/tags/*'],
-                { watchDirectory: scratch, maxBytes });
+                { watchDirectory: scratch, maxBytes, budgetDirectory: scratchRoot });
             if (await this.directorySize(scratch) > maxBytes) {
                 throw this.transferLimitError(maxBytes);
+            }
+            if (await this.directorySize(scratchRoot) > this.scratchBudgetBytes()) {
+                throw this.scratchBudgetError(this.scratchBudgetBytes());
             }
             const tips = this.parseRefs(await git(['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads', 'refs/tags'], { onStderr: undefined }));
             if (tips.length === 0) {
