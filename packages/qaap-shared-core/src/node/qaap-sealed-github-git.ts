@@ -23,6 +23,8 @@ export interface QaapSealedGitRunOptions {
     readonly stdoutHandle?: fs.promises.FileHandle;
 }
 
+/** `https://[user@]github.com/`, `ssh://git@github.com[:22]/` or `git@github.com:`, then `<owner>/<repo>[.git][/]`. */
+const GITHUB_REMOTE = /^(?:https:\/\/(?:[^@/\s]+@)?github\.com\/|ssh:\/\/git@github\.com(?::22)?\/|git@github\.com:)([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_STDOUT = 4 * 1024 * 1024;
 const TOKEN_ENV = 'QAAP_GIT_PUSH_TOKEN';
@@ -55,7 +57,7 @@ export class QaapSealedGithubGit {
      */
     toGithubHttpsUrl(remoteUrl: string): string | undefined {
         const trimmed = remoteUrl.trim();
-        const match = /^(?:https:\/\/(?:[^@/\s]+@)?github\.com\/|ssh:\/\/git@github\.com(?::22)?\/|git@github\.com:)([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(trimmed);
+        const match = GITHUB_REMOTE.exec(trimmed);
         if (!match || match[2] === '.' || match[2] === '..') {
             return undefined;
         }
