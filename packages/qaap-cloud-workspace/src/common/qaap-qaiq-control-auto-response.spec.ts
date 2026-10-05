@@ -118,10 +118,21 @@ describe('qaap-qaiq-control-auto-response', () => {
         }
     });
 
+    it('does not queue approved browser navigation even when other tools require approval', () => {
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode default', false, {
+            requestId: 'req-browser-manual',
+            toolName: 'mcp__qaap_browser__browser_navigate',
+        })).to.equal('allow');
+    });
+
     it('denies unsafe MCP code execution even when a browser server is configured', () => {
         const command = 'qaiq --permission-mode bypassPermissions --allowed-tools mcp__qaap_browser__browser_navigate';
         expect(resolveQaiqControlRequestAutoAction(command, true, {
             requestId: 'req-browser-unsafe',
+            toolName: 'mcp__qaap_browser__browser_run_code_unsafe',
+        })).to.equal('deny');
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode default', false, {
+            requestId: 'req-browser-unsafe-manual',
             toolName: 'mcp__qaap_browser__browser_run_code_unsafe',
         })).to.equal('deny');
     });
