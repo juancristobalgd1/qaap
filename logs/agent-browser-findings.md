@@ -76,6 +76,24 @@ When implementation is complete, verify from a fresh tenant for each supported h
 
 Do not report these checks as passing until they have been run against a built tenant image.
 
+## Verification update (2026-10-05)
+
+The branch was rebased onto the fetched `origin/master` (`0150f4b2`). Verification on this
+checkout:
+
+- `npx tsc -b --pretty false` in `packages/qaap-cloud-workspace`: passed.
+- `npx tsc -b --pretty false` in `packages/qaap-shared-core`: passed.
+- Configured full `qaap-shared-core` Mocha suite: **1,508 passing, 2 pending**.
+- Full `qaap-cloud-workspace` Mocha suite: **1,797 passing, 2 pending, 1 failing**. The failure is
+  `qaap-headless-visual-capture.spec.js`; Playwright Chromium cannot start because the workspace
+  image lacks `libatk-1.0.so.0` (and related system libraries). `apt-get update` is unavailable to
+  this unprivileged workspace user.
+- Focused browser configuration, tenant bootstrap, approval, read-only, QAIQ tool policy, and
+  QAIQ auto-response specs: **102 passing**.
+- The fresh-tenant smoke, browser-to-preview visibility, Work Hub/IDE independence, and load-time
+  comparison remain unverified. A8 is still open; do not open a PR or claim the complete goal until
+  the integrated-browser path is implemented and the required runtime checks pass.
+
 ## References checked
 
 - [Playwright MCP README](https://github.com/microsoft/playwright-mcp) documents headless mode and
