@@ -388,7 +388,9 @@
         // version for JS so a reload always fetches the current entry point;
         // code-split chunks are content-hashed and are never stamped.
         var stylesheet = document.querySelector('link[href*="bundle.css"]');
-        var href = stylesheet && stylesheet.getAttribute('href');
+        var stylesheetMeta = document.querySelector('meta[name="qaap-bundle-css"]');
+        var href = stylesheet && stylesheet.getAttribute('href')
+            || stylesheetMeta && stylesheetMeta.getAttribute('content');
         var match = href && href.match(/[?&]qaap-build=([^&#]+)/);
         if (match) {
             return './bundle.js?qaap-build=' + encodeURIComponent(match[1]);
@@ -399,10 +401,42 @@
         return './bundle.js';
     }
 
+    function isMobileWorkHubMode() {
+        return typeof window.matchMedia === 'function'
+            && window.matchMedia('(max-width: 767px), (pointer: coarse)').matches;
+    }
+
+    function activateBundleStylesheet() {
+        if (document.querySelector('link[href*="bundle.css"]')) {
+            return;
+        }
+        var stylesheetMeta = document.querySelector('meta[name="qaap-bundle-css"]');
+        var href = stylesheetMeta && stylesheetMeta.getAttribute('content');
+        if (!href) {
+            return;
+        }
+        var stylesheet = document.createElement('link');
+        stylesheet.id = 'qaap-bundle-css';
+        stylesheet.rel = 'stylesheet';
+        stylesheet.href = href;
+        document.head.appendChild(stylesheet);
+    }
+
+    function dismissLoginGate() {
+        var host = document.getElementById('qaap-login-host');
+        if (host) {
+            host.remove();
+        }
+        if (document.body) {
+            document.body.classList.remove('qaap-login-active');
+        }
+    }
+
     function loadBundle() {
         if (window.__qaapBundleLoading || window.__qaapBundleLoaded) {
             return;
         }
+        activateBundleStylesheet();
         window.__qaapBundleLoading = true;
         var script = document.createElement('script');
         // The frontend builds as ES modules (esbuild code-splitting); the
@@ -594,9 +628,7 @@
             }
         });
 
-        // If the server has no GitHub OAuth app configured, or cannot be reached, keep the user
-        // on this page with an actionable explanation instead of sending them to a blank/timeout
-        // OAuth page (ONB-1).
+        // If GitHub OAuth is not configured, keep the user on this page with an actionable hint.
         reflectGithubAvailability(host);
     }
 
@@ -605,9 +637,11 @@
             if (!document.getElementById('qaap-login-host')) {
                 showGate();
             }
-            // Keep the gate as the topmost element while the workbench finishes booting
-            // behind it, so auth latency does not become app-start latency.
-            loadBundle();
+            // Keep the gate in front while the workbench starts on desktop. Phones only
+            // need the small gate here; load Work Hub assets after authentication.
+            if (!isMobileWorkHubMode()) {
+                loadBundle();
+            }
         };
         if (document.body) {
             render();
@@ -641,8 +675,7 @@
         fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
             .then(function (res) { return res && res.ok ? res.json() : null; })
             .then(function (config) {
-                // Keep the user on this page when the server cannot affirmatively report its
-                // auth configuration. A retry is safer than navigating to a dead OAuth endpoint.
+                // Keep the user on this page when OAuth configuration is unavailable.
                 if (!config) {
                     throw new Error('config');
                 }
@@ -669,7 +702,11 @@
                     : 'GitHub sign-in isn’t configured on this server yet. Ask the administrator to set the GitHub OAuth credentials.');
             })
             .catch(function () {
-                setGithubUnavailable(host, 'The Qaap server is not responding. Check the VPS, proxy, or firewall, then retry.');
+                // A failed or slow config probe does not prove the server is down. Leave GitHub
+                // sign-in enabled and let the user retry the probe without reporting an outage.
+                if (status) {
+                    status.textContent = '';
+                }
                 if (retry && !productionRuntime) {
                     retry.hidden = false;
                 }
@@ -806,6 +843,7 @@
             .then(function (data) {
                 if (data && data.signedIn && data.user && data.user.provider) {
                     writeSignedIn(data.user.provider, data.user);
+                    dismissLoginGate();
                     loadBundle();
                     return;
                 }
@@ -839,6 +877,7 @@
                         login: 'dev',
                         name: 'Dev User',
                     });
+                    dismissLoginGate();
                     loadBundle();
                     return true;
                 }
@@ -890,12 +929,14 @@
             });
     }
 
-    // Speculatively preload bundle.js while the auth check is in flight.
+    // Speculatively preload bundle.js while the auth check is in flight on desktop.
     // On a warm session the user is signed in — the bundle starts downloading
     // immediately instead of waiting for the /auth/session round-trip.
-    // On a cold session the preload is wasted bandwidth, but the login gate
-    // is shown quickly (it has its own inline CSS) so the UX is still fast.
+    // A phone's unauthenticated Work Hub gate does not need IDE code.
     function speculativePreloadBundle() {
+        if (isMobileWorkHubMode()) {
+            return;
+        }
         try {
             var link = document.createElement('link');
             link.rel = 'modulepreload';
@@ -915,18 +956,13 @@
         verifyStoredSessionThenLoad();
     } else {
         // Probe auth config and session in parallel (cold tenant containers make each
-        // round-trip expensive). The session result is only used when skip-auth is off.
+        // round-trip expensive). Render the small gate before either probe resolves.
         var parallelSessionProbe = fetchSessionProbe();
         // Avoid an unhandled rejection when the probe result is never consumed.
         parallelSessionProbe.catch(function () { /* handled by resumeAfterOAuthOrSession */ });
-        trySkipAuthDevMode().then(function (skipped) {
-            if (skipped === false) {
-                resumeAfterOAuthOrSession(parallelSessionProbe);
-            } else if (skipped === true) {
-                speculativePreloadBundle();
-            } else {
-                showGateAndLoadBundle();
-            }
-        });
+        var skipAuthProbe = trySkipAuthDevMode();
+        showGateAndLoadBundle();
+        resumeAfterOAuthOrSession(parallelSessionProbe);
+        skipAuthProbe.catch(function () { /* handled by trySkipAuthDevMode */ });
     }
 })();

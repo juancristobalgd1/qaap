@@ -11,6 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
+import assetPolicy from './qaap-frontend-asset-policy.cjs';
+
+const { deferBundleStylesheetOnPhones } = assetPolicy;
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const libFrontend = path.join(root, 'lib', 'frontend');
@@ -62,12 +65,6 @@ function patchIndexForFreshAssets(indexPath) {
         return;
     }
     let html = fs.readFileSync(indexPath, 'utf8');
-    // qaap-login-gate.js injects bundle.js late (after its own checks); start fetching the
-    // ES module entry while the page parses. The href gets the same stamp below that the
-    // gate derives from bundle.css, so the preloaded module is the one it imports.
-    if (!html.includes('rel="modulepreload" href="./bundle.js')) {
-        html = html.replace('</head>', '<link rel="modulepreload" href="./bundle.js">\n</head>');
-    }
     html = html.replace(
         /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
         `./bundle.css?qaap-build=${BUILD_VERSION}`,
@@ -78,6 +75,7 @@ function patchIndexForFreshAssets(indexPath) {
         /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
         `./qaap-login-gate.js?qaap-build=${BUILD_VERSION}`,
     );
+    html = deferBundleStylesheetOnPhones(html);
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
