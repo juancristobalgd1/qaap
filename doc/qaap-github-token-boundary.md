@@ -28,9 +28,15 @@ Every GitHub transfer with the token runs as a **sealed git child of the backend
 - Only `PATH`, `LANG`, `LC_ALL` and the orchestrator's egress proxy variables (`HTTPS_PROXY`,
   `HTTP_PROXY`, `NO_PROXY` and their lower-case forms) are inherited. The orchestrator sets these on
   the backend container when a tenant egress proxy is configured (`tenantEgressProxyEnv`), and agents
-  cannot change the backend's environment. `http.proxy` is pinned to the same `HTTPS_PROXY`.
+  cannot change the backend's environment. The proxy is not repeated as `-c http.proxy` (no other
+  git config is read, and argv is visible in `/proc/<pid>/cmdline`). Git runs with its private
+  scratch directory as cwd.
 - The token is only in that child's environment. An inline credential helper answers `get` from it
-  and ignores `store`/`erase`. Nothing is written to disk or argv.
+  only for `protocol=https`, `host=github.com` (a redirect to another host gets nothing) and ignores
+  `store`/`erase`. Nothing is written to disk or argv.
+- Hosted fetch bundles are created and removed by walking from the repositories root through
+  directory descriptors that are checked not to be symlinks. A directory the agent swaps for a
+  symlink fails the call, so the backend uid never creates a file outside the workspace tree.
 
 The token is used by:
 

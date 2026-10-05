@@ -29,6 +29,14 @@ class LocalHostedGitPush extends QaapHostedGitPush {
         this.calls.push({ args, env });
         return super.runGit(args, env, options);
     }
+
+    credentialArgsForTest(token: string): string[] {
+        return this.credentialConfig(token);
+    }
+
+    runGitForTest(args: string[], scratch: string): Promise<string> {
+        return super.runGit(args, this.baseEnv(scratch));
+    }
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -161,7 +169,8 @@ describe('qaap-hosted-git-push', function (): void {
                 expect(pushCall.env.HTTPS_PROXY).to.equal('http://qaap-egress-proxy:3128');
                 expect(pushCall.env.NO_PROXY).to.equal('localhost,127.0.0.1,::1');
                 expect(pushCall.env.GIT_SSL_NO_VERIFY).to.equal(undefined);
-                expect(pushCall.args).to.include('http.proxy=http://qaap-egress-proxy:3128');
+                // The proxy reaches git through the environment only, never argv (R3-4).
+                expect(pushCall.args.some(arg => arg.includes('qaap-egress-proxy'))).to.equal(false);
                 expect(pushCall.args).to.include('http.sslVerify=true');
             } finally {
                 for (const [key, value] of Object.entries(saved)) {
@@ -188,10 +197,38 @@ describe('qaap-hosted-git-push', function (): void {
             expect(helpers[0]).to.equal('credential.helper=');
             // Git runs a `!` helper as `sh -c '<helper> "$@"' <helper> <action>`.
             const helper = `${helpers[1].slice('credential.helper=!'.length)} "$@"`;
-            const answer = execFileSync('sh', ['-c', helper, 'helper', 'get'], { encoding: 'utf8', env: { QAAP_GIT_PUSH_TOKEN: TOKEN } });
-            expect(answer).to.equal(`username=x-access-token\npassword=${TOKEN}\n`);
-            const onStore = execFileSync('sh', ['-c', helper, 'helper', 'store'], { encoding: 'utf8', env: { QAAP_GIT_PUSH_TOKEN: TOKEN } });
-            expect(onStore).to.equal('');
+            const ask = (action: string, request: string): string =>
+                execFileSync('sh', ['-c', helper, 'helper', action], { encoding: 'utf8', input: request, env: { QAAP_GIT_PUSH_TOKEN: TOKEN } });
+            expect(ask('get', 'protocol=https\nhost=github.com\npath=acme/widget.git\n')).to.equal(`username=x-access-token\npassword=${TOKEN}\n`);
+            expect(ask('store', 'protocol=https\nhost=github.com\n')).to.equal('');
+        });
+
+        it('answers no other host or protocol, e.g. after a redirect (R3-3)', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const args = new LocalHostedGitPush().credentialArgsForTest(TOKEN);
+            const helper = `${args[args.length - 1].slice('credential.helper=!'.length)} "$@"`;
+            for (const request of [
+                'protocol=https\nhost=evil.test\n',
+                'protocol=https\nhost=github.com.evil.test\n',
+                'protocol=http\nhost=github.com\n',
+                'protocol=https\nhost=api.github.com\n',
+                '',
+            ]) {
+                const answer = execFileSync('sh', ['-c', helper, 'helper', 'get'], { encoding: 'utf8', input: request, env: { QAAP_GIT_PUSH_TOKEN: TOKEN } });
+                expect(answer, JSON.stringify(request)).to.equal('');
+            }
+        });
+
+        it('runs git in its private scratch directory, not in the backend working directory (R3-4)', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const push = new LocalHostedGitPush();
+            const scratch = fs.realpathSync.native(fs.mkdtempSync(path.join(base, 'scratch-')));
+            const cwd = await push.runGitForTest(['-c', 'alias.where=!pwd', 'where'], scratch);
+            expect(fs.realpathSync.native(cwd.trim())).to.equal(scratch);
         });
     });
 });

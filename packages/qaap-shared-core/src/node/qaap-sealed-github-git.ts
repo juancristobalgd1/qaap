@@ -104,18 +104,38 @@ export class QaapSealedGithubGit {
         ];
     }
 
-    /** TLS verification on and the proxy pinned to this backend's own egress proxy, if any. */
+    /**
+     * TLS verification on. The egress proxy comes only from the inherited `HTTPS_PROXY` environment
+     * ({@link baseEnv}): no git config but these `-c` options is read, so pinning `http.proxy` would add
+     * nothing and would put a proxy URL (possibly with credentials) in the child's argv, readable from
+     * `/proc/<pid>/cmdline` by other uids of the pid namespace (R3-4).
+     */
     protected transportConfig(): string[] {
-        const proxy = (process.env.HTTPS_PROXY || process.env.https_proxy || '').trim();
-        return ['-c', 'http.sslVerify=true', ...(proxy ? ['-c', `http.proxy=${proxy}`] : [])];
+        return ['-c', 'http.sslVerify=true'];
     }
 
-    /** The only credential helper: answers `get` from the token env, ignores `store`/`erase`. */
+    /**
+     * The only credential helper: answers `get` from the token env, and only when git asks for
+     * {@link credentialHost} over HTTPS (a redirect to another host gets nothing, R3-3); ignores
+     * `store`/`erase`.
+     */
     protected credentialConfig(token: string | undefined): string[] {
         return [
             '-c', 'credential.helper=',
-            ...(token ? ['-c', `credential.helper=!f() { test "$1" = get || exit 0; echo username=x-access-token; echo "password=$${TOKEN_ENV}"; }; f`] : []),
+            ...(token ? ['-c', `credential.helper=${this.credentialHelper()}`] : []),
         ];
+    }
+
+    /** Shell helper reading git's `key=value` request on stdin. */
+    protected credentialHelper(): string {
+        return '!f() { test "$1" = get || exit 0; protocol=; host=; '
+            + 'while IFS== read -r key value; do case "$key" in protocol) protocol=$value;; host) host=$value;; esac; done; '
+            + `test "$protocol" = https && test "$host" = ${this.credentialHost()} || exit 0; `
+            + `echo username=x-access-token; echo "password=$${TOKEN_ENV}"; }; f`;
+    }
+
+    protected credentialHost(): string {
+        return 'github.com';
     }
 
     protected credentialEnv(token: string | undefined): NodeJS.ProcessEnv {
@@ -258,7 +278,9 @@ export class QaapSealedGithubGit {
             // Chunks are appended in order; a failed write fails the call.
             let written: Promise<unknown> = Promise.resolve();
             let outputBytes = 0;
-            const child = spawn('git', args, { env, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+            // cwd: the private scratch ({@link baseEnv}'s HOME), so no repository discovery or early config
+            // read happens in this backend's own working directory (R3-4).
+            const child = spawn('git', args, { env, cwd: env.HOME, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
             let stdout = '';
             let stderr = '';
             let settled = false;
