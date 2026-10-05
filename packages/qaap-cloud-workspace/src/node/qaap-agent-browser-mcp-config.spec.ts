@@ -28,6 +28,9 @@ describe('Qaap agent browser MCP configuration', () => {
         expect(claude.command).to.equal('playwright-mcp');
         expect(claude.args).to.include('--headless');
         expect(claude.args).to.include('/usr/bin/chromium');
+        expect(claude.args).to.include('--isolated');
+        expect(claude.args).to.include('--output-dir');
+        expect(claude.args).to.include('/tmp/qaap-agent-browser-output');
         expect(mcp('.gemini/settings.json')).to.have.property('qaap_browser');
         expect(mcp('.gemini/antigravity/mcp_config.json')).to.have.property('qaap_browser');
         expect(mcp('.cursor/mcp.json')).to.have.property('qaap_browser');
@@ -35,7 +38,8 @@ describe('Qaap agent browser MCP configuration', () => {
         const opencode = read('.config/opencode/opencode.json').mcp as Record<string, unknown>;
         expect(opencode.qaap_browser).to.deep.equal({
             type: 'local',
-            command: ['playwright-mcp', '--headless', '--browser', 'chromium', '--executable-path', '/usr/bin/chromium'],
+            command: ['playwright-mcp', '--headless', '--browser', 'chromium', '--executable-path', '/usr/bin/chromium',
+                '--isolated', '--output-dir', '/tmp/qaap-agent-browser-output'],
             enabled: true,
         });
         expect(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8')).to.contain('[mcp_servers.qaap_browser]');
