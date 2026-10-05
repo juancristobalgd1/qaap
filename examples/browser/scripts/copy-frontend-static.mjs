@@ -322,6 +322,63 @@ if (compressed.length) {
     console.log('[qaap] pre-compressed:', sizes.join(', '));
 }
 
+/**
+ * Print the JS each entry costs a cold load: its static-import closure (fetched before the app can
+ * run) and what stays behind dynamic `import()`. Raw and brotli bytes, so the phone entry
+ * (bundle.mobile.js) can be compared with the desktop entry (bundle.js) from any CI build log.
+ */
+function reportEntryWeights() {
+    const staticImport = /(?:\bfrom|\bimport)\s*(["'])\.\/(chunk-[A-Z0-9]+\.js)\1/g;
+    const dynamicImport = /\bimport\(\s*(["'])\.\/(chunk-[A-Z0-9]+\.js)\1\s*\)/g;
+    const edges = new Map();
+    const importsOf = file => {
+        let found = edges.get(file);
+        if (!found) {
+            const source = fs.readFileSync(path.join(libFrontend, file), 'utf8');
+            found = {
+                eager: [...source.matchAll(staticImport)].map(match => match[2]),
+                lazy: [...source.matchAll(dynamicImport)].map(match => match[2])
+            };
+            edges.set(file, found);
+        }
+        return found;
+    };
+    const closure = (entry, followLazy) => {
+        const seen = new Set();
+        const queue = [entry];
+        while (queue.length) {
+            const file = queue.shift();
+            if (seen.has(file) || !fs.existsSync(path.join(libFrontend, file))) {
+                continue;
+            }
+            seen.add(file);
+            const { eager, lazy } = importsOf(file);
+            queue.push(...eager, ...(followLazy ? lazy : []));
+        }
+        return seen;
+    };
+    const weigh = files => {
+        let raw = 0;
+        let br = 0;
+        for (const file of files) {
+            const filePath = path.join(libFrontend, file);
+            const size = fs.statSync(filePath).size;
+            raw += size;
+            br += fs.existsSync(filePath + '.br') ? fs.statSync(filePath + '.br').size : size;
+        }
+        return `${files.size} files, ${(raw / 1e6).toFixed(2)} MB raw, ${(br / 1e6).toFixed(2)} MB br`;
+    };
+    for (const entry of ['bundle.js', 'bundle.mobile.js']) {
+        if (fs.existsSync(path.join(libFrontend, entry))) {
+            const eager = closure(entry, false);
+            const lazy = new Set([...closure(entry, true)].filter(file => !eager.has(file)));
+            console.log(`[qaap] entry weight ${entry}: eager ${weigh(eager)}; lazy ${weigh(lazy)}`);
+        }
+    }
+}
+
+reportEntryWeights();
+
 // Stale code-split chunks are pruned by esbuild.mjs (qaap-prune-stale-chunks) right after the
 // main build, from esbuild's metafile: it keeps this build's chunks plus the previous build's, so
 // a tab still on the previous bundle can keep lazy-loading its chunks. Never prune here by
