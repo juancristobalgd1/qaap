@@ -57,6 +57,9 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
     /** Sealed fetches of this backend (a singleton) running now. */
     protected runningFetches = 0;
 
+    /** Outcome of the one-time {@link probeNoFollowAny} of this backend. */
+    protected noFollowAny: Promise<number | undefined> | undefined;
+
     /**
      * Fails at once, without queueing, when {@link maxConcurrentFetches} are already running, or when
      * the sealed scratch already holds its whole budget (R4-1). Each fetch is also capped on its own
@@ -182,9 +185,10 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
      * a file in a directory only it can write (R3-2). On Linux each component is opened relative
      * to the previous descriptor (`/proc/self/fd/<fd>/<name>`, an `openat` without a race) and checked
      * not to be a symlink. On darwin the kernel refuses a symlink anywhere in the path
-     * (`O_NOFOLLOW_ANY`), so a swapped directory never receives the file. Elsewhere the components
-     * are checked with `lstat` before the open and the parent and the new file are compared by
-     * dev/ino after it; a swap fails the call and the file just created is removed (R4-2).
+     * (`O_NOFOLLOW_ANY`, when {@link noFollowAnyFlag} proved it works), so a swapped directory never
+     * receives the file. Elsewhere the components are checked with `lstat` before the open and the
+     * parent and the new file are compared by dev/ino after it; a swap fails the call and the file
+     * just created is removed (R4-2). Those checks also run after an `O_NOFOLLOW_ANY` open.
      */
     protected async openBundleInPlace(bundleRoot: string, bundleFile: string): Promise<fs.promises.FileHandle> {
         const components = this.bundleComponents(bundleRoot, bundleFile);
@@ -193,7 +197,7 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
             return this.withBundleDirectory(bundleRoot, components, directory => this.openBundle(path.posix.join(directory, name)));
         }
         // `O_NOFOLLOW_ANY` also refuses symlinks above the trusted root (`/tmp`, `/var` on macOS).
-        const root = this.noFollowAnyFlag() === undefined ? bundleRoot : await fs.promises.realpath(bundleRoot);
+        const root = await this.noFollowAnyFlag() === undefined ? bundleRoot : await fs.promises.realpath(bundleRoot);
         const parent = path.join(root, ...components);
         const file = path.join(parent, name);
         const before = await this.lstatDirectoryChain(root, components);
@@ -201,7 +205,12 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
         try {
             handle = await this.openBundle(file);
         } catch (error) {
-            throw (error as NodeJS.ErrnoException).code === 'ELOOP' ? this.bundleDirectoryError() : error;
+            if ((error as NodeJS.ErrnoException).code !== 'EINVAL' || await this.noFollowAnyFlag() === undefined) {
+                throw (error as NodeJS.ErrnoException).code === 'ELOOP' ? this.bundleDirectoryError() : error;
+            }
+            // The probe passed but this file system rejects the flag: use the checked open from now on.
+            this.noFollowAny = Promise.resolve(undefined);
+            handle = await this.openBundle(file);
         }
         let opened: fs.BigIntStats | undefined;
         try {
@@ -269,10 +278,50 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
 
     /**
      * darwin's `O_NOFOLLOW_ANY` (`sys/fcntl.h`, macOS 11 / Darwin 20 and later): `open` fails with
-     * `ELOOP` if any component of the path is a symlink. Node passes numeric flags to `open` as is.
+     * `ELOOP` if any component of the path is a symlink. Some darwin kernels reject the flag with
+     * `EINVAL` (the macos-15 CI runners), so it is used only once {@link probeNoFollowAny} proved
+     * it on a scratch directory; otherwise `undefined` and the checked open applies.
      */
-    protected noFollowAnyFlag(): number | undefined {
-        return process.platform === 'darwin' && Number(os.release().split('.')[0]) >= 20 ? O_NOFOLLOW_ANY_DARWIN : undefined;
+    protected noFollowAnyFlag(): Promise<number | undefined> {
+        if (!this.noFollowAny) {
+            this.noFollowAny = this.isNoFollowAnyKernel() ? this.probeNoFollowAny() : Promise.resolve(undefined);
+        }
+        return this.noFollowAny;
+    }
+
+    protected isNoFollowAnyKernel(): boolean {
+        return process.platform === 'darwin' && Number(os.release().split('.')[0]) >= 20;
+    }
+
+    /**
+     * Creates a file with the bundle's flags in a fresh scratch directory, then one through a symlink
+     * to that directory. The flag is usable only if the first open succeeds and the second fails with
+     * `ELOOP`: `EINVAL`, a flag the kernel ignores, or any other error all mean the checked open.
+     */
+    protected async probeNoFollowAny(): Promise<number | undefined> {
+        let scratch: string | undefined;
+        try {
+            scratch = await fs.promises.mkdtemp(path.join(await fs.promises.realpath(os.tmpdir()), 'qaap-nofollow-any-'));
+            const real = path.join(scratch, 'real');
+            const link = path.join(scratch, 'link');
+            await fs.promises.mkdir(real);
+            await fs.promises.symlink(real, link, 'dir');
+            await (await this.openFile(path.join(real, 'probe'), this.bundleOpenFlags(O_NOFOLLOW_ANY_DARWIN), 0o600)).close();
+            const refused = await this.openFile(path.join(link, 'probe-through-link'), this.bundleOpenFlags(O_NOFOLLOW_ANY_DARWIN), 0o600).then(
+                async handle => {
+                    await handle.close();
+                    return false;
+                },
+                (error: NodeJS.ErrnoException) => error.code === 'ELOOP',
+            );
+            return refused ? O_NOFOLLOW_ANY_DARWIN : undefined;
+        } catch {
+            return undefined;
+        } finally {
+            if (scratch) {
+                await fs.promises.rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+            }
+        }
     }
 
     /** Opens `bundleRoot`, then each component relative to its parent's descriptor ({@link openDirectoryEntry}). */
@@ -334,14 +383,20 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
         return new Error('The workspace directory changed while the hosted fetch was creating its bundle.');
     }
 
-    /** Exclusive create: an existing file or symlink at `file` fails, and on darwin any symlink in its path. */
-    protected openBundle(file: string): Promise<fs.promises.FileHandle> {
-        const noFollowAny = this.noFollowAnyFlag();
-        if (noFollowAny === undefined) {
-            return fs.promises.open(file, 'wx', 0o644);
-        }
-        const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
-        return fs.promises.open(file, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | noFollowAny, 0o644);
+    /** Exclusive create: an existing file or symlink at `file` fails, and with `O_NOFOLLOW_ANY` any symlink in its path. */
+    protected async openBundle(file: string): Promise<fs.promises.FileHandle> {
+        return this.openFile(file, this.bundleOpenFlags(await this.noFollowAnyFlag()), 0o644);
+    }
+
+    /** `O_CREAT | O_EXCL` already refuses a symlink as the last component, so no `O_NOFOLLOW`. */
+    protected bundleOpenFlags(noFollowAny: number | undefined): number {
+        const { O_WRONLY, O_CREAT, O_EXCL } = fs.constants;
+        return O_WRONLY | O_CREAT | O_EXCL | (noFollowAny ?? 0);
+    }
+
+    /** Every bundle `open` goes through here (a test seam for the darwin flag). */
+    protected openFile(file: string, flags: number, mode: number): Promise<fs.promises.FileHandle> {
+        return fs.promises.open(file, flags, mode);
     }
 
     /**

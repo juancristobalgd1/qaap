@@ -38,8 +38,10 @@ Every GitHub transfer with the token runs as a **sealed git child of the backend
   directory descriptors that are checked not to be symlinks. A directory the agent swaps for a
   symlink fails the call, so the backend uid never creates a file outside the workspace tree. Linux
   walks `/proc/self/fd/<fd>/<name>`; darwin opens with `O_NOFOLLOW_ANY`, so the kernel refuses a
-  symlink anywhere in the path. Other platforms (no hosted mode) check before and after the open and
-  remove the file they created when they detect a swap.
+  symlink anywhere in the path, once a probe on a scratch directory proved the kernel takes the flag
+  (the macos-15 CI runners reject it with `EINVAL`). Elsewhere, and on darwin without a working flag,
+  the components are checked before and after the open and the file just created is removed when a
+  swap is detected.
 
 The token is used by:
 

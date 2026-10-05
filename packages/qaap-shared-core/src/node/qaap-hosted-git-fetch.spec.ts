@@ -13,10 +13,55 @@ import { QaapHostedGitFetch } from './qaap-hosted-git-fetch';
 import type { QaapSealedGitRunOptions } from './qaap-sealed-github-git';
 
 const TOKEN = 'gho_secretFetchTokenForSpec123';
+/** darwin's `O_NOFOLLOW_ANY`. */
+const O_NOFOLLOW_ANY = 0x20000000;
 
-/** Fetches from a local bare repository instead of GitHub and records every git invocation. */
+/**
+ * How a {@link LocalHostedGitFetch} simulates darwin on this host (no `/proc/self/fd` walk):
+ * `einval` is a kernel that rejects `O_NOFOLLOW_ANY` like the macos-15 CI runners, `nofollow-any`
+ * one that honours it (`ELOOP` for a symlink anywhere in the path).
+ */
+type SimulatedDarwin = 'einval' | 'nofollow-any';
+
+/** Fetches from a local bare repository instead of GitHub and records every git invocation and open. */
 class LocalHostedGitFetch extends QaapHostedGitFetch {
     readonly calls: Array<{ args: string[]; env: NodeJS.ProcessEnv }> = [];
+    readonly opens: Array<{ file: string; flags: number }> = [];
+
+    constructor(readonly darwin?: SimulatedDarwin) {
+        super();
+    }
+
+    protected override canOpenRelativeToDescriptor(): boolean {
+        return this.darwin === undefined && super.canOpenRelativeToDescriptor();
+    }
+
+    protected override isNoFollowAnyKernel(): boolean {
+        return this.darwin !== undefined || super.isNoFollowAnyKernel();
+    }
+
+    protected override async openFile(file: string, flags: number, mode: number): Promise<fs.promises.FileHandle> {
+        this.opens.push({ file, flags });
+        if (this.darwin === undefined || (flags & O_NOFOLLOW_ANY) === 0) {
+            return super.openFile(file, flags, mode);
+        }
+        if (this.darwin === 'einval') {
+            throw Object.assign(new Error(`EINVAL: invalid argument, open '${file}'`), { code: 'EINVAL' });
+        }
+        for (let directory = path.dirname(file); ; directory = path.dirname(directory)) {
+            if ((await fs.promises.lstat(directory)).isSymbolicLink()) {
+                throw Object.assign(new Error(`ELOOP: too many symbolic links encountered, open '${file}'`), { code: 'ELOOP' });
+            }
+            if (path.dirname(directory) === directory) {
+                return super.openFile(file, flags & ~O_NOFOLLOW_ANY, mode);
+            }
+        }
+    }
+
+    /** The flags of the `open` that created `bundleFile`. */
+    bundleFlags(bundleFile: string): number | undefined {
+        return this.opens.filter(open => open.file === bundleFile).pop()?.flags;
+    }
 
     protected override isAllowedUrl(url: string): boolean {
         return url.startsWith('file://');
@@ -98,84 +143,97 @@ describe('qaap-hosted-git-fetch', function (): void {
         expect(fs.existsSync(valid.bundleFile)).to.equal(false);
     });
 
-    it('first clone: a tokenless bundle the tenant clones, with every branch and the default branch', async () => {
-        const fetcher = new LocalHostedGitFetch();
-        const bundleFile = path.join(base, '.qaap-clone.bundle');
-        const result = await fetcher.fetchBundle({ url, token: TOKEN, bundleFile, bundleRoot: base });
-        expect(result.refs).to.have.members(['refs/heads/main', 'refs/heads/feature', 'refs/tags/v1']);
-        expect(result.defaultBranch).to.equal('main');
-        const project = path.join(base, 'project');
-        git(base, 'clone', '--quiet', '--branch', 'main', bundleFile, project);
-        expect(git(project, 'rev-parse', 'origin/feature')).to.equal(git(upstream, 'rev-parse', 'feature'));
-        expect(fs.readFileSync(path.join(project, 'a.txt'), 'utf8')).to.equal('one\n');
-        expect(fs.readFileSync(bundleFile, 'utf8')).to.not.include(TOKEN);
-        for (const call of fetcher.calls) {
-            expect(call.args.join(' ')).to.not.include(TOKEN);
-            if (!call.args.includes('ls-remote') && !call.args.includes('fetch')) {
-                expect(call.env.QAAP_GIT_PUSH_TOKEN, call.args.join(' ')).to.equal(undefined);
+    /** Without `/proc/self/fd`, the bundle is opened with `O_NOFOLLOW_ANY` only where the kernel takes it. */
+    function expectBundleFlags(fetcher: LocalHostedGitFetch, bundleFile: string): void {
+        if (fetcher.darwin !== undefined) {
+            expect(fetcher.bundleFlags(bundleFile)! & O_NOFOLLOW_ANY).to.equal(fetcher.darwin === 'nofollow-any' ? O_NOFOLLOW_ANY : 0);
+        }
+    }
+
+    for (const darwin of [undefined, 'einval', 'nofollow-any'] as const) {
+        const variant = darwin === undefined ? '' : ` (simulated darwin, ${darwin === 'einval' ? 'O_NOFOLLOW_ANY rejected with EINVAL' : 'O_NOFOLLOW_ANY honoured'})`;
+
+        it(`first clone: a tokenless bundle the tenant clones, with every branch and the default branch${variant}`, async () => {
+            const fetcher = new LocalHostedGitFetch(darwin);
+            const bundleFile = path.join(base, '.qaap-clone.bundle');
+            const result = await fetcher.fetchBundle({ url, token: TOKEN, bundleFile, bundleRoot: base });
+            expect(result.refs).to.have.members(['refs/heads/main', 'refs/heads/feature', 'refs/tags/v1']);
+            expect(result.defaultBranch).to.equal('main');
+            expectBundleFlags(fetcher, bundleFile);
+            const project = path.join(base, 'project');
+            git(base, 'clone', '--quiet', '--branch', 'main', bundleFile, project);
+            expect(git(project, 'rev-parse', 'origin/feature')).to.equal(git(upstream, 'rev-parse', 'feature'));
+            expect(fs.readFileSync(path.join(project, 'a.txt'), 'utf8')).to.equal('one\n');
+            expect(fs.readFileSync(bundleFile, 'utf8')).to.not.include(TOKEN);
+            for (const call of fetcher.calls) {
+                expect(call.args.join(' ')).to.not.include(TOKEN);
+                if (!call.args.includes('ls-remote') && !call.args.includes('fetch')) {
+                    expect(call.env.QAAP_GIT_PUSH_TOKEN, call.args.join(' ')).to.equal(undefined);
+                }
             }
-        }
-        const scratch = fetcher.calls[0].args[fetcher.calls[0].args.length - 1];
-        expect(fs.existsSync(scratch)).to.equal(false);
-    });
-
-    it('fetch: downloads only what the project lacks, keeps unchanged refs for --prune, never reads the project config', async () => {
-        const project = path.join(base, 'project');
-        git(base, 'clone', '--quiet', remote, project);
-        const marker = path.join(base, 'helper-ran');
-        git(project, 'config', 'credential.helper', `!f() { touch '${marker.split(path.sep).join('/')}'; }; f`);
-        git(project, 'config', 'http.sslVerify', 'false');
-        const oldMain = git(project, 'rev-parse', 'origin/main');
-        const newMain = commit(upstream, 'b.txt', 'two\n');
-        git(upstream, 'push', '--quiet', remote, 'main');
-
-        const fetcher = new LocalHostedGitFetch();
-        const bundleFile = path.join(base, '.qaap-fetch.bundle');
-        const haves = git(project, 'for-each-ref', '--format=%(objectname)', 'refs/remotes/origin', 'refs/heads').split('\n');
-        const result = await fetcher.fetchBundle({
-            url,
-            token: TOKEN,
-            bundleFile,
-            bundleRoot: base,
-            objectsDirectory: path.join(project, '.git', 'objects'),
-            haves: [...haves, 'f'.repeat(40), 'not-a-sha'],
+            const scratch = fetcher.calls[0].args[fetcher.calls[0].args.length - 1];
+            expect(fs.existsSync(scratch)).to.equal(false);
         });
-        expect(result.refs).to.have.members(['refs/heads/main', 'refs/heads/feature', 'refs/tags/v1']);
-        const header = fs.readFileSync(bundleFile, 'latin1').split('\n\n')[0];
-        expect(header).to.include(`-${oldMain}`);
-        expect(header).to.not.include(`-${'f'.repeat(40)}`);
 
-        git(project, 'fetch', '--quiet', '--prune', bundleFile, '+refs/heads/*:refs/remotes/origin/*');
-        expect(git(project, 'rev-parse', 'origin/main')).to.equal(newMain);
-        expect(git(project, 'rev-parse', 'origin/feature')).to.equal(oldMain);
-        expect(fs.existsSync(marker)).to.equal(false);
-        const fetchCall = fetcher.calls.find(call => call.args.includes('fetch'))!;
-        expect(fetchCall.args).to.include('core.alternateRefsCommand=true');
-        expect(fetchCall.args).to.include('http.sslVerify=true');
-        expect(fetchCall.env.GIT_CONFIG_NOSYSTEM).to.equal('1');
-        expect(fetchCall.env.GIT_CONFIG_GLOBAL).to.equal('/dev/null');
-    });
+        it(`fetch: downloads only what the project lacks, keeps unchanged refs for --prune, never reads the project config${variant}`, async () => {
+            const project = path.join(base, 'project');
+            git(base, 'clone', '--quiet', remote, project);
+            const marker = path.join(base, 'helper-ran');
+            git(project, 'config', 'credential.helper', `!f() { touch '${marker.split(path.sep).join('/')}'; }; f`);
+            git(project, 'config', 'http.sslVerify', 'false');
+            const oldMain = git(project, 'rev-parse', 'origin/main');
+            const newMain = commit(upstream, 'b.txt', 'two\n');
+            git(upstream, 'push', '--quiet', remote, 'main');
 
-    it('writes nothing for an empty remote, and never writes through an existing bundle path', async () => {
-        const empty = path.join(base, 'empty.git');
-        git(base, 'init', '--bare', '--quiet', empty);
-        const fetcher = new LocalHostedGitFetch();
-        const bundleFile = path.join(base, 'empty.bundle');
-        const result = await fetcher.fetchBundle({ url: fileUrl(empty), bundleFile, bundleRoot: base });
-        expect(result.refs).to.deep.equal([]);
-        expect(fs.existsSync(bundleFile)).to.equal(false);
+            const fetcher = new LocalHostedGitFetch(darwin);
+            const bundleFile = path.join(base, '.qaap-fetch.bundle');
+            const haves = git(project, 'for-each-ref', '--format=%(objectname)', 'refs/remotes/origin', 'refs/heads').split('\n');
+            const result = await fetcher.fetchBundle({
+                url,
+                token: TOKEN,
+                bundleFile,
+                bundleRoot: base,
+                objectsDirectory: path.join(project, '.git', 'objects'),
+                haves: [...haves, 'f'.repeat(40), 'not-a-sha'],
+            });
+            expect(result.refs).to.have.members(['refs/heads/main', 'refs/heads/feature', 'refs/tags/v1']);
+            const header = fs.readFileSync(bundleFile, 'latin1').split('\n\n')[0];
+            expect(header).to.include(`-${oldMain}`);
+            expect(header).to.not.include(`-${'f'.repeat(40)}`);
 
-        const existing = path.join(base, 'existing.bundle');
-        fs.writeFileSync(existing, 'keep');
-        let error: unknown;
-        try {
-            await fetcher.fetchBundle({ url, bundleFile: existing, bundleRoot: base });
-        } catch (caught) {
-            error = caught;
-        }
-        expect(error).to.be.instanceOf(Error);
-        expect(fs.readFileSync(existing, 'utf8')).to.equal('keep');
-    });
+            git(project, 'fetch', '--quiet', '--prune', bundleFile, '+refs/heads/*:refs/remotes/origin/*');
+            expect(git(project, 'rev-parse', 'origin/main')).to.equal(newMain);
+            expect(git(project, 'rev-parse', 'origin/feature')).to.equal(oldMain);
+            expect(fs.existsSync(marker)).to.equal(false);
+            const fetchCall = fetcher.calls.find(call => call.args.includes('fetch'))!;
+            expect(fetchCall.args).to.include('core.alternateRefsCommand=true');
+            expect(fetchCall.args).to.include('http.sslVerify=true');
+            expect(fetchCall.env.GIT_CONFIG_NOSYSTEM).to.equal('1');
+            expect(fetchCall.env.GIT_CONFIG_GLOBAL).to.equal('/dev/null');
+        });
+
+        it(`writes nothing for an empty remote, and never writes through an existing bundle path${variant}`, async () => {
+            const empty = path.join(base, 'empty.git');
+            git(base, 'init', '--bare', '--quiet', empty);
+            const fetcher = new LocalHostedGitFetch(darwin);
+            const bundleFile = path.join(base, 'empty.bundle');
+            const result = await fetcher.fetchBundle({ url: fileUrl(empty), bundleFile, bundleRoot: base });
+            expect(result.refs).to.deep.equal([]);
+            expect(fs.existsSync(bundleFile)).to.equal(false);
+
+            const existing = path.join(base, 'existing.bundle');
+            fs.writeFileSync(existing, 'keep');
+            let error: unknown;
+            try {
+                await fetcher.fetchBundle({ url, bundleFile: existing, bundleRoot: base });
+            } catch (caught) {
+                error = caught;
+            }
+            expect(error).to.be.instanceOf(Error);
+            expect(fs.readFileSync(existing, 'utf8')).to.equal('keep');
+        });
+    }
+
     it('refuses a repository larger than QAAP_SEALED_GIT_MAX_BYTES before writing any bundle (R3-5)', async () => {
         fs.writeFileSync(path.join(upstream, 'big.bin'), crypto.randomBytes(512 * 1024));
         git(upstream, 'add', 'big.bin');
@@ -303,13 +361,23 @@ describe('qaap-hosted-git-fetch', function (): void {
 
     /** Swaps the bundle's directory for a symlink to `elsewhere` just before the open, as an agent racing the backend would (R3-2). */
     class RacedHostedGitFetch extends LocalHostedGitFetch {
-        constructor(protected readonly parent: string, protected readonly elsewhere: string) {
-            super();
+        /** Whether the check-after-open cleanup had to run. */
+        cleanedUp = false;
+
+        constructor(protected readonly parent: string, protected readonly elsewhere: string, darwin?: SimulatedDarwin) {
+            super(darwin);
+        }
+
+        protected override async removeSwappedBundle(file: string, opened: fs.BigIntStats): Promise<void> {
+            this.cleanedUp = true;
+            return super.removeSwappedBundle(file, opened);
         }
 
         protected override openBundle(file: string): Promise<fs.promises.FileHandle> {
-            fs.renameSync(this.parent, `${this.parent}.real`);
-            fs.symlinkSync(this.elsewhere, this.parent, 'dir');
+            if (!fs.lstatSync(this.parent).isSymbolicLink()) {
+                fs.renameSync(this.parent, `${this.parent}.real`);
+                fs.symlinkSync(this.elsewhere, this.parent, 'dir');
+            }
             return super.openBundle(file);
         }
     }
@@ -360,8 +428,8 @@ describe('qaap-hosted-git-fetch', function (): void {
                     return false;
                 }
 
-                protected override noFollowAnyFlag(): number | undefined {
-                    return undefined;
+                protected override isNoFollowAnyKernel(): boolean {
+                    return false;
                 }
             }
             let error: unknown;
@@ -375,30 +443,29 @@ describe('qaap-hosted-git-fetch', function (): void {
             expect(fs.readdirSync(`${parent}.real`)).to.deep.equal([]);
         });
 
-        it('lets the darwin kernel refuse a symlink anywhere in the bundle path (O_NOFOLLOW_ANY)', async function (): Promise<void> {
-            if (process.platform !== 'darwin') {
-                this.skip();
-            }
-            /** Records whether the check-after-open cleanup ever had to run. */
-            class DarwinHostedGitFetch extends RacedHostedGitFetch {
-                cleanedUp = false;
-
-                protected override async removeSwappedBundle(file: string, opened: fs.BigIntStats): Promise<void> {
-                    this.cleanedUp = true;
-                    return super.removeSwappedBundle(file, opened);
+        for (const darwin of ['kernel', 'einval', 'nofollow-any'] as const) {
+            const how = darwin === 'kernel' ? 'darwin kernel' : `simulated darwin, ${darwin === 'einval' ? 'O_NOFOLLOW_ANY rejected with EINVAL' : 'O_NOFOLLOW_ANY honoured'}`;
+            it(`refuses a symlink swapped into the darwin bundle path and leaves no file behind (${how})`, async function (): Promise<void> {
+                if (darwin === 'kernel' && process.platform !== 'darwin') {
+                    this.skip();
                 }
-            }
-            const fetcher = new DarwinHostedGitFetch(parent, elsewhere);
-            let error: unknown;
-            try {
-                await fetcher.fetchBundle({ url, bundleFile, bundleRoot: base });
-            } catch (caught) {
-                error = caught;
-            }
-            expect(String(error)).to.match(/changed while the hosted fetch was creating its bundle/);
-            expect(fetcher.cleanedUp).to.equal(false);
-            expect(fs.readdirSync(elsewhere)).to.deep.equal([]);
-        });
+                const fetcher = new RacedHostedGitFetch(parent, elsewhere, darwin === 'kernel' ? undefined : darwin);
+                let error: unknown;
+                try {
+                    await fetcher.fetchBundle({ url, bundleFile, bundleRoot: base });
+                } catch (caught) {
+                    error = caught;
+                }
+                // The security property, whether the kernel took `O_NOFOLLOW_ANY` or the checked open ran.
+                expect(String(error)).to.match(/changed while the hosted fetch was creating its bundle/);
+                expect(fs.readdirSync(elsewhere)).to.deep.equal([]);
+                expect(fs.readdirSync(`${parent}.real`)).to.deep.equal([]);
+                if (darwin !== 'kernel') {
+                    // `O_NOFOLLOW_ANY` refuses the open itself; the checked open creates the file and removes it.
+                    expect(fetcher.cleanedUp).to.equal(darwin === 'einval');
+                }
+            });
+        }
 
         it('removes the bundle only through the real directory', async () => {
             const decoy = path.join(elsewhere, path.basename(bundleFile));
