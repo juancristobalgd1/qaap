@@ -25,7 +25,7 @@ if [[ "$SMOKE_COOKIE" != *=* ]]; then
     exit 1
 fi
 
-for command in curl python3; do
+for command in curl python3 grep; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command not found: $command" >&2
         exit 1
@@ -117,8 +117,9 @@ if [[ "$DEPLOYED_SHA" != "${EXPECTED_SHA:0:12}" ]]; then
 fi
 echo "OK: auth/config reports deployed build $DEPLOYED_SHA."
 
+# The first signed-in request can wait for the user's tenant backend to start (master: 180 s).
 if ! WORKSPACE_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/workspace-root.html" \
-    --write-out '%{http_code}' --max-time 15 -H "@$COOKIE_HEADER_FILE" "$BASE_URL/")"; then
+    --write-out '%{http_code}' --max-time 180 -H "@$COOKIE_HEADER_FILE" "$BASE_URL/")"; then
     echo '::error::Signed-in post-deploy smoke could not request the workspace root.' >&2
     exit 1
 fi

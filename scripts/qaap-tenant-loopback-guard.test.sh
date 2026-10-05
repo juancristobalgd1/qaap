@@ -180,8 +180,15 @@ QAAP_IPTABLES="$TEST_ROOT/missing-iptables" QAAP_IP6TABLES="$BIN/ip6tables" bash
     && fail 'apply succeeded without iptables' || pass 'apply fails closed without iptables'
 
 # --- deploy: the VPS update installs, enables and verifies the guard ---
-grep -Eq '^[[:space:]]+\./scripts/qaap-vps-update\.sh( |\\|$)' "$DEPLOY_WORKFLOW" \
-    && pass 'deploy workflow runs qaap-vps-update.sh' || fail 'deploy workflow no longer runs scripts/qaap-vps-update.sh'
+# The workflow runs the update directly, or through the rollback transaction that runs it.
+ROLLBACK="$ROOT/scripts/qaap-vps-rollback.sh"
+if grep -Eq '^[[:space:]]+\./scripts/qaap-vps-update\.sh( |\\|$)' "$DEPLOY_WORKFLOW" \
+    || { grep -Eq '^[[:space:]]+bash \./scripts/qaap-vps-rollback\.sh "\$@"' "$DEPLOY_WORKFLOW" \
+        && grep -Eq '^"\$SCRIPT_DIR/qaap-vps-update\.sh" ' "$ROLLBACK"; }; then
+    pass 'deploy workflow runs qaap-vps-update.sh'
+else
+    fail 'deploy workflow no longer runs scripts/qaap-vps-update.sh'
+fi
 call_line="$(grep -nx 'ensure_tenant_loopback_guard' "$UPDATE" | head -n 1 | cut -d: -f1 || true)"
 switch_line="$(grep -nx 'run_runtime_state_check' "$UPDATE" | head -n 1 | cut -d: -f1 || true)"
 [[ -n "$call_line" && -n "$switch_line" && "$call_line" -lt "$switch_line" ]] \
