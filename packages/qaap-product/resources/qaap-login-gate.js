@@ -703,12 +703,13 @@
             })
             .catch(function () {
                 // A failed or slow config probe does not prove the server is down. Leave GitHub
-                // sign-in enabled and let the user retry the probe without reporting an outage.
+                // sign-in enabled; an unavailable capabilities probe is not a liveness check.
                 if (status) {
                     status.textContent = '';
                 }
-                if (retry && !productionRuntime) {
-                    retry.hidden = false;
+                if (retry) {
+                    retry.hidden = true;
+                    retry.disabled = false;
                 }
             });
     }
@@ -795,7 +796,7 @@
      * @param sessionProbe optional already-started session probe (see the parallel boot probes
      * at the bottom of this file) so a cold start does not pay two sequential round-trips.
      */
-    function resumeAfterOAuthOrSession(sessionProbe) {
+    function resumeAfterOAuthOrSession(sessionProbe, skipAuthProbe) {
         if (window.location.search.indexOf('qaap_oauth_error=1') !== -1) {
             try {
                 var errParams = new URLSearchParams(window.location.search);
@@ -851,10 +852,21 @@
             })
             .catch(function (err) {
                 console.warn('[Qaap] session check failed, showing login gate', err && err.message);
-                if (document.body) {
-                    showGateAndLoadBundle();
+                var showGate = function () {
+                    if (document.body) {
+                        showGateAndLoadBundle();
+                    } else {
+                        document.addEventListener('DOMContentLoaded', showGateAndLoadBundle, { once: true });
+                    }
+                };
+                if (skipAuthProbe) {
+                    skipAuthProbe.then(function (skipped) {
+                        if (skipped !== true) {
+                            showGate();
+                        }
+                    });
                 } else {
-                    document.addEventListener('DOMContentLoaded', showGateAndLoadBundle, { once: true });
+                    showGate();
                 }
             });
     }
@@ -956,13 +968,26 @@
         verifyStoredSessionThenLoad();
     } else {
         // Probe auth config and session in parallel (cold tenant containers make each
-        // round-trip expensive). Render the small gate before either probe resolves.
+        // round-trip expensive). On phones, render the small gate before either probe resolves;
+        // desktop keeps its existing auth-first transition and loads the workbench unchanged.
         var parallelSessionProbe = fetchSessionProbe();
         // Avoid an unhandled rejection when the probe result is never consumed.
         parallelSessionProbe.catch(function () { /* handled by resumeAfterOAuthOrSession */ });
         var skipAuthProbe = trySkipAuthDevMode();
-        showGateAndLoadBundle();
-        resumeAfterOAuthOrSession(parallelSessionProbe);
+        if (isMobileWorkHubMode()) {
+            showGateAndLoadBundle();
+            resumeAfterOAuthOrSession(parallelSessionProbe, skipAuthProbe);
+        } else {
+            skipAuthProbe.then(function (skipped) {
+                if (skipped === false) {
+                    resumeAfterOAuthOrSession(parallelSessionProbe);
+                } else if (skipped === true) {
+                    speculativePreloadBundle();
+                } else {
+                    showGateAndLoadBundle();
+                }
+            });
+        }
         skipAuthProbe.catch(function () { /* handled by trySkipAuthDevMode */ });
     }
 })();
