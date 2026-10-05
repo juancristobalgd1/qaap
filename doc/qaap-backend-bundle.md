@@ -64,6 +64,32 @@ module's own `packages/<pkg>/lib/node` directory or `node_modules/...`.
 | Built-in plugins | `--plugins=local-dir:/app/plugins` | same | OK |
 | `--ovsx-router-config` | absolute path | same | OK |
 
+## Layout check
+
+`QaapBackendBundleLayoutCheck` (`packages/qaap-cloud-workspace/src/node/qaap-backend-bundle-layout.ts`)
+encodes the table above. It collects:
+
+- the fixed requirements: `lib/backend/main.js`, `package.json`, `lib/frontend/index.html`, `/app/plugins`,
+  `ovsx-router-config.json`, the compiled destructive-command guard, `lib/backend/shell-integrations`
+  (must not be empty), and `lib/prebuilds/<platform>-<arch>/pty.node`;
+- every entry in `gen-esbuild.node.mjs` as `lib/backend/<entry>.js`. The ConPTY helpers are skipped
+  off Windows. If the config is missing, that is reported as a problem instead of guessing;
+- the string literals each `lib/backend/*.js` turns into paths: `path.join/resolve(__dirname, '…')`,
+  template prefixes, `__dirname + '…'` and the `./native/…` assets.
+
+Known fallbacks may be missing (`optionalPaths`): `scanners/backend-init-theia.js`, the first
+system-skills candidate and `../../resources/legal`. Everything else counts as a problem (`missing`,
+`empty`, or `load-failed` with `--load-native`). Run it inside the image:
+
+    docker run --rm --entrypoint node <image> /app/scripts/qaap-backend-bundle-layout-check.js --load-native
+
+It exits 1 and lists each path along with what needs it. Breakage it reports if the image layout
+drifts: no `pty.node` means no terminals or tenant spawns. A missing entry (`ipc-bootstrap`, `plugin-host`,
+`plugin-vscode-init`, …) means no IPC children or plugins. A missing `native/rg` or `drivelist.node` breaks
+search and file dialogs. Empty `shell-integrations` loses terminal shell integration. A missing
+`scripts/qaap-guarded-bash.mjs` leaves QAIQ shells without the guard. The spec builds the image layout in
+a temp directory and removes each of these in turn.
+
 ## Not changed here
 
 - **Node compile cache** (`/workspace/logs/coldstart.md`, F3): top-level compile of the 18.9 MB bundle
