@@ -548,6 +548,15 @@
     }
 
     function computeBundleUrl() {
+        // Phones use a separate Work Hub entry so no IDE chunks enter their
+        // request graph. Keep this query aligned with the shared
+        // QAAP_MOBILE_DEVICE_MEDIA_QUERY in qaap-mobile-device.ts.
+        var mobile = false;
+        try {
+            mobile = typeof window.matchMedia === 'function'
+                && window.matchMedia('(max-width: 767px), (pointer: coarse)').matches === true;
+        } catch (_) { /* desktop entry is the safe fallback */ }
+        var bundleName = mobile ? 'bundle.mobile.js' : 'bundle.js';
         // copy-frontend-static versions bundle.css in development. Reuse that
         // version for JS so a reload always fetches the current entry point;
         // code-split chunks are content-hashed and are never stamped.
@@ -555,12 +564,12 @@
         var href = stylesheet && stylesheet.getAttribute('href');
         var match = href && href.match(/[?&]qaap-build=([^&#]+)/);
         if (match) {
-            return './bundle.js?qaap-build=' + encodeURIComponent(match[1]);
+            return './' + bundleName + '?qaap-build=' + encodeURIComponent(match[1]);
         }
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '[::1]') {
-            return './bundle.js?qaap-build=' + Date.now().toString(36);
+            return './' + bundleName + '?qaap-build=' + Date.now().toString(36);
         }
-        return './bundle.js';
+        return './' + bundleName;
     }
 
     function loadBundle() {

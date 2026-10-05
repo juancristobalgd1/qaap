@@ -27,6 +27,36 @@ describe('Qaap login gate', () => {
         return run;
     }
 
+    it('loads only the mobile Work Hub entry on mobile and leaves desktop on the desktop entry', async () => {
+        const mobile = start(
+            pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+            'http://localhost:3000/',
+            {
+                beforeRun: window => {
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            },
+        );
+        const mobileScript = (await mobile.bundleAppended).script;
+        expect(new URL(mobileScript.src).pathname).to.equal('/bundle.mobile.js');
+        expect(mobile.document.querySelector('link[rel="modulepreload"]')?.getAttribute('href')).to.equal(mobileScript.src);
+
+        const desktop = start(
+            pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+        );
+        const desktopScript = (await desktop.bundleAppended).script;
+        expect(new URL(desktopScript.src).pathname).to.equal('/bundle.js');
+    });
+
     it('clears a saved IDE surface and holds Work Hub in front on mobile boot', async () => {
         const run = start(
             pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
