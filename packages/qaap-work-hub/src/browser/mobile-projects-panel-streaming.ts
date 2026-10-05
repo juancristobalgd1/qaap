@@ -285,7 +285,9 @@ export function resolveAnnotationComposerSessionExtracted(ctx: MobileProjectsPan
             project,
             summary,
         ),
-        resolveAgentLabel: () => ctx.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
+        resolveAgentLabel: () => ctx.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
+            ctx.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+        ),
         resolveAgentModel: () => {
             const cwd = ctx.projectsService.getProjectCwd(project) ?? summary.cwd;
             return ctx.transcriptComposerUi.resolveTranscriptComposerAgentModel(
