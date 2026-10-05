@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveQaapWorktreesRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -52,6 +53,10 @@ export class QaapConversationWorktreeService {
     @inject(QaapTenantSpawnService)
     protected readonly tenantSpawn: QaapTenantSpawnService;
 
+    /** Records which project each worktree was cut from, so a hosted push from it cannot be redirected (R3-1). */
+    @inject(QaapHostedWorktreeRegistry) @optional()
+    protected readonly worktreeRegistry: QaapHostedWorktreeRegistry | undefined;
+
     async create(baseCwd: string, ownerLogin?: string): Promise<QaapConversationWorktree> {
         const cwd = path.resolve(baseCwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
@@ -71,6 +76,9 @@ export class QaapConversationWorktreeService {
         await this.ensureTenantContainerReady(cwd);
         this.tenantSpawn.provisionTenantDir(cwd, path.dirname(worktreePath));
         await this.mutatingGit(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
+        if (ownerLogin?.trim()) {
+            this.worktreeRegistry?.register(ownerLogin.trim(), cwd, worktreePath);
+        }
         return { worktreePath, branch };
     }
 
@@ -143,6 +151,7 @@ export class QaapConversationWorktreeService {
     }
 
     protected async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
+        this.worktreeRegistry?.unregister(worktreePath);
         await this.mutatingGit(cwd, ['worktree', 'remove', '--force', worktreePath]);
     }
 
