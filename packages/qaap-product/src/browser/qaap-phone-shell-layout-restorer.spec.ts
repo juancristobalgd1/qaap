@@ -8,12 +8,15 @@ const disableJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { Container, ContainerModule } from '@theia/core/shared/inversify';
-import { ShellLayoutRestorer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
+import { ApplicationShellLayoutMigration, ShellLayoutRestorer, ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { QaapPluginHostFrontend } from './qaap-phone-debug-service';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { ILogger } from '@theia/core/lib/common/logger';
+import { ContributionProvider } from '@theia/core/lib/common/contribution-provider';
+import { ThemeService } from '@theia/core/lib/browser/theming';
+import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { QaapPhoneShellLayoutRestorer } from './qaap-phone-shell-layout-restorer';
 
 disableJSDOM();
@@ -53,25 +56,36 @@ describe('QaapPhoneShellLayoutRestorer', () => {
 
     describe('rebindOnPhoneEntry', () => {
 
-        function boundRestorer(desktopEntry: boolean): unknown {
+        async function boundRestorer(desktopEntry: boolean): Promise<{ service: ShellLayoutRestorer; upstream: ShellLayoutRestorer }> {
             const container = new Container();
-            const upstream = {};
-            container.bind(ShellLayoutRestorer).toConstantValue(upstream as ShellLayoutRestorer);
+            const upstream = {} as ShellLayoutRestorer;
+            container.bind(ShellLayoutRestorer).toConstantValue(upstream);
+            container.bind(WidgetManager).toConstantValue({} as WidgetManager);
+            container.bind(ILogger).toConstantValue({} as ILogger);
+            container.bind(StorageService).toConstantValue({} as StorageService);
+            const contributions = { getContributions: () => [] };
+            container.bind(ContributionProvider).toConstantValue(contributions).whenTargetNamed(ApplicationShellLayoutMigration);
+            container.bind(ContributionProvider).toConstantValue(contributions).whenTargetNamed(ShellLayoutTransformer);
+            container.bind(ThemeService).toConstantValue({} as ThemeService);
+            container.bind(WindowService).toConstantValue({} as WindowService);
             if (desktopEntry) {
                 container.bind(QaapPluginHostFrontend).toConstantValue(true);
             }
             container.load(new ContainerModule((bind, _unbind, isBound, rebind) => {
                 QaapPhoneShellLayoutRestorer.rebindOnPhoneEntry(bind, isBound, rebind);
             }));
-            return container.isBound(QaapPhoneShellLayoutRestorer) ? 'phone' : container.get(ShellLayoutRestorer) === upstream ? 'upstream' : 'other';
+            return { service: await container.getAsync(ShellLayoutRestorer), upstream };
         }
 
-        it('keeps the upstream restorer on the desktop entry', () => {
-            expect(boundRestorer(true)).to.equal('upstream');
+        it('keeps the upstream restorer on the desktop entry', async () => {
+            const { service, upstream } = await boundRestorer(true);
+            expect(service).to.equal(upstream);
         });
 
-        it('replaces it on the phone entry', () => {
-            expect(boundRestorer(false)).to.equal('phone');
+        it('resolves the phone restorer through the shell layout service on the phone entry', async () => {
+            const { service, upstream } = await boundRestorer(false);
+            expect(service).to.be.instanceOf(QaapPhoneShellLayoutRestorer);
+            expect(service).not.to.equal(upstream);
         });
     });
 });

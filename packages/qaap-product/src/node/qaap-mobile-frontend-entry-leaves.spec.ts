@@ -105,6 +105,17 @@ describe('QaapMobileFrontendEntry excluded modules', () => {
         expect(offenders).to.deep.equal([]);
     });
 
+    it('keeps the phone shell-layout restorer binding when plugin-host bindings are excluded', () => {
+        const productBindings = kept.find(file => file.relative === 'qaap-product/src/browser/qaap-product-bindings-frontend-module.ts');
+        expect(productBindings?.source).to.include('QaapPhoneShellLayoutRestorer.rebindOnPhoneEntry');
+        expect(QaapMobileFrontendEntry.EXCLUDED_MODULES).to.include(
+            '@theia/qaap-product/lib/browser/qaap-product-plugin-frontend-module'
+        );
+        expect(QaapMobileFrontendEntry.EXCLUDED_MODULES).not.to.include(
+            '@theia/qaap-product/lib/browser/qaap-product-bindings-frontend-module'
+        );
+    });
+
     it('leave no kept RPC proxy that only an excluded module replaced', () => {
         // e.g. plugin-ext rebinds @theia/debug's `DebugService` proxy; on phones the raw proxy would send
         // `onDid*` subscriptions to a backend that does not implement them.

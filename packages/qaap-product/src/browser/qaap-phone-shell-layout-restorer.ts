@@ -3,9 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable, interfaces } from '@theia/core/shared/inversify';
+import { inject, injectable, interfaces } from '@theia/core/shared/inversify';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
 import { ShellLayoutRestorer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
+import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
+import { ILogger } from '@theia/core/lib/common/logger';
+import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { QaapPluginHostFrontend } from './qaap-phone-debug-service';
 
 /**
@@ -20,6 +23,14 @@ import { QaapPluginHostFrontend } from './qaap-phone-debug-service';
  */
 @injectable()
 export class QaapPhoneShellLayoutRestorer extends ShellLayoutRestorer {
+
+    constructor(
+        @inject(WidgetManager) widgetManager: WidgetManager,
+        @inject(ILogger) logger: ILogger,
+        @inject(StorageService) storageService: StorageService
+    ) {
+        super(widgetManager, logger, storageService);
+    }
 
     override storeLayout(_app: FrontendApplication): void {
         // Never persist the Work Hub-only shell (see the class comment).
