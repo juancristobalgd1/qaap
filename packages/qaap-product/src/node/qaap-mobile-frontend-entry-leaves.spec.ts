@@ -13,11 +13,13 @@ const EXAMPLES_DIR = path.resolve(PACKAGES_DIR, '../examples');
 
 /**
  * Kept files that import an excluded package without injecting anything it binds, so the phone
- * entry still resolves: `qaap-product` binds its own `PluginViewWelcomePolicy` implementation,
- * `qaap-shared-core` only looks VSX widgets up by id, and `plugin-ext-headless` has no frontend.
+ * entry still resolves: `qaap-product` binds its own `PluginViewWelcomePolicy` implementation and
+ * rebinds `HostedPluginSupport` only when plugin-ext bound it, `qaap-shared-core` only looks VSX
+ * widgets up by id, and `plugin-ext-headless` has no frontend.
  */
 const ALLOWED_IMPORTERS = [
     'plugin-ext-headless/',
+    'qaap-product/src/browser/qaap-hosted-plugin-support.ts',
     'qaap-product/src/browser/qaap-plugin-view-welcome-policy.ts',
     'qaap-product/src/browser/qaap-product-bindings-frontend-module.ts',
     'qaap-shared-core/src/browser/qaap-vsx-extensions-mobile-contribution.ts',
@@ -56,6 +58,26 @@ describe('QaapMobileFrontendEntry excluded modules', () => {
                         if (excluded.has(match[1])) {
                             offenders.push(`${relative} imports @theia/${match[1]}`);
                         }
+                    }
+                }
+            }
+        }
+        expect(offenders).to.deep.equal([]);
+    });
+
+    it('are only rebound by kept modules when they were bound', () => {
+        // `rebind` throws when nothing is bound, which on phones aborts the frontend start before the Work Hub mounts.
+        const excluded = new Set(QaapMobileFrontendEntry.EXCLUDED_MODULES.map(module => module.split('/')[1]));
+        const offenders: string[] = [];
+        for (const allowed of ALLOWED_IMPORTERS.filter(importer => importer.endsWith('.ts'))) {
+            const source = fs.readFileSync(path.join(PACKAGES_DIR, allowed), 'utf8');
+            for (const match of source.matchAll(/import \{([^}]+)\} from '@theia\/([^/']+)/g)) {
+                if (!excluded.has(match[2])) {
+                    continue;
+                }
+                for (const symbol of match[1].split(',').map(name => name.trim()).filter(name => name.length > 0)) {
+                    if (source.includes(`rebind(${symbol})`) && !source.includes(`isBound(${symbol})`)) {
+                        offenders.push(`${allowed} rebinds ${symbol} without isBound(${symbol})`);
                     }
                 }
             }

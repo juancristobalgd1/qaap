@@ -78,8 +78,11 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapPluginViewWelcomePolicy).toSelf().inSingletonScope();
     bind(PluginViewWelcomePolicy).toService(QaapPluginViewWelcomePolicy);
     // Settings (user-storage) and the Work Hub mount do not wait for the backend plugin deployment.
-    bind(QaapHostedPluginSupport).toSelf().inSingletonScope();
-    rebind(HostedPluginSupport).toService(QaapHostedPluginSupport);
+    // The phone entry (bundle.mobile.js) has no plugin host, so there is nothing to rebind there.
+    if (isBound(HostedPluginSupport)) {
+        bind(QaapHostedPluginSupport).toSelf().inSingletonScope();
+        rebind(HostedPluginSupport).toService(QaapHostedPluginSupport);
+    }
 
     // Settings tree keeps the curated QaapPreferenceLayoutProvider order instead of upstream's id sort.
     rebindQaapPreferenceTreeGenerator(bind, rebind);
