@@ -15,9 +15,10 @@ Branch: `fo/agent-browser`
   `HOME` is `/tmp/qaap-home`; cache/data paths can be redirected to the tenant's `.qaap` mount.
   That makes config persistence a separate concern from browser cache persistence and needs to be
   resolved before claiming the MCP registration survives tenant restarts.
-- `qaap-adapters` already owns mini-browser and embedded agent-preview chrome. The preview host
-  exposes URL/navigation methods, but there is no current MCP-to-preview navigation or screenshot
-  event path.
+- `qaap-adapters` already owns mini-browser and embedded agent-preview chrome. This branch adds a
+  URL event path from the tenant's Playwright MCP shim to the authenticated task endpoint and opens
+  the reported URL in separate task-keyed mini-browser widgets for Work Hub and IDE. It opens the
+  URL in Qaap's browser; it does not mirror the Playwright tab's cookies or pixels.
 - No package currently provisions a default browser MCP server for agent subprocesses. The browser
   integrations must preserve the tenant network boundary (including the host loopback guard and
   private-range blocks).
@@ -32,8 +33,11 @@ bootstrap writes to the process HOME. In tenant backend mode, Qaap links `.claud
 harness config directory (including `.claude`, `.codex`, `.gemini`, `.copilot`, `.cursor`, `.hermes`
 and `.config`) from `/tmp/qaap-home` into
 `/home/theia/.qaap/.qaap-agent-storage/home`, so newly registered MCP config is stored on the
-tenant's persistent mount. A fresh-container persistence check is still pending. Browser-to-preview
-live updates, tenant-image build, and runtime verification remain pending.
+tenant's persistent mount. This branch adds a live URL bridge: the MCP shim reports navigation to
+the authenticated task API, the runner checks the active task owner, and the frontend opens a
+separate mini-browser preview for the selected Work Hub or IDE mode. Source tests cover these
+boundaries and distinct preview keys. Fresh-container persistence, tenant-image build, and manual
+runtime verification remain pending; this does not mirror browser pixels or session state.
 
 Validation so far:
 
