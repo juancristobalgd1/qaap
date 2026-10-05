@@ -9,6 +9,7 @@ import * as os from 'os';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { Container } from '@theia/core/shared/inversify';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { ILogger } from '@theia/core/lib/common/logger';
 import { EncodingService } from '@theia/core/lib/common/encoding-service';
 import { FileSystemProvider, FileSystemProviderErrorCode } from '@theia/filesystem/lib/common/files';
@@ -262,6 +263,46 @@ describe('QaapTenantDiskFileSystemProvider', () => {
         registry.runWithLogin('alice', () => {
             expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(bobWorktree)).to.throw();
             expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(bobParallel)).to.throw();
+        });
+    });
+    describe('watch', () => {
+        const upstreamWatch = DiskFileSystemProvider.prototype.watch;
+        let watched: string[];
+
+        beforeEach(() => {
+            watched = [];
+            DiskFileSystemProvider.prototype.watch = function (resource: URI): Disposable {
+                watched.push(resource.path.toString());
+                return Disposable.NULL;
+            };
+        });
+
+        afterEach(() => {
+            DiskFileSystemProvider.prototype.watch = upstreamWatch;
+        });
+
+        it('ignores a plugin watch outside the tenant roots without failing the RPC', () => {
+            // The Python extension watches ~/.conda/environments.txt at activation; the frontend
+            // never handles a rejected `watch`, so a throw surfaced as a console "forbidden".
+            const registry = new QaapWebsocketAuthRegistry();
+            const provider = createProvider({});
+            (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+            registry.runWithLogin('alice', () => {
+                expect(() => provider.watch(new URI('file:///home/theia/.conda'), { recursive: false, excludes: [] })).to.not.throw();
+                expect(() => provider.watch(new URI('file:///workspace/repos/users/bob'), { recursive: true, excludes: [] })).to.not.throw();
+            });
+            expect(watched).to.deep.equal([]);
+        });
+
+        it('still watches the tenant own repository and keeps reads of other roots forbidden', async () => {
+            const registry = new QaapWebsocketAuthRegistry();
+            const provider = createProvider({});
+            (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+            registry.runWithLogin('alice', () => {
+                provider.watch(new URI('file:///workspace/repos/users/alice/app'), { recursive: true, excludes: [] });
+            });
+            expect(watched).to.deep.equal(['/workspace/repos/users/alice/app']);
+            await registry.runWithLogin('alice', () => expectForbidden(() => provider.stat(new URI('file:///home/theia/.conda'))));
         });
     });
 });
