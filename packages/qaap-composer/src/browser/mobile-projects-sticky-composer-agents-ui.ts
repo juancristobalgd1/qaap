@@ -51,6 +51,9 @@ export interface MobileProjectsStickyComposerAgentsHost {
 }
 
 export class MobileProjectsStickyComposerAgentsUi {
+    /** Whether the first agent catalog refresh answered (successfully or not). */
+    protected stickyComposerAgentCatalogSettled = false;
+
     constructor(protected readonly host: MobileProjectsStickyComposerAgentsHost) { }
 
     /**
@@ -96,8 +99,13 @@ export class MobileProjectsStickyComposerAgentsUi {
         const cwd = project
             ? this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id)
             : undefined;
-        const pinned = this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd)
-            ?? (project ? this.resolveStickyComposerPinnedAgentId(project) : undefined);
+        const chosen = this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd);
+        // Without a choice, submit falls back to @shell while the catalog warms, but painting that
+        // fallback flashed "@shell" in the composer until the real default agent arrived.
+        if (!chosen && project && !this.stickyComposerAgentCatalogSettled) {
+            return nls.localize('qaap/mobileProjects/stickyComposerAgentPending', 'Agent');
+        }
+        const pinned = chosen ?? (project ? this.resolveStickyComposerPinnedAgentId(project) : undefined);
         if (isTheiaCoderAgent(pinned)) {
             return this.host.chatAgentService?.getAgent(THEIA_CODER_AGENT_ID)?.name ?? 'Coder';
         }
@@ -283,7 +291,8 @@ export class MobileProjectsStickyComposerAgentsUi {
             }
             const effectiveAgentId = this.host.stickyComposerPinnedAgentId;
             const seededModel = !!effectiveAgentId && !hadModel && !!this.host.stickyComposerAgentModel;
-            if (agentChanged || modelAgentChanged || seededModel) {
+            const firstSettle = this.settleStickyComposerAgentCatalog();
+            if (agentChanged || modelAgentChanged || seededModel || firstSettle) {
                 this.host.stickyComposerRenderUi.renderStickyComposer();
             }
             return true;
@@ -291,8 +300,20 @@ export class MobileProjectsStickyComposerAgentsUi {
             await this.waitForSelectableActiveTaskAgents(1500);
             this.host.stickyComposerBackendAgents = this.getComposerAgentPickerAgents(this.host.activeTasks?.getAgents() ?? []);
             this.host.stickyComposerQaiqModels = [];
+            if (this.settleStickyComposerAgentCatalog()) {
+                this.host.stickyComposerRenderUi.renderStickyComposer();
+            }
             return this.host.stickyComposerBackendAgents.length > 0;
         }
+    }
+
+    /** Marks the catalog as answered; true only the first time, so the pending label repaints once. */
+    protected settleStickyComposerAgentCatalog(): boolean {
+        if (this.stickyComposerAgentCatalogSettled) {
+            return false;
+        }
+        this.stickyComposerAgentCatalogSettled = true;
+        return true;
     }
 
     /**
