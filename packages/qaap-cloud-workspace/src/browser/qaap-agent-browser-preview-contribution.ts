@@ -5,8 +5,8 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
-import { MOBILE_ONE_COLUMN_LAYOUT_CLASS } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task';
 
 interface BrowserPreviewMessage {
@@ -30,16 +30,17 @@ export class QaapAgentBrowserPreviewContribution implements FrontendApplicationC
 
     onStart(): void {
         this.connect();
-        const shell = document.getElementById('theia-app-shell');
-        if (shell) {
+        if (document.body) {
             this.modeObserver = new MutationObserver(() => this.showLatest());
-            this.modeObserver.observe(shell, { attributes: true, attributeFilter: ['class'] });
+            this.modeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
         }
     }
 
     onStop(): void {
         this.modeObserver?.disconnect();
-        this.socket?.close();
+        const socket = this.socket;
+        this.socket = undefined;
+        socket?.close();
         if (this.reconnectTimer !== undefined) {
             window.clearTimeout(this.reconnectTimer);
             this.reconnectTimer = undefined;
@@ -90,8 +91,7 @@ export class QaapAgentBrowserPreviewContribution implements FrontendApplicationC
         if (!current) {
             return;
         }
-        const mode = document.getElementById('theia-app-shell')?.classList.contains(MOBILE_ONE_COLUMN_LAYOUT_CLASS)
-            ? 'work-hub' : 'ide';
+        const mode = peekPreferDesktopIde() ? 'ide' : 'work-hub';
         if (this.shown.get(mode) === `${current.taskId}\n${current.url}`) {
             return;
         }

@@ -162,7 +162,7 @@ function appendTomlServer(home: string, updated: string[], command: string, args
     const block = `${header}\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(args)}\n`;
     const existing = /(^|\n)\[mcp_servers\.qaap_browser\][\s\S]*?(?=\n\[|$)/.exec(content);
     const next = existing
-        ? content.replace(existing[0], `${existing[1]}${block.trimEnd()}`)
+        ? content.replace(existing[0], `${existing[1]}${block.trimEnd()}${existing[0].endsWith('\n') ? '\n' : ''}`)
         : `${content.trimEnd()}${content.trim() ? '\n\n' : ''}${block}`;
     if (next === content) {
         return;
@@ -205,7 +205,8 @@ function appendHermesServer(home: string, updated: string[], command: string, ar
             }
             end++;
         }
-        lines.splice(index, end - index, formatEntry(indent).trimEnd());
+        const keepFinalNewline = end === lines.length && content.endsWith('\n');
+        lines.splice(index, end - index, `${formatEntry(indent).trimEnd()}${keepFinalNewline ? '\n' : ''}`);
         next = lines.join('\n');
     } else if (emptySection.test(content)) {
         next = content.replace(emptySection, `mcp_servers:\n${formatEntry('  ').trimEnd()}`);

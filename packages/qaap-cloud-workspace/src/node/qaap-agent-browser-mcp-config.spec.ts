@@ -116,7 +116,7 @@ describe('Qaap agent browser MCP configuration', () => {
         ensureQaapAgentBrowserMcpConfiguration(home);
 
         const config = fs.readFileSync(configPath, 'utf8');
-        expect(config).to.match(/^    qaap_browser:\n      command: playwright-mcp\n      args:\n/m);
+        expect(config).to.contain(`    qaap_browser:\n      command: node\n      args:\n        - "${path.join(home, '.qaap-agent-browser-mcp-proxy.cjs')}"`);
         expect(config).to.contain('    personal:\n        command: personal-mcp');
     });
 });
