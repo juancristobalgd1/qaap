@@ -26,6 +26,19 @@ import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/com
 describe('qaap-mobile-work-surface-preference', () => {
 
     const storage = new Map<string, string>();
+    const globalWithBrowserState = global as unknown as { window?: Window; sessionStorage?: Storage };
+    let originalWindow: Window | undefined;
+    let originalSessionStorage: Storage | undefined;
+
+    before(() => {
+        originalWindow = globalWithBrowserState.window;
+        originalSessionStorage = globalWithBrowserState.sessionStorage;
+    });
+
+    after(() => {
+        globalWithBrowserState.window = originalWindow;
+        globalWithBrowserState.sessionStorage = originalSessionStorage;
+    });
 
     function setMobileMode(matches: boolean): void {
         const browserWindow = (global as unknown as { window: Window & { matchMedia: Window['matchMedia'] } }).window;

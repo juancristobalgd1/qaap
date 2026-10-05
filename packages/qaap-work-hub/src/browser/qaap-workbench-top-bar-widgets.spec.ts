@@ -31,10 +31,14 @@ describe('qaap-workbench-top-bar-widgets', () => {
 
     let disableJSDOM: (() => void) | undefined;
     let originalMatchMedia: typeof window.matchMedia;
+    const globalWithSessionStorage = global as unknown as { sessionStorage?: Storage };
+    let originalSessionStorage: Storage | undefined;
 
     before(() => {
         disableJSDOM = enableJSDOM();
         originalMatchMedia = window.matchMedia;
+        originalSessionStorage = globalWithSessionStorage.sessionStorage;
+        globalWithSessionStorage.sessionStorage = window.sessionStorage;
     });
 
     beforeEach(() => {
@@ -55,6 +59,7 @@ describe('qaap-workbench-top-bar-widgets', () => {
         clearPreferDesktopIde();
         window.matchMedia = originalMatchMedia;
         disableJSDOM?.();
+        globalWithSessionStorage.sessionStorage = originalSessionStorage;
     });
 
     it('allows mobile header views on the Work Hub surface', () => {
