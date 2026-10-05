@@ -220,7 +220,6 @@ export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContribut
 }
 
 /** Resolves `true` when the page reloads into another workspace (or into no folder). */
-
 export async function prepareDesktopIdeWorkspaceFromHubExtracted(
     ctx: MobileOneColumnShellContributionContext,
     selected?: string | MobileProjectEntry,
