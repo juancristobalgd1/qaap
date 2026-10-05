@@ -19,6 +19,8 @@ import { GettingStartedWidget } from '@theia/getting-started/lib/browser/getting
 import { PluginViewWelcomePolicy } from '@theia/plugin-ext/lib/main/browser/view/plugin-view-welcome-policy';
 import { QaapGettingStartedWidget } from './qaap-getting-started-widget';
 import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
+import { HostedPluginSupport } from '@theia/plugin-ext/lib/hosted/browser/hosted-plugin';
+import { QaapHostedPluginSupport } from './qaap-hosted-plugin-support';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
@@ -65,6 +67,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
 
     bind(QaapPluginViewWelcomePolicy).toSelf().inSingletonScope();
     bind(PluginViewWelcomePolicy).toService(QaapPluginViewWelcomePolicy);
+    // Settings (user-storage) and the Work Hub mount do not wait for the backend plugin deployment.
+    bind(QaapHostedPluginSupport).toSelf().inSingletonScope();
+    rebind(HostedPluginSupport).toService(QaapHostedPluginSupport);
 
     // Settings tree keeps the curated QaapPreferenceLayoutProvider order instead of upstream's id sort.
     rebindQaapPreferenceTreeGenerator(bind, rebind);
