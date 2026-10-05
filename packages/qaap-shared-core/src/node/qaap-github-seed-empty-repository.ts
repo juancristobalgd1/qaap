@@ -13,12 +13,14 @@ import {
 /**
  * Seeds a freshly cloned repository with a minimal runnable scaffold when it is empty
  * (only `.git` and optionally a `README.md`). Creates `package.json` and `index.html`,
- * commits them, and pushes to origin. Returns true when files were written.
+ * commits them, and pushes to origin (or calls `push`, e.g. the hosted push that keeps the token
+ * away from tenant git). Returns true when files were written.
  */
 export async function seedEmptyRepository(
     target: string,
     repoName: string,
     runGit: (args: string[]) => Promise<void>,
+    push: () => Promise<void> = () => runGit(['-C', target, 'push', 'origin', 'HEAD']),
 ): Promise<boolean> {
     const entries = await fs.readdir(target);
     const meaningful = entries.filter(entry => entry !== '.git');
@@ -34,7 +36,7 @@ export async function seedEmptyRepository(
     await fs.writeFile(indexHtmlPath, buildStaticIndexHtml(repoName), 'utf-8');
     await runGit(['-C', target, 'add', 'package.json', 'index.html']);
     await runGit(['-C', target, '-c', 'user.email=qaaq@qaap.dev', '-c', 'user.name=Qaaq', 'commit', '-m', 'Initial scaffold']);
-    await runGit(['-C', target, 'push', 'origin', 'HEAD']);
+    await push();
     return true;
 }
 

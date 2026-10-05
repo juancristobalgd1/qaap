@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -14,6 +14,7 @@ import * as path from 'path';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { resolveQaapParallelRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     QaapChooseParallelVariantResponse,
@@ -47,6 +48,10 @@ export class QaapParallelRunStore {
 
     @inject(QaapTenantSpawnService)
     protected readonly tenantSpawn: QaapTenantSpawnService;
+
+    /** Records which project each variant worktree was cut from, so a hosted push from it cannot be redirected (R3-1). */
+    @inject(QaapHostedWorktreeRegistry) @optional()
+    protected readonly worktreeRegistry: QaapHostedWorktreeRegistry | undefined;
 
     protected readonly runs = new Map<string, QaapParallelRun>();
     protected readonly liveStatsTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -111,6 +116,9 @@ export class QaapParallelRunStore {
                 const branch = `qaap/parallel/${slug}/${safe}`;
                 const worktreePath = path.join(root, safe);
                 await this.mutatingGit(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
+                if (ownerLogin?.trim()) {
+                    this.worktreeRegistry?.register(ownerLogin.trim(), cwd, worktreePath);
+                }
                 const conversation = this.conversationStore.create({
                     cwd: worktreePath,
                     agent: agentId,
@@ -426,6 +434,7 @@ export class QaapParallelRunStore {
     }
 
     protected async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
+        this.worktreeRegistry?.unregister(worktreePath);
         await this.mutatingGit(cwd, ['worktree', 'remove', '--force', worktreePath]);
     }
 

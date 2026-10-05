@@ -857,8 +857,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
-    public async prepareDesktopIdeWorkspaceFromHub(selectedProjectId?: string): Promise<boolean> {
-        return prepareDesktopIdeWorkspaceFromHubExtracted(this, selectedProjectId);
+    public async prepareDesktopIdeWorkspaceFromHub(selected?: string | MobileProjectEntry): Promise<boolean> {
+        return prepareDesktopIdeWorkspaceFromHubExtracted(this, selected);
     }
 
     /**

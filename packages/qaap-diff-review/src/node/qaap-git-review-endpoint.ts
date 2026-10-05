@@ -25,13 +25,36 @@ import {
     type QaapGitBranchesResponse,
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
+    type QaapGitPushDestination,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import {
     QaapTenantProcessExecutor,
     type QaapTenantProcessExecutor as QaapTenantProcessExecutorContract,
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapHostedGitPush, type QaapHostedGitPushRequest } from '@theia/qaap-shared-core/lib/node/qaap-hosted-git-push';
+import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
+import { resolveQaapParallelRoot, resolveQaapWorktreesRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+
+interface QaapHostedPushTarget {
+    readonly branch: string;
+    readonly remote: string;
+    readonly setUpstream: boolean;
+    readonly request: Omit<QaapHostedGitPushRequest, 'token'>;
+    readonly destination: QaapGitPushDestination;
+}
+
+/** The GitHub project a hosted push goes to, and the verified real objects directory of its clone. */
+interface QaapHostedProject {
+    readonly owner: string;
+    readonly repo: string;
+    readonly objectsDirectory: string;
+}
+
+/** GitHub owner and repository names as they appear in a project's clone path. */
+const GITHUB_OWNER_SEGMENT = /^[A-Za-z0-9-]+$/;
+const GITHUB_REPO_SEGMENT = /^[A-Za-z0-9_.-]+$/;
 
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -84,6 +107,13 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     /** Bound by qaap-cloud-workspace; optional so the mobile shell remains usable in local Theia. */
     @inject(QaapTenantProcessExecutor) @optional()
     protected readonly tenantProcess: QaapTenantProcessExecutorContract | undefined;
+
+    @inject(QaapHostedGitPush) @optional()
+    protected readonly hostedPush: QaapHostedGitPush | undefined;
+
+    /** Without it a worktree has no recorded project, so hosted push from a worktree is refused. */
+    @inject(QaapHostedWorktreeRegistry) @optional()
+    protected readonly worktreeRegistry: QaapHostedWorktreeRegistry | undefined;
 
     protected readonly changedFilesSnapshots = new Map<string, QaapGitChangedFilesSnapshot>();
 
@@ -317,10 +347,8 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             await this.git(root, ['add', '-A']);
             await this.git(root, ['commit', '-m', message]);
             const stat = await this.readLastCommitStat(root);
-            if (this.shouldPush(action)) {
-                await this.pushCurrentBranch(root);
-            }
-            res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root), stat });
+            const pushedTo = this.shouldPush(action) ? await this.pushCurrentBranch(root, this.auth.authenticate(req)) : undefined;
+            res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root), stat, ...(pushedTo ? { pushedTo } : {}) });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
@@ -344,13 +372,199 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             || action === 'commit-create-pr';
     }
 
-    protected async pushCurrentBranch(root: string): Promise<void> {
+    /** Pushes the current branch; returns where a hosted push went so the client can show it. */
+    protected async pushCurrentBranch(root: string, auth?: QaapGithubAuthContext): Promise<QaapGitPushDestination | undefined> {
+        // Hosted: the GitHub token stays in this backend (QaapHostedGitPush); agents never see it.
+        if (auth?.kind === 'authenticated' && auth.session.user.provider === 'github' && auth.session.accessToken
+            && this.hostedPush && isQaapHostedEnvironment()) {
+            const target = await this.resolveHostedPushTarget(root, auth);
+            if (target) {
+                await this.hostedPush.push({ ...target.request, token: auth.session.accessToken });
+                await this.recordHostedPush(root, target);
+                return target.destination;
+            }
+        }
         try {
             await this.git(root, ['rev-parse', '--abbrev-ref', '@{u}']);
             await this.git(root, ['push']);
         } catch {
             const branch = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
             await this.git(root, ['push', '-u', 'origin', branch]);
+        }
+        return undefined;
+    }
+
+    /**
+     * Where a hosted push of the current branch goes, read with the usual agent-uid git (no token).
+     * `undefined` (plain push, as before) for a detached HEAD or a remote that is not GitHub.
+     *
+     * Agents write `.git/config`, the `.git` file of a worktree and every directory under the user's
+     * repos tree, so none of them may choose where the user's token pushes. The destination comes from
+     * backend-held state only: the request root itself when it is the canonical clone
+     * `{reposRoot}/users/{login}/{owner}/{repo}` (lexically), or the project the backend recorded when it
+     * created the worktree ({@link QaapHostedWorktreeRegistry}). The git dir is then verified to be that
+     * project's own `.git` ({@link resolveHostedProject}). The ref is the current local branch; a GitHub
+     * push remote naming any other repository is refused, and `branch.*.merge` is ignored.
+     */
+    protected async resolveHostedPushTarget(root: string, auth: QaapGithubAuthContext): Promise<QaapHostedPushTarget | undefined> {
+        const branch = await this.readCurrentBranch(root);
+        if (!branch || !this.hostedPush) {
+            return undefined;
+        }
+        const configuredRemote = await this.readGitConfig(root, `branch.${branch}.remote`);
+        const configuredMerge = await this.readGitConfig(root, `branch.${branch}.merge`);
+        const remote = configuredRemote ?? 'origin';
+        if (!/^[\w.-]+$/.test(remote) || remote.startsWith('.')) {
+            return undefined;
+        }
+        const remoteUrl = this.hostedPush.toGithubHttpsUrl(await this.git(root, ['remote', 'get-url', '--push', remote]));
+        if (!remoteUrl) {
+            return undefined;
+        }
+        const ref = `refs/heads/${branch}`;
+        const sha = (await this.git(root, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim();
+        const project = await this.resolveHostedProject(auth, root);
+        if (!project) {
+            throw new Error('Hosted push only goes to the project\'s own GitHub repository, and this checkout is not a project clone.');
+        }
+        const url = `https://github.com/${project.owner}/${project.repo}.git`;
+        if (remoteUrl.toLowerCase() !== url.toLowerCase()) {
+            throw new Error(`The push remote "${remote}" points to ${remoteUrl}, not to this project's repository ${url}. Hosted push only goes to the project's own repository.`);
+        }
+        return {
+            branch,
+            remote,
+            setUpstream: !configuredRemote || configuredMerge !== ref,
+            request: { objectsDirectory: project.objectsDirectory, url, sha, ref },
+            destination: { repository: `${project.owner}/${project.repo}`, branch, url },
+        };
+    }
+
+    /**
+     * The project a hosted push from `root` belongs to, and its real objects directory, or `undefined`
+     * (fail closed). `owner/repo` is the lexical tail of the canonical clone path, or what the backend
+     * recorded for a worktree it created; it is never read from the filesystem. Then:
+     * - every component from the repos root down to `{owner}/{repo}/.git/objects` (and from the
+     *   worktrees root down to a worktree) is a real directory, checked with `lstat`, and the real path
+     *   equals the lexical path under the real root, so no symlink anywhere;
+     * - the clone's `.git` is a directory, not a gitfile;
+     * - git's common dir is that `.git`, and its git dir is that `.git` (clone) or one of its
+     *   `worktrees/*` entries (worktree), compared as real paths.
+     */
+    protected async resolveHostedProject(auth: QaapGithubAuthContext, root: string): Promise<QaapHostedProject | undefined> {
+        const login = this.auth.resolveUserLogin(auth);
+        const userRoot = this.auth.userWorkspaceRoot(auth);
+        if (!login || !userRoot) {
+            return undefined;
+        }
+        const checkout = path.resolve(root);
+        const relative = path.relative(userRoot, checkout);
+        const segments = relative.split(path.sep);
+        const isClone = !path.isAbsolute(relative) && segments.length === 2;
+        const project = isClone ? { owner: segments[0], repo: segments[1] } : this.worktreeRegistry?.lookup(login, checkout);
+        if (!project || !GITHUB_OWNER_SEGMENT.test(project.owner) || !GITHUB_REPO_SEGMENT.test(project.repo)
+            || project.repo === '.' || project.repo === '..') {
+            return undefined;
+        }
+        const projectPath = this.auth.repositoryWorkspacePath(auth, project.owner, project.repo);
+        if (!projectPath || path.relative(path.join(userRoot, project.owner, project.repo), projectPath) !== '') {
+            return undefined;
+        }
+        // `{reposRoot}/users/{login}`: the repos root is operator configuration, everything below it may be agent-owned.
+        const reposRoot = path.dirname(path.dirname(userRoot));
+        const realObjects = this.realDirectoryBelow(reposRoot, path.join(projectPath, '.git', 'objects'));
+        if (!realObjects) {
+            return undefined;
+        }
+        const realCommonDir = path.dirname(realObjects);
+        if (!isClone) {
+            const worktreeBase = [resolveQaapWorktreesRoot(), resolveQaapParallelRoot()].find(base => path.relative(base, checkout) !== ''
+                && this.isPathInside(checkout, base));
+            if (!worktreeBase || !this.realDirectoryBelow(worktreeBase, checkout) || !this.isRegularFile(path.join(checkout, '.git'))) {
+                return undefined;
+            }
+        }
+        const gitCommonDir = this.realPathOrUndefined((await this.git(checkout, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim());
+        const gitDir = this.realPathOrUndefined((await this.git(checkout, ['rev-parse', '--absolute-git-dir'])).trim());
+        if (!gitCommonDir || !gitDir || !this.samePath(gitCommonDir, realCommonDir)) {
+            return undefined;
+        }
+        const ownGitDir = isClone ? this.samePath(gitDir, realCommonDir) : this.samePath(path.dirname(gitDir), path.join(realCommonDir, 'worktrees'));
+        return ownGitDir ? { owner: project.owner, repo: project.repo, objectsDirectory: realObjects } : undefined;
+    }
+
+    /**
+     * Real path of directory `target` below `base`, or `undefined` unless every component after `base`
+     * is a directory and not a symlink (or junction), checked with `lstat`, and the real path is the
+     * lexical path under the real `base`.
+     */
+    protected realDirectoryBelow(base: string, target: string): string | undefined {
+        const relative = path.relative(base, target);
+        if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+            return undefined;
+        }
+        const realBase = this.realPathOrUndefined(base);
+        if (!realBase) {
+            return undefined;
+        }
+        let current = base;
+        for (const segment of relative.split(path.sep)) {
+            current = path.join(current, segment);
+            const stat = this.lstatOrUndefined(current);
+            if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
+                return undefined;
+            }
+        }
+        const real = this.realPathOrUndefined(target);
+        return real && this.samePath(real, path.join(realBase, relative)) ? real : undefined;
+    }
+
+    protected isRegularFile(target: string): boolean {
+        const stat = this.lstatOrUndefined(target);
+        return !!stat && stat.isFile();
+    }
+
+    protected lstatOrUndefined(target: string): fs.Stats | undefined {
+        try {
+            return fs.lstatSync(target);
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** Real paths are compared case-insensitively on Windows, where the file system is. */
+    protected samePath(left: string, right: string): boolean {
+        return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+    }
+
+    protected realPathOrUndefined(target: string): string | undefined {
+        try {
+            return fs.realpathSync.native(target);
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected isPathInside(target: string, parent: string): boolean {
+        const relative = path.relative(parent, target);
+        return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+    }
+
+    /** What `git push -u` records locally: the remote-tracking ref and, the first time, the upstream. */
+    protected async recordHostedPush(root: string, target: QaapHostedPushTarget): Promise<void> {
+        const remoteBranch = target.request.ref.slice('refs/heads/'.length);
+        await this.git(root, ['update-ref', `refs/remotes/${target.remote}/${remoteBranch}`, target.request.sha]);
+        if (target.setUpstream) {
+            await this.git(root, ['config', `branch.${target.branch}.remote`, target.remote]);
+            await this.git(root, ['config', `branch.${target.branch}.merge`, target.request.ref]);
+        }
+    }
+
+    protected async readGitConfig(root: string, key: string): Promise<string | undefined> {
+        try {
+            return (await this.git(root, ['config', '--get', key])).trim() || undefined;
+        } catch {
+            return undefined;
         }
     }
 

@@ -162,6 +162,15 @@ export interface QaapGitCommitContextResponse {
     truncated: boolean;
 }
 
+/** Where a commit workflow pushed: `owner/repo` on GitHub and the branch, shown to the user. */
+export interface QaapGitPushDestination {
+    /** `owner/repo` for a hosted push to GitHub; the remote name for a plain local push. */
+    readonly repository: string;
+    readonly branch: string;
+    /** Full remote URL when known (hosted pushes always set it). */
+    readonly url?: string;
+}
+
 export type QaapGitCommitWorkflowAction =
     | 'create-branch-commit'
     | 'create-branch-commit-push'
