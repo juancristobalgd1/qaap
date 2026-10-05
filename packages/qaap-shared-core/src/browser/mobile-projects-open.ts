@@ -13,7 +13,7 @@ import {
     peekPreferDesktopIde,
     shouldInstallWorkHubBootGuard,
 } from '../common/qaap-mobile-work-surface-preference';
-import { isQaapMobileDevice } from '../common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 export {
     clearPreferAgentsSurface,

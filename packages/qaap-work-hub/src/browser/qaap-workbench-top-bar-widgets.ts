@@ -25,7 +25,7 @@ import {
     peekPreferDesktopIde,
     QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS,
 } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
-import { isQaapMobileDevice, QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice, QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { type MobileBottomButton, type MobileBottomButtonId } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -43,9 +43,18 @@ const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate
 
 /** The legacy mobile view picker belongs to Work Hub's one-column surface, never to the classic IDE. */
 export function shouldShowMobileIdeHeaderViews(): boolean {
+    const preferDesktopIde = peekPreferDesktopIde();
     return isQaapMobileDevice()
         && !document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
-        && !peekPreferDesktopIde();
+        && !preferDesktopIde;
+}
+
+/** The IDE/Work Hub surface switch only exists in the classic IDE on desktop. */
+export function shouldShowDesktopIdeModeSwitch(): boolean {
+    const preferDesktopIde = peekPreferDesktopIde();
+    return !isQaapMobileDevice()
+        && (document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
+            || preferDesktopIde);
 }
 
 function createWorkbenchNavBtn(iconClasses: string, title: string): HTMLButtonElement {
@@ -374,9 +383,7 @@ export class QaapWorkbenchViewModeCenterWidget extends Widget {
     }
 
     protected syncViewModeSwitch(): void {
-        const visible = !isQaapMobileDevice()
-            && (document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
-                || peekPreferDesktopIde());
+        const visible = shouldShowDesktopIdeModeSwitch();
         this.node.hidden = !visible;
         this.node.style.display = visible ? '' : 'none';
         this.viewModeSwitchHost.hidden = !visible;

@@ -11,7 +11,7 @@ import {
     installMobilePullToRefresh,
     installMobileSheetDragDismiss,
 } from '@theia/qaap-mobile-shell/lib/browser/mobile-sheet-gestures';
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { createQaapViewModeSwitch } from './qaap-workbench-account-menu';

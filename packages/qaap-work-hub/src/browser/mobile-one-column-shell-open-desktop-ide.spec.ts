@@ -17,7 +17,7 @@ import {
     prepareDesktopIdeWorkspaceFromHubExtracted,
 } from './mobile-one-column-shell-contribution-timeline';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
-import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 disableImportJSDOM();
 

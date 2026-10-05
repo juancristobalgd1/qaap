@@ -22,12 +22,9 @@ import type { WorkHubPerfProbeDiagnostics } from '@theia/qaap-shared-core/lib/co
 import {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import {
-    QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
-    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-} from './qaap-workbench-account-menu';
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
+
+export { openDesktopIdeFromAgentsHubExtracted } from './mobile-projects-open-desktop-ide';
 
 export function bindAgentFinishedToastCallbacksExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.agentFinishedToast?.bindPanelCallbacks({
@@ -408,24 +405,6 @@ export function getFilteredTeamHubStateExtracted(ctx: MobileProjectsPanelContext
     filteredApprovals: WorkHubApprovalItem[];
 } {
     return ctx.tasksHubAttentionUi.getFilteredTeamHubState();
-}
-
-export async function openDesktopIdeFromAgentsHubExtracted(ctx: MobileProjectsPanelContext): Promise<void> {
-    if (isQaapMobileDevice()) {
-        return;
-    }
-    if (ctx.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
-        && ctx.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-        await ctx.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');
-        ctx.hide();
-        return;
-    }
-    if (!ctx.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
-        || !ctx.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
-        return;
-    }
-    await ctx.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
-    ctx.hide();
 }
 
 export function collectSessionsSidebarPinnedGroupsExtracted(ctx: MobileProjectsPanelContext, projects: MobileProjectEntry[],

@@ -34,7 +34,7 @@ import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { QuickInputService } from '@theia/core';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
-import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
@@ -79,7 +79,7 @@ import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaa
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-finished-toast-contribution';
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { MobileShellLandingController, type MobileShellLandingHost } from './mobile-shell-landing-controller';
@@ -347,7 +347,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     public readonly toDispose = new DisposableCollection();
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly mobileMq: MediaQueryList | undefined =
-        typeof window !== 'undefined' ? window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY) : undefined;
+        typeof window !== 'undefined' ? window.matchMedia(QAAP_MOBILE_DEVICE_MEDIA_QUERY) : undefined;
 
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public bottomBarController!: MobileShellBottomBarController;

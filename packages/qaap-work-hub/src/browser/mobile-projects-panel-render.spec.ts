@@ -15,11 +15,11 @@ import {
     QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
-import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 disableImportJSDOM();
 
-type OpenDesktopIde = typeof import('./mobile-projects-panel-render').openDesktopIdeFromAgentsHubExtracted;
+type OpenDesktopIde = typeof import('./mobile-projects-open-desktop-ide').openDesktopIdeFromAgentsHubExtracted;
 
 interface OpenIdeHarness {
     readonly ctx: MobileProjectsPanelContext;
@@ -52,11 +52,11 @@ describe('openDesktopIdeFromAgentsHubExtracted', () => {
     let openDesktopIde: OpenDesktopIde;
 
     before(function (): void {
-        // Loading the render module's import graph cold can exceed mocha's 2s default.
+        // Loading the entry module cold can exceed mocha's 2s default.
         this.timeout(30_000);
-        // The render module pulls in Lumino, which touches `document` at load time.
+        // The panel entry pulls in Lumino, which touches `document` at load time.
         disableJSDOM = enableJSDOM();
-        openDesktopIde = (require('./mobile-projects-panel-render') as typeof import('./mobile-projects-panel-render'))
+        openDesktopIde = (require('./mobile-projects-open-desktop-ide') as typeof import('./mobile-projects-open-desktop-ide'))
             .openDesktopIdeFromAgentsHubExtracted;
     });
 

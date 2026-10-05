@@ -32,20 +32,20 @@ describe('qaap-mobile-device', () => {
         return queries;
     }
 
-    it('uses the same narrow viewport or coarse pointer rule as the mobile shell and boot gate', () => {
+    it('matches the mobile shell layout query and the pre-bundle boot gate', () => {
         expect(QAAP_MOBILE_DEVICE_MEDIA_QUERY).to.equal(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
         const loginGatePath = path.join(__dirname, '..', '..', '..', 'qaap-product', 'resources', 'qaap-login-gate.js');
         const loginGate = fs.readFileSync(loginGatePath, 'utf8');
         expect(loginGate).to.include(`window.matchMedia('${QAAP_MOBILE_DEVICE_MEDIA_QUERY}')`);
     });
 
-    it('queries the shared mobile rule and reports mobile when it matches', () => {
+    it('uses the shared rule and reports mobile when it matches', () => {
         const queries = setMobileMatch(true);
         expect(isQaapMobileDevice()).to.equal(true);
         expect(queries).to.deep.equal([QAAP_MOBILE_DEVICE_MEDIA_QUERY]);
     });
 
-    it('reports desktop when the shared mobile rule does not match', () => {
+    it('reports desktop when the shared rule does not match', () => {
         setMobileMatch(false);
         expect(isQaapMobileDevice()).to.equal(false);
     });

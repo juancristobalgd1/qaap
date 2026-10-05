@@ -15,7 +15,7 @@ import {
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 export interface MobileShellIdeFallbackHost {
     isMobileActive(): boolean;

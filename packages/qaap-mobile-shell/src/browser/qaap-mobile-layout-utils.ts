@@ -5,11 +5,11 @@
 // *****************************************************************************
 
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { isQaapMobileDevice } from '../common/qaap-mobile-device';
 
-/** Same breakpoint as {@link MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY} / product mobile shell CSS. */
+/** Shared mobile-device rule used by the Work Hub and mobile shell. */
 export function isQaapNarrowMobileWorkbench(): boolean {
-    return matchesMobileOneColumnLayout();
+    return isQaapMobileDevice();
 }
 
 /**

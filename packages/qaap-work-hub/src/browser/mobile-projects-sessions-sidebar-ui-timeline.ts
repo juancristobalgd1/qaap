@@ -15,7 +15,7 @@ import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP
 import { MobileWorkHubUnifiedSearchDialog } from './mobile-work-hub-unified-search-dialog';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { isQaapMobileDevice } from './qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 /** Work surface picked in the IDE / Agents view toggle. */
 export type MobileViewToggleId = 'editor' | 'agent';

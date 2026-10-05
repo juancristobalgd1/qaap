@@ -7,7 +7,7 @@ import { injectable } from '@theia/core/shared/inversify';
 import { Command } from '@theia/core/lib/common/command';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 import { QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
 import { isWorkHubCommandPaletteCommand } from '../common/qaap-work-hub-command-palette';
 

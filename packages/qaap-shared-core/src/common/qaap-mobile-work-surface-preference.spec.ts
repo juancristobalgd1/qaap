@@ -21,7 +21,7 @@ import {
     resolveWorkSurfaceBootIntent,
     shouldInstallWorkHubBootGuard,
 } from './qaap-mobile-work-surface-preference';
-import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from './qaap-mobile-device';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 describe('qaap-mobile-work-surface-preference', () => {
 
@@ -140,12 +140,16 @@ describe('qaap-mobile-work-surface-preference', () => {
         });
 
         it('keeps workspace deep links and pending actions in Work Hub on mobile', () => {
-            setMobileMode(true);
             storage.set(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
             storage.set(QAAP_HUB_PENDING_ACTION_KEY, '1');
-            (global as unknown as { window: Window & { location: { hash: string } } }).window.location = {
-                hash: '#/workspace/demo',
-            } as Location;
+            (global as unknown as { window: Window }).window = {
+                location: { hash: '#/workspace/demo' },
+                sessionStorage: (global as unknown as { sessionStorage: Storage }).sessionStorage,
+                matchMedia: (query: string): MediaQueryList => ({
+                    matches: query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
+                    media: query,
+                } as MediaQueryList),
+            } as unknown as Window;
 
             expect(hasWorkspaceRouteInUrl()).to.equal(true);
             expect(resolveWorkSurfaceBootIntent({ preferDesktopIde: true })).to.equal('hub');

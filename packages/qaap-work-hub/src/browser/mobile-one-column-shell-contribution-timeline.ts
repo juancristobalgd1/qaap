@@ -11,7 +11,7 @@ import {
     matchesMobileOneColumnLayout,
     matchesMobileNarrowViewport,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';

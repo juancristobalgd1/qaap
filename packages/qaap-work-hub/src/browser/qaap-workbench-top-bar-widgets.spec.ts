@@ -23,13 +23,16 @@ describe('qaap-workbench-top-bar-widgets', () => {
     let originalMatchMedia: typeof window.matchMedia;
     let mobileOneColumnLayoutMediaQuery: string;
     let shouldShowMobileIdeHeaderViews: typeof import('./qaap-workbench-top-bar-widgets').shouldShowMobileIdeHeaderViews;
+    let shouldShowDesktopIdeModeSwitch: typeof import('./qaap-workbench-top-bar-widgets').shouldShowDesktopIdeModeSwitch;
 
     before(() => {
         disableJSDOM = enableJSDOM();
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         mobileOneColumnLayoutMediaQuery = require('@theia/core/lib/browser/shell/mobile-layout-state').MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY;
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        shouldShowMobileIdeHeaderViews = require('./qaap-workbench-top-bar-widgets').shouldShowMobileIdeHeaderViews;
+        const widgets = require('./qaap-workbench-top-bar-widgets') as typeof import('./qaap-workbench-top-bar-widgets');
+        shouldShowMobileIdeHeaderViews = widgets.shouldShowMobileIdeHeaderViews;
+        shouldShowDesktopIdeModeSwitch = widgets.shouldShowDesktopIdeModeSwitch;
         originalMatchMedia = window.matchMedia;
     });
 
@@ -57,15 +60,45 @@ describe('qaap-workbench-top-bar-widgets', () => {
         expect(shouldShowMobileIdeHeaderViews()).to.equal(true);
     });
 
-    it('hides mobile header views when the classic IDE is active', () => {
-        markPreferDesktopIde();
-        expect(shouldShowMobileIdeHeaderViews()).to.equal(false);
+    it('ignores a stale IDE preference and keeps the mobile Work Hub header views available', () => {
+        window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');
+        expect(shouldShowMobileIdeHeaderViews()).to.equal(true);
+        expect(window.sessionStorage.getItem('qaap.mobileProjects.preferDesktopIde')).to.equal(null);
     });
 
-    it('keeps mobile header views hidden when the IDE body marker survives a narrow resize', () => {
+    it('clears the stale IDE body marker and restores Work Hub views after a narrow resize', () => {
         document.body.classList.add('theia-mobile-mod-desktop-ide');
-        expect(shouldShowMobileIdeHeaderViews()).to.equal(false);
-        document.body.classList.remove('theia-mobile-mod-desktop-ide');
+        expect(shouldShowMobileIdeHeaderViews()).to.equal(true);
+        expect(document.body.classList.contains('theia-mobile-mod-desktop-ide')).to.equal(false);
+    });
+
+    it('keeps the IDE/Work Hub switch hidden on mobile and available in the desktop IDE', () => {
+        window.matchMedia = (query: string): MediaQueryList => ({
+            matches: false,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
+        expect(shouldShowDesktopIdeModeSwitch()).to.equal(false);
+
+        markPreferDesktopIde();
+        expect(shouldShowDesktopIdeModeSwitch()).to.equal(true);
+
+        window.matchMedia = (query: string): MediaQueryList => ({
+            matches: query === mobileOneColumnLayoutMediaQuery,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
+        expect(shouldShowDesktopIdeModeSwitch()).to.equal(false);
     });
 
     it('does not mount a Back to Work Hub button in the IDE history nav', () => {

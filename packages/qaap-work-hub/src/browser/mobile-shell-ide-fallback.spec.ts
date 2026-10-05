@@ -21,7 +21,7 @@ import type {
 } from './mobile-shell-ide-fallback';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 
 disableImportJSDOM();
 

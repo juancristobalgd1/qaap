@@ -1,7 +1,7 @@
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 // Extracted from mobile-one-column-shell-contribution.ts
 
-import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
+import { isQaapMobileDevice } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
 import { toArray } from '@lumino/algorithm';
 import {
     clearMobileWorkHubBootGuard,
