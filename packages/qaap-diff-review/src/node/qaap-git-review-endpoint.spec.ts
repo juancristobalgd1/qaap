@@ -13,6 +13,8 @@ import type { QaapGithubAuthContext, QaapGithubAuthGuard } from '@theia/qaap-sha
 import type { QaapGithubStoredSession } from '@theia/qaap-shared-core/lib/node/qaap-github-session-store';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
 import { QaapHostedGitPush, type QaapHostedGitPushRequest } from '@theia/qaap-shared-core/lib/node/qaap-hosted-git-push';
+import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
+import { resolveQaapWorktreesRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 /** Create the symlink fixture when the host permits it; Windows may require Developer Mode. */
 function createDirectoryLinkIfSupported(target: string, linkPath: string): boolean {
@@ -298,7 +300,7 @@ class HostedPushGitReviewEndpoint extends QaapGitReviewEndpoint {
     readonly agentGitCalls: string[][] = [];
     readonly pushes: QaapHostedGitPushRequest[] = [];
 
-    constructor(userRoot: string) {
+    constructor(userRoot: string, worktreeRegistry?: QaapHostedWorktreeRegistry) {
         super();
         const hostedPush = new QaapHostedGitPush();
         hostedPush.push = async request => {
@@ -306,8 +308,10 @@ class HostedPushGitReviewEndpoint extends QaapGitReviewEndpoint {
         };
         Object.assign(this, {
             hostedPush,
+            worktreeRegistry,
             auth: {
                 ownsWorkspacePath: () => true,
+                resolveUserLogin: (auth: QaapGithubAuthContext) => auth.kind === 'authenticated' ? auth.userLogin : undefined,
                 userWorkspaceRoot: () => userRoot,
                 repositoryWorkspacePath: (_auth: QaapGithubAuthContext, owner: string, name: string) => path.join(userRoot, owner, name),
             } as unknown as QaapGithubAuthGuard,
@@ -321,6 +325,24 @@ class HostedPushGitReviewEndpoint extends QaapGitReviewEndpoint {
 
     pushCurrentBranchForTest(root: string, auth: QaapGithubAuthContext): Promise<QaapGitPushDestination | undefined> {
         return this.pushCurrentBranch(root, auth);
+    }
+}
+
+/** The worktree registry on a throwaway SQLite file, with `base` as the repos root. */
+class SpecHostedWorktreeRegistry extends QaapHostedWorktreeRegistry {
+    static readonly opened: SpecHostedWorktreeRegistry[] = [];
+
+    constructor(protected readonly base: string) {
+        super();
+        SpecHostedWorktreeRegistry.opened.push(this);
+    }
+
+    protected override databasePath(): string {
+        return path.join(this.base, 'registry.sqlite');
+    }
+
+    protected override reposRoot(): string {
+        return this.base;
     }
 }
 
@@ -338,6 +360,7 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
         session: { accessToken: TOKEN, user: { login: 'octo', provider: 'github' } as QaapGithubStoredSession['user'] },
     };
     const run = (args: string[]): string => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+    const worktrees: string[] = [];
 
     beforeEach(() => {
         delete process.env.NODE_ENV;
@@ -358,7 +381,13 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
     });
 
     afterEach(() => {
+        for (const registry of SpecHostedWorktreeRegistry.opened.splice(0)) {
+            registry.close();
+        }
         fs.rmSync(base, { recursive: true, force: true });
+        for (const worktree of worktrees.splice(0)) {
+            fs.rmSync(worktree, { recursive: true, force: true });
+        }
         for (const [key, value] of Object.entries(saved)) {
             if (value === undefined) {
                 delete process.env[key];
@@ -451,5 +480,90 @@ describe('qaap-git-review-endpoint hosted push', function (): void {
         fs.renameSync(repo, stray);
         repo = stray;
         await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot), /project's own GitHub repository/);
+    });
+    /** An agent-made clone `users/octo/victim-org/prod` whose origin is the victim repository, on `feature/x`. */
+    function agentVictimClone(): string {
+        const victim = path.join(userRoot, 'victim-org', 'prod');
+        fs.mkdirSync(victim, { recursive: true });
+        const victimGit = (args: string[]): string => execFileSync('git', args, { cwd: victim, encoding: 'utf8' }).trim();
+        victimGit(['init', '--quiet', '-b', 'main']);
+        victimGit(['remote', 'add', 'origin', 'https://github.com/victim-org/prod.git']);
+        victimGit(['-c', 'user.email=a@b.test', '-c', 'user.name=A', 'commit', '--quiet', '--allow-empty', '-m', 'agent']);
+        victimGit(['checkout', '--quiet', '-b', 'feature/x']);
+        return victim;
+    }
+
+    /** A fresh worktree path under the real worktrees root, `{tmpdir}/qaap-worktrees/octo/{slug}`. */
+    function worktreePath(): string {
+        const tenantDir = path.join(resolveQaapWorktreesRoot(), 'octo');
+        fs.mkdirSync(tenantDir, { recursive: true });
+        const worktree = path.join(fs.mkdtempSync(path.join(tenantDir, 'spec-')), 'wt');
+        worktrees.push(path.dirname(worktree));
+        return worktree;
+    }
+
+    it('refuses a project directory the agent replaced with a symlink to another clone (R3-1 A)', async function (): Promise<void> {
+        const victim = agentVictimClone();
+        fs.rmSync(repo, { recursive: true, force: true });
+        if (!createDirectoryLinkIfSupported(victim, repo)) {
+            this.skip();
+        }
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot), /project's own GitHub repository/);
+    });
+
+    it('refuses a project whose .git the agent replaced with a symlink to another clone (R3-1 A)', async function (): Promise<void> {
+        const victim = agentVictimClone();
+        fs.rmSync(path.join(repo, '.git'), { recursive: true, force: true });
+        if (!createDirectoryLinkIfSupported(path.join(victim, '.git'), path.join(repo, '.git'))) {
+            this.skip();
+        }
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot), /project's own GitHub repository/);
+    });
+
+    it('refuses a worktree the backend did not create, whatever its .git file points at (R3-1 B)', async () => {
+        const victim = agentVictimClone();
+        const worktree = worktreePath();
+        execFileSync('git', ['worktree', 'add', '--quiet', '-b', 'agent-branch', worktree, 'HEAD'], { cwd: victim });
+        repo = worktree;
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot, new SpecHostedWorktreeRegistry(base)), /project's own GitHub repository/);
+    });
+
+    it('pushes a worktree the backend created to the project it recorded', async () => {
+        const registry = new SpecHostedWorktreeRegistry(base);
+        const worktree = worktreePath();
+        run(['worktree', 'add', '--quiet', '-b', 'qaap/worktree/spec', worktree, 'HEAD']);
+        expect(registry.register('octo', repo, worktree)).to.deep.equal({ login: 'octo', owner: 'acme', repo: 'widget' });
+        const project = repo;
+        repo = worktree;
+        const endpoint = new HostedPushGitReviewEndpoint(userRoot, registry);
+        const destination = await endpoint.pushCurrentBranchForTest(worktree, auth);
+
+        expect(destination).to.deep.equal({ repository: 'acme/widget', branch: 'qaap/worktree/spec', url: 'https://github.com/acme/widget.git' });
+        expect(fs.realpathSync.native(endpoint.pushes[0].objectsDirectory)).to.equal(path.join(fs.realpathSync.native(project), '.git', 'objects'));
+        expect(endpoint.pushes[0].ref).to.equal('refs/heads/qaap/worktree/spec');
+    });
+
+    it('refuses a recorded worktree whose .git file the agent pointed at another clone (R3-1 B)', async () => {
+        const registry = new SpecHostedWorktreeRegistry(base);
+        const worktree = worktreePath();
+        run(['worktree', 'add', '--quiet', '-b', 'qaap/worktree/spec', worktree, 'HEAD']);
+        registry.register('octo', repo, worktree);
+        const victim = agentVictimClone();
+        // Even with the victim's origin rewritten to the project URL, the git dir must be the project's own.
+        execFileSync('git', ['remote', 'set-url', 'origin', 'https://github.com/acme/widget.git'], { cwd: victim });
+        const victimWorktree = worktreePath();
+        execFileSync('git', ['worktree', 'add', '--quiet', '-b', 'agent-branch', victimWorktree, 'HEAD'], { cwd: victim });
+        fs.copyFileSync(path.join(victimWorktree, '.git'), path.join(worktree, '.git'));
+        repo = worktree;
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot, registry), /project's own GitHub repository/);
+    });
+
+    it('refuses a recorded worktree for another login', async () => {
+        const registry = new SpecHostedWorktreeRegistry(base);
+        const worktree = worktreePath();
+        run(['worktree', 'add', '--quiet', '-b', 'qaap/worktree/spec', worktree, 'HEAD']);
+        registry.register('mallory', path.join(base, 'users', 'mallory', 'acme', 'widget'), worktree);
+        repo = worktree;
+        await expectRefusedPush(new HostedPushGitReviewEndpoint(userRoot, registry), /project's own GitHub repository/);
     });
 });
