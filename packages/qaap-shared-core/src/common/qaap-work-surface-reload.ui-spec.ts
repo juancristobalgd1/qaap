@@ -8,8 +8,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
-
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 import type * as PreferenceModule from './qaap-mobile-work-surface-preference';
 
