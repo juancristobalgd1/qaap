@@ -148,12 +148,37 @@ async function waitForDesktopEntry(page: Page): Promise<void> {
     }).catch(() => false), { timeout: 60_000 }).toBe(true);
 }
 
+
+async function qaapDiagProbe(page: import('@playwright/test').Page, label: string): Promise<void> {
+    const state = await page.evaluate(() => ({
+        preload: !!document.querySelector('.theia-preload'),
+        preloadClass: document.querySelector('.theia-preload')?.className ?? null,
+        htmlClass: document.documentElement.className,
+        bodyClass: document.body.className,
+        shellClass: document.getElementById('theia-app-shell')?.className ?? null,
+        quickInput: !!document.getElementById('quick-input-container'),
+        scripts: [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map(s => s.src),
+        sw: navigator.serviceWorker?.controller?.scriptURL ?? null,
+        session: Object.fromEntries(Object.keys(sessionStorage).map(k => [k, (sessionStorage.getItem(k) ?? '').slice(0, 80)])),
+        localKeys: Object.keys(localStorage).map(k => `${k}=${(localStorage.getItem(k) ?? '').length}`),
+        accountBtns: [...document.querySelectorAll<HTMLElement>('.theia-workbench-account-btn')].map(b => b.offsetParent !== null),
+    })).catch(error => ({ error: String(error) }));
+    console.log(`[qaap-diag] ${label} ${JSON.stringify(state)}`);
+}
+
 /** The classic IDE is desktop-only: one-column mobile mode always shows Work Hub. */
 async function openDesktopIde(app: TheiaApp): Promise<void> {
+    app.page.on('console', message => console.log(`[qaap-diag console] ${message.type()} ${message.text().slice(0, 600)}`));
+    app.page.on('pageerror', error => console.log(`[qaap-diag pageerror] ${error.stack ?? error}`));
+    await qaapDiagProbe(app.page, 'before-resize');
     await app.page.setViewportSize(DESKTOP_IDE_VIEWPORT);
     await waitForDesktopEntry(app.page);
+    await qaapDiagProbe(app.page, 'desktop-entry');
     await dismissMobileTutorial(app.page);
     await waitForWorkHubReady(app.page);
+    await qaapDiagProbe(app.page, 'hub-ready');
+    await app.page.waitForTimeout(8000);
+    await qaapDiagProbe(app.page, 'hub-ready+8s');
 
     for (let attempt = 0; attempt < 3; attempt++) {
         if (await isDesktopIdeSurface(app.page)) {

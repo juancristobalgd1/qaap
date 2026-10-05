@@ -11,15 +11,16 @@ import baseConfig from './playwright.config';
  */
 const qaapMobileConfig: PlaywrightTestConfig = {
     ...baseConfig,
-    timeout: 180_000,
     expect: {
         timeout: 120_000,
     },
     use: {
         ...baseConfig.use,
+        trace: 'on',
         permissions: [...new Set([...(baseConfig.use?.permissions ?? []), 'clipboard-write'])],
     },
-    retries: process.env.CI ? 1 : 0,
+    retries: 0,
+    timeout: 150_000,
 };
 
 export default qaapMobileConfig;

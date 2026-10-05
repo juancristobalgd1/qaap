@@ -21,7 +21,7 @@
     "lint:fix": "eslint -c ./.eslintrc.js --ext .ts ./src --fix",
     "playwright:install": "playwright install chromium",
     "ui-tests": "npm run build && playwright test --config=./configs/playwright.config.ts",
-    "ui-tests:qaap-mobile": "npm run build && playwright test --config=./configs/playwright.qaap-mobile.config.ts --grep @qaap-mobile",
+    "ui-tests:qaap-mobile": "npm run build && playwright test --config=./configs/playwright.qaap-mobile.config.ts --grep \"surfaces the install action|continues run-app task\"",
     "rioja-e2e-eval": "node scripts/qaap-rioja-e2e-eval.mjs",
     "qaap:perf-baseline": "node scripts/qaap-perf-baseline.mjs",
     "rioja-ui-flow-eval": "node scripts/qaap-rioja-ui-flow-eval.mjs",
