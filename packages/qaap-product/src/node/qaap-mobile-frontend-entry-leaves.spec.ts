@@ -76,9 +76,18 @@ function keptSources(excluded: Set<string>): SourceFile[] {
 
 describe('QaapMobileFrontendEntry excluded modules', () => {
 
+    let excluded: Set<string>;
+    let kept: SourceFile[];
+
+    before(function (): void {
+        // Reads every frontend source of the repository once.
+        this.timeout(60000);
+        excluded = excludedPackages();
+        kept = keptSources(excluded);
+    });
+
     it('are DI leaves: no file kept on phones imports an excluded package', () => {
-        const excluded = excludedPackages();
-        const offenders = keptSources(excluded).flatMap(({ relative, source }) => [...source.matchAll(/from '@theia\/([^/']+)/g)]
+        const offenders = kept.flatMap(({ relative, source }) => [...source.matchAll(/from '@theia\/([^/']+)/g)]
             .filter(match => excluded.has(match[1]))
             .map(match => `${relative} imports @theia/${match[1]}`));
         expect(offenders).to.deep.equal([]);
@@ -87,7 +96,7 @@ describe('QaapMobileFrontendEntry excluded modules', () => {
     it('keep desktop-only files and excluded Qaap modules out of the files kept on phones', () => {
         const desktopOnly = [...DESKTOP_ONLY_FILES.filter(file => file.endsWith('.ts')), ...QaapMobileFrontendEntry.EXCLUDED_MODULES.map(moduleSource)]
             .map(file => path.basename(file, '.ts'));
-        const offenders = keptSources(excludedPackages()).flatMap(({ relative, source }) => [...source.matchAll(/from '([^']+)'/g)]
+        const offenders = kept.flatMap(({ relative, source }) => [...source.matchAll(/from '([^']+)'/g)]
             .filter(match => desktopOnly.includes(path.posix.basename(match[1])))
             .map(match => `${relative} imports ${match[1]}`));
         expect(offenders).to.deep.equal([]);
@@ -96,12 +105,11 @@ describe('QaapMobileFrontendEntry excluded modules', () => {
     it('leave no kept RPC proxy that only an excluded module replaced', () => {
         // e.g. plugin-ext rebinds @theia/debug's `DebugService` proxy; on phones the raw proxy would send
         // `onDid*` subscriptions to a backend that does not implement them.
-        const excluded = excludedPackages();
-        const kept = keptSources(excluded);
         const keptFiles = new Set(kept.map(file => file.relative));
-        // plugin-ext keeps its frontend under src/main/browser, so scan all excluded sources but the backend.
+        // plugin-ext keeps its frontend under src/main/browser, so scan all excluded sources but the backend
+        // Electron and browser-only, which the browser phone entry never loads.
         const reboundByExcluded = new Set(read(fs.readdirSync(PACKAGES_DIR).flatMap(name => [...frontendSources(path.join(PACKAGES_DIR, name, 'src'))]))
-            .filter(file => !keptFiles.has(file.relative) && !/\/(node|electron-main)\//.test(file.relative))
+            .filter(file => !keptFiles.has(file.relative) && !/\/(node|electron-[a-z]+|browser-only)\//.test(file.relative))
             .flatMap(({ source }) => [...source.matchAll(/\brebind\((\w+)\)/g)].map(match => match[1])));
         const offenders: string[] = [];
         for (const { relative, source } of kept) {
