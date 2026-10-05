@@ -44,7 +44,9 @@ describe('qaap-work-surface-reload (F5 same-tab surface contract)', () => {
         window.sessionStorage.clear();
         window.localStorage.clear();
         window.location.hash = '';
-        freshModule();
+        const mod = freshModule();
+        mod.clearPreferDesktopIde();
+        mod.clearPreferAgentsSurface();
     });
 
     afterEach(() => {
