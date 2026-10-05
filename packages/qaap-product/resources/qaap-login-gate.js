@@ -537,6 +537,17 @@
     }
 
     var resolvedBundleUrl;
+    // Keep aligned with QAAP_MOBILE_DEVICE_MEDIA_QUERY in qaap-mobile-device.ts.
+    var MOBILE_DEVICE_MEDIA_QUERY = '(max-width: 767px), (pointer: coarse)';
+    var mobileEntryFailed = false;
+
+    function mobileDeviceMediaQuery() {
+        try {
+            return typeof window.matchMedia === 'function' ? window.matchMedia(MOBILE_DEVICE_MEDIA_QUERY) : undefined;
+        } catch (_) {
+            return undefined;
+        }
+    }
 
     function resolveBundleUrl() {
         // The modulepreload hint and the module script must request the SAME
@@ -547,16 +558,15 @@
         return resolvedBundleUrl;
     }
 
+    function isMobileBundleUrl(url) {
+        return /(^|\/)bundle\.mobile\.js(\?|$)/.test(url || '');
+    }
+
     function computeBundleUrl() {
-        // Phones use a separate Work Hub entry so no IDE chunks enter their
-        // request graph. Keep this query aligned with the shared
-        // QAAP_MOBILE_DEVICE_MEDIA_QUERY in qaap-mobile-device.ts.
-        var mobile = false;
-        try {
-            mobile = typeof window.matchMedia === 'function'
-                && window.matchMedia('(max-width: 767px), (pointer: coarse)').matches === true;
-        } catch (_) { /* desktop entry is the safe fallback */ }
-        var bundleName = mobile ? 'bundle.mobile.js' : 'bundle.js';
+        // Phones use a separate Work Hub entry (bundle.mobile.js, see esbuild.mjs) so no
+        // IDE-only chunks enter their request graph; the desktop entry is the safe fallback.
+        var mq = mobileEntryFailed ? undefined : mobileDeviceMediaQuery();
+        var bundleName = mq && mq.matches === true ? 'bundle.mobile.js' : 'bundle.js';
         // copy-frontend-static versions bundle.css in development. Reuse that
         // version for JS so a reload always fetches the current entry point;
         // code-split chunks are content-hashed and are never stamped.
@@ -572,6 +582,26 @@
         return './' + bundleName;
     }
 
+    /**
+     * The phone entry has no plugin host or IDE-only modules. Phones always match the mobile
+     * query (a coarse pointer keeps landscape mobile), so it only stops matching when a narrow
+     * desktop window is widened: reload once so the desktop gets its full entry; the active
+     * surface survives the reload through sessionStorage.
+     */
+    function reloadIntoDesktopEntryWhenWidened() {
+        var mq = mobileDeviceMediaQuery();
+        if (!mq || typeof mq.addEventListener !== 'function') {
+            return;
+        }
+        var onChange = function () {
+            if (mq.matches !== true) {
+                mq.removeEventListener('change', onChange);
+                window.location.reload();
+            }
+        };
+        mq.addEventListener('change', onChange);
+    }
+
     function loadBundle() {
         if (window.__qaapBundleLoading || window.__qaapBundleLoaded) {
             return;
@@ -584,13 +614,26 @@
         script.type = 'module';
         script.charset = 'utf-8';
         script.src = resolveBundleUrl();
+        var mobileEntry = isMobileBundleUrl(script.src);
         script.onload = function () {
             window.__qaapBundleLoaded = true;
             window.clearTimeout(bundleLoadWatchdog);
             armStartupWatchdog();
+            if (mobileEntry) {
+                reloadIntoDesktopEntryWhenWidened();
+            }
         };
         script.onerror = function () {
             window.__qaapBundleLoading = false;
+            if (mobileEntry && !mobileEntryFailed) {
+                // A server without the phone entry (older build output) still serves bundle.js.
+                console.warn('[Qaap] Phone bundle unavailable, loading the desktop bundle.');
+                mobileEntryFailed = true;
+                resolvedBundleUrl = undefined;
+                script.remove();
+                loadBundle();
+                return;
+            }
             console.error('[Qaap] Failed to load application bundle.');
             showStartupError('bundle');
         };

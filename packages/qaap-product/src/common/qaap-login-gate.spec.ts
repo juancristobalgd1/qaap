@@ -27,29 +27,46 @@ describe('Qaap login gate', () => {
         return run;
     }
 
-    it('loads only the mobile Work Hub entry on mobile and leaves desktop on the desktop entry', async () => {
-        const signedIn = { localStorage: { 'theia:/:qaap.auth.signedIn': 'true' } };
-        const signedInSession: LoginGateResponder = pathname =>
-            pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : undefined;
-        const mobile = start(
-            signedInSession,
-            'http://localhost:3000/',
-            {
-                ...signedIn,
-                beforeRun: window => {
-                    window.matchMedia = (query: string): MediaQueryList => ({
-                        matches: query === '(max-width: 767px), (pointer: coarse)',
-                        media: query,
-                        onchange: null,
-                        addListener: () => undefined,
-                        removeListener: () => undefined,
-                        addEventListener: () => undefined,
-                        removeEventListener: () => undefined,
-                        dispatchEvent: () => false,
-                    } as MediaQueryList);
-                },
+    const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
+    const signedIn = { localStorage: { 'theia:/:qaap.auth.signedIn': 'true' } };
+    const signedInSession: LoginGateResponder = pathname =>
+        pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : undefined;
+
+    /** A `matchMedia` whose mobile query result can be flipped, firing `change` like a resize. */
+    function installMobileMedia(window: Window & typeof globalThis): { setMobile(mobile: boolean): void } {
+        let mobile = true;
+        const listeners = new Set<() => void>();
+        window.matchMedia = (query: string): MediaQueryList => ({
+            get matches(): boolean {
+                return query === MOBILE_QUERY && mobile;
             },
-        );
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: (_type: string, listener: () => void) => { listeners.add(listener); },
+            removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener); },
+            dispatchEvent: () => false,
+        } as unknown as MediaQueryList);
+        return {
+            setMobile: next => {
+                mobile = next;
+                [...listeners].forEach(listener => listener());
+            },
+        };
+    }
+
+    function startMobile(): { run: LoginGateRun; media: { setMobile(mobile: boolean): void } } {
+        let media: { setMobile(mobile: boolean): void } | undefined;
+        const run = start(signedInSession, 'http://localhost:3000/', {
+            ...signedIn,
+            beforeRun: window => { media = installMobileMedia(window); },
+        });
+        return { run, media: media! };
+    }
+
+    it('loads only the mobile Work Hub entry on mobile and leaves desktop on the desktop entry', async () => {
+        const mobile = startMobile().run;
         const mobileScript = (await mobile.bundleAppended).script;
         expect(new URL(mobileScript.src).pathname).to.equal('/bundle.mobile.js');
         const mobilePreload = mobile.document.querySelector('link[rel="modulepreload"]')?.getAttribute('href');
@@ -63,6 +80,48 @@ describe('Qaap login gate', () => {
         );
         const desktopScript = (await desktop.bundleAppended).script;
         expect(new URL(desktopScript.src).pathname).to.equal('/bundle.js');
+    });
+
+    it('falls back to the desktop entry when the phone entry cannot be loaded', async () => {
+        const { run } = startMobile();
+        const mobileScript = (await run.bundleAppended).script;
+        mobileScript.onerror!(new run.window.Event('error'));
+        const scripts = (): string[] => [...run.document.querySelectorAll('script')].map(script => new URL(script.src).pathname);
+        await run.waitFor(() => scripts().includes('/bundle.js'), 'desktop bundle script');
+        expect(scripts()).to.deep.equal(['/bundle.js']);
+        expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+    });
+
+    it('reloads into the desktop entry when a phone-entry window widens past the mobile rule', async () => {
+        const { run, media } = startMobile();
+        const mobileScript = (await run.bundleAppended).script;
+        mobileScript.onload!(new run.window.Event('load'));
+        media.setMobile(true);
+        expect(run.pageErrors.filter(error => /navigation/.test(error))).to.deep.equal([]);
+        // jsdom does not implement navigation: a reload surfaces as its "not implemented" error.
+        media.setMobile(false);
+        expect(run.pageErrors.filter(error => /navigation/.test(error))).to.have.length(1);
+        media.setMobile(true);
+        media.setMobile(false);
+        expect(run.pageErrors.filter(error => /navigation/.test(error))).to.have.length(1);
+        run.pageErrors.splice(0, run.pageErrors.length);
+    });
+
+    it('never reloads a desktop-entry window on resize', async () => {
+        let media: { setMobile(mobile: boolean): void } | undefined;
+        const run = start(signedInSession, 'http://localhost:3000/', {
+            ...signedIn,
+            beforeRun: window => {
+                media = installMobileMedia(window);
+                media.setMobile(false);
+            },
+        });
+        const script = (await run.bundleAppended).script;
+        expect(new URL(script.src).pathname).to.equal('/bundle.js');
+        script.onload!(new run.window.Event('load'));
+        media!.setMobile(true);
+        media!.setMobile(false);
+        expect(run.pageErrors.filter(error => /navigation/.test(error))).to.deep.equal([]);
     });
 
     it('clears a saved IDE surface and holds Work Hub in front on mobile boot', async () => {
