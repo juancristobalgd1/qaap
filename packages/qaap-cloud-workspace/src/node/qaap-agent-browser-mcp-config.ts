@@ -9,7 +9,13 @@ import * as path from 'path';
 
 const SERVER_NAME = 'qaap_browser';
 const COMMAND = 'playwright-mcp';
-const ARGS = ['--headless', '--browser', 'chromium', '--executable-path', '/usr/bin/chromium'];
+const ARGS = [
+    '--headless',
+    '--browser', 'chromium',
+    '--executable-path', '/usr/bin/chromium',
+    '--isolated',
+    '--output-dir', '/tmp/qaap-agent-browser-output',
+];
 
 /**
  * Build a self-contained bootstrap for isolated Docker workers, which cannot load the backend's
