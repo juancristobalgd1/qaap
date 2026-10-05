@@ -26,7 +26,8 @@ export function createQaapAgentBrowserMcpBootstrapScript(): string {
     ].map(helper => helper.toString()).join('\n\n');
     return [
         `const fs = require('fs');`,
-        `const { randomUUID } = require('crypto');`,
+        // The compiled helper below refers to the CommonJS import binding emitted by tsc.
+        `const crypto_1 = require('crypto');`,
         `const path = require('path');`,
         `const SERVER_NAME = ${JSON.stringify(SERVER_NAME)};`,
         `const COMMAND = ${JSON.stringify(COMMAND)};`,
