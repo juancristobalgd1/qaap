@@ -42,6 +42,8 @@ interface Harness {
     readonly opened: string[];
     readonly events: string[];
     closed: number;
+    /** Times the page allowed the plugin host to start. */
+    pluginStarts: number;
     resolveProjects(projects: MobileProjectEntry[]): void;
 }
 
@@ -60,6 +62,7 @@ function harness(options: HarnessOptions = {}): Harness {
         opened: [],
         events: [],
         closed: 0,
+        pluginStarts: 0,
         resolveProjects: projects => {
             result.events.push('project-sessions');
             resolveProjects(projects);
@@ -92,6 +95,7 @@ function harness(options: HarnessOptions = {}): Harness {
             },
         },
         workspaceService: { close: async (): Promise<void> => { result.closed++; } },
+        pluginStartGate: { release: (): void => { result.pluginStarts++; } },
         prepareDesktopIdeWorkspaceFromHub: (selected?: string | MobileProjectEntry): Promise<boolean> =>
             prepareDesktopIdeWorkspaceFromHubExtracted(ctx, selected),
     } as unknown as MobileOneColumnShellContributionContext;
@@ -157,6 +161,40 @@ describe('openDesktopIdeExtracted', () => {
         await openDesktopIdeExtracted(h.ctx);
         expect(h.opened).to.deep.equal([]);
         expect(h.closed).to.equal(0);
+        expect(h.pluginStarts).to.equal(1);
+    });
+
+    it('does not start plugins on a hub page that reloads into the project (prod: 98 plugins booted twice)', async () => {
+        const h = harness({ shown: githubProject('shadcn-landing-page') });
+        await openDesktopIdeExtracted(h.ctx);
+        expect(h.opened).to.deep.equal([`${REPOS}/shadcn-landing-page`]);
+        expect(h.pluginStarts).to.equal(0);
+    });
+
+    it('does not start plugins on a hub page that reloads into no folder', async () => {
+        const h = harness({ currentCwd: '/home/dev/scratch' });
+        const done = openDesktopIdeExtracted(h.ctx);
+        h.resolveProjects([recentProject('vitesse-lite'), recentProject('shadcn-landing-page')]);
+        await done;
+        expect(h.closed).to.equal(1);
+        expect(h.pluginStarts).to.equal(0);
+    });
+
+    it('starts plugins on this page when the IDE opens here without a reload (no projects yet)', async () => {
+        const h = harness();
+        const done = openDesktopIdeExtracted(h.ctx);
+        h.resolveProjects([]);
+        await done;
+        expect(h.opened).to.deep.equal([]);
+        expect(h.closed).to.equal(0);
+        expect(h.pluginStarts).to.equal(1);
+    });
+
+    it('does not start plugins when the user went back to Agents before the IDE was ready', async () => {
+        const h = harness({ shown: githubProject('shadcn-landing-page'), currentCwd: `${REPOS}/shadcn-landing-page` });
+        h.ctx.ideFallback.openDesktopIde = (): void => undefined;
+        await openDesktopIdeExtracted(h.ctx);
+        expect(h.pluginStarts).to.equal(0);
     });
 
     it('does nothing on the mobile one-column layout', async () => {
