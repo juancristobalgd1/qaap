@@ -36,6 +36,9 @@
       "frontend": "lib/browser/qaap-product-frontend-module"
     },
     {
+      "frontend": "lib/browser/qaap-product-plugin-frontend-module"
+    },
+    {
       "frontend": "lib/browser/qaap-product-bindings-frontend-module"
     },
     {

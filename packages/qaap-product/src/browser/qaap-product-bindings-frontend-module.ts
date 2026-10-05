@@ -16,14 +16,10 @@ import { QaapTextmateRegistry } from './qaap-textmate-registry';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences';
 import { TextmateRegistry } from '@theia/monaco/lib/browser/textmate/textmate-registry';
 import { GettingStartedWidget } from '@theia/getting-started/lib/browser/getting-started-widget';
-import { PluginViewWelcomePolicy } from '@theia/plugin-ext/lib/main/browser/view/plugin-view-welcome-policy';
 import { QaapGettingStartedWidget } from './qaap-getting-started-widget';
-import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
-import { HostedPluginSupport } from '@theia/plugin-ext/lib/hosted/browser/hosted-plugin';
-import { QaapHostedPluginSupport } from './qaap-hosted-plugin-support';
 import { WebSocketConnectionProvider } from '@theia/core/lib/browser/messaging/ws-connection-provider';
 import { DebugPath, DebugService } from '@theia/debug/lib/common/debug-service';
-import { QaapPhoneDebugServer, QaapPhoneDebugService } from './qaap-phone-debug-service';
+import { QaapPhoneDebugServer, QaapPhoneDebugService, QaapPluginHostFrontend } from './qaap-phone-debug-service';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { QaapServiceWorkerUpdateContribution } from './qaap-service-worker-update-contribution';
@@ -78,16 +74,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapGettingStartedWidget).toSelf();
     rebind(GettingStartedWidget).toService(QaapGettingStartedWidget);
 
-    bind(QaapPluginViewWelcomePolicy).toSelf().inSingletonScope();
-    bind(PluginViewWelcomePolicy).toService(QaapPluginViewWelcomePolicy);
-    // Settings (user-storage) and the Work Hub mount do not wait for the backend plugin deployment.
-    // The phone entry (bundle.mobile.js) has no plugin host, so there is nothing to rebind there.
-    if (isBound(HostedPluginSupport)) {
-        bind(QaapHostedPluginSupport).toSelf().inSingletonScope();
-        rebind(HostedPluginSupport).toService(QaapHostedPluginSupport);
-    } else if (isBound(DebugService)) {
-        // Without plugin-ext nothing replaces @theia/debug's raw RPC proxy, whose `onDid*` events
-        // the backend does not implement.
+    // Plugin-ext bindings live in qaap-product-plugin-frontend-module (desktop only). On phones nothing
+    // replaces @theia/debug's raw RPC proxy, whose `onDid*` events the backend does not implement.
+    if (!isBound(QaapPluginHostFrontend) && isBound(DebugService)) {
         bind(QaapPhoneDebugServer).toDynamicValue(ctx => WebSocketConnectionProvider.createProxy(ctx.container, DebugPath)).inSingletonScope();
         bind(QaapPhoneDebugService).toSelf().inSingletonScope();
         rebind(DebugService).toService(QaapPhoneDebugService);

@@ -10,6 +10,12 @@ import { DebugConfiguration } from '@theia/debug/lib/common/debug-configuration'
 import { DebuggerDescription, DebugService } from '@theia/debug/lib/common/debug-service';
 import { CommandIdVariables } from '@theia/variable-resolver/lib/common/variable-types';
 
+/**
+ * Bound by `qaap-product-plugin-frontend-module`, i.e. only when the entry has plugin-ext (desktop).
+ * That module loads before `qaap-product-bindings-frontend-module`.
+ */
+export const QaapPluginHostFrontend = Symbol('QaapPluginHostFrontend');
+
 /** The backend debug service proxy (`DebugPath`) the phone entry talks to. */
 export const QaapPhoneDebugServer = Symbol('QaapPhoneDebugServer');
 

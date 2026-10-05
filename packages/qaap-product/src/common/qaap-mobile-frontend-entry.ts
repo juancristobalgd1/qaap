@@ -12,7 +12,8 @@
  * Only leaves of the DI graph are listed: no module kept on mobile imports or injects anything
  * they bind (guarded by `qaap-mobile-frontend-entry-leaves.spec.ts`). In particular
  * `plugin-ext` goes together with everything that injects `HostedPluginSupport`
- * (`plugin-ext-vscode`, `vsx-registry`, `ai-registry`), so the phone never starts a plugin host.
+ * (`plugin-ext-vscode`, `vsx-registry`, `ai-registry`) and the Qaap modules that bind on top of
+ * plugin-ext or vsx-registry, so the phone never downloads or starts a plugin host.
  * Do not add `debug`, `console`, `test`, `task`, `search-in-workspace` (injected by `ai-ide`),
  * `getting-started`, `keymaps` (rebound by `qaap-product`), `memory-inspector` (rebound by
  * `qaap-work-hub`) or `toolbar` (`qaap-shell`).
@@ -45,6 +46,8 @@ export namespace QaapMobileFrontendEntry {
         '@theia/ai-editor/lib/browser/ai-editor-frontend-module',
         '@theia/ai-history/lib/browser/ai-history-frontend-module',
         '@theia/terminal-manager/lib/browser/terminal-manager-frontend-module',
+        '@theia/qaap-product/lib/browser/qaap-product-plugin-frontend-module',
+        '@theia/qaap-work-hub/lib/browser/qaap-work-hub-vsx-frontend-module',
     ];
 
     const MODULE_LOAD_LINE = /^\s*await load\(container, (?:import|require)\('([^']+)'\)\);\s*$/;

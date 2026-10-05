@@ -156,7 +156,6 @@ import { QaapCoreKeybindingContribution } from '@theia/qaap-shared-core/lib/brow
 import { QaapFileNavigatorContribution } from '@theia/qaap-shared-core/lib/browser/qaap-file-navigator-contribution';
 import { QaapNavigatorTabBarDecorator } from '@theia/qaap-shared-core/lib/browser/qaap-navigator-tab-bar-decorator';
 import { createQaapFileNavigatorWidget } from '@theia/qaap-shared-core/lib/browser/qaap-navigator-widget-factory';
-import { QaapVsxExtensionsMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-vsx-extensions-mobile-contribution';
 import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/preference-layout';
 import { QaapPreferenceLayoutProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-layout-provider';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
@@ -364,9 +363,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
 
     bind(QaapNavigatorTabBarDecorator).toSelf().inSingletonScope();
     rebind(NavigatorTabBarDecorator).toService(QaapNavigatorTabBarDecorator);
-
-    bind(QaapVsxExtensionsMobileContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(QaapVsxExtensionsMobileContribution);
 
     bind(QaapPushNotificationContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapPushNotificationContribution);
