@@ -6,7 +6,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { expect } from 'chai';
-import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { isQaapMobileDevice, QAAP_MOBILE_DEVICE_MEDIA_QUERY } from './qaap-mobile-device';
 
 describe('qaap-mobile-device', () => {
@@ -33,7 +32,9 @@ describe('qaap-mobile-device', () => {
     }
 
     it('matches the mobile shell layout query and the pre-bundle boot gate', () => {
-        expect(QAAP_MOBILE_DEVICE_MEDIA_QUERY).to.equal(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
+        const mobileLayoutStatePath = path.join(__dirname, '..', '..', '..', 'core', 'src', 'browser', 'shell', 'mobile-layout-state.ts');
+        const mobileLayoutState = fs.readFileSync(mobileLayoutStatePath, 'utf8');
+        expect(mobileLayoutState).to.include(`export const MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY = '${QAAP_MOBILE_DEVICE_MEDIA_QUERY}';`);
         const loginGatePath = path.join(__dirname, '..', '..', '..', 'qaap-product', 'resources', 'qaap-login-gate.js');
         const loginGate = fs.readFileSync(loginGatePath, 'utf8');
         expect(loginGate).to.include(`window.matchMedia('${QAAP_MOBILE_DEVICE_MEDIA_QUERY}')`);

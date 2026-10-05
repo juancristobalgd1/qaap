@@ -10,10 +10,20 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-mobile-shell/lib/common/qaap-mobile-device';
+import type { CommandRegistry } from '@theia/core/lib/common';
+import type { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
     clearPreferDesktopIde,
     markPreferDesktopIde,
 } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+
+// Import the browser module under JSDOM, outside Mocha's 2 second before-hook timeout.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const widgets = require('./qaap-workbench-top-bar-widgets') as typeof import('./qaap-workbench-top-bar-widgets');
+const shouldShowMobileIdeHeaderViews = widgets.shouldShowMobileIdeHeaderViews;
+const shouldShowDesktopIdeModeSwitch = widgets.shouldShowDesktopIdeModeSwitch;
+const QaapWorkbenchHistoryNavWidget = widgets.QaapWorkbenchHistoryNavWidget;
 
 disableImportJSDOM();
 
@@ -21,24 +31,15 @@ describe('qaap-workbench-top-bar-widgets', () => {
 
     let disableJSDOM: (() => void) | undefined;
     let originalMatchMedia: typeof window.matchMedia;
-    let mobileOneColumnLayoutMediaQuery: string;
-    let shouldShowMobileIdeHeaderViews: typeof import('./qaap-workbench-top-bar-widgets').shouldShowMobileIdeHeaderViews;
-    let shouldShowDesktopIdeModeSwitch: typeof import('./qaap-workbench-top-bar-widgets').shouldShowDesktopIdeModeSwitch;
 
     before(() => {
         disableJSDOM = enableJSDOM();
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        mobileOneColumnLayoutMediaQuery = require('@theia/core/lib/browser/shell/mobile-layout-state').MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY;
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const widgets = require('./qaap-workbench-top-bar-widgets') as typeof import('./qaap-workbench-top-bar-widgets');
-        shouldShowMobileIdeHeaderViews = widgets.shouldShowMobileIdeHeaderViews;
-        shouldShowDesktopIdeModeSwitch = widgets.shouldShowDesktopIdeModeSwitch;
         originalMatchMedia = window.matchMedia;
     });
 
     beforeEach(() => {
         window.matchMedia = (query: string): MediaQueryList => ({
-            matches: query === mobileOneColumnLayoutMediaQuery,
+            matches: query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
             media: query,
             onchange: null,
             addListener: () => undefined,
@@ -89,7 +90,7 @@ describe('qaap-workbench-top-bar-widgets', () => {
         expect(shouldShowDesktopIdeModeSwitch()).to.equal(true);
 
         window.matchMedia = (query: string): MediaQueryList => ({
-            matches: query === mobileOneColumnLayoutMediaQuery,
+            matches: query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
             media: query,
             onchange: null,
             addListener: () => undefined,
@@ -104,19 +105,17 @@ describe('qaap-workbench-top-bar-widgets', () => {
     it('does not mount a Back to Work Hub button in the IDE history nav', () => {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { Event } = require('@theia/core/lib/common');
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { QaapWorkbenchHistoryNavWidget } = require('./qaap-workbench-top-bar-widgets');
         const commands = {
             onDidExecuteCommand: Event.None,
             onCommandsChanged: Event.None,
             isEnabled: () => false,
             executeCommand: async () => undefined,
-        };
+        } as unknown as CommandRegistry;
         const workspaceService = {
             onWorkspaceChanged: Event.None,
             onWorkspaceLocationChanged: Event.None,
         };
-        const widget = new QaapWorkbenchHistoryNavWidget(commands, workspaceService);
+        const widget = new QaapWorkbenchHistoryNavWidget(commands, workspaceService as unknown as WorkspaceService);
         expect(widget.node.querySelector('.theia-workbench-projects-return-nav-btn')).to.equal(null);
         expect(widget.node.querySelector('.theia-workbench-dashboard-nav-btn')).to.equal(null);
         expect(widget.node.querySelectorAll('.theia-workbench-history-nav-btn')).to.have.length(2);
