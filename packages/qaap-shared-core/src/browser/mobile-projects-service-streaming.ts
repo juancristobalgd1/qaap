@@ -20,6 +20,7 @@ import {
     removeLocalProjectSession,
 } from './mobile-projects-session-cache';
 import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
+import { QAAP_USER_REPOS_SEGMENT } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 export async function renameProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
         const dialog = new SingleTextInputDialog({
@@ -90,11 +91,24 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
         if (!ctx.canRemove(project)) {
             return false;
         }
-        if (project.github) {
-            await deleteQaapGithubRepository(project.github.owner, project.github.name);
-            removeLocalProjectSession(`github:${project.github.fullName}`);
+        // A clone opened as a workspace is listed as a `recent:`/`ws:` card that shadows its
+        // `github:` session (dedup prefers the workspace card), so the card has no `github`
+        // field. Treat it as the clone it is: otherwise only the recent entry was forgotten,
+        // the clone stayed on disk and the `github:` session brought the project straight back.
+        // Custom projects are user-added folders: removing one never deletes anything on disk.
+        const github = project.github
+            ?? (project.id.startsWith('custom:') ? undefined : githubCloneOfProjectWorkspace(ctx, project));
+        if (github) {
+            await deleteQaapGithubRepository(github.owner, github.name);
+            removeLocalProjectSession(`github:${github.fullName}`);
             const hiddenIds = ctx.readHiddenProjectIds();
             hiddenIds.add(project.id);
+            hiddenIds.add(`github:${github.fullName}`);
+            if (project.uri) {
+                const key = project.uri.toString();
+                hiddenIds.add(`recent:${key}`);
+                removeLocalProjectSession(`ws:${key}`);
+            }
             ctx.writeHiddenProjectIds(hiddenIds);
             if (project.uri) {
                 await ctx.workspaceService.removeRecentWorkspace(project.uri.toString());
@@ -130,6 +144,31 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
             return true;
         }
         return false;
+}
+
+/**
+ * `owner/repo` of a per-user clone when the card's folder IS the clone root
+ * (`.../repos/users/{login}/{owner}/{repo}`). Sub-folders and other layouts return `undefined`:
+ * removing such a card must never delete the whole repository.
+ */
+export function githubCloneOfProjectWorkspace(ctx: Pick<MobileProjectsServiceContext, 'cwdFromFileUri'>,
+        project: MobileProjectEntry): { owner: string; name: string; fullName: string } | undefined {
+        const cwd = project.uri ? ctx.cwdFromFileUri(project.uri) : undefined;
+        if (!cwd) {
+            return undefined;
+        }
+        const segments = cwd.replace(/\\/g, '/').split('/').filter(Boolean);
+        const reposIndex = segments.lastIndexOf('repos');
+        const clone = reposIndex >= 0 ? segments.slice(reposIndex + 1) : [];
+        if (clone.length !== 4 || clone[0] !== QAAP_USER_REPOS_SEGMENT) {
+            return undefined;
+        }
+        const [, , owner, name] = clone;
+        const segment = /^[A-Za-z0-9_.-]+$/;
+        if (!segment.test(owner) || !segment.test(name) || /^\.+$/.test(owner) || /^\.+$/.test(name)) {
+            return undefined;
+        }
+        return { owner, name, fullName: `${owner}/${name}` };
 }
 
 export function getCurrentWorkspaceDisplayNameExtracted(ctx: MobileProjectsServiceContext): string | undefined {

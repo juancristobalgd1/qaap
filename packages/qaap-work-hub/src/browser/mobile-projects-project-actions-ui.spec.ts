@@ -249,6 +249,65 @@ describe('MobileProjectsProjectActionsUi', () => {
         expect(errors).to.deep.equal([]);
     });
 
+    it('does not let the same clone come back under another id after the delete', async () => {
+        const clone = URI.fromFilePath('/workspace/repos/users/ana/acme/shop');
+        const removed = { ...project(`recent:${clone.toString()}`), uri: clone };
+        const sameCloneAsGithub = { ...project('github:acme/shop'), uri: new URI(clone.toString().toUpperCase().replace('FILE:', 'file:')) };
+        const kept = project('kept');
+        const host = {
+            projects: [removed, kept],
+            projectsService: {
+                canRemove: () => true,
+                removeProject: async () => true,
+                loadProjects: async () => [sameCloneAsGithub, kept],
+            },
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
+            delegate: {},
+            render: () => undefined,
+        } as unknown as MobileProjectsProjectActionsHost;
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
+    });
+
+    it('still removes the project when the agent-task cleanup is refused', async () => {
+        const removed = project('removed');
+        const kept = project('kept');
+        let removeCalls = 0;
+        const errors: string[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalWarn = console.warn;
+        globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 })) as typeof fetch;
+        console.warn = () => undefined;
+        try {
+            const host = {
+                projects: [removed, kept],
+                projectsService: {
+                    canRemove: () => true,
+                    getProjectCwd: () => '/workspace/repos/users/ana/acme/shop',
+                    removeProject: async () => { removeCalls++; return true; },
+                    loadProjects: async () => [kept],
+                },
+                cardMenuUi: { closeCardMenu: () => undefined },
+                confirmRemoveProject: async () => true,
+                delegate: {},
+                messageService: { error: (message: string) => { errors.push(message); } },
+                render: () => undefined,
+            } as unknown as MobileProjectsProjectActionsHost;
+
+            await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+            expect(removeCalls).to.equal(1);
+            expect(errors).to.deep.equal([]);
+            expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
+        } finally {
+            globalThis.fetch = originalFetch;
+            console.warn = originalWarn;
+        }
+    });
+
     it('resolveFailedTasksToClear keeps only the selected failed ids when provided', () => {
         const { resolveFailedTasksToClear } = require('./mobile-projects-project-actions-ui') as typeof import('./mobile-projects-project-actions-ui');
         const failed = [

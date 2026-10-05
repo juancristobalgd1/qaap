@@ -1032,7 +1032,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     protected cleanGithubPathSegment(value: string | undefined): string | undefined {
         const decoded = typeof value === 'string' ? decodeURIComponent(value).trim() : '';
-        if (!/^[A-Za-z0-9_.-]+$/.test(decoded)) {
+        // `.`/`..` pass the character class but resolve to the user's repos root (or above):
+        // a recursive delete of `x/..` would wipe every clone of the caller.
+        if (!/^[A-Za-z0-9_.-]+$/.test(decoded) || /^\.+$/.test(decoded)) {
             return undefined;
         }
         return decoded;

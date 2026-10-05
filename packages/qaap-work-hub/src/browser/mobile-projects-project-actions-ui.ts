@@ -285,7 +285,11 @@ export class MobileProjectsProjectActionsUi {
             const projectCwd = projectsService.getProjectCwd?.(project)
                 ?? projectConversations.map(summary => summary.cwd).find(Boolean);
             if (projectCwd) {
-                await deleteAgentTasksForCwd(projectCwd);
+                // Task cleanup is secondary: a refusal (e.g. a legacy clone path the task
+                // endpoint does not own) must not keep the project itself from being removed.
+                await deleteAgentTasksForCwd(projectCwd).catch(error => {
+                    console.warn('[qaap-work-hub] agent task cleanup failed while removing a project', error);
+                });
             }
             const removed = await projectsService.removeProject(project);
             if (!removed) {
@@ -302,8 +306,12 @@ export class MobileProjectsProjectActionsUi {
                 reloaded = this.host.projects;
             }
             projectsService.clearProjectRemovalPending?.(project.id);
+            // Match the folder too: the same clone can come back under another id
+            // (`recent:` card removed, `github:` session listed).
+            const removedUri = project.uri?.toString().toLowerCase();
             const reconciled = (this.host.reconcileLoadedProjects?.(reloaded) ?? reloaded)
-                .filter(candidate => candidate.id !== project.id);
+                .filter(candidate => candidate.id !== project.id
+                    && (!removedUri || candidate.uri?.toString().toLowerCase() !== removedUri));
             await removalAnimation.promise;
             settled = true;
             this.host.projects = reconciled;

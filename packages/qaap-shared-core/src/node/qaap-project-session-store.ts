@@ -49,7 +49,20 @@ export class QaapProjectSessionStore {
 
     deleteForUser(login: string, repoKey: string): boolean {
         const map = this.byUser.get(login);
-        if (!map || !map.delete(repoKey)) {
+        if (!map) {
+            return false;
+        }
+        // GitHub owner/repo names are case-insensitive: a session recorded as `github:Acme/Shop`
+        // must go when the clone is removed as `github:acme/shop`, or the project comes back.
+        const normalizedRepoKey = repoKey.toLowerCase();
+        let deleted = false;
+        for (const key of [...map.keys()]) {
+            if (key.toLowerCase() === normalizedRepoKey) {
+                map.delete(key);
+                deleted = true;
+            }
+        }
+        if (!deleted) {
             return false;
         }
         if (map.size === 0) {
