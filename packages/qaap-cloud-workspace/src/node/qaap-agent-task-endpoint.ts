@@ -43,6 +43,7 @@ const SSE_HEARTBEAT_MS = 25_000;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
 const WS_PING_MS = 25_000;
 const WS_PATH = `${QAAP_AGENT_TASK_API_PATH}/ws`;
+const BROWSER_PREVIEW_WS_PATH = `${QAAP_AGENT_TASK_API_PATH}/browser-preview/ws`;
 /** How long the picker's model request waits for a cold native CLI model discovery. */
 const QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS = 1_200;
 
@@ -177,6 +178,24 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         app.post(`${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, (req, res) => {
             void this.handleImprovePrompt(req, res);
         });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/browser-preview`, (req, res) => {
+            const helperToken = req.header(HELPER_TOKEN_HEADER);
+            const helperOwner = this.runner.resolveHelperTokenOwner(helperToken);
+            if (!helperOwner) {
+                res.status(401).json({ error: 'Invalid agent task token.' });
+                return;
+            }
+            const body = (req.body ?? {}) as { taskId?: unknown; url?: unknown };
+            if (typeof body.taskId !== 'string' || typeof body.url !== 'string' || body.url.length > 4096) {
+                res.status(400).json({ error: 'A taskId and browser URL are required.' });
+                return;
+            }
+            if (!this.runner.publishAgentBrowserUrl(body.taskId, helperOwner.ownerLogin, body.url)) {
+                res.status(404).json({ error: 'Active agent task not found.' });
+                return;
+            }
+            res.status(204).end();
+        });
         app.post(QAAP_AGENT_TASK_API_PATH, (req, res) => {
             void this.handleCreate(req, res);
         });
@@ -301,7 +320,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         server.on('upgrade', (request, socket, head) => {
             try {
                 const pathname = new URL(request.url ?? '', `http://${request.headers.host}`).pathname;
-                if (pathname === WS_PATH) {
+                if (pathname === WS_PATH || pathname === BROWSER_PREVIEW_WS_PATH) {
                     wss.handleUpgrade(request, socket as import('net').Socket, head, client => {
                         wss.emit('connection', client, request);
                     });
@@ -317,7 +336,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 client.close(4401, 'Not signed in');
                 return;
             }
-            const snapshot = {
+            const browserPreviewOnly = new URL(request.url ?? '', `http://${request.headers.host}`).pathname === BROWSER_PREVIEW_WS_PATH;
+            const snapshot = browserPreviewOnly ? {
+                type: 'browser-preview-snapshot',
+                browserUrls: this.runner.listAgentBrowserUrls()
+                    .filter(entry => this.auth.ownsWorkspacePath(ctx, entry.task.cwd))
+                    .map(entry => ({ taskId: entry.task.id, url: entry.url })),
+            } : {
                 type: 'snapshot',
                 groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()).map(trimTaskGroupCommandsForWire),
                 agentConfigured: this.runner.isAgentConfigured(),
@@ -331,11 +356,16 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 if (client.readyState !== WsClient.OPEN) {
                     return;
                 }
+                if (browserPreviewOnly && event.type !== 'browser-url') {
+                    return;
+                }
                 if (!this.auth.ownsWorkspacePath(ctx, event.task.cwd)) {
                     return;
                 }
                 const msg = event.type === 'output'
                     ? { type: event.type, task: event.task, chunk: event.chunk }
+                    : event.type === 'browser-url'
+                        ? { type: event.type, taskId: event.task.id, url: event.url }
                     : { type: event.type, task: event.task };
                 client.send(JSON.stringify(msg));
             });
@@ -746,7 +776,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             if (!this.auth.ownsWorkspacePath(ctx, event.task.cwd)) {
                 return;
             }
-            const data = event.type === 'output' ? { ...event.task, chunk: event.chunk } : event.task;
+            const data = event.type === 'output' ? { ...event.task, chunk: event.chunk }
+                : event.type === 'browser-url' ? { ...event.task, browserUrl: event.url }
+                    : event.task;
             res.write(`event: ${event.type}\ndata: ${JSON.stringify(data)}\n\n`);
         });
         const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), SSE_HEARTBEAT_MS);

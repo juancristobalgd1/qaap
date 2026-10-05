@@ -158,8 +158,9 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
             cwd: home, state: 'running', createdAt: 0,
         } as QaapAgentTask;
         try {
-            runner.buildChildEnv(task);
+            const childEnv = runner.buildChildEnv(task);
 
+            expect(childEnv.QAAP_AGENT_TASK_ID).to.equal(task.id);
             expect(calls).to.have.length(1);
             expect(calls[0].cwd).to.equal(task.cwd);
             expect(calls[0].file).to.equal('node');

@@ -23,6 +23,8 @@ import {
     isQaapPreviewWidgetUri,
     QaapPreviewWidgetKey,
     qaapPreviewWidgetUri,
+    qaapAgentBrowserPreviewWidgetKey,
+    QaapAgentBrowserSurfaceMode,
 } from './qaap-preview-widget-uri';
 
 /**
@@ -148,6 +150,28 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
      */
     async openProjectPreview(startPage: string, key: QaapPreviewWidgetKey): Promise<MiniBrowser | undefined> {
         return this.openPreviewForProduct(startPage, key);
+    }
+
+    /** Opens/updates the live browser surface driven by an agent's Playwright MCP session. */
+    async openAgentBrowserPreview(url: string, taskId: string, mode: QaapAgentBrowserSurfaceMode): Promise<MiniBrowser | undefined> {
+        const normalized = normalizeMiniBrowserOpenUrl(url);
+        if (!normalized || !taskId.trim()) {
+            return undefined;
+        }
+        const key = qaapAgentBrowserPreviewWidgetKey(taskId, mode);
+        const widget = await this.openPreviewForProduct(normalized, key);
+        if (!widget) {
+            return undefined;
+        }
+        const mapped = await this.locationMapperService.map(normalized);
+        const content = (widget.layout as PanelLayout).widgets[0] as {
+            readonly isDisposed?: boolean;
+            forceNavigate?: (target: string) => Promise<void>;
+        } | undefined;
+        if (content && !content.isDisposed && typeof content.forceNavigate === 'function') {
+            await content.forceNavigate(mapped);
+        }
+        return widget;
     }
 
     protected async openPreviewForProduct(startPage: string, key?: QaapPreviewWidgetKey): Promise<MiniBrowser | undefined> {

@@ -25,7 +25,8 @@ describe('Qaap agent browser MCP configuration', () => {
         const read = (file: string): Record<string, unknown> => JSON.parse(fs.readFileSync(path.join(home, file), 'utf8'));
         const mcp = (file: string, key = 'mcpServers'): Record<string, unknown> => read(file)[key] as Record<string, unknown>;
         const claude = mcp('.claude.json').qaap_browser as { command: string; args: string[] };
-        expect(claude.command).to.equal('playwright-mcp');
+        expect(claude.command).to.equal('node');
+        expect(claude.args[0]).to.equal(path.join(home, '.qaap-agent-browser-mcp-proxy.cjs'));
         expect(claude.args).to.include('--headless');
         expect(claude.args).to.include('/usr/bin/chromium');
         expect(claude.args).to.include('--isolated');
@@ -38,12 +39,16 @@ describe('Qaap agent browser MCP configuration', () => {
         const opencode = read('.config/opencode/opencode.json').mcp as Record<string, unknown>;
         expect(opencode.qaap_browser).to.deep.equal({
             type: 'local',
-            command: ['playwright-mcp', '--headless', '--browser', 'chromium', '--executable-path', '/usr/bin/chromium',
+            command: ['node', path.join(home, '.qaap-agent-browser-mcp-proxy.cjs'), '--headless', '--browser', 'chromium', '--executable-path', '/usr/bin/chromium',
                 '--isolated', '--output-dir', '/tmp/qaap-agent-browser-output'],
             enabled: true,
         });
         expect(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8')).to.contain('[mcp_servers.qaap_browser]');
         expect(fs.readFileSync(path.join(home, '.hermes/config.yaml'), 'utf8')).to.contain('qaap_browser:');
+        const proxy = fs.readFileSync(path.join(home, '.qaap-agent-browser-mcp-proxy.cjs'), 'utf8');
+        expect(proxy).to.contain("message.params.name === 'browser_navigate'");
+        expect(proxy).to.contain("+ '/browser-preview'");
+        expect(proxy).to.contain('QAAP_AGENT_TASK_ID');
         expect(updated).to.have.length(8);
     });
 

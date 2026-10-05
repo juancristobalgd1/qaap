@@ -220,6 +220,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly tasks = new Map<string, QaapAgentTask>();
+    protected readonly agentBrowserUrls = new Map<string, string>();
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly processes = new Map<string, ChildProcess>();
     /** Task ids removed with their project; late process output must not recreate their logs. */
@@ -349,6 +350,40 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** True when the presented token matches any provisioned helper token. */
     verifyHelperToken(presented: string | undefined): boolean {
         return !!this.resolveHelperTokenOwner(presented);
+    }
+
+    /** Publish an ephemeral browser navigation event for the task's authenticated owner. */
+    publishAgentBrowserUrl(taskId: string, ownerLogin: string | undefined, rawUrl: string): boolean {
+        const task = this.tasks.get(taskId);
+        if (!task || task.state !== 'running' || task.ownerLogin?.toLowerCase() !== ownerLogin?.toLowerCase()) {
+            return false;
+        }
+        let url: URL;
+        try {
+            url = new URL(rawUrl);
+        } catch {
+            return false;
+        }
+        if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password) {
+            return false;
+        }
+        const currentUrl = url.toString();
+        this.agentBrowserUrls.set(taskId, currentUrl);
+        this.onDidChangeTaskEmitter.fire({ type: 'browser-url', task, url: currentUrl });
+        return true;
+    }
+
+    listAgentBrowserUrls(): readonly { readonly task: QaapAgentTask; readonly url: string }[] {
+        const active: { task: QaapAgentTask; url: string }[] = [];
+        for (const [taskId, url] of this.agentBrowserUrls) {
+            const task = this.tasks.get(taskId);
+            if (task?.state === 'running') {
+                active.push({ task, url });
+            } else {
+                this.agentBrowserUrls.delete(taskId);
+            }
+        }
+        return active;
     }
 
     /** Called by the backend application once the HTTP server is listening on `port`. */

@@ -18,6 +18,13 @@ export interface QaapPreviewWidgetKey {
     readonly projectId: string;
 }
 
+export type QaapAgentBrowserSurfaceMode = 'work-hub' | 'ide';
+
+/** Separate widget identity for the agent's live browser in Work Hub and the IDE. */
+export function qaapAgentBrowserPreviewWidgetKey(taskId: string, mode: QaapAgentBrowserSurfaceMode): QaapPreviewWidgetKey {
+    return { workspaceId: 'qaap-agent-browser', projectId: `${mode}-${taskId}` };
+}
+
 /** True when `value` can key a project-scoped preview widget. */
 export function isQaapPreviewWidgetKey(value: unknown): value is QaapPreviewWidgetKey {
     const candidate = value as Partial<QaapPreviewWidgetKey> | undefined;

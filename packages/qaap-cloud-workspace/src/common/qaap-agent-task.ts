@@ -408,6 +408,7 @@ export type QaapAgentTaskEvent =
      * without changing state. Consumers that only care about state transitions can ignore it.
      */
     | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered' | 'updated'; readonly task: QaapAgentTask }
+    | { readonly type: 'browser-url'; readonly task: QaapAgentTask; readonly url: string }
     | { readonly type: 'output'; readonly task: QaapAgentTask; readonly chunk: string };
 
 /** True once the task has stopped and will not change state again. */

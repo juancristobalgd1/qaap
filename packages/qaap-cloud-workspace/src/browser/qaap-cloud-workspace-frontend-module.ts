@@ -21,6 +21,7 @@ import { QaapWorkspaceIsolationContribution } from './qaap-workspace-isolation-c
 import { QaapTenantRuntimeUiContribution } from './qaap-tenant-runtime-ui-contribution';
 import { QaapDeferredStartup } from './qaap-deferred-startup';
 import { QaapAgentHooksTrustContribution } from './qaap-agent-hooks-trust-contribution';
+import { QaapAgentBrowserPreviewContribution } from './qaap-agent-browser-preview-contribution';
 import {
     WorkspaceHandlingContribution,
     WorkspaceOpenHandlerContribution,
@@ -64,4 +65,7 @@ export default new ContainerModule(bind => {
 
     bind(QaapAgentHooksTrustContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentHooksTrustContribution);
+
+    bind(QaapAgentBrowserPreviewContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapAgentBrowserPreviewContribution);
 });

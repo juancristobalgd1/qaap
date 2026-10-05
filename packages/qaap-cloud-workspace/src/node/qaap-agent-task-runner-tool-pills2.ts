@@ -321,6 +321,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             env.OPENCODE_PERMISSION = opencodePermission;
         }
         ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
+        env.QAAP_AGENT_TASK_ID = task.id;
         return env;
 }
 
