@@ -85,6 +85,33 @@ describe('QaapMobileFrontendEntry excluded modules', () => {
         expect(offenders).to.deep.equal([]);
     });
 
+    it('leave no kept RPC proxy that only an excluded module replaced', () => {
+        // e.g. plugin-ext rebinds @theia/debug's `DebugService` proxy; on phones the raw proxy would send
+        // `onDid*` subscriptions to a backend that does not implement them.
+        const excluded = new Set(QaapMobileFrontendEntry.EXCLUDED_MODULES.map(module => module.split('/')[1]));
+        const sources = (names: string[]): Array<{ relative: string, source: string }> => names.flatMap(name =>
+            ['browser', 'common'].flatMap(platform => [...frontendSources(path.join(PACKAGES_DIR, name, 'src', platform))]))
+            .map(file => ({ relative: path.relative(PACKAGES_DIR, file).split(path.sep).join('/'), source: fs.readFileSync(file, 'utf8') }));
+        const packages = fs.readdirSync(PACKAGES_DIR);
+        const kept = sources(packages.filter(name => !excluded.has(name)));
+        // plugin-ext keeps its frontend under src/main/browser, so scan all excluded sources but the backend.
+        const reboundByExcluded = new Set(packages.filter(name => excluded.has(name))
+            .flatMap(name => [...frontendSources(path.join(PACKAGES_DIR, name, 'src'))])
+            .filter(file => !/[\\/](node|electron-main)[\\/]/.test(file))
+            .flatMap(file => [...fs.readFileSync(file, 'utf8').matchAll(/\brebind\((\w+)\)/g)].map(match => match[1])));
+        const offenders: string[] = [];
+        for (const { relative, source } of kept) {
+            for (const match of source.matchAll(/\bbind\((\w+)\)\.toDynamicValue\([^;]*?createProxy/g)) {
+                const symbol = match[1];
+                if (reboundByExcluded.has(symbol)
+                    && !kept.some(file => file.relative.startsWith('qaap-') && file.source.includes(`rebind(${symbol})`))) {
+                    offenders.push(`${relative} binds ${symbol} to an RPC proxy that only excluded modules replace`);
+                }
+            }
+        }
+        expect(offenders).to.deep.equal([]);
+    });
+
     it('name packages of the repository', () => {
         const missing = QaapMobileFrontendEntry.EXCLUDED_MODULES
             .map(module => module.split('/')[1])

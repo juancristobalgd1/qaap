@@ -16,6 +16,9 @@
       "path": "../core"
     },
     {
+      "path": "../debug"
+    },
+    {
       "path": "../filesystem"
     },
     {
@@ -56,6 +59,9 @@
     },
     {
       "path": "../terminal"
+    },
+    {
+      "path": "../variable-resolver"
     },
     {
       "path": "../workspace"

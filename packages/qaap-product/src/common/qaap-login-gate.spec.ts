@@ -107,6 +107,16 @@ describe('Qaap login gate', () => {
         run.pageErrors.splice(0, run.pageErrors.length);
     });
 
+    it('reloads into the desktop entry when the window widened while the phone entry was loading', async () => {
+        const { run, media } = startMobile();
+        const mobileScript = (await run.bundleAppended).script;
+        media.setMobile(false);
+        expect(run.pageErrors.filter(error => /navigation/.test(error))).to.deep.equal([]);
+        mobileScript.onload!(new run.window.Event('load'));
+        expect(run.pageErrors.filter(error => /navigation/.test(error))).to.have.length(1);
+        run.pageErrors.splice(0, run.pageErrors.length);
+    });
+
     it('never reloads a desktop-entry window on resize', async () => {
         let media: { setMobile(mobile: boolean): void } | undefined;
         const run = start(signedInSession, 'http://localhost:3000/', {

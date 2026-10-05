@@ -21,6 +21,9 @@ import { QaapGettingStartedWidget } from './qaap-getting-started-widget';
 import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
 import { HostedPluginSupport } from '@theia/plugin-ext/lib/hosted/browser/hosted-plugin';
 import { QaapHostedPluginSupport } from './qaap-hosted-plugin-support';
+import { WebSocketConnectionProvider } from '@theia/core/lib/browser/messaging/ws-connection-provider';
+import { DebugPath, DebugService } from '@theia/debug/lib/common/debug-service';
+import { QaapPhoneDebugServer, QaapPhoneDebugService } from './qaap-phone-debug-service';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { QaapServiceWorkerUpdateContribution } from './qaap-service-worker-update-contribution';
@@ -82,6 +85,12 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     if (isBound(HostedPluginSupport)) {
         bind(QaapHostedPluginSupport).toSelf().inSingletonScope();
         rebind(HostedPluginSupport).toService(QaapHostedPluginSupport);
+    } else if (isBound(DebugService)) {
+        // Without plugin-ext nothing replaces @theia/debug's raw RPC proxy, whose `onDid*` events
+        // the backend does not implement.
+        bind(QaapPhoneDebugServer).toDynamicValue(ctx => WebSocketConnectionProvider.createProxy(ctx.container, DebugPath)).inSingletonScope();
+        bind(QaapPhoneDebugService).toSelf().inSingletonScope();
+        rebind(DebugService).toService(QaapPhoneDebugService);
     }
 
     // Settings tree keeps the curated QaapPreferenceLayoutProvider order instead of upstream's id sort.

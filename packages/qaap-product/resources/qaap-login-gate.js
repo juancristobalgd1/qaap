@@ -586,11 +586,19 @@
      * The phone entry has no plugin host or IDE-only modules. Phones always match the mobile
      * query (a coarse pointer keeps landscape mobile), so it only stops matching when a narrow
      * desktop window is widened: reload once so the desktop gets its full entry; the active
-     * surface survives the reload through sessionStorage.
+     * surface survives the reload through sessionStorage. A window widened while the phone entry
+     * was still downloading has already missed the `change` event, so it reloads right away.
      */
     function reloadIntoDesktopEntryWhenWidened() {
         var mq = mobileDeviceMediaQuery();
-        if (!mq || typeof mq.addEventListener !== 'function') {
+        if (!mq) {
+            return;
+        }
+        if (mq.matches !== true) {
+            window.location.reload();
+            return;
+        }
+        if (typeof mq.addEventListener !== 'function') {
             return;
         }
         var onChange = function () {
