@@ -5,12 +5,15 @@
 # ---------------------------------------------------------------------------------------------
 # Post-deploy image cleanup. Images are built in CI and pulled here, so every deploy leaves the
 # previous qaap image behind in the host daemon AND (via `docker save | docker load`) in the
-# rootless tenant daemon. Keep the image now serving, the image it replaced (rollback) and the
-# previous recorded deploy; remove older qaap images, dangling images and old build cache.
+# rootless tenant daemon. Keep the image now serving, the image it replaced, the previous recorded
+# deploy and the last verified release (rollback target); remove older qaap images, dangling
+# images and old build cache.
 # Never removes an image referenced by any container (running or stopped): those are skipped
 # here and `docker image rm` without --force refuses them as well. Never fails the deploy.
 # ---------------------------------------------------------------------------------------------
 QAAP_IMAGE_HISTORY_FILE="${QAAP_IMAGE_HISTORY_FILE:-${XDG_STATE_HOME:-${HOME:-/root}/.local/state}/qaap-deploy/image-history}"
+# Written by qaap-vps-rollback.sh: the last release that passed health and user smoke (rollback target).
+QAAP_LAST_GOOD_RELEASE_FILE="${QAAP_LAST_GOOD_RELEASE_FILE:-$(dirname "$QAAP_IMAGE_HISTORY_FILE")/last-good-release.env}"
 
 # Repository part of an image reference: drop `@digest`, then a trailing `:tag` (not a registry port).
 image_repository() {
@@ -45,11 +48,6 @@ prune_qaap_images_in() {
         [[ -n "$repo" ]] || continue
         while IFS='|' read -r id repo_name tag digest; do
             [[ -n "$id" ]] || continue
-            if [[ "$repo_name:$tag" == 'qaap-theia:rollback' || "$repo_name:$tag" == 'qaap-tenant:rollback' ]]; then
-                retained=$((retained + 1))
-                echo "[qaap-vps-update] image cleanup ($label): retained protected rollback tag $repo_name:$tag"
-                continue
-            fi
             if grep -Fxq -- "$id" <<<"$keep_ids" || grep -Fxq -- "$id" <<<"$used_ids"; then
                 retained=$((retained + 1))
                 continue
@@ -100,7 +98,11 @@ prune_old_qaap_images() {
     if [[ -n "${PRE_DEPLOY_IMAGE_ID:-}" && "$PRE_DEPLOY_IMAGE_ID" != "$current_id" ]]; then
         previous_id="${previous_id:-$PRE_DEPLOY_IMAGE_ID}"
     fi
-    keep_ids="$(printf '%s\n' "$current_id" "${PRE_DEPLOY_IMAGE_ID:-}" "$previous_id" | sed '/^$/d' | sort -u)"
+    local last_good_id=''
+    if [[ -r "$QAAP_LAST_GOOD_RELEASE_FILE" ]]; then
+        last_good_id="$(sed -n 's/^IMAGE_ID=//p' "$QAAP_LAST_GOOD_RELEASE_FILE" | sed -n '1p')"
+    fi
+    keep_ids="$(printf '%s\n' "$current_id" "${PRE_DEPLOY_IMAGE_ID:-}" "$previous_id" "$last_good_id" | sed '/^$/d' | sort -u)"
 
     if [[ -z "$previous_id" ]]; then
         # No known rollback image yet (first recorded deploy): only dangling data is cleaned.

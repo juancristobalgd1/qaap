@@ -149,14 +149,19 @@ unset FAKE_PS_FAIL
 if grep -q '^host ' "$FAKE_STATE/removed"; then fail 'removed host images although containers could not be listed'; fi
 grep -q 'cannot list containers; skipping' "$FAKE_STATE/output" || fail 'missing skip notice'
 
-# 5) Rollback protection: the tagged previous release survives cleanup even when nothing else keeps it.
-setup_state rollback-tag
-export QAAP_IMAGE_HISTORY_FILE="$TEST_ROOT/history-rollback/image-history" PRE_DEPLOY_IMAGE_ID='sha256:prev'
-printf '%s\n' 'sha256:rb|qaap-theia|rollback|<none>' >> "$FAKE_STATE/host/images"
+# 5) Rollback target: the last release that passed health and user smoke survives cleanup in both
+#    daemons even when it is neither the previous deploy nor used by a container.
+setup_state last-good
+export QAAP_IMAGE_HISTORY_FILE="$TEST_ROOT/history-last-good/image-history" PRE_DEPLOY_IMAGE_ID='sha256:prev'
+export QAAP_LAST_GOOD_RELEASE_FILE="$TEST_ROOT/history-last-good/last-good-release.env"
+mkdir -p "$TEST_ROOT/history-last-good"
+printf '%s\n' 'REVISION=gggg' 'IMAGE_ID=sha256:good' > "$QAAP_LAST_GOOD_RELEASE_FILE"
+printf '%s\n' 'sha256:good|ghcr.io/o/qaap|ggg|sha256:g1' >> "$FAKE_STATE/host/images"
+printf '%s\n' 'sha256:good|ghcr.io/o/qaap|ggg|<none>' >> "$FAKE_STATE/rootless/images"
 run_prune
-grep -q 'sha256:rb|qaap-theia|rollback' "$FAKE_STATE/host/images" || fail 'protected qaap-theia:rollback image removed'
-if grep -q 'qaap-theia:rollback' "$FAKE_STATE/removed"; then fail 'cleanup attempted to remove qaap-theia:rollback'; fi
-grep -q 'retained protected rollback tag qaap-theia:rollback' "$FAKE_STATE/output" || fail 'rollback tag retention was not reported'
-grep -q 'host rm qaap-theia:local' "$FAKE_STATE/removed" || fail 'other qaap-theia tags are no longer pruned'
+unset QAAP_LAST_GOOD_RELEASE_FILE
+grep -q '^sha256:good|' "$FAKE_STATE/host/images" || fail 'last verified rollback target removed from the host daemon'
+grep -q '^sha256:good|' "$FAKE_STATE/rootless/images" || fail 'last verified rollback target removed from the rootless daemon'
+grep -q 'host rm ghcr.io/o/qaap:aaa' "$FAKE_STATE/removed" || fail 'older images are no longer pruned'
 
 echo 'qaap-vps-image-prune tests passed'
