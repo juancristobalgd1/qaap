@@ -14,8 +14,13 @@ export interface QaapHostedGitFetchRequest {
     readonly url: string;
     /** The signed-in user's GitHub token, if any. Lives only in this backend and the fetch child's env. */
     readonly token?: string;
-    /** Absolute path of the bundle to create. It must not exist yet. */
+    /** Absolute path of the bundle to create, below `bundleRoot`. It must not exist yet. */
     readonly bundleFile: string;
+    /**
+     * Trusted directory the agent cannot replace (the repositories root). The directories between it
+     * and the bundle are walked without following symlinks.
+     */
+    readonly bundleRoot: string;
     /** Absolute `objects` directory of an existing project repository, read as an alternate object store. */
     readonly objectsDirectory?: string;
     /** Commit ids the project already has (its ref tips). Unknown or non-commit ids are ignored. */
@@ -81,7 +86,7 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
             if (tips.length === 0) {
                 return { refs: [], defaultBranch };
             }
-            await this.writeBundle(request.bundleFile, tips, haves, git);
+            await this.writeBundle(request.bundleRoot, request.bundleFile, tips, haves, git);
             return { refs: tips.map(tip => tip.ref), defaultBranch };
         } finally {
             await this.removeScratch(scratch);
@@ -92,9 +97,10 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
         if (!this.isAllowedUrl(request.url)) {
             throw new Error('Hosted fetch only reads GitHub over HTTPS.');
         }
-        if (!path.isAbsolute(request.bundleFile)) {
+        if (!path.isAbsolute(request.bundleFile) || !path.isAbsolute(request.bundleRoot)) {
             throw new Error('Hosted fetch needs an absolute bundle path.');
         }
+        this.bundleComponents(request.bundleRoot, request.bundleFile);
         if (request.objectsDirectory !== undefined) {
             this.assertValidObjectsDirectory(request.objectsDirectory);
         }
@@ -133,18 +139,146 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
     }
 
     /**
+     * Creates the bundle file exclusively in the directory reached from `bundleRoot` without following
+     * a symlink. The directories between `bundleRoot` and the bundle may be owned by the agent uid,
+     * which could swap one for a symlink between any check and the `open` and make this backend create
+     * a file in a directory only it can write (R3-2). On Linux each component is opened relative
+     * to the previous descriptor (`/proc/self/fd/<fd>/<name>`, an `openat` without a race) and checked
+     * not to be a symlink; elsewhere the components are checked with `lstat` before the open and
+     * the parent and the new file are compared by dev/ino after it, so a swap fails the call.
+     */
+    protected async openBundleInPlace(bundleRoot: string, bundleFile: string): Promise<fs.promises.FileHandle> {
+        const components = this.bundleComponents(bundleRoot, bundleFile);
+        const name = path.basename(bundleFile);
+        if (this.canOpenRelativeToDescriptor()) {
+            return this.withBundleDirectory(bundleRoot, components, directory => this.openBundle(path.posix.join(directory, name)));
+        }
+        const parent = path.join(bundleRoot, ...components);
+        const before = await this.lstatDirectoryChain(bundleRoot, components);
+        const handle = await this.openBundle(path.join(parent, name));
+        try {
+            const after = await this.lstatDirectoryChain(bundleRoot, components);
+            const opened = await handle.stat({ bigint: true });
+            const atPath = await fs.promises.lstat(path.join(parent, name), { bigint: true }).catch(() => undefined);
+            if (after.dev !== before.dev || after.ino !== before.ino || !atPath?.isFile() || atPath.dev !== opened.dev || atPath.ino !== opened.ino) {
+                throw this.bundleDirectoryError();
+            }
+            return handle;
+        } catch (error) {
+            await handle.truncate(0).catch(() => undefined);
+            await handle.close();
+            throw error;
+        }
+    }
+
+    /** Removes a bundle created by {@link openBundleInPlace}, through the same symlink-free directory walk. */
+    async removeBundle(bundleRoot: string, bundleFile: string): Promise<void> {
+        const components = this.bundleComponents(bundleRoot, bundleFile);
+        const name = path.basename(bundleFile);
+        try {
+            if (this.canOpenRelativeToDescriptor()) {
+                await this.withBundleDirectory(bundleRoot, components, directory => fs.promises.rm(path.posix.join(directory, name), { force: true }));
+            } else {
+                await this.lstatDirectoryChain(bundleRoot, components);
+                await fs.promises.rm(path.join(bundleRoot, ...components, name), { force: true });
+            }
+        } catch {
+            // A directory that is no longer plain never received the bundle.
+        }
+    }
+
+    /** The directory names from `bundleRoot` to the bundle's parent; the bundle must lie strictly below the root. */
+    protected bundleComponents(bundleRoot: string, bundleFile: string): string[] {
+        const relative = path.relative(bundleRoot, path.dirname(bundleFile));
+        const components = relative === '' ? [] : relative.split(path.sep);
+        if (path.isAbsolute(relative) || components.some(component => component === '..' || component === '.' || component === '')) {
+            throw new Error('Hosted fetch writes its bundle only below the repositories root.');
+        }
+        return components;
+    }
+
+    protected canOpenRelativeToDescriptor(): boolean {
+        return process.platform === 'linux' && fs.existsSync('/proc/self/fd');
+    }
+
+    /** Opens `bundleRoot`, then each component relative to its parent's descriptor ({@link openDirectoryEntry}). */
+    protected async withBundleDirectory<T>(bundleRoot: string, components: readonly string[], use: (directory: string) => Promise<T>): Promise<T> {
+        let directory = await fs.promises.open(bundleRoot, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
+        try {
+            for (const component of components) {
+                const next = await this.openDirectoryEntry(directory, component);
+                await directory.close();
+                directory = next;
+            }
+            return await use(`/proc/self/fd/${directory.fd}`);
+        } finally {
+            await directory.close();
+        }
+    }
+
+    /**
+     * Opens `name` inside the directory `parent` without following a symlink. Some kernels (gVisor)
+     * follow a final symlink despite `O_NOFOLLOW | O_DIRECTORY`, so the entry is then checked, through
+     * the still-open parent, to be a plain directory and the very inode that was opened.
+     */
+    protected async openDirectoryEntry(parent: fs.promises.FileHandle, name: string): Promise<fs.promises.FileHandle> {
+        const entry = `/proc/self/fd/${parent.fd}/${name}`;
+        let opened: fs.promises.FileHandle;
+        try {
+            opened = await fs.promises.open(entry, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+        } catch {
+            throw this.bundleDirectoryError();
+        }
+        try {
+            const openedStat = await opened.stat({ bigint: true });
+            const entryStat = await fs.promises.lstat(entry, { bigint: true });
+            if (entryStat.isSymbolicLink() || !entryStat.isDirectory() || entryStat.dev !== openedStat.dev || entryStat.ino !== openedStat.ino) {
+                throw this.bundleDirectoryError();
+            }
+            return opened;
+        } catch {
+            await opened.close();
+            throw this.bundleDirectoryError();
+        }
+    }
+
+    /** `lstat` of each component below `bundleRoot`: all plain directories. Returns the parent's stat. */
+    protected async lstatDirectoryChain(bundleRoot: string, components: readonly string[]): Promise<fs.BigIntStats> {
+        let current = bundleRoot;
+        let stat = await fs.promises.stat(current, { bigint: true });
+        for (const component of components) {
+            current = path.join(current, component);
+            stat = await fs.promises.lstat(current, { bigint: true });
+            if (stat.isSymbolicLink() || !stat.isDirectory()) {
+                throw this.bundleDirectoryError();
+            }
+        }
+        return stat;
+    }
+
+    protected bundleDirectoryError(): Error {
+        return new Error('The workspace directory changed while the hosted fetch was creating its bundle.');
+    }
+
+    /** Exclusive create: an existing file or symlink at `file` fails. */
+    protected openBundle(file: string): Promise<fs.promises.FileHandle> {
+        return fs.promises.open(file, 'wx', 0o644);
+    }
+
+    /**
      * Writes a v2 bundle: every remote ref, the project's tips as prerequisites, and a thin pack of
      * the objects reachable from the refs but not from those tips. The file is created exclusively
      * (an existing file or symlink fails) and made world-readable through its descriptor, so the
      * tenant uid can read it whatever this process's umask is.
      */
     protected async writeBundle(
+        bundleRoot: string,
         bundleFile: string,
         tips: ReadonlyArray<{ sha: string; ref: string }>,
         haves: readonly string[],
         git: (args: string[], extra?: QaapSealedGitRunOptions) => Promise<string>,
     ): Promise<void> {
-        const handle = await fs.promises.open(bundleFile, 'wx', 0o644);
+        const handle = await this.openBundleInPlace(bundleRoot, bundleFile);
         let written = false;
         try {
             await handle.chmod(0o644);
@@ -167,7 +301,7 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
         } finally {
             await handle.close();
             if (!written) {
-                await fs.promises.rm(bundleFile, { force: true });
+                await this.removeBundle(bundleRoot, bundleFile);
             }
         }
     }

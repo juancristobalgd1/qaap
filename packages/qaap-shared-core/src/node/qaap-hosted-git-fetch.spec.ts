@@ -77,11 +77,12 @@ describe('qaap-hosted-git-fetch', function (): void {
 
     it('refuses a non-GitHub URL, a relative bundle path and an objects path list', async () => {
         const fetcher = new QaapHostedGitFetch();
-        const valid = { url: 'https://github.com/acme/widget.git', bundleFile: path.join(base, 'x.bundle') };
+        const valid = { url: 'https://github.com/acme/widget.git', bundleFile: path.join(base, 'x.bundle'), bundleRoot: base };
         for (const bad of [
             { url: 'https://evil.test/acme/widget.git' },
             { url: url },
             { bundleFile: 'x.bundle' },
+            { bundleFile: path.join(path.dirname(base), 'x.bundle') },
             { objectsDirectory: 'relative/objects' },
             { objectsDirectory: `${base}${path.delimiter}${base}` },
             { token: 'with space' },
@@ -100,7 +101,7 @@ describe('qaap-hosted-git-fetch', function (): void {
     it('first clone: a tokenless bundle the tenant clones, with every branch and the default branch', async () => {
         const fetcher = new LocalHostedGitFetch();
         const bundleFile = path.join(base, '.qaap-clone.bundle');
-        const result = await fetcher.fetchBundle({ url, token: TOKEN, bundleFile });
+        const result = await fetcher.fetchBundle({ url, token: TOKEN, bundleFile, bundleRoot: base });
         expect(result.refs).to.have.members(['refs/heads/main', 'refs/heads/feature', 'refs/tags/v1']);
         expect(result.defaultBranch).to.equal('main');
         const project = path.join(base, 'project');
@@ -135,6 +136,7 @@ describe('qaap-hosted-git-fetch', function (): void {
             url,
             token: TOKEN,
             bundleFile,
+            bundleRoot: base,
             objectsDirectory: path.join(project, '.git', 'objects'),
             haves: [...haves, 'f'.repeat(40), 'not-a-sha'],
         });
@@ -159,7 +161,7 @@ describe('qaap-hosted-git-fetch', function (): void {
         git(base, 'init', '--bare', '--quiet', empty);
         const fetcher = new LocalHostedGitFetch();
         const bundleFile = path.join(base, 'empty.bundle');
-        const result = await fetcher.fetchBundle({ url: fileUrl(empty), bundleFile });
+        const result = await fetcher.fetchBundle({ url: fileUrl(empty), bundleFile, bundleRoot: base });
         expect(result.refs).to.deep.equal([]);
         expect(fs.existsSync(bundleFile)).to.equal(false);
 
@@ -167,7 +169,7 @@ describe('qaap-hosted-git-fetch', function (): void {
         fs.writeFileSync(existing, 'keep');
         let error: unknown;
         try {
-            await fetcher.fetchBundle({ url, bundleFile: existing });
+            await fetcher.fetchBundle({ url, bundleFile: existing, bundleRoot: base });
         } catch (caught) {
             error = caught;
         }
@@ -185,7 +187,7 @@ describe('qaap-hosted-git-fetch', function (): void {
         const bundleFile = path.join(base, 'big.bundle');
         let error: unknown;
         try {
-            await fetcher.fetchBundle({ url, token: TOKEN, bundleFile });
+            await fetcher.fetchBundle({ url, token: TOKEN, bundleFile, bundleRoot: base });
         } catch (caught) {
             error = caught;
         } finally {
@@ -200,5 +202,66 @@ describe('qaap-hosted-git-fetch', function (): void {
         expect(fetcher.calls.some(call => call.args.includes('pack-objects'))).to.equal(false);
         const scratch = fetcher.calls[0].args[fetcher.calls[0].args.length - 1];
         expect(fs.existsSync(scratch)).to.equal(false);
+    });
+    /** Swaps the bundle's directory for a symlink to `elsewhere` just before the open, as an agent racing the backend would (R3-2). */
+    class RacedHostedGitFetch extends LocalHostedGitFetch {
+        constructor(protected readonly parent: string, protected readonly elsewhere: string) {
+            super();
+        }
+
+        protected override openBundle(file: string): Promise<fs.promises.FileHandle> {
+            fs.renameSync(this.parent, `${this.parent}.real`);
+            fs.symlinkSync(this.elsewhere, this.parent, 'dir');
+            return super.openBundle(file);
+        }
+    }
+
+    describe('bundle directory owned by the agent (R3-2)', () => {
+        let parent: string;
+        let elsewhere: string;
+        let bundleFile: string;
+
+        beforeEach(function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            parent = path.join(base, 'users', 'octo', 'acme');
+            elsewhere = path.join(base, 'backend-only');
+            fs.mkdirSync(parent, { recursive: true });
+            fs.mkdirSync(elsewhere);
+            bundleFile = path.join(parent, '.qaap-clone-widget-0000.bundle');
+        });
+
+        it('refuses a bundle directory that is a symlink by the time the bundle is created', async () => {
+            fs.renameSync(path.join(base, 'users', 'octo'), path.join(base, 'octo.real'));
+            fs.mkdirSync(path.join(elsewhere, 'acme'));
+            fs.symlinkSync(elsewhere, path.join(base, 'users', 'octo'), 'dir');
+            let error: unknown;
+            try {
+                await new LocalHostedGitFetch().fetchBundle({ url, bundleFile, bundleRoot: base });
+            } catch (caught) {
+                error = caught;
+            }
+            expect(String(error)).to.match(/changed while the hosted fetch was creating its bundle/);
+            expect(fs.readdirSync(path.join(elsewhere, 'acme'))).to.deep.equal([]);
+        });
+
+        it('never writes into the directory an agent swaps in while the bundle is opened', async () => {
+            try {
+                await new RacedHostedGitFetch(parent, elsewhere).fetchBundle({ url, bundleFile, bundleRoot: base });
+            } catch {
+                // Refusing is fine (non-Linux); writing into `elsewhere` is not.
+            }
+            expect(fs.readdirSync(elsewhere)).to.deep.equal([]);
+        });
+
+        it('removes the bundle only through the real directory', async () => {
+            const decoy = path.join(elsewhere, path.basename(bundleFile));
+            fs.writeFileSync(decoy, 'backend data');
+            fs.renameSync(parent, `${parent}.real`);
+            fs.symlinkSync(elsewhere, parent, 'dir');
+            await new LocalHostedGitFetch().removeBundle(base, bundleFile);
+            expect(fs.readFileSync(decoy, 'utf8')).to.equal('backend data');
+        });
     });
 });

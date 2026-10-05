@@ -1278,7 +1278,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     /**
      * Runs `use` with the basename of a fresh bundle in the workspace's parent directory (readable
-     * by the tenant), filled by {@link QaapHostedGitFetch}, and removes the file afterwards.
+     * by the tenant), filled by {@link QaapHostedGitFetch}, and removes the file afterwards. The agent
+     * owns the directories below the repositories root, so both the create and the remove walk them
+     * from that root without following symlinks (R3-2).
      */
     protected async withHostedBundle(
         repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name'>,
@@ -1297,6 +1299,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 url: this.hostedRepositoryUrl(repository),
                 token: accessToken,
                 bundleFile,
+                bundleRoot: this.reposRoot,
                 ...project,
             }, {
                 signal: options.signal,
@@ -1305,7 +1308,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             });
             await use(bundle, result);
         } finally {
-            await fs.rm(bundleFile, { force: true }).catch(() => undefined);
+            await this.hostedFetch.removeBundle(this.reposRoot, bundleFile);
         }
     }
 
