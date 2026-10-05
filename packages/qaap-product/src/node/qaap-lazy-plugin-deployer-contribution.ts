@@ -15,7 +15,10 @@ export class QaapLazyPluginDeployerContribution extends PluginDeployerContributi
     protected readonly deploymentGate: QaapPluginDeploymentGate;
 
     override initialize(): Promise<void> {
-        this.deploymentGate.whenRequested.then(() => super.initialize());
+        // Same as upstream `initialize()`, but the gate learns when the deployment settles.
+        this.deploymentGate.whenRequested
+            .then(() => this.deploymentGate.trackInitialDeployment(this.pluginDeployer.start()))
+            .catch(error => this.logger.error('Initializing plugin deployer failed.', error));
         return Promise.resolve();
     }
 }

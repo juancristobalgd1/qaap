@@ -116,73 +116,14 @@ refresh_caddy() {
     docker compose up -d --no-deps --force-recreate caddy
 }
 
-# Seeds the rootless tenant daemon through a Theia container that mounts its socket.
-# Args (both optional): the container to exec into (default: the current theia service
-# container) and the tenant image to seed (default: that container's QAAP_TENANT_DOCKER_IMAGE).
-preload_tenant_image() {
-    local container_id="${1:-}" tenant_image="${2:-}" rootless
-    if [[ -z "$container_id" ]]; then
-        container_id="$(docker compose ps -q theia | tr -d '\r' | sed -n '1p')"
-    fi
-    if [[ -z "$container_id" ]]; then
-        echo '[qaap-vps-update] no Theia container available to preload the tenant image' >&2
-        return 1
-    fi
+# Tenant image seeding of the rootless daemon (preload_tenant_image); sourced so it can be tested
+# with a fake docker.
+# shellcheck source=scripts/qaap-vps-tenant-image.sh
+source "$REPO_DIR/scripts/qaap-vps-tenant-image.sh"
 
-    rootless="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-        | sed -n 's/^QAAP_DOCKER_ROOTLESS=//p')"
-    if [[ ! "$rootless" =~ ^(1|true)$ ]]; then
-        return 0
-    fi
-
-    if [[ -z "$tenant_image" ]]; then
-        tenant_image="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            | sed -n 's/^QAAP_TENANT_DOCKER_IMAGE=//p')"
-    fi
-    if [[ -z "$tenant_image" ]]; then
-        echo '[qaap-vps-update] QAAP_DOCKER_ROOTLESS is enabled but QAAP_TENANT_DOCKER_IMAGE is empty' >&2
-        return 1
-    fi
-
-    # The serving image is pulled by the host Docker daemon, while tenant backends use the
-    # separate rootless daemon mounted inside Theia. Wait for that daemon before seeding it;
-    # otherwise a freshly recreated Theia container can accept HTTP traffic before its Docker
-    # socket is ready and the first tenant request reports "No such image".
-    echo '[qaap-vps-update] waiting for rootless Docker before preloading tenant image'
-    for _ in $(seq 1 60); do
-        if docker exec "$container_id" docker info >/dev/null 2>&1; then
-            break
-        fi
-        sleep 1
-    done
-    if ! docker exec "$container_id" docker info >/dev/null 2>&1; then
-        echo '[qaap-vps-update] rootless Docker did not become ready' >&2
-        return 1
-    fi
-
-    local host_image_id tenant_image_id
-    host_image_id="$(docker image inspect "$tenant_image" --format '{{.Id}}' 2>/dev/null || true)"
-    tenant_image_id="$(docker exec "$container_id" docker image inspect "$tenant_image" --format '{{.Id}}' 2>/dev/null || true)"
-    if [[ -n "$tenant_image_id" && ( -z "$host_image_id" || "$tenant_image_id" == "$host_image_id" ) ]]; then
-        echo "[qaap-vps-update] tenant image already present in rootless Docker: $tenant_image"
-        return 0
-    fi
-
-    # A locally built serving image (e.g. qaap-theia:local) keeps its tag across deploys, so the tag
-    # alone says nothing about freshness: copy the host build into the rootless daemon whenever the
-    # ids differ. Existing tenant containers notice the new id and are recreated on their next use.
-    if [[ -n "$host_image_id" ]]; then
-        echo "[qaap-vps-update] loading host build of $tenant_image into rootless Docker (${tenant_image_id:-absent} -> $host_image_id)"
-        docker save "$tenant_image" | docker exec -i "$container_id" docker load
-        return 0
-    fi
-
-    echo "[qaap-vps-update] preloading tenant image into rootless Docker: $tenant_image"
-    docker exec "$container_id" docker pull "$tenant_image"
-}
-
-# The new control plane hands tenants the new image as soon as it serves, and a
-# `docker save | docker load` of this image takes minutes. Seed the rootless daemon through the
+# The new control plane hands tenants the new image as soon as it serves, and seeding the rootless
+# daemon takes minutes (a registry pull of the changed layers, or `docker save | docker load` of
+# the whole image as fallback). Seed the rootless daemon through the
 # still-serving container first so tenants never ask for an image it does not have yet
 # ("Tenant backend unavailable ... No such image"). Best effort: a first deploy has no running
 # container, and the post-switch preload still runs either way.
@@ -483,13 +424,14 @@ ensure_caddy_image
 # same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
 # QAIQ in its own CACHE_BUST-keyed layer, so this only re-clones qaiq (not the whole toolchain).
 if [[ -n "$IMAGE_REF" ]]; then
-    # Tenant backends run in the rootless daemon, which receives this image through `docker save |
-    # docker load`. A digest reference (`name:tag@sha256:…`) is saved without its tag and a loaded
-    # image has no RepoDigests, so the rootless daemon could resolve neither form and every tenant
-    # backend failed to start. Hand tenants the tag alone and make sure the host carries that tag.
+    # Tenant backends run in the rootless daemon. It pulls this digest itself (or, as fallback,
+    # receives it through `docker save | docker load`, which drops the tag and RepoDigests). Hand
+    # tenants the tag alone: the seed tags the rootless copy with it, the host carries it too, and
+    # QAAP_TENANT_IMAGE_SOURCE_REF tells the seed which immutable digest that tag must be.
     if [[ "$IMAGE_REF" == *@* && -z "${QAAP_TENANT_DOCKER_IMAGE:-}" ]]; then
         export QAAP_TENANT_DOCKER_IMAGE="${IMAGE_REF%@*}"
         docker tag "$IMAGE_REF" "$QAAP_TENANT_DOCKER_IMAGE"
+        QAAP_TENANT_IMAGE_SOURCE_REF="$IMAGE_REF"
         echo "[qaap-vps-update] tenant image: $QAAP_TENANT_DOCKER_IMAGE"
     fi
     preload_tenant_image_before_switch

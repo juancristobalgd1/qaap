@@ -4,8 +4,8 @@
 
 # ---------------------------------------------------------------------------------------------
 # Post-deploy image cleanup. Images are built in CI and pulled here, so every deploy leaves the
-# previous qaap image behind in the host daemon AND (via `docker save | docker load`) in the
-# rootless tenant daemon. Keep the image now serving, the image it replaced (rollback) and the
+# previous qaap image behind in the host daemon AND in the rootless tenant daemon (pulled by
+# digest, or copied with `docker save | docker load`). Keep the image now serving, the image it replaced (rollback) and the
 # previous recorded deploy; remove older qaap images, dangling images and old build cache.
 # Never removes an image referenced by any container (running or stopped): those are skipped
 # here and `docker image rm` without --force refuses them as well. Never fails the deploy.
@@ -115,7 +115,8 @@ prune_old_qaap_images() {
         | sed -n 's/^QAAP_DOCKER_ROOTLESS=//p' | sed -n '1p')"
     if [[ "$rootless" =~ ^(1|true)$ ]]; then
         if docker exec "$container_id" docker info >/dev/null 2>&1; then
-            # Same image ids in both daemons: `docker save | docker load` preserves the image id.
+            # Same image ids in both daemons: `docker save | docker load` preserves the image id and
+            # the digest pull is verified against the host id (qaap-vps-tenant-image.sh).
             # Stopped tenant containers still on an old image keep it (docker refuses to remove it).
             prune_qaap_images_in rootless "$keep_ids" "$repos" docker exec "$container_id" docker
         else
