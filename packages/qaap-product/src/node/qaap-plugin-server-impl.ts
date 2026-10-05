@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import {
     PluginDeployOptions,
@@ -11,6 +11,7 @@ import {
 } from '@theia/plugin-ext/lib/common/plugin-protocol';
 import { PluginServerImpl } from '@theia/plugin-ext/lib/main/node/plugin-server-impl';
 import { isLocalPluginArchiveInstallBlocked } from './qaap-local-plugin-archive-policy';
+import { QaapPluginDeploymentGate } from './qaap-plugin-deployment-gate';
 
 /**
  * Blocks runtime `local-file:` installs (drag/drop VSIX, Install from VSIX) when the
@@ -20,6 +21,9 @@ import { isLocalPluginArchiveInstallBlocked } from './qaap-local-plugin-archive-
  */
 @injectable()
 export class QaapPluginServerImpl extends PluginServerImpl {
+
+    @inject(QaapPluginDeploymentGate)
+    protected readonly deploymentGate: QaapPluginDeploymentGate;
 
     override async install(
         pluginEntry: string,
@@ -33,6 +37,8 @@ export class QaapPluginServerImpl extends PluginServerImpl {
                 + 'install hosted extensions from the marketplace.',
             );
         }
+        // An install joins the full deployment rather than racing ahead of it.
+        this.deploymentGate.request();
         return super.install(pluginEntry, arg2, options);
     }
 }

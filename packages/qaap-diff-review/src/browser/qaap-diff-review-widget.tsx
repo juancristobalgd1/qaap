@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { codicon, LabelProvider, Message, open, OpenerService, ReactWidget } from '@theia/core/lib/browser';
+import { codicon, ConfirmDialog, LabelProvider, Message, open, OpenerService, ReactWidget } from '@theia/core/lib/browser';
 import { QuickInputService } from '@theia/core/lib/common/quick-pick-service';
-import { CommandService } from '@theia/core/lib/common/command';
+import { CommandRegistry, CommandService } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
@@ -38,10 +38,10 @@ import {
     type VerifyCommitReadiness,
 } from '../common/qaap-verify-commit-readiness';
 import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
+import { QaapBulkReviewAction, runQaapBulkReviewAction } from './qaap-diff-review-bulk-action';
 
-/** Git extension commands used by the bulk review actions. */
+/** Git extension commands used by the commit without a message (see also QAAP_BULK_REVIEW_GIT_COMMANDS). */
 const GIT_STAGE_ALL = 'git.stageAll';
-const GIT_CLEAN_ALL = 'git.cleanAll';
 const GIT_COMMIT = 'git.commit';
 const PR_CREATE = 'pr.create';
 const PR_PUSH_AND_CREATE = 'pr.pushAndCreate';
@@ -103,6 +103,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     @inject(CommandService)
     protected readonly commands!: CommandService;
+
+    @inject(CommandRegistry)
+    protected readonly commandRegistry!: CommandRegistry;
 
     @inject(QuickInputService)
     protected readonly quickInputService!: QuickInputService;
@@ -887,7 +890,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
             // The AI writes the commit message automatically from the diff (Cursor-agents style).
             const generated = await this.commitMessageAi?.generate(this.rootFsPath);
             let message = generated?.message;
-            if (!message && action !== 'commit') {
+            // A plain commit without a message opens the git extension's own input, when it runs on this page.
+            if (!message && (action !== 'commit' || !this.commandRegistry.getCommand(GIT_COMMIT))) {
                 message = (await this.quickInputService.input({
                     title: nls.localize('qaap/mobileProjects/commitMessageTitle', 'Commit message'),
                     placeHolder: nls.localize('qaap/mobileProjects/commitMessagePlaceholder', 'Describe your changes'),
@@ -1420,16 +1424,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.error = undefined;
         this.update();
         try {
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ root: this.rootFsPath, file }),
-            });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({})) as { error?: string };
-                throw new Error(body.error ?? `request failed (${response.status})`);
-            }
+            await this.postFileAction(endpoint, file);
             await this.refresh();
         } catch (error) {
             this.error = error instanceof Error ? error.message : String(error);
@@ -1440,15 +1435,28 @@ export class QaapDiffReviewWidget extends ReactWidget {
         }
     }
 
+    protected async postFileAction(endpoint: string, file: string): Promise<void> {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ root: this.rootFsPath, file }),
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({})) as { error?: string };
+            throw new Error(body.error ?? `request failed (${response.status})`);
+        }
+    }
+
     protected readonly onAcceptAll = (): void => {
-        void this.runBulkAction(GIT_STAGE_ALL);
+        void this.runBulkAction('stage');
     };
 
     protected readonly onDiscardAll = (): void => {
-        void this.runBulkAction(GIT_CLEAN_ALL);
+        void this.runBulkAction('discard');
     };
 
-    protected async runBulkAction(commandId: string): Promise<void> {
+    protected async runBulkAction(action: QaapBulkReviewAction): Promise<void> {
         if (this.runningBulkAction || !this.bulkActionsEnabled) {
             return;
         }
@@ -1456,7 +1464,12 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.error = undefined;
         this.update();
         try {
-            await this.commands.executeCommand(commandId);
+            await runQaapBulkReviewAction(action, this.files.map(file => file.path), {
+                hasCommand: commandId => !!this.commandRegistry.getCommand(commandId),
+                executeCommand: commandId => this.commands.executeCommand(commandId),
+                runFileAction: (fileAction, file) => this.postFileAction(`${QAAP_GIT_REVIEW_API_PATH}/${fileAction}`, file),
+                confirmDiscardAll: fileCount => this.confirmDiscardAll(fileCount),
+            });
             await this.refresh();
         } catch (error) {
             this.error = error instanceof Error ? error.message : String(error);
@@ -1464,6 +1477,15 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.runningBulkAction = false;
             this.update();
         }
+    }
+
+    protected async confirmDiscardAll(fileCount: number): Promise<boolean> {
+        const confirmed = await new ConfirmDialog({
+            title: nls.localize('qaap/diffReview/discardAllTitle', 'Discard all changes'),
+            msg: nls.localize('qaap/diffReview/discardAllMessage', 'Discard the changes in {0} files? This cannot be undone.', fileCount),
+            ok: nls.localize('qaap/diffReview/discardAllConfirm', 'Discard all'),
+        }).open();
+        return confirmed === true;
     }
 }
 

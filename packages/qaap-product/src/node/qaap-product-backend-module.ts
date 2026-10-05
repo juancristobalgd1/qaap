@@ -18,6 +18,7 @@ import { QaapSocketWriteBuffer } from './qaap-socket-write-buffer';
 import { QaapPluginDeployerSecurityParticipant } from './qaap-plugin-deployer-security-participant';
 import { QaapPluginServerImpl } from './qaap-plugin-server-impl';
 import { QaapTerminalEnvironmentContribution } from './qaap-terminal-environment-contribution';
+import { bindQaapLazyPlugins } from './qaap-lazy-plugin-bindings';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
@@ -46,4 +47,6 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     }
     bind(QaapPluginDeployerSecurityParticipant).toSelf().inSingletonScope();
     bind(PluginDeployerParticipant).toService(QaapPluginDeployerSecurityParticipant);
+
+    bindQaapLazyPlugins(bind, isBound, rebind);
 });
