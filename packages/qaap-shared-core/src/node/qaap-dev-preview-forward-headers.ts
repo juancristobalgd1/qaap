@@ -63,6 +63,10 @@ export function buildQaapPreviewUpstreamHeaders(
         if (value === undefined || lowerKey === 'cookie' || lowerKey.startsWith(QAAP_INTERNAL_HEADER_PREFIX)) {
             continue;
         }
+        // A Qaap personal API token must never reach the previewed (user-controlled) dev server.
+        if (lowerKey === 'authorization' && /^\s*Bearer\s+qaap_pat_/i.test(String(value))) {
+            continue;
+        }
         headers[key] = value;
     }
     const cookie = stripQaapReservedCookies(incoming.cookie);

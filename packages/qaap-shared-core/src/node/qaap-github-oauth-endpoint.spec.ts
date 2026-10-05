@@ -626,7 +626,7 @@ describe('QaapGithubOauthEndpoint GitHub credential transport', () => {
         expect(joined).to.not.include('extraheader');
     }
 
-    it('hosted: passes the auth header through env config, never through the git argv', async () => {
+    it('hosted: tenant git never receives the GitHub token, in argv or env', async () => {
         process.env.QAAP_CLOUD_MODE = 'docker';
         const calls: Array<{ file: string; args: string[]; env: NodeJS.ProcessEnv }> = [];
         const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
@@ -641,15 +641,16 @@ describe('QaapGithubOauthEndpoint GitHub credential transport', () => {
                 },
             },
         });
-        await (endpoint as unknown as { runGit(args: string[], accessToken: string | undefined, cwd: string): Promise<void> })
-            .runGit(['-C', '/workspace/repos/users/alice/o/r', 'fetch', '--all'], token, '/workspace/repos/users/alice/o/r');
+        const runner = endpoint as unknown as { runGit(args: string[], accessToken: string | undefined, cwd: string): Promise<void> };
+        let refused: Error | undefined;
+        await runner.runGit(['-C', '/workspace/repos/users/alice/o/r', 'fetch', '--all'], token, '/workspace/repos/users/alice/o/r').catch(err => { refused = err; });
+        expect(refused?.message).to.contain('never receives the GitHub token');
+        expect(calls).to.have.length(0);
 
+        await runner.runGit(['-C', '/workspace/repos/users/alice/o/r', 'status'], undefined, '/workspace/repos/users/alice/o/r');
         expect(calls).to.have.length(1);
-        expectNoToken([calls[0].file, ...calls[0].args]);
-        expect(calls[0].args).to.include.members(['core.hooksPath=/dev/null', 'fetch', '--all']);
-        expect(calls[0].env.GIT_CONFIG_COUNT).to.equal('1');
-        expect(calls[0].env.GIT_CONFIG_KEY_0).to.equal('http.https://github.com/.extraheader');
-        expect(calls[0].env.GIT_CONFIG_VALUE_0).to.equal(`AUTHORIZATION: basic ${encoded}`);
+        expectNoToken([calls[0].file, ...calls[0].args, ...Object.values(calls[0].env).map(String)]);
+        expect(calls[0].env.GIT_CONFIG_COUNT).to.equal(undefined);
     });
 
     it('local: passes the auth header through env config, never through the git argv', async () => {

@@ -10,7 +10,7 @@ import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { spawn, type ChildProcess } from 'child_process';
 import { randomBytes } from 'crypto';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, realpathSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import {
@@ -58,6 +58,8 @@ import {
     mergeGithubPullRequest,
 } from './qaap-github-api';
 import { seedEmptyRepository } from './qaap-github-seed-empty-repository';
+import { QaapHostedGitFetch, type QaapHostedGitFetchResult } from './qaap-hosted-git-fetch';
+import { QaapHostedGitPush } from './qaap-hosted-git-push';
 import { QaapGithubPullRequestSearchService } from './qaap-github-pull-request-search-service';
 import {
     parseGithubPullRequestStateFilter,
@@ -65,6 +67,7 @@ import {
 } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
@@ -132,6 +135,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
 
+    @inject(QaapApiTokenStore) @optional()
+    protected readonly apiTokens: QaapApiTokenStore | undefined;
+
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
@@ -150,6 +156,14 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     /** Bound by qaap-cloud-workspace; hosted git must never execute on the shared backend. */
     @inject(QaapTenantProcessExecutor) @optional()
     protected readonly tenantProcess: QaapTenantProcessExecutorContract | undefined;
+
+    /** GitHub clone/fetch with the user's token as this backend's uid (doc/qaap-github-token-boundary.md). */
+    @inject(QaapHostedGitFetch)
+    protected readonly hostedFetch: QaapHostedGitFetch;
+
+    /** Pushes the empty-repository seed in hosted mode, where tenant git never gets the token. */
+    @inject(QaapHostedGitPush)
+    protected readonly hostedPush: QaapHostedGitPush;
 
     /** A stalled network operation must release the clone request and its workspace lock. */
     protected readonly gitOperationTimeoutMs = GIT_OPERATION_TIMEOUT_MS;
@@ -378,7 +392,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             const user = await fetchGithubUser(accessToken);
             const previousSessionId = this.auth.resolveSessionId(req);
             if (previousSessionId) {
-                this.sessions.deleteSession(previousSessionId);
+                this.endSession(previousSessionId);
             }
             const sessionId = this.sessions.createSession({ accessToken, user });
             this.setSessionCookie(res, sessionId);
@@ -444,9 +458,19 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected handleSignOut(req: Request, res: Response): void {
-        this.sessions.deleteSession(this.auth.resolveSessionId(req));
+        this.endSession(this.auth.resolveSessionId(req));
         this.clearSessionCookie(res);
         res.json({ ok: true });
+    }
+
+    /** Deletes a GitHub session and the personal API tokens acting for it. */
+    protected endSession(sessionId: string | undefined): void {
+        const login = sessionId ? this.sessions.getSession(sessionId)?.user.login : undefined;
+        this.sessions.deleteSession(sessionId);
+        const revoked = this.apiTokens?.revokeForSession(sessionId) ?? 0;
+        if (revoked > 0) {
+            this.auth.logSecurityEvent('api_token_revoke', { userLogin: login, count: revoked, reason: 'sign_out' });
+        }
     }
 
     protected async handleGithubRepositories(req: Request, res: Response): Promise<void> {
@@ -1119,18 +1143,17 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         await fs.mkdir(path.dirname(target), { recursive: true });
         await this.removeStaleCloneStaging(target);
         if (await this.isGitRepository(target)) {
-            // SEC-1/C-3: `fetch` updates refs + downloads objects with NO checkout and NO filters, so it
-            // is safe to run as the backend uid (root in prod). The former `pull --ff-only` here CHECKED
-            // OUT into the tenant-writable repo as root — that runs a tenant-defined clean/smudge FILTER
-            // (from the repo's own .git/config) as ROOT, i.e. a root-RCE. We deliberately do NOT check
-            // out in the open flow: the working tree fast-forwards on the tenant's next git operation
-            // (agent / terminal), which runs UNDER THE TENANT UID and is therefore safe. See SECURITY.md.
+            // SEC-1/C-3: the open flow only fetches (refs + objects, NO checkout, so no clean/smudge
+            // filter runs); the working tree fast-forwards on the tenant's next git operation under the
+            // tenant uid. Hosted: tenant git fetches a tokenless bundle the sealed backend fetch wrote.
             report({ phase: 'fetching', percent: 5 });
             const fetchProgress = new QaapGitProgressParser('fetch', report);
-            await this.runGit(['-C', target, 'fetch', '--all', '--prune', '--progress'], accessToken, target, {
-                ...gitOptions,
-                onStderr: chunk => fetchProgress.push(chunk),
-            });
+            const fetchOptions: QaapGitRunOptions = { ...gitOptions, onStderr: chunk => fetchProgress.push(chunk) };
+            if (isQaapHostedEnvironment()) {
+                await this.hostedFetchWorkspace(repository, accessToken, target, fetchOptions);
+            } else {
+                await this.runGit(['-C', target, 'fetch', '--all', '--prune', '--progress'], accessToken, target, fetchOptions);
+            }
             return target;
         }
         const targetExists = await this.pathExists(target);
@@ -1146,10 +1169,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         report({ phase: 'cloning', percent: 5 });
         const cloneProgress = new QaapGitProgressParser('clone', report);
         try {
-            await this.runGit(['clone', '--progress', repository.cloneUrl, path.basename(staging)], accessToken, path.dirname(target), {
-                ...gitOptions,
-                onStderr: chunk => cloneProgress.push(chunk),
-            });
+            const cloneOptions: QaapGitRunOptions = { ...gitOptions, onStderr: chunk => cloneProgress.push(chunk) };
+            if (isQaapHostedEnvironment()) {
+                await this.hostedCloneWorkspace(repository, accessToken, target, staging, cloneOptions);
+            } else {
+                await this.runGit(['clone', '--progress', repository.cloneUrl, path.basename(staging)], accessToken, path.dirname(target), cloneOptions);
+            }
             report({ phase: 'finalizing', percent: 95 });
             if (targetExists) {
                 await fs.rmdir(target).catch(() => undefined);
@@ -1169,13 +1194,166 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             await this.removeCloneStaging(staging);
             throw err;
         }
+        const hosted = isQaapHostedEnvironment();
         try {
             // Seeding is best effort: once the shared deadline is spent it fails fast and only warns.
-            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken, target, gitOptions));
+            await seedEmptyRepository(
+                target,
+                repository.name,
+                args => this.runGit(args, hosted ? undefined : accessToken, target, gitOptions),
+                hosted ? () => this.hostedPushSeed(repository, accessToken, target) : undefined,
+            );
         } catch (err) {
             console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
         }
         return target;
+    }
+
+    /**
+     * The GitHub URL of a hosted workspace, built from the owner and name its path was derived from
+     * ({@link resolveRepositoryWorkspacePath}); never from the agent-writable `.git/config`.
+     */
+    protected hostedRepositoryUrl(repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name'>): string {
+        const url = this.hostedFetch.toGithubHttpsUrl(`https://github.com/${repository.owner}/${repository.name}.git`);
+        if (!url) {
+            throw new Error(`Not a GitHub repository: ${repository.owner}/${repository.name}`);
+        }
+        return url;
+    }
+
+    /**
+     * Hosted fetch: the sealed backend-uid git downloads what the project lacks into a bundle next to
+     * the workspace, then tenant git fetches that file without any credential.
+     */
+    protected async hostedFetchWorkspace(
+        repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name'>,
+        accessToken: string | undefined,
+        target: string,
+        options: QaapGitRunOptions,
+    ): Promise<void> {
+        const objectsDirectory = await this.hostedObjectsDirectory(target);
+        // The project's tips as haves, so only missing objects are downloaded. Read by tenant git; the
+        // sealed fetch ignores ids that are not commits of the objects directory.
+        const project = objectsDirectory ? {
+            objectsDirectory,
+            haves: (await this.runGitOutput(['-C', target, 'for-each-ref', '--format=%(objectname)', 'refs/heads', 'refs/remotes'], target, options)).split('\n'),
+        } : {};
+        await this.withHostedBundle(repository, accessToken, target, project, options, async (bundle, result) => {
+            if (result.refs.length === 0) {
+                return;
+            }
+            // Relative to the workspace, so the path means the same inside the tenant worker. Tags
+            // pointing into the fetched history are followed automatically and never pruned.
+            await this.runGit(['-C', target, 'fetch', '--prune', '--progress', `../${bundle}`, '+refs/heads/*:refs/remotes/origin/*'], undefined, target, options);
+        });
+    }
+
+    /**
+     * Hosted first clone: the sealed backend-uid git writes the whole repository as a bundle, tenant
+     * git clones that file into `staging` and points `origin` at GitHub. An empty GitHub repository
+     * becomes an empty local repository with that `origin`.
+     */
+    protected async hostedCloneWorkspace(
+        repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name'>,
+        accessToken: string | undefined,
+        target: string,
+        staging: string,
+        options: QaapGitRunOptions,
+    ): Promise<void> {
+        const parent = path.dirname(staging);
+        const name = path.basename(staging);
+        const url = this.hostedRepositoryUrl(repository);
+        await this.withHostedBundle(repository, accessToken, target, {}, options, async (bundle, result) => {
+            if (result.refs.length === 0) {
+                await this.runGit(['init', '--quiet', `--initial-branch=${result.defaultBranch ?? 'main'}`, name], undefined, parent, options);
+                await this.runGit(['-C', staging, 'remote', 'add', 'origin', url], undefined, staging, options);
+                return;
+            }
+            const branches = result.refs.filter(ref => ref.startsWith('refs/heads/')).map(ref => ref.slice('refs/heads/'.length));
+            const branch = result.defaultBranch && branches.includes(result.defaultBranch) ? result.defaultBranch : branches[0];
+            await this.runGit(['clone', '--progress', ...(branch ? ['--branch', branch] : ['--no-checkout']), bundle, name], undefined, parent, options);
+            await this.runGit(['-C', staging, 'remote', 'set-url', 'origin', url], undefined, staging, options);
+        });
+    }
+
+    /**
+     * Runs `use` with the basename of a fresh bundle in the workspace's parent directory (readable
+     * by the tenant), filled by {@link QaapHostedGitFetch}, and removes the file afterwards. The agent
+     * owns the directories below the repositories root, so both the create and the remove walk them
+     * from that root without following symlinks (R3-2).
+     */
+    protected async withHostedBundle(
+        repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name'>,
+        accessToken: string | undefined,
+        target: string,
+        project: { objectsDirectory?: string; haves?: readonly string[] },
+        options: QaapGitRunOptions,
+        use: (bundle: string, result: QaapHostedGitFetchResult) => Promise<void>,
+    ): Promise<void> {
+        const parent = path.dirname(target);
+        this.assertInsideReposRoot(parent);
+        const bundle = `${this.cloneStagingPrefix(target)}${randomBytes(4).toString('hex')}.bundle`;
+        const bundleFile = path.join(parent, bundle);
+        try {
+            const result = await this.hostedFetch.fetchBundle({
+                url: this.hostedRepositoryUrl(repository),
+                token: accessToken,
+                bundleFile,
+                bundleRoot: this.reposRoot,
+                ...project,
+            }, {
+                signal: options.signal,
+                timeoutMs: Math.max(1, this.resolveGitDeadline(options.deadline, options.operationTimeoutMs) - Date.now()),
+                onStderr: options.onStderr,
+            });
+            await use(bundle, result);
+        } finally {
+            await this.hostedFetch.removeBundle(this.reposRoot, bundleFile);
+        }
+    }
+
+    /**
+     * The project's own `objects` directory for the sealed fetch, or `undefined` (full download) when
+     * `.git` or `objects` is not a plain directory inside the workspace, e.g. a symlink an agent planted.
+     */
+    protected async hostedObjectsDirectory(target: string): Promise<string | undefined> {
+        const gitDir = path.join(target, '.git');
+        const objectsDirectory = path.join(gitDir, 'objects');
+        try {
+            const [gitStat, objectsStat] = [await fs.lstat(gitDir), await fs.lstat(objectsDirectory)];
+            if (!gitStat.isDirectory() || !objectsStat.isDirectory()) {
+                return undefined;
+            }
+            const realTarget = realpathSync.native(target);
+            const realObjects = realpathSync.native(objectsDirectory);
+            return realObjects === path.join(realTarget, '.git', 'objects') ? realObjects : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** The backend writes the bundle as its own uid: refuse a parent an agent symlinked out of the repos root. */
+    protected assertInsideReposRoot(directory: string): void {
+        const root = realpathSync.native(this.reposRoot);
+        const real = realpathSync.native(directory);
+        if (!real.startsWith(root + path.sep)) {
+            throw new Error('The workspace directory is outside the repositories root.');
+        }
+    }
+
+    /** Hosted seed push: the sealed push sends the seed commit of the current branch to the project's own repository. */
+    protected async hostedPushSeed(
+        repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name'>,
+        accessToken: string | undefined,
+        target: string,
+    ): Promise<void> {
+        const objectsDirectory = await this.hostedObjectsDirectory(target);
+        if (!accessToken || !objectsDirectory) {
+            throw new Error('Pushing the seed needs a GitHub sign-in and a plain repository.');
+        }
+        const sha = await this.runGitOutput(['-C', target, 'rev-parse', '--verify', 'HEAD^{commit}'], target);
+        const branch = await this.runGitOutput(['-C', target, 'symbolic-ref', '--short', 'HEAD'], target);
+        await this.hostedPush.push({ objectsDirectory, url: this.hostedRepositoryUrl(repository), sha, ref: `refs/heads/${branch}`, token: accessToken });
     }
 
     /** Hidden sibling name prefix used for the staging clone of `target`. */
@@ -1304,15 +1482,17 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         // shared backend uid. The hooks-path override remains defense in depth inside the tenant.
         const hardening = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
         const gitArgs = [...hardening, ...invocation.args];
-        // The credential header travels in git's env config (GIT_CONFIG_COUNT/KEY_n/VALUE_n, git
-        // >= 2.31), never in argv: in hosted mode argv becomes the `docker exec` argv, which is
-        // visible to `ps` and in `docker events` (exec_create). See githubAuthEnvironment.
-        const hosted = isQaapHostedEnvironment();
-        // Local git inherits process.env, so keep any GIT_CONFIG_COUNT entries it already has.
-        const authEnv = accessToken ? this.githubAuthEnvironment(accessToken, hosted ? {} : process.env) : {};
-        if (hosted) {
-            return this.runTenantGit(invocation.cwd, gitArgs, false, options, authEnv).then(() => undefined);
+        if (isQaapHostedEnvironment()) {
+            if (accessToken) {
+                // Tenant git runs as the agent uid in an agent-writable repository: it never gets the
+                // token (doc/qaap-github-token-boundary.md). Hosted GitHub transfers use QaapHostedGitFetch/Push.
+                return Promise.reject(new Error('Hosted git never receives the GitHub token.'));
+            }
+            return this.runTenantGit(invocation.cwd, gitArgs, false, options).then(() => undefined);
         }
+        // Local dev only: the credential header travels in git's env config (GIT_CONFIG_COUNT/KEY_n/VALUE_n,
+        // git >= 2.31), never in argv. Local git inherits process.env, so keep its GIT_CONFIG_COUNT entries.
+        const authEnv = accessToken ? this.githubAuthEnvironment(accessToken, process.env) : {};
         return this.runLocalGit(invocation.cwd, gitArgs, false, options, authEnv).then(() => undefined);
     }
 
@@ -1458,13 +1638,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         return { cwd, args: copy };
     }
 
-    /** Execute git with a minimal environment and a fail-closed tenant worker in hosted mode. */
+    /**
+     * Execute git with a minimal environment and a fail-closed tenant worker in hosted mode. This git
+     * runs as the agent uid: it never receives a credential.
+     */
     protected async runTenantGit(
         cwd: string,
         args: readonly string[],
         captureStdout: boolean,
         options: QaapGitRunOptions = {},
-        extraEnv: NodeJS.ProcessEnv = {},
     ): Promise<string> {
         if (!this.tenantProcess) {
             throw new Error('Hosted GitHub repository operations are unavailable: the tenant worker is not bound.');
@@ -1491,10 +1673,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         const prepared = this.tenantProcess.spawnArgvPreparedAsync('git', args, {
             cwd,
-            // extraEnv (credential env config) reaches the worker via `docker exec -e NAME`: the
-            // tenant spawn service launches the docker CLI with exactly this env, so the value
-            // never appears in any argv.
-            env: this.tenantProcess.resolveProcessEnv(cwd, { ...baseEnv, ...extraEnv }),
+            env: this.tenantProcess.resolveProcessEnv(cwd, baseEnv),
             stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'],
             detached: true,
         });

@@ -123,6 +123,20 @@ RUN for harness in qaiq openclaude codex claude opencode antigravity; do \
             || { echo "Required Qaap harness is missing: $harness" >&2; exit 1; }; \
     done
 
+# `gh` for projects. It carries no credential: agents never receive the user's GitHub token (see
+# doc/qaap-github-token-boundary.md); a user who wants `gh` in a terminal signs it in themselves.
+ARG GH_CLI_VERSION=2.102.0
+ARG GH_CLI_SHA256_AMD64=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
+ARG GH_CLI_SHA256_ARM64=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484
+ARG TARGETARCH
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$arch" in amd64) sha="${GH_CLI_SHA256_AMD64}" ;; arm64) sha="${GH_CLI_SHA256_ARM64}" ;; *) echo "Unsupported gh arch: $arch" >&2; exit 1 ;; esac \
+    && curl -fsSL -o /tmp/gh.tar.gz "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_${arch}.tar.gz" \
+    && echo "${sha}  /tmp/gh.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/gh.tar.gz -C /usr/local --strip-components=1 "gh_${GH_CLI_VERSION}_linux_${arch}/bin/gh" \
+    && rm /tmp/gh.tar.gz \
+    && gh --version
+
 WORKDIR /app/examples/browser
 
 COPY --from=build /app /app

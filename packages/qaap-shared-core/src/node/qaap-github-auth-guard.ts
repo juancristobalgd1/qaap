@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import type { Request, Response } from '@theia/core/shared/express';
 import {
     QAAP_AUTH_SESSION_COOKIE,
@@ -24,6 +24,8 @@ import {
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task-client';
+import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { isRealPathUnder } from './qaap-realpath-guard';
 import {
@@ -47,7 +49,14 @@ export type QaapResolvedRepositoryCwd =
     | { readonly kind: 'denied' };
 
 export type QaapGithubAuthContext =
-    | { readonly kind: 'authenticated'; readonly session: QaapGithubStoredSession; readonly sessionId: string; readonly userLogin: string }
+    | {
+        readonly kind: 'authenticated';
+        readonly session: QaapGithubStoredSession;
+        readonly sessionId: string;
+        readonly userLogin: string;
+        /** Set when a personal API token (not the browser session) authenticated the request. */
+        readonly apiTokenId?: string;
+    }
     | { readonly kind: 'skip'; readonly userLogin: string }
     | { readonly kind: 'unauthorized' };
 
@@ -65,11 +74,27 @@ export type QaapSecurityEventAction =
     | 'agent_task'
     | 'workspace_path';
 
+/** Raw Node requests (WebSocket upgrade, preview ports) carry `url`; Express ones also `originalUrl`. */
+export type QaapAuthRequest = Pick<Request, 'headers'> & { readonly method?: string; readonly url?: string; readonly originalUrl?: string };
+
+const AGENT_TASK_ID_SEGMENT = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+
+/** The only routes a personal API token can call (see `isApiTokenScope`). Task ids are UUIDs. */
+export const QAAP_API_TOKEN_ROUTES: ReadonlyArray<{ readonly method: string; readonly path: RegExp }> = [
+    { method: 'POST', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}$`) },
+    { method: 'GET', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}$`) },
+    { method: 'GET', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}/${AGENT_TASK_ID_SEGMENT}$`) },
+    { method: 'POST', path: new RegExp(`^${QAAP_AGENT_TASK_API_PATH}/${AGENT_TASK_ID_SEGMENT}/cancel$`) },
+];
+
 /** Shared GitHub session resolution and multi-tenant ownership checks for Qaap HTTP endpoints. */
 @injectable()
 export class QaapGithubAuthGuard {
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
+
+    @inject(QaapApiTokenStore) @optional()
+    protected readonly apiTokens: QaapApiTokenStore | undefined;
 
     protected readonly reposRoot = resolveQaapReposRoot();
 
@@ -77,10 +102,11 @@ export class QaapGithubAuthGuard {
     // `resolveGithubSession` → `resolveSessionId` → `readSessionIdFromCookie`), so a plain
     // `http.IncomingMessage` (no Express-specific members) is accepted here too — the dev-preview
     // WebSocket-upgrade and legacy-port paths authenticate raw Node requests, not Express ones.
-    authenticate(req: Pick<Request, 'headers'>): QaapGithubAuthContext {
-        const tenantBackend = this.authenticateTenantBackend(req);
-        if (tenantBackend) {
-            return tenantBackend;
+    authenticate(req: QaapAuthRequest): QaapGithubAuthContext {
+        if (this.isTenantBackendMode()) {
+            // Only the control-plane proxy's assertion counts here. The tenant-local stores are
+            // writable from inside the tenant, so a cookie or API token resolved against them is not.
+            return this.authenticateTenantBackend(req) ?? { kind: 'unauthorized' };
         }
         const session = this.resolveGithubSession(req);
         if (session) {
@@ -89,6 +115,17 @@ export class QaapGithubAuthGuard {
                 session: session.stored,
                 sessionId: session.sessionId,
                 userLogin: session.stored.user.login,
+            };
+        }
+        const tokenSession = this.resolveApiTokenSession(req);
+        if (tokenSession) {
+            this.logApiTokenUse(req, tokenSession.stored.user.login, tokenSession.tokenId);
+            return {
+                kind: 'authenticated',
+                session: tokenSession.stored,
+                sessionId: tokenSession.sessionId,
+                userLogin: tokenSession.stored.user.login,
+                apiTokenId: tokenSession.tokenId,
             };
         }
         if (this.isSkipAuthEnabled()) {
@@ -103,7 +140,7 @@ export class QaapGithubAuthGuard {
      * short-lived HMAC assertion whose tenant is fixed by the container environment.
      */
     protected authenticateTenantBackend(req: Pick<Request, 'headers'>): Extract<QaapGithubAuthContext, { kind: 'authenticated' }> | undefined {
-        if (!/^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '')) {
+        if (!this.isTenantBackendMode()) {
             return undefined;
         }
         const rawHeader = req.headers[QAAP_TENANT_BACKEND_ASSERTION_HEADER];
@@ -127,6 +164,10 @@ export class QaapGithubAuthGuard {
         };
     }
 
+    protected isTenantBackendMode(): boolean {
+        return /^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '');
+    }
+
     resolveUserLogin(ctx: QaapGithubAuthContext): string | undefined {
         if (ctx.kind === 'authenticated' || ctx.kind === 'skip') {
             return ctx.userLogin;
@@ -137,6 +178,12 @@ export class QaapGithubAuthGuard {
     userWorkspaceRoot(ctx: QaapGithubAuthContext): string | undefined {
         const login = this.resolveUserLogin(ctx);
         return login ? resolveUserReposRoot(this.reposRoot, login) : undefined;
+    }
+
+    /** The caller's canonical clone of `owner/repo` ({@link resolveRepositoryWorkspacePath}), or `undefined` without a login. */
+    repositoryWorkspacePath(ctx: QaapGithubAuthContext, owner: string, repo: string): string | undefined {
+        const login = this.resolveUserLogin(ctx);
+        return login ? resolveRepositoryWorkspacePath(this.reposRoot, login, owner, repo) : undefined;
     }
 
     ownsWorkspacePath(ctx: QaapGithubAuthContext, targetPath: string): boolean {
@@ -391,8 +438,72 @@ export class QaapGithubAuthGuard {
         return process.env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
     }
 
+    /**
+     * `Authorization: Bearer qaap_pat_…` from a headless caller. The token acts for the GitHub
+     * session it was created from, so signing out of that session revokes it as well.
+     */
+    resolveApiTokenSession(req: QaapAuthRequest): { stored: QaapGithubStoredSession; sessionId: string; tokenId: string } | undefined {
+        if (this.isTenantBackendMode()) {
+            return undefined;
+        }
+        const token = this.readBearerApiToken(req);
+        const record = token && this.isApiTokenScope(req) ? this.apiTokens?.resolve(token) : undefined;
+        const stored = record ? this.sessions.getSession(record.sessionId) : undefined;
+        if (!record || !stored || stored.user.login.toLowerCase() !== record.ownerLogin.toLowerCase()) {
+            return undefined;
+        }
+        return { stored, sessionId: record.sessionId, tokenId: record.id };
+    }
+
+    /** Requests already audited, so a handler that authenticates twice logs one `api_token_use`. */
+    protected readonly auditedApiTokenRequests = new WeakSet<object>();
+
+    /** Audit trail for a leaked token: which token id acted, as whom, on which route. Never the secret. */
+    protected logApiTokenUse(req: QaapAuthRequest, userLogin: string, tokenId: string): void {
+        if (this.auditedApiTokenRequests.has(req)) {
+            return;
+        }
+        this.auditedApiTokenRequests.add(req);
+        this.logSecurityEvent('api_token_use', {
+            userLogin,
+            tokenId,
+            method: req.method,
+            path: (req.originalUrl ?? req.url ?? '').split('?')[0],
+        });
+    }
+
+    /**
+     * A personal API token is for headless agent tasks only: plain HTTP requests matching
+     * {@link QAAP_API_TOKEN_ROUTES} (create, list, read and cancel a task). Everything else, including
+     * the rest of the agent-task API (CLI updates, warm-up, project deletion, retry/resume, the event
+     * stream) and IDE RPC/terminal WebSockets, files, GitHub repository/PR actions, settings with
+     * provider keys and billing, still needs the browser session.
+     */
+    protected isApiTokenScope(req: QaapAuthRequest): boolean {
+        if (req.headers.upgrade) {
+            return false;
+        }
+        const method = req.method?.toUpperCase();
+        const pathname = (req.originalUrl ?? req.url ?? '').split('?')[0];
+        return QAAP_API_TOKEN_ROUTES.some(route => route.method === method && route.path.test(pathname));
+    }
+
+    /** True when the request carries a personal API token (token routes refuse to mint more). */
+    hasBearerApiToken(req: Pick<Request, 'headers'>): boolean {
+        return !!this.readBearerApiToken(req);
+    }
+
+    protected readBearerApiToken(req: Pick<Request, 'headers'>): string | undefined {
+        const header = req.headers.authorization;
+        const match = typeof header === 'string' ? /^Bearer\s+(qaap_pat_\S+)$/i.exec(header.trim()) : undefined;
+        return match?.[1];
+    }
+
     /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */
     resolveGithubSession(req: Pick<Request, 'headers'>): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+        if (this.isTenantBackendMode()) {
+            return undefined;
+        }
         const sessionId = this.resolveSessionId(req);
         if (!sessionId) {
             return undefined;
