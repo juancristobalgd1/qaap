@@ -6,16 +6,19 @@
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
-import assetPolicy from './qaap-frontend-asset-policy.cjs';
-
-const { patchIndexForFreshAssets: patchFreshAssets } = assetPolicy;
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const qaapRoot = path.dirname(resolvePackagePath('@theia/qaap-product', root));
+const requireFromBrowserScript = createRequire(import.meta.url);
+const { patchIndexForFreshAssets: patchFreshAssets } = requireFromBrowserScript(
+    path.join(qaapRoot, 'resources', 'qaap-frontend-asset-policy.cjs'),
+);
 const libFrontend = path.join(root, 'lib', 'frontend');
 const srcFrontend = path.join(root, 'src-gen', 'frontend');
 const srcIndex = path.join(srcFrontend, 'index.html');
@@ -139,7 +142,6 @@ copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));
 
 try {
-    const qaapRoot = path.dirname(resolvePackagePath('@theia/qaap-product', root));
     const gate = path.join(qaapRoot, 'resources', 'qaap-login-gate.js');
     copyIfExists(gate, path.join(libFrontend, 'qaap-login-gate.js'));
     const legal = path.join(qaapRoot, 'resources', 'legal');

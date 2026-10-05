@@ -46,8 +46,10 @@ describe('Qaap frontend asset policy', () => {
             const stylesheet = dom.window.document.querySelector('link[href*="bundle.css"]');
             expect(stylesheet?.getAttribute('href')).to.equal('./bundle.css?qaap-build=desktop-build');
             expect(dom.window.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(1);
-            expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(0);
-            expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(0);
+            const bundlePreload = dom.window.document.querySelector('link[rel~="modulepreload"][href*="bundle.js"]');
+            expect(bundlePreload?.getAttribute('href')).to.equal('./bundle.js?qaap-build=desktop-build');
+            expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(1);
+            expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(1);
         } finally {
             dom.window.close();
         }
