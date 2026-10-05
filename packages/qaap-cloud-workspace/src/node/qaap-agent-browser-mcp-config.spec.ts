@@ -4,8 +4,10 @@
 // *****************************************************************************
 
 import * as fs from 'fs';
+import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { expect } from 'chai';
 import { ensureQaapAgentBrowserMcpConfiguration } from './qaap-agent-browser-mcp-config';
 
@@ -60,6 +62,90 @@ describe('Qaap agent browser MCP configuration', () => {
         expect(JSON.parse(first).mcpServers).to.have.property('personal');
         expect(ensureQaapAgentBrowserMcpConfiguration(home)).to.have.length(0);
         expect(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).to.equal(first);
+    });
+
+    it('bridges only the current URL from successful MCP navigation results', async function () {
+        this.timeout(5000);
+        ensureQaapAgentBrowserMcpConfiguration(home);
+
+        const executableDir = path.join(home, 'bin');
+        fs.mkdirSync(executableDir);
+        fs.writeFileSync(path.join(executableDir, 'playwright-mcp'), [
+            '#!/usr/bin/env node',
+            "let input = '';",
+            "process.stdin.on('data', chunk => { input += chunk.toString(); let end; while ((end = input.indexOf('\\n')) >= 0) { const line = input.slice(0, end); input = input.slice(end + 1); try { const request = JSON.parse(line); if (request.method !== 'tools/call') continue; const args = request.params.arguments || {}; const blocked = typeof args.url === 'string' && args.url.includes('10.0.2.2'); const url = request.params.name === 'browser_click' ? 'http://localhost:5173/after-click' : 'http://localhost:5173/redirected'; const result = blocked ? { isError: true, content: [{ type: 'text', text: 'Navigation failed' }] } : { content: [{ type: 'text', text: 'Page URL: ' + url }] }; process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\\n'); } catch {} } });",
+        ].join('\n'), { mode: 0o755 });
+
+        const posted: { taskId: string; url: string }[] = [];
+        let receivedToken: string | undefined;
+        const server = http.createServer((request, response) => {
+            let body = '';
+            request.setEncoding('utf8');
+            request.on('data', chunk => body += chunk);
+            request.on('end', () => {
+                receivedToken = request.headers['x-qaap-task-token'] as string | undefined;
+                posted.push(JSON.parse(body) as { taskId: string; url: string });
+                response.writeHead(204).end();
+            });
+        });
+        await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+            server.close();
+            throw new Error('The browser preview test server did not listen on TCP.');
+        }
+
+        const proxyPath = path.join(home, '.qaap-agent-browser-mcp-proxy.cjs');
+        const child = spawn(process.execPath, [proxyPath], {
+            env: {
+                ...process.env,
+                PATH: `${executableDir}${path.delimiter}${process.env.PATH ?? ''}`,
+                QAAP_TASK_API_URL: `http://127.0.0.1:${address.port}/qaap/api/agent-tasks`,
+                QAAP_TASK_TOKEN: 'browser-preview-test-token',
+                QAAP_AGENT_TASK_ID: 'task-bridge-test',
+            },
+            stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        let responseCount = 0;
+        let stdout = '';
+        let timeout: NodeJS.Timeout | undefined;
+        const responses = new Promise<void>((resolve, reject) => {
+            child.once('error', reject);
+            child.stdout.on('data', chunk => {
+                stdout += chunk.toString();
+                let end: number;
+                while ((end = stdout.indexOf('\n')) >= 0) {
+                    stdout = stdout.slice(end + 1);
+                    responseCount++;
+                    if (responseCount === 3) {
+                        resolve();
+                    }
+                }
+            });
+            timeout = setTimeout(() => reject(new Error('The browser MCP proxy did not forward all tool results.')), 3000);
+        });
+
+        try {
+            child.stdin.write([
+                { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'http://localhost:5173/start' } } },
+                { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'browser_click', arguments: { element: 'next' } } },
+                { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'http://10.0.2.2:4873/blocked' } } },
+            ].map(request => `${JSON.stringify(request)}\n`).join(''));
+            await responses;
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            expect(receivedToken).to.equal('browser-preview-test-token');
+            expect(posted).to.deep.equal([
+                { taskId: 'task-bridge-test', url: 'http://localhost:5173/redirected' },
+                { taskId: 'task-bridge-test', url: 'http://localhost:5173/after-click' },
+            ]);
+        } finally {
+            if (timeout) {
+                clearTimeout(timeout);
+            }
+            child.kill();
+            await new Promise<void>(resolve => server.close(() => resolve()));
+        }
     });
 
     it('updates persistent config through its symlink and does not follow a planted temp symlink', () => {

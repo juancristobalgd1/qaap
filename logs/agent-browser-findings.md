@@ -144,6 +144,33 @@ This DOM spec verifies URL delivery and per-surface widget selection, not a buil
 page. Fresh-tenant visibility, browsing a tenant dev server, and load-time comparison remain
 unverified; no PR is ready.
 
+### MCP navigation result bridge (2026-10-05)
+
+The MCP proxy now correlates `browser_navigate` requests with their JSON-RPC responses. It publishes
+the resulting `Page URL` only after a successful tool result, and reports the current page URL from
+other successful browser tool results such as `browser_click`. Failed navigations do not send their
+requested URL to the integrated preview. This keeps the preview aligned with the page Chromium
+actually reached and prevents a failed private-range navigation from being replayed by the user's
+browser.
+
+The new process-level spec runs the generated proxy against a fake MCP server and callback endpoint.
+It checks a redirect, a click to another page, the task token and id, and a failed request to
+`10.0.2.2:4873`. It was run against the previous committed proxy first: **6 passing, 1 failing** on
+the new regression assertion (the old proxy published both the requested URL and the failed host).
+Against the fix, the focused MCP config spec passed: **7 passing**.
+
+Validation for this change:
+
+- `npx tsc -p tsconfig.json --pretty false` in `packages/qaap-cloud-workspace`: passed.
+- Full `@theia/qaap-cloud-workspace` suite: **1,824 passing, 2 pending, 1 failing**. The only failure
+  is `inspectQaapHeadlessPage` in `qaap-headless-visual-capture.spec.js`, because this workspace
+  lacks Chromium's `libatk-1.0.so.0`; that spec was not changed.
+- `npx tsc -b --pretty false` still stops at upstream `ai-terminal` because the installed Zod type
+  lacks `toJSONSchema`.
+
+The local MCP bridge and URL selection are covered; fresh-tenant runtime visibility and load-time
+comparison remain unverified.
+
 ## References checked
 
 - [Playwright MCP README](https://github.com/microsoft/playwright-mcp) documents headless mode and
