@@ -5,12 +5,14 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-const disableJSDOM = enableJSDOM();
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { Container } from '@theia/core/shared/inversify';
 import { clearPreferDesktopIde, markPreferDesktopIde } from './mobile-projects-open';
 import { QaapPluginStartGate } from './qaap-plugin-start-gate';
+
+disableImportJSDOM();
 
 function createGate(): QaapPluginStartGate {
     const container = new Container();
@@ -19,8 +21,11 @@ function createGate(): QaapPluginStartGate {
 }
 
 describe('QaapPluginStartGate', () => {
+    let disableSuiteJSDOM: () => void;
+    before(() => { disableSuiteJSDOM = enableJSDOM(); });
+    after(() => disableSuiteJSDOM());
 
-    after(() => disableJSDOM());
+
 
     afterEach(() => clearPreferDesktopIde());
 
