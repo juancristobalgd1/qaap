@@ -204,6 +204,61 @@ export function packagelessHarnessInstallMessage(label: string): string {
     return `${label} has no installable package on this server yet. Ask your administrator to add it to the Qaap image.`;
 }
 
+/** Private npm work area inside the prefix: npm's HOME, cache, logs and temporary files. */
+export const QAAP_NPM_WORK_DIRNAME = '.qaap-npm';
+
+export interface QaapNpmWorkDirectories {
+    readonly home: string;
+    readonly cache: string;
+    readonly logs: string;
+    readonly tmp: string;
+}
+
+export function resolveQaapNpmWorkDirectories(prefix: string): QaapNpmWorkDirectories {
+    const root = path.join(prefix, QAAP_NPM_WORK_DIRNAME);
+    return {
+        home: path.join(root, 'home'),
+        cache: path.join(root, 'cache'),
+        logs: path.join(root, 'logs'),
+        tmp: path.join(root, 'tmp'),
+    };
+}
+
+/**
+ * One short, actionable sentence for a failed install. npm's own output (`npm error code …`, stack
+ * paths) is never shown to the user; the caller logs it on the server.
+ */
+export function describeQaapNpmInstallFailure(
+    label: string,
+    install: { readonly status: number | null; readonly signal: NodeJS.Signals | null; readonly stdout: string; readonly stderr: string; readonly error?: Error },
+): string {
+    const output = [install.stderr, install.stdout, install.error?.message ?? ''].join('\n');
+    const code = /\b(E[A-Z0-9]{2,})\b/.exec(/npm (?:error|ERR!) code (\S+)/.exec(output)?.[1] ?? output)?.[1];
+    const suffix = code ? ` (${code})` : '';
+    if (install.error && /timed out/i.test(install.error.message)) {
+        return `${label} update took too long and was stopped. Try again.`;
+    }
+    if (install.signal) {
+        return `${label} update was interrupted. Try again.`;
+    }
+    if (/spawn\S* (?:npm|npm\.cmd|setpriv)\b.*ENOENT|\bENOENT\b.*spawn/i.test(output)) {
+        return `${label} could not be updated: npm is not available on this server.`;
+    }
+    if (/\b(?:ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|ESOCKETTIMEDOUT)\b/.test(output)) {
+        return `${label} update could not reach the npm registry. Check the connection and try again${suffix}.`;
+    }
+    if (/\b(?:ENOSPC|EDQUOT)\b/.test(output)) {
+        return `${label} update ran out of disk space. Free some space and try again${suffix}.`;
+    }
+    if (/\b(?:E404|ETARGET)\b/.test(output)) {
+        return `${label} update is not available on npm right now. Try again later${suffix}.`;
+    }
+    if (/\b(?:EACCES|EPERM|ENOENT|ENOTDIR|EROFS|EEXIST|ENOTEMPTY|EISDIR)\b/.test(output)) {
+        return `${label} update could not write its install folder. Try again; if it keeps failing, contact support${suffix}.`;
+    }
+    return `${label} update failed. Try again in a moment${suffix}.`;
+}
+
 export interface QaapNpmInstallInvocation {
     readonly file: string;
     readonly args: readonly string[];
@@ -424,7 +479,7 @@ export class QaapAgentCliUpdateService {
         npmPackage: string,
         target: ResolvedNpmInstallTarget,
     ): Promise<QaapAgentCliUpdateResult> {
-        if (!await this.isInstallPrefixWritableAsTarget(target.prefix, target.uid, target.gid)) {
+        if (!await this.prepareInstallDirectoriesAsTarget(target)) {
             return {
                 ok: false,
                 id: tracked.id,
@@ -434,18 +489,14 @@ export class QaapAgentCliUpdateService {
         }
         const install = await this.runNpmInstall(npmPackage, target, !!tracked.requiresInstallScripts);
         if (install.error || install.status !== 0) {
-            const detail = [
-                install.stderr.trim(),
-                install.stdout.trim(),
-                install.error?.message,
-                install.signal ? `npm install was terminated by ${install.signal}.` : undefined,
-                install.status === null ? 'npm install did not exit normally.' : undefined,
-            ].find(value => !!value) ?? 'npm install failed without a diagnostic.';
+            // The raw npm output stays in the server log; the user gets one actionable sentence.
+            console.warn(`[qaap-cli-update] ${npmPackage} install into ${target.prefix} failed (status ${install.status}, signal ${install.signal}): `
+                + `${[install.error?.message, install.stderr.trim(), install.stdout.trim()].filter(value => !!value).join('\n').slice(-4000)}`);
             return {
                 ok: false,
                 id: tracked.id,
                 reason: 'failed',
-                message: `${tracked.label} update failed: ${detail}`.slice(0, 500),
+                message: describeQaapNpmInstallFailure(tracked.label, install),
             };
         }
         // Invalidate cached latest so the next list re-probes.
@@ -490,8 +541,8 @@ export class QaapAgentCliUpdateService {
             return { status: null, signal: null, stdout: '', stderr: '', error: error as Error };
         }
         return this.runBoundedProcess(invocation.file, invocation.args, {
-            cwd: this.nearestExistingDirectory(target.prefix),
-            env: this.npmEnvironment(target),
+            cwd: target.prefix,
+            env: this.npmInstallEnvironment(target),
             shell: invocation.shell,
             timeoutMs: NPM_INSTALL_TIMEOUT_MS,
         });
@@ -599,6 +650,28 @@ export class QaapAgentCliUpdateService {
         return env;
     }
 
+    /**
+     * {@link npmEnvironment} with every directory npm writes (HOME, cache, logs, temp files) inside the
+     * prefix's private work area, which {@link prepareInstallDirectoriesAsTarget} created as the agent
+     * uid. npm never depends on the agent's HOME or on cache/temp directories prepared by another uid.
+     */
+    protected npmInstallEnvironment(target: ResolvedNpmInstallTarget): NodeJS.ProcessEnv {
+        const env = this.npmEnvironment(target);
+        const work = resolveQaapNpmWorkDirectories(target.prefix);
+        for (const key of Object.keys(env)) {
+            if (/^(?:npm_config_(?:cache|logs_dir|userconfig)|TMPDIR|TMP|TEMP)$/i.test(key)) {
+                delete env[key];
+            }
+        }
+        env.HOME = work.home;
+        env.npm_config_cache = work.cache;
+        env.npm_config_logs_dir = work.logs;
+        env.TMPDIR = work.tmp;
+        env.TMP = work.tmp;
+        env.TEMP = work.tmp;
+        return env;
+    }
+
     /** Uid of the backend process; `undefined` where POSIX uids do not exist. Overridable in tests. */
     protected backendUid(): number | undefined {
         return currentProcessUid();
@@ -691,28 +764,25 @@ export class QaapAgentCliUpdateService {
         return !blockedRoots.some(blocked => candidate === blocked || candidate.startsWith(`${blocked}${path.sep}`));
     }
 
-    protected nearestExistingDirectory(candidate: string): string {
-        let current = candidate;
-        while (!fs.existsSync(current)) {
-            const parent = path.dirname(current);
-            if (parent === current) {
-                break;
-            }
-            current = parent;
-        }
-        return current;
-    }
-
-    /** Whether the agent uid can create (or write) the npm prefix: checks its nearest existing ancestor. */
-    protected async isInstallPrefixWritableAsTarget(prefix: string, uid: number, gid: number): Promise<boolean> {
-        const existing = this.nearestExistingDirectory(prefix);
+    /**
+     * Create the npm prefix and its private work area ({@link resolveQaapNpmWorkDirectories}) as the agent
+     * uid, then check that the prefix is writable. A root tenant backend runs without CAP_CHOWN and
+     * CAP_DAC_OVERRIDE, so it can neither hand a directory it created to the agent uid nor see what that
+     * uid can reach: the directories are created by the agent uid itself (`setpriv … mkdir -p`).
+     */
+    protected async prepareInstallDirectoriesAsTarget(target: ResolvedNpmInstallTarget): Promise<boolean> {
+        const work = resolveQaapNpmWorkDirectories(target.prefix);
+        const directories = [target.prefix, work.home, work.cache, work.logs, work.tmp];
         const currentUid = this.backendUid();
-        if (currentUid !== 0 || uid === 0) {
-            if (currentUid !== undefined && currentUid !== uid) {
+        if (currentUid !== 0 || target.uid === 0) {
+            if (currentUid !== undefined && currentUid !== target.uid) {
                 return false;
             }
             try {
-                await fs.promises.access(existing, fs.constants.W_OK);
+                for (const directory of directories) {
+                    await fs.promises.mkdir(directory, { recursive: true });
+                }
+                await fs.promises.access(target.prefix, fs.constants.W_OK);
                 return true;
             } catch {
                 return false;
@@ -723,11 +793,11 @@ export class QaapAgentCliUpdateService {
             return false;
         }
         const result = await this.runBoundedProcess(setpriv, [
-            ...buildQaapSetprivDropArgs(uid, gid),
+            ...buildQaapSetprivDropArgs(target.uid, target.gid),
             '--',
-            '/bin/sh', '-c', 'test -w "$1"',
-            'qaap-agent-cli-prefix-check', existing,
-        ], { env: { PATH: '/usr/bin:/bin' }, timeoutMs: PREFIX_WRITABLE_PROBE_TIMEOUT_MS });
+            '/bin/sh', '-c', 'umask 022 && mkdir -p -- "$@" && test -w "$1"',
+            'qaap-agent-cli-prefix-prepare', ...directories,
+        ], { cwd: '/', env: { PATH: '/usr/bin:/bin' }, timeoutMs: PREFIX_WRITABLE_PROBE_TIMEOUT_MS });
         return !result.error && result.status === 0;
     }
 
