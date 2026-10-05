@@ -957,8 +957,15 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-row {
+  --qaap-task-title-row-gap: 0px;
   align-items: center;
-  gap: 0;
+  gap: var(--qaap-task-title-row-gap);
+}
+
+/* Compact rows: slightly smaller unread dot with the same clear space before the 14px title. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-unread-reply .theia-mobile-projects-task-title-row {
+  --qaap-unread-dot-size: 6px;
+  --qaap-unread-dot-space: 8px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title {
