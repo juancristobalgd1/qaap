@@ -28,6 +28,7 @@ import {
     resolveVerifiedComposerPreviewUrl,
 } from './qaap-composer-preview-action';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
+import { clearQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
@@ -320,6 +321,7 @@ export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTrans
             return;
         }
         ctx.host.transcriptPreviewSuppressedByUser = false;
+        clearQaapPreviewDismissedByUser(projectRoot);
         MobileSnackbar.show(nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'), { duration: 2200 });
         try {
             await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
@@ -366,6 +368,7 @@ export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTrans
         return;
     }
     ctx.host.transcriptPreviewSuppressedByUser = false;
+    clearQaapPreviewDismissedByUser(projectRoot);
     ctx.host.beginTranscriptDevPreviewRequest(project, summary);
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
     await bootstrap.refreshFromProjectRoot(projectRoot, project.id);

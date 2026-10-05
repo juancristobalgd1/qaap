@@ -37,6 +37,8 @@ import {
     terminalOutputOutOfMemory,
 } from './qaap-project-bootstrap-dev-errors';
 import { peekPreferDesktopIde } from './mobile-projects-open';
+import { clearQaapPreviewDismissedByUser } from './qaap-preview-user-dismissal';
+import { bootstrapPreviewDismissalDirectory } from './qaap-project-bootstrap-service-timeline';
 import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
 import {
     QAAP_PREVIEW_TERMINAL_KIND,
@@ -310,6 +312,10 @@ export async function openPreviewExtracted(ctx: QaapProjectBootstrapServiceConte
             nestedEntry,
             rememberedUrls: [ctx._previewUrl],
         });
+        if (!options?.auto && !options?.silent) {
+            // Explicit request ("Open preview", "Focus preview"): lift a previous user close.
+            clearQaapPreviewDismissedByUser(bootstrapPreviewDismissalDirectory(ctx));
+        }
         if (options?.auto && !ctx.mayAutoOpenPreviewNow()) {
             // Stage instead of navigating: record the ready URL and flip to `running` so the
             // transcript listener offers the "Open preview" pill; the user performs navigation.

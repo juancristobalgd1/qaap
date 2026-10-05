@@ -19,6 +19,7 @@ import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } fr
 import { writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { markQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 export function resolveExecutionSurfaceProjectExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): MobileProjectEntry | undefined {
     const projectId = ctx.host.projectDetailExpandedId ?? ctx.host.expandedId;
@@ -758,6 +759,10 @@ export function closeExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecuti
         ?? ctx.host.transcriptOpenSummary
         ?? (project && ctx.host.agentsHubShellActive ? ctx.host.resolveAgentsHubShellSummary(project) : undefined);
     const origin = sidebar?.origin ?? 'transcript';
+    if (project && (sidebar?.element.dataset.surface ?? ctx.executionSurfaceTabForProject(project)) === 'preview') {
+        // Closing the preview is a decision: no port/server-ready/poll event may reopen it.
+        markQaapPreviewDismissedByUser(executionSurfacePreviewDirectory(ctx, project, summary));
+    }
     ctx.dismissExecutionSurfaceSidebar();
     if (project && summary) {
         ctx.activateExecutionSurfaceTab('messages', project, summary, origin);
@@ -1112,4 +1117,9 @@ export function navigateExecutionSurfaceBackExtracted(ctx: MobileProjectsExecuti
         return true;
     }
     return false;
+}
+
+export function executionSurfacePreviewDirectory(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
+    summary?: QaapAgentConversationSummaryDTO,): string | undefined {
+    return qaapProjectPreviewDirectory(ctx.host.projectsService, project, ctx.host.preparedCwdByProjectId, summary?.cwd);
 }

@@ -36,6 +36,7 @@ import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isCon
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
+import { isQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, next: QaapAgentConversationDTO,
     eventMessage: QaapAgentMessageDTO,): void {
@@ -296,13 +297,16 @@ export async function openReadyTranscriptPreviewUrlExtracted(ctx: MobileProjects
     }
     ctx.host.stageTranscriptPreviewReadyUrl(normalized);
     ctx.transcriptPreviewOfferAnnouncedUrl = normalized;
+    const project = ctx.host.transcriptOpenProject;
     if (
         ctx.host.transcriptPreviewSuppressedByUser
         || !conversationMayAutoOpenTranscriptPreview(conv)
+        // The user closed this project's preview: a new URL form, a state change or a poll hit
+        // only refreshes the staged URL; the user reopens it from the Preview tab/pill.
+        || isQaapPreviewDismissedByUser(qaapProjectPreviewDirectory(ctx.host.projectsService, project, undefined, conv?.cwd))
     ) {
         return;
     }
-    const project = ctx.host.transcriptOpenProject;
     const summary = ctx.host.transcriptOpenSummary;
     if (!project || !summary) {
         return;

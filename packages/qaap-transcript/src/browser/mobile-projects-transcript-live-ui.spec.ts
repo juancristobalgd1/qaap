@@ -24,6 +24,7 @@ import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { MobileProjectsTranscriptLiveUi, type MobileProjectsTranscriptLiveHost } from './mobile-projects-transcript-live-ui';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { clearQaapPreviewDismissedByUser, markQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 disableImportJSDOM();
 
@@ -426,6 +427,65 @@ describe('MobileProjectsTranscriptLiveUi', () => {
 
         chatHost.remove();
         composerHost.remove();
+    });
+
+    it('openReadyTranscriptPreviewUrl never reopens a preview the user closed, whatever URL form arrives', async () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        const project = { id: 'vitesse-closed', name: 'vitesse-closed', status: 'working' } as import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry;
+        const summary = {
+            id: 'conv-closed',
+            cwd: '/tmp/vitesse-closed',
+            agentId: 'qaiq',
+            title: 'Preview',
+            status: 'idle' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        host.transcriptOpenProject = project;
+        host.transcriptOpenSummary = summary;
+        host.transcriptOpenSummaryId = summary.id;
+        const selected: string[] = [];
+        const staged: string[] = [];
+        host.stageTranscriptPreviewReadyUrl = (url: string) => { staged.push(url); };
+        host.executionSurfaceTabsUi = {
+            selectTranscriptTab: (tab: string) => { selected.push(tab); },
+        } as unknown as MobileProjectsTranscriptLiveHost['executionSurfaceTabsUi'];
+        const conv: QaapAgentConversationDTO = {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [{ id: 'u1', role: 'user', content: 'Levanta la app y abre la preview.', createdAt: 1 }],
+        };
+        const liveUi = new MobileProjectsTranscriptLiveUi(host) as unknown as {
+            openReadyTranscriptPreviewUrl: (url: string, conversation: QaapAgentConversationDTO) => Promise<void>;
+        };
+        // The user closed the preview drawer of this project (same tab, survives F5).
+        markQaapPreviewDismissedByUser('/tmp/vitesse-closed/');
+        try {
+            // Bootstrap state change, port poll and kickoff report the same server in different forms.
+            await liveUi.openReadyTranscriptPreviewUrl('http://127.0.0.1:5173/', conv);
+            await liveUi.openReadyTranscriptPreviewUrl('/qaap-preview/abc123/', conv);
+            await liveUi.openReadyTranscriptPreviewUrl('http://127.0.0.1:5173/', conv);
+            expect(selected).to.deep.equal([]);
+            expect(staged).to.have.length(3);
+
+            // An explicit request lifts the mark; the next ready URL opens again.
+            clearQaapPreviewDismissedByUser('/tmp/vitesse-closed');
+            await liveUi.openReadyTranscriptPreviewUrl('/qaap-preview/abc123/', conv);
+            expect(selected).to.deep.equal(['preview']);
+        } finally {
+            clearQaapPreviewDismissedByUser('/tmp/vitesse-closed');
+            chatHost.remove();
+            composerHost.remove();
+        }
     });
 
     it('openReadyTranscriptPreviewUrl only stages the pill when the user never asked for preview', async () => {
