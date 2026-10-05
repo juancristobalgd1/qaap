@@ -84,7 +84,8 @@ describe('QaapGithubOauthEndpoint hosted clone/fetch (token boundary)', function
         } else {
             process.env.QAAP_CLOUD_MODE = previousCloudMode;
         }
-        fs.rmSync(base, { recursive: true, force: true });
+        // A detached `git gc --auto` can still be writing into .git on macOS; retry instead of racing it.
+        fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     });
 
     function createEndpoint(fetcher: LocalHostedGitFetch): WorkspaceEnsurer {
