@@ -189,7 +189,9 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 ctx.schedulePersistTranscriptComposerDraft(summary.id);
             }
         },
-        resolveAgentLabel: () => ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
+        resolveAgentLabel: () => ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
+            ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+        ),
         resolveAgentId: () => ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
         resolveAgentModel: () => ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentModel(
             ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
@@ -207,7 +209,9 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 ctx.host.transcriptComposerUi.openTranscriptComposerApprovalPolicySheet(
                     project,
                     summary,
-                    ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
+                    ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
+                        ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+                    ),
                     anchor,
                 );
             }
