@@ -338,19 +338,45 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
     }
 }
 
-/** Selects Gemini CLI's "Login with Google" in `~/.gemini/settings.json`, keeping other settings. */
-const GEMINI_CLI_SELECT_GOOGLE_LOGIN_SCRIPT = 'const fs=require("fs"),path=require("path"),file=path.join(require("os").homedir(),".gemini","settings.json");'
-    + 'let settings={};try{settings=JSON.parse(fs.readFileSync(file,"utf8"))}catch{}'
-    + 'settings.security={...settings.security,auth:{...(settings.security||{}).auth,selectedType:"oauth-personal"}};'
-    + 'fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(settings,null,2))';
+/**
+ * Prepares Gemini CLI for an unattended sign-in, in the agent's own `~/.gemini` (the hidden
+ * terminal runs as the tenant uid with the tenant HOME, never the backend's):
+ * - selects "Login with Google" (`security.auth.selectedType`), so no auth picker opens;
+ * - marks the IDE nudge as seen, so no IDE-integration question opens;
+ * - trusts only the current folder (the tenant workspace the Connect terminal starts in) through
+ *   the official `trustedFolders.json` rule `TRUST_FOLDER`, so the folder-trust dialog ("Trusting
+ *   a folder allows Gemini CLI to load its local configurations...") cannot hold the link back.
+ *   Folder trust stays enabled for every other folder, an existing rule for this folder is kept,
+ *   and a file this script cannot parse (comments) is left alone.
+ * Paths follow Gemini CLI's own `GEMINI_CLI_HOME` / `GEMINI_CLI_TRUSTED_FOLDERS_PATH` overrides.
+ * Written with double quotes only: the POSIX command wraps it in single quotes.
+ */
+const GEMINI_CLI_PREPARE_LOGIN_SCRIPT = [
+    'const fs=require("fs"),path=require("path"),os=require("os");',
+    'const dir=path.join(process.env.GEMINI_CLI_HOME||os.homedir(),".gemini");',
+    'const read=file=>{try{return JSON.parse(fs.readFileSync(file,"utf8"))}catch(error){return error.code==="ENOENT"?{}:undefined}};',
+    'const isObject=value=>!!value&&typeof value==="object"&&!Array.isArray(value);',
+    'fs.mkdirSync(dir,{recursive:true});',
+    'const settingsFile=path.join(dir,"settings.json"),stored=read(settingsFile),settings=isObject(stored)?stored:{};',
+    'settings.security={...settings.security,auth:{...(settings.security||{}).auth,selectedType:"oauth-personal"}};',
+    'settings.ide={...settings.ide,hasSeenNudge:true};',
+    'fs.writeFileSync(settingsFile,JSON.stringify(settings,null,2));',
+    'const trustFile=process.env.GEMINI_CLI_TRUSTED_FOLDERS_PATH||path.join(dir,"trustedFolders.json"),rules=read(trustFile),folder=fs.realpathSync(process.cwd());',
+    'if(isObject(rules)&&!rules[folder]){rules[folder]="TRUST_FOLDER";fs.mkdirSync(path.dirname(trustFile),{recursive:true});',
+    'fs.writeFileSync(trustFile,JSON.stringify(rules,null,2),{mode:0o600})}',
+].join('');
 
+/**
+ * `GEMINI_CLI_TRUST_WORKSPACE=true` is Gemini CLI's documented per-session trust switch (what
+ * `--skip-trust` sets); unlike the flag, older CLIs that do not know it simply ignore it.
+ */
 function resolveGeminiCliLoginCommand(): string {
     const runtimeProcess = (globalThis as typeof globalThis & {
         process?: { readonly platform?: string };
     }).process;
     return runtimeProcess?.platform === 'win32'
-        ? '$env:NO_BROWSER=\'true\'; gemini'
-        : `node -e '${GEMINI_CLI_SELECT_GOOGLE_LOGIN_SCRIPT}' && NO_BROWSER=true gemini`;
+        ? '$env:NO_BROWSER=\'true\'; $env:GEMINI_CLI_TRUST_WORKSPACE=\'true\'; gemini'
+        : `node -e '${GEMINI_CLI_PREPARE_LOGIN_SCRIPT}' && NO_BROWSER=true GEMINI_CLI_TRUST_WORKSPACE=true gemini`;
 }
 
 /**

@@ -111,8 +111,8 @@ describe('resolveAgentConnectionFlow', () => {
         expect(flow.kind).to.equal('cli-login');
         // The tenant terminal is POSIX; on a Windows desktop the same flow runs in PowerShell.
         expect(flow.kind === 'cli-login' && flow.command).to.match(process.platform === 'win32'
-            ? /\$env:NO_BROWSER='true'; gemini$/
-            : /selectedType:"oauth-personal".*&& NO_BROWSER=true gemini$/);
+            ? /\$env:NO_BROWSER='true'; \$env:GEMINI_CLI_TRUST_WORKSPACE='true'; gemini$/
+            : /selectedType:"oauth-personal".*"TRUST_FOLDER".*&& NO_BROWSER=true GEMINI_CLI_TRUST_WORKSPACE=true gemini$/);
     });
 
     it('offers the Settings API-key route to QAIQ only', () => {
