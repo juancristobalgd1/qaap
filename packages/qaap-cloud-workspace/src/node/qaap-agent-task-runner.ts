@@ -89,6 +89,7 @@ import {
     hasAgentSettingsCredentials as hasAgentSettingsCredentialsHelper,
     resolveAgentConnectionProbe as resolveAgentConnectionProbeHelper,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
+    stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
 import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
@@ -733,7 +734,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         const owner = ownerLogin?.trim();
         if (!owner) {
-            return probeAgentConnectionStateHelper(agentId, probe.file, { args: probe.args });
+            return probeAgentConnectionStateHelper(agentId, probe.file, {
+                args: probe.args,
+                env: stripSignInOnlyAgentApiKeyEnv({ ...process.env }, agentId),
+            });
         }
 
         const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
@@ -742,10 +746,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         try {
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
-            const env = {
+            // An inherited OPENAI_API_KEY makes `codex login status` report the key, not the sign-in.
+            const env = stripSignInOnlyAgentApiKeyEnv({
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
-            };
+            }, agentId);
             const prefix = this.resolveAgentCliPrefix(tenantCwd);
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);

@@ -31,6 +31,8 @@ import {
     hasAgentSettingsCredentials,
     resolveAgentConnectionProbe,
     resolveAgentConnectionProbeArgs,
+    resolveTaskHarnessId,
+    stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
 
 describe('harness connection state', () => {
@@ -42,6 +44,23 @@ describe('harness connection state', () => {
         for (const id of ['openclaude', 'hermes', 'antigravity', 'gemini']) {
             expect(hasAgentSettingsCredentials(id, () => 'tenant-api-key'), id).to.equal(undefined);
         }
+    });
+
+    it('asks Codex for a ChatGPT sign-in when it is logged in with an API key', () => {
+        // Real `codex login status` output for each auth mode.
+        expect(classifyAgentConnectionProbe('codex', 0, 'Logged in using an API key - sk-proj-***dUA', false)).to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('codex', 0, 'Logged in using ChatGPT', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('codex', 1, 'Not logged in', false)).to.equal('disconnected');
+    });
+
+    it('withholds API keys from Codex (and its auth probe) but not from QAIQ', () => {
+        const env = { OPENAI_API_KEY: 'sk-proj', codex_api_key: 'k', OPENAI_BASE_URL: 'https://x', PATH: '/usr/bin' };
+        expect(stripSignInOnlyAgentApiKeyEnv({ ...env }, 'codex')).to.deep.equal({ PATH: '/usr/bin' });
+        expect(stripSignInOnlyAgentApiKeyEnv({ ...env }, 'qaiq')).to.deep.equal(env);
+        expect(resolveTaskHarnessId(undefined, 'codex exec --json hola')).to.equal('codex');
+        expect(resolveTaskHarnessId(undefined, '/usr/local/bin/codex exec')).to.equal('codex');
+        expect(resolveTaskHarnessId(undefined, 'qaiq -p "use codex"')).to.equal(undefined);
+        expect(resolveTaskHarnessId('Codex', 'anything')).to.equal('codex');
     });
 
     it('probes OpenClaude, Hermes and Gemini CLI with their own sign-in state', () => {

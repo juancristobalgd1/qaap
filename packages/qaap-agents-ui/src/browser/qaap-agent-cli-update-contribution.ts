@@ -164,12 +164,12 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             return;
         }
 
-        const detail = result.message?.trim();
+        const detail = presentableAgentCliUpdateFailure(result.message);
         const message = detail
             ? nls.localize('qaap/agentCliUpdate/updateFailedDetail', 'Could not update {0}: {1}', info.label, detail)
             : nls.localize(
                 'qaap/agentCliUpdate/updateFailedRetry',
-                'Could not update {0}. Check server npm access and permissions, then retry.',
+                'Could not update {0}. Try again in a moment.',
                 info.label,
             );
         this.showUpdateFailure(info, message);
@@ -188,4 +188,16 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             onAction: () => void this.runUpdate(info),
         });
     }
+}
+
+/**
+ * The server's one-sentence failure reason, or `undefined` when the text looks like raw tool output
+ * (an older server, a proxy error page, a thrown stack): the toast then shows its generic retry text.
+ */
+export function presentableAgentCliUpdateFailure(message: string | undefined): string | undefined {
+    const detail = message?.trim();
+    if (!detail || detail.length > 240 || /[\r\n]|npm (?:error|ERR!|warn)|<\/?[a-z]|\bat \S+ \(/i.test(detail)) {
+        return undefined;
+    }
+    return detail;
 }

@@ -20,6 +20,14 @@ import {
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('qaap-agent-failure-message', () => {
+    it('asks a sign-in harness to sign in when its provider rejects an API key; QAIQ keeps the Settings copy', () => {
+        const codexLog = 'unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-***dUA';
+        const codex = resolveAgentTurnFailureMessage(codexLog, { state: 'failed', agentId: 'codex' });
+        expect(codex).to.match(/needs you to sign in/i);
+        expect(codex).not.to.match(/401|sk-proj|API key/i);
+        expect(resolveAgentTurnFailureMessage(codexLog, { state: 'failed', agentId: 'qaiq' })).to.match(/Check your API key in Settings/);
+    });
+
     afterEach(() => {
         rememberQaapHostedRuntime(false);
     });

@@ -177,4 +177,51 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         expect(env.OPENROUTER_API_KEY).to.equal('operator-openrouter');
         expect(env.GITHUB_TOKEN).to.equal('operator-github');
     });
+
+    it('Codex never receives an OpenAI key: not from its picker binding, Settings or the operator env', () => {
+        // Production: "Failed to authenticate. API Error: 401 Incorrect API key provided: sk-proj-…".
+        // Only QAIQ runs on an API key; Codex must use its own ChatGPT sign-in (~/.codex/auth.json).
+        const codexEnv = (ownerLogin: string | undefined): NodeJS.ProcessEnv => {
+            const runner = createRunner();
+            Object.assign(runner, {
+                readUserSettingsFromDisk: () => ({
+                    ...ALICE_SETTINGS,
+                    'ai-features.openAiOfficial.openAiApiKey': 'sk-proj-stale-dUA',
+                    'ai-features.openAiOfficial.officialOpenAiModels': ['gpt-6-luna'],
+                }),
+            });
+            const task = {
+                id: 'task-codex',
+                title: 'Codex task',
+                agentId: 'codex',
+                command: 'codex exec --json -m gpt-6-luna hola',
+                cwd: '/repo',
+                state: 'running',
+                createdAt: 0,
+                agentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-6-luna', label: 'GPT-6 Luna' },
+                ...(ownerLogin ? { ownerLogin } : {}),
+            } as QaapAgentTask;
+            return (runner as unknown as { buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv }).buildChildEnv(task);
+        };
+        process.env.CODEX_API_KEY = 'operator-codex';
+        process.env.OPENAI_BASE_URL = 'https://operator.example/v1';
+        try {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            for (const env of [codexEnv('alice'), codexEnv(undefined)]) {
+                expect(env.OPENAI_API_KEY).to.equal(undefined);
+                expect(env.CODEX_API_KEY).to.equal(undefined);
+                expect(env.OPENAI_BASE_URL).to.equal(undefined);
+                expect(leakedValues(env, ['sk-proj-stale-dUA', 'sk-alice-openrouter'])).to.deep.equal([]);
+            }
+            // Local single user: the operator env stays for other tools, never for Codex.
+            delete process.env.QAAP_CLOUD_MODE;
+            const local = codexEnv(undefined);
+            expect(local.OPENAI_API_KEY).to.equal(undefined);
+            expect(local.CODEX_API_KEY).to.equal(undefined);
+            expect(local.GITHUB_TOKEN).to.equal('operator-github');
+        } finally {
+            delete process.env.CODEX_API_KEY;
+            delete process.env.OPENAI_BASE_URL;
+        }
+    });
 });

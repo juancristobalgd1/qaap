@@ -4,11 +4,13 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import {
     buildQaapNpmInstallInvocation,
+    describeQaapNpmInstallFailure,
+    resolveQaapNpmWorkDirectories,
     type QaapAgentCliInstallTarget,
     isInPlaceCliUpdateAllowed,
     QaapAgentCliUpdateService,
@@ -44,7 +46,7 @@ class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
         return this.result;
     }
 
-    protected override async isInstallPrefixWritableAsTarget(): Promise<boolean> {
+    protected override async prepareInstallDirectoriesAsTarget(): Promise<boolean> {
         return true;
     }
 
@@ -58,7 +60,7 @@ class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
 }
 
 class ReadOnlyNpmUpdateProbe extends NpmUpdateResultProbe {
-    protected override async isInstallPrefixWritableAsTarget(): Promise<boolean> {
+    protected override async prepareInstallDirectoriesAsTarget(): Promise<boolean> {
         return false;
     }
 }
@@ -66,6 +68,7 @@ class ReadOnlyNpmUpdateProbe extends NpmUpdateResultProbe {
 interface CapturedProcess {
     readonly file: string;
     readonly args: readonly string[];
+    readonly cwd?: string;
     readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -92,9 +95,9 @@ class BackendUidProbe extends QaapAgentCliUpdateService {
     protected override async runBoundedProcess(
         file: string,
         args: readonly string[],
-        options: { readonly env?: NodeJS.ProcessEnv },
+        options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv },
     ): Promise<{ status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }> {
-        this.processes.push({ file, args, env: options.env });
+        this.processes.push({ file, args, cwd: options.cwd, env: options.env });
         return { status: 0, signal: null, stdout: 'codex-cli 9.9.9', stderr: '' };
     }
 
@@ -230,12 +233,36 @@ describe('QaapAgentCliUpdateService', () => {
         const target = { home: '/home/qaap-tenants/alice', uid: agentUid, gid: agentUid };
         const result = await service.installUpdate('codex', target);
         expect(result.ok).to.equal(false);
-        expect(result.message).to.match(/SIGTERM/);
+        expect(result.message).to.equal('Codex update was interrupted. Try again.');
 
         service.result = { status: 1, signal: null, stdout: '', stderr: 'EACCES: permission denied' };
         const permissionFailure = await service.installUpdate('codex', target);
-        expect(permissionFailure.ok).to.equal(false);
-        expect(permissionFailure.message).to.contain('EACCES: permission denied');
+        expect(permissionFailure).to.include({ ok: false, reason: 'failed' });
+        expect(permissionFailure.message).to.equal('Codex update could not write its install folder. Try again; if it keeps failing, contact support (EACCES).');
+    });
+
+    it('never shows raw npm output when an install fails', () => {
+        const productionOutput = [
+            'npm error code ENOENT',
+            'npm error syscall mkdir',
+            'npm error path /tmp/qaap-home/.npm/_cacache',
+            'npm error errno -2',
+            'npm error enoent ENOENT: no such file or directory, mkdir \'/tmp/qaap-home/.npm/_cacache\'',
+            'npm error enoent This is related to npm not being able to find a file.',
+        ].join('\n');
+        const message = describeQaapNpmInstallFailure('Codex', { status: 254, signal: null, stdout: '', stderr: productionOutput });
+        expect(message).to.equal('Codex update could not write its install folder. Try again; if it keeps failing, contact support (ENOENT).');
+        expect(message).not.to.match(/npm error|\/tmp\//);
+        expect(describeQaapNpmInstallFailure('Codex', { status: 1, signal: null, stdout: '', stderr: 'npm error code ENOTFOUND\nnpm error network getaddrinfo ENOTFOUND registry.npmjs.org' }))
+            .to.equal('Codex update could not reach the npm registry. Check the connection and try again (ENOTFOUND).');
+        expect(describeQaapNpmInstallFailure('Codex', { status: null, signal: 'SIGKILL', stdout: '', stderr: '', error: new Error('setpriv timed out after 120 s.') }))
+            .to.equal('Codex update took too long and was stopped. Try again.');
+        expect(describeQaapNpmInstallFailure('Codex', { status: null, signal: null, stdout: '', stderr: '', error: new Error('spawn npm ENOENT') }))
+            .to.equal('Codex could not be updated: npm is not available on this server.');
+        expect(describeQaapNpmInstallFailure('Codex', { status: 1, signal: null, stdout: '', stderr: 'npm error code ENOSPC' }))
+            .to.equal('Codex update ran out of disk space. Free some space and try again (ENOSPC).');
+        expect(describeQaapNpmInstallFailure('Codex', { status: 1, signal: null, stdout: 'something odd', stderr: '' }))
+            .to.equal('Codex update failed. Try again in a moment.');
     });
 
     it('runs npm through an absolute setpriv with a complete drop and without lifecycle scripts', () => {
@@ -419,6 +446,62 @@ describe('QaapAgentCliUpdateService hardening', () => {
         const limited = await service.installUpdate('copilot', target, { userKey: 'alice' });
         expect(limited).to.include({ ok: false, reason: 'rate-limited' });
         expect((await service.installUpdate('copilot', { ...target, home: join(sandbox, 'bob') }, { userKey: 'bob' })).ok).to.equal(true);
+    });
+
+    posixIt('creates every directory npm writes as the agent uid before a root tenant backend runs npm', async () => {
+        delete process.env.NODE_ENV;
+        // Production tenant backend: container root without CAP_CHOWN/CAP_DAC_OVERRIDE, agent uid 1001,
+        // HOME on the /tmp tmpfs (root-created when the credential links could not be chowned) and the
+        // prefix on the tenant storage mount. npm used that HOME and failed with `ENOENT … mkdir`.
+        const prefix = '/home/theia/.qaap/.qaap-agent-storage/data/qaap-cli';
+        const service = new BackendUidProbe(0);
+        const result = await service.installUpdate('codex', {
+            home: '/tmp/qaap-home',
+            prefix,
+            uid: 1001,
+            gid: 1001,
+            env: { npm_config_cache: '/home/theia/.qaap/.qaap-agent-storage/cache/npm', TMPDIR: '/tmp/root-only' },
+        }, { userKey: 'alice' });
+        expect(result.ok).to.equal(true);
+        const work = resolveQaapNpmWorkDirectories(prefix);
+        expect(work.home).to.equal(join(prefix, '.qaap-npm', 'home'));
+
+        const [prepare, npm] = service.processes;
+        expect(prepare.file).to.equal('/usr/bin/setpriv');
+        expect(prepare.args.slice(0, 4)).to.deep.equal(['--reuid', '1001', '--regid', '1001']);
+        const command = prepare.args.slice(prepare.args.indexOf('--') + 1);
+        expect(command.slice(0, 3)).to.deep.equal(['/bin/sh', '-c', 'umask 022 && mkdir -p -- "$@" && test -w "$1"']);
+        expect(command.slice(4)).to.deep.equal([prefix, work.home, work.cache, work.logs, work.tmp]);
+
+        expect(npm.file).to.equal('/usr/bin/setpriv');
+        expect(npm.args).to.include('@openai/codex@latest');
+        expect(npm.cwd).to.equal(prefix);
+        expect(npm.env).to.include({
+            HOME: work.home,
+            npm_config_cache: work.cache,
+            npm_config_logs_dir: work.logs,
+            TMPDIR: work.tmp,
+            TMP: work.tmp,
+            TEMP: work.tmp,
+        });
+    });
+
+    posixNonRootIt('creates the npm work area on disk when the backend runs as the agent uid', async () => {
+        delete process.env.NODE_ENV;
+        const uid = process.getuid!();
+        const prefix = join(sandbox, 'storage', 'data', 'qaap-cli');
+        // HOME is a dangling link (its target was never created): npm must not depend on it.
+        const home = join(sandbox, 'home');
+        mkdirSync(join(sandbox, 'storage', 'data'), { recursive: true });
+        symlinkSync(join(sandbox, 'missing-home'), home);
+        const service = new BackendUidProbe(uid);
+        const result = await service.installUpdate('codex', { home, prefix, uid, gid: uid }, { userKey: 'alice' });
+        expect(result.ok).to.equal(true);
+        const work = resolveQaapNpmWorkDirectories(prefix);
+        for (const directory of [prefix, work.home, work.cache, work.logs, work.tmp]) {
+            expect(statSync(directory).isDirectory(), directory).to.equal(true);
+        }
+        expect(service.processes[0].env?.HOME).to.equal(work.home);
     });
 
     it('kills an install that exceeds its timeout instead of waiting on it', async () => {
