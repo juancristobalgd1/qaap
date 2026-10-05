@@ -117,7 +117,7 @@ describe('qaap-hosted-git-fetch', function (): void {
     });
 
     afterEach(() => {
-        fs.rmSync(base, { recursive: true, force: true });
+        fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     });
 
     it('refuses a non-GitHub URL, a relative bundle path and an objects path list', async () => {

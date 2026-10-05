@@ -50,7 +50,7 @@ describe('qaap-sealed-github-git scratch and output limits (R3-5)', function ():
     });
 
     afterEach(() => {
-        fs.rmSync(base, { recursive: true, force: true });
+        fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
         for (const [key, value] of Object.entries(saved)) {
             if (value === undefined) {
                 delete process.env[key];

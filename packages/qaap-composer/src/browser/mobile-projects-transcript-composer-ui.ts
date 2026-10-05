@@ -138,7 +138,11 @@ export class MobileProjectsTranscriptComposerUi {
         )[0]?.id ?? '';
     }
 
-    resolveTranscriptComposerAgentLabel(): string {
+    /**
+     * Label for the composer agent chip. `agentId` is the id the chip and submit resolved
+     * (`resolveTranscriptComposerPinnedAgentId`), so the label never names another agent.
+     */
+    resolveTranscriptComposerAgentLabel(agentId: string): string {
         const pinned = this.host.transcriptComposerPinnedAgentId;
         if (isTheiaCoderAgent(pinned)) {
             return this.host.chatAgentService?.getAgent(THEIA_CODER_AGENT_ID)?.name ?? 'Coder';
@@ -147,7 +151,20 @@ export class MobileProjectsTranscriptComposerUi {
         if (fromList) {
             return fromList;
         }
-        return this.host.projectRowsUi.resolveConversationAgentLabel(this.host.transcriptComposerSummary);
+        const summary = this.host.transcriptComposerSummary;
+        if (summary && !isAgentsHubIdleConversationSummary(summary)) {
+            return this.host.projectRowsUi.resolveConversationAgentLabel(summary);
+        }
+        // The idle Work Hub summary has no agent: the conversation label fell back to @shell on
+        // first load (aria-label "Agent: @shell" next to another agent's model) until the
+        // default agent arrived. Name the resolved agent, or nothing while none is resolved.
+        const resolved = agentId.trim();
+        if (!resolved) {
+            return nls.localize('qaap/mobileProjects/stickyComposerAgentPending', 'Agent');
+        }
+        return this.host.transcriptComposerBackendAgents.find(a => a.id === resolved)?.label
+            ?? this.host.activeTasks?.getAgents().find(a => a.id === resolved)?.label
+            ?? (resolved.startsWith('@') ? resolved : `@${resolved}`);
     }
 
     resolveTranscriptComposerAgentModel(

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { inject, injectable, interfaces } from '@theia/core/shared/inversify';
@@ -186,10 +187,27 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
         return super.rename(from, to, opts);
     }
 
+    /**
+     * Copying a single file only reads it, so read access suffices: the Python extension copies its
+     * own `python_files/pythonrc.py` from the read-only plugin root into its storage at activation.
+     * Directory sources keep requiring write access: the recursive copy follows nested symlinks,
+     * which the per-root realpath check on `from` does not cover.
+     */
     override async copy(from: URI, to: URI, opts: FileOverwriteOptions): Promise<void> {
-        this.assertAllowed(from, 'write');
+        this.assertAllowed(from, 'read');
+        if (!(await this.isFile(from))) {
+            this.assertAllowed(from, 'write');
+        }
         this.assertAllowed(to, 'write');
         return super.copy(from, to, opts);
+    }
+
+    protected async isFile(resource: URI): Promise<boolean> {
+        try {
+            return (await fs.promises.stat(FileUri.fsPath(resource))).isFile();
+        } catch {
+            return false;
+        }
     }
 
     override async access(resource: URI, mode?: number): Promise<void> {
@@ -202,8 +220,18 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
         return super.open(resource, opts);
     }
 
+    /**
+     * Plugins register watchers outside the tenant roots at activation (the Python extension
+     * watches `~/.conda/environments.txt`). The frontend never handles a rejected `watch` RPC, so a
+     * throw here surfaced as a browser console "forbidden" on every load and reconnect. Registering
+     * nothing keeps the path unobservable (no watcher, no events) without widening any access.
+     */
     override watch(resource: URI, opts: WatchOptions): Disposable {
-        this.assertAllowed(resource);
+        try {
+            this.assertAllowed(resource);
+        } catch {
+            return Disposable.NULL;
+        }
         return super.watch(resource, opts);
     }
 }
