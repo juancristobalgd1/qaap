@@ -69,7 +69,14 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
                 { ...options, ...extra },
             );
             const defaultBranch = this.parseDefaultBranch(await withToken(['ls-remote', '--symref', request.url, 'HEAD'], { onStderr: undefined }));
-            await withToken(['fetch', '--progress', '--no-tags', '--no-write-fetch-head', request.url, '+refs/heads/*:refs/heads/*', '+refs/tags/*:refs/tags/*']);
+            // A hostile or huge repository must not fill this backend's disk: the scratch is watched while
+            // git downloads, measured once more when it is done, and the bundle is capped the same way.
+            const maxBytes = this.maxTransferBytes();
+            await withToken(['fetch', '--progress', '--no-tags', '--no-write-fetch-head', request.url, '+refs/heads/*:refs/heads/*', '+refs/tags/*:refs/tags/*'],
+                { watchDirectory: scratch, maxBytes });
+            if (await this.directorySize(scratch) > maxBytes) {
+                throw this.transferLimitError(maxBytes);
+            }
             const tips = this.parseRefs(await git(['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads', 'refs/tags'], { onStderr: undefined }));
             if (tips.length === 0) {
                 return { refs: [], defaultBranch };
@@ -153,6 +160,7 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
             await git(['pack-objects', '--stdout', '--thin', '--delta-base-offset', '--revs', '--quiet'], {
                 input: `${revisions}\n`,
                 stdoutHandle: handle,
+                maxBytes: this.maxTransferBytes(),
                 onStderr: undefined,
             });
             written = true;

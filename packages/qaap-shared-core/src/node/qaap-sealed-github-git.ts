@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { injectable } from '@theia/core/shared/inversify';
+import { resolveQaapReposRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 /** Options of one sealed git child. */
 export interface QaapSealedGitRunOptions {
@@ -19,8 +20,15 @@ export interface QaapSealedGitRunOptions {
     readonly onStderr?: (chunk: string) => void;
     /** Written to stdin, which is otherwise closed. */
     readonly input?: string;
-    /** Streams stdout into this open file (from its current position) instead of returning it; the caller closes it. */
+    /**
+     * Streams stdout into this open file (from its current position) instead of returning it; the caller
+     * closes it. Stdout is paused until each chunk is written, so a slow volume never buffers the output.
+     */
     readonly stdoutHandle?: fs.promises.FileHandle;
+    /** Fails the call once more than this many bytes went to {@link stdoutHandle} or sit in {@link watchDirectory}. */
+    readonly maxBytes?: number;
+    /** Polled while git runs; its total size counts against {@link maxBytes}. */
+    readonly watchDirectory?: string;
 }
 
 /** `https://[user@]github.com/`, `ssh://git@github.com[:22]/` or `git@github.com:`, then `<owner>/<repo>[.git][/]`. */
@@ -28,6 +36,12 @@ const GITHUB_REMOTE = /^(?:https:\/\/(?:[^@/\s]+@)?github\.com\/|ssh:\/\/git@git
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_STDOUT = 4 * 1024 * 1024;
 const TOKEN_ENV = 'QAAP_GIT_PUSH_TOKEN';
+/** Default for `QAAP_SEALED_GIT_MAX_BYTES`: what one sealed fetch may download, and the bundle it may write. */
+const DEFAULT_MAX_TRANSFER_BYTES = 4 * 1024 * 1024 * 1024;
+const WATCH_INTERVAL_MS = 500;
+const SCRATCH_PREFIXES = ['qaap-fetch-', 'qaap-push-'] as const;
+/** Older than any sealed command can run, so only a crashed backend leaves such a scratch directory. */
+const STALE_SCRATCH_MS = 60 * 60 * 1000;
 /**
  * Egress proxy variables the orchestrator sets on this backend container (`tenantEgressProxyEnv`):
  * with a tenant egress proxy the tenant has no direct route to github.com. Agents cannot change
@@ -125,9 +139,86 @@ export class QaapSealedGithubGit {
         }
     }
 
-    /** A fresh `0700` directory in this backend's own temp dir, never shared with the agent uid. */
-    protected createScratch(prefix: string): Promise<string> {
-        return fs.promises.mkdtemp(path.join(os.tmpdir(), prefix));
+    protected staleScratchSwept = false;
+
+    /** A fresh `0700` directory under {@link scratchRoot}, never shared with the agent uid. */
+    protected async createScratch(prefix: string): Promise<string> {
+        const root = await this.ensureScratchRoot();
+        return fs.promises.mkdtemp(path.join(root, prefix));
+    }
+
+    /**
+     * Where sealed git works: `QAAP_SEALED_GIT_SCRATCH_ROOT`, else `{volume}/.qaap/sealed-git` next to a
+     * `.../repos` root (the backend-owned directory of the project-session store), so a whole repository
+     * is never downloaded into a tmpfs `/tmp`; else `{tmpdir}/qaap-sealed-git`.
+     */
+    protected scratchRoot(): string {
+        const configured = process.env.QAAP_SEALED_GIT_SCRATCH_ROOT?.trim();
+        if (configured) {
+            return path.resolve(configured);
+        }
+        const reposRoot = resolveQaapReposRoot();
+        return path.basename(reposRoot) === 'repos'
+            ? path.join(path.dirname(reposRoot), '.qaap', 'sealed-git')
+            : path.join(os.tmpdir(), 'qaap-sealed-git');
+    }
+
+    /**
+     * Creates the scratch root `0700` and refuses one that is a symlink, or (POSIX) not owned by this
+     * uid or open to others. The first call also removes scratch directories a crashed backend left.
+     */
+    protected async ensureScratchRoot(): Promise<string> {
+        const root = this.scratchRoot();
+        await fs.promises.mkdir(root, { recursive: true, mode: 0o700 });
+        const stat = await fs.promises.lstat(root);
+        const foreign = process.platform !== 'win32' && (stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0);
+        if (stat.isSymbolicLink() || !stat.isDirectory() || foreign) {
+            throw new Error(`The sealed git scratch directory ${root} must be a private (0700) directory of this backend.`);
+        }
+        if (!this.staleScratchSwept) {
+            this.staleScratchSwept = true;
+            await this.removeStaleScratch(root);
+        }
+        return root;
+    }
+
+    protected async removeStaleScratch(root: string): Promise<void> {
+        const now = Date.now();
+        for (const entry of await fs.promises.readdir(root)) {
+            if (!SCRATCH_PREFIXES.some(prefix => entry.startsWith(prefix))) {
+                continue;
+            }
+            const target = path.join(root, entry);
+            const stat = await fs.promises.lstat(target).catch(() => undefined);
+            if (stat && now - stat.mtimeMs > STALE_SCRATCH_MS) {
+                await this.removeScratch(target).catch(() => undefined);
+            }
+        }
+    }
+
+    /** `QAAP_SEALED_GIT_MAX_BYTES`, default 4 GiB. */
+    protected maxTransferBytes(): number {
+        const configured = Number(process.env.QAAP_SEALED_GIT_MAX_BYTES);
+        return Number.isSafeInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_TRANSFER_BYTES;
+    }
+
+    /** Total size of the regular files under `directory`; entries that vanish meanwhile count as empty. */
+    protected async directorySize(directory: string): Promise<number> {
+        let total = 0;
+        const entries = await fs.promises.readdir(directory, { withFileTypes: true }).catch(() => []);
+        for (const entry of entries) {
+            const target = path.join(directory, entry.name);
+            if (entry.isDirectory()) {
+                total += await this.directorySize(target);
+            } else if (entry.isFile()) {
+                total += (await fs.promises.lstat(target).catch(() => undefined))?.size ?? 0;
+            }
+        }
+        return total;
+    }
+
+    protected transferLimitError(maxBytes: number): Error {
+        return new Error(`The repository is larger than the ${maxBytes}-byte limit for a hosted fetch (QAAP_SEALED_GIT_MAX_BYTES).`);
     }
 
     protected removeScratch(scratch: string): Promise<void> {
@@ -163,8 +254,10 @@ export class QaapSealedGithubGit {
                 return;
             }
             const output = options.stdoutHandle;
+            const maxBytes = options.maxBytes;
             // Chunks are appended in order; a failed write fails the call.
             let written: Promise<unknown> = Promise.resolve();
+            let outputBytes = 0;
             const child = spawn('git', args, { env, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
             let stdout = '';
             let stderr = '';
@@ -175,6 +268,7 @@ export class QaapSealedGithubGit {
                 }
                 settled = true;
                 clearTimeout(timer);
+                clearInterval(watcher);
                 options.signal?.removeEventListener('abort', onAbort);
                 if (error) {
                     child.kill();
@@ -187,12 +281,28 @@ export class QaapSealedGithubGit {
             };
             const onAbort = (): void => finish(new Error('Git operation cancelled: the request was closed.'));
             const timer = setTimeout(() => finish(new Error('Git operation timed out.')), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+            const watchDirectory = options.watchDirectory;
+            const watcher = watchDirectory && maxBytes !== undefined ? setInterval(() => {
+                this.directorySize(watchDirectory).then(size => {
+                    if (size > maxBytes) {
+                        finish(this.transferLimitError(maxBytes));
+                    }
+                }, () => undefined);
+            }, WATCH_INTERVAL_MS) : undefined;
             options.signal?.addEventListener('abort', onAbort, { once: true });
             if (output) {
                 child.stdout?.on('data', (chunk: Buffer) => {
-                    written = written.then(() => output.write(chunk));
-                    // Settled by `finish`; until then a failure must not count as unhandled.
-                    written.catch(() => undefined);
+                    outputBytes += chunk.length;
+                    if (maxBytes !== undefined && outputBytes > maxBytes) {
+                        finish(this.transferLimitError(maxBytes));
+                        return;
+                    }
+                    // Backpressure: no further chunk is read until this one is on disk.
+                    child.stdout?.pause();
+                    written = written.then(() => output.write(chunk)).then(() => {
+                        child.stdout?.resume();
+                    });
+                    written.catch(error => finish(error instanceof Error ? error : new Error(String(error))));
                 });
             } else {
                 child.stdout?.on('data', chunk => {

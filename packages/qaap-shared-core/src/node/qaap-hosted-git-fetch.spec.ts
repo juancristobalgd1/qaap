@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { execFileSync } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -172,5 +173,32 @@ describe('qaap-hosted-git-fetch', function (): void {
         }
         expect(error).to.be.instanceOf(Error);
         expect(fs.readFileSync(existing, 'utf8')).to.equal('keep');
+    });
+    it('refuses a repository larger than QAAP_SEALED_GIT_MAX_BYTES before writing any bundle (R3-5)', async () => {
+        fs.writeFileSync(path.join(upstream, 'big.bin'), crypto.randomBytes(512 * 1024));
+        git(upstream, 'add', 'big.bin');
+        git(upstream, 'commit', '--quiet', '-m', 'big');
+        git(upstream, 'push', '--quiet', remote, 'main');
+        const saved = process.env.QAAP_SEALED_GIT_MAX_BYTES;
+        process.env.QAAP_SEALED_GIT_MAX_BYTES = String(128 * 1024);
+        const fetcher = new LocalHostedGitFetch();
+        const bundleFile = path.join(base, 'big.bundle');
+        let error: unknown;
+        try {
+            await fetcher.fetchBundle({ url, token: TOKEN, bundleFile });
+        } catch (caught) {
+            error = caught;
+        } finally {
+            if (saved === undefined) {
+                delete process.env.QAAP_SEALED_GIT_MAX_BYTES;
+            } else {
+                process.env.QAAP_SEALED_GIT_MAX_BYTES = saved;
+            }
+        }
+        expect(String(error)).to.match(/131072-byte limit/);
+        expect(fs.existsSync(bundleFile)).to.equal(false);
+        expect(fetcher.calls.some(call => call.args.includes('pack-objects'))).to.equal(false);
+        const scratch = fetcher.calls[0].args[fetcher.calls[0].args.length - 1];
+        expect(fs.existsSync(scratch)).to.equal(false);
     });
 });
