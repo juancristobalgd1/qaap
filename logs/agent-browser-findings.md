@@ -94,6 +94,30 @@ checkout:
   comparison remain unverified. A8 is still open; do not open a PR or claim the complete goal until
   the integrated-browser path is implemented and the required runtime checks pass.
 
+## Verification update (2026-10-05, resumed run)
+
+`git fetch origin master` fetched `fd3f0ebf`; `git rebase origin/master` reported that the branch
+was already up to date. `git rev-list --left-right --count origin/master...HEAD` is `0 20`, so the
+fetched master is an ancestor of this branch (20 branch commits ahead, none behind).
+
+On this checkout, using temporary Node 22.14.0 under `/tmp` and missing test-only npm packages
+under `/tmp/qaap-browser-test-deps`:
+
+- `npx tsc -b --pretty false` in `packages/qaap-shared-core`: passed.
+- `npx tsc -b --pretty false` in `packages/qaap-cloud-workspace`: passed.
+- Full `qaap-shared-core` Mocha suite: **1,570 passing, 3 pending**.
+- Full `qaap-cloud-workspace` suite: **1,805 passing, 2 pending, 1 failing**. The sole failure is
+  `qaap-headless-visual-capture.spec.js`: bundled Chromium cannot start because this environment
+  lacks system libraries. Playwright first reports `libatk-1.0.so.0`; `ldd` also reports missing
+  `libatk-bridge-2.0.so.0`, `libxkbcommon.so.0`, `libasound.so.2`, `libgbm.so.1`, `libpango-1.0.so.0`,
+  `libXcomposite.so.1`, `libXdamage.so.1`, `libXfixes.so.3`, and `libatspi.so.0`. Re-running the
+  package suite while excluding only that environment-dependent spec produced **1,805 passing,
+  2 pending**.
+
+The browser config, QAIQ permission and read-only specs passed as part of the full cloud package
+run. The fresh-tenant smoke, browser-to-preview visibility, Work Hub/IDE independence, and load-time
+comparison remain unverified. A8 remains open; no PR is ready.
+
 ## References checked
 
 - [Playwright MCP README](https://github.com/microsoft/playwright-mcp) documents headless mode and
