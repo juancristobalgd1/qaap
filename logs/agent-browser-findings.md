@@ -122,6 +122,28 @@ The browser config, QAIQ permission and read-only specs passed as part of the fu
 run. The fresh-tenant smoke, browser-to-preview visibility, Work Hub/IDE independence, and load-time
 comparison remain unverified. A8 remains open; no PR is ready.
 
+## Integrated browser bridge follow-up (2026-10-05)
+
+The preview contribution now has a DOM-level regression spec that exercises a live URL message, the
+Work Hub-to-IDE surface change, a later navigation while in IDE, and the return to Work Hub at
+375×812. It verifies that navigation in IDE does not mutate the Work Hub preview and that Work Hub
+catches up to the latest URL when selected. The focused spec passed (**1 passing**).
+
+Validation on this checkout:
+
+- `npx tsc -p tsconfig.json --pretty false` in `packages/qaap-cloud-workspace`: passed.
+- Full `@theia/qaap-cloud-workspace` suite: **1,823 passing, 2 pending, 1 failing**. The one failure
+  remains `qaap-headless-visual-capture.spec.js`; Chromium cannot load `libatk-1.0.so.0` in this
+  environment. The spec was not changed.
+- Full `@theia/qaap-adapters` suite: **175 passing**; its TypeScript build passed.
+- `npx tsc -b --pretty false` in `packages/qaap-cloud-workspace` stops in upstream `ai-terminal`
+  because its installed Zod type lacks `toJSONSchema`; compiling the touched package directly with
+  `tsc -p` succeeds.
+
+This DOM spec verifies URL delivery and per-surface widget selection, not a built tenant's rendered
+page. Fresh-tenant visibility, browsing a tenant dev server, and load-time comparison remain
+unverified; no PR is ready.
+
 ## References checked
 
 - [Playwright MCP README](https://github.com/microsoft/playwright-mcp) documents headless mode and

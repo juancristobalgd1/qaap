@@ -26,7 +26,9 @@ describe('Qaap agent browser preview contribution', () => {
 
     afterEach(() => clearPreferDesktopIde());
 
-    it('opens the same live agent URL in distinct Work Hub and IDE previews at a mobile viewport', () => {
+    it('keeps live agent previews independent while switching Work Hub and IDE at a mobile viewport', async () => {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 812 });
         const opened: { url: string; taskId: string; mode: string }[] = [];
         const contribution = Object.create(QaapAgentBrowserPreviewContribution.prototype) as QaapAgentBrowserPreviewContribution;
         Object.assign(contribution, {
@@ -38,19 +40,28 @@ describe('Qaap agent browser preview contribution', () => {
             },
             latest: undefined,
             shown: new Map<string, string>(),
+            connect: () => undefined,
         });
 
         const internals = contribution as unknown as {
             handleMessage(raw: unknown): void;
-            showLatest(): void;
         };
+        contribution.onStart();
         internals.handleMessage(JSON.stringify({ type: 'browser-url', taskId: 'task-7', url: 'https://example.com/docs' }));
+        await new Promise(resolve => window.setTimeout(resolve, 0));
         markPreferDesktopIde();
-        internals.showLatest();
+        await new Promise(resolve => window.setTimeout(resolve, 0));
+        internals.handleMessage(JSON.stringify({ type: 'browser-url', taskId: 'task-7', url: 'https://example.com/next' }));
+        await new Promise(resolve => window.setTimeout(resolve, 0));
+        clearPreferDesktopIde();
+        await new Promise(resolve => window.setTimeout(resolve, 0));
 
         expect(opened).to.deep.equal([
             { url: 'https://example.com/docs', taskId: 'task-7', mode: 'work-hub' },
             { url: 'https://example.com/docs', taskId: 'task-7', mode: 'ide' },
+            { url: 'https://example.com/next', taskId: 'task-7', mode: 'ide' },
+            { url: 'https://example.com/next', taskId: 'task-7', mode: 'work-hub' },
         ]);
+        contribution.onStop();
     });
 });
