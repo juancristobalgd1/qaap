@@ -13,6 +13,8 @@ import { QaapGithubInboxEndpoint } from './qaap-github-inbox-endpoint';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import { QaapGithubWorkspaceJobRegistry } from './qaap-github-workspace-jobs';
+import { QaapHostedGitFetch } from './qaap-hosted-git-fetch';
+import { QaapHostedGitPush } from './qaap-hosted-git-push';
 import { QaapApiTokenEndpoint } from './qaap-api-token-endpoint';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -35,6 +37,9 @@ export default new ContainerModule(bind => {
     bind(BackendApplicationContribution).toService(QaapGithubInboxEndpoint);
     bind(QaapProjectSessionStore).toSelf().inSingletonScope();
     bind(QaapGithubWorkspaceJobRegistry).toSelf().inSingletonScope();
+    // Sealed GitHub git as the backend uid; shared by the GitHub open/clone flow and the git-review push.
+    bind(QaapHostedGitFetch).toSelf().inSingletonScope();
+    bind(QaapHostedGitPush).toSelf().inSingletonScope();
     bind(QaapGithubOauthEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapGithubOauthEndpoint);
     bind(QaapDevPreviewPortRegistry).toSelf().inSingletonScope();
