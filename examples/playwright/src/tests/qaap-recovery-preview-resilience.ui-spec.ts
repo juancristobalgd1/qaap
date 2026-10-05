@@ -152,6 +152,9 @@ async function waitForDesktopEntry(page: Page): Promise<void> {
 async function openDesktopIde(app: TheiaApp): Promise<void> {
     await app.page.setViewportSize(DESKTOP_IDE_VIEWPORT);
     await waitForDesktopEntry(app.page);
+    // The reloaded desktop entry paints the Work Hub before FrontendApplication.start() finishes;
+    // keybindings (command palette) and the account menu only work once the preload is gone.
+    await app.waitForShellAndInitialized();
     await dismissMobileTutorial(app.page);
     await waitForWorkHubReady(app.page);
 

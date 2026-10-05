@@ -14,9 +14,9 @@ import { QaapPluginHostFrontend } from './qaap-phone-debug-service';
  * The phone entry has none of the IDE-only modules, so its shell layout is not an IDE layout. It
  * shares `localStorage` with the desktop entry: a narrow window that is widened reloads into
  * bundle.js in the same tab (qaap-login-gate.js). When the phone entry stored its layout on that
- * unload, the desktop entry restored it instead of building the default IDE layout and never finished
- * starting (no keybindings, no command palette, "Open IDE" did nothing). Phones neither store nor
- * restore the layout. The active surface survives reloads through sessionStorage, not the layout.
+ * unload, the desktop entry restored the Work Hub-only layout instead of building the default IDE
+ * layout. Phones neither store nor restore the layout. The active surface survives reloads through
+ * sessionStorage, not the layout.
  */
 @injectable()
 export class QaapPhoneShellLayoutRestorer extends ShellLayoutRestorer {
