@@ -13,13 +13,16 @@ const EXAMPLES_DIR = path.resolve(PACKAGES_DIR, '../examples');
 
 /**
  * Kept-package files that only desktop-only (excluded) modules import, so they may use excluded
- * packages: plugin-ext and vsx-registry bindings of `qaap-product-plugin-frontend-module` and
- * `qaap-work-hub-vsx-frontend-module`; `plugin-ext-headless` has no frontend.
+ * packages: plugin-ext and vsx-registry bindings of `qaap-product-plugin-frontend-module` (incl. the
+ * lazy plugin load gate and its RPC contract) and `qaap-work-hub-vsx-frontend-module`;
+ * `plugin-ext-headless` has no frontend.
  */
 const DESKTOP_ONLY_FILES = [
     'plugin-ext-headless/',
     'qaap-product/src/browser/qaap-hosted-plugin-support.ts',
+    'qaap-product/src/browser/qaap-plugin-load-gate.ts',
     'qaap-product/src/browser/qaap-plugin-view-welcome-policy.ts',
+    'qaap-product/src/common/qaap-hosted-plugin-server.ts',
     'qaap-shared-core/src/browser/qaap-vsx-extensions-mobile-contribution.ts',
 ];
 

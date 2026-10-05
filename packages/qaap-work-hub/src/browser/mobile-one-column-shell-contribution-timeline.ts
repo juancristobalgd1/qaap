@@ -206,15 +206,22 @@ export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContribut
         ?? projectsPanel?.resolveShellProject()
         ?? projectsPanel?.getAgentsHubSelectedProjectId();
     ctx.ideFallback.openDesktopIde();
+    let reloading = false;
     try {
-        await ctx.prepareDesktopIdeWorkspaceFromHub(selected);
+        reloading = await ctx.prepareDesktopIdeWorkspaceFromHub(selected);
     } catch (error) {
         // The surface switch has already succeeded. Do not turn a project-list refresh failure
         // into an unhandled rejection that makes the control appear intermittent.
         console.warn('[qaap-mobile-shell] desktop IDE workspace preparation failed', error);
     }
+    // Plugins start on the page that shows the IDE: never on a hub page about to reload into the
+    // project, which would boot all of them twice; nor when the user went back to Agents meanwhile.
+    if (!reloading && peekPreferDesktopIde()) {
+        ctx.pluginStartGate.release();
+    }
 }
 
+/** Resolves `true` when the page reloads into another workspace (or into no folder). */
 export async function prepareDesktopIdeWorkspaceFromHubExtracted(
     ctx: MobileOneColumnShellContributionContext,
     selected?: string | MobileProjectEntry,
@@ -248,13 +255,13 @@ export async function prepareDesktopIdeWorkspaceFromHubExtracted(
         );
         markPreferDesktopIde();
         await ctx.workspaceService.close();
-        return false;
+        return true;
     }
     if (plan.kind === 'open-project') {
         const project = projects[plan.projectIndex];
         return project ? openDesktopIdeProjectExtracted(ctx, project) : false;
     }
-    return true;
+    return false;
 }
 
 function toDesktopIdeHubProject(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): QaapDesktopIdeHubProject {
@@ -266,6 +273,7 @@ function toDesktopIdeHubProject(ctx: MobileOneColumnShellContributionContext, pr
     };
 }
 
+/** Resolves `true` when the page reloads into the project's workspace. */
 async function openDesktopIdeProjectExtracted(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): Promise<boolean> {
     let cwd = ctx.projectsService.getProjectCwd(project);
     if (!cwd && project.github) {
@@ -288,9 +296,9 @@ async function openDesktopIdeProjectExtracted(ctx: MobileOneColumnShellContribut
             { duration: 2800 },
         );
         markPreferDesktopIde();
-        await ctx.projectsService.openInCurrentWindowAsync(project);
+        return ctx.projectsService.openInCurrentWindowAsync(project);
     }
-    return true;
+    return false;
 }
 
 export function enforceWorkHubSurfaceIsolationExtracted(ctx: MobileOneColumnShellContributionContext): void {
@@ -420,6 +428,7 @@ export async function onProjectsPanelOpenInIdeExtracted(ctx: MobileOneColumnShel
                 return;
             }
             ctx.ideFallback?.openDesktopIde();
+            ctx.pluginStartGate.release();
             await ctx.onCurrentProjectActivated();
             return;
         }

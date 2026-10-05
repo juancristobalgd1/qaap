@@ -128,6 +128,7 @@ export type MobileOneColumnShellContributionContextMember =
     | 'overlayHost'
     | 'patchWorkHubBootstrapLandingHost'
     | 'persistWorkHubSurfacePreference'
+    | 'pluginStartGate'
     | 'preferenceService'
     | 'prepareDesktopIdeWorkspaceFromHub'
     | 'prepareSideSheetOpen'

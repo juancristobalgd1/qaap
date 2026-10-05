@@ -1480,8 +1480,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         // GitHub clone/fetch is tenant-controlled work. In hosted mode it MUST go through the
         // worker so clean/smudge filters, config helpers and repository hooks cannot execute as the
         // shared backend uid. The hooks-path override remains defense in depth inside the tenant.
-        const hardening = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
-        const gitArgs = [...hardening, ...invocation.args];
+        const gitArgs = [...this.supervisedGitConfig(), ...invocation.args];
         if (isQaapHostedEnvironment()) {
             if (accessToken) {
                 // Tenant git runs as the agent uid in an agent-writable repository: it never gets the
@@ -1511,9 +1510,24 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         };
     }
 
+    /**
+     * `-c` options of every git this endpoint runs. Hooks and fsmonitor are off; auto maintenance
+     * (`git fetch`/`git commit` run `git maintenance run --auto`, detached by default since git 2.48)
+     * stays in the foreground, so it is bounded by the same deadline and the repository is quiescent
+     * once the awaited git exits.
+     */
+    protected supervisedGitConfig(): string[] {
+        return [
+            '-c', 'core.hooksPath=/dev/null',
+            '-c', 'core.fsmonitor=false',
+            '-c', 'maintenance.autoDetach=false',
+            '-c', 'gc.autoDetach=false',
+        ];
+    }
+
     protected runGitOutput(args: string[], cwd = this.reposRoot, options: QaapGitRunOptions = {}): Promise<string> {
         const invocation = this.resolveGitInvocation(args, cwd);
-        const gitArgs = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...invocation.args];
+        const gitArgs = [...this.supervisedGitConfig(), ...invocation.args];
         if (isQaapHostedEnvironment()) {
             return this.runTenantGit(invocation.cwd, gitArgs, true, options).then(output => output.trim());
         }

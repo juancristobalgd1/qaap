@@ -20,6 +20,7 @@ import { QaapPluginServerImpl } from './qaap-plugin-server-impl';
 import { QaapTerminalEnvironmentContribution } from './qaap-terminal-environment-contribution';
 import { WebsocketEndpoint } from '@theia/core/lib/node/messaging/websocket-endpoint';
 import { QaapWebsocketEndpoint } from './qaap-websocket-endpoint';
+import { bindQaapLazyPlugins } from './qaap-lazy-plugin-bindings';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
@@ -51,4 +52,6 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     }
     bind(QaapPluginDeployerSecurityParticipant).toSelf().inSingletonScope();
     bind(PluginDeployerParticipant).toService(QaapPluginDeployerSecurityParticipant);
+
+    bindQaapLazyPlugins(bind, isBound, rebind);
 });

@@ -25,6 +25,8 @@ export function ensureMobilePreviewEditorVisibleExtracted(ctx: MobileOneColumnSh
         if (!peekPreferDesktopIde()) {
             markPreferDesktopIde();
         }
+        // The IDE is now shown on this page, without a workspace reload.
+        ctx.pluginStartGate.release();
 }
 
 export async function activateMainPreviewWidgetExtracted(ctx: MobileOneColumnShellContributionContext): Promise<boolean> {
