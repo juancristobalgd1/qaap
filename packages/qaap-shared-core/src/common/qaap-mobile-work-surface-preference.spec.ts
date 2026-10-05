@@ -21,10 +21,25 @@ import {
     resolveWorkSurfaceBootIntent,
     shouldInstallWorkHubBootGuard,
 } from './qaap-mobile-work-surface-preference';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from './qaap-mobile-device';
 
 describe('qaap-mobile-work-surface-preference', () => {
 
     const storage = new Map<string, string>();
+
+    function setMobileMode(matches: boolean): void {
+        const browserWindow = (global as unknown as { window: Window & { matchMedia: Window['matchMedia'] } }).window;
+        browserWindow.matchMedia = (query: string): MediaQueryList => ({
+            matches: matches && query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
+    }
 
     beforeEach(() => {
         storage.clear();
@@ -38,6 +53,7 @@ describe('qaap-mobile-work-surface-preference', () => {
         };
         (global as unknown as { sessionStorage: Storage }).sessionStorage = sessionStorage as Storage;
         (global as unknown as { window: Window }).window = { sessionStorage } as unknown as Window;
+        setMobileMode(false);
         clearPreferDesktopIde();
         clearPreferAgentsSurface();
     });
@@ -56,6 +72,20 @@ describe('qaap-mobile-work-surface-preference', () => {
         expect(peekPreferDesktopIde()).to.equal(true);
         clearPreferDesktopIde();
         expect(peekPreferDesktopIde()).to.equal(false);
+    });
+
+    it('clears stale IDE choices and ignores new IDE choices on mobile', () => {
+        setMobileMode(true);
+        storage.set(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
+        storage.set(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY, '1');
+
+        expect(peekPreferDesktopIde()).to.equal(false);
+        expect(storage.has(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY)).to.equal(false);
+        expect(storage.has(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY)).to.equal(false);
+        markPreferDesktopIde();
+        expect(peekPreferDesktopIde()).to.equal(false);
+        expect(storage.has(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY)).to.equal(false);
+        expect(storage.has(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY)).to.equal(false);
     });
 
     it('persists the Agents surface after leaving desktop IDE', () => {
@@ -107,6 +137,20 @@ describe('qaap-mobile-work-surface-preference', () => {
 
         it('takes an explicit preferDesktopIde override over the persisted value', () => {
             expect(resolveWorkSurfaceBootIntent({ preferDesktopIde: true })).to.equal('ide');
+        });
+
+        it('keeps workspace deep links and pending actions in Work Hub on mobile', () => {
+            setMobileMode(true);
+            storage.set(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
+            storage.set(QAAP_HUB_PENDING_ACTION_KEY, '1');
+            (global as unknown as { window: Window & { location: { hash: string } } }).window.location = {
+                hash: '#/workspace/demo',
+            } as Location;
+
+            expect(hasWorkspaceRouteInUrl()).to.equal(true);
+            expect(resolveWorkSurfaceBootIntent({ preferDesktopIde: true })).to.equal('hub');
+            expect(resolveWorkSurfaceBootIntent({ hasPendingHubAction: true })).to.equal('hub');
+            expect(shouldInstallWorkHubBootGuard('ide')).to.equal(true);
         });
 
         it('takes an explicit hasPendingHubAction override over storage', () => {

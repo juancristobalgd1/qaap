@@ -34,10 +34,7 @@ import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { QuickInputService } from '@theia/core';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
-import {
-    matchesMobileOneColumnLayout,
-    MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
-} from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
@@ -82,6 +79,7 @@ import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaa
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-finished-toast-contribution';
+import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { MobileShellLandingController, type MobileShellLandingHost } from './mobile-shell-landing-controller';
@@ -609,11 +607,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly onMediaChange = (): void => {
-        // The classic IDE is a desktop-only surface. If a desktop IDE session crosses into the
-        // one-column layout, restore Work Hub before reconciling the mobile shell.
-        if (matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
-            this.returnToAgentsFromDesktopIde();
-            return;
+        // Accessing the session preference on mobile drops a stale desktop IDE choice before the
+        // layout reconciles, so a desktop IDE session cannot survive a resize/rotation into mobile.
+        if (isQaapMobileDevice()) {
+            peekPreferDesktopIde();
         }
         this.workHubBootstrap.persistAgentsSurfaceForActiveSession();
         if (this.shouldActivateMobileLayout()) {

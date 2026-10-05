@@ -12,8 +12,12 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
-import { openDesktopIdeExtracted } from './mobile-one-column-shell-contribution-timeline';
+import {
+    openDesktopIdeExtracted,
+    prepareDesktopIdeWorkspaceFromHubExtracted,
+} from './mobile-one-column-shell-contribution-timeline';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 
 disableImportJSDOM();
 
@@ -49,5 +53,66 @@ describe('openDesktopIdeExtracted', () => {
 
     it('prepares without a project when there is no projects panel', async () => {
         expect(await run(undefined)).to.deep.equal([undefined]);
+    });
+
+    it('does not enter the IDE for a direct mobile IDE entry', async () => {
+        const originalMatchMedia = window.matchMedia;
+        window.matchMedia = (query: string): MediaQueryList => ({
+            matches: query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
+        const prepared: Array<string | undefined> = [];
+        let openedIde = false;
+        const ctx = {
+            ideFallback: { openDesktopIde: (): void => { openedIde = true; } },
+            prepareDesktopIdeWorkspaceFromHub: async (id?: string): Promise<boolean> => {
+                prepared.push(id);
+                return true;
+            },
+        } as unknown as MobileOneColumnShellContributionContext;
+        try {
+            await openDesktopIdeExtracted(ctx);
+            expect(openedIde).to.equal(false);
+            expect(prepared).to.deep.equal([]);
+        } finally {
+            window.matchMedia = originalMatchMedia;
+        }
+    });
+
+    it('does not close the workspace through the no-folder IDE fallback on mobile', async () => {
+        const originalMatchMedia = window.matchMedia;
+        window.matchMedia = (query: string): MediaQueryList => ({
+            matches: query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
+        let loadProjects = 0;
+        let closeWorkspace = 0;
+        const ctx = {
+            projectsService: {
+                loadProjects: async (): Promise<never[]> => { loadProjects++; return []; },
+                getCurrentWorkspaceCwd: () => undefined,
+                getProjectCwd: () => undefined,
+            },
+            workspaceService: { close: async () => { closeWorkspace++; } },
+        } as unknown as MobileOneColumnShellContributionContext;
+        try {
+            expect(await prepareDesktopIdeWorkspaceFromHubExtracted(ctx)).to.equal(false);
+            expect(loadProjects).to.equal(0);
+            expect(closeWorkspace).to.equal(0);
+        } finally {
+            window.matchMedia = originalMatchMedia;
+        }
     });
 });

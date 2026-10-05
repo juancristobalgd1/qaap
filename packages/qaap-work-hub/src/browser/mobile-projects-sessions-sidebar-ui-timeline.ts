@@ -15,6 +15,7 @@ import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP
 import { MobileWorkHubUnifiedSearchDialog } from './mobile-work-hub-unified-search-dialog';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 
 export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
@@ -182,6 +183,9 @@ export function createSessionsSidebarNewAgentControlExtracted(ctx: MobileProject
 
 export function onSessionsSidebarViewModeChangeExtracted(ctx: MobileProjectsSessionsSidebarUiContext, id: MobileViewToggleId): void {
     if (id === 'editor') {
+        if (isQaapMobileDevice()) {
+            return;
+        }
         if (!ctx.host.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
             || !ctx.host.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
             return;

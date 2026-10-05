@@ -10,7 +10,7 @@ import {
     setMobileWorkHubHideBottomChrome,
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 import {
     BottomBarSecondaryItem,
     MobileBottomButton,
@@ -123,7 +123,8 @@ export async function onMobileBottomButtonClickExtracted(ctx: MobileShellBottomB
         return;
     }
     if (def.id === 'editor') {
-        if (matchesMobileOneColumnLayout()) {
+        // The classic IDE is desktop-only: the editor tab never switches surfaces on a phone.
+        if (isQaapMobileDevice()) {
             return;
         }
         if (ctx.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND) && ctx.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
@@ -134,7 +135,6 @@ export async function onMobileBottomButtonClickExtracted(ctx: MobileShellBottomB
         markPreferDesktopIde();
         setMobileWorkHubComposerHeaderChrome(false);
         setMobileWorkHubHideBottomChrome(false);
-        document.body.classList.add('theia-mobile-mod-desktop-ide');
         document.body.classList.remove('theia-mobile-mod-landing');
         ctx.host.hideProjectsPanel();
         ctx.host.hidePullRequestPanel();

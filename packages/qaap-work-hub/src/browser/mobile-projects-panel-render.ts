@@ -26,6 +26,7 @@ import {
     QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
+import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
 
 export function bindAgentFinishedToastCallbacksExtracted(ctx: MobileProjectsPanelContext): void {
@@ -410,6 +411,9 @@ export function getFilteredTeamHubStateExtracted(ctx: MobileProjectsPanelContext
 }
 
 export async function openDesktopIdeFromAgentsHubExtracted(ctx: MobileProjectsPanelContext): Promise<void> {
+    if (isQaapMobileDevice()) {
+        return;
+    }
     if (ctx.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
         && ctx.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
         await ctx.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');

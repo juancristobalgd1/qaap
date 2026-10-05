@@ -21,7 +21,7 @@ import type {
 } from './mobile-shell-ide-fallback';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 
 disableImportJSDOM();
 
@@ -117,7 +117,7 @@ describe('mobile-shell-ide-fallback', () => {
     it('does not enter the classic IDE in one-column mobile mode', () => {
         const originalMatchMedia = window.matchMedia;
         window.matchMedia = (query: string): MediaQueryList => ({
-            matches: query === MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
+            matches: query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
             media: query,
             onchange: null,
             addListener: () => undefined,

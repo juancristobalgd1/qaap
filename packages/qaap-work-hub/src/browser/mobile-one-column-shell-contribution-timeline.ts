@@ -11,6 +11,7 @@ import {
     matchesMobileOneColumnLayout,
     matchesMobileNarrowViewport,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';
@@ -161,10 +162,11 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
         label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
     }, {
         execute: () => { void ctx.openDesktopIde(); },
-        isEnabled: () => !matchesMobileOneColumnLayout()
+        // The classic IDE is desktop-only: never offered on a mobile device (Work Hub only).
+        isEnabled: () => !isQaapMobileDevice()
             && ctx.shouldActivateMobileLayout()
             && !peekPreferDesktopIde(),
-        isVisible: () => !matchesMobileOneColumnLayout()
+        isVisible: () => !isQaapMobileDevice()
             && ctx.shouldActivateWorkHubLayout(),
     });
     // The in-IDE header-view commands remain desktop/one-column IDE commands.
@@ -188,7 +190,7 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
 }
 
 export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContributionContext): Promise<void> {
-    if (matchesMobileOneColumnLayout() || !ctx.ideFallback) {
+    if (isQaapMobileDevice() || !ctx.ideFallback) {
         return;
     }
 
@@ -212,6 +214,10 @@ export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContribut
 }
 
 export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: MobileOneColumnShellContributionContext, selectedProjectId?: string): Promise<boolean> {
+    // Never close/reload the workspace into the classic IDE on a mobile device (Work Hub only).
+    if (isQaapMobileDevice()) {
+        return false;
+    }
     const projects = await ctx.projectsService.loadProjects();
     const plan = planDesktopIdeWorkspaceOpen(
         projects.map(project => ({
@@ -379,7 +385,8 @@ export async function onProjectsPanelOpenExtracted(ctx: MobileOneColumnShellCont
 }
 
 export async function onProjectsPanelOpenInIdeExtracted(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): Promise<void> {
-    if (matchesMobileOneColumnLayout()) {
+    // Mobile is Work Hub only: "Open in IDE" degrades to opening the project in Work Hub.
+    if (isQaapMobileDevice()) {
         await onProjectsPanelOpenExtracted(ctx, project);
         return;
     }

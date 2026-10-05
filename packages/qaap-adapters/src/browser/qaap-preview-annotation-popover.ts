@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { nls } from '@theia/core/lib/common/nls';
 import { isBlankAnnotationComment, sanitizeAnnotationComment } from './qaap-preview-annotation-store';
 
@@ -85,7 +86,6 @@ export interface AnnotationCommentPopoverHandle {
     setImages(images: readonly AnnotationPopoverPendingImage[]): void;
 }
 
-const NARROW_QUERY = '(max-width: 767px), (pointer: coarse)';
 const SINGLE_LINE_HEIGHT_PX = 22;
 const MAX_INPUT_HEIGHT_PX = 140;
 
@@ -336,7 +336,7 @@ function createElementRefChip(ref: AnnotationPopoverElementRef, toneIndex: numbe
 
 export function mountAnnotationCommentPopover(options: MountAnnotationCommentPopoverOptions): AnnotationCommentPopoverHandle {
     const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const mobile = typeof matchMedia === 'function' && matchMedia(NARROW_QUERY).matches;
+    const mobile = matchesMobileOneColumnLayout();
 
     const root = document.createElement('div');
     root.className = 'qaap-preview-annotation-popover';

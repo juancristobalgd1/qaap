@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
@@ -352,8 +353,7 @@ export class QaapPreviewFramePicker {
         } catch {
             route = '/';
         }
-        const narrow = typeof matchMedia === 'function'
-            && matchMedia('(max-width: 767px), (pointer: coarse)').matches;
+        const narrow = matchesMobileOneColumnLayout();
         return {
             previewId: previewUrl,
             workspaceId: 'workspace',

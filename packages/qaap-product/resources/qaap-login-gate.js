@@ -28,33 +28,33 @@
      */
     (function installMobileWorkHubBootGuardEarly() {
         try {
-            if (!window.sessionStorage) {
-                return;
-            }
-            var ss = window.sessionStorage;
-            var preferDesktopIde = ss.getItem('qaap.mobileProjects.preferDesktopIde') === '1'
-                || ss.getItem('qaap.mobileProjects.explicitDesktopIde') === '1';
+            var ss;
+            try {
+                ss = window.sessionStorage;
+            } catch (e) { /* storage may be unavailable */ }
             // A mobile one-column viewport always boots into Work Hub. Keep this query aligned
             // with MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY in core and the CSS mobile breakpoints.
             var isMobileMode = typeof window.matchMedia === 'function'
                 && window.matchMedia('(max-width: 767px), (pointer: coarse)').matches;
+            var preferDesktopIde = !!ss && (ss.getItem('qaap.mobileProjects.preferDesktopIde') === '1'
+                || ss.getItem('qaap.mobileProjects.explicitDesktopIde') === '1');
             if (preferDesktopIde && isMobileMode) {
                 ss.removeItem('qaap.mobileProjects.preferDesktopIde');
                 ss.removeItem('qaap.mobileProjects.explicitDesktopIde');
                 preferDesktopIde = false;
             }
-            if (preferDesktopIde) {
+            if (preferDesktopIde && !isMobileMode) {
                 return;
             }
             // NOTE: `homeVisible` is NOT a skip — the Work Hub Home is a hub surface, so on reload
             // we must keep hiding the IDE until the hub home mounts (applyLandingChrome releases it).
-            if (ss.getItem('qaap.hub.pendingAction')) {
+            if (!isMobileMode && ss && ss.getItem('qaap.hub.pendingAction')) {
                 return;
             }
             var hash = (window.location.hash || '').replace(/^#/, '').trim();
             var hasWorkspace = hash.length > 0 && hash !== '/';
-            var dismiss = ss.getItem('qaap.mobileProjects.dismissPanel') === '1';
-            var preferAgents = ss.getItem('qaap.mobileProjects.preferAgentsSurface') === '1';
+            var dismiss = !!ss && ss.getItem('qaap.mobileProjects.dismissPanel') === '1';
+            var preferAgents = !!ss && ss.getItem('qaap.mobileProjects.preferAgentsSurface') === '1';
             // Pre-hide IDE chrome while the Work Hub / Agents surface mounts.
             // Apply on every viewport: Work Hub is the default surface on every boot unless
             // the user explicitly chose the classic IDE in this tab.

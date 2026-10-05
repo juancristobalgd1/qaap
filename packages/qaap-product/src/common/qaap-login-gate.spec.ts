@@ -55,6 +55,61 @@ describe('Qaap login gate', () => {
         expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
     });
 
+    it('keeps the IDE hidden on mobile while a Work Hub action is pending', async () => {
+        const run = start(
+            pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+            'http://localhost:3000/#/workspace/demo',
+            {
+                beforeRun: window => {
+                    window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');
+                    window.sessionStorage.setItem('qaap.hub.pendingAction', '1');
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            },
+        );
+        await run.bundleAppended;
+        expect(run.window.sessionStorage.getItem('qaap.mobileProjects.preferDesktopIde')).to.equal(null);
+        expect(run.document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
+        expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+    });
+
+    it('still holds Work Hub in front on mobile when sessionStorage is unavailable', async () => {
+        const run = start(
+            pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+            'http://localhost:3000/#/workspace/demo',
+            {
+                beforeRun: window => {
+                    Object.defineProperty(window, 'sessionStorage', {
+                        configurable: true,
+                        get: () => { throw new Error('sessionStorage unavailable'); },
+                    });
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            },
+        );
+        await run.bundleAppended;
+        expect(run.document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
+        expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+    });
+
     describe('instant Work Hub shell', () => {
         const SIGNED_IN = { localStorage: { 'theia:/:qaap.auth.signedIn': 'true' } };
         const signedInSession: LoginGateResponder = pathname =>
@@ -521,4 +576,3 @@ describe('Qaap login gate', () => {
         });
     });
 });
-

@@ -15,6 +15,7 @@ import {
     QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
+import { QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 
 disableImportJSDOM();
 
@@ -75,5 +76,27 @@ describe('openDesktopIdeFromAgentsHubExtracted', () => {
         await openDesktopIde(ctx);
         expect(executed).to.deep.equal([{ id: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, args: [] }]);
         expect(hidden()).to.equal(1);
+    });
+
+    it('does not activate or hide Work Hub when an IDE entry is triggered on mobile', async () => {
+        const originalMatchMedia = window.matchMedia;
+        window.matchMedia = (query: string): MediaQueryList => ({
+            matches: query === QAAP_MOBILE_DEVICE_MEDIA_QUERY,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        } as MediaQueryList);
+        try {
+            const { ctx, executed, hidden } = harness([QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND]);
+            await openDesktopIde(ctx);
+            expect(executed).to.deep.equal([]);
+            expect(hidden()).to.equal(0);
+        } finally {
+            window.matchMedia = originalMatchMedia;
+        }
     });
 });

@@ -1,3 +1,4 @@
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 import { resolveTranscriptTypedPreviewUrlExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
@@ -338,8 +339,7 @@ export function resolvePreviewAnnotationScopeExtracted(ctx: MobileProjectsTransc
         } catch {
             route = '/';
         }
-        const narrow = typeof matchMedia === 'function'
-            && matchMedia('(max-width: 767px), (pointer: coarse)').matches;
+        const narrow = matchesMobileOneColumnLayout();
         const frame = ctx.host.transcriptEmbeddedPreview?.frame;
         const identity = ctx.resolveTranscriptPreviewIdentity(project, ctx.host.transcriptOpenSummary);
         return {

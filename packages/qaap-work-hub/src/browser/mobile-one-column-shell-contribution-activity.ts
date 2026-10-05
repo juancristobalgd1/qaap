@@ -1,7 +1,7 @@
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 // Extracted from mobile-one-column-shell-contribution.ts
 
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { isQaapMobileDevice } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 import { toArray } from '@lumino/algorithm';
 import {
     clearMobileWorkHubBootGuard,
@@ -15,7 +15,7 @@ import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-bro
 import { GETTING_STARTED_WIDGET_COMMAND } from './mobile-one-column-shell-contribution';
 
 export function ensureMobilePreviewEditorVisibleExtracted(ctx: MobileOneColumnShellContributionContext): void {
-        if (!ctx.mobileActive || matchesMobileOneColumnLayout()) {
+        if (!ctx.mobileActive || isQaapMobileDevice()) {
             return;
         }
         setMobileWorkHubHideBottomChrome(false);
@@ -49,7 +49,7 @@ export async function relocatePreviewToMainIfNeededExtracted(ctx: MobileOneColum
 }
 
 export async function toggleMobilePreviewExtracted(ctx: MobileOneColumnShellContributionContext): Promise<void> {
-        if (matchesMobileOneColumnLayout()) {
+        if (isQaapMobileDevice()) {
             return;
         }
         ctx.hideProjectsPanel();
@@ -138,4 +138,3 @@ export async function ensureWelcomeInMainAreaExtracted(ctx: MobileOneColumnShell
             console.error('[qaap-mobile-shell] failed to open Welcome', e);
         }
 }
-

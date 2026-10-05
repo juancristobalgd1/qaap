@@ -11,7 +11,7 @@ import { Message } from '@theia/core/lib/browser/widgets/widget';
 import { BrowserMainMenuFactory } from '@theia/core/lib/browser/menu/browser-menu-plugin';
 import { CompoundMenuNode, MAIN_MENU_BAR } from '@theia/core/lib/common/menu/menu-types';
 import { MenuModelRegistry } from '@theia/core/lib/common/menu/menu-model-registry';
-import { collapseLeftPanelIfMobileOneColumn, matchesMobileOneColumnLayout, MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { collapseLeftPanelIfMobileOneColumn } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { Menu as LuminoMenu } from '@lumino/widgets';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
@@ -25,6 +25,7 @@ import {
     peekPreferDesktopIde,
     QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS,
 } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+import { isQaapMobileDevice, QAAP_MOBILE_DEVICE_MEDIA_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-device';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { type MobileBottomButton, type MobileBottomButtonId } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -42,7 +43,7 @@ const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate
 
 /** The legacy mobile view picker belongs to Work Hub's one-column surface, never to the classic IDE. */
 export function shouldShowMobileIdeHeaderViews(): boolean {
-    return matchesMobileOneColumnLayout()
+    return isQaapMobileDevice()
         && !document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
         && !peekPreferDesktopIde();
 }
@@ -223,7 +224,7 @@ export class QaapWorkbenchMenuButtonWidget extends Widget {
         this.toDispose.push(this.commands.onDidExecuteCommand(refresh));
         this.toDispose.push(this.commands.onCommandsChanged(refresh));
         if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-            const mq = window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
+            const mq = window.matchMedia(QAAP_MOBILE_DEVICE_MEDIA_QUERY);
             const onMqChange = (): void => refresh();
             mq.addEventListener('change', onMqChange);
             this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));
@@ -322,7 +323,7 @@ export class QaapWorkbenchViewModeCenterWidget extends Widget {
         this.toDispose.push(this.workspaceService.onWorkspaceChanged(refresh));
         this.toDispose.push(this.workspaceService.onWorkspaceLocationChanged(refresh));
         if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-            const mq = window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
+            const mq = window.matchMedia(QAAP_MOBILE_DEVICE_MEDIA_QUERY);
             const onMqChange = (): void => refresh();
             mq.addEventListener('change', onMqChange);
             this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));
@@ -336,6 +337,9 @@ export class QaapWorkbenchViewModeCenterWidget extends Widget {
     }
 
     protected readonly onViewModeSwitchSelect = (id: MobileViewToggleId): void => {
+        if (id === 'editor' && isQaapMobileDevice()) {
+            return;
+        }
         if (id === 'editor') {
             if (this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
                 && this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
@@ -370,7 +374,7 @@ export class QaapWorkbenchViewModeCenterWidget extends Widget {
     }
 
     protected syncViewModeSwitch(): void {
-        const visible = !matchesMobileOneColumnLayout()
+        const visible = !isQaapMobileDevice()
             && (document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
                 || peekPreferDesktopIde());
         this.node.hidden = !visible;
@@ -482,7 +486,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         // breakpoint: command/widget events alone leave it stuck when the layout mode
         // changes without any command executing (e.g. rotation or window resize).
         if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-            const mq = window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
+            const mq = window.matchMedia(QAAP_MOBILE_DEVICE_MEDIA_QUERY);
             const onMqChange = (): void => refresh();
             mq.addEventListener('change', onMqChange);
             this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));

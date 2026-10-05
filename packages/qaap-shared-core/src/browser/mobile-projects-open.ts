@@ -13,6 +13,7 @@ import {
     peekPreferDesktopIde,
     shouldInstallWorkHubBootGuard,
 } from '../common/qaap-mobile-work-surface-preference';
+import { isQaapMobileDevice } from '../common/qaap-mobile-device';
 
 export {
     clearPreferAgentsSurface,
@@ -104,9 +105,15 @@ export function recomputeMobileWorkHubHideIdeSidePanels(): void {
  * the boot guard's inline CSS hides `#theia-main-content-panel`, the top panel and the bottom
  * panel / split while `composer-header` is on the body, and `active-transcript` hides the status bar.
  * Returning to Work Hub re-adds them through the hub surface transitions.
+ *
+ * No-op on a mobile device ({@link isQaapMobileDevice}): the classic IDE is desktop-only, so the
+ * Work Hub chrome must stay and stale IDE keys are cleared instead.
  */
 export function markPreferDesktopIde(): void {
     markPreferDesktopIdePreference();
+    if (isQaapMobileDevice()) {
+        return;
+    }
     clearMobileWorkHubSurfaceChromeForDesktopIde();
 }
 

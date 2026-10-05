@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isQaapMobileDevice } from './qaap-mobile-device';
+
 /** Work surface picked in the IDE / Agents view toggle. */
 export type MobileViewToggleId = 'editor' | 'agent';
 
@@ -20,10 +22,11 @@ let preferDesktopIdeThisRuntime = false;
 export const QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS = 'theia-mobile-mod-desktop-ide';
 
 function syncDesktopIdeBodyClass(): void {
-    if (typeof document === 'undefined') {
+    if (typeof document === 'undefined' || !document.body) {
         return;
     }
-    document.body.classList.toggle(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS, preferDesktopIdeThisRuntime);
+    // The classic IDE is desktop-only: never flag the IDE surface on a mobile device.
+    document.body.classList.toggle(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS, preferDesktopIdeThisRuntime && !isQaapMobileDevice());
 }
 
 function readPersistedPreferDesktopIde(): boolean {
@@ -48,8 +51,28 @@ function writePersistedPreferDesktopIde(active: boolean): void {
     }
 }
 
-/** Persists explicit desktop IDE choice for reload/F5 within the same browser session. */
+/**
+ * Drops any IDE choice on a mobile device (Work Hub only), mirroring the pre-bundle login gate.
+ * Returns `true` when the device is mobile.
+ */
+function dropDesktopIdePreferenceOnMobile(): boolean {
+    if (!isQaapMobileDevice()) {
+        return false;
+    }
+    preferDesktopIdeThisRuntime = false;
+    writePersistedPreferDesktopIde(false);
+    syncDesktopIdeBodyClass();
+    return true;
+}
+
+/**
+ * Persists explicit desktop IDE choice for reload/F5 within the same browser session.
+ * No-op on a mobile device (the classic IDE is desktop-only); stale IDE keys are cleared there.
+ */
 export function markPreferDesktopIde(): void {
+    if (dropDesktopIdePreferenceOnMobile()) {
+        return;
+    }
     preferDesktopIdeThisRuntime = true;
     writePersistedPreferDesktopIde(true);
     syncDesktopIdeBodyClass();
@@ -61,8 +84,14 @@ export function clearPreferDesktopIde(): void {
     syncDesktopIdeBodyClass();
 }
 
-/** Hydrates session-scoped IDE preference after reload. */
+/**
+ * Hydrates session-scoped IDE preference after reload. Always `false` on a mobile device, where
+ * stale IDE keys and the IDE body class are cleared.
+ */
 export function peekPreferDesktopIde(): boolean {
+    if (dropDesktopIdePreferenceOnMobile()) {
+        return false;
+    }
     if (typeof sessionStorage !== 'undefined') {
         preferDesktopIdeThisRuntime = preferDesktopIdeThisRuntime || readPersistedPreferDesktopIde();
         syncDesktopIdeBodyClass();
@@ -115,6 +144,10 @@ export function resolveWorkSurfaceBootIntent(options?: {
     readonly preferDesktopIde?: boolean;
     readonly hasPendingHubAction?: boolean;
 }): WorkSurfaceBootIntent {
+    if (dropDesktopIdePreferenceOnMobile()) {
+        return 'hub';
+    }
+    // `peekPreferDesktopIde()` is already false on mobile; an explicit option must not override that.
     const ide = options?.preferDesktopIde ?? peekPreferDesktopIde();
     if (ide) {
         return 'ide';
@@ -130,5 +163,5 @@ export function resolveWorkSurfaceBootIntent(options?: {
 
 /** Should the early/TS boot guard hide the IDE shell? */
 export function shouldInstallWorkHubBootGuard(intent = resolveWorkSurfaceBootIntent()): boolean {
-    return intent === 'hub';
+    return isQaapMobileDevice() || intent === 'hub';
 }

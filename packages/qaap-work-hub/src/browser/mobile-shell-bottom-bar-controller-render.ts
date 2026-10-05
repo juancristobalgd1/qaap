@@ -1,3 +1,4 @@
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileShellBottomBarControllerContext } from './mobile-shell-bottom-bar-controller-context';
 // Extracted from mobile-shell-bottom-bar-controller.ts
 
@@ -192,9 +193,7 @@ export function installBottomChromeTouchScrollExtracted(ctx: MobileShellBottomBa
     if (typeof window === 'undefined') {
         return;
     }
-    const coarse = window.matchMedia('(pointer: coarse)').matches;
-    const narrow = ctx.mobileMq?.matches ?? false;
-    if (!coarse && !narrow) {
+    if (!matchesMobileOneColumnLayout() && !(ctx.mobileMq?.matches ?? false)) {
         ctx.bottomChromeTouchScrollDispose = Disposable.NULL;
         return;
     }
