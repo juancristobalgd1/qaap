@@ -5,7 +5,7 @@ import {
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 // Extracted from qaap-agent-task-runner.ts
 
-import { spawnSync } from 'child_process';
+import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
@@ -129,23 +129,32 @@ export function detectAgentsExtracted(ctx: QaapAgentTaskRunnerContext): void {
         ctx.logDetectedAgents();
 }
 
-export function logDetectedAgentsExtracted(ctx: QaapAgentTaskRunnerContext): void {
+const QAIQ_VERSION_PROBE_TIMEOUT_MS = 15_000;
+
+export function logDetectedAgentsExtracted(
+    ctx: QaapAgentTaskRunnerContext,
+    resolveQaiq: () => string | undefined = () => resolveTrustedExecutable(QAIQ_AGENT_ID),
+): void {
         const ids = [...ctx.detectedAgents.keys()];
         console.log(`[qaap-agent-tasks] detected agents: ${ids.length ? ids.join(', ') : '(none — install qaiq/openclaude or set QAAP_AGENT_COMMAND)'}`);
         if (!ctx.detectedAgents.has(QAIQ_AGENT_ID)) {
             return;
         }
         // Log the version only of a qaiq the backend uid trusts; a tenant-installed one never runs here.
-        const qaiq = resolveTrustedExecutable(QAIQ_AGENT_ID);
+        const qaiq = resolveQaiq();
         if (!qaiq) {
             return;
         }
+        // Asynchronous: this runs from the task runner's @postConstruct, before the backend listens.
+        // `qaiq --version` boots a Node CLI (2-3.5 s on a tenant), and spawnSync held the whole
+        // backend startup for it just to print this line.
         try {
-            const probe = spawnSync(qaiq, ['--version'], { encoding: 'utf8' });
-            const line = (probe.stdout || probe.stderr || '').trim().split('\n')[0];
-            if (line) {
-                console.log(`[qaap-agent-tasks] qaiq: ${line}`);
-            }
+            execFile(qaiq, ['--version'], { encoding: 'utf8', timeout: QAIQ_VERSION_PROBE_TIMEOUT_MS }, (_error, stdout, stderr) => {
+                const line = (stdout || stderr || '').trim().split('\n')[0];
+                if (line) {
+                    console.log(`[qaap-agent-tasks] qaiq: ${line}`);
+                }
+            });
         } catch {
             /* ignore */
         }
