@@ -20,6 +20,7 @@ import { QaapGettingStartedWidget } from './qaap-getting-started-widget';
 import { WebSocketConnectionProvider } from '@theia/core/lib/browser/messaging/ws-connection-provider';
 import { DebugPath, DebugService } from '@theia/debug/lib/common/debug-service';
 import { QaapPhoneDebugServer, QaapPhoneDebugService, QaapPluginHostFrontend } from './qaap-phone-debug-service';
+import { QaapPhoneShellLayoutRestorer } from './qaap-phone-shell-layout-restorer';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { QaapServiceWorkerUpdateContribution } from './qaap-service-worker-update-contribution';
@@ -81,6 +82,8 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
         bind(QaapPhoneDebugService).toSelf().inSingletonScope();
         rebind(DebugService).toService(QaapPhoneDebugService);
     }
+    // The phone entry's Work Hub-only shell layout must never be restored by the desktop entry.
+    QaapPhoneShellLayoutRestorer.rebindOnPhoneEntry(bind, isBound, rebind);
 
     // Settings tree keeps the curated QaapPreferenceLayoutProvider order instead of upstream's id sort.
     rebindQaapPreferenceTreeGenerator(bind, rebind);
