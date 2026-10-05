@@ -10,7 +10,7 @@
  * its own `import()`, i.e. lives in its own chunk, so a dropped module is never fetched.
  *
  * Only leaves of the DI graph are listed: no module kept on mobile imports or injects anything
- * they bind (checked with `grep "from '@theia/<package>"` over every kept package). In particular
+ * they bind (guarded by `qaap-mobile-frontend-entry-leaves.spec.ts`). In particular
  * `plugin-ext` goes together with everything that injects `HostedPluginSupport`
  * (`plugin-ext-vscode`, `vsx-registry`, `ai-registry`), so the phone never starts a plugin host.
  * Do not add `debug`, `console`, `test`, `task`, `search-in-workspace` (injected by `ai-ide`),
@@ -41,6 +41,10 @@ export namespace QaapMobileFrontendEntry {
         '@theia/scanoss/lib/browser/scanoss-frontend-module',
         '@theia/ai-scanoss/lib/browser/ai-scanoss-frontend-module',
         '@theia/metrics/lib/browser/metrics-frontend-module',
+        '@theia/ai-code-completion/lib/browser/ai-code-completion-frontend-module',
+        '@theia/ai-editor/lib/browser/ai-editor-frontend-module',
+        '@theia/ai-history/lib/browser/ai-history-frontend-module',
+        '@theia/terminal-manager/lib/browser/terminal-manager-frontend-module',
     ];
 
     const MODULE_LOAD_LINE = /^\s*await load\(container, (?:import|require)\('([^']+)'\)\);\s*$/;
