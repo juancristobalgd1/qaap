@@ -16,6 +16,9 @@
       "path": "../core"
     },
     {
+      "path": "../filesystem"
+    },
+    {
       "path": "../getting-started"
     },
     {
