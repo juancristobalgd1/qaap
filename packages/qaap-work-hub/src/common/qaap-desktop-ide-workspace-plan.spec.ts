@@ -34,18 +34,19 @@ describe('planDesktopIdeWorkspaceOpen', () => {
         )).to.deep.equal({ kind: 'reload-empty' });
     });
 
-    it('keeps the IDE empty when several projects exist and no repository is open yet', () => {
+    it('opens the most recent project when several exist and no repository is open yet', () => {
+        // Hosted Work Hub has no workspace root; the header then shows the first project.
         expect(planDesktopIdeWorkspaceOpen(
             [{ id: 'a' }, { id: 'b' }],
             undefined,
-        )).to.deep.equal({ kind: 'proceed' });
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 0 });
     });
 
-    it('does not reload when several projects exist but the cwd is only a container', () => {
+    it('opens the pinned project when several exist and the cwd is only a container', () => {
         expect(planDesktopIdeWorkspaceOpen(
-            [{ id: 'a' }, { id: 'b' }],
+            [{ id: 'a' }, { id: 'b', pinned: true }],
             '/workspace',
-        )).to.deep.equal({ kind: 'proceed' });
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
     });
 
     it('opens the pinned hub project when several exist', () => {
@@ -72,9 +73,38 @@ describe('planDesktopIdeWorkspaceOpen', () => {
 
     it('falls back to the multi-project plan when the selected id is unknown', () => {
         expect(planDesktopIdeWorkspaceOpen(
-            [{ id: 'a' }, { id: 'b' }],
-            undefined,
+            [{ id: 'a', cwd: '/ws/a' }, { id: 'b', cwd: '/ws/b' }],
+            '/ws/b',
             'missing',
-        )).to.deep.equal({ kind: 'proceed' });
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
+    });
+
+    it('matches the shown project by cwd when the fresh list gives it another id', () => {
+        expect(planDesktopIdeWorkspaceOpen(
+            [
+                { id: 'recent:file:///workspace/repos/users/alice/acme/vitesse-lite', cwd: '/workspace/repos/users/alice/acme/vitesse-lite' },
+                { id: 'recent:file:///workspace/repos/users/alice/acme/shadcn', cwd: '/workspace/repos/users/alice/acme/shadcn' },
+            ],
+            undefined,
+            { id: 'github:acme/shadcn', cwd: '/workspace/repos/users/alice/acme/shadcn/' },
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
+    });
+
+    it('matches the shown project by GitHub full name when it has no cwd yet', () => {
+        expect(planDesktopIdeWorkspaceOpen(
+            [
+                { id: 'recent:a', cwd: '/ws/a', githubFullName: 'acme/a' },
+                { id: 'recent:shadcn', cwd: '/ws/shadcn', githubFullName: 'Acme/Shadcn' },
+            ],
+            undefined,
+            { id: 'github:acme/shadcn', githubFullName: 'acme/shadcn' },
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
+    });
+
+    it('compares cwds regardless of trailing slashes and Windows separators', () => {
+        expect(planDesktopIdeWorkspaceOpen(
+            [{ id: 'a', cwd: 'C:\\ws\\a' }, { id: 'b', cwd: 'C:\\ws\\b' }],
+            'C:/ws/b/',
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
     });
 });

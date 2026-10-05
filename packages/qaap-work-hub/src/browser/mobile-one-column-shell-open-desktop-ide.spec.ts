@@ -12,7 +12,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { clearPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 import { openDesktopIdeExtracted, prepareDesktopIdeWorkspaceFromHubExtracted } from './mobile-one-column-shell-contribution-timeline';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
@@ -67,7 +67,13 @@ function harness(options: HarnessOptions = {}): Harness {
         ctx: undefined as unknown as MobileOneColumnShellContributionContext,
     };
     const ctx = {
-        ideFallback: { openDesktopIde: (): void => { result.events.push('ide'); } },
+        ideFallback: {
+            // Like MobileShellIdeFallback.openDesktopIde: the IDE surface becomes the preference.
+            openDesktopIde: (): void => {
+                markPreferDesktopIde();
+                result.events.push('ide');
+            },
+        },
         projectsPanel: {
             hubHeaderUi: { resolveHeaderProject: (): MobileProjectEntry | undefined => options.shown },
             resolveShellProject: (): MobileProjectEntry | undefined => options.shown,

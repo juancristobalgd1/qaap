@@ -13,7 +13,7 @@ import {
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';
+import { planDesktopIdeWorkspaceOpen, QaapDesktopIdeHubProject, sameDesktopIdeCwd } from '../common/qaap-desktop-ide-workspace-plan';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { MobileAgentTaskComposer } from '@theia/qaap-composer/lib/browser/mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
@@ -194,16 +194,18 @@ export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContribut
 
     // Switch the visible shell synchronously. Workspace/project discovery may involve the
     // network, and waiting for it made the avatar switch look like a lost click. The existing
-    // workspace is already enough to show the classic IDE; preparation can continue in the
-    // background and may still reload/open the correct project when the hub has one selected.
-    // Root the IDE on the project the hub SHOWS. The raw selection is unset until the user picks a
-    // project explicitly; the hub then shows the open workspace, pinned or first project, and
-    // passing undefined made the plan close the workspace ("No Folder Opened").
-    const selectedProjectId = ctx.projectsPanel?.resolveShellProject()?.id
-        ?? ctx.projectsPanel?.getAgentsHubSelectedProjectId();
+    // workspace is already enough to show the classic IDE; preparation continues in the background.
+    // Root the IDE on the project ENTRY the hub header shows, not only its id: on a cold hosted
+    // start the header paints from cached project sessions (`github:owner/repo`) while a fresh
+    // `loadProjects()` lists the same repository as `recent:file:///…`, so an id lookup missed and
+    // the IDE stayed on "No Folder Opened".
+    const projectsPanel = ctx.projectsPanel;
+    const selected: MobileProjectEntry | string | undefined = projectsPanel?.hubHeaderUi.resolveHeaderProject()
+        ?? projectsPanel?.resolveShellProject()
+        ?? projectsPanel?.getAgentsHubSelectedProjectId();
     ctx.ideFallback.openDesktopIde();
     try {
-        await ctx.prepareDesktopIdeWorkspaceFromHub(selectedProjectId);
+        await ctx.prepareDesktopIdeWorkspaceFromHub(selected);
     } catch (error) {
         // The surface switch has already succeeded. Do not turn a project-list refresh failure
         // into an unhandled rejection that makes the control appear intermittent.
@@ -211,15 +213,24 @@ export async function openDesktopIdeExtracted(ctx: MobileOneColumnShellContribut
     }
 }
 
-export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: MobileOneColumnShellContributionContext, selectedProjectId?: string): Promise<boolean> {
+export async function prepareDesktopIdeWorkspaceFromHubExtracted(
+    ctx: MobileOneColumnShellContributionContext,
+    selected?: string | MobileProjectEntry,
+): Promise<boolean> {
+    const shown = typeof selected === 'object' ? selected : undefined;
+    if (shown && (ctx.projectsService.getProjectCwd(shown) || shown.github)) {
+        // The hub already knows what it shows; do not wait on a slow `/github/project-sessions`.
+        return openDesktopIdeProjectExtracted(ctx, shown);
+    }
     const projects = await ctx.projectsService.loadProjects();
+    if (!peekPreferDesktopIde()) {
+        // The user went back to Agents while the project list was loading.
+        return false;
+    }
     const plan = planDesktopIdeWorkspaceOpen(
-        projects.map(project => ({
-            id: project.id,
-            cwd: ctx.projectsService.getProjectCwd(project),
-        })),
+        projects.map(project => toDesktopIdeHubProject(ctx, project)),
         ctx.projectsService.getCurrentWorkspaceCwd(),
-        selectedProjectId,
+        shown ? toDesktopIdeHubProject(ctx, shown) : selected,
     );
     if (plan.kind === 'reload-empty') {
         MobileSnackbar.show(
@@ -235,33 +246,43 @@ export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: MobileOneC
     }
     if (plan.kind === 'open-project') {
         const project = projects[plan.projectIndex];
-        if (!project) {
-            return false;
-        }
-        let cwd = ctx.projectsService.getProjectCwd(project);
-        if (!cwd && project.github) {
-            cwd = await ctx.projectsService.prepareProjectCwd(project);
-        }
-        if (!cwd) {
-            MobileSnackbar.show(
-                nls.localize('qaap/mobile/openDesktopIdeNeedsProject', 'Open a project from Work Hub before opening the IDE.'),
-                { kind: 'warning' },
-            );
-            return false;
-        }
-        const current = ctx.projectsService.getCurrentWorkspaceCwd();
-        if (current !== cwd) {
-            MobileSnackbar.show(
-                nls.localize(
-                    'qaap/mobile/openDesktopIdeOpeningProject',
-                    'Opening {0} in the IDE…',
-                    project.name || project.id,
-                ),
-                { duration: 2800 },
-            );
-            markPreferDesktopIde();
-            await ctx.projectsService.openInCurrentWindowAsync(project);
-        }
+        return project ? openDesktopIdeProjectExtracted(ctx, project) : false;
+    }
+    return true;
+}
+
+function toDesktopIdeHubProject(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): QaapDesktopIdeHubProject {
+    return {
+        id: project.id,
+        cwd: ctx.projectsService.getProjectCwd(project),
+        githubFullName: project.github?.fullName,
+        pinned: project.pinned,
+    };
+}
+
+async function openDesktopIdeProjectExtracted(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): Promise<boolean> {
+    let cwd = ctx.projectsService.getProjectCwd(project);
+    if (!cwd && project.github) {
+        cwd = await ctx.projectsService.prepareProjectCwd(project);
+    }
+    if (!cwd) {
+        MobileSnackbar.show(
+            nls.localize('qaap/mobile/openDesktopIdeNeedsProject', 'Open a project from Work Hub before opening the IDE.'),
+            { kind: 'warning' },
+        );
+        return false;
+    }
+    if (!sameDesktopIdeCwd(ctx.projectsService.getCurrentWorkspaceCwd(), cwd)) {
+        MobileSnackbar.show(
+            nls.localize(
+                'qaap/mobile/openDesktopIdeOpeningProject',
+                'Opening {0} in the IDE…',
+                project.name || project.id,
+            ),
+            { duration: 2800 },
+        );
+        markPreferDesktopIde();
+        await ctx.projectsService.openInCurrentWindowAsync(project);
     }
     return true;
 }
