@@ -147,7 +147,7 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
                 isContainerIsolationEnabled: () => true,
                 wrapArgvForTenant: (cwd: string, file: string, args: readonly string[], env?: NodeJS.ProcessEnv) => {
                     calls.push({ cwd, file, args, env });
-                    return { file, args: [...args] };
+                    return { file: process.execPath, args: [...args] };
                 },
             },
         });
@@ -162,8 +162,9 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
 
             expect(calls).to.have.length(1);
             expect(calls[0].cwd).to.equal(task.cwd);
-            expect(calls[0].file).to.equal(process.execPath);
+            expect(calls[0].file).to.equal('node');
             expect(calls[0].args.join(' ')).to.contain('ensureQaapAgentBrowserMcpConfiguration');
+            expect(calls[0].args.join(' ')).not.to.contain('qaap-agent-browser-mcp-config.js');
             expect(calls[0].env).to.deep.include({ HOME: home, QAAP_HEADLESS_CHROMIUM: process.execPath });
             expect(calls[0].env).not.to.have.property('QAAP_TENANT_BACKEND_SECRET');
             expect(fs.existsSync(path.join(home, '.claude.json'))).to.equal(true);

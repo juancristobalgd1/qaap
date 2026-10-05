@@ -11,6 +11,31 @@ const SERVER_NAME = 'qaap_browser';
 const COMMAND = 'playwright-mcp';
 const ARGS = ['--headless', '--browser', 'chromium', '--executable-path', '/usr/bin/chromium'];
 
+/**
+ * Build a self-contained bootstrap for isolated Docker workers, which cannot load the backend's
+ * compiled package path. The code runs inside the tenant process and uses only Node built-ins.
+ */
+export function createQaapAgentBrowserMcpBootstrapScript(): string {
+    const helpers = [
+        ensureQaapAgentBrowserMcpConfiguration,
+        appendTomlServer,
+        appendHermesServer,
+        writePrivateFile,
+        resolveConfigFilePath,
+        isRecord,
+    ].map(helper => helper.toString()).join('\n\n');
+    return [
+        `const fs = require('fs');`,
+        `const { randomUUID } = require('crypto');`,
+        `const path = require('path');`,
+        `const SERVER_NAME = ${JSON.stringify(SERVER_NAME)};`,
+        `const COMMAND = ${JSON.stringify(COMMAND)};`,
+        `const ARGS = ${JSON.stringify(ARGS)};`,
+        helpers,
+        `ensureQaapAgentBrowserMcpConfiguration(process.env.HOME);`,
+    ].join('\n');
+}
+
 /** Register the tenant image's pinned headless browser MCP with the harnesses Qaap ships. */
 export function ensureQaapAgentBrowserMcpConfiguration(home: string): readonly string[] {
     if (!path.isAbsolute(home)) {

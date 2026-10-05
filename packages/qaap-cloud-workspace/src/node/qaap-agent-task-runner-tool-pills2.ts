@@ -42,6 +42,7 @@ import {
 } from './qaap-agent-task-runner-utils';
 import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
 import { canExposeAgentCliBinToChild, prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
+import { createQaapAgentBrowserMcpBootstrapScript } from './qaap-agent-browser-mcp-config';
 
 export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext, command: string,
         cwd: string,
@@ -246,9 +247,11 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
                     PATH: env.PATH,
                     QAAP_HEADLESS_CHROMIUM: env.QAAP_HEADLESS_CHROMIUM,
                 };
-                const modulePath = path.join(__dirname, 'qaap-agent-browser-mcp-config');
-                const script = `require(${JSON.stringify(modulePath)}).ensureQaapAgentBrowserMcpConfiguration(process.env.HOME);`;
-                const invocation = ctx.tenantSpawn.wrapArgvForTenant(task.cwd, process.execPath, ['-e', script], bootstrapEnv);
+                const script = createQaapAgentBrowserMcpBootstrapScript();
+                // A Docker worker has its own filesystem and Node installation; never pass the
+                // backend's process.execPath or compiled module path into docker exec.
+                const nodeCommand = ctx.tenantSpawn.isContainerIsolationEnabled() ? 'node' : process.execPath;
+                const invocation = ctx.tenantSpawn.wrapArgvForTenant(task.cwd, nodeCommand, ['-e', script], bootstrapEnv);
                 const result = spawnSync(invocation.file, invocation.args, {
                     cwd: task.cwd,
                     env: bootstrapEnv,
