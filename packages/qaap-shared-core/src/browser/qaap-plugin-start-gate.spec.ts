@@ -47,7 +47,7 @@ describe('QaapPluginStartGate', () => {
         gate.release();
         expect(gate.released).to.equal(false);
         let started = false;
-        void gate.whenReleased.then(() => { started = true; });
+        gate.whenReleased.then(() => { started = true; });
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(started).to.equal(false);
     });
@@ -64,7 +64,6 @@ describe('QaapPluginStartGate', () => {
         expect(gate.released).to.equal(true);
         await gate.whenReleased;
     });
-
 
     it('settles waiters once released', async () => {
         const gate = createGate();
