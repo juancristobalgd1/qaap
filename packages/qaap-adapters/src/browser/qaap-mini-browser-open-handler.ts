@@ -18,6 +18,7 @@ import { MiniBrowserOpenerOptions } from '@theia/mini-browser/lib/browser/mini-b
 import { formatMiniBrowserNavigateError, normalizeMiniBrowserOpenUrl } from '@theia/mini-browser/lib/browser/mini-browser-url-utils';
 import { isMiniBrowserPreviewPlaceholderUrl } from './qaap-mini-browser-defaults';
 import { QaapMiniBrowser } from './qaap-mini-browser';
+import { normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
 import {
     coerceQaapPreviewWidgetKey,
     isQaapPreviewWidgetUri,
@@ -154,7 +155,7 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
 
     /** Opens/updates the live browser surface driven by an agent's Playwright MCP session. */
     async openAgentBrowserPreview(url: string, taskId: string, mode: QaapAgentBrowserSurfaceMode): Promise<MiniBrowser | undefined> {
-        const normalized = normalizeMiniBrowserOpenUrl(url);
+        const normalized = normalizePreviewUrlForSameOrigin(normalizeMiniBrowserOpenUrl(url));
         if (!normalized || !taskId.trim()) {
             return undefined;
         }
