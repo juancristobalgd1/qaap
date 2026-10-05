@@ -56,7 +56,7 @@ function patchIndexForLoginGate(indexPath) {
 }
 
 function computeFrontendBuildHash() {
-    const assets = ['bundle.js', 'bundle.css', 'qaap-login-gate.js'];
+    const assets = ['bundle.js', 'bundle.mobile.js', 'bundle.css', 'qaap-login-gate.js'];
     const hash = createHash('sha256');
     for (const asset of assets) {
         const assetPath = path.join(libFrontend, asset);
@@ -74,6 +74,14 @@ function computeFrontendBuildHash() {
     return hash.digest('hex');
 }
 
+/** Same rule as QAAP_MOBILE_DEVICE_MEDIA_QUERY (qaap-mobile-device.ts) and qaap-login-gate.js. */
+const MOBILE_DEVICE_MEDIA_QUERY = '(max-width: 767px), (pointer: coarse)';
+const DESKTOP_DEVICE_MEDIA_QUERY = '(min-width: 768px) and (pointer: fine), (min-width: 768px) and (pointer: none)';
+const ENTRY_MODULE_PRELOADS = [
+    `<link rel="modulepreload" href="./bundle.js" media="${DESKTOP_DEVICE_MEDIA_QUERY}">`,
+    `<link rel="modulepreload" href="./bundle.mobile.js" media="${MOBILE_DEVICE_MEDIA_QUERY}">`,
+].join('\n');
+
 function patchIndexForFreshAssets(indexPath, buildHash) {
     const bundleCss = path.join(libFrontend, 'bundle.css');
     const bundleJs = path.join(libFrontend, 'bundle.js');
@@ -83,16 +91,20 @@ function patchIndexForFreshAssets(indexPath, buildHash) {
     let html = fs.readFileSync(indexPath, 'utf8');
     // qaap-login-gate.js injects bundle.js late (after its own checks); start fetching the
     // ES module entry while the page parses. The href gets the same stamp below that the
-    // gate derives from bundle.css, so the preloaded module is the one it imports.
-    if (!html.includes('rel="modulepreload" href="./bundle.js')) {
-        html = html.replace('</head>', '<link rel="modulepreload" href="./bundle.js">\n</head>');
-    }
+    // gate derives from bundle.css, so the preloaded module is the one it imports. Phones
+    // get bundle.mobile.js (see the gate): each hint only applies to its own devices.
+    // Rewrite the hints on every build: src-gen/frontend/index.html survives rebuilds.
+    html = html.replace(/<link rel="modulepreload" href="\.\/bundle(?:\.mobile)?\.js[^>]*>\n?/g, '');
+    html = html.replace('</head>', `${ENTRY_MODULE_PRELOADS}\n</head>`);
     html = html.replace(
         /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
         `./bundle.css?qaap-build=${buildHash}`,
     ).replace(
         /\.\/bundle\.js(?:\?[^"'\s>]*)?/g,
         `./bundle.js?qaap-build=${buildHash}`,
+    ).replace(
+        /\.\/bundle\.mobile\.js(?:\?[^"'\s>]*)?/g,
+        `./bundle.mobile.js?qaap-build=${buildHash}`,
     ).replace(
         /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
         `./qaap-login-gate.js?qaap-build=${buildHash}`,
@@ -124,7 +136,7 @@ function stampEntryBuild(filePath, buildHash) {
  * (a referenced chunk is missing, or an import carries a query), e.g. after a partial esbuild write.
  */
 function verifyFrontendChunkGraph() {
-    const entryPoints = ['bundle.js', 'secondary-window.js'];
+    const entryPoints = ['bundle.js', 'bundle.mobile.js', 'secondary-window.js'];
     const chunkImport = /(["'])\.\/(chunk-[A-Z0-9]+\.js)(\?[^"']*)?\1/g;
     const problems = [];
     const visited = new Set();
@@ -132,8 +144,8 @@ function verifyFrontendChunkGraph() {
     for (const entry of entryPoints) {
         if (fs.existsSync(path.join(libFrontend, entry))) {
             queue.push(entry);
-        } else if (entry === 'bundle.js') {
-            problems.push('bundle.js is missing');
+        } else if (entry !== 'secondary-window.js') {
+            problems.push(`${entry} is missing`);
         }
     }
     while (queue.length) {
@@ -214,7 +226,7 @@ const GZIP_EXTS = /\.(js|css|wasm|svg|html|json)$/i;
 // since core's serveGzipped never looks up their `.gz`. woff/woff2 are compressed already.
 const BROTLI_ONLY_EXTS = /\.(ttf|eot)$/i;
 const GZIP_MIN_BYTES = 1024; // skip tiny files where gzip overhead isn't worth it
-const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.css'];
+const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.mobile.js', 'bundle.css'];
 // Level 9 costs several times the CPU of level 6 for ~1-2% smaller output: only worth it
 // for production bundles. Development builds (`npm run bundle`) use level 6. serveGzipped
 // falls back to the uncompressed file when no .gz companion exists, so either is safe.

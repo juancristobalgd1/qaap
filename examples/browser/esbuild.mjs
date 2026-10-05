@@ -25,7 +25,20 @@ browserOptions.plugins.push(exposeModulePlugin());
  * The login gate (qaap-login-gate.js) loads ./bundle.js with
  * `<script type="module">`; the browser resolves the chunk graph itself.
  */
-const { 'editor.worker': editorWorkerEntry, 'plugin-worker': pluginWorkerEntry, ...mainEntryPoints } = browserOptions.entryPoints;
+const { 'editor.worker': editorWorkerEntry, 'plugin-worker': pluginWorkerEntry, ...desktopEntryPoints } = browserOptions.entryPoints;
+
+/**
+ * Phone entry (`bundle.mobile.js`, picked by qaap-login-gate.js on mobile devices): phones only
+ * show the Work Hub, so the entry is the generated index.js minus the IDE-only frontend modules
+ * listed in `QaapMobileFrontendEntry` (no plugin host, no VS Code extensions). Written next to
+ * index.js so relative requires and the DI interop patch below apply unchanged.
+ */
+const qaapRequireForMobile = createRequire(import.meta.url);
+const { QaapMobileFrontendEntry } = qaapRequireForMobile('@theia/qaap-product/lib/common/qaap-mobile-frontend-entry');
+const desktopFrontendEntry = path.resolve(path.dirname(fileURLToPath(import.meta.url)), desktopEntryPoints.bundle);
+const mobileFrontendEntry = path.join(path.dirname(desktopFrontendEntry), 'mobile-index.js');
+fs.writeFileSync(mobileFrontendEntry, QaapMobileFrontendEntry.create(fs.readFileSync(desktopFrontendEntry, 'utf8')), 'utf8');
+const mainEntryPoints = { ...desktopEntryPoints, 'bundle.mobile': mobileFrontendEntry };
 
 /**
  * Under `format: 'esm'`, a dynamic `import()` of a CommonJS module (all
@@ -73,7 +86,7 @@ const qaapBundleShimsPlugin = {
 const esmDiInteropPlugin = {
     name: 'qaap-esm-di-interop',
     setup(build) {
-        build.onLoad({ filter: /src-gen[\\/]frontend[\\/](index|secondary-index)\.js$/ }, async args => {
+        build.onLoad({ filter: /src-gen[\\/]frontend[\\/](index|mobile-index|secondary-index)\.js$/ }, async args => {
             const fs = await import('node:fs/promises');
             const source = await fs.readFile(args.path, 'utf8');
             const patched = source.replaceAll(
@@ -240,7 +253,7 @@ const pruneStaleChunksPlugin = {
 
 /**
  * Fetch parallelism for the sequential frontend module loads (see esbuild-DI interop above).
- * After each build, append to the `bundle` entry a snippet that adds a
+ * After each build, append to the `bundle` and `bundle.mobile` entries a snippet that adds a
  * `<link rel="modulepreload">` for every chunk the entry imports dynamically (its frontend
  * modules), taken from the metafile. A preloaded chunk is fetched and parsed concurrently but
  * evaluated only when the ordered `import()` reaches it, so DI and evaluation order stay exactly
@@ -249,11 +262,17 @@ const pruneStaleChunksPlugin = {
  * not index.html, because `theia start` regenerates index.html on every start. The snippet goes
  * before the `sourceMappingURL` comment so every mapped line keeps its position.
  */
-const MODULE_PRELOAD_ENTRY = 'bundle.js';
+const MODULE_PRELOAD_ENTRIES = ['bundle.js', 'bundle.mobile.js'];
 
 function appendModulePreloads(metafile) {
+    for (const entryName of MODULE_PRELOAD_ENTRIES) {
+        appendEntryModulePreloads(metafile, entryName);
+    }
+}
+
+function appendEntryModulePreloads(metafile, entryName) {
     const [entryOutput, entry] = Object.entries(metafile.outputs)
-        .find(([output]) => path.basename(output) === MODULE_PRELOAD_ENTRY) ?? [];
+        .find(([output]) => path.basename(output) === entryName) ?? [];
     if (!entry) {
         return;
     }

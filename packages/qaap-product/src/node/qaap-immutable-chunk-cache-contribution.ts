@@ -31,7 +31,7 @@ export function qaapGetVersionedFrontendEntryAssetPath(requestUrl: string): stri
     } catch {
         return undefined;
     }
-    if (!['/bundle.js', '/bundle.css', '/qaap-login-gate.js'].includes(url.pathname)) {
+    if (!['/bundle.js', '/bundle.mobile.js', '/bundle.css', '/qaap-login-gate.js'].includes(url.pathname)) {
         return undefined;
     }
     const buildHashes = url.searchParams.getAll('qaap-build');

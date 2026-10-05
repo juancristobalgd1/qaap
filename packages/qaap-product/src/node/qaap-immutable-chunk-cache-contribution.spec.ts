@@ -62,7 +62,7 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
 
     it('matches only fingerprinted top-level frontend entry asset requests', () => {
         const hash = 'a'.repeat(64);
-        for (const asset of ['bundle.js', 'bundle.css', 'qaap-login-gate.js']) {
+        for (const asset of ['bundle.js', 'bundle.mobile.js', 'bundle.css', 'qaap-login-gate.js']) {
             expect(qaapIsVersionedFrontendEntryAssetRequest(`/${asset}?qaap-build=${hash}`), asset).to.equal(true);
             expect(qaapGetVersionedFrontendEntryAssetPath(`/${asset}?qaap-build=${hash}`), asset).to.equal(`/${asset}`);
         }
@@ -129,11 +129,27 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
             path.resolve(__dirname, '../../../../examples/browser/scripts/copy-frontend-static.mjs'),
             'utf8',
         );
-        expect(sync).to.include("const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.css']");
+        expect(sync).to.include("const REQUIRED_GZIP_ASSETS = ['bundle.js', 'bundle.mobile.js', 'bundle.css']");
+        expect(sync).to.include("const entryPoints = ['bundle.js', 'bundle.mobile.js', 'secondary-window.js']");
+        expect(sync).to.include("const assets = ['bundle.js', 'bundle.mobile.js', 'bundle.css', 'qaap-login-gate.js']");
         expect(sync).to.include('Required pre-compressed frontend assets are missing or stale');
         expect(sync).to.include("['.gz', '.br'].some(suffix");
         expect(sync).to.include('fs.renameSync(temporaryPath, compressedPath)');
         expect(sync).to.include("precompressFile(filePath, '.br', createBrotli)");
+    });
+
+    it('preloads each entry only on its own devices, with the gate\'s mobile rule', () => {
+        const sync = fs.readFileSync(
+            path.resolve(__dirname, '../../../../examples/browser/scripts/copy-frontend-static.mjs'),
+            'utf8',
+        );
+        const gate = fs.readFileSync(path.resolve(__dirname, '../../resources/qaap-login-gate.js'), 'utf8');
+        // Same string as QAAP_MOBILE_DEVICE_MEDIA_QUERY in @theia/qaap-mobile-shell.
+        const mobileQuery = "'(max-width: 767px), (pointer: coarse)'";
+        expect(sync).to.include(`const MOBILE_DEVICE_MEDIA_QUERY = ${mobileQuery};`);
+        expect(gate).to.include(`var MOBILE_DEVICE_MEDIA_QUERY = ${mobileQuery};`);
+        expect(sync).to.include('<link rel="modulepreload" href="./bundle.js" media="${DESKTOP_DEVICE_MEDIA_QUERY}">');
+        expect(sync).to.include('<link rel="modulepreload" href="./bundle.mobile.js" media="${MOBILE_DEVICE_MEDIA_QUERY}">');
     });
 
     it('resolves packaged legal HTML from the qaap-product resources tree', () => {
