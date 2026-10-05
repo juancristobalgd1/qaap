@@ -12,6 +12,15 @@ const PHASE = process.env.QAAP_PERF_PHASE || 'baseline';
 /** `ide` runs on a desktop viewport; `ide-mobile` opens the IDE surface on the same 375×812 phone as the Work Hub. */
 const isIdeMode = mode => mode === 'ide' || mode === 'ide-mobile';
 const MODES = (process.env.QAAP_PERF_MODES || 'work-hub,ide').split(',').map(mode => mode.trim()).filter(Boolean);
+/**
+ * `work-hub-desktop-entry` is the Work Hub on the same phone, but served the desktop entry
+ * (bundle.js) where the gate asks for the phone entry (bundle.mobile.js): the "before" of the
+ * phone entry. Request interception disables Chromium's HTTP cache, so when this mode is
+ * measured the plain `work-hub` mode is intercepted too and both see the same caching.
+ */
+const isWorkHubMode = mode => mode === 'work-hub' || mode === 'work-hub-desktop-entry';
+const ROUTE_ENTRIES = MODES.includes('work-hub-desktop-entry');
+const PHONE_ENTRY = /\/bundle\.mobile\.js(?:\?|$)/;
 const BUILD_SHA = process.env.QAAP_PERF_BUILD_SHA || 'not specified';
 const AUTH_METHOD = process.env.QAAP_PERF_AUTH_METHOD
     || (process.env.QAAP_PERF_STORAGE_STATE ? 'Playwright storage state (QAAP_PERF_STORAGE_STATE)' : 'not specified');
@@ -35,6 +44,8 @@ const FOUR_G = {
 
 const initMarks = String.raw`
 (() => {
+    // The default 250-entry buffer drops late chunks and RPC polls from the byte totals.
+    performance.setResourceTimingBufferSize(5000);
     const marks = {};
     Object.defineProperty(window, '__qaapPerfMarks', { value: marks, configurable: false });
     const mark = name => {
@@ -274,6 +285,11 @@ async function captureNavigation(browser, mode, navigation) {
         contextOptions.storageState = process.env.QAAP_PERF_STORAGE_STATE;
     }
     const context = await browser.newContext(contextOptions);
+    if (ROUTE_ENTRIES && isWorkHubMode(mode)) {
+        await context.route(PHONE_ENTRY, route => mode === 'work-hub-desktop-entry'
+            ? route.continue({ url: route.request().url().replace('/bundle.mobile.js', '/bundle.js') })
+            : route.continue());
+    }
     const ideSessionSeed = isIdeMode(mode) ? "sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');\n" : '';
     await context.addInitScript(`${ideSessionSeed}${initMarks}`);
 
@@ -291,7 +307,7 @@ async function captureNavigation(browser, mode, navigation) {
     const network = await configureNetwork(page);
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120_000 });
     const loginRequired = await waitForMilestone(page, mode);
-    const interaction = mode === 'work-hub' && !loginRequired ? await measureComposerAndSelector(page) : undefined;
+    const interaction = isWorkHubMode(mode) && !loginRequired ? await measureComposerAndSelector(page) : undefined;
 
     const metrics = await page.evaluate(() => {
         const visible = element => {
@@ -365,7 +381,7 @@ async function measureMode(browser, mode) {
     network.rpcTimings.length = 0;
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 120_000 });
     const loginRequired = await waitForMilestone(page, mode);
-    const interaction = mode === 'work-hub' && !loginRequired ? await measureComposerAndSelector(page) : undefined;
+    const interaction = isWorkHubMode(mode) && !loginRequired ? await measureComposerAndSelector(page) : undefined;
     const metrics = await page.evaluate(() => ({
         marks: { ...(window.__qaapPerfMarks || {}) },
         navigation: performance.getEntriesByType('navigation').map(entry => ({
@@ -448,6 +464,21 @@ function renderSelector(interaction, key = 'selector') {
         : `${fmtMs(selector.ms)} (${selector.status}${selector.options ? `, ${selector.options} rows` : ''}${skeleton})`;
 }
 
+/** JavaScript the navigation fetched: entry file, file count, bytes over the wire / decoded. */
+function javaScriptTransfer(run) {
+    const scripts = run.resources.filter(resource => new URL(resource.name).pathname.endsWith('.js'));
+    const entry = scripts.map(resource => new URL(resource.name).pathname).find(pathname => /\/bundle(?:\.mobile)?\.js$/.test(pathname));
+    const transferred = scripts.reduce((sum, resource) => sum + (resource.transferBytes || 0), 0);
+    const decoded = scripts.reduce((sum, resource) => sum + (resource.decodedBytes || 0), 0);
+    return { entry: entry ? entry.slice(1) : '—', files: scripts.length, transferred, decoded };
+}
+
+function renderJavaScriptTransfer(run) {
+    const { entry, files, transferred, decoded } = javaScriptTransfer(run);
+    const served = run.mode === 'work-hub-desktop-entry' ? ' (bundle.js served for it)' : '';
+    return `${(transferred / 1e6).toFixed(2)} MB / ${(decoded / 1e6).toFixed(2)} MB in ${files} files, entry ${entry}${served}`;
+}
+
 function renderRun(run) {
     const readyKey = isIdeMode(run.mode) ? 'ideShell' : 'firstUsableComposer';
     const marks = run.metrics.marks;
@@ -462,7 +493,7 @@ function renderRun(run) {
         `- Document loads: ${run.documentLoads}${run.documentLoads > 1 ? ' — the page reloaded during the run; marks are relative to the last document and understate the real time' : ''}`,
         `- Time to logo: ${fmtMs(marks.logo)}`,
         `- Time to first enabled Work Hub control: ${fmtMs(marks.workHubInteractive)}`,
-        `- Time to first usable Work Hub composer: ${fmtMs(run.mode === 'work-hub' ? milestone : undefined)}${run.interaction ? ` (typing ${run.interaction.typeable ? 'accepted' : 'rejected'} via ${run.interaction.composerKind || 'unknown'})` : ''}`,
+        `- Time to first usable Work Hub composer: ${fmtMs(isWorkHubMode(run.mode) ? milestone : undefined)}${run.interaction ? ` (typing ${run.interaction.typeable ? 'accepted' : 'rejected'} via ${run.interaction.composerKind || 'unknown'})` : ''}`,
         `- Time to real Theia composer: ${fmtMs(marks.composerTypeable)}${run.interaction ? ` (visible at selector check: ${run.interaction.realComposerReady ? 'yes' : 'no'})` : ''}`,
         `- Time to instant shell composer: ${fmtMs(marks.instantComposerTypeable)}`,
         `- Agent selector open → list: ${renderSelector(run.interaction)}`,
@@ -470,6 +501,7 @@ function renderRun(run) {
         `- Time to IDE shell: ${fmtMs(isIdeMode(run.mode) ? milestone : undefined)}`,
         `- Navigation TTFB / DOMContentLoaded / load: ${fmtMs(navigation.responseStartMs)} / ${fmtMs(navigation.domContentLoadedMs)} / ${fmtMs(navigation.loadMs)}`,
         `- Navigation transfer / decoded: ${navigation.transferSize ?? '—'} / ${navigation.decodedBodySize ?? '—'} bytes`,
+        `- JavaScript transferred / decoded: ${renderJavaScriptTransfer(run)}`,
         `- DOM state: ${safeText(JSON.stringify(run.metrics.documentState))}`,
         `- Work Hub startup-ready event: ${fmtMs(marks.startupReady)}`,
         `- Work Hub root / composer in DOM / splash hidden: ${fmtMs(marks.workHubInDom)} / ${fmtMs(marks.composerInDom)} / ${fmtMs(marks.splashHidden)}`,
@@ -519,9 +551,9 @@ function findHeadlessShell(root) {
 }
 
 async function main() {
-    const validModes = new Set(['work-hub', 'ide', 'ide-mobile']);
+    const validModes = new Set(['work-hub', 'work-hub-desktop-entry', 'ide', 'ide-mobile']);
     if (!MODES.length || MODES.some(mode => !validModes.has(mode))) {
-        throw new Error(`QAAP_PERF_MODES must contain work-hub, ide and/or ide-mobile; received: ${MODES.join(', ')}`);
+        throw new Error(`QAAP_PERF_MODES must contain work-hub, work-hub-desktop-entry, ide and/or ide-mobile; received: ${MODES.join(', ')}`);
     }
     const browser = await chromium.launch(resolveLaunchOptions());
     const results = [];
@@ -544,13 +576,13 @@ async function main() {
         '',
         `Network: ${NETWORK === '4g' ? '4G emulation (150 ms RTT, 1.6 Mbps down)' : 'unthrottled'}`,
         '',
-        '| Mode | Navigation | Logo | First usable composer | Theia composer | IDE workbench | Selector open → list | Selector once idle | Document loads | Outcome |',
-        '|---|---|---:|---:|---:|---:|---:|---:|---:|---|',
+        '| Mode | Navigation | Logo | First usable composer | Theia composer | Work Hub interactive | IDE workbench | Selector open → list | Selector once idle | JS transferred / decoded | Document loads | Outcome |',
+        '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
         ...results.map(run => {
             const marks = run.metrics.marks;
             const expected = isIdeMode(run.mode) ? marks.ideShell : marks.firstUsableComposer;
             const outcome = expected !== undefined ? 'ready' : run.loginRequired ? 'auth gate; startup not measurable' : 'milestone not reached';
-            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(run.mode === 'work-hub' ? expected : undefined)} | ${fmtMs(run.mode === 'work-hub' ? marks.composerTypeable : undefined)} | ${fmtMs(isIdeMode(run.mode) ? expected : undefined)} | ${run.mode === 'work-hub' ? renderSelector(run.interaction) : '—'} | ${run.mode === 'work-hub' ? renderSelector(run.interaction, 'idleSelector') : '—'} | ${run.documentLoads} | ${outcome} |`;
+            return `| ${run.mode} | ${run.navigation} | ${fmtMs(marks.logo)} | ${fmtMs(isWorkHubMode(run.mode) ? expected : undefined)} | ${fmtMs(isWorkHubMode(run.mode) ? marks.composerTypeable : undefined)} | ${fmtMs(isWorkHubMode(run.mode) ? marks.workHubInteractive : undefined)} | ${fmtMs(isIdeMode(run.mode) ? expected : undefined)} | ${isWorkHubMode(run.mode) ? renderSelector(run.interaction) : '—'} | ${isWorkHubMode(run.mode) ? renderSelector(run.interaction, 'idleSelector') : '—'} | ${renderJavaScriptTransfer(run)} | ${run.documentLoads} | ${outcome} |`;
         }),
         '',
         ...results.map(renderRun),

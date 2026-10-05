@@ -73,3 +73,31 @@ jobs:
           QAAP_SKIP_AUTH: 'true'
           QAAP_CLOUD_MODE: local
         run: npm run test:playwright -- theia-app
+
+      # Advisory cold-load numbers for the production build: the Work Hub on a 375×812 phone with
+      # the phone entry (bundle.mobile.js) and with the desktop entry served in its place (the
+      # "before"), plus the desktop IDE, all on emulated 4G. Never fails the job.
+      - name: Measure phone and desktop cold load (advisory)
+        shell: bash
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          QAAP_SKIP_AUTH: 'true'
+          QAAP_CLOUD_MODE: local
+          QAAP_PERF_URL: http://127.0.0.1:3100/
+          QAAP_PERF_OUTPUT: ${{ runner.temp }}/qaap-perf.md
+          QAAP_PERF_PHASE: CI production build
+          QAAP_PERF_BUILD_SHA: ${{ github.sha }}
+          QAAP_PERF_AUTH_METHOD: QAAP_SKIP_AUTH (local CI backend)
+          QAAP_PERF_MODES: work-hub,work-hub-desktop-entry,ide
+          QAAP_PERF_MILESTONE_TIMEOUT_MS: '120000'
+        run: |
+          (cd examples/browser && npm run start -- --hostname 127.0.0.1 --port 3100 > "$RUNNER_TEMP/qaap-perf-server.log" 2>&1 &)
+          for attempt in $(seq 1 90); do
+            curl -sf -o /dev/null http://127.0.0.1:3100/ && break
+            sleep 2
+          done
+          (cd examples/playwright && node scripts/qaap-perf-baseline.mjs)
+          cat "$QAAP_PERF_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^\| (work-hub|ide)' "$QAAP_PERF_OUTPUT" || true
+          grep -E 'JavaScript transferred' "$QAAP_PERF_OUTPUT" || true
