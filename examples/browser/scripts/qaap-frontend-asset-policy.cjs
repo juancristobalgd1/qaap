@@ -25,4 +25,29 @@ function deferBundleStylesheetOnPhones(html) {
     });
 }
 
-module.exports = { deferBundleStylesheetOnPhones };
+function patchIndexForFreshAssets(html, buildVersion) {
+    let patched = html.replace(
+        /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
+        `./bundle.css?qaap-build=${buildVersion}`,
+    ).replace(
+        /\.\/bundle\.js(?:\?[^"'\s>]*)?/g,
+        `./bundle.js?qaap-build=${buildVersion}`,
+    ).replace(
+        /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
+        `./qaap-login-gate.js?qaap-build=${buildVersion}`,
+    );
+
+    // The login gate chooses when bundle.js starts. Any parser-discovered preload
+    // bypasses that choice and downloads the full workbench before sign-in.
+    patched = patched.replace(/<link\b[^>]*>/gi, linkTag => {
+        const rel = linkTag.match(/\brel\s*=\s*(["'])([^"']*)\1/i);
+        const href = linkTag.match(/\bhref\s*=\s*(["'])([^"']*)\1/i);
+        const isModulePreload = rel && rel[2].toLowerCase().split(/\s+/).includes('modulepreload');
+        const isBundle = href && /(?:^|\/)bundle\.js(?:\?|$)/i.test(href[2]);
+        return isModulePreload && isBundle ? '' : linkTag;
+    });
+
+    return deferBundleStylesheetOnPhones(patched);
+}
+
+module.exports = { deferBundleStylesheetOnPhones, patchIndexForFreshAssets };

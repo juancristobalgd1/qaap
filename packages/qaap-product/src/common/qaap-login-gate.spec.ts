@@ -98,6 +98,32 @@ describe('Qaap login gate', () => {
     });
 
     describe('cold start probes', () => {
+        it('renders the mobile sign-in gate immediately while auth probes are still pending', async () => {
+            const run = start(() => new Promise<undefined>(() => undefined), undefined, {
+                headHtml: '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=test">',
+                beforeRun: window => {
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            });
+            const startedAt = Date.now();
+            await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'mobile sign-in gate');
+
+            expect(Date.now() - startedAt).to.be.lessThan(2000);
+            expect(run.document.getElementById('qaap-login-github')?.textContent).to.contain('Sign in with GitHub');
+            expect(run.document.querySelectorAll('script[src*="bundle.js"]')).to.have.length(0);
+            expect(run.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
+            expect((run.window as unknown as { __qaapBundleLoading?: boolean }).__qaapBundleLoading).to.equal(undefined);
+        });
+
         it('probes auth config and session in parallel and loads a signed-in user without the gate', async () => {
             const run = start(pathname => {
                 if (pathname === CONFIG) {
@@ -157,15 +183,16 @@ describe('Qaap login gate', () => {
             expect((run.document.getElementById('qaap-login-retry') as HTMLButtonElement).hidden).to.equal(true);
         });
 
-        it('offers a retry when the server does not answer, and re-enables GitHub once it does', async () => {
+        it('keeps GitHub sign-in available after a failed config probe without claiming the server is down', async () => {
             let serverUp = false;
             const run = start(pathname => pathname === CONFIG && serverUp
                 ? { ok: true, body: { skipAuth: false, githubOAuth: true } }
                 : undefined);
             const retry = (): HTMLButtonElement => run.document.getElementById('qaap-login-retry') as HTMLButtonElement;
             await run.waitFor(() => retry()?.hidden === false, 'retry button visible');
-            expect(button(run).disabled).to.equal(true);
-            expect(status(run)).to.contain('The Qaap server is not responding.');
+            expect(button(run).disabled).to.equal(false);
+            expect(button(run).textContent).to.contain('Sign in with GitHub');
+            expect(status(run)).to.not.contain('The Qaap server is not responding.');
 
             serverUp = true;
             retry().click();
@@ -418,4 +445,3 @@ describe('Qaap login gate', () => {
         });
     });
 });
-

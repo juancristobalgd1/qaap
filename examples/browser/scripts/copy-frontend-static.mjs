@@ -13,7 +13,7 @@ import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
 import assetPolicy from './qaap-frontend-asset-policy.cjs';
 
-const { deferBundleStylesheetOnPhones } = assetPolicy;
+const { patchIndexForFreshAssets: patchFreshAssets } = assetPolicy;
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const libFrontend = path.join(root, 'lib', 'frontend');
@@ -64,18 +64,7 @@ function patchIndexForFreshAssets(indexPath) {
     if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss) || !fs.existsSync(bundleJs)) {
         return;
     }
-    let html = fs.readFileSync(indexPath, 'utf8');
-    html = html.replace(
-        /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
-        `./bundle.css?qaap-build=${BUILD_VERSION}`,
-    ).replace(
-        /\.\/bundle\.js(?:\?[^"'\s>]*)?/g,
-        `./bundle.js?qaap-build=${BUILD_VERSION}`,
-    ).replace(
-        /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
-        `./qaap-login-gate.js?qaap-build=${BUILD_VERSION}`,
-    );
-    html = deferBundleStylesheetOnPhones(html);
+    const html = patchFreshAssets(fs.readFileSync(indexPath, 'utf8'), BUILD_VERSION);
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
