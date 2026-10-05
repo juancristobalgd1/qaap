@@ -148,12 +148,26 @@ async function waitForDesktopIdeSurface(page: Page, timeout: number): Promise<bo
 }
 
 /**
+ * A page booted at the phone viewport runs the phone entry (bundle.mobile.js), which reloads once into
+ * the desktop entry when the window is widened (qaap-login-gate.js). Keys pressed during that reload
+ * are lost, so wait until the current document runs the desktop entry before driving the IDE.
+ */
+async function waitForDesktopEntry(page: Page): Promise<void> {
+    await expect.poll(() => page.evaluate(() => {
+        const sources = [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map(script => script.src);
+        return sources.some(source => /\/bundle\.js(\?|$)/.test(source))
+            && !sources.some(source => /\/bundle\.mobile\.js(\?|$)/.test(source));
+    }).catch(() => false), { timeout: 60_000 }).toBe(true);
+}
+
+/**
  * Escape hatch: Work Hub → classic IDE. The classic IDE is desktop-only (one-column mobile mode
  * always shows Work Hub, see .cursor/rules/work-hub-reload-default.mdc), so switch to a desktop
  * viewport before choosing "Open IDE".
  */
 async function openDesktopIde(app: TheiaApp): Promise<void> {
     await app.page.setViewportSize(DESKTOP_IDE_VIEWPORT);
+    await waitForDesktopEntry(app.page);
     await dismissMobileTutorial(app.page);
     await waitForWorkHubReady(app.page);
 
