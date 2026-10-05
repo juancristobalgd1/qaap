@@ -80,14 +80,30 @@ reset_case() {
     unset QAAP_SMOKE_SESSION QAAP_SMOKE_COOKIE
 }
 
-# Missing credentials must fail clearly before sending any requests.
+# Missing credentials: health and build are still enforced; only the signed-in part is skipped,
+# reported as "skipped (no smoke credentials)" with a machine-readable marker, and exits 0.
 reset_case
-if "$TEST_ROOT/qaap-vps-post-deploy-user-smoke.sh" https://qaap.example.test "$EXPECTED_SHA" \
+if ! "$TEST_ROOT/qaap-vps-post-deploy-user-smoke.sh" https://qaap.example.test "$EXPECTED_SHA" \
     > "$TEST_ROOT/missing-secret.out" 2>&1; then
-    fail 'smoke accepted missing authentication secrets'
+    fail "smoke without credentials failed instead of skipping: $(cat "$TEST_ROOT/missing-secret.out")"
 fi
-grep -q 'QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required' "$TEST_ROOT/missing-secret.out" || fail 'missing secret failure was unclear'
-[[ ! -s "$QAAP_TEST_URLS" ]] || fail 'smoke made requests without credentials'
+grep -q 'user smoke skipped (no smoke credentials)' "$TEST_ROOT/missing-secret.out" || fail 'skipped user smoke was not reported'
+grep -Fxq 'QAAP_USER_SMOKE=skipped' "$TEST_ROOT/missing-secret.out" || fail 'skipped marker missing'
+grep -q 'health reports deployed build aaaaaaaaaaaa' "$TEST_ROOT/missing-secret.out" || fail 'health was not checked without credentials'
+grep -q 'auth/config reports deployed build aaaaaaaaaaaa' "$TEST_ROOT/missing-secret.out" || fail 'build was not checked without credentials'
+if grep -Eq '\|qaap_sid|/qaap/api/agent-approvals\||https://qaap.example.test/\|' "$QAAP_TEST_URLS"; then
+    fail 'smoke sent signed-in requests without credentials'
+fi
+
+# Missing credentials never hide a health failure.
+reset_case
+export QAAP_TEST_HEALTH_STATUS=503
+if "$TEST_ROOT/qaap-vps-post-deploy-user-smoke.sh" https://qaap.example.test "$EXPECTED_SHA" \
+    > "$TEST_ROOT/missing-secret-health.out" 2>&1; then
+    fail 'smoke without credentials accepted a failing health check'
+fi
+grep -q 'expected health HTTP 200, got 503' "$TEST_ROOT/missing-secret-health.out" || fail 'health failure without credentials was unclear'
+if grep -q 'QAAP_USER_SMOKE=skipped' "$TEST_ROOT/missing-secret-health.out"; then fail 'health failure was reported as a skipped smoke'; fi
 
 # A valid session checks health, build, authenticated workspace root, and signed-in API.
 reset_case
@@ -101,6 +117,7 @@ grep -q 'health reports deployed build aaaaaaaaaaaa' "$TEST_ROOT/signed-in.out" 
 grep -q 'auth/config reports deployed build aaaaaaaaaaaa' "$TEST_ROOT/signed-in.out" || fail 'auth/config build success was not reported'
 grep -q 'signed-in workspace root returned HTTP 200' "$TEST_ROOT/signed-in.out" || fail 'workspace success was not reported'
 grep -q 'signed-in agent-approvals returned HTTP 200' "$TEST_ROOT/signed-in.out" || fail 'authenticated API success was not reported'
+grep -Fxq 'QAAP_USER_SMOKE=passed' "$TEST_ROOT/signed-in.out" || fail 'passed marker missing'
 grep -Fxq 'https://qaap.example.test/|qaap_sid=smoke-session' "$QAAP_TEST_URLS" || fail 'workspace root was not requested with the session cookie'
 grep -Fxq 'https://qaap.example.test/qaap/api/agent-approvals|qaap_sid=smoke-session' "$QAAP_TEST_URLS" || fail 'signed-in API was not requested with the session cookie'
 if grep -Fq 'smoke-session' "$TEST_ROOT/signed-in.out"; then fail 'smoke secret leaked to output'; fi
@@ -191,4 +208,4 @@ fi
 grep -q 'separated by =' "$TEST_ROOT/bad-cookie.out" || fail 'malformed cookie failure was unclear'
 [[ ! -s "$QAAP_TEST_URLS" ]] || fail 'smoke made requests with a malformed cookie'
 
-echo 'qaap-vps-post-deploy-user-smoke tests passed (13 scenarios)'
+echo 'qaap-vps-post-deploy-user-smoke tests passed (14 scenarios)'

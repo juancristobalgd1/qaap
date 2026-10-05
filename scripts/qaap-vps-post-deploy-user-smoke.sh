@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Check the deployed health payload and a real signed-in workspace request.
+#
+# Without QAAP_SMOKE_SESSION/QAAP_SMOKE_COOKIE the health and build checks still run and still fail
+# the script; only the signed-in part is skipped. The last stdout line is a marker for callers:
+# QAAP_USER_SMOKE=passed or QAAP_USER_SMOKE=skipped. Exit 3 means the session was rejected.
 set -euo pipefail
 
 BASE_URL="${1:-${QAAP_VPS_PUBLIC_URL:-}}"
@@ -16,11 +20,7 @@ if [[ -n "${QAAP_SMOKE_SESSION:-}" ]]; then
         *) SMOKE_COOKIE="qaap_sid=$QAAP_SMOKE_SESSION" ;;
     esac
 fi
-if [[ -z "$SMOKE_COOKIE" ]]; then
-    echo '::error::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required; refusing deploy without an authenticated workspace smoke.' >&2
-    exit 1
-fi
-if [[ "$SMOKE_COOKIE" != *=* ]]; then
+if [[ -n "$SMOKE_COOKIE" && "$SMOKE_COOKIE" != *=* ]]; then
     echo '::error::QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE must contain a cookie name and value separated by =.' >&2
     exit 1
 fi
@@ -41,9 +41,6 @@ cleanup() {
     esac
 }
 trap cleanup EXIT
-COOKIE_HEADER_FILE="$TEMP_DIR/cookie-header"
-printf 'Cookie: %s\n' "$SMOKE_COOKIE" > "$COOKIE_HEADER_FILE"
-chmod 600 "$COOKIE_HEADER_FILE"
 
 if ! HEALTH_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/health.json" \
     --write-out '%{http_code}' --max-time 15 "$BASE_URL/qaap/api/health")"; then
@@ -117,6 +114,17 @@ if [[ "$DEPLOYED_SHA" != "${EXPECTED_SHA:0:12}" ]]; then
 fi
 echo "OK: auth/config reports deployed build $DEPLOYED_SHA."
 
+if [[ -z "$SMOKE_COOKIE" ]]; then
+    echo '::warning::Signed-in user smoke skipped (no smoke credentials): set QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE.' >&2
+    echo 'SKIPPED: user smoke skipped (no smoke credentials).'
+    echo 'QAAP_USER_SMOKE=skipped'
+    exit 0
+fi
+
+COOKIE_HEADER_FILE="$TEMP_DIR/cookie-header"
+(umask 077 && printf 'Cookie: %s\n' "$SMOKE_COOKIE" > "$COOKIE_HEADER_FILE")
+chmod 600 "$COOKIE_HEADER_FILE"
+
 # The first signed-in request can wait for the user's tenant backend to start (master: 180 s).
 if ! WORKSPACE_STATUS="$(curl --silent --show-error --output "$TEMP_DIR/workspace-root.html" \
     --write-out '%{http_code}' --max-time 180 -H "@$COOKIE_HEADER_FILE" "$BASE_URL/")"; then
@@ -151,3 +159,4 @@ if [[ "$APPROVALS_STATUS" != 200 ]]; then
     exit 1
 fi
 echo 'OK: signed-in agent-approvals returned HTTP 200.'
+echo 'QAAP_USER_SMOKE=passed'
