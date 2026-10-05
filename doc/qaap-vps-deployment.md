@@ -167,22 +167,33 @@ After secrets exist:
 
 ### Verification and automatic rollback
 
-`scripts/qaap-vps-rollback.sh` wraps every CI deploy. It needs `QAAP_SMOKE_SESSION` or
-`QAAP_SMOKE_COOKIE` (a signed-in `name=value` cookie) and refuses to deploy without one.
+`scripts/qaap-vps-rollback.sh` wraps every CI deploy. It only deploys an immutable image
+reference (`ghcr.io/<owner>/qaap:<sha>@sha256:<digest>`).
 
+- **User smoke.** With `QAAP_SMOKE_SESSION` or `QAAP_SMOKE_COOKIE` (a signed-in `name=value`
+  cookie), verification includes the signed-in workspace and agent-approvals requests. Without
+  them the deploy still runs: health, build, launch readiness and the auth API gate still decide
+  the result and still trigger a rollback, and the summary reports
+  "User smoke: skipped (no smoke credentials)". A skipped smoke never triggers a rollback.
 - **Preflight.** Before changing anything it runs the same gates against the release that is
-  serving now: launch readiness (when the host has Node.js), auth API, health build and the
-  authenticated workspace smoke. An expired smoke credential (HTTP 302/401/403) or a VPS that
-  cannot reach its own public URL blocks the deploy; a healthy release is never rolled back
-  because of it. Renew the secret and re-run.
-- **Rollback target.** The serving image is tagged `qaap-theia:rollback`, and the tenant image is
-  tagged `qaap-tenant:rollback` in the rootless daemon. Image cleanup never removes these tags.
-  If the deploy user reaches the rootless daemon through a different socket path than Theia,
-  set `QAAP_ROOTLESS_DOCKER_HOST`.
-- **Rollback.** If the candidate fails verification, the script drains agent turns, stops the
-  candidate, stops and renames its new `qaap-backend-*` containers, and removes its new tenant
-  and ingress helpers. Volumes are kept. It then checks out the previous repository revision,
-  pins both rollback tags in `.env`, refreshes Caddy, restores Theia and verifies the old build.
+  serving now. An expired smoke credential (HTTP 302/401/403) or a VPS that cannot reach its own
+  public URL blocks the deploy; a healthy release is never rolled back because of it. A session
+  rejected only after the switch ends in `manual` without a rollback.
+- **Rollback target.** `~/.local/state/qaap-deploy/last-good-release.env` records the last release
+  whose deploy passed health, build, the gates **and** the signed-in user smoke: revision, digest
+  reference, image id, tenant image tag and rootless Docker endpoint. A release verified with the
+  smoke skipped is never recorded, so until smoke credentials are configured there is no target
+  and a failed release ends in `manual`. Image cleanup keeps the recorded image in both daemons.
+  Before the deploy the script checks the target: its commit, its image by digest on the host
+  (pulled again if missing) and its tenant tag in the rootless daemon (seeded from the host if
+  missing). If the deploy user reaches the rootless daemon through a different socket path than
+  Theia, set `QAAP_ROOTLESS_DOCKER_HOST`.
+- **Rollback.** If the candidate fails verification, the script checks the target again while
+  the candidate still serves, drains agent turns, stops the candidate, stops and renames its new
+  `qaap-backend-*` containers, and removes its new tenant and ingress helpers. Volumes are kept.
+  It then checks out the target revision (Compose and Caddy files), refreshes Caddy and starts
+  Theia with `QAAP_THEIA_IMAGE=<recorded digest reference>` and `--no-build`, then verifies the
+  target build. `.env` is never rewritten and no rollback tags are created.
 - **External check.** After the VPS checks pass, the runner repeats them from outside: readiness,
   auth API and the authenticated smoke. If that check fails, a second SSH step runs
   `qaap-vps-rollback.sh --rollback-only`.
@@ -195,9 +206,9 @@ After secrets exist:
 - **Detached runs.** The deploy and the rollback run detached from SSH (`setsid nohup`) under
   `/run/lock/qaap-deploy.lock`. A cancelled job or a dropped connection cannot stop them halfway.
   Full logs stay on the VPS in `~/.local/state/qaap-deploy/logs/`.
-- **Bootstrap or hotfix without a target.** Run the workflow manually with
-  `allow_no_rollback` only when no healthy Theia is running. Automatic rollback is then off,
-  and the summary says so.
+- **Emergency override.** Run the workflow manually with `allow_no_rollback` when the serving
+  release or the rollback target is broken and a hotfix must go out. The preflight and the
+  automatic rollback are then off, and a failure ends in `manual`.
 
 The GHCR package remains private by default. Keep it private: the runtime image contains the built
 application and source tree. GitHub links the package to this repository through the

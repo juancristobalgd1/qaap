@@ -60,9 +60,33 @@ daemon='host'
 printf '%s %s\n' "$daemon" "$*" >> "$FAKE_STATE/docker.calls"
 
 read_current_image() { cat "$FAKE_STATE/current-image"; }
+# Image ids by reference, per daemon. The rollback target is the old release.
+ref_image_id() {
+    local ref="$1"
+    if [[ "$daemon" == rootless ]]; then
+        if [[ "$ref" == "$FAKE_OLD_TENANT_IMAGE" ]]; then
+            if [[ -f "$FAKE_STATE/rootless-old-tenant-missing" ]]; then return 1; fi
+            printf '%s\n' "$FAKE_OLD_IMAGE_ID"
+        elif [[ "$ref" == "$FAKE_NEW_TENANT_IMAGE" ]]; then
+            printf '%s\n' "$FAKE_NEW_IMAGE_ID"
+        else
+            return 1
+        fi
+        return 0
+    fi
+    case "$ref" in
+        "$FAKE_TARGET_REF"|"$FAKE_OLD_IMAGE_ID"|"$FAKE_OLD_TENANT_IMAGE")
+            if [[ -f "$FAKE_STATE/host-target-missing" ]]; then return 1; fi
+            printf '%s\n' "$FAKE_OLD_IMAGE_ID"
+            ;;
+        "$FAKE_CANDIDATE_REF"|"$FAKE_NEW_IMAGE_ID"|"$FAKE_NEW_TENANT_IMAGE") printf '%s\n' "$FAKE_NEW_IMAGE_ID" ;;
+        *) return 1 ;;
+    esac
+}
 case "$1" in
     compose)
         shift
+        printf '%s|%s|%s\n' "$1" "${QAAP_THEIA_IMAGE:-}" "${QAAP_TENANT_DOCKER_IMAGE:-}" >> "$FAKE_STATE/compose.env"
         case "$1" in
             ps)
                 if [[ "${FAKE_CURRENT_MISSING:-0}" != 1 ]]; then printf '%s\n' theia-container; fi
@@ -79,12 +103,11 @@ case "$1" in
                 [[ "${QAAP_THEIA_IMAGE:-}" ]] || { echo 'QAAP_THEIA_IMAGE missing' >&2; exit 21; }
                 [[ " $* " == *' --no-build '* ]] || { echo '--no-build missing' >&2; exit 22; }
                 if [[ " $* " == *' theia '* ]]; then
-                    image="$QAAP_THEIA_IMAGE"
-                    if [[ "$image" == "$FAKE_CANDIDATE_REF" ]]; then
-                        image="$FAKE_NEW_IMAGE_ID"
-                    elif [[ "$image" == qaap-theia:rollback ]]; then
-                        image="$FAKE_OLD_IMAGE_ID"
-                    fi
+                    case "$QAAP_THEIA_IMAGE" in
+                        "$FAKE_CANDIDATE_REF") image="$FAKE_NEW_IMAGE_ID" ;;
+                        "$FAKE_TARGET_REF") image="$FAKE_OLD_IMAGE_ID" ;;
+                        *) echo "compose up theia with an unrecorded image: $QAAP_THEIA_IMAGE" >&2; exit 26 ;;
+                    esac
                     if [[ "$image" == "$FAKE_OLD_IMAGE_ID" && "${FAKE_FAIL_ROLLBACK:-0}" == 1 ]]; then
                         echo 'simulated rollback compose failure' >&2
                         exit 23
@@ -114,8 +137,12 @@ case "$1" in
                 if [[ "$format" == *'.Image'* ]]; then
                     read_current_image
                 elif [[ "$format" == *'Config.Env'* ]]; then
+                    tenant_image="$FAKE_OLD_TENANT_IMAGE"
+                    [[ "$(read_current_image)" == "$FAKE_NEW_IMAGE_ID" ]] && tenant_image="$FAKE_NEW_TENANT_IMAGE"
                     printf 'QAAP_DOCKER_ROOTLESS=1\nQAAP_TENANT_DOCKER_IMAGE=%s\nDOCKER_HOST=%s\n' \
-                        "$FAKE_OLD_TENANT_IMAGE" "$FAKE_ROOTLESS_HOST"
+                        "$tenant_image" "$FAKE_ROOTLESS_HOST"
+                elif [[ "$format" == *'.Mounts'* ]]; then
+                    :
                 else
                     exit 24
                 fi
@@ -149,30 +176,34 @@ case "$1" in
         ;;
     tag)
         printf '%s %s %s\n' "$daemon" "$2" "$3" >> "$FAKE_STATE/tags"
-        if [[ "$daemon" == rootless && "${FAKE_ROOTLESS_MISSING_IMAGE:-}" == "$2" ]]; then exit 30; fi
+        ;;
+    pull)
+        echo "$daemon $2" >> "$FAKE_STATE/pulls"
+        if [[ "${FAKE_PULL_FAIL:-0}" == 1 ]]; then echo 'pull denied' >&2; exit 1; fi
+        rm -f "$FAKE_STATE/host-target-missing"
+        ;;
+    save)
+        [[ "$daemon" == host ]] || exit 2
+        printf 'image-archive:%s\n' "$2"
+        ;;
+    load)
+        [[ "$daemon" == rootless ]] || exit 2
+        archive="$(cat)"
+        echo "$archive" >> "$FAKE_STATE/rootless.loaded"
+        [[ "$archive" == "image-archive:$FAKE_OLD_TENANT_IMAGE" ]] && rm -f "$FAKE_STATE/rootless-old-tenant-missing"
         ;;
     image)
         [[ "$2" == inspect ]] || exit 2
         image="$3"
-        if [[ "$daemon" == rootless && "${FAKE_ROOTLESS_MISSING_IMAGE:-}" == "$image" ]]; then exit 28; fi
-        if [[ " ${*:4} " == *'--format'* ]]; then
-            if [[ "$image" == "$FAKE_OLD_IMAGE_ID" ]]; then
-                if [[ " $* " == *'org.opencontainers.image.revision'* ]]; then
-                    printf '%s\n' "${FAKE_OLD_LABEL_BUILD:-$FAKE_OLD_BUILD}"
-                else
-                    printf '%s\n' "$FAKE_OLD_BUILD"
-                fi
-            elif [[ "$image" == "$FAKE_NEW_IMAGE_ID" ]]; then
-                if [[ " $* " == *'ai.qaap.rollback'* ]]; then
-                    printf '%s\n' "${FAKE_NEW_ROLLBACK_LABEL:-}"
-                else
-                    printf '%s\n' "$FAKE_NEW_BUILD"
-                fi
-            else
-                exit 27
-            fi
-        elif [[ "$image" != "$FAKE_OLD_IMAGE_ID" && "$image" != "$FAKE_OLD_TENANT_IMAGE" &&
-            "$image" != qaap-theia:rollback && "$image" != qaap-tenant:rollback ]]; then
+        if [[ " ${*:4} " == *'{{.Id}}'* ]]; then
+            ref_image_id "$image" || { echo "Error: No such image: $image" >&2; exit 1; }
+        elif [[ " $* " == *'org.opencontainers.image.revision'* ]]; then
+            id="$(ref_image_id "$image")" || exit 27
+            if [[ "$id" == "$FAKE_OLD_IMAGE_ID" ]]; then printf '%s\n' "$FAKE_OLD_BUILD"; else printf '%s\n' "$FAKE_NEW_BUILD"; fi
+        elif [[ " $* " == *'ai.qaap.rollback'* ]]; then
+            id="$(ref_image_id "$image")" || exit 27
+            if [[ "$id" == "$FAKE_NEW_IMAGE_ID" ]]; then printf '%s\n' "${FAKE_NEW_ROLLBACK_LABEL:-}"; else printf '\n'; fi
+        else
             exit 28
         fi
         ;;
@@ -238,6 +269,7 @@ fi
 case "$url" in
     */qaap/api/health)
         status="${FAKE_HEALTH_STATUS:-200}"
+        if [[ "$current" == "$FAKE_NEW_IMAGE_ID" ]]; then status="${FAKE_CANDIDATE_HEALTH_STATUS:-$status}"; fi
         if [[ ! -s "$FAKE_STATE/capture-health-called" ]]; then
             : > "$FAKE_STATE/capture-health-called"
             status="${FAKE_CAPTURE_HEALTH_STATUS:-$status}"
@@ -262,12 +294,16 @@ case "$url" in
             body='Tenant backend unavailable'
         else
             status="${FAKE_WORKSPACE_STATUS:-200}"
+            if [[ "$current" == "$FAKE_NEW_IMAGE_ID" ]]; then status="${FAKE_CANDIDATE_WORKSPACE_STATUS:-$status}"; fi
             body='workspace ready'
         fi
         ;;
     *) echo "unexpected curl URL: $url" >&2; exit 2 ;;
 esac
-if [[ -n "$output" && "$output" != /dev/null ]]; then
+if (( fail_http == 1 && status >= 400 )); then exit 22; fi
+if [[ -z "$output" ]]; then
+    printf '%s\n' "$body"
+elif [[ "$output" != /dev/null ]]; then
     printf '%s\n' "$body" > "$output"
 fi
 if [[ -n "$write_out" ]]; then
@@ -281,9 +317,8 @@ cat > "$TEST_ROOT/bin/git" <<'MOCK'
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_STATE/git.calls"
 case "$1" in
-    cat-file) exit 0 ;;
+    cat-file) [[ "${FAKE_GIT_MISSING:-}" != "${3%^\{commit\}}" ]] ;;
     checkout) printf '%s\n' "$3" > "$FAKE_STATE/checked-out-sha" ;;
-    rev-parse) printf '%s\n' "$FAKE_PREV_SHA" ;;
     *) echo "unexpected git command: $*" >&2; exit 2 ;;
 esac
 MOCK
@@ -297,11 +332,12 @@ export FAKE_STATE="$TEST_ROOT/state"
 export FAKE_ROOTLESS_HOST='unix:///tmp/qaap-test-rootless.sock'
 export FAKE_OLD_IMAGE_ID="sha256:$(printf '1%.0s' {1..64})"
 export FAKE_NEW_IMAGE_ID="sha256:$(printf '2%.0s' {1..64})"
-export FAKE_OLD_TENANT_IMAGE='ghcr.io/qaap/theia:old'
+export FAKE_OLD_TENANT_IMAGE="ghcr.io/qaap/qaap:$(printf 'a%.0s' {1..40})"
+export FAKE_NEW_TENANT_IMAGE="ghcr.io/qaap/qaap:$(printf 'b%.0s' {1..40})"
+export FAKE_TARGET_REF="$FAKE_OLD_TENANT_IMAGE@sha256:$(printf '1%.0s' {1..64})"
 export FAKE_OLD_BUILD="$(printf 'a%.0s' {1..40})"
 export FAKE_NEW_BUILD="$(printf 'b%.0s' {1..40})"
-export FAKE_CANDIDATE_REF='ghcr.io/qaap/qaap:candidate@sha256:abcd'
-export FAKE_PREV_SHA="$(printf 'c%.0s' {1..40})"
+export FAKE_CANDIDATE_REF="$FAKE_NEW_TENANT_IMAGE@sha256:$(printf '2%.0s' {1..64})"
 export QAAP_SMOKE_SESSION='test-session'
 export QAAP_VPS_VERIFY_TIMEOUT_SECONDS=1
 export QAAP_VPS_VERIFY_INTERVAL_SECONDS=0
@@ -315,29 +351,31 @@ setup_case() {
     export FAKE_STATE
     mkdir -p "$FAKE_STATE/rootless"
     printf '%s\n' "$FAKE_OLD_IMAGE_ID" > "$FAKE_STATE/current-image"
-    : > "$FAKE_STATE/docker.calls"
-    : > "$FAKE_STATE/curl.calls"
-    : > "$FAKE_STATE/gates"
-    : > "$FAKE_STATE/actions"
-    : > "$FAKE_STATE/tags"
-    : > "$FAKE_STATE/rootless.removed"
-    : > "$FAKE_STATE/rootless.stopped"
-    : > "$FAKE_STATE/rootless.renamed"
-    rm -f "$FAKE_STATE/capture-health-called"
+    for file in docker.calls curl.calls gates actions tags rootless.removed rootless.stopped rootless.renamed \
+        compose.env pulls rootless.loaded update.calls; do
+        : > "$FAKE_STATE/$file"
+    done
+    rm -f "$FAKE_STATE/capture-health-called" "$FAKE_STATE/checked-out-sha" \
+        "$FAKE_STATE/host-target-missing" "$FAKE_STATE/rootless-old-tenant-missing"
     printf '%s\n' "$FAKE_OLD_CREATED" > "$FAKE_STATE/rootless/backend-old.created"
     printf '%s\n' "$FAKE_OLD_CREATED" > "$FAKE_STATE/rootless/backend-new.created"
     printf 'OTHER_SETTING=preserved\n' > "$TEST_ROOT/repo/.env"
     unset FAKE_CANDIDATE_WORKSPACE_FAIL FAKE_FAIL_ROLLBACK FAKE_HEALTH_STATUS QAAP_SMOKE_COOKIE
-    unset FAKE_HEALTH_BUILD FAKE_CAPTURE_HEALTH_STATUS FAKE_CAPTURE_HEALTH_BUILD FAKE_OLD_LABEL_BUILD
-    unset FAKE_WORKSPACE_STATUS FAKE_APPROVALS_STATUS FAKE_ROOTLESS_MISSING_IMAGE FAKE_ROOTLESS_INSPECT_FAIL
+    unset FAKE_HEALTH_BUILD FAKE_CAPTURE_HEALTH_STATUS FAKE_CAPTURE_HEALTH_BUILD
+    unset FAKE_WORKSPACE_STATUS FAKE_APPROVALS_STATUS FAKE_ROOTLESS_INSPECT_FAIL
     unset FAKE_ROOTLESS_DISAPPEAR_INSPECT FAKE_ROOTLESS_DISAPPEAR_RM FAKE_ROOTLESS_RM_FAIL
     unset FAKE_UPDATE_NO_SWITCH FAKE_UPDATE_STATUS FAKE_CURRENT_MISSING FAKE_GATE_FAIL QAAP_VPS_ALLOW_NO_ROLLBACK
     unset FAKE_NEW_ROLLBACK_LABEL FAKE_ROOTLESS_DISAPPEAR_STOP FAKE_ROOTLESS_DISAPPEAR_RENAME
+    unset FAKE_CANDIDATE_HEALTH_STATUS FAKE_CANDIDATE_WORKSPACE_STATUS FAKE_PULL_FAIL FAKE_GIT_MISSING
     export QAAP_SMOKE_SESSION='test-session'
     export QAAP_DEPLOY_LOCK_FILE="$FAKE_STATE/deploy.lock"
     export QAAP_DEPLOY_STATE_DIR="$FAKE_STATE/deploy-state"
-    : > "$FAKE_STATE/update.calls"
-    rm -f "$FAKE_STATE/checked-out-sha"
+    LAST_GOOD="$QAAP_DEPLOY_STATE_DIR/last-good-release.env"
+    # The serving (old) release passed health and user smoke in an earlier deploy.
+    mkdir -p "$QAAP_DEPLOY_STATE_DIR"
+    printf '%s\n' "REVISION=$FAKE_OLD_BUILD" "IMAGE_REF=$FAKE_TARGET_REF" "IMAGE_ID=$FAKE_OLD_IMAGE_ID" \
+        "TENANT_IMAGE=$FAKE_OLD_TENANT_IMAGE" "ROOTLESS_DOCKER_HOST=$FAKE_ROOTLESS_HOST" \
+        'VERIFIED_AT=2026-10-04T10:00:00Z' > "$LAST_GOOD"
 }
 run_rollback_only() {
     (cd "$TEST_ROOT/outside" && "$TEST_ROOT/repo/scripts/qaap-vps-rollback.sh" \
@@ -346,13 +384,26 @@ run_rollback_only() {
 # Runs a deploy and stores its exit status in $status without tripping set -e.
 deploy_status() {
     status=0
-    run_deploy > "$FAKE_STATE/output" 2>&1 || status=$?
+    run_deploy "${1:-$FAKE_CANDIDATE_REF}" > "$FAKE_STATE/output" 2>&1 || status=$?
 }
 line_of() { grep -n -m 1 -F -- "$1" "$FAKE_STATE/docker.calls" | cut -d: -f1; }
 run_deploy() {
     (mkdir -p "$TEST_ROOT/outside" && cd "$TEST_ROOT/outside" && "$TEST_ROOT/repo/scripts/qaap-vps-rollback.sh" \
-        master "$FAKE_NEW_BUILD" "$FAKE_CANDIDATE_REF" https://qaap.example.test "$FAKE_PREV_SHA")
+        master "$FAKE_NEW_BUILD" "$1" https://qaap.example.test)
 }
+# Every Compose up/run after the candidate switch must resolve the recorded target digest.
+assert_rollback_compose_pinned() {
+    local switch_line
+    switch_line="$(grep -n -F "up|$FAKE_CANDIDATE_REF|" "$FAKE_STATE/compose.env" | tail -n 1 | cut -d: -f1)"
+    switch_line="${switch_line:-0}"
+    if tail -n "+$((switch_line + 1))" "$FAKE_STATE/compose.env" | grep -E '^(up|run)\|' \
+        | grep -v -F "|$FAKE_TARGET_REF|$FAKE_OLD_TENANT_IMAGE"; then
+        fail 'a rollback compose up/run did not pin QAAP_THEIA_IMAGE to the recorded digest and its tenant tag'
+    fi
+    tail -n "+$((switch_line + 1))" "$FAKE_STATE/compose.env" | grep -q -F "up|$FAKE_TARGET_REF|" \
+        || fail 'rollback did not start the recorded target digest'
+}
+last_good_value() { sed -n "s/^$1=//p" "$LAST_GOOD"; }
 
 # Guard every production compose up/run: Compose must receive a pinned serving image.
 awk '
@@ -377,42 +428,55 @@ awk '
 ' "$SOURCE/qaap-vps-update.sh" "$SOURCE/qaap-vps-deploy-helpers.sh" "$SOURCE/qaap-vps-rollback.sh" \
     || fail 'compose up/run safety invariant failed'
 
-# (a) Healthy deploy verifies the new health build and authenticated workspace; it never rolls back.
+# The rollback path never pins mutable rollback tags or rewrites .env.
+if grep -Eq 'qaap-(theia|tenant):rollback|write_env_value' "$SOURCE/qaap-vps-rollback.sh"; then
+    fail 'rollback must start the recorded digest, not a rollback tag or an .env pin'
+fi
+
+# (a) Healthy deploy with smoke credentials: verified, and the candidate becomes the rollback target.
 setup_case healthy
 deploy_status
 [[ "$status" == 0 ]] || fail "healthy deploy failed: $(cat "$FAKE_STATE/output")"
 [[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_NEW_IMAGE_ID" ]] || fail 'healthy deploy did not leave the candidate image serving'
-grep -q 'authenticated workspaces' "$FAKE_STATE/output" || fail 'healthy workspace verification was not reported'
 grep -q '^QAAP_DEPLOY_RESULT=verified$' "$FAKE_STATE/output" || fail 'healthy deploy did not emit the verified result marker'
+grep -q 'User smoke: passed' "$FAKE_STATE/output" || fail 'passed user smoke was not reported'
 if grep -q 'MANUAL INTERVENTION\|ROLLED BACK' "$FAKE_STATE/output"; then fail 'healthy deploy incorrectly rolled back'; fi
 if [[ -s "$FAKE_STATE/rootless.removed" ]]; then fail 'healthy deploy removed rootless containers'; fi
-grep -Fxq "host $FAKE_OLD_IMAGE_ID qaap-theia:rollback" "$FAKE_STATE/tags" || fail 'previous Theia image was not protected with qaap-theia:rollback'
-grep -Fxq "rootless $FAKE_OLD_TENANT_IMAGE qaap-tenant:rollback" "$FAKE_STATE/tags" || fail 'previous tenant image was not protected in rootless Docker'
 grep -Fxq 'launch-readiness' "$FAKE_STATE/gates" || fail 'launch-readiness gate did not run'
 grep -Fxq 'auth-api' "$FAKE_STATE/gates" || fail 'auth API gate did not run'
-grep -q '^STATE_RESULT=verified$' "$QAAP_DEPLOY_STATE_DIR/rollback-target.env" || fail 'verified rollback target was not recorded'
+[[ "$(last_good_value REVISION)" == "$FAKE_NEW_BUILD" ]] || fail 'verified release was not recorded as the rollback target'
+[[ "$(last_good_value IMAGE_REF)" == "$FAKE_CANDIDATE_REF" ]] || fail 'rollback target must be the immutable digest reference'
+[[ "$(last_good_value IMAGE_ID)" == "$FAKE_NEW_IMAGE_ID" ]] || fail 'rollback target image id was not recorded'
+[[ "$(last_good_value TENANT_IMAGE)" == "$FAKE_NEW_TENANT_IMAGE" ]] || fail 'rollback target tenant image was not recorded'
+[[ "$(last_good_value ROOTLESS_DOCKER_HOST)" == "$FAKE_ROOTLESS_HOST" ]] || fail 'rootless endpoint was not recorded'
+grep -q '^STATE_RESULT=verified$' "$QAAP_DEPLOY_STATE_DIR/rollback-target.env" || fail 'verified deploy was not recorded'
+grep -Fxq "TARGET_IMAGE_REF=$FAKE_TARGET_REF" "$QAAP_DEPLOY_STATE_DIR/rollback-target.env" || fail 'deploy record lost the previous rollback target'
+[[ ! -s "$FAKE_STATE/tags" ]] || fail 'deploy created image tags'
 
-# (a2) Runner-side verification fails after the VPS checks passed: --rollback-only restores the old release.
+# (a2) Runner-side verification fails after the VPS checks passed: --rollback-only restores the
+#      target recorded before this deploy, and gives it back its last-good status.
 status=0
 run_rollback_only 'build or authenticated workspace smoke failed from the runner' > "$FAKE_STATE/rollback-only.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "rollback-only returned $status instead of 1: $(cat "$FAKE_STATE/rollback-only.out")"
-[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'rollback-only did not restore the previous image'
+[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'rollback-only did not restore the target image'
 grep -q '^QAAP_DEPLOY_RESULT=rolled_back$' "$FAKE_STATE/rollback-only.out" || fail 'rollback-only did not emit rolled_back'
 grep -q 'external verification from the GitHub runner failed' "$FAKE_STATE/rollback-only.out" || fail 'rollback-only trigger was not reported'
-[[ "$(cat "$FAKE_STATE/checked-out-sha")" == "$FAKE_PREV_SHA" ]] || fail 'rollback-only did not restore the previous repository revision'
+[[ "$(cat "$FAKE_STATE/checked-out-sha")" == "$FAKE_OLD_BUILD" ]] || fail 'rollback-only did not check out the target revision'
+[[ "$(last_good_value IMAGE_REF)" == "$FAKE_TARGET_REF" ]] || fail 'rollback-only left the rejected release as the rollback target'
+assert_rollback_compose_pinned
 status=0
 run_rollback_only > "$FAKE_STATE/rollback-only-again.out" 2>&1 || status=$?
 [[ "$status" == 3 ]] || fail "a second rollback-only for an already rolled back deploy returned $status instead of 3"
 
-# (b) Health stays 200 while the authenticated workspace returns 502; rollback restores the exact old image.
+# (b) Health stays 200 while the authenticated workspace returns 502: roll back to the recorded digest.
 setup_case workspace-failure
 export FAKE_CANDIDATE_WORKSPACE_FAIL=1
 deploy_status
 [[ "$status" == 1 ]] || fail "successful rollback returned $status instead of 1: $(cat "$FAKE_STATE/output")"
-[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'rollback did not restore the exact previous image id'
+[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'rollback did not restore the exact target image id'
 grep -q 'health reports deployed build bbbbbbbbbbbb' "$FAKE_STATE/output" || fail 'candidate health was not observed as healthy before smoke failed'
 grep -q 'Tenant backend unavailable' "$FAKE_STATE/output" || fail 'workspace 502 body was not reported'
-grep -q "ROLLED BACK to ${FAKE_OLD_BUILD:0:12}" "$FAKE_STATE/output" || fail 'rollback success message was missing'
+grep -q "ROLLED BACK to ${FAKE_OLD_BUILD:0:12} ($FAKE_TARGET_REF)" "$FAKE_STATE/output" || fail 'rollback success message was missing'
 grep -q '^QAAP_DEPLOY_RESULT=rolled_back$' "$FAKE_STATE/output" || fail 'rollback did not emit the rolled_back result marker'
 for container in tenant-new ingress-new; do
     grep -Fxq "$container" "$FAKE_STATE/rootless.removed" || fail "new rootless $container container was not removed"
@@ -427,38 +491,73 @@ cleanup_line="$(line_of 'rootless rm tenant-new')"
 up_line="$(grep -n -F 'host compose up -d --no-build --no-deps --force-recreate theia' "$FAKE_STATE/docker.calls" | cut -d: -f1 | tail -n 1)"
 [[ -n "$stop_line" && -n "$cleanup_line" && -n "$up_line" ]] || fail 'rollback stop/cleanup/up calls were not all recorded'
 (( stop_line < cleanup_line && cleanup_line < up_line )) || fail 'candidate theia must be stopped before tenant cleanup and cleanup must precede the restore'
-[[ "$(cat "$FAKE_STATE/checked-out-sha")" == "$FAKE_PREV_SHA" ]] || fail 'rollback did not restore the previous repository revision'
-grep -Fxq 'QAAP_THEIA_IMAGE=qaap-theia:rollback' "$TEST_ROOT/repo/.env" || fail 'rollback did not pin the restored Theia image in .env'
-grep -Fxq 'QAAP_TENANT_DOCKER_IMAGE=qaap-tenant:rollback' "$TEST_ROOT/repo/.env" || fail 'rollback did not pin the restored tenant image in .env'
-grep -Fxq 'OTHER_SETTING=preserved' "$TEST_ROOT/repo/.env" || fail 'rollback lost unrelated .env settings'
-grep -q 'host compose up -d --no-build --no-deps --force-recreate caddy' "$FAKE_STATE/docker.calls" || fail 'rollback did not refresh Caddy with the previous configuration'
+[[ "$(cat "$FAKE_STATE/checked-out-sha")" == "$FAKE_OLD_BUILD" ]] || fail 'rollback did not check out the target revision'
+[[ "$(cat "$TEST_ROOT/repo/.env")" == 'OTHER_SETTING=preserved' ]] || fail 'rollback rewrote .env'
+grep -q 'host compose up -d --no-build --no-deps --force-recreate caddy' "$FAKE_STATE/docker.calls" || fail 'rollback did not refresh Caddy with the target configuration'
+assert_rollback_compose_pinned
+[[ "$(last_good_value IMAGE_REF)" == "$FAKE_TARGET_REF" ]] || fail 'a failed candidate became the rollback target'
 
-# (c) Compose cannot restore the previous image: report manual intervention with the reserved code 3.
+# (c) Compose cannot start the target: report manual intervention with the reserved code 3.
 setup_case rollback-failure
 export FAKE_CANDIDATE_WORKSPACE_FAIL=1 FAKE_FAIL_ROLLBACK=1
 deploy_status
 [[ "$status" == 3 ]] || fail "failed rollback returned $status instead of reserved code 3"
 grep -q 'MANUAL INTERVENTION NEEDED' "$FAKE_STATE/output" || fail 'manual intervention message was missing'
 grep -q '^QAAP_DEPLOY_RESULT=manual$' "$FAKE_STATE/output" || fail 'manual result marker was missing'
-grep -q '^QAAP_DEPLOY_REASON=docker compose could not restore theia image' "$FAKE_STATE/output" || fail 'manual reason was not on stdout'
+grep -q '^QAAP_DEPLOY_REASON=docker compose could not start the rollback target' "$FAKE_STATE/output" || fail 'manual reason was not on stdout'
 
-# (d) Without smoke credentials, refuse the deploy before calling docker or the update script.
-setup_case missing-secrets
+# (d) No smoke credentials and a healthy candidate: deploy proceeds and is verified, the user smoke
+#     reports "skipped (no smoke credentials)", nothing rolls back, and the release does not become
+#     the rollback target.
+setup_case no-credentials
 unset QAAP_SMOKE_SESSION QAAP_SMOKE_COOKIE
 deploy_status
-[[ "$status" != 0 ]] || fail 'deploy proceeded without smoke secrets'
-grep -q 'QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required' "$FAKE_STATE/output" || fail 'missing smoke secret failure was not explicit'
-[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'missing secrets changed the serving image'
-[[ ! -s "$FAKE_STATE/docker.calls" ]] || fail 'missing secrets touched Docker before failing'
+[[ "$status" == 0 ]] || fail "deploy without smoke credentials returned $status: $(cat "$FAKE_STATE/output")"
+grep -q '^QAAP_DEPLOY_RESULT=verified$' "$FAKE_STATE/output" || fail 'deploy without smoke credentials was not verified'
+grep -q 'user smoke skipped (no smoke credentials)' "$FAKE_STATE/output" || fail 'skipped user smoke was not reported'
+grep -q 'User smoke: skipped (no smoke credentials)' "$FAKE_STATE/output" || fail 'summary does not report the skipped smoke'
+[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_NEW_IMAGE_ID" ]] || fail 'skipped smoke triggered a rollback'
+if grep -q 'compose stop' "$FAKE_STATE/docker.calls"; then fail 'skipped smoke stopped the candidate'; fi
+[[ "$(last_good_value IMAGE_REF)" == "$FAKE_TARGET_REF" ]] || fail 'a release without user smoke became the rollback target'
+[[ -s "$FAKE_STATE/update.calls" ]] || fail 'missing smoke credentials blocked the deploy'
+
+# (d2) No smoke credentials and a candidate whose health fails: health still triggers the rollback.
+setup_case no-credentials-health-failure
+unset QAAP_SMOKE_SESSION QAAP_SMOKE_COOKIE
+export FAKE_CANDIDATE_HEALTH_STATUS=503
+deploy_status
+[[ "$status" == 1 ]] || fail "health failure without credentials returned $status instead of 1: $(cat "$FAKE_STATE/output")"
+grep -q '^QAAP_DEPLOY_RESULT=rolled_back$' "$FAKE_STATE/output" || fail 'health failure without credentials did not roll back'
+[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'health failure without credentials did not restore the target'
+grep -q 'user smoke: skipped (no smoke credentials)' "$FAKE_STATE/output" || fail 'restored release summary does not report the skipped smoke'
+assert_rollback_compose_pinned
+
+# (d3) No rollback target recorded yet: a failed release ends in manual and keeps the candidate.
+setup_case no-target
+rm -f "$LAST_GOOD"
+export FAKE_CANDIDATE_HEALTH_STATUS=503
+deploy_status
+[[ "$status" == 3 ]] || fail "failure without a rollback target returned $status instead of 3"
+grep -q 'No rollback target is recorded' "$FAKE_STATE/output" || fail 'missing rollback target was not reported'
+[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_NEW_IMAGE_ID" ]] || fail 'candidate was replaced without a rollback target'
+if grep -q 'compose stop' "$FAKE_STATE/docker.calls"; then fail 'candidate was stopped without a rollback target'; fi
+
+# (d4) A mutable image reference (tag without digest) is refused before anything changes.
+setup_case mutable-ref
+deploy_status "$FAKE_NEW_TENANT_IMAGE"
+[[ "$status" == 1 ]] || fail "mutable image reference returned $status instead of 1"
+grep -q 'immutable image reference' "$FAKE_STATE/output" || fail 'mutable image reference was not reported'
+[[ ! -s "$FAKE_STATE/docker.calls" ]] || fail 'mutable image reference touched Docker'
 
 # (e) Compose no-op: update exits 0, the image never changes and verification fails. Never green.
 setup_case same-image
 export FAKE_UPDATE_NO_SWITCH=1
 deploy_status
-[[ "$status" == 1 ]] || fail "unchanged image with failed verification returned $status instead of 1"
+[[ "$status" == 1 ]] || fail "unchanged image with failed verification returned $status instead of 1: $(cat "$FAKE_STATE/output")"
 grep -q 'verification failed, image unchanged' "$FAKE_STATE/output" || fail 'unchanged-image summary was missing'
 grep -q '^QAAP_DEPLOY_RESULT=blocked$' "$FAKE_STATE/output" || fail 'unchanged-image result marker was missing'
-[[ "$(cat "$FAKE_STATE/checked-out-sha")" == "$FAKE_PREV_SHA" ]] || fail 'unchanged image did not restore the previous Compose/Caddy revision'
+[[ "$(cat "$FAKE_STATE/checked-out-sha")" == "$FAKE_OLD_BUILD" ]] || fail 'unchanged image did not restore the serving revision checkout'
+if grep -Eq '^(up|run)\|' "$FAKE_STATE/compose.env"; then fail 'unchanged image ran compose up/run'; fi
 
 # (f) Update fails before switching with a code that collides with "manual" (3): still a plain block.
 setup_case update-fails-before-switch
@@ -472,8 +571,9 @@ setup_case update-fails-after-switch
 export FAKE_UPDATE_STATUS=4
 deploy_status
 [[ "$status" == 1 ]] || fail "update failure after the switch returned $status instead of 1: $(cat "$FAKE_STATE/output")"
-[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'update failure after the switch did not restore the previous image'
+[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'update failure after the switch did not restore the target image'
 grep -q 'update script exited 4 after switching' "$FAKE_STATE/output" || fail 'post-switch update failure was not the reported trigger'
+assert_rollback_compose_pinned
 
 # (h) Expired smoke credential: block before deploying instead of rolling back a healthy release.
 setup_case expired-credential
@@ -482,7 +582,16 @@ deploy_status
 [[ "$status" == 1 ]] || fail "expired credential returned $status instead of 1"
 grep -q 'smoke cookie or session is expired' "$FAKE_STATE/output" || fail 'expired credential was not reported'
 [[ ! -s "$FAKE_STATE/update.calls" ]] || fail 'expired credential still ran the update'
-[[ ! -s "$FAKE_STATE/tags" ]] || fail 'expired credential still changed rollback tags'
+
+# (h2) The session is rejected only after the switch: health passed, so no rollback and no retries.
+setup_case credential-expires-mid-deploy
+export FAKE_CANDIDATE_WORKSPACE_STATUS=401 QAAP_VPS_VERIFY_TIMEOUT_SECONDS=30
+deploy_status
+export QAAP_VPS_VERIFY_TIMEOUT_SECONDS=1
+[[ "$status" == 3 ]] || fail "credential rejected after the switch returned $status instead of 3: $(cat "$FAKE_STATE/output")"
+grep -q 'Not rolled back' "$FAKE_STATE/output" || fail 'credential rejection after the switch was not explained'
+[[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_NEW_IMAGE_ID" ]] || fail 'credential rejection rolled back a healthy release'
+[[ "$(grep -c 'new release verification attempt' "$FAKE_STATE/output")" == 1 ]] || fail 'a rejected session was retried'
 
 # (i) Candidate fails the launch-readiness gate: rollback (the gates are part of verification).
 setup_case readiness-failure
@@ -512,21 +621,43 @@ grep -q 'ai.qaap.rollback=unsafe' "$FAKE_STATE/output" || fail 'unsafe migration
 [[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_NEW_IMAGE_ID" ]] || fail 'unsafe migration still replaced the candidate'
 if grep -q 'compose stop' "$FAKE_STATE/docker.calls"; then fail 'unsafe migration still stopped the candidate'; fi
 
-# (k) Rootless tenant cleanup fails: rollback still restores the previous release, with a warning.
+# (k) Rootless tenant cleanup fails: rollback still restores the target, with a warning.
 setup_case cleanup-failure
 export FAKE_CANDIDATE_WORKSPACE_FAIL=1 FAKE_ROOTLESS_RM_FAIL=tenant-new
 deploy_status
 [[ "$status" == 1 ]] || fail "rollback with cleanup failure returned $status instead of 1"
-grep -q 'tenant cleanup warning\|cleanup of one or more rootless tenant containers was incomplete' "$FAKE_STATE/output" || fail 'cleanup warning missing from summary'
+grep -q 'cleanup of one or more rootless tenant containers was incomplete' "$FAKE_STATE/output" || fail 'cleanup warning missing from summary'
 [[ "$(cat "$FAKE_STATE/current-image")" == "$FAKE_OLD_IMAGE_ID" ]] || fail 'cleanup failure prevented rollback'
 
-# (l) The previous tenant image is missing from rootless Docker: block before deploying.
+# (l) The target tenant image is missing from rootless Docker: it is seeded from the host before
+#     the deploy, so the rollback stays possible.
 setup_case missing-tenant-image
-export FAKE_ROOTLESS_MISSING_IMAGE="$FAKE_OLD_TENANT_IMAGE"
+: > "$FAKE_STATE/rootless-old-tenant-missing"
+export FAKE_CANDIDATE_WORKSPACE_FAIL=1
 deploy_status
-[[ "$status" == 1 ]] || fail "missing rollback tenant image returned $status instead of 1"
-grep -q 'previous tenant image is missing from rootless Docker' "$FAKE_STATE/output" || fail 'missing tenant image was not reported'
-[[ ! -s "$FAKE_STATE/update.calls" ]] || fail 'missing tenant image still ran the update'
+[[ "$status" == 1 ]] || fail "rollback after seeding the tenant image returned $status instead of 1: $(cat "$FAKE_STATE/output")"
+grep -Fxq "image-archive:$FAKE_OLD_TENANT_IMAGE" "$FAKE_STATE/rootless.loaded" || fail 'target tenant image was not seeded into rootless Docker'
+seed_line="$(line_of 'rootless load')"
+update_line="$(grep -n -m 1 -F "up|$FAKE_CANDIDATE_REF|" "$FAKE_STATE/compose.env" | cut -d: -f1)"
+[[ -n "$seed_line" && -n "$update_line" ]] || fail 'seed or switch was not recorded'
+grep -q '^QAAP_DEPLOY_RESULT=rolled_back$' "$FAKE_STATE/output" || fail 'rollback did not complete after seeding'
+
+# (l2) The target image is gone from the host and cannot be pulled again: block before deploying.
+setup_case missing-target-image
+: > "$FAKE_STATE/host-target-missing"
+export FAKE_PULL_FAIL=1
+deploy_status
+[[ "$status" == 1 ]] || fail "unusable rollback target returned $status instead of 1"
+grep -q "rollback target $FAKE_TARGET_REF is not usable" "$FAKE_STATE/output" || fail 'unusable rollback target was not reported'
+grep -Fxq "host $FAKE_TARGET_REF" "$FAKE_STATE/pulls" || fail 'missing target image was not pulled by digest'
+[[ ! -s "$FAKE_STATE/update.calls" ]] || fail 'unusable rollback target still ran the update'
+
+# (l3) The target image was pruned but can be pulled by digest: deploy proceeds.
+setup_case pull-target-image
+: > "$FAKE_STATE/host-target-missing"
+deploy_status
+[[ "$status" == 0 ]] || fail "re-pullable rollback target blocked the deploy: $(cat "$FAKE_STATE/output")"
+grep -Fxq "host $FAKE_TARGET_REF" "$FAKE_STATE/pulls" || fail 'missing target image was not pulled by digest'
 
 # (m) Another deploy holds the lock: block without touching Docker state.
 setup_case locked
@@ -538,4 +669,4 @@ exec 8>&-
 grep -q 'Another VPS deploy holds' "$FAKE_STATE/output" || fail 'lock contention was not reported'
 [[ ! -s "$FAKE_STATE/update.calls" ]] || fail 'locked deploy still ran the update'
 
-echo 'qaap-vps-rollback tests passed (14 scenarios)'
+echo 'qaap-vps-rollback tests passed (21 scenarios)'

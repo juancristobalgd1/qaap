@@ -319,9 +319,10 @@ jobs:
             exit 1
           fi
           if [ -z "$QAAP_SMOKE_SESSION" ] && [ -z "$QAAP_SMOKE_COOKIE" ]; then
-            echo "::error::Configure QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE; deploy is blocked without authenticated workspace verification."
-            printf '%s\n\n%s\n' '## VPS deploy blocked' 'QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE is required. No deployment was started.' >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+            # Health, build and the release gates still decide rollback; only the signed-in smoke is
+            # skipped, and a release verified without it never becomes the rollback target.
+            echo "::warning::User smoke skipped (no smoke credentials): configure QAAP_SMOKE_SESSION or QAAP_SMOKE_COOKIE."
+            printf '%s\n\n%s\n\n' '## User smoke skipped (no smoke credentials)' 'QAAP_SMOKE_SESSION and QAAP_SMOKE_COOKIE are empty. Health and release gates still run and still trigger rollback; this release cannot become the rollback target.' >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
@@ -367,7 +368,6 @@ jobs:
               git stash push --include-untracked --message "$STASH_NAME"
               echo "[qaap-vps] preserved dirty worktree in stash: $STASH_NAME"
             fi
-            PREV_SHA="$(git rev-parse HEAD)"
             git checkout --detach "$QAAP_DEPLOY_SHA"
             export GHCR_USERNAME GHCR_TOKEN QAAP_VPS_ALLOW_NO_ROLLBACK QAAP_SMOKE_SESSION QAAP_SMOKE_COOKIE
             # Detached from this SSH session: a cancelled job, timeout or dropped connection cannot
@@ -382,7 +382,7 @@ jobs:
               bash ./scripts/qaap-vps-rollback.sh "$@" || status=$?
               docker logout ghcr.io >/dev/null 2>&1 || true
               exit "$status"
-            ' qaap-deploy "$QAAP_DEPLOY_BRANCH" "$QAAP_DEPLOY_SHA" "$QAAP_DEPLOY_IMAGE" "$QAAP_VPS_PUBLIC_URL" "$PREV_SHA"
+            ' qaap-deploy "$QAAP_DEPLOY_BRANCH" "$QAAP_DEPLOY_SHA" "$QAAP_DEPLOY_IMAGE" "$QAAP_VPS_PUBLIC_URL"
 
       # The on-VPS checks reach the public URL from the server itself, which can hide DNS, firewall,
       # CDN or TLS problems (and hairpin NAT can differ). Re-run the release gates from the runner.
