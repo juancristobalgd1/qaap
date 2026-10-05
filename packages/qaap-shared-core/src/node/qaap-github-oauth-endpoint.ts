@@ -1143,12 +1143,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         await fs.mkdir(path.dirname(target), { recursive: true });
         await this.removeStaleCloneStaging(target);
         if (await this.isGitRepository(target)) {
-            // SEC-1/C-3: `fetch` updates refs + downloads objects with NO checkout and NO filters, so it
-            // is safe to run as the backend uid (root in prod). The former `pull --ff-only` here CHECKED
-            // OUT into the tenant-writable repo as root — that runs a tenant-defined clean/smudge FILTER
-            // (from the repo's own .git/config) as ROOT, i.e. a root-RCE. We deliberately do NOT check
-            // out in the open flow: the working tree fast-forwards on the tenant's next git operation
-            // (agent / terminal), which runs UNDER THE TENANT UID and is therefore safe. See SECURITY.md.
+            // SEC-1/C-3: the open flow only fetches (refs + objects, NO checkout, so no clean/smudge
+            // filter runs); the working tree fast-forwards on the tenant's next git operation under the
+            // tenant uid. Hosted: tenant git fetches a tokenless bundle the sealed backend fetch wrote.
             report({ phase: 'fetching', percent: 5 });
             const fetchProgress = new QaapGitProgressParser('fetch', report);
             const fetchOptions: QaapGitRunOptions = { ...gitOptions, onStderr: chunk => fetchProgress.push(chunk) };

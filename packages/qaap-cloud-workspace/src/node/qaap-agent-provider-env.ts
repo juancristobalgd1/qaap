@@ -27,7 +27,8 @@ export const SHARED_PROVIDER_ONLY_ENV: readonly string[] = [
     // Cursor Agent
     'CURSOR_API_KEY',
     // Copilot CLI. INVARIANT: agents never receive the user's GitHub token, in env, file, helper or
-    // otherwise; hosted pushes use it only inside the root backend (doc/qaap-github-token-boundary.md).
+    // otherwise; hosted clone, fetch and push use it only in sealed git children of the backend uid
+    // (doc/qaap-github-token-boundary.md).
     'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN',
     // Qwen Code / Kimi CLI / Hermes (Nous)
     'DASHSCOPE_API_KEY', 'MOONSHOT_API_KEY', 'KIMI_API_KEY', 'NOUS_API_KEY',
