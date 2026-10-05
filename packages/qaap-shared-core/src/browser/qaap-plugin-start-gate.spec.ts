@@ -25,8 +25,6 @@ describe('QaapPluginStartGate', () => {
     before(() => { disableSuiteJSDOM = enableJSDOM(); });
     after(() => disableSuiteJSDOM());
 
-
-
     afterEach(() => clearPreferDesktopIde());
 
     it('holds plugins on a Work Hub page without a project (it may reload into the IDE)', () => {
