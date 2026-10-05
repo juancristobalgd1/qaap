@@ -120,14 +120,15 @@ async function openDesktopIdeViaCommandPalette(app: TheiaApp): Promise<boolean> 
     return isDesktopIdeSurface(app.page);
 }
 
-/** Classic desktop IDE: the shell left the one-column layout and the Work Hub panel is gone. */
+/** Classic desktop IDE: the shell left one-column mode and no Work Hub composer is visible. */
 async function isDesktopIdeSurface(page: Page): Promise<boolean> {
     return page.evaluate(() => {
         const shell = document.getElementById('theia-app-shell');
         return !!shell
             && !shell.classList.contains('theia-mod-mobile-one-column')
             && !document.body.classList.contains('theia-mobile-mod-landing')
-            && document.querySelectorAll('.theia-mobile-projects-sticky-composer-input').length === 0;
+            && ![...document.querySelectorAll<HTMLElement>('.theia-mobile-projects-sticky-composer-input')]
+                .some(input => input.offsetParent !== null);
     });
 }
 
