@@ -88,6 +88,7 @@ import {
     MobileProjectChatViewWidgetFactory,
 } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import { QaapPluginStartGate } from '@theia/qaap-shared-core/lib/browser/qaap-plugin-start-gate';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
 import { QaapProjectSwitcherContribution } from './qaap-project-switcher-contribution';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -215,6 +216,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapCoreKeybindingContribution).toSelf().inSingletonScope();
     bind(KeybindingContribution).toService(QaapCoreKeybindingContribution);
     bind(MobileProjectsService).toSelf().inSingletonScope();
+    bind(QaapPluginStartGate).toSelf().inSingletonScope();
     bind(QaapProjectSwitcherService).toSelf().inSingletonScope();
     bind(QaapProjectSwitcherContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapProjectSwitcherContribution);

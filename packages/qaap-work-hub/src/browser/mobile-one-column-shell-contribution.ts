@@ -50,6 +50,7 @@ import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/brows
 import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import { QaapPluginStartGate } from '@theia/qaap-shared-core/lib/browser/qaap-plugin-start-gate';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
@@ -168,6 +169,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(MobileProjectsService)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly projectsService: MobileProjectsService;
+
+    @inject(QaapPluginStartGate)
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly pluginStartGate: QaapPluginStartGate;
 
     @inject(QaapDesktopTerminalLayoutContribution)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
