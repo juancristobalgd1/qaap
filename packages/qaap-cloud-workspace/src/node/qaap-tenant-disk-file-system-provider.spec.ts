@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import URI from '@theia/core/lib/common/uri';
@@ -239,6 +240,57 @@ describe('QaapTenantDiskFileSystemProvider', () => {
                     process.env[key] = previous[index];
                 }
             });
+        }
+    });
+
+    it('lets a plugin copy its own bundled file into tenant storage, never into or out of escapes', async () => {
+        // Production: the Python extension copies python_files/pythonrc.py from /app/plugins into
+        // its storage at activation; requiring write access on the source failed its activation.
+        const previous = process.env.THEIA_PLUGINS_DIR;
+        const pluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-fs-guard-plugins-'));
+        const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-fs-guard-outside-'));
+        const tenantRoot = path.join(resolveQaapWorktreesRoot(), 'alice');
+        fs.mkdirSync(tenantRoot, { recursive: true });
+        const storage = fs.mkdtempSync(path.join(tenantRoot, 'storage-'));
+        process.env.THEIA_PLUGINS_DIR = pluginsDir;
+        try {
+            const pythonFiles = path.join(pluginsDir, 'ms-python.python', 'extension', 'python_files');
+            fs.mkdirSync(pythonFiles, { recursive: true });
+            fs.writeFileSync(path.join(pythonFiles, 'pythonrc.py'), '# pythonrc\n');
+            fs.writeFileSync(path.join(outside, 'secret.txt'), 'secret');
+            fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(pythonFiles, 'escape.txt'));
+            const source = FileUri.create(path.join(pythonFiles, 'pythonrc.py'));
+            const target = FileUri.create(path.join(storage, 'pythonrc.py'));
+            const registry = new QaapWebsocketAuthRegistry();
+            const provider = createProvider({});
+            (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+            await registry.runWithLogin('alice', async () => {
+                await provider.copy(source, target, { overwrite: true });
+                expect(fs.readFileSync(path.join(storage, 'pythonrc.py'), 'utf8')).to.equal('# pythonrc\n');
+                // The plugin root stays read-only: no copy into it, no move out of it.
+                await expectForbidden(() => provider.copy(target, FileUri.create(path.join(pythonFiles, 'x.py')), { overwrite: true }));
+                await expectForbidden(() => provider.rename(source, FileUri.create(path.join(storage, 'moved.py')), { overwrite: true }));
+                // Directories stay out: their recursive copy would follow nested symlinks.
+                await expectForbidden(() => provider.copy(
+                    FileUri.create(pythonFiles), FileUri.create(path.join(storage, 'python_files')), { overwrite: true }));
+                // A symlink inside the plugin root does not open the file it points to.
+                await expectForbidden(() => provider.copy(
+                    FileUri.create(path.join(pythonFiles, 'escape.txt')), FileUri.create(path.join(storage, 'leak.txt')), { overwrite: true }));
+            });
+            expect(fs.existsSync(path.join(pythonFiles, 'pythonrc.py'))).to.equal(true);
+            expect(fs.existsSync(path.join(storage, 'leak.txt'))).to.equal(false);
+            expect(fs.existsSync(path.join(storage, 'python_files'))).to.equal(false);
+            // Never without an authenticated connection.
+            await expectForbidden(() => provider.copy(source, target, { overwrite: true }));
+        } finally {
+            if (previous === undefined) {
+                delete process.env.THEIA_PLUGINS_DIR;
+            } else {
+                process.env.THEIA_PLUGINS_DIR = previous;
+            }
+            for (const dir of [pluginsDir, outside, storage]) {
+                fs.rmSync(dir, { recursive: true, force: true });
+            }
         }
     });
 
