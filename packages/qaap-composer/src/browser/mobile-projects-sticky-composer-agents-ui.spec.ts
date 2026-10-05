@@ -82,6 +82,48 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
     });
 
+    describe('agent label while the catalog warms', () => {
+
+        function createWarmingHost(): { host: MobileProjectsStickyComposerAgentsHost; renders: () => number } {
+            let renderCount = 0;
+            const host = createHost();
+            host.stickyComposerBackendAgents = [];
+            host.stickyComposerRenderUi = {
+                renderStickyComposer: () => { renderCount += 1; },
+            } as unknown as MobileProjectsStickyComposerAgentsHost['stickyComposerRenderUi'];
+            return { host, renders: () => renderCount };
+        }
+
+        it('does not flash @shell before the first catalog answer', () => {
+            const { host } = createWarmingHost();
+            const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+            expect(ui.resolveStickyComposerAgentLabel(project)).to.equal('Agent');
+            // Submit keeps the actionable shell fallback; only the visible label is neutral.
+            expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
+        });
+
+        it('shows @shell and repaints once the catalog settles without a coding agent', async () => {
+            const { host, renders } = createWarmingHost();
+            const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+            await ui.refreshStickyComposerAgents(project);
+
+            expect(ui.resolveStickyComposerAgentLabel(project)).to.equal('@shell');
+            expect(renders()).to.equal(1);
+            await ui.refreshStickyComposerAgents(project);
+            expect(renders()).to.equal(1);
+        });
+
+        it('shows an explicit stored shell choice immediately', () => {
+            writeStoredAgent('/workspace/project', 'shell');
+            const { host } = createWarmingHost();
+            const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+            expect(ui.resolveStickyComposerAgentLabel(project)).to.equal('@shell');
+        });
+    });
+
     it('recognizes a harness as connected after the backend catalog refreshes', () => {
         const host = createHost();
         host.stickyComposerBackendAgents = [

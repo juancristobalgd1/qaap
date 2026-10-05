@@ -31,7 +31,7 @@ export function sameDesktopIdeCwd(a: string | undefined, b: string | undefined):
  * Work Hub paints from cached project sessions (`github:owner/repo`) while a fresh load lists the
  * recent workspace (`recent:file:///…`) first, so fall back to the cwd and the GitHub identity.
  */
-function findHubProjectIndex(projects: readonly QaapDesktopIdeHubProject[], target: QaapDesktopIdeHubProject): number {
+export function findHubProjectIndex(projects: readonly QaapDesktopIdeHubProject[], target: QaapDesktopIdeHubProject): number {
     const byId = projects.findIndex(project => project.id === target.id);
     if (byId >= 0 || (!target.cwd && !target.githubFullName)) {
         return byId;

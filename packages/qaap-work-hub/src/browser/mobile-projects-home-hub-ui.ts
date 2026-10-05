@@ -16,6 +16,7 @@ import {
     type WorkHubHomeSnapshot,
 } from '../common/qaap-work-hub-home';
 import { buildWorkHubHomeUsageSummary } from '../common/qaap-work-hub-usage-summary';
+import { findHubProjectIndex, type QaapDesktopIdeHubProject } from '../common/qaap-desktop-ide-workspace-plan';
 import { isLocalChatSummary } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-surfaces';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
@@ -66,6 +67,13 @@ export interface MobileProjectsHomeHubHost {
 }
 
 export class MobileProjectsHomeHubUi {
+    /**
+     * Project the unselected fallback last showed. The first paint lists cached project sessions;
+     * `loadProjects()` then replaces them with other ids (`recent:file:///…` vs `github:…`) and
+     * server recency, so re-picking `projects[0]` made the header jump to another repository.
+     */
+    protected homeFallbackProject: QaapDesktopIdeHubProject | undefined;
+
     constructor(protected readonly host: MobileProjectsHomeHubHost) { }
 
     refreshHomeHubData(forceRender: boolean): void {
@@ -341,8 +349,26 @@ export class MobileProjectsHomeHubUi {
         if (fromWorkspace) {
             return fromWorkspace;
         }
-        return this.host.projects.find(project => project.pinned)
-            ?? this.host.projects[0];
+        const pinned = this.host.projects.find(project => project.pinned);
+        if (pinned) {
+            return pinned;
+        }
+        const keptIndex = this.homeFallbackProject
+            ? findHubProjectIndex(this.host.projects.map(project => this.toHubProject(project)), this.homeFallbackProject)
+            : -1;
+        const fallback = this.host.projects[keptIndex >= 0 ? keptIndex : 0];
+        if (fallback) {
+            this.homeFallbackProject = this.toHubProject(fallback);
+        }
+        return fallback;
+    }
+
+    protected toHubProject(project: MobileProjectEntry): QaapDesktopIdeHubProject {
+        return {
+            id: project.id,
+            cwd: this.host.projectsService.getProjectCwd(project),
+            githubFullName: project.github?.fullName,
+        };
     }
 
     onHomeNavigate(target: WorkHubHomeNavigateTarget): void {

@@ -202,8 +202,18 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
         return super.open(resource, opts);
     }
 
+    /**
+     * Plugins register watchers outside the tenant roots at activation (the Python extension
+     * watches `~/.conda/environments.txt`). The frontend never handles a rejected `watch` RPC, so a
+     * throw here surfaced as a browser console "forbidden" on every load and reconnect. Registering
+     * nothing keeps the path unobservable (no watcher, no events) without widening any access.
+     */
     override watch(resource: URI, opts: WatchOptions): Disposable {
-        this.assertAllowed(resource);
+        try {
+            this.assertAllowed(resource);
+        } catch {
+            return Disposable.NULL;
+        }
         return super.watch(resource, opts);
     }
 }
