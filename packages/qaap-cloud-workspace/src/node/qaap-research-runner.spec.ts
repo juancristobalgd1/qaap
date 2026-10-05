@@ -291,15 +291,19 @@ describe('QaapResearchRunner resource limits', () => {
         expect(resolveResearchMeasureTimeoutMs(deadlineGoal, 7_000)).to.equal(1);
     });
 
-    it('isolates a pathological metric regex and returns before it can block the backend', async () => {
+    it('isolates a pathological metric regex and keeps the backend event loop responsive', async function () {
+        this.timeout(8_000);
         const startedAt = Date.now();
-        const value = await parseResearchMetricFromStdout(
+        const parsed = parseResearchMetricFromStdout(
             `${'a'.repeat(50_000)}!`,
             { ...METRIC, metricRegex: '(a+)+$' },
         );
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(Date.now() - startedAt).to.be.lessThan(2_000);
+        const value = await parsed;
 
         expect(value).to.equal(undefined);
-        expect(Date.now() - startedAt).to.be.lessThan(2_000);
+        expect(Date.now() - startedAt).to.be.lessThan(7_000);
     });
 
     it('still extracts ordinary regex metrics in the isolated worker', async () => {

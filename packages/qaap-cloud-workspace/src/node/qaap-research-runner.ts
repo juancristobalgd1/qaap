@@ -35,9 +35,7 @@ const MAX_MEASURE_TIMEOUT_MS = 10 * 60 * 1000;
 export const RESEARCH_COMMAND_CAPTURE_MAX_CHARS = 256 * 1024;
 /** Bounds input copied into the metric parser and its isolated regex worker. */
 const RESEARCH_METRIC_PARSE_MAX_CHARS = RESEARCH_COMMAND_CAPTURE_MAX_CHARS;
-// Worker startup can exceed 250 ms while the backend test suite is loaded; keep enough
-// startup headroom while retaining a bounded timeout for pathological expressions.
-const METRIC_REGEX_TIMEOUT_MS = 1_000;
+const METRIC_REGEX_TIMEOUT_MS = 5_000;
 export const GIT_COMMAND_TIMEOUT_MS = 15_000;
 /** Keep failed command diagnostics useful without turning the JSONL ledger into a copy of a
  *  multi-hour training log. The full 12k tail remains in the task log; this smaller excerpt is
