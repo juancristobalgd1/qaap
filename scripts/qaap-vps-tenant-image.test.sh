@@ -2,7 +2,8 @@
 # Test the rootless tenant image seed (scripts/qaap-vps-tenant-image.sh) against a fake Docker CLI
 # (host + rootless daemons, no daemon needed). Fails if the deploy goes back to streaming the whole
 # image with `docker save | docker load` when the rootless daemon can pull the pinned digest, if it
-# seeds anything but the pinned digest, or if registry credentials could reach the Theia container.
+# seeds anything but the pinned digest (never the tag), or if registry credentials could reach the
+# rootless daemon or the Theia container (the GHCR package is public: every pull is anonymous).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_ROOT="$(mktemp -d -t qaap-tenant-image-test.XXXXXXXX)"
@@ -34,6 +35,14 @@ case "$1" in
     exec)
         shift
         [[ "$1" == -i ]] && shift
+        # The container never inherits the host client's environment; only an empty client config
+        # may be passed in.
+        unset DOCKER_CONFIG
+        if [[ "$1" == -e ]]; then
+            [[ "$2" == DOCKER_CONFIG=/nonexistent/* ]] || exit 2
+            export "$2"
+            shift 2
+        fi
         [[ "$1" == theia ]] || exit 2
         shift
         [[ "$1" == docker ]] || exit 2
@@ -53,7 +62,11 @@ case "$1" in
         [[ "$2" == inspect ]] || exit 2
         id="$(id_of "$3")"
         [[ -n "$id" ]] || exit 1
-        printf '%s\n' "$id"
+        if [[ "$5" == *RepoDigests* ]]; then
+            [[ -n "${FAKE_NO_REPO_DIGEST:-}" ]] || awk -F'|' -v i="$id" '$2 == i && $1 ~ /@sha256:/ { print $1 }' "$dir/images"
+        else
+            printf '%s\n' "$id"
+        fi
         ;;
     tag)
         id="$(id_of "$2")"
@@ -63,6 +76,10 @@ case "$1" in
     pull)
         [[ "$daemon" == rootless && "${FAKE_PULL:-ok}" != fail ]] || exit 1
         [[ "$2" == *@sha256:* ]] || exit 1
+        # The default client config (~/.docker) holds the deploy's `docker login`.
+        if [[ -z "${DOCKER_CONFIG:-}" || -e "$DOCKER_CONFIG/config.json" ]]; then
+            echo 'CREDENTIALED pull' >> "$FAKE_STATE/calls"
+        fi
         printf '%s|%s\n' "$2" "${FAKE_PULLED_ID:-sha256:new}" >> "$dir/images"
         ;;
     save) printf 'image-tar:%s\n' "$(id_of "$2")" ;;
@@ -91,7 +108,7 @@ setup() {
     : > "$FAKE_STATE/calls"
     printf '%s|sha256:new\n%s|sha256:new\n' "$SOURCE_REF" "$TAG_REF" > "$FAKE_STATE/host/images"
     printf 'ghcr.io/o/qaap:old|sha256:old\n' > "$FAKE_STATE/rootless/images"
-    export FAKE_SOCKET="$SOCKET" FAKE_TENANT_IMAGE="$TAG_REF" FAKE_PULL=ok FAKE_PULLED_ID=sha256:new
+    export FAKE_SOCKET="$SOCKET" FAKE_TENANT_IMAGE="$TAG_REF" FAKE_PULL=ok FAKE_PULLED_ID=sha256:new FAKE_NO_REPO_DIGEST=''
 }
 # $@: preload_tenant_image arguments.
 seed() {
@@ -130,7 +147,7 @@ fi
 setup in-container
 export FAKE_SOCKET="$TEST_ROOT/missing.sock"
 if seed theia "$TAG_REF" "$SOURCE_REF"; then
-    grep -Fxq "host exec theia docker pull $DIGEST_REF" "$FAKE_STATE/calls" && ! streamed \
+    grep -Fxq "host exec -e DOCKER_CONFIG=/nonexistent/qaap-anonymous-pull theia docker pull $DIGEST_REF" "$FAKE_STATE/calls" && ! streamed \
         && pass 'falls back to an anonymous digest pull inside Theia' || fail 'in-container digest pull not used'
 else
     fail "in-container seed failed: $(cat "$FAKE_STATE/output")"
@@ -156,6 +173,28 @@ else
     fail "mismatch seed failed: $(cat "$FAKE_STATE/output")"
 fi
 
+# 5b) Pulled image does not carry the pinned digest: never tagged, host image streamed instead.
+setup no-repo-digest
+export FAKE_NO_REPO_DIGEST=1
+if seed theia "$TAG_REF" "$SOURCE_REF"; then
+    streamed && [[ "$(rootless_id "$TAG_REF")" == sha256:new ]] \
+        && pass 'pulled image without the pinned digest falls back to the host image' || fail 'unverified pulled image was used'
+else
+    fail "repo digest seed failed: $(cat "$FAKE_STATE/output")"
+fi
+
+# 5c) Pinned digest, pull fails and no host image to copy: clear error, never a pull by tag.
+setup no-host-image
+export FAKE_PULL=fail
+: > "$FAKE_STATE/host/images"
+if seed theia "$TAG_REF" "$SOURCE_REF"; then
+    fail 'seed succeeded without any verified image'
+elif grep -Fq " pull $TAG_REF" "$FAKE_STATE/calls"; then
+    fail 'pinned deploy fell back to pulling the mutable tag'
+else
+    pass 'pinned deploy without a host image fails instead of pulling the tag'
+fi
+
 # 6) Local build (no digest) and operator-chosen tenant image: only save | load, never a pull.
 setup local-build
 if seed theia "$TAG_REF" '' && streamed && ! grep -q ' pull ' "$FAKE_STATE/calls"; then
@@ -170,9 +209,12 @@ else
     fail "override seed pulled: $(cat "$FAKE_STATE/calls")"
 fi
 
-# 7) No credentials ever enter the Theia container: no login, no env injection through exec.
-grep -rhE ' (login|exec (-e|--env))' "$TEST_ROOT"/state-*/calls \
+# 7) No credentials anywhere: no login, no env injected through exec except an empty client
+# config, and no pull (host client or inside Theia) that could send the deploy's registry login.
+grep -rhE ' login|exec (-i )?(--env|-e [^D]|-e DOCKER_CONFIG=[^/])' "$TEST_ROOT"/state-*/calls \
     && fail 'credentials passed into the Theia container' || pass 'no credentials passed into the Theia container'
+grep -rh '^CREDENTIALED' "$TEST_ROOT"/state-*/calls \
+    && fail 'a digest pull sent the registry login' || pass 'digest pulls are anonymous'
 
 # 8) Digest reference parsing (registry ports are not tags; tags without a digest are not pulled).
 (

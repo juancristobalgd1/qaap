@@ -86,12 +86,15 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 
 - **Rule:** when the deploy pins a GHCR digest (`--image name:tag@sha256:…`), the rootless tenant
   daemon pulls that exact digest and tags it with the tenant tag (`preload_tenant_image` in
-  `scripts/qaap-vps-tenant-image.sh`). The pull goes from the host Docker CLI to the rootless socket
-  (bind source of the Theia container's `DOCKER_HOST`), so the deploy's registry login is a
-  per-request header to that daemon only; never `docker login` or pass credentials into the Theia
-  container or a tenant. Without host access to the socket it pulls anonymously inside Theia. A
-  failed pull, or a pulled id that differs from the host image id, falls back to
-  `docker save | docker load`. Local builds (no digest) always use `save | load`.
+  `scripts/qaap-vps-tenant-image.sh`). The GHCR package is public, so the pull is **anonymous**: an
+  empty `DOCKER_CONFIG` on the host client that talks to the rootless socket (bind source of the
+  Theia container's `DOCKER_HOST`), or inside Theia when the host cannot reach it. The deploy's
+  `docker login` token is never sent to the rootless daemon (its uid is the uid tenant containers
+  map to) nor passed into the Theia container or a tenant (#188). The pulled image must have the
+  host image id and carry the pinned digest in `RepoDigests`; otherwise, or if the pull fails
+  (e.g. the package became private), it falls back to `docker save | docker load`. A pinned deploy
+  never pulls the mutable tag: without a host image to copy it fails with a clear error and the
+  previous tenant tag stays in place. Local builds (no digest) always use `save | load`.
 - **Why:** `docker save | docker exec -i <theia> docker load` streams the whole multi-GB image,
   uncompressed, on every deploy (each deploy is a new image): tens of minutes of the deploy. A
   registry pull only downloads the layers that changed.
