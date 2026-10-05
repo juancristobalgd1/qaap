@@ -36,7 +36,10 @@ Every GitHub transfer with the token runs as a **sealed git child of the backend
   `store`/`erase`. Nothing is written to disk or argv.
 - Hosted fetch bundles are created and removed by walking from the repositories root through
   directory descriptors that are checked not to be symlinks. A directory the agent swaps for a
-  symlink fails the call, so the backend uid never creates a file outside the workspace tree.
+  symlink fails the call, so the backend uid never creates a file outside the workspace tree. Linux
+  walks `/proc/self/fd/<fd>/<name>`; darwin opens with `O_NOFOLLOW_ANY`, so the kernel refuses a
+  symlink anywhere in the path. Other platforms (no hosted mode) check before and after the open and
+  remove the file they created when they detect a swap.
 
 The token is used by:
 

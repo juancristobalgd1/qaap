@@ -255,6 +255,53 @@ describe('qaap-hosted-git-fetch', function (): void {
             expect(fs.readdirSync(elsewhere)).to.deep.equal([]);
         });
 
+        it('refuses the swap and leaves no file behind without a descriptor walk (R4-2)', async () => {
+            /** The check-after-open path of platforms with neither `/proc/self/fd` nor `O_NOFOLLOW_ANY`. */
+            class CheckedHostedGitFetch extends RacedHostedGitFetch {
+                protected override canOpenRelativeToDescriptor(): boolean {
+                    return false;
+                }
+
+                protected override noFollowAnyFlag(): number | undefined {
+                    return undefined;
+                }
+            }
+            let error: unknown;
+            try {
+                await new CheckedHostedGitFetch(parent, elsewhere).fetchBundle({ url, bundleFile, bundleRoot: base });
+            } catch (caught) {
+                error = caught;
+            }
+            expect(String(error)).to.match(/changed while the hosted fetch was creating its bundle/);
+            expect(fs.readdirSync(elsewhere)).to.deep.equal([]);
+            expect(fs.readdirSync(`${parent}.real`)).to.deep.equal([]);
+        });
+
+        it('lets the darwin kernel refuse a symlink anywhere in the bundle path (O_NOFOLLOW_ANY)', async function (): Promise<void> {
+            if (process.platform !== 'darwin') {
+                this.skip();
+            }
+            /** Records whether the check-after-open cleanup ever had to run. */
+            class DarwinHostedGitFetch extends RacedHostedGitFetch {
+                cleanedUp = false;
+
+                protected override async removeSwappedBundle(file: string, opened: fs.BigIntStats): Promise<void> {
+                    this.cleanedUp = true;
+                    return super.removeSwappedBundle(file, opened);
+                }
+            }
+            const fetcher = new DarwinHostedGitFetch(parent, elsewhere);
+            let error: unknown;
+            try {
+                await fetcher.fetchBundle({ url, bundleFile, bundleRoot: base });
+            } catch (caught) {
+                error = caught;
+            }
+            expect(String(error)).to.match(/changed while the hosted fetch was creating its bundle/);
+            expect(fetcher.cleanedUp).to.equal(false);
+            expect(fs.readdirSync(elsewhere)).to.deep.equal([]);
+        });
+
         it('removes the bundle only through the real directory', async () => {
             const decoy = path.join(elsewhere, path.basename(bundleFile));
             fs.writeFileSync(decoy, 'backend data');

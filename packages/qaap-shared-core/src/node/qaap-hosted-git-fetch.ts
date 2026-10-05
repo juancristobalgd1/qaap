@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { injectable } from '@theia/core/shared/inversify';
 import { QaapSealedGithubGit, type QaapSealedGitRunOptions } from './qaap-sealed-github-git';
@@ -36,6 +37,8 @@ export interface QaapHostedGitFetchResult {
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const MAX_HAVES = 512;
+/** `O_NOFOLLOW_ANY` in darwin's `sys/fcntl.h`; not exposed by `fs.constants`. */
+const O_NOFOLLOW_ANY_DARWIN = 0x20000000;
 
 /**
  * Clone/fetch counterpart of the hosted push (doc/qaap-github-token-boundary.md): the token never
@@ -144,8 +147,10 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
      * which could swap one for a symlink between any check and the `open` and make this backend create
      * a file in a directory only it can write (R3-2). On Linux each component is opened relative
      * to the previous descriptor (`/proc/self/fd/<fd>/<name>`, an `openat` without a race) and checked
-     * not to be a symlink; elsewhere the components are checked with `lstat` before the open and
-     * the parent and the new file are compared by dev/ino after it, so a swap fails the call.
+     * not to be a symlink. On darwin the kernel refuses a symlink anywhere in the path
+     * (`O_NOFOLLOW_ANY`), so a swapped directory never receives the file. Elsewhere the components
+     * are checked with `lstat` before the open and the parent and the new file are compared by
+     * dev/ino after it; a swap fails the call and the file just created is removed (R4-2).
      */
     protected async openBundleInPlace(bundleRoot: string, bundleFile: string): Promise<fs.promises.FileHandle> {
         const components = this.bundleComponents(bundleRoot, bundleFile);
@@ -153,13 +158,22 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
         if (this.canOpenRelativeToDescriptor()) {
             return this.withBundleDirectory(bundleRoot, components, directory => this.openBundle(path.posix.join(directory, name)));
         }
-        const parent = path.join(bundleRoot, ...components);
-        const before = await this.lstatDirectoryChain(bundleRoot, components);
-        const handle = await this.openBundle(path.join(parent, name));
+        // `O_NOFOLLOW_ANY` also refuses symlinks above the trusted root (`/tmp`, `/var` on macOS).
+        const root = this.noFollowAnyFlag() === undefined ? bundleRoot : await fs.promises.realpath(bundleRoot);
+        const parent = path.join(root, ...components);
+        const file = path.join(parent, name);
+        const before = await this.lstatDirectoryChain(root, components);
+        let handle: fs.promises.FileHandle;
         try {
-            const after = await this.lstatDirectoryChain(bundleRoot, components);
-            const opened = await handle.stat({ bigint: true });
-            const atPath = await fs.promises.lstat(path.join(parent, name), { bigint: true }).catch(() => undefined);
+            handle = await this.openBundle(file);
+        } catch (error) {
+            throw (error as NodeJS.ErrnoException).code === 'ELOOP' ? this.bundleDirectoryError() : error;
+        }
+        let opened: fs.BigIntStats | undefined;
+        try {
+            opened = await handle.stat({ bigint: true });
+            const after = await this.lstatDirectoryChain(root, components);
+            const atPath = await fs.promises.lstat(file, { bigint: true }).catch(() => undefined);
             if (after.dev !== before.dev || after.ino !== before.ino || !atPath?.isFile() || atPath.dev !== opened.dev || atPath.ino !== opened.ino) {
                 throw this.bundleDirectoryError();
             }
@@ -167,7 +181,23 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
         } catch (error) {
             await handle.truncate(0).catch(() => undefined);
             await handle.close();
+            if (opened) {
+                await this.removeSwappedBundle(file, opened);
+            }
             throw error;
+        }
+    }
+
+    /**
+     * After a detected swap, removes the file the `open` created through the swapped path, if that
+     * path still leads to the very inode. The bundle name is random and the file is new, so even if
+     * the agent swaps again before the `unlink`, the only file with that name it could point us to
+     * is the one this call created.
+     */
+    protected async removeSwappedBundle(file: string, opened: fs.BigIntStats): Promise<void> {
+        const atPath = await fs.promises.lstat(file, { bigint: true }).catch(() => undefined);
+        if (atPath?.isFile() && atPath.dev === opened.dev && atPath.ino === opened.ino) {
+            await fs.promises.unlink(file).catch(() => undefined);
         }
     }
 
@@ -179,6 +209,8 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
             if (this.canOpenRelativeToDescriptor()) {
                 await this.withBundleDirectory(bundleRoot, components, directory => fs.promises.rm(path.posix.join(directory, name), { force: true }));
             } else {
+                // No `unlinkat` here: a swap after this check can only point the unlink at a file with
+                // the bundle's random name, which `openBundleInPlace` never created outside the walk.
                 await this.lstatDirectoryChain(bundleRoot, components);
                 await fs.promises.rm(path.join(bundleRoot, ...components, name), { force: true });
             }
@@ -199,6 +231,14 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
 
     protected canOpenRelativeToDescriptor(): boolean {
         return process.platform === 'linux' && fs.existsSync('/proc/self/fd');
+    }
+
+    /**
+     * darwin's `O_NOFOLLOW_ANY` (`sys/fcntl.h`, macOS 11 / Darwin 20 and later): `open` fails with
+     * `ELOOP` if any component of the path is a symlink. Node passes numeric flags to `open` as is.
+     */
+    protected noFollowAnyFlag(): number | undefined {
+        return process.platform === 'darwin' && Number(os.release().split('.')[0]) >= 20 ? O_NOFOLLOW_ANY_DARWIN : undefined;
     }
 
     /** Opens `bundleRoot`, then each component relative to its parent's descriptor ({@link openDirectoryEntry}). */
@@ -260,9 +300,14 @@ export class QaapHostedGitFetch extends QaapSealedGithubGit {
         return new Error('The workspace directory changed while the hosted fetch was creating its bundle.');
     }
 
-    /** Exclusive create: an existing file or symlink at `file` fails. */
+    /** Exclusive create: an existing file or symlink at `file` fails, and on darwin any symlink in its path. */
     protected openBundle(file: string): Promise<fs.promises.FileHandle> {
-        return fs.promises.open(file, 'wx', 0o644);
+        const noFollowAny = this.noFollowAnyFlag();
+        if (noFollowAny === undefined) {
+            return fs.promises.open(file, 'wx', 0o644);
+        }
+        const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+        return fs.promises.open(file, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | noFollowAny, 0o644);
     }
 
     /**
