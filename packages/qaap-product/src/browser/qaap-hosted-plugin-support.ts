@@ -6,10 +6,10 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { WaitUntilEvent } from '@theia/core/lib/common/event';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
-import { WillExecuteCommandEvent } from '@theia/core/lib/common/command';
 import { PluginContributions, PluginHost } from '@theia/plugin-ext/lib/hosted/common/hosted-plugin';
 import { HostedPluginSupport } from '@theia/plugin-ext/lib/hosted/browser/hosted-plugin';
 import { QaapPluginStartGate } from '@theia/qaap-shared-core/lib/browser/qaap-plugin-start-gate';
+import { QaapPluginLoadGate } from './qaap-plugin-load-gate';
 import { QaapFileSystemActivation } from './qaap-file-system-activation';
 
 /**
@@ -21,9 +21,11 @@ import { QaapFileSystemActivation } from './qaap-file-system-activation';
  * soon as any provider for the scheme is registered; plugins listening to `onFileSystem:<scheme>`
  * are still activated once plugins are synced, exactly as upstream.
  *
- * Plugins are synced and their contributions loaded as upstream, but the plugin host only starts
- * once {@link QaapPluginStartGate} is released: a Work Hub page that opens a project in the IDE
- * reloads into it, and must not boot every plugin twice.
+ * Plugins are only synced, their contributions loaded and the plugin host started once
+ * {@link QaapPluginStartGate} is released, i.e. on a page that shows the IDE. Until then the page does
+ * not call the plugin server at all, so the backend neither deploys plugins nor forks a plugin host
+ * for it; a phone never releases the gate. On release the page asks the backend for plugins
+ * explicitly (see {@link QaapPluginLoadGate}) and loads them as upstream.
  */
 @injectable()
 export class QaapHostedPluginSupport extends HostedPluginSupport {
@@ -31,21 +33,32 @@ export class QaapHostedPluginSupport extends HostedPluginSupport {
     @inject(QaapPluginStartGate)
     protected readonly pluginStartGate: QaapPluginStartGate;
 
+    protected loadGate: QaapPluginLoadGate;
+
+    protected override init(): void {
+        super.init();
+        this.loadGate = new QaapPluginLoadGate(this.pluginStartGate, this.server, () => this.load());
+    }
+
+    protected override async syncPlugins(): Promise<void> {
+        if (await this.loadGate.beginSync()) {
+            return super.syncPlugins();
+        }
+    }
+
+    /** Without synced plugins, keep restored plugin views for the IDE instead of removing them as stale. */
+    protected override async afterLoadContributions(toDisconnect: DisposableCollection): Promise<void> {
+        if (this.loadGate.syncHeld) {
+            return;
+        }
+        return super.afterLoadContributions(toDisconnect);
+    }
+
     protected override async startPlugins(contributionsByHost: Map<PluginHost, PluginContributions[]>, toDisconnect: DisposableCollection): Promise<void> {
-        this.pluginStartGate.releaseForBootWorkspace(this.workspaceService.workspace?.resource.path.toString());
-        await this.pluginStartGate.whenReleased;
-        if (toDisconnect.disposed) {
+        if (this.loadGate.syncHeld) {
             return;
         }
         return super.startPlugins(contributionsByHost, toDisconnect);
-    }
-
-    /** A plugin command waits for its handler, which only a started plugin host registers. */
-    protected override ensureCommandHandlerRegistration(event: WillExecuteCommandEvent): void {
-        if (this.contributionHandler.hasCommand(event.commandId) && !this.contributionHandler.hasCommandHandler(event.commandId)) {
-            this.pluginStartGate.release();
-        }
-        super.ensureCommandHandlerRegistration(event);
     }
 
     protected override ensureFileSystemActivation(event: WaitUntilEvent & { scheme: string }): void {

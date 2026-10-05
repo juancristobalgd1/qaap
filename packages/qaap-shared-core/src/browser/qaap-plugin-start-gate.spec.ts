@@ -25,13 +25,37 @@ describe('QaapPluginStartGate', () => {
     before(() => { disableSuiteJSDOM = enableJSDOM(); });
     after(() => disableSuiteJSDOM());
 
-    afterEach(() => clearPreferDesktopIde());
+    afterEach(() => {
+        clearPreferDesktopIde();
+        delete (window as { matchMedia?: unknown }).matchMedia;
+    });
 
-    it('holds plugins on a Work Hub page without a project (it may reload into the IDE)', () => {
+    /** A phone (narrow or coarse pointer), as `isQaapMobileDevice` sees it. */
+    function emulatePhone(): void {
+        Object.defineProperty(window, 'matchMedia', {
+            configurable: true,
+            writable: true,
+            value: (query: string) => ({ matches: true, media: query }),
+        });
+    }
+
+    it('never starts plugins on a phone, even when it boots into the IDE or the IDE is shown', async () => {
+        emulatePhone();
+        markPreferDesktopIde();
         const gate = createGate();
-        gate.releaseForBootWorkspace(undefined);
-        gate.releaseForBootWorkspace('/workspace/repos/users/alice');
+        expect(gate.mobileDevice).to.equal(true);
+        gate.release();
         expect(gate.released).to.equal(false);
+        let started = false;
+        gate.whenReleased.then(() => { started = true; });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(started).to.equal(false);
+    });
+
+    it('holds plugins on a desktop Work Hub page, with or without a project, until the IDE is shown', () => {
+        const gate = createGate();
+        expect(gate.released).to.equal(false);
+        expect(gate.mobileDevice).to.equal(false);
     });
 
     it('starts plugins at boot when the page boots into the IDE', async () => {
@@ -39,12 +63,6 @@ describe('QaapPluginStartGate', () => {
         const gate = createGate();
         expect(gate.released).to.equal(true);
         await gate.whenReleased;
-    });
-
-    it('starts plugins on a Work Hub page rooted on a project', () => {
-        const gate = createGate();
-        gate.releaseForBootWorkspace('/workspace/repos/users/alice/acme/landing');
-        expect(gate.released).to.equal(true);
     });
 
     it('settles waiters once released', async () => {
