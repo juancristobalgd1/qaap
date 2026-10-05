@@ -64,6 +64,12 @@ const TENANT_BACKEND_QAAP_HOME_MOUNT = '/home/theia/.qaap';
 const TENANT_BACKEND_THEIA_HOME_MOUNT = '/home/theia/.theia';
 const TENANT_BACKEND_LOGS_MOUNT = `${TENANT_BACKEND_THEIA_HOME_MOUNT}/logs`;
 const TENANT_BACKEND_SQLITE_STORE_PATH = `${TENANT_BACKEND_QAAP_HOME_MOUNT}/tenant.sqlite`;
+/**
+ * Backend entry scripts the image ships, relative to the tenant backend `WorkingDir`. The first is
+ * the default: the generated, unbundled `src-gen` entry. `lib/backend/main.js` is the esbuild
+ * backend bundle. Same allow-list as the Dockerfile `CMD`; see doc/qaap-backend-bundle.md.
+ */
+const TENANT_BACKEND_ENTRIES: readonly string[] = ['src-gen/backend/main.js', 'lib/backend/main.js'];
 // Agent CLIs such as Copilot extract native addons under HOME. Keep the worker scratch space
 // executable while retaining the other hardening flags; a noexec tmpfs makes those addons look
 // missing even when the extracted .node file is present. The size is configurable through
@@ -1163,15 +1169,7 @@ export class QaapDockerOrchestrator {
                 // Keep Node's cwd in the immutable application tree. The tenant repo is exposed
                 // through QAAP_REPOS_ROOT and must never replace the image's application cwd.
                 WorkingDir: '/app/examples/browser',
-                Cmd: [
-                    'node',
-                    'src-gen/backend/main.js',
-                    '--hostname=0.0.0.0',
-                    `--port=${TENANT_BACKEND_PORT}`,
-                    '--no-cluster',
-                    '--plugins=local-dir:/app/plugins',
-                    '--ovsx-router-config=/app/examples/ovsx-router-config.json',
-                ],
+                Cmd: this.tenantBackendCommand(),
                 Env: env,
                 ExposedPorts: { [`${TENANT_BACKEND_PORT}/tcp`]: {} },
                 Labels: {
@@ -1657,6 +1655,37 @@ export class QaapDockerOrchestrator {
         return undefined;
     }
 
+    /**
+     * Command line of a tenant backend container. Part of the reuse contract: a backend started with
+     * another entry is stale and recreated (deferred while an agent turn runs), like an image change.
+     */
+    protected tenantBackendCommand(): string[] {
+        return [
+            'node',
+            this.getTenantBackendEntry(),
+            '--hostname=0.0.0.0',
+            `--port=${TENANT_BACKEND_PORT}`,
+            '--no-cluster',
+            '--plugins=local-dir:/app/plugins',
+            '--ovsx-router-config=/app/examples/ovsx-router-config.json',
+        ];
+    }
+
+    /**
+     * Backend entry from `QAAP_BACKEND_ENTRY` (unset or empty: `src-gen/backend/main.js`). Any value
+     * outside {@link TENANT_BACKEND_ENTRIES} is refused: it becomes part of a container command line.
+     */
+    protected getTenantBackendEntry(env: NodeJS.ProcessEnv = process.env): string {
+        const configured = env.QAAP_BACKEND_ENTRY;
+        if (!configured) {
+            return TENANT_BACKEND_ENTRIES[0];
+        }
+        if (!TENANT_BACKEND_ENTRIES.includes(configured)) {
+            throw new Error(`Unsupported QAAP_BACKEND_ENTRY "${configured}"; expected one of: ${TENANT_BACKEND_ENTRIES.join(', ')}.`);
+        }
+        return configured;
+    }
+
     protected tenantBackendContainerMatches(
         inspect: Dockerode.ContainerInspectInfo,
         ownerLogin: string,
@@ -1734,10 +1763,7 @@ export class QaapDockerOrchestrator {
             && raw.Config?.User === this.getTenantContainerUser()
             && raw.Config?.Image === this.getTenantImage()
             && raw.Config?.WorkingDir === '/app/examples/browser'
-            && raw.Config?.Cmd?.join('\u0000') === [
-                'node', 'src-gen/backend/main.js', '--hostname=0.0.0.0', `--port=${TENANT_BACKEND_PORT}`,
-                '--no-cluster', '--plugins=local-dir:/app/plugins', '--ovsx-router-config=/app/examples/ovsx-router-config.json',
-            ].join('\u0000')
+            && raw.Config?.Cmd?.join('\u0000') === this.tenantBackendCommand().join('\u0000')
             && expectedEnv.every(entry => env.has(entry))
             && this.tenantContainerHasExpectedNetworks(inspect, networkMode, directEgressNetwork)
             && raw.Mounts?.length === expectedMounts.length

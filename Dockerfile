@@ -214,7 +214,13 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
 
 USER theia
 
-CMD ["sh", "-c", "exec node src-gen/backend/main.js \
+# QAAP_BACKEND_ENTRY selects the backend entry: unset/empty runs the generated src-gen/backend/main.js;
+# lib/backend/main.js runs the esbuild backend bundle. Tenant backends use the same allow-list
+# (qaap-docker-orchestrator.ts tenantBackendCommand); see doc/qaap-backend-bundle.md.
+CMD ["sh", "-c", "entry=\"${QAAP_BACKEND_ENTRY:-src-gen/backend/main.js}\"; \
+    case \"$entry\" in src-gen/backend/main.js|lib/backend/main.js) ;; \
+    *) echo \"Unsupported QAAP_BACKEND_ENTRY: $entry\" >&2; exit 64 ;; esac; \
+    exec node \"$entry\" \
     --hostname=${HOST} \
     --port=${PORT} \
     --no-cluster \

@@ -60,6 +60,7 @@ interface QaapDockerOrchestratorTestAccess {
     createOrValidateTenantBackend(ownerLogin: string, tenantRootHostPath: string): Promise<unknown>;
     containerNameForTenant(ownerLogin?: string): string;
     waitForTenantBackendReady(target: unknown): Promise<void>;
+    fetchTenantBusyStatus(target: unknown): Promise<{ busy: boolean; runningTasks: number } | undefined>;
 }
 
 function access(instance: QaapDockerOrchestrator): QaapDockerOrchestratorTestAccess {
@@ -343,6 +344,7 @@ const ENV_KEYS = [
     'QAAP_TENANT_PIDS_LIMIT_OVERRIDES',
     'QAAP_TENANT_PIDS_LIMIT_MAX',
     'QAAP_TENANT_TMPFS_SIZE',
+    'QAAP_BACKEND_ENTRY',
     'QAAP_TENANT_AGENT_STORAGE_ROOT',
     'QAAP_TENANT_CONFIG_ROOT',
     'QAAP_TENANT_BACKEND_MASTER_SECRET',
@@ -1197,6 +1199,102 @@ describe('QaapDockerOrchestrator', () => {
                 });
             });
         }
+    });
+
+    describe('tenant backend command', () => {
+
+        const TENANT_BACKEND_ARGS = [
+            '--hostname=0.0.0.0', '--port=4873', '--no-cluster',
+            '--plugins=local-dir:/app/plugins', '--ovsx-router-config=/app/examples/ovsx-router-config.json',
+        ];
+
+        function configureTenantBackendEnvironment(): string {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-backend-entry');
+            process.env.QAAP_REPOS_ROOT = path.join(specRoot, 'repos');
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
+            process.env.QAAP_TENANT_DOCKER_IMAGE = 'qaap-backend-entry-spec:release';
+            process.env.QAAP_TENANT_NETWORK_MODE = 'isolated-bridge';
+            process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            process.env.QAAP_DOCKER_PUBLISH_HOST_IP = '127.0.0.1';
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            delete process.env.QAAP_DOCKER_NODES;
+            delete process.env.QAAP_BACKEND_ENTRY;
+            return path.join(specRoot, 'repos', 'users', 'alice');
+        }
+
+        function createOrchestratorWithFakeDocker(docker: Dockerode): QaapDockerOrchestratorTestAccess {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            orchestrator.docker = docker;
+            orchestrator.getDocker = async () => docker;
+            orchestrator.waitForTenantBackendReady = async () => undefined;
+            orchestrator.fetchTenantBusyStatus = async () => ({ busy: false, runningTasks: 0 });
+            return orchestrator;
+        }
+
+        function backendCommands(fakeDocker: ReturnType<typeof createFakeTenantBackendDocker>): unknown[] {
+            return fakeDocker.created
+                .filter(container => container.name.startsWith('qaap-backend-'))
+                .map(container => container.options.Cmd);
+        }
+
+        it('starts the generated src-gen entry by default', async () => {
+            const root = configureTenantBackendEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            process.env.QAAP_BACKEND_ENTRY = '';
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+
+            expect(backendCommands(fakeDocker)).to.deep.equal([['node', 'src-gen/backend/main.js', ...TENANT_BACKEND_ARGS]]);
+        });
+
+        it('starts the esbuild backend bundle when QAAP_BACKEND_ENTRY selects it', async () => {
+            const root = configureTenantBackendEnvironment();
+            process.env.QAAP_BACKEND_ENTRY = 'lib/backend/main.js';
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+
+            expect(backendCommands(fakeDocker)).to.deep.equal([['node', 'lib/backend/main.js', ...TENANT_BACKEND_ARGS]]);
+        });
+
+        it('recreates an idle backend started with another entry', async () => {
+            const root = configureTenantBackendEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            process.env.QAAP_BACKEND_ENTRY = 'lib/backend/main.js';
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            delete process.env.QAAP_BACKEND_ENTRY;
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+
+            expect(backendCommands(fakeDocker)).to.deep.equal([
+                ['node', 'src-gen/backend/main.js', ...TENANT_BACKEND_ARGS],
+                ['node', 'lib/backend/main.js', ...TENANT_BACKEND_ARGS],
+                ['node', 'src-gen/backend/main.js', ...TENANT_BACKEND_ARGS],
+            ]);
+        });
+
+        it('refuses entries outside the shipped backend entries', async () => {
+            for (const entry of [' lib/backend/main.js', 'lib/backend/plugin-host.js', '../../../tmp/evil.js', 'lib/backend/main.js --inspect=0.0.0.0', '/app/examples/browser/lib/backend/main.js']) {
+                const root = configureTenantBackendEnvironment();
+                process.env.QAAP_BACKEND_ENTRY = entry;
+                const fakeDocker = createFakeTenantBackendDocker();
+                const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+                let thrown: unknown;
+                try {
+                    await orchestrator.createOrValidateTenantBackend('alice', root);
+                } catch (error) {
+                    thrown = error;
+                }
+                expect((thrown as Error | undefined)?.message, entry).to.match(/Unsupported QAAP_BACKEND_ENTRY/);
+                expect(backendCommands(fakeDocker), entry).to.deep.equal([]);
+            }
+        });
     });
 
     describe('buildTenantEnvironmentArgs', () => {

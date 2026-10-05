@@ -161,6 +161,10 @@ services:
       QAAP_TENANT_MEMORY_LIMIT_MAX: ${QAAP_TENANT_MEMORY_LIMIT_MAX:-16g}
       QAAP_TENANT_CPU_LIMIT_MAX: ${QAAP_TENANT_CPU_LIMIT_MAX:-8}
       QAAP_TENANT_PIDS_LIMIT_MAX: ${QAAP_TENANT_PIDS_LIMIT_MAX:-4096}
+      # Backend entry for this backend (Dockerfile CMD) and every tenant backend it starts: empty runs
+      # src-gen/backend/main.js, lib/backend/main.js the esbuild bundle. Changing it recreates idle
+      # tenant backends. See doc/qaap-backend-bundle.md before switching.
+      QAAP_BACKEND_ENTRY: ${QAAP_BACKEND_ENTRY:-}
       # Size of each tenant container's /tmp tmpfs (holds the tenant HOME). Charged to the tenant memory
       # limit, so values above half of QAAP_TENANT_MEMORY_LIMIT are ignored. Package caches and agent
       # databases are kept on the tenant's disk-backed data mount instead (QAAP_TENANT_AGENT_STORAGE_ROOT=off
