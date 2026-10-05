@@ -330,18 +330,19 @@ chmod +x "$TEST_ROOT/bin/docker" "$TEST_ROOT/bin/curl" "$TEST_ROOT/repo/scripts/
 export PATH="$TEST_ROOT/bin:$PATH"
 export FAKE_STATE="$TEST_ROOT/state"
 export FAKE_ROOTLESS_HOST='unix:///tmp/qaap-test-rootless.sock'
-export FAKE_OLD_IMAGE_ID="sha256:$(printf '1%.0s' {1..64})"
-export FAKE_NEW_IMAGE_ID="sha256:$(printf '2%.0s' {1..64})"
-export FAKE_OLD_TENANT_IMAGE="ghcr.io/qaap/qaap:$(printf 'a%.0s' {1..40})"
-export FAKE_NEW_TENANT_IMAGE="ghcr.io/qaap/qaap:$(printf 'b%.0s' {1..40})"
-export FAKE_TARGET_REF="$FAKE_OLD_TENANT_IMAGE@sha256:$(printf '1%.0s' {1..64})"
-export FAKE_OLD_BUILD="$(printf 'a%.0s' {1..40})"
-export FAKE_NEW_BUILD="$(printf 'b%.0s' {1..40})"
-export FAKE_CANDIDATE_REF="$FAKE_NEW_TENANT_IMAGE@sha256:$(printf '2%.0s' {1..64})"
+FAKE_OLD_IMAGE_ID="sha256:$(printf '1%.0s' {1..64})"
+FAKE_NEW_IMAGE_ID="sha256:$(printf '2%.0s' {1..64})"
+FAKE_OLD_TENANT_IMAGE="ghcr.io/qaap/qaap:$(printf 'a%.0s' {1..40})"
+FAKE_NEW_TENANT_IMAGE="ghcr.io/qaap/qaap:$(printf 'b%.0s' {1..40})"
+FAKE_TARGET_REF="$FAKE_OLD_TENANT_IMAGE@sha256:$(printf '1%.0s' {1..64})"
+FAKE_OLD_BUILD="$(printf 'a%.0s' {1..40})"
+FAKE_NEW_BUILD="$(printf 'b%.0s' {1..40})"
+FAKE_CANDIDATE_REF="$FAKE_NEW_TENANT_IMAGE@sha256:$(printf '2%.0s' {1..64})"
+export FAKE_OLD_IMAGE_ID FAKE_NEW_IMAGE_ID FAKE_OLD_TENANT_IMAGE FAKE_NEW_TENANT_IMAGE FAKE_TARGET_REF FAKE_OLD_BUILD FAKE_NEW_BUILD FAKE_CANDIDATE_REF FAKE_OLD_CREATED
 export QAAP_SMOKE_SESSION='test-session'
 export QAAP_VPS_VERIFY_TIMEOUT_SECONDS=1
 export QAAP_VPS_VERIFY_INTERVAL_SECONDS=0
-export FAKE_OLD_CREATED="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%S.%NZ)"
+FAKE_OLD_CREATED="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%S.%NZ)"
 mkdir -p "$FAKE_STATE/rootless"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }

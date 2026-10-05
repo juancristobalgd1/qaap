@@ -21,7 +21,7 @@ on:
         default: false
         type: boolean
       allow_no_rollback:
-        description: Allow bootstrap or emergency deploys without an existing rollback target
+        description: Emergency only - skip the preflight and the automatic rollback (serving release or rollback target broken)
         required: false
         default: false
         type: boolean
