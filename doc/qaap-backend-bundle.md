@@ -90,6 +90,84 @@ search and file dialogs. Empty `shell-integrations` loses terminal shell integra
 `scripts/qaap-guarded-bash.mjs` leaves QAIQ shells without the guard. The spec builds the image layout in
 a temp directory and removes each of these in turn.
 
+## VPS e2e plan
+
+This has not been run. Each phase needs an operator. Phases 0–2 never touch the running service.
+Run host checks as root or through `docker compose exec`. The loopback guard rejects `ubuntu`'s
+own `127.0.0.1:4873` clients (ci-invariants, "Tenant host loopback guard").
+
+**Phase 0: baseline (read-only).**
+- `docker ps --format '{{.Names}} {{.Image}} {{.Status}}'`. Record the `qaap-theia-1` image
+  (`docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}'`). Its
+  `docker image inspect -f '{{json .Config.Cmd}}'` must mention `QAAP_BACKEND_ENTRY`. Otherwise the image
+  predates this change and ignores the variable.
+- `docker inspect -f '{{json .Config.Cmd}}' qaap-backend-<id>` on the rootless daemon shows
+  `src-gen/backend/main.js` today.
+- For 2–3 recent tenant starts, take timings from `docker logs -t qaap-backend-<id>`: container start →
+  `detected agents` → `Theia app listening on` → plugins deployed. Use the same phases as
+  `/workspace/logs/coldstart.md`, and note whether the host was contended (`docker stats --no-stream`).
+
+**Phase 1: layout check in the image (no service change).**
+
+    docker run --rm --read-only --tmpfs /tmp --entrypoint node <image> \
+        /app/scripts/qaap-backend-bundle-layout-check.js --load-native
+
+Pass: `OK: N paths … native modules load`, exit 0. Any `MISSING`/`EMPTY`/`LOAD-FAILED` stops the plan.
+`--read-only` matches the tenant rootfs.
+
+**Phase 2: side-by-side cold start (throwaway containers, not the service).** Use the same image
+with no published ports and `--network none`. Do this three times per entry, alternating:
+
+    docker run --rm -d --name qaap-bebundle-<entry>-<n> --network none \
+        --cpus 2 --memory 4g -e QAAP_BACKEND_ENTRY=<entry> <image>
+
+These containers run the image's main-backend role with default settings (no OAuth, no Docker
+socket). They measure module loading and catch load errors. Tenant-only paths are left to phase 3.
+
+- Time `docker logs -t` from start to `Theia app listening on`. Pass: the bundle saves ≥ 3 s
+  uncontended (expected ~4–5 s, coldstart.md module-loading phase).
+- `docker exec … node -e '<health GET /qaap/api/health>'` returns 200 (same probe as the HEALTHCHECK).
+- grep the logs for `Cannot find module`, `Failed to load native module`, `ENOENT`, `MODULE_NOT_FOUND`,
+  `plugin-host` and `exited`. All must be empty. Plugin deploy must report the same plugin count as src-gen (98).
+- `docker stats --no-stream`: RSS stays within +20 % of src-gen.
+- `QAAP_BACKEND_ENTRY=bogus` exits 64 with `Unsupported QAAP_BACKEND_ENTRY`.
+
+**Phase 3: canary on the service (explicit approval needed, outside a demo window).** Set
+`QAAP_BACKEND_ENTRY=lib/backend/main.js` in the VPS `.env`, then run `docker compose up -d theia`. The main
+backend restarts. Each idle tenant backend is recreated with the new `Cmd` on its next request. A tenant
+with a running agent turn keeps src-gen until the turn ends (deferred recreation). Then
+check with a test account in a fresh tenant:
+
+| Area | Check | Depends on |
+|---|---|---|
+| Tenant spawn | `docker inspect` the new `qaap-backend-<id>`: `Cmd` has `lib/backend/main.js` | orchestrator `tenantBackendCommand()` |
+| Terminals | open a terminal, `echo ok` prints, resize works, no `terminal "<id>" does not exist` | `lib/prebuilds/linux-x64/pty.node`, spawn wrapper (ci-invariants #1) |
+| Shell integration | command decorations appear after `ls` | `lib/backend/shell-integrations` |
+| Plugin host | open a `.ts` file: hover/diagnostics work, Git SCM view lists changes, no plugin-host crash in the logs | `plugin-host.js`, `plugin-vscode-init.js`, `backend-init-theia.js` |
+| Search / dialogs | workspace text search returns hits, the Open File dialog lists drives/roots | `native/rg`, `native/drivelist.node` |
+| File watching | `touch x` in a terminal shows up in the explorer | `parcel-watcher` / in-process watcher |
+| IPC children | anything that forks `ipc-bootstrap` (e.g. hosted plugin, file-watcher fork) starts | `ipc-bootstrap.js` |
+| Agent runners | one QAIQ turn and one codex/claude turn complete. `detected agents` lists the same harnesses as before | `PATH`, helper API env |
+| Guarded shell | in a QAIQ turn, a destructive command (e.g. `rm -rf /`) is refused by the guard | `CLAUDE_CODE_SHELL` → `/app/scripts/qaap-guarded-bash.mjs` → compiled guard |
+| Helper CLIs | an agent turn that calls the task API (`QAAP_TASK_API_URL`) succeeds | env only |
+| Preview | start a dev-server preview, it reaches `ready` | tenant spawn + terminals |
+| Main backend | login, Work Hub, project list, `/qaap/api/health` 200 | Dockerfile `CMD` |
+
+Then keep it running for 24 h. Compare tenant `Theia app listening on` times against phase 0, and watch
+`docker logs` of `qaap-theia-1` and the tenants for the phase-2 error strings.
+
+**Rollback.** Remove the line from `.env` (or set it empty), then `docker compose up -d theia`. Tenants go
+back to src-gen on their next request, because the `Cmd` mismatch makes them stale. No data migration is
+involved. Both entries read the same `~/.theia`/`~/.qaap`.
+
+**Then.** After phase 3 passes, change the default in the Dockerfile `CMD`, `getTenantBackendEntry()` and
+their specs in a separate commit. Add the phase-1 command to `scripts/qaap-image-smoke.sh` so CI
+checks every candidate image.
+
+Notes for the reviewer: the node bundle is `platform: 'node'` with no `define`, so tenants keep reading
+`NODE_ENV=development` at runtime as before. `minify` is on without `keepNames`. The only
+qaap backend use of `constructor.name` is a log line (`qaap-ai-provider-env-tenant-scope.ts`).
+
 ## Not changed here
 
 - **Node compile cache** (`/workspace/logs/coldstart.md`, F3): top-level compile of the 18.9 MB bundle
