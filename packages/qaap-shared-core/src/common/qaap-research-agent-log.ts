@@ -123,6 +123,13 @@ export function extractAgentTurnError(log: string): string | undefined {
         if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
             continue;
         }
+        // Codex `exec --json` ends a failed turn with `{"type":"turn.failed","error":{"message":…}}`.
+        const codexFailure = parsed as { readonly type?: unknown; readonly error?: { readonly message?: unknown } };
+        if (codexFailure.type === 'turn.failed') {
+            const message = typeof codexFailure.error?.message === 'string' ? codexFailure.error.message.trim() : '';
+            lastError = message || 'agent turn failed (no error message provided)';
+            continue;
+        }
         const envelope = parsed as ResultEnvelope;
         if (envelope.type !== 'result' || !envelope.is_error) {
             continue;

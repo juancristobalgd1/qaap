@@ -247,7 +247,7 @@ export interface QaapAgentConversationStoreContext {
         userMessageId: string,
         reason: string,
     ): QaapAgentConversation;
-    resolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined;
+    resolveCompletedTurnAuthFailureReason(log: string | undefined, agentId?: string): string | undefined;
     markTurnFailed(
         conv: QaapAgentConversation,
         options: {

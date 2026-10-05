@@ -108,6 +108,14 @@ describe('extractAgentTextFromLog', () => {
 });
 
 describe('extractAgentTurnError', () => {
+    it('returns the message of a Codex turn.failed event', () => {
+        const log = [
+            '{"type":"thread.started","thread_id":"t1"}',
+            '{"type":"turn.started"}',
+            '{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-***dUA"}}',
+        ].join('\n');
+        expect(extractAgentTurnError(log)).to.equal('unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-***dUA');
+    });
 
     /** The real 8-line stream-json log from an auth-expired smoke test (agent-task id
      *  405e956e-13c7-4e28-87cc-d833f49b002b): the CLI exits having authenticated nothing, and the

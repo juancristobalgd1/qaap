@@ -259,7 +259,7 @@ export function appendAgentReply(
  * rate limits). Covers stream-json `is_error:true` and plain-text Antigravity
  * quota lines ("Individual quota reached…").
  */
-export function resolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined {
+export function resolveCompletedTurnAuthFailureReason(log: string | undefined, agentId?: string): string | undefined {
     const trimmed = (log ?? '').trim();
     if (!trimmed) {
         return undefined;
@@ -279,7 +279,7 @@ export function resolveCompletedTurnAuthFailureReason(log: string | undefined): 
         const mode = detectAgentAuthFailureMode(turnError);
         const kind = detectAgentFailureKind(turnError);
         if (mode || kind === 'auth' || kind === 'quota' || kind === 'rate_limit') {
-            return resolveAgentTurnFailureMessage(turnError, { state: 'failed' });
+            return resolveAgentTurnFailureMessage(turnError, { state: 'failed', agentId });
         }
     }
     // No structured error envelope: only a genuine device-code login challenge — a login
@@ -310,7 +310,7 @@ export function resolveCompletedTurnAuthFailureReason(log: string | undefined): 
             || /\binsufficient[_\s-]?quota\b/i.test(trimmed)
             || /\brate[_\s-]?limit(?:ed|ing)?\b/i.test(trimmed);
         if (looksLikeProviderError) {
-            return resolveAgentTurnFailureMessage(trimmed, { state: 'failed' });
+            return resolveAgentTurnFailureMessage(trimmed, { state: 'failed', agentId });
         }
     }
     return undefined;

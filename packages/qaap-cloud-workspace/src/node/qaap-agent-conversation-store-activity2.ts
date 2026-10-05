@@ -205,7 +205,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     // and quota/rate-limit (Task failed dialog). Antigravity often prints a plain
     // "Individual quota reached…" line and exits 0; never treat that as success.
     const completedAuthFailureReason = (task.state === 'completed' || task.state === 'completed_with_warnings')
-        ? ctx.resolveCompletedTurnAuthFailureReason(log)
+        ? ctx.resolveCompletedTurnAuthFailureReason(log, turnAgentId)
         : undefined;
     const deliveredTurn = (task.state === 'completed' || task.state === 'completed_with_warnings') && !completedAuthFailureReason;
     // Diff stats + checkpoint run BEFORE the re-read below, as async git on the per-repository
@@ -270,6 +270,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             state: task.state === 'interrupted' ? 'interrupted' : 'failed',
             exitCode: task.exitCode,
             agentMessage: agentMessageForFailure,
+            agentId: turnAgentId,
         });
         const failureBody = log ? resolveAgentLogDisplayText(turnAgentId, log) : '';
         const failed = ctx.markTurnFailed(convForFailure, {

@@ -417,6 +417,8 @@ export interface QaapAgentTurnFailureOptions {
     readonly state?: QaapAgentTurnFailureState;
     readonly exitCode?: number;
     readonly agentMessage?: Pick<QaapAgentMessageDTO, 'segments' | 'traceEvents' | 'role' | 'content'>;
+    /** Harness of the turn: a key error of a sign-in harness (every one but QAIQ) asks for sign-in. */
+    readonly agentId?: string;
 }
 
 function parseExitCodeFromToolResult(result: string | undefined): number | undefined {
@@ -498,8 +500,9 @@ export function resolveAgentTurnFailureMessage(
         ? { state: 'failed' }
         : (options ?? { state: 'failed' });
     const kind = detectAgentFailureKind(log);
+    const challengeOptions = resolvedOptions.agentId ? { agentId: resolvedOptions.agentId } : undefined;
     if (kind === 'auth') {
-        return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(log));
+        return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(log, challengeOptions));
     }
     if (kind === 'quota' || kind === 'rate_limit') {
         // Prefer the provider's concrete line (incl. "Resets in …") over generic copy.
@@ -525,7 +528,7 @@ export function resolveAgentTurnFailureMessage(
         const toolLog = failedTool.result ?? log;
         const toolKind = detectAgentFailureKind(toolLog);
         if (toolKind === 'auth') {
-            return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(toolLog));
+            return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(toolLog, challengeOptions));
         }
         if (toolKind) {
             return localizeAgentFailureMessage(toolKind);

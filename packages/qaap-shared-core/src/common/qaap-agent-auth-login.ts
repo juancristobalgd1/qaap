@@ -229,7 +229,10 @@ export function extractAgentAuthLoginChallenge(
     const urls = extractAuthUrls(sample, options?.agentId);
     const userCode = extractUserCode(sample);
     const detectedMode = detectAgentAuthFailureMode(sample);
-    const mode = options?.preferMode ?? detectedMode;
+    // Only QAIQ runs on a Settings API key: for every other harness a rejected key ("401 Incorrect
+    // API key provided") means its own sign-in is missing or stale, so offer the sign-in flow.
+    const mode = options?.preferMode
+        ?? (detectedMode === 'api_key' && options?.agentId && !agentNeedsSettingsApiKeyPath(options.agentId) ? 'session' : detectedMode);
     if (!mode && !urls.length && !userCode) {
         return undefined;
     }

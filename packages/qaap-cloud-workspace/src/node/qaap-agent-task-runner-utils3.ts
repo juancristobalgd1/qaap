@@ -227,6 +227,37 @@ export function hasAgentSettingsCredentials(agentId: string, readPreference: (ke
     });
 }
 
+/**
+ * API-key variables a sign-in-only harness must never receive. Product rule: only QAIQ runs on an
+ * API key. Codex prefers `OPENAI_API_KEY`/`CODEX_API_KEY` over its ChatGPT sign-in, so an inherited
+ * or Settings key turned every turn into "401 Incorrect API key provided" instead of a sign-in.
+ */
+export const SIGN_IN_ONLY_AGENT_API_KEY_ENV: Readonly<Record<string, readonly string[]>> = {
+    codex: ['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL'],
+};
+
+/** Harness id of a task: its agent id, or `codex` for a legacy task whose command runs the Codex CLI. */
+export function resolveTaskHarnessId(agentId: string | undefined, command: string | undefined): string | undefined {
+    const normalized = agentId?.trim().toLowerCase();
+    if (normalized) {
+        return normalized;
+    }
+    return /^\s*(?:\S*\/)?codex(?:\s|$)/.test(command ?? '') ? 'codex' : undefined;
+}
+
+/** Deletes the API-key variables of a sign-in-only harness ({@link SIGN_IN_ONLY_AGENT_API_KEY_ENV}) in place. */
+export function stripSignInOnlyAgentApiKeyEnv(env: NodeJS.ProcessEnv, agentId: string | undefined): NodeJS.ProcessEnv {
+    const keys = SIGN_IN_ONLY_AGENT_API_KEY_ENV[agentId?.trim().toLowerCase() ?? ''];
+    if (keys) {
+        for (const key of Object.keys(env)) {
+            if (keys.includes(key.toUpperCase())) {
+                delete env[key];
+            }
+        }
+    }
+    return env;
+}
+
 /** CLI commands whose exit/output can safely report an authentication state. */
 export function resolveAgentConnectionProbeArgs(agentId: string): readonly string[] | undefined {
     switch (agentId.trim().toLowerCase()) {
@@ -277,6 +308,11 @@ export function classifyAgentConnectionProbe(
         return 'unknown';
     }
     const sample = output.toLowerCase();
+    // `codex login status` → "Logged in using an API key - sk-…": Codex must run on a ChatGPT
+    // sign-in (only QAIQ uses API keys), so an API-key login needs the sign-in flow.
+    if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key/.test(sample)) {
+        return 'disconnected';
+    }
     if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*false/.test(sample)
         || /not logged in|not authenticated|logged out|no active login|no credentials|no providers configured|not connected|no authentication information found|sign in required/.test(sample)) {
         return 'disconnected';

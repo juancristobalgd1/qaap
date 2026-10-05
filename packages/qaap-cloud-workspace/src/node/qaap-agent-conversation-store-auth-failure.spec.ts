@@ -57,10 +57,10 @@ class TestConversationStore extends QaapAgentConversationStore {
         (this as unknown as { conversations: Map<string, QaapAgentConversation> }).conversations.set(conv.id, conv);
     }
 
-    exposeResolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined {
+    exposeResolveCompletedTurnAuthFailureReason(log: string | undefined, agentId?: string): string | undefined {
         return (this as unknown as {
-            resolveCompletedTurnAuthFailureReason: (l: string | undefined) => string | undefined;
-        }).resolveCompletedTurnAuthFailureReason(log);
+            resolveCompletedTurnAuthFailureReason: (l: string | undefined, a?: string) => string | undefined;
+        }).resolveCompletedTurnAuthFailureReason(log, agentId);
     }
 
     async settleRun(taskId: string, task: QaapAgentTask): Promise<void> {
@@ -97,6 +97,18 @@ describe('QaapAgentConversationStore completed-turn auth failure', () => {
         expect(reason).to.be.a('string');
         expect(reason).to.match(/sign in/i);
         expect(reason).to.not.match(/API key/i);
+    });
+
+    it('turns a Codex 401 for a rejected API key into the sign-in failure, not a raw reply', () => {
+        const store = new TestConversationStore();
+        const log = [
+            '{"type":"thread.started","thread_id":"t1"}',
+            '{"type":"turn.started"}',
+            '{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-***dUA"}}',
+        ].join('\n');
+        const reason = store.exposeResolveCompletedTurnAuthFailureReason(log, 'codex');
+        expect(reason).to.match(/needs you to sign in/i);
+        expect(reason).to.not.match(/401|sk-proj|API key/i);
     });
 
     it('resolveCompletedTurnAuthFailureReason ignores ordinary successful logs', () => {

@@ -16,7 +16,7 @@ import {
     ComposerPromptImproveTimeoutError,
     COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
-import { QaapAgentCommandTimeoutError } from './qaap-agent-task-runner-utils3';
+import { QaapAgentCommandTimeoutError, resolveTaskHarnessId, stripSignInOnlyAgentApiKeyEnv } from './qaap-agent-task-runner-utils3';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
@@ -249,7 +249,11 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         const binding = ctx.resolveAgentBindingForTask(task);
         if (binding) {
             applyQaapQaiqModelEnv(env, binding);
-            applyQaapQaiqCredentialEnv(env, binding, ctx.preferenceReaderForOwner(task.ownerLogin));
+            // Product rule: only QAIQ runs on a Settings API key. A Codex pick such as
+            // `{ vendor: 'openai', modelId: 'gpt-…' }` must not receive the user's OpenAI key.
+            if (usesQaiqSettingsCatalog) {
+                applyQaapQaiqCredentialEnv(env, binding, ctx.preferenceReaderForOwner(task.ownerLogin));
+            }
         }
         if (usesQaiqSettingsCatalog) {
             ctx.applyQaiqProviderEnv(env, task.command, binding);
@@ -285,6 +289,8 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             env.OPENCODE_PERMISSION = opencodePermission;
         }
         ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
+        // Last: no inherited (operator / tenant) key may bypass a harness's own sign-in.
+        stripSignInOnlyAgentApiKeyEnv(env, resolveTaskHarnessId(task.agentId, task.command));
         return env;
 }
 

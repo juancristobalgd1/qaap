@@ -653,8 +653,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
      * quota lines ("Individual quota reached…").
      */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public resolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined {
-        return resolveCompletedTurnAuthFailureReasonHelper(log);
+    public resolveCompletedTurnAuthFailureReason(log: string | undefined, agentId?: string): string | undefined {
+        return resolveCompletedTurnAuthFailureReasonHelper(log, agentId);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
