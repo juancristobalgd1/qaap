@@ -203,6 +203,17 @@ describe('qaap-hosted-git-push', function (): void {
             expect(ask('store', 'protocol=https\nhost=github.com\n')).to.equal('');
         });
 
+        it('reads a whole store/erase request before exiting, so git never writes into a closed pipe (R4-3)', () => {
+            const args = new LocalHostedGitPush().credentialArgsForTest(TOKEN);
+            const helper = `${args[args.length - 1].slice('credential.helper=!'.length)} "$@"`;
+            // Larger than any pipe buffer: a helper that exits unread makes this write fail with EPIPE.
+            const request = `protocol=https\nhost=github.com\npassword=${'x'.repeat(1024 * 1024)}\n`;
+            for (const action of ['store', 'erase']) {
+                const answer = execFileSync('sh', ['-c', helper, 'helper', action], { encoding: 'utf8', input: request, env: { QAAP_GIT_PUSH_TOKEN: TOKEN } });
+                expect(answer, action).to.equal('');
+            }
+        });
+
         it('answers no other host or protocol, e.g. after a redirect (R3-3)', function (): void {
             if (process.platform === 'win32') {
                 this.skip();

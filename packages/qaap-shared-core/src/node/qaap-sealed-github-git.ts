@@ -126,9 +126,12 @@ export class QaapSealedGithubGit {
         ];
     }
 
-    /** Shell helper reading git's `key=value` request on stdin. */
+    /**
+     * Shell helper reading git's `key=value` request on stdin. Every action reads the whole request
+     * before exiting, so the writer never hits a closed pipe (R4-3).
+     */
     protected credentialHelper(): string {
-        return '!f() { test "$1" = get || exit 0; protocol=; host=; '
+        return '!f() { test "$1" = get || { cat >/dev/null; exit 0; }; protocol=; host=; '
             + 'while IFS== read -r key value; do case "$key" in protocol) protocol=$value;; host) host=$value;; esac; done; '
             + `test "$protocol" = https && test "$host" = ${this.credentialHost()} || exit 0; `
             + `echo username=x-access-token; echo "password=$${TOKEN_ENV}"; }; f`;
