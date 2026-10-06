@@ -190,6 +190,14 @@ function readJsonFailureHint(value: unknown): string | undefined {
             return nested;
         }
     }
+    // opencode `run --format json` wraps errors as { name, data: { message } } (NamedError).
+    const data = record.data;
+    if (data && typeof data === 'object') {
+        const nested = readJsonFailureHint(data);
+        if (nested) {
+            return nested;
+        }
+    }
     return undefined;
 }
 
