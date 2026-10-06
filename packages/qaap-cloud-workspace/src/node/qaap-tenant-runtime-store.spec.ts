@@ -125,7 +125,11 @@ describe('QaapTenantRuntimeStore touch cache', () => {
         store.touch('alice', 'user', 1_000);
         store.touch('alice', 'user', 2_000);
         expect(store.persisted('alice')?.lastActivityAt).to.equal(new Date(1_000).toISOString());
-        await new Promise(resolve => setTimeout(resolve, 120));
+        // Slow CI runners (Windows) can fire the 40 ms timer late; wait for it instead of a fixed sleep.
+        const deadline = Date.now() + 5_000;
+        while (store.pendingFlushTimers() > 0 && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 20));
+        }
         expect(store.persisted('alice')?.lastActivityAt).to.equal(new Date(2_000).toISOString());
         expect(store.pendingFlushTimers()).to.equal(0);
     });
