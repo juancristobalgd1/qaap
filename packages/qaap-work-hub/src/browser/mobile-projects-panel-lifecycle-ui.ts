@@ -344,6 +344,11 @@ export class MobileProjectsPanelLifecycleUi {
                     // Before any row repaint: a tick for the conversation on screen is already read.
                     this.host.unreadTrackerUi?.syncOpenConversationRead(change.conversationId);
                     this.host.markTasksFirstLoadComplete(false);
+                    // The sessions sidebar lists every task whatever the hub surface below shows
+                    // (a task finishing in the background must repaint its status and dot now).
+                    if (this.host.sessionsSidebar?.isVisible()) {
+                        this.host.sessionsSidebar.scheduleRefreshList();
+                    }
                     if (this.host.visible && change.changedFields?.includes('goalLoop')) {
                         // Goal loop phase changes arrive without transcript traffic (verify /
                         // evaluate run between turns) — patch the pill and chip directly.

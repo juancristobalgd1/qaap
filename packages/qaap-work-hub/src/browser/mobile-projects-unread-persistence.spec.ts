@@ -10,7 +10,11 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
-import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import {
+    conversationToSummary,
+    type QaapAgentConversationDTO,
+    type QaapAgentConversationSummaryDTO,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import {
     MobileProjectsConversationIndexUi,
@@ -137,6 +141,35 @@ describe('Work Hub unread state persists per user', () => {
 
         expect(desktop.unread('A')).to.equal(false);
         expect(desktop.unread('B')).to.equal(false);
+    });
+
+    it('the real composer-prefs PATCH response, mapped to a summary, does not light the dot on A again', async () => {
+        // Full conversation the server returns from PATCH agent-conversations/<id> after leaving A.
+        const patchResponse = (updatedAt: number): QaapAgentConversationDTO => ({
+            id: 'A',
+            cwd: '/repo',
+            agentId: 'codex',
+            title: 'A',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt,
+            messages: [
+                { id: 'u1', role: 'user', content: 'go', createdAt: 50 },
+                { id: 'a1', role: 'agent', content: 'Done', createdAt: 90, runFinishedAt: 100 },
+            ],
+        } as unknown as QaapAgentConversationDTO);
+        store.set('A', conversationToSummary(patchResponse(100)));
+        task('B', 200);
+        const desktop = await loadWorkHub();
+        expect(desktop.unread('A')).to.equal(true);
+
+        await desktop.open('A');
+        serverNow = 1_100;
+        await desktop.open('B');
+        store.set('A', conversationToSummary(patchResponse(1_100)));
+
+        expect(store.get('A')!.lastAgentActivityAt).to.equal(100);
+        expect(desktop.unread('A')).to.equal(false);
     });
 
     it('a reload and the phone of the same user both see A and B read', async () => {
