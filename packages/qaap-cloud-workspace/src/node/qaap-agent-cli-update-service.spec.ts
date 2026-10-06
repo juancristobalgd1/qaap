@@ -17,6 +17,7 @@ import {
     QAAP_ALLOW_IN_PLACE_CLI_UPDATE,
     TRACKED_AGENT_CLIS,
 } from './qaap-agent-cli-update-service';
+import { QAAP_HARNESS_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { resolveAgentCliPrefix, resolveAgentCliPrefixBinDirectory } from './qaap-agent-cli-prefix';
 
 class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
@@ -578,5 +579,31 @@ describe('Dockerfile tracked agent CLI coverage', () => {
         expect(dockerfile).to.include('&& copilot --version');
         expect(runtimeSmoke).to.include("'copilot'");
         expect(runtimeSmoke).to.include("spawnSync('copilot', ['--version']");
+    });
+
+    it('bakes exactly the tracked harness CLIs into the image and keeps their Work Hub bins tracked', () => {
+        const repositoryRoot = resolve(__dirname, '../../../..');
+        const dockerfile = readFileSync(resolve(repositoryRoot, 'Dockerfile'), 'utf8').replace(/\r\n/g, '\n');
+        const runtimeSmoke = readFileSync(resolve(repositoryRoot, 'scripts/qaap-image-runtime-check.js'), 'utf8').replace(/\r\n/g, '\n');
+        const harnessLoop = dockerfile.match(/^RUN for harness in ([^;]+); do \\$/m)?.[1];
+        const smokeList = runtimeSmoke.match(/^const requiredHarnesses = \[([^\]]*)\];$/m)?.[1];
+
+        if (!harnessLoop || !smokeList) {
+            throw new Error('Dockerfile harness loop or runtime smoke harness list was not found.');
+        }
+        const imageHarnesses = harnessLoop.trim().split(/\s+/);
+        const toTrackedId = (name: string): string | undefined =>
+            TRACKED_AGENT_CLIS.find(cli => cli.id === name || cli.bins.includes(name))?.id;
+        for (const name of imageHarnesses) {
+            expect(toTrackedId(name), `image harness ${name} must be tracked`).to.be.a('string');
+        }
+        expect([...new Set(imageHarnesses.map(toTrackedId))].sort())
+            .to.deep.equal(TRACKED_AGENT_CLIS.map(cli => cli.id).sort());
+        expect(smokeList.split(',').map(entry => entry.trim().replace(/'/g, ''))).to.deep.equal(imageHarnesses);
+        for (const tracked of TRACKED_AGENT_CLIS) {
+            const harness = QAAP_HARNESS_DEFINITIONS.find(definition => definition.id === tracked.id);
+            expect(harness, `${tracked.id} must be a Work Hub harness`).not.to.equal(undefined);
+            expect(tracked.bins, `${tracked.id} must track the bin Work Hub detects`).to.include(harness!.bin);
+        }
     });
 });

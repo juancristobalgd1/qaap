@@ -143,6 +143,22 @@ export const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
         expectedVersionEnv: 'GEMINI_CLI_VERSION',
     },
     {
+        id: 'qwen',
+        label: 'Qwen Code',
+        bins: ['qwen'],
+        npmPackage: '@qwen-code/qwen-code',
+        expectedVersionEnv: 'QWEN_CODE_VERSION',
+    },
+    {
+        id: 'openclaw',
+        label: 'OpenClaw',
+        bins: ['openclaw'],
+        // Shipped in the image on its own Node 24 runtime (OpenClaw needs Node >=24.16; the backend
+        // runs Node 22). A tenant-prefix npm install would run on Node 22 and fail, so rebuild the
+        // image to update it.
+        expectedVersionEnv: 'OPENCLAW_CLI_VERSION',
+    },
+    {
         id: 'qaiq',
         label: 'QAIQ',
         bins: ['qaiq'],

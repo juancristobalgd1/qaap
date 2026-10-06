@@ -59,6 +59,13 @@ ARG COPILOT_CLI_VERSION=1.0.91
 ARG ANTIGRAVITY_CLI_VERSION=0.1.1
 ARG GEMINI_CLI_VERSION=0.62.0
 ARG OPENCODE_CLI_VERSION=1.18.28
+ARG QWEN_CODE_VERSION=0.25.0
+ARG OPENCLAW_CLI_VERSION=2026.9.8
+# OpenClaw needs Node >=24.16 (it exits on the Node 22 runtime). It gets a private, checksum-pinned
+# official Node build under /opt/openclaw-node; the backend and every other CLI stay on Node 22.
+ARG OPENCLAW_NODE_VERSION=24.21.0
+ARG OPENCLAW_NODE_SHA256_AMD64=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+ARG OPENCLAW_NODE_SHA256_ARM64=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -84,6 +91,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @sanchaymittal/antigravity-cli@"${ANTIGRAVITY_CLI_VERSION}" \
         @google/gemini-cli@"${GEMINI_CLI_VERSION}" \
         opencode-ai@"${OPENCODE_CLI_VERSION}" \
+        @qwen-code/qwen-code@"${QWEN_CODE_VERSION}" \
     && npm install -g bun \
     && codex --version \
     && claude --version \
@@ -92,8 +100,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \
     && gemini --version \
+    && qwen --version \
     && python3 -c "import tarfile; assert hasattr(tarfile, 'data_filter')"
 RUN setpriv --version >/dev/null && setfacl --version >/dev/null
+
+# OpenClaw (official npm package `openclaw`, github.com/openclaw/openclaw) on its private Node 24.
+# The `/usr/local/bin/openclaw` launcher pins that runtime so PATH order never picks Node 22.
+ARG TARGETARCH
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$arch" in \
+        amd64) node_arch=x64; sha="${OPENCLAW_NODE_SHA256_AMD64}" ;; \
+        arm64) node_arch=arm64; sha="${OPENCLAW_NODE_SHA256_ARM64}" ;; \
+        *) echo "Unsupported OpenClaw Node arch: $arch" >&2; exit 1 ;; \
+    esac \
+    && node_dist="node-v${OPENCLAW_NODE_VERSION}-linux-${node_arch}" \
+    && curl -fsSL -o /tmp/openclaw-node.tar.gz "https://nodejs.org/dist/v${OPENCLAW_NODE_VERSION}/${node_dist}.tar.gz" \
+    && echo "${sha}  /tmp/openclaw-node.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/openclaw-node \
+    && tar -xzf /tmp/openclaw-node.tar.gz -C /opt/openclaw-node --strip-components=1 \
+    && rm -rf /tmp/openclaw-node.tar.gz /opt/openclaw-node/include /opt/openclaw-node/share \
+    && PATH="/opt/openclaw-node/bin:${PATH}" npm install -g --prefix /opt/openclaw openclaw@"${OPENCLAW_CLI_VERSION}" \
+    && npm cache clean --force \
+    && printf '%s\n' '#!/bin/sh' 'exec /opt/openclaw-node/bin/node /opt/openclaw/lib/node_modules/openclaw/openclaw.mjs "$@"' \
+        > /usr/local/bin/openclaw \
+    && chmod 0755 /usr/local/bin/openclaw \
+    && openclaw --version
 
 # Fetch and verify the reviewed commit itself, rather than using its SHA only as a cache key.
 ARG CACHE_BUST=unpinned
@@ -118,7 +149,7 @@ ENV PATH="/root/.local/bin:${PATH}" \
 # These executables are runtime dependencies of Jobs / Background tasks. Keep the image build
 # fail-fast: a worker based on a partially built image must never reach a VPS and silently accept
 # tasks without a coding harness.
-RUN for harness in qaiq openclaude codex claude opencode antigravity; do \
+RUN for harness in qaiq openclaude codex claude copilot opencode antigravity gemini qwen openclaw; do \
         command -v "$harness" >/dev/null 2>&1 \
             || { echo "Required Qaap harness is missing: $harness" >&2; exit 1; }; \
     done
