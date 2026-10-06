@@ -433,6 +433,9 @@ export class MobileProjectsPanelLifecycleUi {
             this.host.scheduleRenderList();
         }
         this.host.refreshWorkHubConversationChrome();
+        // The sessions sidebar paints its own rows (fingerprint includes the unread state): without
+        // this, a task stayed dotted after opening it and moving to another until the next reload.
+        this.host.sessionsSidebar?.refreshList();
     }
 
     subscribeToInboxStream(): void {
