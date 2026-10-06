@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import * as fs from 'fs';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { QaapSqliteStore, QaapSqliteStoreOptions } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 /** Run lifecycle stored in `qaap_agent_runs.state` (coarser than the task state kept in `task_json`). */
@@ -101,23 +101,23 @@ export interface QaapAgentRunLedgerOptions extends Omit<QaapSqliteStoreOptions, 
 interface RunRecord {
     run_id: string;
     owner: string;
-    conversation_id: string | null;
-    parent_run_id: string | null;
-    agent_id: string | null;
-    model_id: string | null;
+    conversation_id?: string;
+    parent_run_id?: string;
+    agent_id?: string;
+    model_id?: string;
     cwd: string;
     state: QaapAgentRunState;
-    queue_position: number | null;
+    queue_position?: number;
     queue_held: number;
-    native_session_id: string | null;
+    native_session_id?: string;
     resume_count: number;
-    request_json: string | null;
-    task_json: string | null;
+    request_json?: string;
+    task_json?: string;
     created_at: number;
     updated_at: number;
-    finished_at: number | null;
-    last_error_class: string | null;
-    reset_at: number | null;
+    finished_at?: number;
+    last_error_class?: string;
+    reset_at?: number;
 }
 
 interface EffectRecord {
@@ -125,12 +125,12 @@ interface EffectRecord {
     run_id: string;
     owner: string;
     kind: string;
-    payload_json: string | null;
+    payload_json?: string;
     status: QaapAgentEffectStatus;
     attempt_count: number;
     available_at: number;
-    lease_owner: string | null;
-    last_error: string | null;
+    lease_owner?: string;
+    last_error?: string;
     created_at: number;
 }
 
@@ -203,6 +203,9 @@ const QAAP_AGENT_RUN_LEDGER_SCHEMA: ReadonlyArray<(database: DatabaseSync) => vo
     `),
 ];
 
+/** The only `null` in the ledger: what node:sqlite binds as SQL NULL. */
+const SQL_NULL: SQLInputValue = null;
+
 const RUN_UPSERT_SQL = `
     INSERT INTO qaap_agent_runs (
         run_id, owner, conversation_id, parent_run_id, agent_id, model_id, cwd, state,
@@ -259,14 +262,14 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
                     INSERT OR IGNORE INTO qaap_agent_command_receipts
                         (owner, command_id, run_id, status, result_json, accepted_at)
                     VALUES (?, ?, ?, ?, ?, ?)
-                `).run(
+                `).run(...QaapAgentRunLedger.sqlParams([
                     owner,
                     receipt.commandId,
                     receipt.runId,
                     receipt.status ?? 'accepted',
                     QaapAgentRunLedger.toJson(receipt.result),
                     receipt.acceptedAt ?? now,
-                );
+                ]));
                 if (inserted.changes === 0) {
                     const stored = this.readReceipt(database, owner, receipt.commandId);
                     return { duplicate: true, runId: stored?.runId, result: stored?.result };
@@ -368,14 +371,14 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
                             INSERT OR IGNORE INTO qaap_agent_command_receipts
                                 (owner, command_id, run_id, status, result_json, accepted_at)
                             VALUES (?, ?, ?, ?, ?, ?)
-                        `).run(
+                        `).run(...QaapAgentRunLedger.sqlParams([
                             QaapAgentRunLedger.ownerKey(receipt.owner),
                             receipt.commandId,
                             receipt.runId,
                             receipt.status ?? 'accepted',
                             QaapAgentRunLedger.toJson(receipt.result),
                             receipt.acceptedAt ?? now,
-                        );
+                        ]));
                     }
                 }
             }
@@ -401,27 +404,27 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
 
     protected upsertRun(database: DatabaseSync, run: QaapAgentRunRow, now: number): void {
         const owner = QaapAgentRunLedger.ownerKey(run.owner);
-        const result = database.prepare(RUN_UPSERT_SQL).run(
+        const result = database.prepare(RUN_UPSERT_SQL).run(...QaapAgentRunLedger.sqlParams([
             run.runId,
             owner,
-            run.conversationId ?? null,
-            run.parentRunId ?? null,
-            run.agentId ?? null,
-            run.modelId ?? null,
+            run.conversationId,
+            run.parentRunId,
+            run.agentId,
+            run.modelId,
             run.cwd,
             run.state,
-            run.queuePosition ?? null,
+            run.queuePosition,
             run.queueHeld ? 1 : 0,
-            run.nativeSessionId ?? null,
+            run.nativeSessionId,
             run.resumeCount ?? 0,
             QaapAgentRunLedger.toJson(run.request),
             QaapAgentRunLedger.toJson(run.task),
             run.createdAt,
             run.updatedAt ?? now,
-            run.finishedAt ?? null,
-            run.lastErrorClass ?? null,
-            run.resetAt ?? null,
-        );
+            run.finishedAt,
+            run.lastErrorClass,
+            run.resetAt,
+        ]));
         if (result.changes === 0) {
             throw new Error(`Agent run ${run.runId} belongs to another owner.`);
         }
@@ -436,7 +439,7 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
             INSERT OR IGNORE INTO qaap_agent_outbox
                 (effect_id, run_id, owner, kind, payload_json, status, attempt_count, available_at, lease_owner, last_error, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
+        `).run(...QaapAgentRunLedger.sqlParams([
             effect.effectId,
             effect.runId,
             owner,
@@ -445,57 +448,57 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
             effect.status ?? 'pending',
             effect.attemptCount ?? 0,
             effect.availableAt ?? now,
-            effect.leaseOwner ?? null,
-            effect.lastError ?? null,
+            effect.leaseOwner,
+            effect.lastError,
             effect.createdAt ?? now,
-        );
+        ]));
     }
 
     protected static toRun(record: RunRecord): QaapAgentRunRow {
-        return {
+        return QaapAgentRunLedger.withoutUndefined({
             runId: record.run_id,
             owner: record.owner,
-            ...(record.conversation_id !== null ? { conversationId: record.conversation_id } : {}),
-            ...(record.parent_run_id !== null ? { parentRunId: record.parent_run_id } : {}),
-            ...(record.agent_id !== null ? { agentId: record.agent_id } : {}),
-            ...(record.model_id !== null ? { modelId: record.model_id } : {}),
+            conversationId: record.conversation_id ?? undefined,
+            parentRunId: record.parent_run_id ?? undefined,
+            agentId: record.agent_id ?? undefined,
+            modelId: record.model_id ?? undefined,
             cwd: record.cwd,
             state: record.state,
-            ...(record.queue_position !== null ? { queuePosition: record.queue_position } : {}),
+            queuePosition: record.queue_position ?? undefined,
             queueHeld: record.queue_held === 1,
-            ...(record.native_session_id !== null ? { nativeSessionId: record.native_session_id } : {}),
+            nativeSessionId: record.native_session_id ?? undefined,
             resumeCount: record.resume_count,
-            ...(record.request_json !== null ? { request: QaapAgentRunLedger.fromJson(record.request_json) } : {}),
-            ...(record.task_json !== null ? { task: QaapAgentRunLedger.fromJson(record.task_json) } : {}),
+            request: QaapAgentRunLedger.fromJson(record.request_json) ?? undefined,
+            task: QaapAgentRunLedger.fromJson(record.task_json) ?? undefined,
             createdAt: record.created_at,
             updatedAt: record.updated_at,
-            ...(record.finished_at !== null ? { finishedAt: record.finished_at } : {}),
-            ...(record.last_error_class !== null ? { lastErrorClass: record.last_error_class } : {}),
-            ...(record.reset_at !== null ? { resetAt: record.reset_at } : {}),
-        };
+            finishedAt: record.finished_at ?? undefined,
+            lastErrorClass: record.last_error_class ?? undefined,
+            resetAt: record.reset_at ?? undefined,
+        });
     }
 
     protected static toEffect(record: EffectRecord): QaapAgentEffect {
-        return {
+        return QaapAgentRunLedger.withoutUndefined({
             effectId: record.effect_id,
             runId: record.run_id,
             owner: record.owner,
             kind: record.kind,
-            ...(record.payload_json !== null ? { payload: QaapAgentRunLedger.fromJson(record.payload_json) } : {}),
+            payload: QaapAgentRunLedger.fromJson(record.payload_json) ?? undefined,
             status: record.status,
             attemptCount: record.attempt_count,
             availableAt: record.available_at,
-            ...(record.lease_owner !== null ? { leaseOwner: record.lease_owner } : {}),
-            ...(record.last_error !== null ? { lastError: record.last_error } : {}),
+            leaseOwner: record.lease_owner ?? undefined,
+            lastError: record.last_error ?? undefined,
             createdAt: record.created_at,
-        };
+        });
     }
 
     protected readReceipt(database: DatabaseSync, ownerKey: string, commandId: string): QaapAgentCommandReceipt | undefined {
         const record = database.prepare(
             'SELECT * FROM qaap_agent_command_receipts WHERE owner = ? AND command_id = ?',
         ).get(ownerKey, commandId) as {
-            owner: string; command_id: string; run_id: string; status: string; result_json: string | null; accepted_at: number;
+            owner: string; command_id: string; run_id: string; status: string; result_json?: string; accepted_at: number;
         } | undefined;
         return record ? {
             owner: record.owner,
@@ -521,11 +524,22 @@ export namespace QaapAgentRunLedger {
         return owner?.trim().toLowerCase() || '_';
     }
 
-    export function toJson(value: unknown): string | null {
-        return value === undefined ? null : JSON.stringify(value);
+    export function toJson(value: unknown): string | undefined {
+        return value === undefined ? undefined : JSON.stringify(value);
     }
 
-    export function fromJson(value: string | null | undefined): unknown {
-        return value === null || value === undefined ? undefined : JSON.parse(value);
+    /** SQLite NULL comes back as `null`; the ledger API only uses `undefined`. */
+    export function fromJson(value: string | undefined): unknown {
+        return value ? JSON.parse(value) : undefined;
+    }
+
+    /** Binds `undefined` as SQL NULL (node:sqlite rejects `undefined` parameters). */
+    export function sqlParams(values: ReadonlyArray<string | number | undefined>): SQLInputValue[] {
+        return values.map(value => value === undefined ? SQL_NULL : value);
+    }
+
+    /** Drops absent columns so rows read back like the objects that were written. */
+    export function withoutUndefined<T extends object>(value: T): T {
+        return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
     }
 }

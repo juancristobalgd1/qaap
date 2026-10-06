@@ -501,9 +501,10 @@ export function persistExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void>
                         ctx.drainQueuedTasks();
                     }
                 })
-                .catch(() => {
+                .catch((error: unknown) => {
                     ctx.storageWriteFailed = true;
-                    console.warn('[qaap-agent-tasks] task ledger write failed; new tasks and queue promotion are blocked.');
+                    console.warn('[qaap-agent-tasks] task ledger write failed; new tasks and queue promotion are blocked.',
+                        error instanceof Error ? error.message : error);
                 });
             return ctx.persistChain;
         }

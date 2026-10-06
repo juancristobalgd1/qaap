@@ -92,7 +92,9 @@ export function ledgerToTaskIndex(ledger: QaapAgentRunLedger): PersistedAgentTas
     const queuedRequests: Record<string, QaapCreateAgentTaskRequest> = {};
     for (const run of ledger.listRunsForRecovery()) {
         const task = run.task as QaapAgentTask | undefined;
-        if (!task || typeof task !== 'object' || task.id !== run.runId) {
+        if (!task || typeof task !== 'object' || task.id !== run.runId || typeof task.cwd !== 'string'
+            // Never re-attribute a run to another owner (I1), even from a damaged snapshot.
+            || QaapAgentRunLedger.ownerKey(task.ownerLogin) !== run.owner) {
             continue;
         }
         tasks.push(task);
