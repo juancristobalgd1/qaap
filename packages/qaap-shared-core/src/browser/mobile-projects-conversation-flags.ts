@@ -71,6 +71,12 @@ export class MobileProjectsConversationFlags {
         this.onDidChangeEmitter.fire(id);
     }
 
+    /** Loads the signed-in user's read marks (stub: not server-backed yet). */
+    async loadReadMarks(): Promise<void> { }
+
+    /** Resolves once pending read marks are saved (stub: not server-backed yet). */
+    async flushReadMarks(): Promise<void> { }
+
     protected ensureLoaded(): void {
         if (this.loaded) {
             return;
