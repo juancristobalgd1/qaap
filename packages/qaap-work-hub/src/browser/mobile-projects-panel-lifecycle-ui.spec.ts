@@ -399,5 +399,20 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             expect(host.patchRowCalls).to.equal(patchesBefore + 1);
             expect(host.refreshChromeCalls).to.equal(chromeBefore + 1);
         });
+
+        it('repaints the sessions sidebar row when a read mark changes, so opening another task leaves no stale dot', () => {
+            const { host, flags } = createUnreadFixture();
+            let sidebarRefreshes = 0;
+            host.sessionsSidebar = {
+                isVisible: () => true,
+                isPullRequestsVisible: () => false,
+                refreshList: () => { sidebarRefreshes++; },
+                scheduleRefreshList: () => { sidebarRefreshes++; },
+            } as unknown as MobileProjectsPanelLifecycleHost['sessionsSidebar'];
+
+            flags.markRead('c1', 50);
+
+            expect(sidebarRefreshes).to.equal(1);
+        });
     });
 });
