@@ -34,7 +34,10 @@ import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
 import { QaapAgentRunLedger } from './qaap-agent-run-ledger';
-import { resolveAgentRunLedgerExtracted, restoreFromLedgerExtracted } from './qaap-agent-task-runner-ledger';
+import {
+    commitQueuedTaskStartExtracted, enqueueTurnStartExtracted, resolveAgentRunLedgerExtracted, restoreFromLedgerExtracted,
+    startAgentRunOutboxExtracted,
+} from './qaap-agent-task-runner-ledger';
 
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
@@ -289,6 +292,8 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentTaskRunnerContext):
                 restoreFromLedgerExtracted(ctx, ledger);
                 ctx.recoveryState = 'ready';
                 await ctx.persist();
+                // Restart continuations wait for the conversation store's handler; turn starts run now.
+                startAgentRunOutboxExtracted(ctx, ledger);
                 ctx.drainQueuedTasks();
             } catch (error) {
                 ctx.recoveryState = 'failed';
@@ -521,6 +526,8 @@ export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void
             // repo can't block everyone behind them in the FIFO queue — promote the next eligible task.
             const next = [...ctx.tasks.values()]
                 .filter(task => task.state === 'queued'
+                    // Held after a failure or restart (ledger only): waits for queue.resume.
+                    && !task.queueHeld
                     && !ctx.ownerAtConcurrencyCap(task.ownerLogin)
                     && !ctx.repoAtConcurrencyCap(task.cwd))
                 .sort(compareQueuedTasks)[0];
@@ -533,9 +540,18 @@ export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void
                 continue;
             }
             const running: QaapAgentTask = { ...next, state: 'running', startedAt: Date.now(), queuePosition: undefined };
+            const ledger = ctx.agentRunLedger;
+            const throughOutbox = !!ledger && !!ctx.agentRunOutbox;
+            if (ledger && throughOutbox && !commitQueuedTaskStartExtracted(ctx, ledger, running)) {
+                return;
+            }
             ctx.tasks.set(next.id, running);
             ctx.queuedCreateRequests.delete(next.id);
-            void ctx.spawnProcessWhenReady(running, request);
+            if (throughOutbox) {
+                enqueueTurnStartExtracted(ctx, running, request);
+            } else {
+                void ctx.spawnProcessWhenReady(running, request);
+            }
             void ctx.persist();
             ctx.onDidChangeTaskEmitter.fire({ type: 'created', task: running });
         }

@@ -107,7 +107,8 @@ import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVis
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
 import { appendAgentReplyExtracted, appendBlockedTraceExtracted, appendCheckpointTraceExtracted, appendReviewTraceExtracted, appendRunCancelledTraceExtracted, appendVerificationWarningTraceExtracted, buildTaskCreateRequestExtracted, clearRunActiveExtracted, detectAgentBlockedNeedExtracted, extractAgentMentionFromUserMessageExtracted, failTurnBeforeSpawnExtracted, finalizeStreamingAgentMessageExtracted, markTurnFailedExtracted, maybeAutoContinueIncompleteTurnExtracted, maybeRetryTurnWithFallbackModelExtracted, postAutoContinueMessageExtracted, prepareContextCompactionForTurnExtracted, publishFinalizedAgentMessageExtracted, reportPreviewBootstrapFailureExtracted, resolveTurnAgentExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-conversation-store-tool-pills2';
-import { applyAgUiTranscriptEventExtracted, buildPromptExtracted, clearAgUiReducerExtracted, cwdMatchesGithubRepoExtracted, fireAgentMessageWireUpdateExtracted, flushPersistExtracted, forceStopZombieTurnExtracted, maybeAutoResumeInterruptedTurnExtracted, recordStreamMetricsExtracted, resolveRunAgentMessageIdExtracted, restoreFromDiskExtracted, schedulePersistExtracted, stageWireMetricsBaselineExtracted, startTurnWatchdogExtracted, sweepZombieStreamingTurnsExtracted, tryAutoLinkConversationToGitBranchExtracted } from './qaap-agent-conversation-store-live-status2';
+import type { QaapAgentTurnContinuationRequest } from './qaap-agent-run-outbox';
+import { applyAgUiTranscriptEventExtracted, buildPromptExtracted, clearAgUiReducerExtracted, continueTurnAfterRestartExtracted, cwdMatchesGithubRepoExtracted, fireAgentMessageWireUpdateExtracted, flushPersistExtracted, forceStopZombieTurnExtracted, maybeAutoResumeInterruptedTurnExtracted, recordStreamMetricsExtracted, resolveRunAgentMessageIdExtracted, restoreFromDiskExtracted, schedulePersistExtracted, stageWireMetricsBaselineExtracted, startTurnWatchdogExtracted, sweepZombieStreamingTurnsExtracted, tryAutoLinkConversationToGitBranchExtracted } from './qaap-agent-conversation-store-live-status2';
 import { captureCheckpointExtracted, discardCheckpointRefExtracted, countDurableLoopSpawnsExtracted, findLiveChatTurnRunExtracted, interruptStreamingTurnForRestartExtracted, maybeRetryTurnWithFallbackModelViaGraphExtracted, persistExtracted, reapOrphanedChatTurnRunsExtracted, resumeInterruptedTurnViaGraphExtracted, settleChatTurnRunExtracted } from './qaap-agent-conversation-store-thought-brief2';
 import { previewRewindExtracted, restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-agent-conversation-store-diff2';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qaap-conversation-rewind-preview';
@@ -893,6 +894,14 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    /** @internal Lost run each conversation is continuing from a ledger `turn.continue` effect. */
+    public restartContinuationRuns?: Map<string, string>;
+
+    /** @internal Ledger `turn.continue` handler (`QAAP_AGENT_LEDGER=on`). */
+    public async continueTurnAfterRestart(request: QaapAgentTurnContinuationRequest): Promise<boolean> {
+        return continueTurnAfterRestartExtracted(this, request);
+    }
+
     public async maybeAutoResumeInterruptedTurn(conversationId: string, nowMs: number): Promise<boolean> {
         return maybeAutoResumeInterruptedTurnExtracted(this, conversationId, nowMs);
     }

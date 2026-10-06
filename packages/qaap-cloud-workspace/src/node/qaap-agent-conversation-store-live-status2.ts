@@ -1,5 +1,7 @@
 // Extracted from qaap-agent-conversation-store.ts
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
+import type { QaapAgentTurnContinuationRequest } from './qaap-agent-run-outbox';
+import type { QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 
 import { randomUUID } from 'crypto';
 
@@ -305,11 +307,15 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreCo
         const now = Date.now();
         // First try to auto-resume turns the restart interrupted (bounded, persisted counter).
         // A turn that resumes gets a live task, so the sweep below skips it (getActiveTaskIds guard).
-        const resumedAny = await runQaapConversationRestoreStep(
-            [...ctx.conversations.values()] as QaapAgentConversation[],
-            'restart resume',
-            async conv => conv.status === 'streaming' && ctx.maybeAutoResumeInterruptedTurn(conv.id, now),
-        );
+        const resumedAny = ctx.taskRunner.isAgentRunLedgerActive?.() === true
+            // QAAP_AGENT_LEDGER=on: the runner's startup reconciliation already enqueued one durable
+            // `turn.continue` per eligible lost run; run them now through this store's handler.
+            ? await continueLostTurnsFromLedgerExtracted(ctx)
+            : await runQaapConversationRestoreStep(
+                [...ctx.conversations.values()] as QaapAgentConversation[],
+                'restart resume',
+                async conv => conv.status === 'streaming' && ctx.maybeAutoResumeInterruptedTurn(conv.id, now),
+            );
         const sweptAny = ctx.sweepZombieStreamingTurns(now, { resetSurvivorsToIdle: true });
         // Evidence is persisted before its repair process is spawned. A hard kill in that
         // narrow gap therefore leaves an idle tail with `[QAAP repair required]`; resume it
@@ -377,6 +383,59 @@ export function forceStopZombieTurnExtracted(ctx: QaapAgentConversationStoreCont
     });
 }
 
+/** Binds the ledger `turn.continue` handler and runs the continuations the runner's reconciliation enqueued. */
+export async function continueLostTurnsFromLedgerExtracted(ctx: QaapAgentConversationStoreContext): Promise<boolean> {
+    let resumedAny = false;
+    ctx.taskRunner.setTurnContinuationHandler(async request => {
+        const resumed = await ctx.continueTurnAfterRestart(request);
+        resumedAny ||= resumed;
+        return resumed;
+    });
+    try {
+        await ctx.taskRunner.drainAgentRunOutbox();
+    } catch (error) {
+        console.warn('[qaap-agent-conversation-resume] restart continuations failed.', error instanceof Error ? error.message : error);
+    }
+    return resumedAny;
+}
+
+/**
+ * `turn.continue` for a run the previous backend process lost: resumes the conversation turn that
+ * ran it through the same bounded path as the legacy auto-resume (approval/plan guard, persisted
+ * budget, prompt rebuilt from the transcript). Idempotent: once the turn points at another task,
+ * or is no longer streaming, nothing happens.
+ */
+export async function continueTurnAfterRestartExtracted(
+    ctx: QaapAgentConversationStoreContext, request: QaapAgentTurnContinuationRequest,
+): Promise<boolean> {
+    const byId = request.conversationId ? ctx.conversations.get(request.conversationId) : undefined;
+    const conv = byId ?? [...ctx.conversations.values()].find(candidate =>
+        candidate.messages.some(message => message.role === 'user' && message.taskId === request.runId));
+    if (!conv || conv.status !== 'streaming'
+        || (conv.ownerLogin?.trim().toLowerCase() || '_') !== (request.ownerLogin?.trim().toLowerCase() || '_')) {
+        return false;
+    }
+    const turnUserMessage = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
+    if (turnUserMessage?.taskId !== request.runId) {
+        return false;
+    }
+    const continuing = ctx.restartContinuationRuns ??= new Map();
+    continuing.set(conv.id, request.runId);
+    try {
+        return await ctx.maybeAutoResumeInterruptedTurn(conv.id, Date.now());
+    } finally {
+        continuing.delete(conv.id);
+    }
+}
+
+/** Create options marking a resume as a ledger restart continuation (validated again by the runner). */
+export function restartContinuationCreateOptions(
+    ctx: QaapAgentConversationStoreContext, conversationId: string,
+): QaapAgentTaskCreateOptions | undefined {
+    const runId = ctx.restartContinuationRuns?.get(conversationId);
+    return runId ? { restartContinuationOf: runId } : undefined;
+}
+
 export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, nowMs: number): Promise<boolean> {
     if (!QAAP_AUTO_RESUME_TURNS_ENABLED || MAX_RESTART_RESUMES <= 0) {
         return false;
@@ -438,6 +497,7 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
         spawned = ctx.taskRunner.create(
             ctx.buildTaskCreateRequest(resumeConv, turnAgentId, undefined, userMessageId),
             resumeConv.ownerLogin,
+            restartContinuationCreateOptions(ctx, conversationId),
         );
     } catch {
         // cwd gone / runner refused: degrade to the manual "Retry to continue" flow. The counter

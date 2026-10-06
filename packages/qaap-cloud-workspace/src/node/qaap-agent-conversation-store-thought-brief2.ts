@@ -30,6 +30,7 @@ import { agentModelKey, agentTurnHasRetryableEmptyOutput, agentTurnHasRetryableM
 import { countDurableLoopSpawns as countDurableLoopSpawnsHelper } from './qaap-agent-conversation-store-helpers';
 
 import { MAX_RESTART_RESUMES, MAX_LOOP_SPAWNS_PER_USER_MESSAGE } from './qaap-agent-conversation-store-constants';
+import { restartContinuationCreateOptions } from './qaap-agent-conversation-store-live-status2';
 
 export async function resumeInterruptedTurnViaGraphExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
         turnUserMessage: QaapAgentMessage,
@@ -94,6 +95,7 @@ export async function resumeInterruptedTurnViaGraphExtracted(ctx: QaapAgentConve
             spawned = ctx.taskRunner.create(
                 ctx.buildTaskCreateRequest(resumeConv, turnAgentId, undefined, userMessageId),
                 resumeConv.ownerLogin,
+                restartContinuationCreateOptions(ctx, conversationId),
             );
         } catch {
             // cwd gone / runner refused: settle the run's failure edge and degrade to the manual

@@ -46,6 +46,7 @@ import type { QaapAgentHookService } from './qaap-agent-hook-service';
 import type { QaapAgentStdinPrompt } from './qaap-agent-task-runner-utils';
 import type { AgentCandidate, QaapGenericCommandResult } from './qaap-agent-task-runner-constants';
 import type { QaapAgentRunLedger } from './qaap-agent-run-ledger';
+import type { QaapAgentRunOutbox, QaapAgentTurnContinuationHandler } from './qaap-agent-run-outbox';
 
 /** Result of {@link QaapAgentTaskRunnerContext.buildAgentCommand}. */
 export interface QaapAgentCommandBuildResult {
@@ -122,6 +123,12 @@ export interface QaapAgentTaskRunnerContext {
     agentRunLedger?: QaapAgentRunLedger;
     /** Row signatures last committed to {@link agentRunLedger}, so `persist()` writes only changed rows. */
     ledgerSyncedRows?: Map<string, string>;
+    /** Outbox worker of this process; started after a ledger recovery. */
+    agentRunOutbox?: QaapAgentRunOutbox;
+    /** Create requests of committed `turn.start` effects; memory only (never persisted, I2). */
+    outboxStartRequests?: Map<string, QaapCreateAgentTaskRequest>;
+    /** Conversation-level continuation for `turn.continue` effects, bound by the conversation store. */
+    turnContinuationHandler?: QaapAgentTurnContinuationHandler;
     recoveryState: 'loading' | 'ready' | 'failed';
     recoveryReady: Promise<void>;
     storageWriteFailed: boolean;

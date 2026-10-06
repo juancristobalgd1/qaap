@@ -362,6 +362,13 @@ export interface QaapAgentConversationStoreContext {
     sweepZombieStreamingTurns(nowMs: number, options?: { readonly resetSurvivorsToIdle?: boolean }): boolean;
     forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean;
     maybeAutoResumeInterruptedTurn(conversationId: string, nowMs: number): Promise<boolean>;
+    /**
+     * Lost run each conversation is continuing from a ledger `turn.continue` effect
+     * (`QAAP_AGENT_LEDGER=on`), keyed by conversation id; only set while that effect runs.
+     */
+    restartContinuationRuns?: Map<string, string>;
+    /** Ledger `turn.continue` handler: resumes the conversation turn that ran the lost run. */
+    continueTurnAfterRestart(request: import('./qaap-agent-run-outbox').QaapAgentTurnContinuationRequest): Promise<boolean>;
     isTurnGraphEnabled(): boolean;
     resumeInterruptedTurnViaGraph(
         conv: QaapAgentConversation,

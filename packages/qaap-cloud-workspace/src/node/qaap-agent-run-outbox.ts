@@ -22,6 +22,19 @@ export interface QaapAgentRunOutboxOptions {
     readonly now?: () => number;
 }
 
+/** A lost run the conversation layer may continue (`turn.continue`). */
+export interface QaapAgentTurnContinuationRequest {
+    readonly runId: string;
+    readonly ownerLogin?: string;
+    readonly conversationId?: string;
+}
+
+/**
+ * Continues a lost turn (the conversation store rebuilds its prompt). It may decline (e.g. the
+ * turn was waiting on a human); the runner checks afterwards whether a continuation exists.
+ */
+export type QaapAgentTurnContinuationHandler = (request: QaapAgentTurnContinuationRequest) => Promise<unknown>;
+
 /** Eligibility inputs for an automatic restart continuation. */
 export interface QaapAgentRestartContinuationPolicy {
     readonly enabled: boolean;

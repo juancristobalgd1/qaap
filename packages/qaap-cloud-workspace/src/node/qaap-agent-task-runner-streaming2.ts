@@ -2,7 +2,10 @@ import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CA
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
-import { commitCreatedTaskExtracted, findLedgerClientRequestExtracted } from './qaap-agent-task-runner-ledger';
+import {
+    commitCreatedTaskExtracted, enqueueTurnStartExtracted, findLedgerClientRequestExtracted, isRunContinuable, restartContinuationFieldsExtracted,
+} from './qaap-agent-task-runner-ledger';
+import type { QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 // Extracted from qaap-agent-task-runner.ts
 
 import { randomUUID } from 'crypto';
@@ -110,7 +113,9 @@ export function nativeModelRoutingTableExtracted(ctx: QaapAgentTaskRunnerContext
         return ctx.cachedNativeModelRoutingTable;
 }
 
-export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
+export function createExtracted(
+    ctx: QaapAgentTaskRunnerContext, request: QaapCreateAgentTaskRequest, ownerLogin?: string, options?: QaapAgentTaskCreateOptions,
+): QaapAgentTask {
         if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed) {
             throw new QaapAgentStorageUnavailableError();
         }
@@ -204,6 +209,8 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         if (ownerLogin && ctx.billingStore) {
             void ctx.billingStore.getOrCreateAccount(ownerLogin).catch(() => undefined);
         }
+        // Only an in-flight restart-continuation effect can mark a task as such (never a request body).
+        const continuation = ledger ? restartContinuationFieldsExtracted(ctx, options?.restartContinuationOf, ownerLogin) : undefined;
         const createdAt = Date.now();
         const task: QaapAgentTask = {
             id,
@@ -225,17 +232,23 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
                 : {}),
             ...(clientRequestId ? { clientRequestId } : {}),
             ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
+            ...(continuation ?? {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt || rawCommand, ownerLogin);
                 return agentModel ? { agentModel, qaiqModel: agentModel } : {};
             })(),
         };
+        // With the outbox running, a start is a durable `turn.start` intent the worker executes.
+        const startThroughOutbox = !!ledger && !!ctx.agentRunOutbox && !atCapacity;
         if (ledger) {
-            // Run row + client request receipt in one transaction, before the task becomes visible.
+            // Run row + client request receipt (+ turn.start) in one transaction, before the task becomes visible.
             let accepted: QaapAgentTask | undefined;
             try {
-                accepted = commitCreatedTaskExtracted(ctx, ledger, task, request, clientRequestId || undefined);
+                accepted = commitCreatedTaskExtracted(ctx, ledger, task, request, clientRequestId || undefined, {
+                    continuable: isRunContinuable(resolvedAgentId, request, autoApprove),
+                    startEffect: startThroughOutbox,
+                });
             } catch (error) {
                 ctx.storageWriteFailed = true;
                 console.warn('[qaap-agent-tasks] task ledger write failed; new tasks and queue promotion are blocked.',
@@ -261,6 +274,8 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         if (atCapacity) {
             ctx.queuedCreateRequests.set(id, request);
+        } else if (startThroughOutbox) {
+            enqueueTurnStartExtracted(ctx, task, request);
         } else {
             void ctx.spawnProcessWhenReady(task, request);
         }

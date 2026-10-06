@@ -13,6 +13,11 @@ export interface QaapAgentTaskCreateOptions {
      * write. Must settle on its own within a short budget; a rejection is ignored.
      */
     readonly spawnGate?: Promise<unknown>;
+    /**
+     * Internal only (never from a request body): id of the interrupted run this create continues
+     * from a restart-continuation outbox effect. Honoured only while that effect is in flight.
+     */
+    readonly restartContinuationOf?: string;
 }
 
 /**

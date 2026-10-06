@@ -116,6 +116,8 @@ import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapObservability } from './qaap-observability';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import type { QaapAgentRunLedger } from './qaap-agent-run-ledger';
+import type { QaapAgentRunOutbox, QaapAgentTurnContinuationHandler } from './qaap-agent-run-outbox';
+import { resumeQueueExtracted, setTurnContinuationHandlerExtracted } from './qaap-agent-task-runner-ledger';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 
@@ -291,6 +293,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     public agentRunLedger?: QaapAgentRunLedger;
     /** @internal Row signatures last committed to {@link agentRunLedger}. */
     public ledgerSyncedRows?: Map<string, string>;
+    /** @internal Outbox worker, started after a ledger recovery. */
+    public agentRunOutbox?: QaapAgentRunOutbox;
+    /** @internal Start requests of committed `turn.start` effects (memory only). */
+    public outboxStartRequests?: Map<string, QaapCreateAgentTaskRequest>;
+    /** @internal Bound by the conversation store via {@link setTurnContinuationHandler}. */
+    public turnContinuationHandler?: QaapAgentTurnContinuationHandler;
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public recoveryState: 'loading' | 'ready' | 'failed' = 'ready';
     /** @internal Settles when the startup index restore leaves `'loading'` (never rejects). */
@@ -453,6 +461,26 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      */
     public whenRecovered(): Promise<void> {
         return this.recoveryReady ?? Promise.resolve();
+    }
+
+    /** True when the durable run ledger (and its outbox) own task state: `QAAP_AGENT_LEDGER=on` and recovered. */
+    public isAgentRunLedgerActive(): boolean {
+        return !!this.agentRunLedger && !!this.agentRunOutbox;
+    }
+
+    /** Binds the conversation-level continuation run by restart `turn.continue` effects (ledger on). */
+    public setTurnContinuationHandler(handler: QaapAgentTurnContinuationHandler): void {
+        setTurnContinuationHandlerExtracted(this, handler);
+    }
+
+    /** Runs every outbox effect that is runnable now (startup continuations; specs). */
+    public async drainAgentRunOutbox(): Promise<void> {
+        await this.agentRunOutbox?.drain();
+    }
+
+    /** `queue.resume`: starts the owner's queued tasks held after a failure or restart. Returns how many. */
+    public resumeQueue(ownerLogin: string | undefined): number {
+        return resumeQueueExtracted(this, ownerLogin);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -832,7 +860,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     create(request: QaapCreateAgentTaskRequest, ownerLogin?: string, options?: QaapAgentTaskCreateOptions): QaapAgentTask {
         registerQaapAgentTaskSpawnGate(request, options);
-        const task = createExtracted(this, request, ownerLogin);
+        const task = createExtracted(this, request, ownerLogin, options);
         const owner = ownerLogin ?? task.ownerLogin;
         const tenantActivity = this.tenantActivity;
         tenantActivity?.touch(owner, 'agent');

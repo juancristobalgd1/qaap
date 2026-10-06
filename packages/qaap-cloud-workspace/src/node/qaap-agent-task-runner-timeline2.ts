@@ -271,7 +271,8 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         if (task.ownerLogin && ctx.billingStore) {
             try {
                 const account = await ctx.billingStore.getOrCreateAccount(task.ownerLogin);
-                if (!canStartNewAgentJob(account)) {
+                // A restart continuation finishes a turn that was already admitted; it spends no allowance.
+                if (!task.restartContinuationOf && !canStartNewAgentJob(account)) {
                     fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                     fs.writeFileSync(
                         ctx.logPath(task.id),

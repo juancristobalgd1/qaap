@@ -10,7 +10,7 @@ import { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
-import { persistToLedgerExtracted } from './qaap-agent-task-runner-ledger';
+import { holdQueueAfterFailureExtracted, persistToLedgerExtracted } from './qaap-agent-task-runner-ledger';
 import * as path from 'path';
 import {
     buildImproveComposerPromptRequest,
@@ -397,6 +397,9 @@ export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string,
         // (including a cancel mid-verification) so a finished task never reads as "verifying".
         const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now(), worktreeFinishedFingerprint, verificationPhase: undefined };
         ctx.tasks.set(id, finished);
+        if (state === 'failed') {
+            holdQueueAfterFailureExtracted(ctx, finished);
+        }
         void ctx.persist();
         ctx.observability?.recordAgentCommandFinished(
             finished,
@@ -405,7 +408,8 @@ export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string,
             finished.startedAt === undefined ? undefined : finished.finishedAt! - finished.startedAt,
         );
         const durationMs = billableAgentDurationMs(finished);
-        if (durationMs > 0 && finished.ownerLogin && ctx.billingStore) {
+        // A restart continuation redoes work our deploy or restart killed: never charged to the user.
+        if (durationMs > 0 && finished.ownerLogin && ctx.billingStore && !finished.restartContinuationOf) {
             void ctx.billingStore.debitRuntime(finished.ownerLogin, durationMs).catch(() => undefined);
         }
         // 'completed'/'failed'/'interrupted' map to 'completed' for subscribers; 'cancelled' stays distinct.

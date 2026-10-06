@@ -90,6 +90,18 @@ export interface QaapAgentTask {
     readonly clientRequestId?: string;
     /** Id of the interrupted task this execution is continuing, when applicable. */
     readonly resumedFromTaskId?: string;
+    /**
+     * Set when the backend continued this turn on its own because a restart or deploy killed the
+     * run with this id (`QAAP_AGENT_LEDGER=on`). Such continuations are not charged to the user.
+     */
+    readonly restartContinuationOf?: string;
+    /** Restart continuations already spent on this turn's lineage. */
+    readonly restartResumeCount?: number;
+    /**
+     * Queued task held after a failure or restart (`QAAP_AGENT_LEDGER=on`): it does not start until
+     * the owner resumes the queue (`POST /qaap/api/agent-tasks/queue/resume`).
+     */
+    readonly queueHeld?: boolean;
     /** Opt-in latency marks for submit → first output diagnostics. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /**
