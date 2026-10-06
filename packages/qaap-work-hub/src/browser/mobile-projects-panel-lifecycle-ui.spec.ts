@@ -248,6 +248,40 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
         expect(host.renderListCalls).to.equal(0);
     });
 
+    it('repaints the visible sessions sidebar when a task that is not open finishes, on any hub surface', () => {
+        const onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
+        let sidebarRefreshes = 0;
+        const host = createHost({
+            // Desktop: task B open in the transcript, Work Hub not on the tasks/home list.
+            transcriptSheet: {} as HTMLElement,
+            transcriptOpenSummaryId: 'b',
+            hubQueryUi: {
+                isTasksHubView: () => false,
+                isHomeHubView: () => false,
+            } as unknown as MobileProjectsPanelLifecycleHost['hubQueryUi'],
+            sessionsSidebar: {
+                isVisible: () => true,
+                refreshList: () => { sidebarRefreshes++; },
+                scheduleRefreshList: () => { sidebarRefreshes++; },
+            } as unknown as MobileProjectsPanelLifecycleHost['sessionsSidebar'],
+            conversations: {
+                warmLiveTransport: () => undefined,
+                onDidChange: Event.None,
+                onDidChangeDetail: onDidChangeDetailEmitter.event,
+                onDidReceiveMessage: Event.None,
+                onDidReceiveParallelRun: Event.None,
+                onDidReceiveTransportActivity: Event.None,
+                onDidReconnectTransport: Event.None,
+                onDidReceivePendingQueue: Event.None,
+            } as MobileProjectsPanelLifecycleHost['conversations'],
+        });
+        new MobileProjectsPanelLifecycleUi(host).subscribeToActiveTasks();
+
+        onDidChangeDetailEmitter.fire({ kind: 'updated', conversationId: 'a', cwd: '/repo', changedFields: ['status'] });
+
+        expect(sidebarRefreshes).to.equal(1);
+    });
+
     it('skips active task list rebuild while transcript overlay is open on tasks hub', () => {
         const onDidChangeEmitter = new Emitter<void>();
         const host = createHost({

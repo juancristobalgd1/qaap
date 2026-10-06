@@ -719,10 +719,8 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     scheduleRefreshList(): void {
-        if (this.delegate.shouldDeferSessionListRefresh?.()) {
-            this.scheduleDeferredRefresh();
-            return;
-        }
+        // The defer/throttle decision belongs to refreshList alone: asking here too would
+        // record a refresh that never painted and make the frame below defer itself forever.
         if (this.refreshListRaf) {
             return;
         }
