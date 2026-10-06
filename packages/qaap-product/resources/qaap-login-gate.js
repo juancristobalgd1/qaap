@@ -16,6 +16,9 @@
         document.documentElement.setAttribute('lang', 'en');
     })();
 
+    /** Set when this tab reloads into the classic IDE; the IDE never reads Work Hub data at boot. */
+    var bootsIntoIde = false;
+
     /**
      * Mobile Work Hub boot guard — runs before bundle.js so the IDE shell never flashes
      * behind the Agents chat while layout + workspace restore finish loading.
@@ -39,6 +42,7 @@
                 preferDesktopIde = false;
             }
             if (preferDesktopIde) {
+                bootsIntoIde = true;
                 return;
             }
             // NOTE: `homeVisible` is NOT a skip — the Work Hub Home is a hub surface, so on reload
@@ -432,10 +436,30 @@
         }
     }
 
+    // Work Hub reads the frontend only issues once all of its modules are loaded, seconds after
+    // the session is known (7-12 s into a cold load). Start them with the bundle; the frontend
+    // takes the responses through @theia/qaap-adapters' qaap-boot-prefetch.ts.
+    var BOOT_PREFETCH_PATHS = ['/qaap/api/github/project-sessions', '/qaap/api/user-settings'];
+
+    function prefetchWorkHubData() {
+        if (bootsIntoIde || window.__qaapBootPrefetch || typeof fetch !== 'function' || !isSignedIn()) {
+            return;
+        }
+        var entries = {};
+        BOOT_PREFETCH_PATHS.forEach(function (path) {
+            var response = fetch(path, { credentials: 'include' });
+            // Consumed (or dropped) by the frontend; never an unhandled rejection here.
+            response.catch(function () { /* the frontend refetches */ });
+            entries[path] = { startedAt: Date.now(), response: response };
+        });
+        window.__qaapBootPrefetch = entries;
+    }
+
     function loadBundle() {
         if (window.__qaapBundleLoading || window.__qaapBundleLoaded) {
             return;
         }
+        prefetchWorkHubData();
         activateBundleStylesheet();
         window.__qaapBundleLoading = true;
         var script = document.createElement('script');

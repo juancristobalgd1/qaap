@@ -10,6 +10,8 @@ import { runLoginGate, type LoginGateOptions, type LoginGateResponder, type Logi
 const CONFIG = '/qaap/api/auth/config';
 const SESSION = '/qaap/api/auth/session';
 const HEALTH = '/qaap/api/health';
+const PROJECT_SESSIONS = '/qaap/api/github/project-sessions';
+const USER_SETTINGS = '/qaap/api/user-settings';
 const SIGNED_IN_USER = { provider: 'github', login: 'octocat', name: 'The Octocat' };
 
 describe('Qaap login gate', () => {
@@ -70,7 +72,8 @@ describe('Qaap login gate', () => {
             const stored = Object.keys(run.window.localStorage).filter(key => key.includes('qaap.auth'));
             expect(stored.some(key => run.window.localStorage.getItem(key) === 'true')).to.equal(true);
             // The callback trusts the session endpoint only; it never asks for the auth config.
-            expect(run.requests).to.deep.equal([SESSION]);
+            // The confirmed session then starts the Work Hub data reads with the bundle.
+            expect(run.requests).to.deep.equal([SESSION, PROJECT_SESSIONS, USER_SETTINGS]);
         });
 
         it('falls back to the sign-in gate when the callback session cannot be confirmed', async () => {
@@ -165,6 +168,51 @@ describe('Qaap login gate', () => {
             expect(run.requests.slice(0, 2).sort()).to.deep.equal([CONFIG, SESSION].sort());
             expect(run.requests.filter(request => request === SESSION)).to.have.length(1);
             expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+        });
+
+        it('starts the Work Hub data reads once the session is confirmed, before the bundle boots', async () => {
+            // The frontend only asks for these after all its modules loaded (7-12 s into a cold
+            // page load in logs/perf-baseline); qaap-boot-prefetch.ts hands it these responses.
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : { ok: true, body: {} };
+            });
+            await run.bundleAppended;
+            expect(run.requests).to.include.members([PROJECT_SESSIONS, USER_SETTINGS]);
+            const prefetch = (run.window as unknown as {
+                __qaapBootPrefetch?: Record<string, { startedAt: number; response: Promise<unknown> }>;
+            }).__qaapBootPrefetch;
+            expect(Object.keys(prefetch ?? {}).sort()).to.deep.equal([PROJECT_SESSIONS, USER_SETTINGS].sort());
+            expect(prefetch?.[PROJECT_SESSIONS].startedAt).to.be.a('number');
+            expect(prefetch?.[PROJECT_SESSIONS].response.then).to.be.a('function');
+        });
+
+        it('does not read Work Hub data when the tab reloads into the classic IDE', async () => {
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : { ok: true, body: {} };
+            }, undefined, {
+                beforeRun: window => window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1'),
+            });
+            await run.bundleAppended;
+            expect(run.requests).not.to.include(PROJECT_SESSIONS);
+            expect(run.requests).not.to.include(USER_SETTINGS);
+        });
+
+        it('does not read Work Hub data for a visitor who is not signed in', async () => {
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: false } } : undefined;
+            });
+            await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'sign-in gate');
+            expect(run.requests).not.to.include(PROJECT_SESSIONS);
+            expect(run.requests).not.to.include(USER_SETTINGS);
         });
 
         it('still honours skip-auth dev mode while the session probe runs', async () => {
