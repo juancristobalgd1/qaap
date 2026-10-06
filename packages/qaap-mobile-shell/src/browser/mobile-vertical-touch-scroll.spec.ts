@@ -110,6 +110,34 @@ describe('mobile-vertical-touch-scroll', () => {
         expect(css).to.include('translate3d(0, 0, 0)');
     });
 
+    it('keeps the outer Work Hub scroller still behind inline Settings', () => {
+        const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css'), 'utf8');
+        const locks = [...css.matchAll(/([^{}]+)\{\s*overflow:\s*hidden\s*!important;\s*overflow-y:\s*hidden\s*!important;\s*\}/g)]
+            .map(match => match[1].replace(/\/\*[\s\S]*?\*\//g, '').trim());
+        const settingsLock = locks.find(selectors => selectors.includes(':has('));
+        expect(settingsLock, 'outer scroll lock rule').to.equal(
+            '.theia-mobile-projects-scroll:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline)',
+            'a selector list with `:has()` is dropped whole where `:has()` is unsupported'
+        );
+    });
+
+    it('never nests a forced scroller around the Settings scroll container, and covers the Agents settings pane', () => {
+        const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css'), 'utf8');
+        const nested = '.theia-mobile-work-hub-preferences-widget-host .preferences-editor-widget';
+        expect(css).to.not.include(nested);
+        expect(MOBILE_VERTICAL_SCROLL_SELECTORS).to.not.include(nested);
+        expect(MOBILE_VERTICAL_SCROLL_SELECTORS).to.include('.theia-mobile-work-hub-preferences-embed .settings-main-scroll-container');
+        expect(css).to.include('.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-configuration-content');
+    });
+
+    it('lets vertical swipes on a pull request diff chain to the list around it', () => {
+        const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css'), 'utf8');
+        const diff = css.match(/\.theia-mobile-work-hub-pull-request-diff,[^{]*\{([^}]*)\}/);
+        expect(diff, 'diff rule').to.not.equal(null);
+        expect(diff![1]).to.match(/overscroll-behavior-x:\s*contain/);
+        expect(diff![1]).to.not.match(/overscroll-behavior:\s*contain/);
+    });
+
     it('excludes Work Hub projects scroll from compositor promotion', () => {
         expect(MOBILE_SCROLL_COMPOSITOR_EXCLUDED_SELECTORS).to.include('.theia-mobile-projects-scroll');
     });

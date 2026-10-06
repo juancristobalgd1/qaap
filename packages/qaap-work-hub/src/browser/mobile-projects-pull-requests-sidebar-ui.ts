@@ -135,6 +135,9 @@ export class MobileProjectsPullRequestsSidebarUi {
     constructor(protected readonly host: MobileProjectsPullRequestsSidebarHost) { }
 
     render(container: HTMLElement): void {
+        // The results list is the scroller in this mode; a rebuild (inbox polling, search pages)
+        // must not throw the user back to the top.
+        const previousResultsScrollTop = this.results && container.contains(this.results) ? this.results.scrollTop : 0;
         this.container = container;
         container.replaceChildren();
         const root = document.createElement('div');
@@ -188,6 +191,9 @@ export class MobileProjectsPullRequestsSidebarUi {
         this.results = results;
         this.ensureSearchLoaded();
         this.renderPullRequestResults(results);
+        if (previousResultsScrollTop > 0) {
+            results.scrollTop = previousResultsScrollTop;
+        }
     }
 
     get currentStateFilter(): MobileProjectsPullRequestSidebarState {

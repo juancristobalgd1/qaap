@@ -262,6 +262,53 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         sidebar.hide();
     });
 
+    it('does not rebuild the pull request list under a touch scroll, only once it settles', async () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        let renders = 0;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            renderPullRequestList: host => {
+                renders++;
+                const results = document.createElement('div');
+                results.className = 'theia-mobile-work-hub-pull-requests-results';
+                host.replaceChildren(results);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        try {
+            sidebar.showPullRequests();
+            sidebar.show();
+            const rendersBeforeGesture = renders;
+            const touched = sidebar.node.querySelector('.theia-mobile-work-hub-pull-requests-results')!;
+            // `window` is stubbed in these tests: take the Event constructor from the jsdom document.
+            const DomEvent = touched.ownerDocument.defaultView!.Event;
+
+            touched.dispatchEvent(new DomEvent('touchstart'));
+            // Inbox polling and search pages always force the refresh.
+            sidebar.refreshList({ force: true });
+            expect(renders, 'rebuilt under the finger').to.equal(rendersBeforeGesture);
+
+            touched.dispatchEvent(new DomEvent('touchend'));
+            touched.dispatchEvent(new DomEvent('scroll'));
+            sidebar.refreshList({ force: true });
+            expect(renders, 'rebuilt during momentum').to.equal(rendersBeforeGesture);
+
+            await new Promise(resolve => setTimeout(resolve, 900));
+            expect(renders, 'deferred refresh never ran').to.equal(rendersBeforeGesture + 1);
+        } finally {
+            sidebar.hide();
+            sidebar.node.remove();
+        }
+    });
+
     it('syncs the embedded state when the viewport layout changes while open', () => {
         const currentWindow = (global as { window?: Window }).window;
         (global as { window?: Window }).window = {

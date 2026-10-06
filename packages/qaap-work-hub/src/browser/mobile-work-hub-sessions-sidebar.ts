@@ -36,6 +36,8 @@ export const QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY = '(min-width: 768px) and
 export const QAAP_SESSIONS_SIDEBAR_EDGE_SWIPE_DISMISS_MIN_DELTA = 40;
 
 const DISMISS_HINT_DURATION_MS = 4200;
+/** Quiet time after the last touch/scroll before the pull request list may be rebuilt (covers momentum). */
+const PULL_REQUEST_SCROLL_SETTLE_MS = 350;
 const DESKTOP_SIDEBAR_MIN_WIDTH = 240;
 const DESKTOP_SIDEBAR_MAX_WIDTH = 460;
 const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
@@ -145,6 +147,18 @@ export class MobileWorkHubSessionsSidebar {
     protected resizeDispose: Disposable = Disposable.NULL;
     protected refreshListRaf = 0;
     protected refreshDeferTimer = 0;
+    protected listTouchActive = false;
+    protected listScrollActiveUntil = 0;
+    protected readonly onListTouchStart = (): void => {
+        this.listTouchActive = true;
+    };
+    protected readonly onListTouchEnd = (): void => {
+        this.listTouchActive = false;
+        this.listScrollActiveUntil = Date.now() + PULL_REQUEST_SCROLL_SETTLE_MS;
+    };
+    protected readonly onListScrollActivity = (): void => {
+        this.listScrollActiveUntil = Date.now() + PULL_REQUEST_SCROLL_SETTLE_MS;
+    };
     protected shellResizeRaf = 0;
     protected shellResizeObserver: ResizeObserver | undefined;
     protected shellResizeSettleTimer = 0;
@@ -290,6 +304,11 @@ export class MobileWorkHubSessionsSidebar {
         this.scrollHost = document.createElement('div');
         this.scrollHost.className = 'theia-mobile-work-hub-sessions-sidebar-scroll';
         this.scrollHost.addEventListener('scroll', this.onProjectsScroll, { passive: true });
+        // Capture so scrolls of nested hosts (the pull request results list) count too.
+        this.scrollHost.addEventListener('scroll', this.onListScrollActivity, { capture: true, passive: true });
+        this.scrollHost.addEventListener('touchstart', this.onListTouchStart, { capture: true, passive: true });
+        this.scrollHost.addEventListener('touchend', this.onListTouchEnd, { capture: true, passive: true });
+        this.scrollHost.addEventListener('touchcancel', this.onListTouchEnd, { capture: true, passive: true });
         this.listHost = document.createElement('div');
         this.listHost.className = 'theia-mobile-work-hub-sessions-sidebar-list';
         this.scrollHost.append(this.listHost);
@@ -728,6 +747,10 @@ export class MobileWorkHubSessionsSidebar {
         });
     }
 
+    protected isListScrollGestureActive(): boolean {
+        return this.listTouchActive || Date.now() < this.listScrollActiveUntil;
+    }
+
     protected scheduleDeferredRefresh(): void {
         if (this.refreshDeferTimer) {
             return;
@@ -740,6 +763,12 @@ export class MobileWorkHubSessionsSidebar {
 
     refreshList(options?: { force?: boolean }): void {
         const pullRequests = this.sidebarMode === 'pullRequests';
+        if (pullRequests && this.isListScrollGestureActive()) {
+            // Pull request refreshes (inbox polling, search pages) are always forced and replace
+            // the whole list: doing that under the finger drops the touch scroll and its momentum.
+            this.scheduleDeferredRefresh();
+            return;
+        }
         if (!pullRequests && !options?.force && this.delegate.shouldDeferSessionListRefresh?.()) {
             this.scheduleDeferredRefresh();
             return;
