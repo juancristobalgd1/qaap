@@ -28,6 +28,7 @@ import {
     requestMobileProjectsPanelRestore,
 } from './mobile-projects-open';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { QaapWorkspaceService } from './qaap-workspace-service';
 import {
     mobileProjectsUserStorageKey,
 } from './mobile-projects-user-storage';
@@ -247,6 +248,41 @@ export async function openInCurrentWindowAsyncExtracted(ctx: MobileProjectsServi
             return ctx.openWorkspaceUri(project.uri);
         }
         return false;
+}
+
+/**
+ * Opens the project as this page's workspace without a reload; only possible while the page has
+ * no workspace (see `QaapWorkspaceService.openWithoutReload`). Resolves `false` when the caller
+ * must fall back to `openInCurrentWindowAsync` (reload).
+ */
+export async function openProjectWithoutReloadExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
+        const workspaceService = ctx.workspaceService;
+        if (!(workspaceService instanceof QaapWorkspaceService) || workspaceService.opened) {
+            return false;
+        }
+        let uri = project.uri?.scheme === 'file' ? project.uri : undefined;
+        let repository: QaapGithubRepositorySummary | undefined;
+        if (project.github) {
+            // The backend owns the clone path: a cached entry can name another login's folder.
+            try {
+                const result = await openQaapGithubRepository(project.github.owner, project.github.name);
+                uri = new URI(result.workspaceUri);
+                repository = result.repository;
+            } catch {
+                return false;
+            }
+        }
+        if (!uri || !await workspaceService.openWithoutReload(uri)) {
+            return false;
+        }
+        clearHiddenProjectIdExtracted(ctx, `recent:${uri.toString()}`);
+        if (repository) {
+            clearHiddenProjectIdExtracted(ctx, `github:${repository.fullName}`);
+            ctx.touchGithubRepositoryActivity(repository);
+        } else {
+            ctx.touchProjectActivity(project);
+        }
+        return true;
 }
 
 export async function openGithubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, newWindow = false): Promise<boolean> {

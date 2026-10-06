@@ -34,7 +34,7 @@ import {
     MOBILE_PROJECTS_HIDDEN_IDS_BASE,
     MOBILE_PROJECTS_PINNED_IDS_BASE,
 } from './mobile-projects-user-storage';
-import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
+import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openProjectWithoutReloadExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
 import { cachedGithubSessionToEntryExtracted, cachedSessionToEntryExtracted, cachedWorkspaceSessionToEntryExtracted, collapseCurrentWorkspaceDuplicatesExtracted, duplicateProjectExtracted, getCurrentWorkspaceBranchExtracted, getCurrentWorkspaceDisplayNameExtracted, getProjectCwdExtracted, isBrowsableHubProjectExtracted, loadProjectsExtracted, overlayActiveTasksExtracted, peekCachedProjectsExtracted, removeProjectExtracted, renameProjectExtracted } from './mobile-projects-service-streaming';
 import { applySessionToEntryExtracted, buildEphemeralCurrentWorkspaceEntryExtracted, currentGithubRepositoryFullNameExtracted, currentRepoKeyExtracted, cwdFromFileUriExtracted, getCurrentWorkspaceMatchKeyExtracted, getProjectWorkspaceMatchKeyExtracted, githubRepositoryToProjectExtracted, isProjectContainerWorkspaceExtracted, latestTimestampExtracted, loadGithubProjectsExtracted, loadSessionMapExtracted, prepareProjectCwdExtracted, projectActivityTimeExtracted, projectMatchesCurrentWorkspaceExtracted, projectSessionKeyExtracted, recordProjectPreviewUrlExtracted, recordProjectSessionExtracted, relativeUpdatedAtExtracted, resolveCurrentWorkspaceProjectExtracted, resolveProjectPreviewUrlExtracted, touchProjectActivityExtracted, touchProjectSessionExtracted } from './mobile-projects-service-timeline';
 
@@ -122,6 +122,11 @@ export class MobileProjectsService {
     /** Resolves `true` when the workspace open (and page reload) was issued. */
     async openInCurrentWindowAsync(project: MobileProjectEntry): Promise<boolean> {
         return openInCurrentWindowAsyncExtracted(this, project);
+    }
+
+    /** Resolves `true` when the project became this page's workspace without a reload. */
+    async openProjectWithoutReload(project: MobileProjectEntry): Promise<boolean> {
+        return openProjectWithoutReloadExtracted(this, project);
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */

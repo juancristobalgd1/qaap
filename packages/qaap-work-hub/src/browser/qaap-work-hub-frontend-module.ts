@@ -67,6 +67,8 @@ import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-c
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { QaapKeybindingRegistry } from '@theia/qaap-shared-core/lib/browser/qaap-keybinding-registry';
+import { QaapWorkspaceService } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-service';
+import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/browser/qaap-build-freshness-contribution';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
@@ -173,6 +175,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // The registry is shared by the application and every widget. Keeping the
     // Qaap override singleton preserves contributions registered during startup.
     rebind(KeybindingRegistry).to(QaapKeybindingRegistry).inSingletonScope();
+    // The desktop Work Hub (no workspace) opens the IDE on a project without reloading the page.
+    rebind(WorkspaceService).to(QaapWorkspaceService).inSingletonScope();
     // Work Hub command palette shows hub-relevant commands only; IDE keeps the full list.
     rebind(QuickCommandService).to(QaapQuickCommandService).inSingletonScope();
     // AI Features Settings: prioritize Qaap BYOK providers; omit Theia leftover groups.
