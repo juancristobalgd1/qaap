@@ -399,6 +399,63 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(document.activeElement?.textContent).to.equal('Updated');
     });
 
+    it('does not re-focus a conversation the pointer selected when the list refreshes', () => {
+        // A script focus after the swap matches :focus-visible, which runs the hover marquee on
+        // the selected row (title clipped and shifted left, no ellipsis, fade block at the end).
+        let label = 'First';
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                const row = document.createElement('div');
+                row.dataset.qaapConversationId = 'conv-1';
+                const button = document.createElement('button');
+                button.textContent = label;
+                row.append(button);
+                host.append(row);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        const clicked = sidebar.node.querySelector<HTMLButtonElement>('[data-qaap-conversation-id="conv-1"] button')!;
+        const matches = clicked.matches.bind(clicked);
+        clicked.matches = (selector: string) => selector === ':focus-visible' ? false : matches(selector);
+        clicked.focus();
+
+        label = 'Updated';
+        sidebar.refreshList({ force: true });
+
+        expect(sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"] button')?.textContent).to.equal('Updated');
+        expect(document.activeElement).to.equal(document.body);
+    });
+
+    it('keeps the live list when only the title marquee measurement differs', () => {
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                const row = document.createElement('div');
+                row.dataset.qaapConversationId = 'conv-1';
+                const title = document.createElement('span');
+                title.className = 'theia-mobile-projects-task-title';
+                title.textContent = 'Count the number of files in the repo root';
+                row.append(title);
+                host.append(row);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        const liveRow = sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"]');
+        const liveTitle = liveRow!.querySelector<HTMLElement>('.theia-mobile-projects-task-title')!;
+        // What the marquee measurement leaves on the live (laid out) title only.
+        liveTitle.classList.add('theia-mod-title-overflow');
+        liveTitle.style.setProperty('--qaap-task-title-overflow', '42px');
+
+        sidebar.refreshList();
+
+        expect(sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"]')).to.equal(liveRow);
+    });
+
     it('does not touch DOM when refreshed markup is unchanged', () => {
         let renderCalls = 0;
         const sidebar = new MobileWorkHubSessionsSidebar({

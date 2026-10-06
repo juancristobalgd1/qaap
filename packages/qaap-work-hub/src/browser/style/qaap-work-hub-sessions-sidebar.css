@@ -1729,7 +1729,20 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current:hover::before,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current:focus-within::before,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current.theia-mod-menu-open::before {
-    background: color-mix(in srgb,
+    background: var(--qaap-task-title-fade-surface);
+  }
+
+  /* The marquee fades blend into the row's own interaction surface (the ::before above),
+     not into the theme's list hover color, which painted a grey block at the end of the
+     title on the selected row. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {
+    --qaap-task-title-fade-surface: color-mix(in srgb,
+        var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e)) 94%,
+        var(--theia-foreground) 6%);
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current {
+    --qaap-task-title-fade-surface: color-mix(in srgb,
         var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e)) 91%,
         var(--theia-foreground) 9%);
   }
@@ -1837,7 +1850,7 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     animation: qaap-task-title-marquee-start-fade 5.2s linear 180ms 1 both;
     background: linear-gradient(
       to right,
-      var(--theia-list-hoverBackground, var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e))) 0%,
+      var(--qaap-task-title-fade-surface) 0%,
       transparent 100%);
   }
 
@@ -1847,7 +1860,7 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     right: 0;
     background: linear-gradient(
       to left,
-      var(--theia-list-hoverBackground, var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e))) 0%,
+      var(--qaap-task-title-fade-surface) 0%,
       transparent 100%);
   }
 
