@@ -44,6 +44,12 @@ describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
 
     before(() => {
         disableJSDOM = enableJSDOM();
+        try {
+            FrontendApplicationConfigProvider.get();
+        } catch {
+            // Another spec in the same mocha run may already have set it on the shared jsdom window.
+            FrontendApplicationConfigProvider.set({ applicationName: 'Qaap' });
+        }
     });
 
     after(() => {
@@ -53,7 +59,6 @@ describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
     beforeEach(() => {
         stopped = false;
         document.body.innerHTML = '';
-        FrontendApplicationConfigProvider.set({ applicationName: 'Qaap' });
         window.requestAnimationFrame = ((callback: FrameRequestCallback): number =>
             setTimeout(() => callback(Date.now()), 16) as unknown as number) as typeof window.requestAnimationFrame;
         window.cancelAnimationFrame = ((id: number) => clearTimeout(id)) as typeof window.cancelAnimationFrame;

@@ -715,10 +715,8 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     scheduleRefreshList(): void {
-        if (this.delegate.shouldDeferSessionListRefresh?.()) {
-            this.scheduleDeferredRefresh();
-            return;
-        }
+        // The defer/throttle decision belongs to refreshList alone: asking here too would
+        // record a refresh that never painted and make the frame below defer itself forever.
         if (this.refreshListRaf) {
             return;
         }
@@ -749,6 +747,8 @@ export class MobileWorkHubSessionsSidebar {
             return;
         }
         if (!pullRequests && !options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
+            // Skipped only while a tap/open settles: retry so the update is never lost.
+            this.scheduleDeferredRefresh();
             return;
         }
         const previousScrollTop = this.scrollHost.scrollTop;

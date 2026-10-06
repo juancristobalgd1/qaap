@@ -224,7 +224,9 @@ export function tryPatchSessionsSidebarListExtracted(ctx: MobileProjectsSessions
         return false;
     }
     if (ctx.isSessionsSidebarInteractionGuardActive()) {
-        return true;
+        // Nothing was patched: reporting success would stamp fresh row fingerprints over
+        // stale rows and the caller would never retry.
+        return false;
     }
     const structure = ctx.buildSessionsSidebarStructureFingerprint();
     if (listHost.getAttribute(QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR) !== structure) {
