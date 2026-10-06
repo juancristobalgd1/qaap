@@ -294,6 +294,54 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         composerHost.remove();
     });
 
+    it('ensureTranscriptConversationRefresh re-watches the real task when the controller still watches the pending placeholder', () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        const createdSummary = {
+            id: 'conv-new',
+            cwd: '/repo',
+            agentId: 'opencode',
+            title: 'New task',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 10,
+            messageCount: 1,
+        };
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        const liveUiAny = liveUi as unknown as {
+            refreshOpenTranscriptConversation: (options?: { forcePoll?: boolean }) => Promise<void>;
+            isWatchingOpenTranscript: (id: string) => boolean;
+            resolveTranscriptRefreshContext: () => unknown;
+            scheduleTranscriptConversationRefresh: (project: unknown, summary: { id: string }, chatHost: HTMLElement) => void;
+            ensureTranscriptLiveController: () => { watch: (id: string) => void; stopWatch: () => void; onScheduleRefresh: (() => void) | undefined };
+            ensureTranscriptConversationRefresh: () => void;
+        };
+        liveUiAny.refreshOpenTranscriptConversation = async () => undefined;
+        liveUiAny.isWatchingOpenTranscript = id => id === host.transcriptOpenSummaryId;
+        const watched: string[] = [];
+        liveUiAny.scheduleTranscriptConversationRefresh = (_project, summary) => { watched.push(summary.id); };
+        liveUiAny.resolveTranscriptRefreshContext = () => ({ project: {}, summary: createdSummary, chatHost });
+
+        // Task opened as the "new chat" placeholder, then the submit swaps in the created id.
+        host.transcriptOpenSummaryId = 'pending-new-chat-1';
+        const controller = liveUiAny.ensureTranscriptLiveController();
+        controller.watch('pending-new-chat-1');
+        host.transcriptScheduleRefresh = controller.onScheduleRefresh;
+        host.transcriptOpenSummaryId = 'conv-new';
+        host.transcriptLastConv = { ...createdSummary, messages: [{ id: 'u1', role: 'user', content: 'hi', createdAt: 5 }] };
+
+        try {
+            liveUiAny.ensureTranscriptConversationRefresh();
+            expect(watched).to.deep.equal(['conv-new']);
+        } finally {
+            controller.stopWatch();
+            chatHost.remove();
+            composerHost.remove();
+        }
+    });
+
     it('onTranscriptUserMessageSubmitted sets preview pending without switching execution tab', () => {
         const chatHost = document.createElement('div');
         const composerHost = document.createElement('div');

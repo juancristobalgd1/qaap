@@ -124,4 +124,24 @@ describe('qaap-transcript-stream-health', () => {
         expect(health.sseStale).to.equal(true);
         expect(health.timeoutCause).to.equal('sse_disconnected');
     });
+
+    it('times out a turn with no output after 90s even when the progress clock was never seeded', () => {
+        expect(TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS).to.equal(90_000);
+        const turnStartedAtMs = 1_000;
+        const health = resolveTranscriptStreamHealth({
+            streaming: true,
+            lastProgressAtMs: undefined,
+            turnStartedAtMs,
+            lastTransportEventAtMs: undefined,
+            segments: [],
+            now: turnStartedAtMs + TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS,
+        });
+        expect(health.awaitingFirstOutput).to.equal(true);
+        expect(health.timedOut).to.equal(true);
+        expect(health.timeoutCause).to.equal('semantic_idle');
+    });
+
+    it('keeps the automatic first-output retry later than the visible 90s timeout', () => {
+        expect(TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS).to.be.greaterThan(TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS);
+    });
 });
