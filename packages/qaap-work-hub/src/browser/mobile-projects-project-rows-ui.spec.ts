@@ -268,3 +268,58 @@ describe('MobileProjectsProjectRowsUi — task block', () => {
         expect(block.querySelector('.theia-mobile-projects-tasks-more-btn')?.textContent).to.contain('(2)');
     });
 });
+
+describe('MobileProjectsProjectRowsUi — sessions sidebar unread dot', () => {
+
+    useSuiteJSDOM();
+
+    const task: MobileProjectTaskView = {
+        id: 'conv-1',
+        title: 'Task',
+        state: 'idle',
+        since: 'now',
+        command: 'qaiq',
+        cwd: '/repo',
+        createdAt: 1,
+    } as MobileProjectTaskView;
+
+    const summary = {
+        id: 'conv-1',
+        title: 'Task',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 2,
+        messageCount: 3,
+        lastMessageRole: 'agent',
+        agentId: 'qaiq',
+        cwd: '/repo',
+    } as QaapAgentConversationSummaryDTO;
+
+    function compactRow(dotted: boolean): HTMLElement {
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-projects-task-row theia-mod-sidebar-compact';
+        row.classList.toggle('theia-mod-unread-reply', dotted);
+        row.dataset.qaapConversationId = 'conv-1';
+        return row;
+    }
+
+    it('drops the dot in place once the task has been read', () => {
+        const ui = new MobileProjectsProjectRowsUi({
+            activeTasks: undefined,
+            conversationIndexUi: { isConversationUnread: () => false },
+        } as never);
+        const row = compactRow(true);
+        ui.patchSidebarCompactTaskRow(row, {} as never, task, summary, { isCurrent: false });
+        expect(row.classList.contains('theia-mod-unread-reply')).to.equal(false);
+    });
+
+    it('lights the dot in place when a new agent reply arrives', () => {
+        const ui = new MobileProjectsProjectRowsUi({
+            activeTasks: undefined,
+            conversationIndexUi: { isConversationUnread: () => true },
+        } as never);
+        const row = compactRow(false);
+        ui.patchSidebarCompactTaskRow(row, {} as never, task, summary, { isCurrent: false });
+        expect(row.classList.contains('theia-mod-unread-reply')).to.equal(true);
+    });
+});
