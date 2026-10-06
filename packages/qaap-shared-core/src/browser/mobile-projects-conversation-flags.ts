@@ -31,8 +31,12 @@ export class MobileProjectsConversationFlags {
     protected readonly cache = new Map<string, ConversationFlags>();
     protected readonly readCache = new Map<string, number>();
     protected loaded = false;
-    /** Highest mark per conversation that is not saved yet, and the save in flight. */
-    protected readonly pendingReadMarks = new Map<string, number>();
+    /**
+     * Mark per conversation not saved yet (`'now'` = the server's clock at save time), and the save in
+     * flight. Live deltas stamp `updatedAt` with the client clock, so marks from opening or watching a
+     * task are taken by the server, not sent: a phone running behind would otherwise re-light the dot.
+     */
+    protected readonly pendingReadMarks = new Map<string, number | 'now'>();
     protected readonly savingReadMarks = new Map<string, Promise<void>>();
 
     protected readonly onDidChangeEmitter = new Emitter<string>();
@@ -77,12 +81,19 @@ export class MobileProjectsConversationFlags {
         return this.readCache.get(id) ?? 0;
     }
 
-    /** Mark the conversation as read up to `readAt` (a server timestamp, typically `summary.updatedAt`). */
-    markRead(id: string, readAt: number): void {
-        if (!this.raiseReadMark(id, readAt)) {
-            return;
+    /**
+     * The user has seen the conversation up to `seenAt` (typically `summary.updatedAt`), which hides the
+     * dot right away; the backend records its own current time as the user's mark.
+     */
+    markRead(id: string, seenAt: number): void {
+        if (this.raiseReadMark(id, seenAt)) {
+            this.queueReadMark(id, 'now');
         }
-        this.pendingReadMarks.set(id, Math.max(this.pendingReadMarks.get(id) ?? 0, readAt));
+    }
+
+    protected queueReadMark(id: string, readAt: number | 'now'): void {
+        const pending = this.pendingReadMarks.get(id);
+        this.pendingReadMarks.set(id, pending === 'now' || readAt === 'now' ? 'now' : Math.max(pending ?? 0, readAt));
         if (!this.savingReadMarks.has(id)) {
             this.savingReadMarks.set(id, this.saveReadMarks(id));
         }
@@ -127,7 +138,7 @@ export class MobileProjectsConversationFlags {
             while (readAt !== undefined) {
                 this.pendingReadMarks.delete(id);
                 try {
-                    const saved = await putConversationReadMark(id, readAt);
+                    const saved = await putConversationReadMark(id, readAt === 'now' ? undefined : readAt);
                     if (this.raiseReadMark(id, saved)) {
                         this.onDidChangeEmitter.fire(id);
                     }
@@ -150,8 +161,8 @@ export class MobileProjectsConversationFlags {
             window.localStorage.removeItem(LEGACY_READ_STORAGE_KEY);
             const parsed = JSON.parse(raw) as Record<string, number>;
             for (const [id, readAt] of Object.entries(parsed ?? {})) {
-                if (typeof readAt === 'number' && readAt > 0) {
-                    this.markRead(id, readAt);
+                if (typeof readAt === 'number' && this.raiseReadMark(id, readAt)) {
+                    this.queueReadMark(id, readAt);
                 }
             }
         } catch {

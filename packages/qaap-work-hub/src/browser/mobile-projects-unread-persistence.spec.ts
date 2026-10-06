@@ -185,6 +185,15 @@ describe('Work Hub unread state persists per user', () => {
         expect(bob.unread('B')).to.equal(true);
     });
 
+    it('the mark is the server\'s clock when the task is opened, not a client timestamp', async () => {
+        task('A', 100);
+        const phone = await loadWorkHub();
+
+        await phone.open('A');
+
+        expect(serverMarks.get('alice')?.get('A')).to.equal(1_000);
+    });
+
     it('imports the legacy browser-wide marks once into the signed-in user\'s marks', async () => {
         task('A', 100);
         task('B', 200);
