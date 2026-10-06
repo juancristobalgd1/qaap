@@ -115,6 +115,7 @@ import {
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapObservability } from './qaap-observability';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import type { QaapAgentRunLedger } from './qaap-agent-run-ledger';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 
@@ -286,6 +287,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** Serializes whole-index snapshots so an older, slower write can never overwrite a newer one. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public persistChain: Promise<void> = Promise.resolve();
+    /** @internal Durable run ledger, only while `QAAP_AGENT_LEDGER` is on. */
+    public agentRunLedger?: QaapAgentRunLedger;
+    /** @internal Row signatures last committed to {@link agentRunLedger}. */
+    public ledgerSyncedRows?: Map<string, string>;
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public recoveryState: 'loading' | 'ready' | 'failed' = 'ready';
     /** @internal Settles when the startup index restore leaves `'loading'` (never rejects). */

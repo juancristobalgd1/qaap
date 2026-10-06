@@ -1,0 +1,531 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import * as fs from 'fs';
+import { DatabaseSync } from 'node:sqlite';
+import { QaapSqliteStore, QaapSqliteStoreOptions } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+
+/** Run lifecycle stored in `qaap_agent_runs.state` (coarser than the task state kept in `task_json`). */
+export type QaapAgentRunState = 'queued' | 'starting' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+
+/** Outbox effect lifecycle stored in `qaap_agent_outbox.status`. */
+export type QaapAgentEffectStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/** One durable agent run. `owner` scopes every read and write (invariant I1). */
+export interface QaapAgentRunRow {
+    readonly runId: string;
+    readonly owner: string | undefined;
+    readonly conversationId?: string;
+    readonly parentRunId?: string;
+    readonly agentId?: string;
+    readonly modelId?: string;
+    readonly cwd: string;
+    readonly state: QaapAgentRunState;
+    readonly queuePosition?: number;
+    readonly queueHeld?: boolean;
+    readonly nativeSessionId?: string;
+    readonly resumeCount?: number;
+    /** Original create request; only kept while it is needed to start the run (queued). */
+    readonly request?: unknown;
+    /** Full wire snapshot of the run (the task DTO), so the ledger replaces `index.json` losslessly. */
+    readonly task?: unknown;
+    readonly createdAt: number;
+    readonly updatedAt?: number;
+    readonly finishedAt?: number;
+    readonly lastErrorClass?: string;
+    readonly resetAt?: number;
+}
+
+/** Idempotency record for one client command (e.g. a create POST with `clientRequestId`). */
+export interface QaapAgentCommandReceipt {
+    readonly owner: string | undefined;
+    readonly commandId: string;
+    readonly runId: string;
+    readonly status?: string;
+    readonly result?: unknown;
+    readonly acceptedAt?: number;
+}
+
+/** Durable intention (never env or argv: invariant I2), executed later by the outbox worker. */
+export interface QaapAgentEffect {
+    readonly effectId: string;
+    readonly runId: string;
+    readonly owner: string | undefined;
+    readonly kind: string;
+    readonly payload?: unknown;
+    readonly status?: QaapAgentEffectStatus;
+    readonly attemptCount?: number;
+    readonly availableAt?: number;
+    readonly leaseOwner?: string;
+    readonly lastError?: string;
+    readonly createdAt?: number;
+}
+
+/** Owner-scoped reference to a run. */
+export interface QaapAgentRunRef {
+    readonly owner: string | undefined;
+    readonly runId: string;
+}
+
+export interface QaapAgentLedgerCommit {
+    /** Inserted with `INSERT OR IGNORE`; when it already exists nothing else in the commit is applied. */
+    readonly receipt?: QaapAgentCommandReceipt;
+    readonly runUpserts?: readonly QaapAgentRunRow[];
+    /** Deleting a run also deletes its receipts and outbox effects (cascade). */
+    readonly runDeletes?: readonly QaapAgentRunRef[];
+    /** Inserted with `INSERT OR IGNORE`, so deterministic effect ids are idempotent. */
+    readonly effects?: readonly QaapAgentEffect[];
+    /** Moves the run's `pending`/`running` effects to `cancelled`. */
+    readonly cancelEffectsFor?: readonly QaapAgentRunRef[];
+}
+
+export interface QaapAgentLedgerCommitResult {
+    /** True when the receipt already existed: the stored outcome is returned and nothing was written. */
+    readonly duplicate: boolean;
+    readonly runId?: string;
+    readonly result?: unknown;
+}
+
+/** Rows produced by a one-time legacy import. */
+export interface QaapAgentLedgerImport {
+    readonly runs: readonly QaapAgentRunRow[];
+    readonly receipts?: readonly QaapAgentCommandReceipt[];
+}
+
+export interface QaapAgentRunLedgerOptions extends Omit<QaapSqliteStoreOptions, 'namespace'> {
+    readonly namespace?: string;
+}
+
+interface RunRecord {
+    run_id: string;
+    owner: string;
+    conversation_id: string | null;
+    parent_run_id: string | null;
+    agent_id: string | null;
+    model_id: string | null;
+    cwd: string;
+    state: QaapAgentRunState;
+    queue_position: number | null;
+    queue_held: number;
+    native_session_id: string | null;
+    resume_count: number;
+    request_json: string | null;
+    task_json: string | null;
+    created_at: number;
+    updated_at: number;
+    finished_at: number | null;
+    last_error_class: string | null;
+    reset_at: number | null;
+}
+
+interface EffectRecord {
+    effect_id: string;
+    run_id: string;
+    owner: string;
+    kind: string;
+    payload_json: string | null;
+    status: QaapAgentEffectStatus;
+    attempt_count: number;
+    available_at: number;
+    lease_owner: string | null;
+    last_error: string | null;
+    created_at: number;
+}
+
+/**
+ * Ordered ledger schema steps. The connection-wide `PRAGMA user_version` belongs to
+ * `@theia/qaap-persistence`, so the ledger records its own version in `qaap_migration`
+ * (`<namespace>/schema/v<n>`). Append new steps, never edit or reorder existing ones.
+ *
+ * Receipts and outbox rows reference `(run_id, owner)`: a row can never point at another owner's run.
+ */
+const QAAP_AGENT_RUN_LEDGER_SCHEMA: ReadonlyArray<(database: DatabaseSync) => void> = [
+    database => database.exec(`
+        CREATE TABLE IF NOT EXISTS qaap_agent_runs (
+            run_id TEXT PRIMARY KEY,
+            owner TEXT NOT NULL,
+            conversation_id TEXT,
+            parent_run_id TEXT,
+            agent_id TEXT,
+            model_id TEXT,
+            cwd TEXT NOT NULL,
+            state TEXT NOT NULL CHECK (state IN ('queued', 'starting', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted')),
+            queue_position INTEGER,
+            queue_held INTEGER NOT NULL DEFAULT 0 CHECK (queue_held IN (0, 1)),
+            native_session_id TEXT,
+            resume_count INTEGER NOT NULL DEFAULT 0 CHECK (resume_count >= 0),
+            request_json TEXT,
+            task_json TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            finished_at INTEGER,
+            last_error_class TEXT,
+            reset_at INTEGER,
+            UNIQUE (run_id, owner)
+        );
+        CREATE INDEX IF NOT EXISTS qaap_agent_runs_owner_state
+            ON qaap_agent_runs (owner, state, queue_position);
+        CREATE INDEX IF NOT EXISTS qaap_agent_runs_conversation
+            ON qaap_agent_runs (owner, conversation_id);
+        CREATE TABLE IF NOT EXISTS qaap_agent_command_receipts (
+            owner TEXT NOT NULL,
+            command_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            result_json TEXT,
+            accepted_at INTEGER NOT NULL,
+            PRIMARY KEY (owner, command_id),
+            FOREIGN KEY (run_id, owner) REFERENCES qaap_agent_runs (run_id, owner)
+                ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+        ) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS qaap_agent_command_receipts_run
+            ON qaap_agent_command_receipts (run_id);
+        CREATE TABLE IF NOT EXISTS qaap_agent_outbox (
+            effect_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            owner TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            payload_json TEXT,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')),
+            attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+            available_at INTEGER NOT NULL,
+            lease_owner TEXT,
+            last_error TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (run_id, owner) REFERENCES qaap_agent_runs (run_id, owner) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS qaap_agent_outbox_status_available
+            ON qaap_agent_outbox (status, available_at);
+        CREATE INDEX IF NOT EXISTS qaap_agent_outbox_run_status
+            ON qaap_agent_outbox (run_id, status);
+    `),
+];
+
+const RUN_UPSERT_SQL = `
+    INSERT INTO qaap_agent_runs (
+        run_id, owner, conversation_id, parent_run_id, agent_id, model_id, cwd, state,
+        queue_position, queue_held, native_session_id, resume_count, request_json, task_json,
+        created_at, updated_at, finished_at, last_error_class, reset_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (run_id) DO UPDATE SET
+        conversation_id = excluded.conversation_id,
+        parent_run_id = excluded.parent_run_id,
+        agent_id = excluded.agent_id,
+        model_id = excluded.model_id,
+        cwd = excluded.cwd,
+        state = excluded.state,
+        queue_position = excluded.queue_position,
+        queue_held = excluded.queue_held,
+        native_session_id = excluded.native_session_id,
+        resume_count = excluded.resume_count,
+        request_json = excluded.request_json,
+        task_json = excluded.task_json,
+        updated_at = excluded.updated_at,
+        finished_at = excluded.finished_at,
+        last_error_class = excluded.last_error_class,
+        reset_at = excluded.reset_at
+    WHERE qaap_agent_runs.owner = excluded.owner
+`;
+
+/**
+ * Durable agent-run ledger in the tenant SQLite database (see `doc/qaap-agent-run-ledger.md`).
+ *
+ * Every mutation goes through {@link commit}: command receipt, run rows and outbox effects land in
+ * one transaction or not at all. All reads take an owner, and an owner never reads or writes
+ * another owner's rows (invariant I1). Only used when `QAAP_AGENT_LEDGER` is on.
+ */
+export class QaapAgentRunLedger extends QaapSqliteStore {
+
+    static readonly NAMESPACE = 'agent-run-ledger';
+
+    constructor(options: QaapAgentRunLedgerOptions) {
+        super({ ...options, namespace: options.namespace ?? QaapAgentRunLedger.NAMESPACE });
+        this.migrateLedgerSchema();
+    }
+
+    /**
+     * Applies one command atomically. A receipt that already exists short-circuits the commit and
+     * returns the stored outcome, so a retried client command never creates a second run.
+     */
+    commit(change: QaapAgentLedgerCommit): QaapAgentLedgerCommitResult {
+        return this.withTransaction(database => {
+            const now = Date.now();
+            if (change.receipt) {
+                const receipt = change.receipt;
+                const owner = QaapAgentRunLedger.ownerKey(receipt.owner);
+                const inserted = database.prepare(`
+                    INSERT OR IGNORE INTO qaap_agent_command_receipts
+                        (owner, command_id, run_id, status, result_json, accepted_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                `).run(
+                    owner,
+                    receipt.commandId,
+                    receipt.runId,
+                    receipt.status ?? 'accepted',
+                    QaapAgentRunLedger.toJson(receipt.result),
+                    receipt.acceptedAt ?? now,
+                );
+                if (inserted.changes === 0) {
+                    const stored = this.readReceipt(database, owner, receipt.commandId);
+                    return { duplicate: true, runId: stored?.runId, result: stored?.result };
+                }
+            }
+            for (const run of change.runUpserts ?? []) {
+                this.upsertRun(database, run, now);
+            }
+            for (const ref of change.runDeletes ?? []) {
+                database.prepare('DELETE FROM qaap_agent_runs WHERE owner = ? AND run_id = ?')
+                    .run(QaapAgentRunLedger.ownerKey(ref.owner), ref.runId);
+            }
+            for (const ref of change.cancelEffectsFor ?? []) {
+                database.prepare(`
+                    UPDATE qaap_agent_outbox SET status = 'cancelled', lease_owner = NULL
+                    WHERE owner = ? AND run_id = ? AND status IN ('pending', 'running')
+                `).run(QaapAgentRunLedger.ownerKey(ref.owner), ref.runId);
+            }
+            for (const effect of change.effects ?? []) {
+                this.insertEffect(database, effect, now);
+            }
+            return change.receipt
+                ? { duplicate: false, runId: change.receipt.runId, result: change.receipt.result }
+                : { duplicate: false };
+        });
+    }
+
+    getRun(owner: string | undefined, runId: string): QaapAgentRunRow | undefined {
+        const record = this.withDatabase(database => database.prepare(
+            'SELECT * FROM qaap_agent_runs WHERE owner = ? AND run_id = ?',
+        ).get(QaapAgentRunLedger.ownerKey(owner), runId)) as RunRecord | undefined;
+        return record ? QaapAgentRunLedger.toRun(record) : undefined;
+    }
+
+    /** The owner's runs in creation order. */
+    listRuns(owner: string | undefined): QaapAgentRunRow[] {
+        const records = this.withDatabase(database => database.prepare(
+            'SELECT * FROM qaap_agent_runs WHERE owner = ? ORDER BY created_at, rowid',
+        ).all(QaapAgentRunLedger.ownerKey(owner))) as unknown as RunRecord[];
+        return records.map(record => QaapAgentRunLedger.toRun(record));
+    }
+
+    /**
+     * Every run in this database, for the backend's own startup recovery only. The database is
+     * the tenant's; never expose the result to a request without filtering by owner.
+     */
+    listRunsForRecovery(): QaapAgentRunRow[] {
+        const records = this.withDatabase(database => database.prepare(
+            'SELECT * FROM qaap_agent_runs ORDER BY created_at, rowid',
+        ).all()) as unknown as RunRecord[];
+        return records.map(record => QaapAgentRunLedger.toRun(record));
+    }
+
+    findReceipt(owner: string | undefined, commandId: string): QaapAgentCommandReceipt | undefined {
+        return this.withDatabase(database => this.readReceipt(database, QaapAgentRunLedger.ownerKey(owner), commandId));
+    }
+
+    listEffects(owner: string | undefined, runId?: string): QaapAgentEffect[] {
+        const ownerKey = QaapAgentRunLedger.ownerKey(owner);
+        const records = this.withDatabase(database => runId === undefined
+            ? database.prepare('SELECT * FROM qaap_agent_outbox WHERE owner = ? ORDER BY rowid').all(ownerKey)
+            : database.prepare('SELECT * FROM qaap_agent_outbox WHERE owner = ? AND run_id = ? ORDER BY rowid').all(ownerKey, runId),
+        ) as unknown as EffectRecord[];
+        return records.map(record => QaapAgentRunLedger.toEffect(record));
+    }
+
+    /** True once {@link importLegacy} recorded the import (whether or not it found rows to copy). */
+    isLegacyImported(): boolean {
+        return this.withDatabase(database => !!database.prepare(
+            'SELECT 1 FROM qaap_migration WHERE namespace = ?',
+        ).get(this.namespace));
+    }
+
+    /**
+     * Imports the legacy JSON source exactly once and never modifies or deletes it
+     * (`doc/qaap-sqlite-persistence.md`). Rows are only copied into an empty ledger. A parse error
+     * propagates and leaves the import unrecorded, so the caller can fail closed and retry later.
+     */
+    importLegacy(loader: (raw: string) => QaapAgentLedgerImport, sourcePath = this.legacyPath): boolean {
+        if (!sourcePath || !fs.existsSync(sourcePath) || this.isLegacyImported()) {
+            return false;
+        }
+        const raw = fs.readFileSync(sourcePath, 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n');
+        const imported = loader(raw);
+        return this.withTransaction(database => {
+            if (database.prepare('SELECT 1 FROM qaap_migration WHERE namespace = ?').get(this.namespace)) {
+                return false;
+            }
+            const empty = !database.prepare('SELECT 1 FROM qaap_agent_runs LIMIT 1').get();
+            if (empty) {
+                const now = Date.now();
+                for (const run of imported.runs) {
+                    this.upsertRun(database, run, now);
+                }
+                const runIds = new Set(imported.runs.map(run => run.runId));
+                for (const receipt of imported.receipts ?? []) {
+                    if (runIds.has(receipt.runId)) {
+                        database.prepare(`
+                            INSERT OR IGNORE INTO qaap_agent_command_receipts
+                                (owner, command_id, run_id, status, result_json, accepted_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        `).run(
+                            QaapAgentRunLedger.ownerKey(receipt.owner),
+                            receipt.commandId,
+                            receipt.runId,
+                            receipt.status ?? 'accepted',
+                            QaapAgentRunLedger.toJson(receipt.result),
+                            receipt.acceptedAt ?? now,
+                        );
+                    }
+                }
+            }
+            database.prepare('INSERT INTO qaap_migration (namespace, source_path, migrated_at) VALUES (?, ?, ?)')
+                .run(this.namespace, sourcePath, Date.now());
+            return empty;
+        });
+    }
+
+    protected migrateLedgerSchema(): void {
+        this.withTransaction(database => {
+            QAAP_AGENT_RUN_LEDGER_SCHEMA.forEach((step, index) => {
+                const marker = `${this.namespace}/schema/v${index + 1}`;
+                if (database.prepare('SELECT 1 FROM qaap_migration WHERE namespace = ?').get(marker)) {
+                    return;
+                }
+                step(database);
+                database.prepare('INSERT INTO qaap_migration (namespace, source_path, migrated_at) VALUES (?, ?, ?)')
+                    .run(marker, 'schema', Date.now());
+            });
+        });
+    }
+
+    protected upsertRun(database: DatabaseSync, run: QaapAgentRunRow, now: number): void {
+        const owner = QaapAgentRunLedger.ownerKey(run.owner);
+        const result = database.prepare(RUN_UPSERT_SQL).run(
+            run.runId,
+            owner,
+            run.conversationId ?? null,
+            run.parentRunId ?? null,
+            run.agentId ?? null,
+            run.modelId ?? null,
+            run.cwd,
+            run.state,
+            run.queuePosition ?? null,
+            run.queueHeld ? 1 : 0,
+            run.nativeSessionId ?? null,
+            run.resumeCount ?? 0,
+            QaapAgentRunLedger.toJson(run.request),
+            QaapAgentRunLedger.toJson(run.task),
+            run.createdAt,
+            run.updatedAt ?? now,
+            run.finishedAt ?? null,
+            run.lastErrorClass ?? null,
+            run.resetAt ?? null,
+        );
+        if (result.changes === 0) {
+            throw new Error(`Agent run ${run.runId} belongs to another owner.`);
+        }
+    }
+
+    protected insertEffect(database: DatabaseSync, effect: QaapAgentEffect, now: number): void {
+        const owner = QaapAgentRunLedger.ownerKey(effect.owner);
+        if (!database.prepare('SELECT 1 FROM qaap_agent_runs WHERE owner = ? AND run_id = ?').get(owner, effect.runId)) {
+            throw new Error(`Agent run ${effect.runId} does not exist for this owner.`);
+        }
+        database.prepare(`
+            INSERT OR IGNORE INTO qaap_agent_outbox
+                (effect_id, run_id, owner, kind, payload_json, status, attempt_count, available_at, lease_owner, last_error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            effect.effectId,
+            effect.runId,
+            owner,
+            effect.kind,
+            QaapAgentRunLedger.toJson(effect.payload),
+            effect.status ?? 'pending',
+            effect.attemptCount ?? 0,
+            effect.availableAt ?? now,
+            effect.leaseOwner ?? null,
+            effect.lastError ?? null,
+            effect.createdAt ?? now,
+        );
+    }
+
+    protected static toRun(record: RunRecord): QaapAgentRunRow {
+        return {
+            runId: record.run_id,
+            owner: record.owner,
+            ...(record.conversation_id !== null ? { conversationId: record.conversation_id } : {}),
+            ...(record.parent_run_id !== null ? { parentRunId: record.parent_run_id } : {}),
+            ...(record.agent_id !== null ? { agentId: record.agent_id } : {}),
+            ...(record.model_id !== null ? { modelId: record.model_id } : {}),
+            cwd: record.cwd,
+            state: record.state,
+            ...(record.queue_position !== null ? { queuePosition: record.queue_position } : {}),
+            queueHeld: record.queue_held === 1,
+            ...(record.native_session_id !== null ? { nativeSessionId: record.native_session_id } : {}),
+            resumeCount: record.resume_count,
+            ...(record.request_json !== null ? { request: QaapAgentRunLedger.fromJson(record.request_json) } : {}),
+            ...(record.task_json !== null ? { task: QaapAgentRunLedger.fromJson(record.task_json) } : {}),
+            createdAt: record.created_at,
+            updatedAt: record.updated_at,
+            ...(record.finished_at !== null ? { finishedAt: record.finished_at } : {}),
+            ...(record.last_error_class !== null ? { lastErrorClass: record.last_error_class } : {}),
+            ...(record.reset_at !== null ? { resetAt: record.reset_at } : {}),
+        };
+    }
+
+    protected static toEffect(record: EffectRecord): QaapAgentEffect {
+        return {
+            effectId: record.effect_id,
+            runId: record.run_id,
+            owner: record.owner,
+            kind: record.kind,
+            ...(record.payload_json !== null ? { payload: QaapAgentRunLedger.fromJson(record.payload_json) } : {}),
+            status: record.status,
+            attemptCount: record.attempt_count,
+            availableAt: record.available_at,
+            ...(record.lease_owner !== null ? { leaseOwner: record.lease_owner } : {}),
+            ...(record.last_error !== null ? { lastError: record.last_error } : {}),
+            createdAt: record.created_at,
+        };
+    }
+
+    protected readReceipt(database: DatabaseSync, ownerKey: string, commandId: string): QaapAgentCommandReceipt | undefined {
+        const record = database.prepare(
+            'SELECT * FROM qaap_agent_command_receipts WHERE owner = ? AND command_id = ?',
+        ).get(ownerKey, commandId) as {
+            owner: string; command_id: string; run_id: string; status: string; result_json: string | null; accepted_at: number;
+        } | undefined;
+        return record ? {
+            owner: record.owner,
+            commandId: record.command_id,
+            runId: record.run_id,
+            status: record.status,
+            result: QaapAgentRunLedger.fromJson(record.result_json),
+            acceptedAt: record.accepted_at,
+        } : undefined;
+    }
+}
+
+export namespace QaapAgentRunLedger {
+    export const FLAG_ENV = 'QAAP_AGENT_LEDGER';
+
+    /** `QAAP_AGENT_LEDGER=on|1|true` enables the ledger; anything else keeps the `index.json` path. */
+    export function isEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+        return /^(1|true|on)$/i.test(env[FLAG_ENV]?.trim() ?? '');
+    }
+
+    /** Owner key stored in every row: GitHub logins are case-insensitive; no owner (local mode) is `_`. */
+    export function ownerKey(owner: string | undefined): string {
+        return owner?.trim().toLowerCase() || '_';
+    }
+
+    export function toJson(value: unknown): string | null {
+        return value === undefined ? null : JSON.stringify(value);
+    }
+
+    export function fromJson(value: string | null | undefined): unknown {
+        return value === null || value === undefined ? undefined : JSON.parse(value);
+    }
+}

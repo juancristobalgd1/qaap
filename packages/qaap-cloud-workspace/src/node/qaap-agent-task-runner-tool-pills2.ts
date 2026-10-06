@@ -10,6 +10,7 @@ import { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
+import { persistToLedgerExtracted } from './qaap-agent-task-runner-ledger';
 import * as path from 'path';
 import {
     buildImproveComposerPromptRequest,
@@ -482,6 +483,29 @@ export async function readLogExtracted(ctx: QaapAgentTaskRunnerContext, id: stri
 export function persistExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void> {
         if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed') {
             return Promise.resolve();
+        }
+        const ledger = ctx.agentRunLedger;
+        if (ledger) {
+            // Same ordering and failure gate as the index.json path, but only changed rows are written.
+            const previousWrite = ctx.persistChain ?? Promise.resolve();
+            ctx.persistChain = previousWrite
+                .catch(() => undefined)
+                .then(() => {
+                    if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed') {
+                        return;
+                    }
+                    persistToLedgerExtracted(ctx, ledger);
+                    const wasFailed = ctx.storageWriteFailed;
+                    ctx.storageWriteFailed = false;
+                    if (wasFailed) {
+                        ctx.drainQueuedTasks();
+                    }
+                })
+                .catch(() => {
+                    ctx.storageWriteFailed = true;
+                    console.warn('[qaap-agent-tasks] task ledger write failed; new tasks and queue promotion are blocked.');
+                });
+            return ctx.persistChain;
         }
         const queuedRequests: Record<string, QaapCreateAgentTaskRequest> = {};
         for (const [taskId, request] of ctx.queuedCreateRequests) {

@@ -33,6 +33,8 @@ import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
+import { QaapAgentRunLedger } from './qaap-agent-run-ledger';
+import { resolveAgentRunLedgerExtracted, restoreFromLedgerExtracted } from './qaap-agent-task-runner-ledger';
 
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
@@ -278,6 +280,24 @@ export function readCustomAgentsExtracted(ctx: QaapAgentTaskRunnerContext): Agen
 
 export async function restoreFromDiskExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void> {
         ctx.recoveryState = 'loading';
+        if (QaapAgentRunLedger.isEnabled()) {
+            try {
+                const ledger = resolveAgentRunLedgerExtracted(ctx);
+                if (!ledger) {
+                    throw new Error('Agent run ledger is unavailable.');
+                }
+                restoreFromLedgerExtracted(ctx, ledger);
+                ctx.recoveryState = 'ready';
+                await ctx.persist();
+                ctx.drainQueuedTasks();
+            } catch (error) {
+                ctx.recoveryState = 'failed';
+                console.warn('[qaap-agent-tasks] ledger recovery failed; task creation and ledger writes are blocked.',
+                    error instanceof Error ? error.message : error);
+            }
+            return;
+        }
+        ctx.agentRunLedger = undefined;
         try {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
             ctx.restorePersistedIndex(JSON.parse(raw));

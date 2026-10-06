@@ -2,6 +2,7 @@ import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CA
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
+import { commitCreatedTaskExtracted, findLedgerClientRequestExtracted } from './qaap-agent-task-runner-ledger';
 // Extracted from qaap-agent-task-runner.ts
 
 import { randomUUID } from 'crypto';
@@ -138,7 +139,13 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         const clientRequestId = typeof request.clientRequestId === 'string'
             ? request.clientRequestId.trim()
             : '';
-        if (clientRequestId) {
+        const ledger = ctx.agentRunLedger;
+        if (clientRequestId && ledger) {
+            const prior = findLedgerClientRequestExtracted(ctx, ledger, ownerLogin, clientRequestId);
+            if (prior) {
+                return prior;
+            }
+        } else if (clientRequestId) {
             const dedupKey = `${ownerLogin?.trim() || '_'}:${clientRequestId}`;
             const priorId = ctx.clientRequestTaskIds?.get(dedupKey);
             const prior = priorId ? ctx.tasks.get(priorId) : undefined;
@@ -224,8 +231,23 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
                 return agentModel ? { agentModel, qaiqModel: agentModel } : {};
             })(),
         };
+        if (ledger) {
+            // Run row + client request receipt in one transaction, before the task becomes visible.
+            let accepted: QaapAgentTask | undefined;
+            try {
+                accepted = commitCreatedTaskExtracted(ctx, ledger, task, request, clientRequestId || undefined);
+            } catch (error) {
+                ctx.storageWriteFailed = true;
+                console.warn('[qaap-agent-tasks] task ledger write failed; new tasks and queue promotion are blocked.',
+                    error instanceof Error ? error.message : error);
+                throw new QaapAgentStorageUnavailableError();
+            }
+            if (accepted) {
+                return accepted;
+            }
+        }
         ctx.tasks.set(id, task);
-        if (clientRequestId) {
+        if (clientRequestId && !ledger) {
             const dedupKey = `${ownerLogin?.trim() || '_'}:${clientRequestId}`;
             ctx.clientRequestTaskIds ??= new Map();
             ctx.clientRequestTaskIds.set(dedupKey, id);

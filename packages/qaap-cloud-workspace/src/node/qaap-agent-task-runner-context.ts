@@ -45,6 +45,7 @@ import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentHookService } from './qaap-agent-hook-service';
 import type { QaapAgentStdinPrompt } from './qaap-agent-task-runner-utils';
 import type { AgentCandidate, QaapGenericCommandResult } from './qaap-agent-task-runner-constants';
+import type { QaapAgentRunLedger } from './qaap-agent-run-ledger';
 
 /** Result of {@link QaapAgentTaskRunnerContext.buildAgentCommand}. */
 export interface QaapAgentCommandBuildResult {
@@ -117,6 +118,10 @@ export interface QaapAgentTaskRunnerContext {
     helperApiUrl: string;
     cachedNativeModelRoutingTable: QaapNativeModelRoutingTable | undefined;
     persistChain: Promise<void>;
+    /** Durable run ledger; set only while `QAAP_AGENT_LEDGER` is on (undefined keeps the index.json path). */
+    agentRunLedger?: QaapAgentRunLedger;
+    /** Row signatures last committed to {@link agentRunLedger}, so `persist()` writes only changed rows. */
+    ledgerSyncedRows?: Map<string, string>;
     recoveryState: 'loading' | 'ready' | 'failed';
     recoveryReady: Promise<void>;
     storageWriteFailed: boolean;
