@@ -154,6 +154,38 @@ describe('Qaap login gate', () => {
                 .to.equal('./bundle.css?qaap-build=mobile-test');
         });
 
+        it('loads the content-hashed entry named by the index metadata after session confirmation', async () => {
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : undefined;
+            }, undefined, {
+                headHtml: [
+                    '<meta name="qaap-bundle-css" content="./bundle-B2B2B2B2B2B2.css">',
+                    '<meta name="qaap-bundle-js" content="./bundle-A1A1A1A1A1A1.js">',
+                ].join(''),
+                beforeRun: window => {
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            });
+
+            await run.bundleAppended;
+
+            expect(run.document.querySelector('link#qaap-bundle-css')?.getAttribute('href')).to.equal('./bundle-B2B2B2B2B2B2.css');
+            expect(run.document.querySelectorAll('link[rel="stylesheet"]')).to.have.length(1);
+            expect(run.document.querySelector('script[src*="bundle-"]')?.getAttribute('src')).to.equal('./bundle-A1A1A1A1A1A1.js');
+        });
+
         it('probes auth config and session in parallel and loads a signed-in user without the gate', async () => {
             const run = start(pathname => {
                 if (pathname === CONFIG) {

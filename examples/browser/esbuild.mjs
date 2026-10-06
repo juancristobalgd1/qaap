@@ -87,7 +87,7 @@ const CHUNK_HASH_EPOCH = '/* qaap-chunk-epoch: 2 */';
  */
 const FRONTEND_OUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'frontend');
 const CHUNK_MANIFEST = path.join(FRONTEND_OUT_DIR, '..', '.qaap-frontend-chunks.json');
-const PRUNABLE_CHUNK = /^chunk-[A-Z0-9]+\.(?:js|css)(?:\.map)?(?:\.gz)?$/;
+const PRUNABLE_CHUNK = /^chunk-[A-Z0-9]+\.(?:js|css)(?:\.map)?(?:\.(?:gz|br))?$/;
 
 function readPreviousChunkGeneration() {
     try {
@@ -109,7 +109,7 @@ function pruneStaleFrontendChunks(metafile) {
     let removed = 0;
     let failed = 0;
     for (const name of fs.readdirSync(FRONTEND_OUT_DIR)) {
-        if (!PRUNABLE_CHUNK.test(name) || keep.has(name.replace(/\.gz$/, ''))) {
+        if (!PRUNABLE_CHUNK.test(name) || keep.has(name.replace(/\.(?:gz|br)$/, ''))) {
             continue;
         }
         try {

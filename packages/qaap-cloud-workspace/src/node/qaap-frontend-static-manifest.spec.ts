@@ -26,7 +26,8 @@ describe('QaapFrontendStaticManifest', () => {
     before(() => {
         root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-static-manifest-'));
         for (const file of [
-            'index.html', 'secondary-window.html', 'bundle.js', 'bundle.js.gz', 'chunk-ABC123.js', 'legal/terms.html', 'media/logo.svg',
+            'index.html', 'secondary-window.html', 'bundle.js', 'bundle.js.gz', 'bundle-ABC123.js', 'bundle-ABC123.js.br',
+            'chunk-ABC123.js', 'legal/terms.html', 'media/logo.svg',
             'hostedPlugin/p/x.js', 'webview/index.html', 'files/a.png', 'plugins/x.js', 'vscode-icons.css', 'qaap/api/x', 'services',
             'qaap-dev/3000/main.js', 'qaap-preview/id/app.js', 'mini-browser/x.js', 'socket.io/x.js', 'a/b.js', 'x',
         ]) {
@@ -46,7 +47,9 @@ describe('QaapFrontendStaticManifest', () => {
         expect(manifest.classify('GET', '/?qaap_oauth=github')).to.deep.equal({ static: true, isNavigation: true });
         expect(manifest.classify('GET', '/index.html')).to.deep.equal({ static: true, isNavigation: true });
         expect(manifest.classify('HEAD', '/secondary-window.html')).to.deep.equal({ static: true, isNavigation: true });
-        for (const url of ['/bundle.js?qaap-build=x', '/chunk-ABC123.js', '/legal/terms.html', '/media/logo.svg', '/media/%6Cogo.svg']) {
+        for (const url of [
+            '/bundle.js?qaap-build=x', '/bundle-ABC123.js', '/chunk-ABC123.js', '/legal/terms.html', '/media/logo.svg', '/media/%6Cogo.svg',
+        ]) {
             expect(manifest.classify('GET', url), url).to.deep.equal({ static: true, isNavigation: false });
         }
     });

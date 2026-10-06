@@ -384,9 +384,16 @@
     }
 
     function computeBundleUrl() {
-        // copy-frontend-static versions bundle.css in development. Reuse that
-        // version for JS so a reload always fetches the current entry point;
-        // code-split chunks are content-hashed and are never stamped.
+        // copy-frontend-static publishes the entry as a content-addressed
+        // `bundle-<hash>.js` (served immutable) and names it in this meta.
+        var scriptMeta = document.querySelector('meta[name="qaap-bundle-js"]');
+        var scriptHref = scriptMeta && scriptMeta.getAttribute('content');
+        if (scriptHref) {
+            return scriptHref;
+        }
+        // Without that meta, reuse the bundle.css build version for JS so a
+        // reload always fetches the current entry point; code-split chunks are
+        // content-hashed and are never stamped.
         var stylesheet = document.querySelector('link[href*="bundle.css"]');
         var stylesheetMeta = document.querySelector('meta[name="qaap-bundle-css"]');
         var href = stylesheet && stylesheet.getAttribute('href')
@@ -407,11 +414,15 @@
     }
 
     function activateBundleStylesheet() {
-        if (document.querySelector('link[href*="bundle.css"]')) {
-            return;
-        }
         var stylesheetMeta = document.querySelector('meta[name="qaap-bundle-css"]');
         var href = stylesheetMeta && stylesheetMeta.getAttribute('content');
+        var links = document.querySelectorAll('link[rel="stylesheet"]');
+        for (var i = 0; i < links.length; i++) {
+            var linked = links[i].getAttribute('href') || '';
+            if (linked === href || /(?:^|\/)bundle(?:-[A-Z0-9]+)?\.css(?:[?#]|$)/.test(linked)) {
+                return;
+            }
+        }
         if (!href) {
             return;
         }

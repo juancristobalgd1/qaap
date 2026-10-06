@@ -24,11 +24,16 @@ describe('Qaap frontend asset policy', () => {
     ].join('');
 
     it('does not expose IDE JS or CSS to an unauthenticated phone document', () => {
-        const html = patchIndexForFreshAssets(source, 'test-build');
+        const html = patchIndexForFreshAssets(source, 'test-build', {
+            javascript: './bundle-A1A1A1A1A1A1.js',
+            stylesheet: './bundle-B2B2B2B2B2B2.css',
+        });
         const dom = parseIndex(html, true);
         try {
             expect(dom.window.document.querySelector('meta[name="qaap-bundle-css"]')?.getAttribute('content'))
-                .to.equal('./bundle.css?qaap-build=test-build');
+                .to.equal('./bundle-B2B2B2B2B2B2.css');
+            expect(dom.window.document.querySelector('meta[name="qaap-bundle-js"]')?.getAttribute('content'))
+                .to.equal('./bundle-A1A1A1A1A1A1.js');
             expect(dom.window.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
             expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(0);
             expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(0);
@@ -39,17 +44,42 @@ describe('Qaap frontend asset policy', () => {
         }
     });
 
-    it('keeps the original bundle stylesheet on desktop while the gate controls bundle JS', () => {
-        const html = patchIndexForFreshAssets(source, 'desktop-build');
+    it('keeps the hashed desktop stylesheet and modulepreload while the gate controls bundle JS', () => {
+        const html = patchIndexForFreshAssets(source, 'desktop-build', {
+            javascript: './bundle-A1A1A1A1A1A1.js',
+            stylesheet: './bundle-B2B2B2B2B2B2.css',
+        });
         const dom = parseIndex(html, false);
         try {
-            const stylesheet = dom.window.document.querySelector('link[href*="bundle.css"]');
-            expect(stylesheet?.getAttribute('href')).to.equal('./bundle.css?qaap-build=desktop-build');
-            expect(dom.window.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(1);
-            const bundlePreload = dom.window.document.querySelector('link[rel~="modulepreload"][href*="bundle.js"]');
-            expect(bundlePreload?.getAttribute('href')).to.equal('./bundle.js?qaap-build=desktop-build');
-            expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(1);
+            const stylesheet = dom.window.document.querySelector('link[href*="bundle-"]');
+            expect(stylesheet?.getAttribute('href')).to.equal('./bundle-B2B2B2B2B2B2.css');
+            expect(dom.window.document.querySelectorAll('link[href*="bundle-"]')).to.have.length(2);
+            const bundlePreload = dom.window.document.querySelector('link[rel~="modulepreload"][href*="bundle-"]');
+            expect(bundlePreload?.getAttribute('href')).to.equal('./bundle-A1A1A1A1A1A1.js');
             expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(1);
+        } finally {
+            dom.window.close();
+        }
+    });
+
+    it('refreshes entry hash metadata idempotently when the static sync runs again', () => {
+        const first = patchIndexForFreshAssets(source, 'first-build', {
+            javascript: './bundle-111111111111.js',
+            stylesheet: './bundle-222222222222.css',
+        });
+        const second = patchIndexForFreshAssets(first, 'second-build', {
+            javascript: './bundle-333333333333.js',
+            stylesheet: './bundle-444444444444.css',
+        });
+        const dom = parseIndex(second, true);
+        try {
+            expect(dom.window.document.querySelectorAll('meta[name="qaap-bundle-js"]')).to.have.length(1);
+            expect(dom.window.document.querySelector('meta[name="qaap-bundle-css"]')?.getAttribute('content'))
+                .to.equal('./bundle-444444444444.css');
+            expect(dom.window.document.querySelector('meta[name="qaap-bundle-js"]')?.getAttribute('content'))
+                .to.equal('./bundle-333333333333.js');
+            expect((second.match(/data-qaap-desktop-asset=/g) || []).length).to.equal(2);
+            expect(second).not.to.match(/bundle-(111111111111|222222222222)/);
         } finally {
             dom.window.close();
         }
