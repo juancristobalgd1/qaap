@@ -1,8 +1,14 @@
 # Multi-stage image for the browser example (frontend + Node backend).
 # Works on Railway, Fly.io, Hetzner, or any host with Docker.
 
+# Base images are pinned by version and digest (enforced by scripts/qaap-dockerfile-base-pin-check.sh):
+# a moving tag such as node:22-bookworm makes a rebuild of the same commit differ from the image
+# CI built and verified. Bump a pin deliberately: resolve the new index digest, let the publish and
+# verify jobs prove it, then deploy. These are the bases of the verified GHCR image for 3452a58d3.
+
 # --- Build -------------------------------------------------------------------
-FROM node:22-bookworm AS build
+# Node 22.23.3 (bookworm), multi-arch index digest.
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -38,9 +44,12 @@ WORKDIR /app/examples/browser
 RUN npm run build:production && node scripts/copy-frontend-static.mjs
 
 # --- Runtime -----------------------------------------------------------------
-FROM python:3.12-slim-bookworm AS python-runtime
+# Python 3.12.15 (slim bookworm), multi-arch index digest.
+FROM python:3.12.15-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3 AS python-runtime
 
-FROM node:22-bookworm-slim AS runtime
+# Node 22.23.3 (slim bookworm), multi-arch index digest of the Debian rebuild published on
+# 2026-10-06 under node:22-bookworm-slim (the 22.23.3-bookworm-slim tag still names the older build).
+FROM node:22.23.3-bookworm-slim@sha256:1b3abbc0bf2421c8733f58c6fd7bbb961a960f37e05ed7369eccd1fbb0edcc84 AS runtime
 
 # Debian Bookworm's system Python is 3.11, but Qaap's backup restore guard uses
 # tarfile.data_filter, which was introduced in Python 3.12. Copy the official
