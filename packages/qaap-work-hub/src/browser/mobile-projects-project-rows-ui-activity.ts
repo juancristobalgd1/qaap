@@ -22,6 +22,12 @@ export function patchSidebarCompactTaskRowExtracted(ctx: MobileProjectsProjectRo
         if (!row.classList.contains('theia-mod-sidebar-compact') || row.dataset.qaapConversationId !== summary.id) {
             return false;
         }
+        // The sessions sidebar patches rows through here directly (not via patchWorkHubTaskRow), so the
+        // unread dot must be toggled here too: otherwise a task opened live kept its dot until a reload.
+        row.classList.toggle(
+            'theia-mod-unread-reply',
+            isQaapAgentTaskUnreadReply(summary, ctx.host.conversationIndexUi.isConversationUnread(summary)),
+        );
         return ctx.patchWorkHubTaskRowContent(row, task, summary, options);
 }
 
