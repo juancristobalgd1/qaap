@@ -229,6 +229,8 @@ describe('QaapTranscriptLiveController', () => {
 
         const advance = async (ms: number): Promise<void> => {
             const until = now + ms;
+            await Promise.resolve();
+            await Promise.resolve();
             for (;;) {
                 const due = [...timers.entries()]
                     .filter(([, timer]) => timer.at <= until)
