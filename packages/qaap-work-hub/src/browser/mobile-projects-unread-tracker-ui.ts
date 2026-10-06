@@ -27,7 +27,7 @@ export class MobileProjectsUnreadTrackerUi {
 
     /** Opening a conversation acknowledges everything the agent wrote so far. */
     markConversationOpened(summary: QaapAgentConversationSummaryDTO): void {
-        this.markRead(summary.id, summary.updatedAt);
+        this.markRead(summary.id, Math.max(summary.updatedAt, summary.lastAgentActivityAt ?? 0));
     }
 
     /**
@@ -61,10 +61,15 @@ export class MobileProjectsUnreadTrackerUi {
         }
     }
 
-    /** Store summary wins over the caller's copy, which may be a stale list snapshot. */
+    /**
+     * Store summary wins over the caller's copy, which may be a stale list snapshot. Live deltas stamp
+     * `updatedAt` with the client clock, so the agent's own activity time counts too.
+     */
     protected latestUpdatedAt(conversationId: string, fallback: number): number {
-        const stored = this.host.conversations?.findSummaryById(conversationId)?.updatedAt ?? 0;
-        const open = this.host.transcriptOpenSummary?.id === conversationId ? this.host.transcriptOpenSummary.updatedAt : 0;
+        const seenAt = (summary: QaapAgentConversationSummaryDTO | undefined): number =>
+            summary ? Math.max(summary.updatedAt, summary.lastAgentActivityAt ?? 0) : 0;
+        const stored = seenAt(this.host.conversations?.findSummaryById(conversationId));
+        const open = this.host.transcriptOpenSummary?.id === conversationId ? seenAt(this.host.transcriptOpenSummary) : 0;
         return Math.max(fallback, stored, open);
     }
 }

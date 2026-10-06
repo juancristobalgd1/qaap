@@ -19,6 +19,10 @@ import { MobileProjectsTranscriptSheetUi, type MobileProjectsTranscriptSheetHost
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import {
+    MobileProjectsConversationIndexUi,
+    type MobileProjectsConversationIndexHost,
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
 import { MobileProjectsUnreadTrackerUi } from './mobile-projects-unread-tracker-ui';
 
 disableImportJSDOM();
@@ -31,7 +35,7 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         document.body.replaceChildren();
     });
 
-    function summary(overrides: Partial<QaapAgentConversationSummaryDTO> = {}): QaapAgentConversationSummaryDTO {
+    function summary(overrides: Partial<QaapAgentConversationSummaryDTO> & { lastAgentActivityAt?: number } = {}): QaapAgentConversationSummaryDTO {
         return {
             id: 'conv-1',
             cwd: '/workspace',
@@ -192,6 +196,39 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         await new MobileProjectsTranscriptSheetUi(host, createWorkHub()).openTranscriptSheet(project(), listSnapshot);
 
         expect(flags.getLastSeen('conv-1')).to.equal(15);
+    });
+
+    /**
+     * The #206 regression: the specs above only checked the read mark right after one open. Leaving A
+     * for B saves A's composer prefs (an async PATCH) and the server bumps A's `updatedAt` after the
+     * close was recorded — only the rendered unread state, checked after the second open, shows it.
+     */
+    it('opening another conversation keeps the previous one read after its composer prefs are saved', async () => {
+        const host = createHost();
+        const store = new Map<string, QaapAgentConversationSummaryDTO>([
+            ['conv-a', summary({ id: 'conv-a', lastMessageRole: 'agent', updatedAt: 10, lastAgentActivityAt: 10 })],
+            ['conv-b', summary({ id: 'conv-b', lastMessageRole: 'agent', updatedAt: 20, lastAgentActivityAt: 20 })],
+        ]);
+        const flags = attachUnreadTracker(host, store);
+        let prefsSaved: Promise<void> = Promise.resolve();
+        host.transcriptStickyComposerUi = {
+            ...host.transcriptStickyComposerUi,
+            flushTranscriptComposerPrefs: (_project: MobileProjectEntry, previous: QaapAgentConversationSummaryDTO) => prefsSaved = (async () => {
+                await Promise.resolve();
+                // PATCH response: same agent activity, newer updatedAt.
+                store.set(previous.id, { ...previous, updatedAt: 40 });
+            })(),
+        } as never;
+        const index = new MobileProjectsConversationIndexUi({ conversationFlags: flags } as unknown as MobileProjectsConversationIndexHost);
+        const ui = new MobileProjectsTranscriptSheetUi(host, createWorkHub());
+
+        await ui.openTranscriptSheet(project(), store.get('conv-a')!);
+        await ui.openTranscriptSheet(project(), store.get('conv-b')!);
+        await prefsSaved;
+
+        expect(store.get('conv-a')!.updatedAt).to.equal(40);
+        expect(index.isConversationUnread(store.get('conv-a')!)).to.equal(false);
+        expect(index.isConversationUnread(store.get('conv-b')!)).to.equal(false);
     });
 
     it('marks the conversation read when the Agents Hub opens it inline', async () => {

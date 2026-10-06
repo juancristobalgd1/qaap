@@ -97,7 +97,9 @@ export class MobileProjectsConversationIndexUi {
     /**
      * A conversation is "unread" when the agent has produced new activity since the user last
      * opened it. Conversations the user has never opened only count as unread if their last
-     * message is from the agent — otherwise the row would render as a permanent badge.
+     * message is from the agent — otherwise the row would render as a permanent badge. The read
+     * mark is compared with the agent's last activity, not `updatedAt`: renames, flags and the
+     * composer prefs saved when the user switches to another task move `updatedAt` too.
      */
     isConversationUnread(summary: QaapAgentConversationSummaryDTO): boolean {
         if (!this.host.conversationFlags) {
@@ -107,7 +109,7 @@ export class MobileProjectsConversationIndexUi {
             return false;
         }
         const lastSeen = this.host.conversationFlags.getLastSeen(summary.id);
-        return summary.updatedAt > lastSeen;
+        return (summary.lastAgentActivityAt ?? summary.updatedAt) > lastSeen;
     }
 
     /** All persistent agent conversations the panel knows about for this project. */

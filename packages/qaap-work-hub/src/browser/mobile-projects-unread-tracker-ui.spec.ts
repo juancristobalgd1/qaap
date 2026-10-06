@@ -20,6 +20,11 @@ import { MobileProjectsUnreadTrackerUi, type MobileProjectsUnreadTrackerHost } f
 
 disableImportJSDOM();
 
+/** Sources as checked out on any OS: CRLF working copies must not break the contract regexes. */
+function readSource(file: string): string {
+    return fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+}
+
 describe('MobileProjectsUnreadTrackerUi', () => {
 
     useSuiteJSDOM();
@@ -54,13 +59,9 @@ describe('MobileProjectsUnreadTrackerUi', () => {
         return new MobileProjectsUnreadTrackerUi(host);
     }
 
-    it('keeps the read mark after a reload (fresh flags store, same conversation id)', () => {
-        createTracker(new MobileProjectsConversationFlags()).markConversationOpened(summary('conv-1', 42));
-
-        const afterReload = new MobileProjectsConversationFlags();
-
-        expect(afterReload.getLastSeen('conv-1')).to.equal(42);
-    });
+    // Reload / cross-device / per-user persistence lives in mobile-projects-unread-persistence.spec.ts:
+    // a fresh flags store reading the same browser's localStorage proved nothing about another device
+    // or another user, and the mark it checked was `updatedAt`, which leaving a task bumps again.
 
     it('never records the Agents Hub idle placeholder as read', () => {
         const flags = new MobileProjectsConversationFlags();
@@ -105,14 +106,14 @@ describe('MobileProjectsUnreadTrackerUi', () => {
 
         for (const file of entryPoints) {
             it(`${file} opens conversations through the transcript sheet`, () => {
-                const source = fs.readFileSync(path.join(browserDir, file), 'utf8');
+                const source = readSource(path.join(browserDir, file));
                 expect(source).to.contain('transcriptSheetUi.openTranscriptSheet(');
             });
         }
 
         it('the transcript sheet and the Agents Hub inline transcript report opens and closes', () => {
-            const sheet = fs.readFileSync(path.join(browserDir, 'mobile-projects-transcript-sheet-ui.ts'), 'utf8');
-            const inline = fs.readFileSync(path.join(browserDir, 'mobile-projects-agents-hub-inline-ui.ts'), 'utf8');
+            const sheet = readSource(path.join(browserDir, 'mobile-projects-transcript-sheet-ui.ts'));
+            const inline = readSource(path.join(browserDir, 'mobile-projects-agents-hub-inline-ui.ts'));
             expect(sheet).to.match(/async openTranscriptSheet\([^)]*\): Promise<void> \{[^}]*unreadTrackerUi\?\.markConversationOpened\(summary\)/);
             expect(sheet).to.match(/closeTranscriptSheet\(\): void \{\s*this\.host\.unreadTrackerUi\?\.markOpenConversationClosed\(\);/);
             expect(inline).to.match(/async openAgentsHubInlineTranscript\([^)]*\): Promise<void> \{\s*this\.host\.unreadTrackerUi\?\.markConversationOpened\(summary\);/);
@@ -121,8 +122,8 @@ describe('MobileProjectsUnreadTrackerUi', () => {
 
         it('the unread dot keeps clear space before the title on every surface', () => {
             const styleDir = path.join(browserDir, 'style');
-            const workHubCss = fs.readFileSync(path.join(styleDir, 'mobile-workbench-work-hub.css'), 'utf8');
-            const sidebarCss = fs.readFileSync(path.join(styleDir, 'qaap-work-hub-sessions-sidebar.css'), 'utf8');
+            const workHubCss = readSource(path.join(styleDir, 'mobile-workbench-work-hub.css'));
+            const sidebarCss = readSource(path.join(styleDir, 'qaap-work-hub-sessions-sidebar.css'));
             const dotRule = /\.theia-mod-unread-reply \.theia-mobile-projects-task-title-row::before \{([^}]*)\}/.exec(workHubCss)?.[1] ?? '';
             // Spacing comes from the dot itself, net of whatever gap the surface's title row uses.
             expect(dotRule).to.contain('margin-right: calc(var(--qaap-unread-dot-space) - var(--qaap-task-title-row-gap, 8px));');
@@ -135,7 +136,7 @@ describe('MobileProjectsUnreadTrackerUi', () => {
         it('only the unread tracker writes read marks', () => {
             const offenders = fs.readdirSync(browserDir)
                 .filter(file => file.endsWith('.ts') && !file.endsWith('.spec.ts') && file !== 'mobile-projects-unread-tracker-ui.ts')
-                .filter(file => /\.markRead\(/.test(fs.readFileSync(path.join(browserDir, file), 'utf8')));
+                .filter(file => /\.markRead\(/.test(readSource(path.join(browserDir, file))));
             expect(offenders).to.deep.equal([]);
         });
     });
