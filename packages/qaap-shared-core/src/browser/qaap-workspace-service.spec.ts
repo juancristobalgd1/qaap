@@ -31,7 +31,7 @@ class TestWorkspaceService extends QaapWorkspaceService {
                         return FileStat.dir(REPO);
                     }
                     if (uri.isEqual(README)) {
-                        return { resource: README, name: 'README.md', isFile: true, isDirectory: false, isSymbolicLink: false };
+                        return { resource: README, name: 'README.md', isFile: true, isDirectory: false, isSymbolicLink: false, isReadonly: false };
                     }
                     throw new Error(`not found: ${uri}`);
                 },

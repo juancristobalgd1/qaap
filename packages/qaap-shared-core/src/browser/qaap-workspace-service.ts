@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { injectable, interfaces } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
+import { CollaborationWorkspaceService } from '@theia/collaboration/lib/browser/collaboration-workspace-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 
 /**
@@ -13,9 +14,11 @@ import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service
  * Upstream `WorkspaceService.open` always reloads (`reloadWindow`), even when the page has no
  * workspace yet. On a hosted desktop the Work Hub runs at `/` without a workspace, so the first
  * click on the IDE tab paid a full reload: modules, backend connection and plugin host again.
+ * Extends the collaboration subclass, which upstream already binds as the `WorkspaceService` and
+ * which switches workspaces in place the same way (`setHostWorkspace`).
  */
 @injectable()
-export class QaapWorkspaceService extends WorkspaceService {
+export class QaapWorkspaceService extends CollaborationWorkspaceService {
 
     /**
      * Makes the directory `uri` the workspace of this page in place and resolves `true`.
@@ -35,6 +38,18 @@ export class QaapWorkspaceService extends WorkspaceService {
             return false;
         }
         await this.setWorkspace(stat);
+        // Upstream fires this only for workspace files; listeners such as the workspace-scoped
+        // layout storage otherwise keep the "no workspace" state they read at startup.
+        this.onWorkspaceLocationChangedEmitter.fire(stat);
         return true;
     }
+}
+
+/** Binds {@link QaapWorkspaceService} as the single workspace service, also behind the collaboration binding. */
+export function bindQaapWorkspaceService(bind: interfaces.Bind, rebind: interfaces.Rebind, isBound: interfaces.IsBound): void {
+    bind(QaapWorkspaceService).toSelf().inSingletonScope();
+    if (isBound(CollaborationWorkspaceService)) {
+        rebind(CollaborationWorkspaceService).toService(QaapWorkspaceService);
+    }
+    rebind(WorkspaceService).toService(QaapWorkspaceService);
 }
