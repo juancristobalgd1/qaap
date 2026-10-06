@@ -7,7 +7,6 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
-import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
@@ -15,7 +14,6 @@ import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/commo
 
 export interface MobileProjectsConversationOpenHost {
     conversations: MobileProjectsConversations | undefined;
-    conversationFlags: MobileProjectsConversationFlags | undefined;
     homeMode: boolean;
     hubView: MobileProjectsHubView;
     agentsHubSelectedProjectId: string | undefined;
@@ -81,9 +79,6 @@ export class MobileProjectsConversationOpenUi {
             }
         }
         this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
-        // Opening a chat clears its unread badge — record the high-water mark before navigating so
-        // the project glyph drops the "new replies" treatment on the next render.
-        this.host.conversationFlags?.markRead(summary.id, summary.updatedAt);
         this.host.conversations?.prefetchDocument(summary.id);
         await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
         this.host.refreshWorkHubConversationChrome();
