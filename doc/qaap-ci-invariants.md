@@ -134,6 +134,12 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 - Specs that depend on `QAAP_BETA_ALLOWED_LOGINS`, `NODE_ENV` or `QAAP_CLOUD_MODE` must set and restore them: Nx loads a developer `.env` into `lerna run`.
 - Heavy jsdom suites: create one jsdom per suite, not per test (per-test setup hit the 2 s hook timeout on loaded machines).
 
+### 11. Image harnesses = tracked harnesses
+
+- The Dockerfile `RUN for harness in ...` loop, `requiredHarnesses` in `scripts/qaap-image-runtime-check.js` and `TRACKED_AGENT_CLIS` (`qaap-agent-cli-update-service.ts`) name the same CLIs, and each tracked entry's `bins` includes the bin Work Hub probes on `PATH` (`QAAP_HARNESS_DEFINITIONS`). Guarded by the `Dockerfile tracked agent CLI coverage` spec.
+- Add a harness in all three places at once, pinned to an exact version and only from the vendor's official source (never third-party npm bridges such as `@vibe-kit/grok-cli` or `hermes-agent`).
+- Set `npmPackage` only when a tenant-prefix `npm install` on the backend's Node 22 yields a working CLI. OpenClaw needs Node ≥24.16: it ships on its own checksum-pinned Node under `/opt/openclaw-node` and updates only by rebuilding the image.
+
 ## Process rules for agents
 
 - A test that fails only on the Linux runner is a product signal until proven otherwise. Reproduce the backend path (e.g. run the produced argv with a POSIX `sh`) before excluding the test or touching upstream page objects.
