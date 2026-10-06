@@ -54,13 +54,9 @@ describe('MobileProjectsUnreadTrackerUi', () => {
         return new MobileProjectsUnreadTrackerUi(host);
     }
 
-    it('keeps the read mark after a reload (fresh flags store, same conversation id)', () => {
-        createTracker(new MobileProjectsConversationFlags()).markConversationOpened(summary('conv-1', 42));
-
-        const afterReload = new MobileProjectsConversationFlags();
-
-        expect(afterReload.getLastSeen('conv-1')).to.equal(42);
-    });
+    // Reload / cross-device / per-user persistence lives in mobile-projects-unread-persistence.spec.ts:
+    // a fresh flags store reading the same browser's localStorage proved nothing about another device
+    // or another user, and the mark it checked was `updatedAt`, which leaving a task bumps again.
 
     it('never records the Agents Hub idle placeholder as read', () => {
         const flags = new MobileProjectsConversationFlags();

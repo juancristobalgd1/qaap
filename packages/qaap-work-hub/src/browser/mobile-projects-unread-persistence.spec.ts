@@ -184,4 +184,20 @@ describe('Work Hub unread state persists per user', () => {
         expect(bob.unread('A')).to.equal(true);
         expect(bob.unread('B')).to.equal(true);
     });
+
+    it('imports the legacy browser-wide marks once into the signed-in user\'s marks', async () => {
+        task('A', 100);
+        task('B', 200);
+        window.localStorage.setItem('qaap.mobile.conversation-read', JSON.stringify({ A: 150 }));
+
+        const desktop = await loadWorkHub();
+        await desktop.flags.flushReadMarks();
+
+        expect(desktop.unread('A')).to.equal(false);
+        expect(desktop.unread('B')).to.equal(true);
+        expect(window.localStorage.getItem('qaap.mobile.conversation-read')).to.equal(null);
+        expect(serverMarks.get('alice')?.get('A')).to.equal(150);
+        currentUser = 'bob';
+        expect((await loadWorkHub()).unread('A')).to.equal(true);
+    });
 });
