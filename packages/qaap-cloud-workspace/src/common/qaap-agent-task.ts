@@ -367,6 +367,12 @@ export interface QaapAgentWarmResult {
     readonly qaiqProbed: boolean;
 }
 
+/** Response of `POST /qaap/api/agent-tasks/queue/resume`. */
+export interface QaapAgentQueueResumeResponse {
+    /** Queued tasks of the caller released from the hold (0 with `QAAP_AGENT_LEDGER` off). */
+    readonly resumed: number;
+}
+
 export interface QaapAgentTaskListResponse {
     readonly tasks: QaapAgentTask[];
     /**

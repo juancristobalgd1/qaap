@@ -142,7 +142,9 @@ export class QaapAgentRunOutbox {
 
     protected start(effect: QaapAgentEffect): void {
         const registration = this.handlers.get(effect.kind);
-        const running = (async () => {
+        // Deferred one microtask so the effect is registered as in flight before its handler runs
+        // (a handler may synchronously ask `isInFlight` about its own effect).
+        const running = Promise.resolve().then(async () => {
             try {
                 if (!registration) {
                     throw new Error(`No handler for outbox effect kind ${effect.kind}.`);
@@ -152,7 +154,7 @@ export class QaapAgentRunOutbox {
             } catch (error) {
                 this.settleFailure(effect, registration?.retry ?? false, error);
             }
-        })().finally(() => {
+        }).finally(() => {
             this.inFlight.delete(effect.effectId);
             this.kick();
         });
@@ -186,7 +188,8 @@ export class QaapAgentRunOutbox {
         if (at === undefined || this.stopped) {
             return;
         }
-        const delay = Math.max(0, at - this.now());
+        // Capped: a far `available_at` (or a clock jump) is simply re-checked later.
+        const delay = Math.min(QaapAgentRunOutbox.MAX_BACKOFF_MS, Math.max(0, at - this.now()));
         if (delay === 0) {
             // Due now but blocked by a running effect of its thread: that effect's completion kicks.
             return;

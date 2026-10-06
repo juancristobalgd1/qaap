@@ -14,6 +14,7 @@ import {
     QAAP_AGENT_TASK_API_PATH,
     QaapAgentTaskKind,
     type QaapAgentHarnessStatusResponse,
+    type QaapAgentQueueResumeResponse,
     type QaapAgentTaskAllResponse,
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
@@ -87,6 +88,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/storage-retry`, (req, res) => {
             void this.handleStorageRetry(req, res);
+        });
+        // `queue.resume`: starts the caller's queued tasks held after a failure or restart (ledger on).
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/queue/resume`, (req, res) => {
+            this.handleQueueResume(req, res);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
             void this.handleListAgentModels(req, res);
@@ -595,6 +600,17 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const health = await this.runner.retryStorage();
         res.set('Cache-Control', 'no-store');
         res.status(health.ready ? 200 : 503).json(health);
+    }
+
+    /** Releases only the caller's held queue: the owner comes from the session, never from the body. */
+    protected handleQueueResume(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const resumed = this.runner.resumeQueue(this.auth.resolveUserLogin(ctx));
+        res.set('Cache-Control', 'no-store');
+        res.json({ resumed } satisfies QaapAgentQueueResumeResponse);
     }
 
     protected async handleCreate(req: Request, res: Response): Promise<void> {
