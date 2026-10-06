@@ -23,6 +23,7 @@ import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input
 import type { MobileProjectChatViewWidget } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { disposeComposerContextEntries, type StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
+import type { MobileProjectsUnreadTrackerUi } from './mobile-projects-unread-tracker-ui';
 
 interface VerifyCheckResult {
     readonly check: { readonly label: string; readonly command: string };
@@ -98,6 +99,8 @@ export interface MobileProjectsTranscriptSheetHost {
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     agentsHubInlineActive: boolean;
     conversations?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversations').MobileProjectsConversations;
+    /** Owns the unread high-water mark; every open/close of the transcript reports here. */
+    unreadTrackerUi?: MobileProjectsUnreadTrackerUi;
     visible: boolean;
     delegate: {
         onEnterActiveTranscript?(): void;
@@ -143,6 +146,9 @@ export class MobileProjectsTranscriptSheetUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
+        // Every entry point (rows, sidebar, search, Mission Control, Team, background tasks, forks)
+        // lands here, so this is the one place opening a conversation clears its unread dot.
+        this.host.unreadTrackerUi?.markConversationOpened(summary);
         await ensureTranscriptSurfaceCss();
         if (this.workHub.isAgentsHubLanding() && !this.workHub.isProjectDetailView()) {
             await this.workHub.openInlineTranscript(project, summary);
@@ -429,6 +435,7 @@ export class MobileProjectsTranscriptSheetUi {
     }
 
     closeTranscriptSheet(): void {
+        this.host.unreadTrackerUi?.markOpenConversationClosed();
         const closingProject = this.host.transcriptOpenProject;
         closingProject && this.host.executionSurfaceTabsUi.setExecutionSurfaceTab?.(closingProject, 'messages');
         this.host.executionSurfaceTabsUi.closeExecutionTabOverflowMenu();

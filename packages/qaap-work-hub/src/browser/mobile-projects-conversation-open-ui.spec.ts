@@ -35,9 +35,6 @@ describe('mobile-projects-conversation-open-ui', () => {
             conversations: {
                 prefetchDocument: () => { calls.push('prefetchDocument'); },
             } as unknown as MobileProjectsConversationOpenHost['conversations'],
-            conversationFlags: {
-                markRead: () => { calls.push('markRead'); },
-            } as unknown as MobileProjectsConversationOpenHost['conversationFlags'],
             homeMode: true,
             hubView: 'tasks',
             agentsHubSelectedProjectId: undefined,

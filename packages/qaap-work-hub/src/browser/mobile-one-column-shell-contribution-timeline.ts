@@ -269,6 +269,12 @@ function toDesktopIdeHubProject(ctx: MobileOneColumnShellContributionContext, pr
 
 /** Resolves `true` when the page reloads into the project's workspace. */
 async function openDesktopIdeProjectExtracted(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): Promise<boolean> {
+    // The Hub can show a cached GitHub entry while Theia has the same repository open under a
+    // different workspace path. Keep the current workspace in that case: WorkspaceService.open
+    // reloads the page even when the workspace is already inside the selected repository.
+    if (ctx.projectsService.projectMatchesCurrentWorkspace(project)) {
+        return false;
+    }
     let cwd = ctx.projectsService.getProjectCwd(project);
     if (!cwd && project.github) {
         cwd = await ctx.projectsService.prepareProjectCwd(project);

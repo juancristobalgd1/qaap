@@ -42,6 +42,7 @@ interface Harness {
     readonly opened: string[];
     readonly events: string[];
     closed: number;
+    prepared: number;
     /** Times the page allowed the plugin host to start. */
     pluginStarts: number;
     resolveProjects(projects: MobileProjectEntry[]): void;
@@ -51,6 +52,7 @@ interface HarnessOptions {
     /** The project the Work Hub header shows when the IDE tab is clicked. */
     readonly shown?: MobileProjectEntry;
     readonly currentCwd?: string;
+    readonly currentProjectMatches?: boolean;
 }
 
 function harness(options: HarnessOptions = {}): Harness {
@@ -62,6 +64,7 @@ function harness(options: HarnessOptions = {}): Harness {
         opened: [],
         events: [],
         closed: 0,
+        prepared: 0,
         pluginStarts: 0,
         resolveProjects: projects => {
             result.events.push('project-sessions');
@@ -86,7 +89,12 @@ function harness(options: HarnessOptions = {}): Harness {
             loadProjects: (): Promise<MobileProjectEntry[]> => pendingProjects,
             getProjectCwd: cwdOf,
             getCurrentWorkspaceCwd: (): string | undefined => options.currentCwd,
-            prepareProjectCwd: async (project: MobileProjectEntry): Promise<string | undefined> => cwdOf(project),
+            projectMatchesCurrentWorkspace: (project: MobileProjectEntry): boolean =>
+                !!project.isCurrent || !!options.currentProjectMatches,
+            prepareProjectCwd: async (project: MobileProjectEntry): Promise<string | undefined> => {
+                result.prepared++;
+                return cwdOf(project);
+            },
             openInCurrentWindowAsync: async (project: MobileProjectEntry): Promise<boolean> => {
                 const cwd = cwdOf(project) ?? project.id;
                 result.events.push(`open ${cwd}`);
@@ -160,6 +168,19 @@ describe('openDesktopIdeExtracted', () => {
         const h = harness({ shown: githubProject('shadcn-landing-page'), currentCwd: `${REPOS}/shadcn-landing-page/` });
         await openDesktopIdeExtracted(h.ctx);
         expect(h.opened).to.deep.equal([]);
+        expect(h.closed).to.equal(0);
+        expect(h.pluginStarts).to.equal(1);
+    });
+
+    it('does not reopen a GitHub repository already identified as current, even when the workspace path differs', async () => {
+        const h = harness({
+            shown: githubProject('shadcn-landing-page'),
+            currentCwd: `${REPOS}/shadcn-landing-page/linked-workspace`,
+            currentProjectMatches: true,
+        });
+        await openDesktopIdeExtracted(h.ctx);
+        expect(h.opened).to.deep.equal([]);
+        expect(h.prepared).to.equal(0);
         expect(h.closed).to.equal(0);
         expect(h.pluginStarts).to.equal(1);
     });

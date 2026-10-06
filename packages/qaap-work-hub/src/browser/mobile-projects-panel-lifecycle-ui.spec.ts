@@ -18,6 +18,14 @@ import {
 } from './mobile-projects-panel-lifecycle-ui';
 import type { QaapConversationChangeEvent } from '@theia/qaap-shared-core/lib/common/qaap-conversation-change';
 import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import {
+    MobileProjectsConversationIndexUi,
+    type MobileProjectsConversationIndexHost,
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { MobileProjectsUnreadTrackerUi } from './mobile-projects-unread-tracker-ui';
 
 disableImportJSDOM();
 
@@ -276,5 +284,120 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
         (ui as unknown as { ensureVisibleAgentsHubShell(): void }).ensureVisibleAgentsHubShell();
 
         expect(ensureCalls).to.equal(1);
+    });
+
+    describe('unread dot while the conversation is open', () => {
+
+        useSuiteJSDOM();
+
+        beforeEach(() => {
+            window.localStorage.clear();
+        });
+
+        function agentReply(updatedAt: number): QaapAgentConversationSummaryDTO {
+            return {
+                id: 'c1',
+                cwd: '/repo',
+                agentId: 'codex',
+                title: 'Task',
+                status: 'streaming',
+                createdAt: 1,
+                updatedAt,
+                messageCount: 2,
+                lastMessagePreview: 'Working on it',
+                lastMessageRole: 'agent',
+            };
+        }
+
+        function createUnreadFixture(): {
+            host: ReturnType<typeof createHost>;
+            flags: MobileProjectsConversationFlags;
+            tick(updatedAt: number): void;
+            isUnread(): boolean;
+        } {
+            const onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
+            const store = new Map<string, QaapAgentConversationSummaryDTO>([['c1', agentReply(10)]]);
+            const flags = new MobileProjectsConversationFlags();
+            const host = createHost({
+                conversationFlags: flags,
+                conversations: {
+                    warmLiveTransport: () => undefined,
+                    findSummaryById: (id: string) => store.get(id),
+                    onDidChange: Event.None,
+                    onDidChangeDetail: onDidChangeDetailEmitter.event,
+                    onDidReceiveMessage: Event.None,
+                    onDidReceiveParallelRun: Event.None,
+                    onDidReceiveTransportActivity: Event.None,
+                    onDidReconnectTransport: Event.None,
+                    onDidReceivePendingQueue: Event.None,
+                } as unknown as MobileProjectsPanelLifecycleHost['conversations'],
+            });
+            host.unreadTrackerUi = new MobileProjectsUnreadTrackerUi({
+                conversationFlags: flags,
+                conversations: { findSummaryById: id => store.get(id) },
+                get transcriptOpenSummaryId(): string | undefined { return host.transcriptOpenSummaryId; },
+                transcriptOpenSummary: undefined,
+                get visible(): boolean { return host.visible; },
+            });
+            new MobileProjectsPanelLifecycleUi(host).subscribeToActiveTasks();
+            const indexUi = new MobileProjectsConversationIndexUi({ conversationFlags: flags } as unknown as MobileProjectsConversationIndexHost);
+            return {
+                host,
+                flags,
+                tick: updatedAt => {
+                    store.set('c1', agentReply(updatedAt));
+                    onDidChangeDetailEmitter.fire({ kind: 'updated', conversationId: 'c1', cwd: '/repo', changedFields: ['updatedAt'] });
+                },
+                isUnread: () => indexUi.isConversationUnread(store.get('c1')!),
+            };
+        }
+
+        it('keeps the dot off while the agent keeps writing in the open conversation', () => {
+            const { host, tick, isUnread } = createUnreadFixture();
+            host.transcriptOpenSummaryId = 'c1';
+            host.unreadTrackerUi!.markConversationOpened(agentReply(10));
+            expect(isUnread()).to.equal(false);
+
+            tick(20);
+            tick(30);
+
+            expect(isUnread()).to.equal(false);
+        });
+
+        it('shows the dot again for an agent reply that lands after the conversation was closed', () => {
+            const { host, tick, isUnread } = createUnreadFixture();
+            host.transcriptOpenSummaryId = 'c1';
+            host.unreadTrackerUi!.markConversationOpened(agentReply(10));
+            tick(20);
+            host.unreadTrackerUi!.markOpenConversationClosed();
+            host.transcriptOpenSummaryId = undefined;
+            expect(isUnread()).to.equal(false);
+
+            tick(40);
+
+            expect(isUnread()).to.equal(true);
+        });
+
+        it('does not acknowledge replies while the Work Hub is hidden', () => {
+            const { host, tick, isUnread } = createUnreadFixture();
+            host.transcriptOpenSummaryId = 'c1';
+            host.unreadTrackerUi!.markConversationOpened(agentReply(10));
+            host.visible = false;
+
+            tick(20);
+
+            expect(isUnread()).to.equal(true);
+        });
+
+        it('repaints the row as soon as a read mark changes', () => {
+            const { host, flags } = createUnreadFixture();
+            const patchesBefore = host.patchRowCalls;
+            const chromeBefore = host.refreshChromeCalls;
+
+            flags.markRead('c1', 50);
+
+            expect(host.patchRowCalls).to.equal(patchesBefore + 1);
+            expect(host.refreshChromeCalls).to.equal(chromeBefore + 1);
+        });
     });
 });

@@ -19,6 +19,8 @@ import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/commo
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import type { MobileProjectsUnreadTrackerUi } from './mobile-projects-unread-tracker-ui';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
@@ -74,6 +76,8 @@ export interface MobileProjectsPanelLifecycleHost {
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
     transcriptSheetUi: MobileProjectsTranscriptSheetUi;
+    conversationFlags?: MobileProjectsConversationFlags;
+    unreadTrackerUi?: MobileProjectsUnreadTrackerUi;
 
     closeCardMenu(): void;
     stickyComposerSheetsUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
@@ -337,6 +341,8 @@ export class MobileProjectsPanelLifecycleUi {
             }
             const conversationUpdates = new DisposableCollection(
                 this.host.conversations.onDidChangeDetail(change => {
+                    // Before any row repaint: a tick for the conversation on screen is already read.
+                    this.host.unreadTrackerUi?.syncOpenConversationRead(change.conversationId);
                     this.host.markTasksFirstLoadComplete(false);
                     if (this.host.visible && change.changedFields?.includes('goalLoop')) {
                         // Goal loop phase changes arrive without transcript traffic (verify /
@@ -408,10 +414,25 @@ export class MobileProjectsPanelLifecycleUi {
                     }
                 }),
             );
+            if (this.host.conversationFlags) {
+                conversationUpdates.push(this.host.conversationFlags.onDidChange(id => this.refreshConversationFlagChrome(id)));
+            }
             this.host.conversationsDispose = conversationUpdates;
         }
         this.subscribeToChatServiceSessions();
         this.subscribeToInboxStream();
+    }
+
+    /** Read marks and priority/pause flags only change row chrome: repaint it right away. */
+    protected refreshConversationFlagChrome(conversationId: string): void {
+        if (!this.host.visible) {
+            return;
+        }
+        this.host.patchWorkHubConversationRowInPlace(conversationId);
+        if (!this.host.shouldSkipFullRenderListOnConversationTick()) {
+            this.host.scheduleRenderList();
+        }
+        this.host.refreshWorkHubConversationChrome();
     }
 
     subscribeToInboxStream(): void {
