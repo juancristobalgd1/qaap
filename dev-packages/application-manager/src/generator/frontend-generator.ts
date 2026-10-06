@@ -348,8 +348,13 @@ export class FrontendGenerator extends AbstractGenerator {
             // "installability" heuristic (the install banner won't appear until the SW controls the page).
             'if(document.readyState!=="loading"){register();}else{document.addEventListener("DOMContentLoaded",register,{once:true});}',
             // Reload once when a new SW takes over so the page is consistent with cached assets.
+            // The first install also fires controllerchange (clients.claim() on an uncontrolled
+            // page): nothing was served by an older SW then, and a reload would start the
+            // frontend a second time while it is still booting.
+            'var hadController=!!navigator.serviceWorker.controller;',
             'var reloaded=false;',
             'navigator.serviceWorker.addEventListener("controllerchange",function(){',
+            'if(!hadController){hadController=true;return;}',
             'if(reloaded)return;',
             'if(window.location.search.indexOf("qaap_oauth=")>=0)return;',
             'reloaded=true;try{location.reload();}catch(_){}});',

@@ -1,6 +1,7 @@
 'use strict';
 
 const { expect } = require('chai');
+const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
 const { patchIndexForFreshAssets } = require('./qaap-frontend-asset-policy.cjs');
 
@@ -50,6 +51,31 @@ describe('Qaap frontend asset policy', () => {
             expect(bundlePreload?.getAttribute('href')).to.equal('./bundle.js?qaap-build=desktop-build');
             expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(1);
             expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(1);
+        } finally {
+            dom.window.close();
+        }
+    });
+
+    it('is idempotent: re-patching an already patched index keeps every inline script valid', () => {
+        // The Docker build runs copy-frontend-static twice (bundle:production + an explicit
+        // run), and src-gen/frontend/index.html is patched in place, so the second pass sees
+        // the escaped link inside the first pass's document.write() string.
+        const generated = [
+            '<!doctype html><html><head>',
+            '<link rel="preload" href="./bundle.css" as="style" onload="this.onload=null;this.rel=\'stylesheet\'">',
+            '<noscript><link rel="stylesheet" href="./bundle.css"></noscript>',
+            '</head><body><script src="./qaap-login-gate.js"></script></body></html>',
+        ].join('');
+        const once = patchIndexForFreshAssets(generated, 'first-build');
+        const twice = patchIndexForFreshAssets(once, 'second-build');
+        for (const [, script] of twice.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+            expect(() => new vm.Script(script)).not.to.throw();
+        }
+        expect(twice).to.equal(once.replace(/first-build/g, 'second-build'));
+        const dom = parseIndex(twice, false);
+        try {
+            expect(dom.window.document.querySelector('link[rel="preload"][href*="bundle.css"]')?.getAttribute('href'))
+                .to.equal('./bundle.css?qaap-build=second-build');
         } finally {
             dom.window.close();
         }

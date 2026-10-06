@@ -37,15 +37,21 @@ function deferIdeAssetsOnPhones(html) {
     });
 }
 
+/**
+ * Idempotent: the Docker build runs copy-frontend-static twice and src-gen/frontend/index.html
+ * is patched in place, so a second pass sees the first pass's desktop links escaped inside a
+ * document.write() string. A query never consumes a backslash, otherwise `\"` loses its escape
+ * and the inline script fails with "missing ) after argument list".
+ */
 function patchIndexForFreshAssets(html, buildVersion) {
     let patched = html.replace(
-        /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
+        /\.\/bundle\.css(?:\?[^"'\\\s>]*)?/g,
         `./bundle.css?qaap-build=${buildVersion}`,
     ).replace(
-        /\.\/bundle\.js(?:\?[^"'\s>]*)?/g,
+        /\.\/bundle\.js(?:\?[^"'\\\s>]*)?/g,
         `./bundle.js?qaap-build=${buildVersion}`,
     ).replace(
-        /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
+        /\.\/qaap-login-gate\.js(?:\?[^"'\\\s>]*)?/g,
         `./qaap-login-gate.js?qaap-build=${buildVersion}`,
     );
 
