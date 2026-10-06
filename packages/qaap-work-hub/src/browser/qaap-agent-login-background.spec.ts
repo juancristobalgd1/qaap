@@ -99,8 +99,13 @@ describe('Antigravity Connect dialog in a tenant workspace', () => {
     let restoreWindowTimers: (() => void) | undefined;
     let originalFetch: typeof globalThis.fetch | undefined;
     let harnessStatus: () => Promise<Response>;
+    let originalPlatform: PropertyDescriptor | undefined;
 
     beforeEach(() => {
+        // Tenant workspaces run a Linux shell whatever OS runs the tests: pin the platform so the
+        // POSIX sign-in command is the one under test on Windows and macOS CI too.
+        originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+        Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
         clock = sinon.useFakeTimers({ now: 1_000_000, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
         // jsdom's window has its own timers: route them through the same fake clock.
         const timerNames = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] as const;
@@ -118,6 +123,9 @@ describe('Antigravity Connect dialog in a tenant workspace', () => {
     });
 
     afterEach(() => {
+        if (originalPlatform) {
+            Object.defineProperty(process, 'platform', originalPlatform);
+        }
         for (const dialog of Array.from(document.querySelectorAll<HTMLButtonElement>('.theia-mobile-agent-login-dialog-close'))) {
             dialog.click();
         }
