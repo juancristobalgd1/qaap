@@ -63,6 +63,36 @@ ignored.
 - `persist()`: writes only the rows whose snapshot changed and deletes removed tasks, in one
   transaction. Write failures keep the existing gate (`storageWriteFailed`, admission paused).
 
+## Outbox worker (flag on)
+
+`QaapAgentRunOutbox` (`qaap-agent-run-outbox.ts`) is the only path that starts a turn:
+
+- `create()` and queue promotion commit the run row (`running`) and a `turn.start` effect in one
+  transaction. The effect is an intent (`runId`, `kind`, `{ version: 1 }`); the request, env, argv
+  and tokens stay in process memory and are never written to the ledger (I2).
+- One pump claims with `UPDATE … RETURNING` (`lease_owner` = boot id, `available_at`,
+  `attempt_count`), FIFO per `(owner, thread_key)`; other threads and owners are never blocked.
+  Only kinds with a registered handler are claimed. A thrown handler is retried with
+  `min(30 s, 100 ms · 2^(n-1))` backoff, at most 5 attempts (process kinds do not retry blindly).
+  Only the lease holder settles an effect. `drain()` runs the pump to quiescence for specs.
+- Startup: import → `reconcileAfterProcessLoss()` → `restorePersistedIndex` → worker. In one
+  transaction: `running` runs become `interrupted`, process effects (`turn.start`, `turn.continue`)
+  left `running` become `cancelled`, safe effects (`checkpoint.capture`, `push.notify`,
+  `subtask.deliver`) go back to `pending`, and each continuable lost root run gets one
+  `turn.continue` with id `restart-continuation:<runId>` (a second restart cannot duplicate it).
+  A run is continuable only when it is an autonomous agent turn (no human approval, not a shell),
+  has no delegated child waiting and `resume_count < QAAP_MAX_RESTART_RESUMES`.
+- The continuation replaces `maybeAutoResumeInterruptedTurn` with the flag on. It carries
+  `restartContinuationOf`, set only by the in-flight `turn.continue` effect (never from a request
+  body), and skips both the job admission check and the runtime debit: a deploy never charges the
+  user.
+- Queue hold: after a root run fails, and after a restart, the owner's queued tasks are held
+  (`queueHeld`). `POST /qaap/api/agent-tasks/queue/resume` releases only the caller's queue (owner
+  from the session) and returns `{ resumed }`; with the flag off it returns `{ resumed: 0 }`.
+
+With the flag off no outbox is built, turns start directly and `maybeAutoResumeInterruptedTurn`
+keeps working as before.
+
 ## Rollback
 
 Turn the flag off and restart: the runner reads `index.json` again. Tasks created while the flag

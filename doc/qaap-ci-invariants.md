@@ -124,6 +124,14 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 - **Why:** since #103 the Ollama schema default (`http://localhost:11434`) no longer counts as a configured provider, so the runner refuses every QAIQ task ("QAIQ/OpenClaude needs an API key…") before spawning the mock.
 - **Symptoms if broken:** agent turns never start; Rioja composer UI flow (P0) fails; **the VPS deploy gate blocks every deploy** (nothing was deployed Sep 24–25 for this reason).
 
+## Agent-run outbox (`QAAP_AGENT_LEDGER=on`)
+
+### 11. Turns start only through the outbox, and restarts never charge
+
+- **Rule:** with the ledger on, a turn starts only from a claimed `turn.start` effect, and the effect payload stays an intent (no prompt, env, argv or token). Restart continuations use the deterministic id `restart-continuation:<runId>` and skip admission and billing only through `restartContinuationOf` set by the in-flight `turn.continue` effect, never from a request body. With the flag off the outbox is not constructed.
+- **Why:** the outbox makes start/reconcile crash-safe (T3 V2 PR 1.2); a secret in the payload would persist in SQLite, a non-deterministic continuation id would resume a turn twice after two quick restarts, and a body-settable flag would be a free-quota bypass.
+- **Symptoms if broken:** duplicated turns after a deploy, a deploy that consumes user quota, or secrets in the ledger database (`doc/qaap-agent-run-ledger.md`). Covered by `qaap-agent-run-outbox.spec.ts`.
+
 ## CI/CD (`Build and Test`, `Lint`)
 
 ### 10. Known traps
