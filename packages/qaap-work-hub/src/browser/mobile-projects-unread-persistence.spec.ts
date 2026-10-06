@@ -55,7 +55,7 @@ describe('Work Hub unread state persists per user', () => {
         const url = String(input);
         const marks = serverMarks.get(currentUser) ?? new Map<string, number>();
         serverMarks.set(currentUser, marks);
-        const match = /\/qaap\/api\/agent-conversation-read-marks(?:\/([^/?]+))?/.exec(url);
+        const match = /\/qaap\/api\/conversation-read-marks(?:\/([^/?]+))?/.exec(url);
         if (!match) {
             return new Response('{}', { status: 404 });
         }

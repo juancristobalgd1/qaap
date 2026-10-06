@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
-import { excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import {
     agentMessageHasVisualVerificationMarker,
@@ -329,6 +329,11 @@ export interface QaapAgentConversationSummary {
     readonly lastTurnCancelled?: boolean;
     /** Role of the most recent message, so the UI can render "you said…" vs. "agent replied…". */
     readonly lastMessageRole?: QaapAgentMessageRole;
+    /**
+     * When the agent last wrote (see `resolveQaapConversationAgentActivityAt`); the unread dot
+     * compares this, not `updatedAt`, with the user's read mark. Absent when the user spoke last.
+     */
+    readonly lastAgentActivityAt?: number;
     readonly priority?: boolean;
     readonly paused?: boolean;
     /** User-flagged "archived" — hidden from the main task list. */
@@ -613,6 +618,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         messageCount: conv.messages.length,
         lastMessagePreview: last ? excerpt(resolveMessagePreviewText(last)) : undefined,
         lastMessageRole: last?.role,
+        ...agentActivityField(conv, status),
         ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         ...(isLastTurnCancelled({ status, messages: conv.messages }) ? { lastTurnCancelled: true } : {}),
         priority: conv.priority || undefined,

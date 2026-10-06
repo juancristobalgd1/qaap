@@ -22,6 +22,7 @@ import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
 import { normalizeQaapVisualPreviewUrl, type QaapPreviewVisualValidationResult } from './qaap-visual-verification';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from './qaap-conversation-rewind-preview';
+import { resolveQaapConversationAgentActivityAt, type QaapConversationActivityMessage } from './qaap-conversation-read-marks';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -70,6 +71,11 @@ export interface QaapAgentConversationSummaryDTO {
     readonly messageCount: number;
     readonly lastMessagePreview?: string;
     readonly lastMessageRole?: 'user' | 'agent';
+    /**
+     * When the agent last wrote (see `resolveQaapConversationAgentActivityAt`); the unread dot
+     * compares this, not `updatedAt`, with the user's read mark. Absent when the user spoke last.
+     */
+    readonly lastAgentActivityAt?: number;
     /** Excerpt of the most recent message's persisted failure reason, when it failed. */
     readonly lastMessageError?: string;
     /** The latest turn ended because someone pressed Stop / Cancel run — not a finish, not a failure. */
@@ -518,6 +524,15 @@ export function excerptConversationMessageError(error: string): string {
     return clean.length > 400 ? `${clean.slice(0, 399)}…` : clean;
 }
 
+/** `lastAgentActivityAt` for a summary (given the effective status), omitted when the user spoke last. */
+export function agentActivityField(
+    conv: Pick<QaapAgentConversationDTO, 'updatedAt'> & { readonly messages: ReadonlyArray<QaapConversationActivityMessage> },
+    status: string,
+): { lastAgentActivityAt?: number } {
+    const lastAgentActivityAt = resolveQaapConversationAgentActivityAt({ status, updatedAt: conv.updatedAt, messages: conv.messages });
+    return lastAgentActivityAt === undefined ? {} : { lastAgentActivityAt };
+}
+
 export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
@@ -543,6 +558,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         messageCount: conv.messages.length,
         lastMessagePreview: preview,
         lastMessageRole: last?.role,
+        ...agentActivityField(conv, status),
         ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         ...(isLastTurnCancelled({ status, messages: conv.messages }) ? { lastTurnCancelled: true } : {}),
         priority: conv.priority,

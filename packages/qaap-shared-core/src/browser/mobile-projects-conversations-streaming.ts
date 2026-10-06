@@ -245,6 +245,9 @@ export function refreshSummaryFromLiveMessageExtracted(ctx: MobileProjectsConver
                 : existing.messageCount + 1,
             lastMessagePreview: excerpt(resolveMessagePreviewText(payload.message)),
             lastMessageRole: payload.message.role,
+            lastAgentActivityAt: payload.message.role === 'agent'
+                ? Math.max(existing.lastAgentActivityAt ?? 0, payload.message.createdAt, payload.message.runFinishedAt ?? 0)
+                : undefined,
             lastMessageError: payload.message.error?.trim()
                 ? excerptConversationMessageError(payload.message.error)
                 : undefined,
