@@ -186,8 +186,11 @@ export async function openAgentLoginDialogInBackground(
             return;
         }
         connectionPollInFlight = true;
+        const pollAttempt = attempt;
         try {
-            if (await onConnected() === true) {
+            // A poll that resolves after this attempt failed (or a Retry started) must not turn
+            // that state into "connected".
+            if (await onConnected() === true && !closed && pollAttempt === attempt && !flow.isSettled) {
                 flow.connected();
             }
         } catch (error) {
@@ -237,15 +240,34 @@ export async function openAgentLoginDialogInBackground(
             const cwd = await resolveAgentLoginCwd(ctx, project, loginSummary);
             const services = ctx.createTranscriptTerminalViewServices?.();
             if (!cwd || !services) {
-                throw new Error('workspace terminal unavailable');
+                throw new Error(!cwd
+                    ? nls.localize('qaap/mobileProjects/agentLoginDialogNoCwd', 'The project folder is not ready in this workspace yet.')
+                    : nls.localize('qaap/mobileProjects/agentLoginDialogNoTerminals', 'Terminals are not available in this view.'));
             }
-            staging = createTranscriptTerminalStagingHost();
-            surface = await createTranscriptTerminalSurface(staging, cwd, services);
+            // Each attempt owns its staging host and terminal until it is still current: a terminal
+            // that resolves after its attempt was abandoned (prepare watchdog, Retry) must only
+            // dispose itself, never the staging host of the attempt that replaced it (that made the
+            // Retry's terminal throw "Host is not attached").
+            const attemptStaging = createTranscriptTerminalStagingHost();
+            let attemptSurface: any;
+            try {
+                attemptSurface = await createTranscriptTerminalSurface(attemptStaging, cwd, services);
+            } catch (error) {
+                attemptStaging.remove();
+                throw error;
+            }
             // The preparing watchdog may already have given up on this attempt.
-            if (closed || currentAttempt !== attempt || !surface || surface.terminal.isDisposed || flow.state.phase !== 'preparing') {
-                disposeTerminal();
+            if (closed || currentAttempt !== attempt || !attemptSurface || attemptSurface.terminal.isDisposed || flow.state.phase !== 'preparing') {
+                try {
+                    attemptSurface?.dispose.dispose();
+                } catch {
+                    // The PTY may already have closed.
+                }
+                attemptStaging.remove();
                 return;
             }
+            staging = attemptStaging;
+            surface = attemptSurface;
             outputListener = surface.terminal.onOutput((chunk: string) => {
                 flow.appendOutput(stripTerminalControlSequences(chunk));
             });
@@ -266,9 +288,10 @@ export async function openAgentLoginDialogInBackground(
                 window.addEventListener('pageshow', refreshConnectionState);
             }
         } catch (error) {
-            console.warn('[qaap] Agent login terminal unavailable:', error instanceof Error ? error.message : String(error));
+            const detail = error instanceof Error ? error.message : String(error);
+            console.warn('[qaap] Agent login terminal unavailable:', detail);
             if (!closed && currentAttempt === attempt && flow.state.phase === 'preparing') {
-                flow.unavailable();
+                flow.terminalUnavailable(detail);
             }
         }
     };
