@@ -1,5 +1,0 @@
-{
-  "extends": "../../configs/base.tsconfig",
-  "compilerOptions": { "composite": false, "incremental": true, "tsBuildInfoFile": "lib/.verify.tsbuildinfo", "rootDir": "src", "outDir": "lib", "skipLibCheck": true },
-  "include": ["src"]
-}
