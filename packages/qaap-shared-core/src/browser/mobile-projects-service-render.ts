@@ -29,6 +29,8 @@ import {
 } from './mobile-projects-open';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QaapWorkspaceService } from './qaap-workspace-service';
+import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { parseGithubFullNameFromWorkspacePath, QAAP_USER_REPOS_SEGMENT, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     mobileProjectsUserStorageKey,
 } from './mobile-projects-user-storage';
@@ -262,6 +264,18 @@ export async function openProjectWithoutReloadExtracted(ctx: MobileProjectsServi
         }
         let uri = project.uri?.scheme === 'file' ? project.uri : undefined;
         let repository: QaapGithubRepositorySummary | undefined;
+        const ownedClone = project.github && ownedGithubCloneUri(project);
+        if (ownedClone && project.github && await workspaceService.openWithoutReload(ownedClone)) {
+            // The regular open fetches the repository first (seconds on a hosted tenant); the IDE shows
+            // the clone now and the fetch only updates its refs.
+            const { owner, name } = project.github;
+            void openQaapGithubRepository(owner, name).then(result => {
+                clearHiddenProjectIdExtracted(ctx, `github:${result.repository.fullName}`);
+                ctx.touchGithubRepositoryActivity(result.repository);
+            }, () => undefined);
+            clearHiddenProjectIdExtracted(ctx, `recent:${ownedClone.toString()}`);
+            return true;
+        }
         if (project.github) {
             // The backend owns the clone path: a cached entry can name another login's folder.
             try {
@@ -283,6 +297,26 @@ export async function openProjectWithoutReloadExtracted(ctx: MobileProjectsServi
             ctx.touchProjectActivity(project);
         }
         return true;
+}
+
+/**
+ * The project's local clone when it is the signed-in login's own (`…/repos/users/{login}/{owner}/{repo}`,
+ * the path the backend rebuilds from the login). A cached entry can name another login's folder.
+ */
+function ownedGithubCloneUri(project: MobileProjectEntry): URI | undefined {
+        const login = readQaapAuthUser()?.login;
+        if (!login || !project.github || project.uri?.scheme !== 'file') {
+            return undefined;
+        }
+        const clonePath = project.uri.path.toString();
+        const segments = clonePath.split('/').filter(Boolean);
+        const users = segments.lastIndexOf('repos') + 1;
+        const owned = users > 0
+            && segments.length === users + 4
+            && segments[users] === QAAP_USER_REPOS_SEGMENT
+            && segments[users + 1] === safeUserIdSegment(login)
+            && parseGithubFullNameFromWorkspacePath(clonePath) === `${project.github.owner}/${project.github.name}`.toLowerCase();
+        return owned ? project.uri : undefined;
 }
 
 export async function openGithubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, newWindow = false): Promise<boolean> {
