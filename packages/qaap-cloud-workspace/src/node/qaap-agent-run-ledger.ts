@@ -26,7 +26,13 @@ export interface QaapAgentRunRow {
     readonly queuePosition?: number;
     readonly queueHeld?: boolean;
     readonly nativeSessionId?: string;
+    /** Restart continuations already spent on this turn's lineage; never decreases. */
     readonly resumeCount?: number;
+    /**
+     * Whether a process loss may continue this run automatically (autonomous `agent` contract, no
+     * human approval in the loop). Unset keeps the stored value; never set means "no".
+     */
+    readonly continuable?: boolean;
     /** Original create request; only kept while it is needed to start the run (queued). */
     readonly request?: unknown;
     /** Full wire snapshot of the run (the task DTO), so the ledger replaces `index.json` losslessly. */
@@ -54,6 +60,8 @@ export interface QaapAgentEffect {
     readonly runId: string;
     readonly owner: string | undefined;
     readonly kind: string;
+    /** FIFO key within the owner: effects of one thread run one at a time, in order. Defaults to `runId`. */
+    readonly threadKey?: string;
     readonly payload?: unknown;
     readonly status?: QaapAgentEffectStatus;
     readonly attemptCount?: number;
@@ -88,6 +96,29 @@ export interface QaapAgentLedgerCommitResult {
     readonly result?: unknown;
 }
 
+/** How {@link QaapAgentRunLedger.settleEffect} leaves a claimed effect. */
+export type QaapAgentEffectSettlement =
+    | { readonly status: 'succeeded' | 'failed' | 'cancelled'; readonly error?: string }
+    | { readonly status: 'pending'; readonly availableAt: number; readonly error?: string };
+
+export interface QaapAgentLedgerReconcileOptions {
+    readonly now: number;
+    /** Effect kinds bound to a live agent process (cancelled, never replayed, after a process loss). */
+    readonly processKinds: readonly string[];
+    /** Continuation to enqueue for an interrupted run, if it is eligible. */
+    readonly continuation?: (run: QaapAgentRunRow) => QaapAgentEffect | undefined;
+}
+
+export interface QaapAgentLedgerReconcileResult {
+    readonly cancelled: readonly string[];
+    readonly requeued: readonly string[];
+    readonly interrupted: readonly QaapAgentRunRow[];
+    /** Continuations inserted by this reconciliation (an id that already existed is not repeated). */
+    readonly continuations: readonly QaapAgentEffect[];
+    /** Owner keys whose queued runs are now held. */
+    readonly heldOwners: readonly string[];
+}
+
 /** Rows produced by a one-time legacy import. */
 export interface QaapAgentLedgerImport {
     readonly runs: readonly QaapAgentRunRow[];
@@ -111,6 +142,7 @@ interface RunRecord {
     queue_held: number;
     native_session_id?: string;
     resume_count: number;
+    continuable?: number;
     request_json?: string;
     task_json?: string;
     created_at: number;
@@ -125,6 +157,7 @@ interface EffectRecord {
     run_id: string;
     owner: string;
     kind: string;
+    thread_key?: string;
     payload_json?: string;
     status: QaapAgentEffectStatus;
     attempt_count: number;
@@ -201,6 +234,13 @@ const QAAP_AGENT_RUN_LEDGER_SCHEMA: ReadonlyArray<(database: DatabaseSync) => vo
         CREATE INDEX IF NOT EXISTS qaap_agent_outbox_run_status
             ON qaap_agent_outbox (run_id, status);
     `),
+    // v2 (outbox worker): per-thread FIFO key and the run's auto-continue eligibility.
+    database => database.exec(`
+        ALTER TABLE qaap_agent_outbox ADD COLUMN thread_key TEXT;
+        ALTER TABLE qaap_agent_runs ADD COLUMN continuable INTEGER CHECK (continuable IN (0, 1));
+        CREATE INDEX IF NOT EXISTS qaap_agent_outbox_owner_thread
+            ON qaap_agent_outbox (owner, thread_key, status);
+    `),
 ];
 
 /** The only `null` in the ledger: what node:sqlite binds as SQL NULL. */
@@ -209,11 +249,11 @@ const SQL_NULL: SQLInputValue = null;
 const RUN_UPSERT_SQL = `
     INSERT INTO qaap_agent_runs (
         run_id, owner, conversation_id, parent_run_id, agent_id, model_id, cwd, state,
-        queue_position, queue_held, native_session_id, resume_count, request_json, task_json,
+        queue_position, queue_held, native_session_id, resume_count, continuable, request_json, task_json,
         created_at, updated_at, finished_at, last_error_class, reset_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (run_id) DO UPDATE SET
-        conversation_id = excluded.conversation_id,
+        conversation_id = COALESCE(excluded.conversation_id, qaap_agent_runs.conversation_id),
         parent_run_id = excluded.parent_run_id,
         agent_id = excluded.agent_id,
         model_id = excluded.model_id,
@@ -222,7 +262,8 @@ const RUN_UPSERT_SQL = `
         queue_position = excluded.queue_position,
         queue_held = excluded.queue_held,
         native_session_id = excluded.native_session_id,
-        resume_count = excluded.resume_count,
+        resume_count = MAX(qaap_agent_runs.resume_count, excluded.resume_count),
+        continuable = COALESCE(excluded.continuable, qaap_agent_runs.continuable),
         request_json = excluded.request_json,
         task_json = excluded.task_json,
         updated_at = excluded.updated_at,
@@ -388,6 +429,144 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
         });
     }
 
+    /**
+     * Claims the oldest runnable effect atomically (`UPDATE … RETURNING`): `pending`, due, of a
+     * handled kind, and with no `running` effect nor an earlier unfinished effect of a handled kind
+     * in the same owner thread (per-thread FIFO). Unhandled kinds neither run nor block.
+     */
+    claimNextEffect(leaseOwner: string, now: number, kinds: readonly string[]): QaapAgentEffect | undefined {
+        if (kinds.length === 0) {
+            return undefined;
+        }
+        const handled = JSON.stringify(kinds);
+        const record = this.withTransaction(database => database.prepare(`
+            UPDATE qaap_agent_outbox
+            SET status = 'running', attempt_count = attempt_count + 1, lease_owner = ?, last_error = NULL
+            WHERE status = 'pending' AND effect_id = (
+                SELECT candidate.effect_id FROM qaap_agent_outbox AS candidate
+                WHERE candidate.status = 'pending'
+                    AND candidate.available_at <= ?
+                    AND candidate.kind IN (SELECT value FROM json_each(?))
+                    AND NOT EXISTS (
+                        SELECT 1 FROM qaap_agent_outbox AS active
+                        WHERE active.owner = candidate.owner
+                            AND COALESCE(active.thread_key, active.run_id) = COALESCE(candidate.thread_key, candidate.run_id)
+                            AND (active.status = 'running' OR (
+                                active.status = 'pending'
+                                AND active.rowid < candidate.rowid
+                                AND active.kind IN (SELECT value FROM json_each(?))
+                            ))
+                    )
+                ORDER BY candidate.rowid
+                LIMIT 1
+            )
+            RETURNING *
+        `).get(leaseOwner, now, handled, handled)) as EffectRecord | undefined;
+        return record ? QaapAgentRunLedger.toEffect(record) : undefined;
+    }
+
+    /**
+     * Settles a claimed effect. Only the lease holder can settle it, so an effect that startup
+     * reconciliation (or a cancel) already moved on is never overwritten. Returns whether it changed.
+     */
+    settleEffect(effectId: string, leaseOwner: string, outcome: QaapAgentEffectSettlement): boolean {
+        const changes = this.withTransaction(database => {
+            if (outcome.status === 'pending') {
+                return database.prepare(`
+                    UPDATE qaap_agent_outbox SET status = 'pending', available_at = ?, lease_owner = NULL, last_error = ?
+                    WHERE effect_id = ? AND status = 'running' AND lease_owner = ?
+                `).run(...QaapAgentRunLedger.sqlParams([outcome.availableAt, outcome.error, effectId, leaseOwner])).changes;
+            }
+            return database.prepare(`
+                UPDATE qaap_agent_outbox SET status = ?, lease_owner = NULL, last_error = ?
+                WHERE effect_id = ? AND status = 'running' AND lease_owner = ?
+            `).run(...QaapAgentRunLedger.sqlParams([outcome.status, outcome.error, effectId, leaseOwner])).changes;
+        });
+        return Number(changes) > 0;
+    }
+
+    /** Earliest `available_at` among pending effects of the given kinds, if any. */
+    nextEffectAvailableAt(kinds: readonly string[]): number | undefined {
+        if (kinds.length === 0) {
+            return undefined;
+        }
+        const row = this.withDatabase(database => database.prepare(`
+            SELECT MIN(available_at) AS next FROM qaap_agent_outbox
+            WHERE status = 'pending' AND kind IN (SELECT value FROM json_each(?))
+        `).get(JSON.stringify(kinds))) as { next?: number } | undefined;
+        return typeof row?.next === 'number' ? row.next : undefined;
+    }
+
+    /**
+     * Startup reconciliation after the previous backend process died, in one transaction:
+     * - `running` effects of a process kind are `cancelled` (their process is gone);
+     * - `running` effects of any other kind go back to `pending` (safe to repeat);
+     * - `running`/`starting` runs become `interrupted` (row and task snapshot), and their pending
+     *   process effects are cancelled (the in-memory start request died with the process);
+     * - `continuation(run)` may return one effect per interrupted run (inserted `OR IGNORE`, so a
+     *   deterministic id makes a second restart a no-op);
+     * - queued runs of every owner with an interrupted run are held (`queue_held`).
+     */
+    reconcileAfterProcessLoss(options: QaapAgentLedgerReconcileOptions): QaapAgentLedgerReconcileResult {
+        return this.withTransaction(database => {
+            const now = options.now;
+            const processKinds = JSON.stringify(options.processKinds);
+            const cancelled = (database.prepare(`
+                UPDATE qaap_agent_outbox
+                SET status = 'cancelled', lease_owner = NULL, last_error = 'The server process running this effect ended.'
+                WHERE status = 'running' AND kind IN (SELECT value FROM json_each(?))
+                RETURNING effect_id
+            `).all(processKinds) as unknown as Array<{ effect_id: string }>).map(row => row.effect_id);
+            const requeued = (database.prepare(`
+                UPDATE qaap_agent_outbox
+                SET status = 'pending', lease_owner = NULL, available_at = ?, last_error = 'Requeued after the server process ended.'
+                WHERE status = 'running'
+                RETURNING effect_id
+            `).all(now) as unknown as Array<{ effect_id: string }>).map(row => row.effect_id);
+            const lost = (database.prepare(`
+                SELECT * FROM qaap_agent_runs WHERE state IN ('running', 'starting') ORDER BY created_at, rowid
+            `).all() as unknown as RunRecord[]).map(record => QaapAgentRunLedger.toRun(record));
+            const interrupted: QaapAgentRunRow[] = [];
+            const continuations: QaapAgentEffect[] = [];
+            const heldOwners = new Set<string>();
+            for (const run of lost) {
+                const owner = QaapAgentRunLedger.ownerKey(run.owner);
+                database.prepare(`
+                    UPDATE qaap_agent_runs
+                    SET state = 'interrupted', finished_at = COALESCE(finished_at, ?), updated_at = ?,
+                        task_json = CASE WHEN json_valid(task_json)
+                            THEN json_set(task_json, '$.state', 'interrupted', '$.finishedAt', ?)
+                            ELSE task_json END
+                    WHERE owner = ? AND run_id = ?
+                `).run(now, now, now, owner, run.runId);
+                cancelled.push(...(database.prepare(`
+                    UPDATE qaap_agent_outbox
+                    SET status = 'cancelled', lease_owner = NULL, last_error = 'The run was interrupted before this effect ran.'
+                    WHERE owner = ? AND run_id = ? AND status = 'pending' AND kind IN (SELECT value FROM json_each(?))
+                    RETURNING effect_id
+                `).all(owner, run.runId, processKinds) as unknown as Array<{ effect_id: string }>).map(row => row.effect_id));
+                const row: QaapAgentRunRow = { ...run, state: 'interrupted' };
+                interrupted.push(row);
+                heldOwners.add(owner);
+                const continuation = options.continuation?.(row);
+                if (continuation && this.insertEffect(database, continuation, now)) {
+                    continuations.push(continuation);
+                }
+            }
+            for (const owner of heldOwners) {
+                database.prepare(`
+                    UPDATE qaap_agent_runs
+                    SET queue_held = 1, updated_at = ?,
+                        task_json = CASE WHEN json_valid(task_json)
+                            THEN json_set(task_json, '$.queueHeld', json('true'))
+                            ELSE task_json END
+                    WHERE owner = ? AND state = 'queued'
+                `).run(now, owner);
+            }
+            return { cancelled, requeued, interrupted, continuations, heldOwners: [...heldOwners] };
+        });
+    }
+
     protected migrateLedgerSchema(): void {
         this.withTransaction(database => {
             QAAP_AGENT_RUN_LEDGER_SCHEMA.forEach((step, index) => {
@@ -417,6 +596,7 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
             run.queueHeld ? 1 : 0,
             run.nativeSessionId,
             run.resumeCount ?? 0,
+            run.continuable === undefined ? undefined : run.continuable ? 1 : 0,
             QaapAgentRunLedger.toJson(run.request),
             QaapAgentRunLedger.toJson(run.task),
             run.createdAt,
@@ -430,20 +610,22 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
         }
     }
 
-    protected insertEffect(database: DatabaseSync, effect: QaapAgentEffect, now: number): void {
+    /** Returns false when an effect with the same id already existed (deterministic ids are idempotent). */
+    protected insertEffect(database: DatabaseSync, effect: QaapAgentEffect, now: number): boolean {
         const owner = QaapAgentRunLedger.ownerKey(effect.owner);
         if (!database.prepare('SELECT 1 FROM qaap_agent_runs WHERE owner = ? AND run_id = ?').get(owner, effect.runId)) {
             throw new Error(`Agent run ${effect.runId} does not exist for this owner.`);
         }
-        database.prepare(`
+        return database.prepare(`
             INSERT OR IGNORE INTO qaap_agent_outbox
-                (effect_id, run_id, owner, kind, payload_json, status, attempt_count, available_at, lease_owner, last_error, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (effect_id, run_id, owner, kind, thread_key, payload_json, status, attempt_count, available_at, lease_owner, last_error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(...QaapAgentRunLedger.sqlParams([
             effect.effectId,
             effect.runId,
             owner,
             effect.kind,
+            effect.threadKey ?? effect.runId,
             QaapAgentRunLedger.toJson(effect.payload),
             effect.status ?? 'pending',
             effect.attemptCount ?? 0,
@@ -451,7 +633,7 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
             effect.leaseOwner,
             effect.lastError,
             effect.createdAt ?? now,
-        ]));
+        ])).changes > 0;
     }
 
     protected static toRun(record: RunRecord): QaapAgentRunRow {
@@ -468,6 +650,7 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
             queueHeld: record.queue_held === 1,
             nativeSessionId: record.native_session_id ?? undefined,
             resumeCount: record.resume_count,
+            continuable: typeof record.continuable === 'number' ? record.continuable === 1 : undefined,
             request: QaapAgentRunLedger.fromJson(record.request_json) ?? undefined,
             task: QaapAgentRunLedger.fromJson(record.task_json) ?? undefined,
             createdAt: record.created_at,
@@ -484,6 +667,7 @@ export class QaapAgentRunLedger extends QaapSqliteStore {
             runId: record.run_id,
             owner: record.owner,
             kind: record.kind,
+            threadKey: record.thread_key ?? undefined,
             payload: QaapAgentRunLedger.fromJson(record.payload_json) ?? undefined,
             status: record.status,
             attemptCount: record.attempt_count,
