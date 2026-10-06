@@ -48,7 +48,10 @@ describe('Qaap legal pages', () => {
         );
         expect(sync).to.include("resources', 'legal'");
         expect(sync).to.include("libFrontend, 'legal'");
-        expect(sync).to.include('qaap-build=');
-        expect(sync).to.include('bundle\\.css');
+        // Cache-busting moved to the shared asset policy the sync script requires.
+        expect(sync).to.include('qaap-frontend-asset-policy.cjs');
+        const policy = fs.readFileSync(path.join(productRoot, 'resources/qaap-frontend-asset-policy.cjs'), 'utf8');
+        expect(policy).to.include('qaap-build=');
+        expect(policy).to.include('bundle\\.css');
     });
 });
