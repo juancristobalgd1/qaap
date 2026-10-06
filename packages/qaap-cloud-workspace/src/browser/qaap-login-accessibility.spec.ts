@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const sourceRoot = path.resolve(__dirname, '../../src');
-const read = (relativePath: string): string => fs.readFileSync(path.join(sourceRoot, relativePath), 'utf8');
+// Windows checkouts use CRLF; the contract slices source text by '\n', so normalize first.
+const read = (relativePath: string): string => fs.readFileSync(path.join(sourceRoot, relativePath), 'utf8').replace(/\r\n/g, '\n');
 
 describe('Qaap login gate accessibility contract', () => {
 
