@@ -16,16 +16,17 @@ export const TRANSCRIPT_STREAM_ACTIVE_TOOL_TIMEOUT_MS = 120_000;
 
 /**
  * Budget before the turn's first agent output. A cold first run (tenant wake, CLI boot, provider
- * auth, model cold start) routinely needs more than a minute; timing out at 60s told users the
- * agent "didn't respond" while it was still starting. The backend keeps its own idle watchdog.
+ * auth, model cold start) can need more than a minute, so 60s was too eager; past 90s the user
+ * gets the timeout card with Retry instead of an open-ended "Starting the agent…" spinner. The
+ * timeout card does not stop the agent; the backend keeps its own idle watchdog.
  */
-export const TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS = 180_000;
+export const TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS = 90_000;
 
 /**
- * Retry a turn once when the agent has produced no output. Same budget as the first-output timeout:
- * a cold first run routinely needs more than a minute, and a forced retry kills the running agent.
+ * Retry a turn once automatically when the agent has produced no output. Later than the visible
+ * timeout: a forced retry kills the running agent, so the user gets the Retry card first.
  */
-export const TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS = TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS;
+export const TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS = 180_000;
 
 export interface TranscriptFirstOutputRetryInput {
     readonly streaming: boolean;
@@ -54,6 +55,11 @@ export type TranscriptStreamTimeoutCause = 'semantic_idle' | 'active_tool' | 'ss
 export interface TranscriptStreamHealthInput {
     readonly streaming: boolean;
     readonly lastProgressAtMs: number | undefined;
+    /**
+     * Start of the in-flight turn (last user message). Used as the progress baseline when the
+     * client never seeded its progress clock, so a turn that never starts still times out.
+     */
+    readonly turnStartedAtMs?: number;
     readonly lastTransportEventAtMs: number | undefined;
     readonly segments: readonly TranscriptSemanticProgressSegment[];
     readonly now?: number;
@@ -81,7 +87,8 @@ export function resolveTranscriptStreamHealth(
     input: TranscriptStreamHealthInput,
 ): TranscriptStreamHealth {
     const now = input.now ?? Date.now();
-    if (!input.streaming || input.lastProgressAtMs === undefined || input.verifying) {
+    const lastProgressAtMs = input.lastProgressAtMs ?? input.turnStartedAtMs;
+    if (!input.streaming || lastProgressAtMs === undefined || input.verifying) {
         return {
             stalled: false,
             timedOut: false,
@@ -93,7 +100,7 @@ export function resolveTranscriptStreamHealth(
             awaitingFirstOutput: false,
         };
     }
-    const idleMs = Math.max(0, now - input.lastProgressAtMs);
+    const idleMs = Math.max(0, now - lastProgressAtMs);
     const hasActiveTool = hasActiveTranscriptToolSegment(input.segments);
     const thinkingActive = isTranscriptAgentThinkingPhase(input.segments, input.streaming);
     const sseStale = input.lastTransportEventAtMs !== undefined

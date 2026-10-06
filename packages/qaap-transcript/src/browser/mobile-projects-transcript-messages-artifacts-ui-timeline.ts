@@ -5,7 +5,7 @@ import { transcriptToolGroupItems } from './mobile-projects-transcript-messages-
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
-import { isTranscriptComposerVisualIdle } from '../common/qaap-transcript-stream-status';
+import { isTranscriptComposerVisualIdle, resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
 import {
     resolveTranscriptStreamHealth,
     shouldAutoRetryTranscriptFirstOutput,
@@ -231,6 +231,7 @@ export function resolveTranscriptStreamHealthExtracted(ctx: MobileProjectsTransc
         const health = resolveTranscriptStreamHealth({
             streaming,
             lastProgressAtMs: ctx.host.transcriptLastStreamProgressAt,
+            turnStartedAtMs: conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined,
             lastTransportEventAtMs: ctx.host.transcriptLastTransportEventAt,
             segments,
             verifying: streaming && conv?.turnPhase?.kind === 'verifying',

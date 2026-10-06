@@ -403,7 +403,7 @@ export class MobileProjectsPanelLifecycleUi {
                     this.host.transcriptLiveUi.touchTranscriptTransportEvent();
                 }),
                 this.host.conversations.onDidReconnectTransport(() => {
-                    void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
+                    this.host.transcriptLiveUi.handleTranscriptTransportReconnected();
                 }),
                 this.host.conversations.onDidReceiveParallelRun(payload => {
                     this.host.ensureOverlayUi().parallel.applyParallelRunStats(payload.runId, payload.variants);
