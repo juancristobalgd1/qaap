@@ -216,4 +216,163 @@ describe('QaapTranscriptLiveController', () => {
         controller.dispose();
         changeEmitter.dispose();
     });
+
+    describe('active-task fallback poll', () => {
+
+        interface FakeTimer { at: number; handler: () => void }
+        let now = 0;
+        let timers = new Map<number, FakeTimer>();
+        let nextTimerId = 1;
+        const realSetTimeout = globalThis.setTimeout;
+        const realClearTimeout = globalThis.clearTimeout;
+        const realDateNow = Date.now;
+
+        const advance = async (ms: number): Promise<void> => {
+            const until = now + ms;
+            await Promise.resolve();
+            await Promise.resolve();
+            for (;;) {
+                const due = [...timers.entries()]
+                    .filter(([, timer]) => timer.at <= until)
+                    .sort((a, b) => a[1].at - b[1].at)[0];
+                if (!due) {
+                    break;
+                }
+                timers.delete(due[0]);
+                now = due[1].at;
+                due[1].handler();
+                await Promise.resolve();
+                await Promise.resolve();
+            }
+            now = until;
+        };
+
+        beforeEach(() => {
+            now = 1_000_000;
+            timers = new Map();
+            nextTimerId = 1;
+            Date.now = () => now;
+            globalThis.setTimeout = ((handler: () => void, delay?: number) => {
+                const id = nextTimerId++;
+                timers.set(id, { at: now + (delay ?? 0), handler });
+                return id;
+            }) as unknown as typeof setTimeout;
+            globalThis.clearTimeout = ((id: number) => { timers.delete(id); }) as unknown as typeof clearTimeout;
+        });
+
+        afterEach(() => {
+            globalThis.setTimeout = realSetTimeout;
+            globalThis.clearTimeout = realClearTimeout;
+            Date.now = realDateNow;
+        });
+
+        function createPolledController(state: { lastConv: QaapAgentConversationDTO | undefined; sseAt?: number }): {
+            controller: QaapTranscriptLiveController;
+            forcePolls: number[];
+            dispose: () => void;
+        } {
+            const forcePolls: number[] = [];
+            const changeEmitter = new Emitter<void>();
+            const controller = new QaapTranscriptLiveController({
+                isDocumentVisible: () => true,
+                isWatching: () => true,
+                getOpenSummary: () => summary(),
+                setOpenSummary: () => undefined,
+                getLastConv: () => state.lastConv,
+                setLastConv: next => { state.lastConv = next; },
+                getLastSseDeltaAt: () => state.sseAt,
+                setLastSseDeltaAt: at => { state.sseAt = at; },
+                findSummaryById: () => summary(),
+                refreshConversation: async options => {
+                    if (options?.forcePoll) {
+                        forcePolls.push(now);
+                    }
+                },
+                renderConversation: () => undefined,
+                onApprovalRefresh: () => undefined,
+                conversationsOnDidChange: changeEmitter.event,
+            });
+            return {
+                controller,
+                forcePolls,
+                dispose: () => {
+                    controller.dispose();
+                    changeEmitter.dispose();
+                },
+            };
+        }
+
+        it('keeps polling while the conversation has not loaded yet, then refetches once it streams', async () => {
+            const state: { lastConv: QaapAgentConversationDTO | undefined } = { lastConv: undefined };
+            const { controller, forcePolls, dispose } = createPolledController(state);
+            controller.watch('conv-1');
+            await advance(3_500);
+            state.lastConv = conv({ status: 'streaming' });
+            const before = forcePolls.length;
+            await advance(6_000);
+            expect(forcePolls.length).to.be.greaterThan(before);
+            dispose();
+        });
+
+        it('ensureActivePoll re-arms the poll after a follow-up into an idle task', async () => {
+            const state: { lastConv: QaapAgentConversationDTO | undefined } = { lastConv: conv({ status: 'idle' }) };
+            const { controller, forcePolls, dispose } = createPolledController(state);
+            controller.watch('conv-1');
+            await advance(10_000);
+            const idleCount = forcePolls.length;
+            controller.ensureActivePoll();
+            state.lastConv = conv({ status: 'streaming' });
+            await advance(3_100);
+            expect(forcePolls.length).to.be.greaterThan(idleCount);
+            dispose();
+        });
+
+        it('backs off from 3s to 5s while live events are silent and stops once the turn settles', async () => {
+            const state: { lastConv: QaapAgentConversationDTO | undefined } = { lastConv: conv({ status: 'streaming' }) };
+            const { controller, forcePolls, dispose } = createPolledController(state);
+            const start = Date.now();
+            controller.watch('conv-1');
+            await advance(30_000);
+            const gaps = forcePolls.map((at, index) => at - (index === 0 ? start : forcePolls[index - 1]));
+            expect(gaps.slice(0, 4)).to.deep.equal([3_000, 4_000, 5_000, 5_000]);
+            state.lastConv = conv({ status: 'idle' });
+            await advance(5_000);
+            const settledCount = forcePolls.length;
+            await advance(60_000);
+            expect(forcePolls.length).to.equal(settledCount);
+            expect(timers.size).to.equal(0);
+            dispose();
+        });
+
+        it('does not poll while live deltas keep arriving', async () => {
+            const state: { lastConv: QaapAgentConversationDTO | undefined; sseAt?: number } = { lastConv: conv({ status: 'streaming' }) };
+            const { controller, forcePolls, dispose } = createPolledController(state);
+            controller.watch('conv-1');
+            for (let i = 0; i < 20; i++) {
+                state.sseAt = Date.now();
+                await advance(1_000);
+            }
+            expect(forcePolls).to.deep.equal([]);
+            dispose();
+        });
+
+        it('rehydrates from the server when the tab becomes visible, even if the local copy looks idle', async () => {
+            const state: { lastConv: QaapAgentConversationDTO | undefined } = { lastConv: conv({ status: 'idle' }) };
+            const { controller, forcePolls, dispose } = createPolledController(state);
+            controller.watch('conv-1');
+            await advance(1_000);
+            controller.handleDocumentVisible();
+            await advance(0);
+            expect(forcePolls.length).to.equal(1);
+            dispose();
+        });
+
+        it('reports which conversation it is watching', () => {
+            const { controller, dispose } = createPolledController({ lastConv: undefined });
+            controller.watch('conv-1');
+            expect(controller.isWatchingConversation('conv-1')).to.equal(true);
+            expect(controller.isWatchingConversation('pending-new-chat-1')).to.equal(false);
+            dispose();
+        });
+    });
 });

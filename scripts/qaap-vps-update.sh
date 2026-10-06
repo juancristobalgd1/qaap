@@ -454,13 +454,10 @@ export QAAP_BUILD_SHA="$BEFORE"
 
 # Guard the host loopback before anything else changes, so a failed release still leaves it closed.
 ensure_tenant_loopback_guard
-# Fail before replacing the old container if runtime state is still in its writable layer.
-run_runtime_state_check
-ensure_caddy_image
-
-# Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
-# same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
-# QAIQ in its own CACHE_BUST-keyed layer, so this only re-clones qaiq (not the whole toolchain).
+# Pull and verify the CI-built image before anything runs `docker compose run|up theia`. The
+# runtime-state check below starts a temporary `theia` container; with QAAP_THEIA_IMAGE still
+# unset, Compose resolved the fallback `qaap-theia:local`, which the post-deploy prune deletes,
+# and silently rebuilt the whole image from source on the VPS (deploy of 3452a58d3, Oct 6 2026).
 if [[ -n "$IMAGE_REF" ]]; then
     export QAAP_THEIA_IMAGE="$IMAGE_REF"
     echo "[qaap-vps-update] image: $QAAP_THEIA_IMAGE"
@@ -476,6 +473,16 @@ if [[ -n "$IMAGE_REF" ]]; then
         echo "Image revision $IMAGE_REVISION does not match checked-out commit $SOURCE_SHA" >&2
         exit 1
     fi
+fi
+
+# Fail before replacing the old container if runtime state is still in its writable layer.
+run_runtime_state_check
+ensure_caddy_image
+
+# Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
+# same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
+# QAIQ in its own CACHE_BUST-keyed layer, so this only re-clones qaiq (not the whole toolchain).
+if [[ -n "$IMAGE_REF" ]]; then
     # Tenant backends run in the rootless daemon, which receives this image through `docker save |
     # docker load`. A digest reference (`name:tag@sha256:…`) is saved without its tag and a loaded
     # image has no RepoDigests, so the rootless daemon could resolve neither form and every tenant

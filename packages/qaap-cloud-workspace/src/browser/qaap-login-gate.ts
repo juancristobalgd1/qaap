@@ -135,8 +135,9 @@ export function presentQaapLoginGate(): void {
         }
     });
 
-    // If the server has no GitHub OAuth app configured, or cannot be reached, keep the user on this
-    // page with an actionable explanation instead of navigating to a blank/timeout OAuth page.
+    // If the server confirms GitHub OAuth is not configured, keep the user on this page with an
+    // actionable explanation. A failed capabilities probe does not establish server liveness, so it
+    // must not disable sign-in or tell the user the server is down.
     void reflectGithubAvailability(host);
     githubButton?.focus();
 }
@@ -161,8 +162,8 @@ function authorize(button: HTMLButtonElement): void {
 }
 
 /**
- * Reflect whether GitHub sign-in is actually usable. When OAuth is unavailable or the backend
- * cannot be reached, keep the user on this page with a clear recovery action.
+ * Reflect whether GitHub sign-in is configured. Failed config probes leave sign-in available:
+ * `/auth/config` is a capabilities endpoint, not a server liveness check.
  */
 async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
     const button = host.querySelector<HTMLButtonElement>('#qaap-login-github');
@@ -227,15 +228,12 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
             )
         );
     } catch {
-        setGithubUnavailable(
-            host,
-            nls.localize(
-                'qaap/auth/serverUnavailable',
-                'The Qaap server is not responding. Check the VPS, proxy, or firewall, then retry.'
-            )
-        );
-        if (retryButton && !productionRuntime) {
-            retryButton.hidden = false;
+        if (status) {
+            status.textContent = '';
+        }
+        if (retryButton) {
+            retryButton.hidden = true;
+            retryButton.disabled = false;
         }
     }
 }

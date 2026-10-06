@@ -9,6 +9,9 @@ import { runLoginGate, type LoginGateOptions, type LoginGateResponder, type Logi
 
 const CONFIG = '/qaap/api/auth/config';
 const SESSION = '/qaap/api/auth/session';
+const HEALTH = '/qaap/api/health';
+const PROJECT_SESSIONS = '/qaap/api/github/project-sessions';
+const USER_SETTINGS = '/qaap/api/user-settings';
 const SIGNED_IN_USER = { provider: 'github', login: 'octocat', name: 'The Octocat' };
 
 describe('Qaap login gate', () => {
@@ -69,7 +72,8 @@ describe('Qaap login gate', () => {
             const stored = Object.keys(run.window.localStorage).filter(key => key.includes('qaap.auth'));
             expect(stored.some(key => run.window.localStorage.getItem(key) === 'true')).to.equal(true);
             // The callback trusts the session endpoint only; it never asks for the auth config.
-            expect(run.requests).to.deep.equal([SESSION]);
+            // The confirmed session then starts the Work Hub data reads with the bundle.
+            expect(run.requests).to.deep.equal([SESSION, PROJECT_SESSIONS, USER_SETTINGS]);
         });
 
         it('falls back to the sign-in gate when the callback session cannot be confirmed', async () => {
@@ -98,6 +102,61 @@ describe('Qaap login gate', () => {
     });
 
     describe('cold start probes', () => {
+        it('renders the mobile sign-in gate immediately while auth probes are still pending', async () => {
+            const run = start(() => new Promise<undefined>(() => undefined), undefined, {
+                headHtml: '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=test">',
+                beforeRun: window => {
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            });
+            const startedAt = Date.now();
+            await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'mobile sign-in gate');
+
+            expect(Date.now() - startedAt).to.be.lessThan(2000);
+            expect(run.document.getElementById('qaap-login-github')?.textContent).to.contain('Sign in with GitHub');
+            expect(run.document.querySelectorAll('script[src*="bundle.js"]')).to.have.length(0);
+            expect(run.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
+            expect((run.window as unknown as { __qaapBundleLoading?: boolean }).__qaapBundleLoading).to.equal(undefined);
+        });
+
+        it('loads the deferred mobile stylesheet with the bundle after session confirmation', async () => {
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : undefined;
+            }, undefined, {
+                headHtml: '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=mobile-test">',
+                beforeRun: window => {
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            });
+
+            await run.bundleAppended;
+
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+            expect(run.document.querySelector('link#qaap-bundle-css')?.getAttribute('href'))
+                .to.equal('./bundle.css?qaap-build=mobile-test');
+        });
+
         it('probes auth config and session in parallel and loads a signed-in user without the gate', async () => {
             const run = start(pathname => {
                 if (pathname === CONFIG) {
@@ -109,6 +168,51 @@ describe('Qaap login gate', () => {
             expect(run.requests.slice(0, 2).sort()).to.deep.equal([CONFIG, SESSION].sort());
             expect(run.requests.filter(request => request === SESSION)).to.have.length(1);
             expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+        });
+
+        it('starts the Work Hub data reads once the session is confirmed, before the bundle boots', async () => {
+            // The frontend only asks for these after all its modules loaded (7-12 s into a cold
+            // page load in logs/perf-baseline); qaap-boot-prefetch.ts hands it these responses.
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : { ok: true, body: {} };
+            });
+            await run.bundleAppended;
+            expect(run.requests).to.include.members([PROJECT_SESSIONS, USER_SETTINGS]);
+            const prefetch = (run.window as unknown as {
+                __qaapBootPrefetch?: Record<string, { startedAt: number; response: Promise<unknown> }>;
+            }).__qaapBootPrefetch;
+            expect(Object.keys(prefetch ?? {}).sort()).to.deep.equal([PROJECT_SESSIONS, USER_SETTINGS].sort());
+            expect(prefetch?.[PROJECT_SESSIONS].startedAt).to.be.a('number');
+            expect(prefetch?.[PROJECT_SESSIONS].response.then).to.be.a('function');
+        });
+
+        it('does not read Work Hub data when the tab reloads into the classic IDE', async () => {
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER } } : { ok: true, body: {} };
+            }, undefined, {
+                beforeRun: window => window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1'),
+            });
+            await run.bundleAppended;
+            expect(run.requests).not.to.include(PROJECT_SESSIONS);
+            expect(run.requests).not.to.include(USER_SETTINGS);
+        });
+
+        it('does not read Work Hub data for a visitor who is not signed in', async () => {
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: false } } : undefined;
+            });
+            await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'sign-in gate');
+            expect(run.requests).not.to.include(PROJECT_SESSIONS);
+            expect(run.requests).not.to.include(USER_SETTINGS);
         });
 
         it('still honours skip-auth dev mode while the session probe runs', async () => {
@@ -157,21 +261,46 @@ describe('Qaap login gate', () => {
             expect((run.document.getElementById('qaap-login-retry') as HTMLButtonElement).hidden).to.equal(true);
         });
 
-        it('offers a retry when the server does not answer, and re-enables GitHub once it does', async () => {
-            let serverUp = false;
-            const run = start(pathname => pathname === CONFIG && serverUp
-                ? { ok: true, body: { skipAuth: false, githubOAuth: true } }
-                : undefined);
-            const retry = (): HTMLButtonElement => run.document.getElementById('qaap-login-retry') as HTMLButtonElement;
-            await run.waitFor(() => retry()?.hidden === false, 'retry button visible');
-            expect(button(run).disabled).to.equal(true);
-            expect(status(run)).to.contain('The Qaap server is not responding.');
+        it('keeps GitHub sign-in available when auth config times out but health is reachable', async () => {
+            let clock: InstalledClock | undefined;
+            const run = start(pathname => {
+                if (pathname === HEALTH) {
+                    return { ok: true, body: { ready: true } };
+                }
+                if (pathname === SESSION) {
+                    return { ok: true, body: { signedIn: false } };
+                }
+                return pathname === CONFIG ? new Promise<undefined>(() => undefined) : undefined;
+            }, 'https://qaap.example/', {
+                beforeRun: window => {
+                    clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
+                    window.matchMedia = (query: string): MediaQueryList => ({
+                        matches: query === '(max-width: 767px), (pointer: coarse)',
+                        media: query,
+                        onchange: null,
+                        addListener: () => undefined,
+                        removeListener: () => undefined,
+                        addEventListener: () => undefined,
+                        removeEventListener: () => undefined,
+                        dispatchEvent: () => false,
+                    } as MediaQueryList);
+                },
+            });
+            const retry = run.document.getElementById('qaap-login-retry') as HTMLButtonElement;
 
-            serverUp = true;
-            retry().click();
-            await run.waitFor(() => button(run).disabled === false, 'GitHub button re-enabled');
-            expect(button(run).textContent).to.contain('Sign in with GitHub');
-            expect(retry().hidden).to.equal(true);
+            try {
+                await run.waitFor(() => button(run) !== null, 'GitHub sign-in button');
+                expect((await run.window.fetch(HEALTH)).ok).to.equal(true);
+                await clock!.tickAsync(4000);
+
+                expect(button(run).disabled).to.equal(false);
+                expect(button(run).textContent).to.contain('Sign in with GitHub');
+                expect(status(run)).to.not.contain('The Qaap server is not responding.');
+                expect(retry.hidden).to.equal(true);
+                expect(run.requests.filter(request => request === CONFIG)).to.have.length(2);
+            } finally {
+                clock?.uninstall();
+            }
         });
 
         it('never offers retry or local mode on a production runtime', async () => {
@@ -242,15 +371,19 @@ describe('Qaap login gate', () => {
             expect(run.document.activeElement).to.equal(github);
         });
 
-        it('wraps to the first visible control when the leading buttons are disabled or hidden', async () => {
-            const run = start(() => undefined);
-            const retry = (): HTMLButtonElement => run.document.getElementById('qaap-login-retry') as HTMLButtonElement;
-            await run.waitFor(() => retry()?.hidden === false, 'retry button visible');
+        it('wraps between visible links when the leading buttons are disabled or hidden', async () => {
+            const run = start(pathname => pathname === CONFIG
+                ? { ok: true, body: { skipAuth: false, githubOAuth: false } }
+                : undefined);
+            await run.waitFor(() => (run.document.getElementById('qaap-login-github') as HTMLButtonElement)?.disabled === true,
+                'GitHub button disabled');
+            const terms = run.document.querySelector('a[href="/legal/terms.html"]') as HTMLAnchorElement;
             const privacy = run.document.querySelector('a[href="/legal/privacy.html"]') as HTMLAnchorElement;
-            // GitHub is disabled and local mode hidden: Retry is the first reachable control.
+
+            // GitHub is disabled; local mode and retry are hidden, leaving the legal links reachable.
             privacy.focus();
             expect(tab(run).defaultPrevented).to.equal(true);
-            expect(run.document.activeElement).to.equal(retry());
+            expect(run.document.activeElement).to.equal(terms);
             expect(tab(run, true).defaultPrevented).to.equal(true);
             expect(run.document.activeElement).to.equal(privacy);
         });
@@ -418,4 +551,3 @@ describe('Qaap login gate', () => {
         });
     });
 });
-

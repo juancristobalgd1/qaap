@@ -395,11 +395,17 @@ export function ensureTranscriptConversationRefreshExtracted(ctx: MobileProjects
                 void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
             }
         }
-        if (!ctx.host.transcriptScheduleRefresh) {
+        // A new task opens as the `pending-new-chat-*` placeholder; after submit the open id is the
+        // created task but the controller (and transcriptScheduleRefresh) still watch the
+        // placeholder, so every refresh/poll was a no-op until a tab switch. Re-watch the real id.
+        const controller = ctx.transcriptLiveController;
+        if (!ctx.host.transcriptScheduleRefresh || !controller?.isWatchingConversation(context.summary.id)) {
             ctx.scheduleTranscriptConversationRefresh(context.project, context.summary, context.chatHost);
+            ctx.ensureTranscriptLiveController().ensureActivePoll();
             void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
+        controller.ensureActivePoll();
         const liveStatus = ctx.host.transcriptLastConv?.status ?? context.summary.status;
         if (liveStatus !== 'streaming') {
             void ctx.refreshOpenTranscriptConversation({ forcePoll: true });

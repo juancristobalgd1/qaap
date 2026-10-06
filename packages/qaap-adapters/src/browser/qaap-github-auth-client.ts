@@ -35,6 +35,7 @@ import {
 } from '../common/qaap-github-api-types';
 import { rememberQaapHostedRuntime } from '../common/qaap-hosted-runtime';
 import { fetchQaapGetWithTransientRetry } from '../common/qaap-transient-get';
+import { takeQaapBootPrefetch } from './qaap-boot-prefetch';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     clearQaapAuthSession,
@@ -212,7 +213,7 @@ export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {
 }
 
 export async function fetchQaapProjectSessions(): Promise<QaapProjectSessionsResponse> {
-    const response = await fetchQaapOrTimeoutError(
+    const response = await takeQaapBootPrefetch(`${QAAP_GITHUB_API_PATH}/project-sessions`, QAAP_API_REQUEST_TIMEOUT_MS) ?? await fetchQaapOrTimeoutError(
         `${QAAP_GITHUB_API_PATH}/project-sessions`,
         qaapAuthenticatedFetchInit(),
         QAAP_API_REQUEST_TIMEOUT_MS,
@@ -549,7 +550,7 @@ export async function cancelQaapGithubWorkspaceJob(id: string): Promise<QaapGith
 }
 
 export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>> {
-    const response = await fetchQaapOrTimeoutError(
+    const response = await takeQaapBootPrefetch(QAAP_USER_SETTINGS_API_PATH, QAAP_API_REQUEST_TIMEOUT_MS) ?? await fetchQaapOrTimeoutError(
         QAAP_USER_SETTINGS_API_PATH,
         qaapAuthenticatedFetchInit(),
         QAAP_API_REQUEST_TIMEOUT_MS,

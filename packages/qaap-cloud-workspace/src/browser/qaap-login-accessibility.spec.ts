@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const sourceRoot = path.resolve(__dirname, '../../src');
-const read = (relativePath: string): string => fs.readFileSync(path.join(sourceRoot, relativePath), 'utf8');
+// Windows checkouts use CRLF; the contract slices source text by '\n', so normalize first.
+const read = (relativePath: string): string => fs.readFileSync(path.join(sourceRoot, relativePath), 'utf8').replace(/\r\n/g, '\n');
 
 describe('Qaap login gate accessibility contract', () => {
 
@@ -23,10 +24,24 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('id="qaap-login-retry"');
         expect(source).to.include('productionRuntime = config.productionRuntime === true');
         expect(source).to.include('!productionRuntime && config.skipAuth === true');
-        expect(source).to.include('retryButton && !productionRuntime');
         expect(source).to.include('host.querySelectorAll<HTMLElement>(');
         expect(source).to.not.include("githubButton.addEventListener('keydown'");
         expect(source).to.not.include('data-qaap-link');
+    });
+
+    it('leaves GitHub sign-in available when the auth config probe fails', () => {
+        const source = read('browser/qaap-login-gate.ts');
+        const catchStart = source.indexOf('    } catch {');
+        const catchEnd = source.indexOf('\n    }\n}', catchStart);
+        const catchBody = source.slice(catchStart, catchEnd);
+
+        expect(catchStart).to.be.greaterThan(-1);
+        expect(catchBody).to.include("status.textContent = ''");
+        expect(catchBody).to.include('retryButton.hidden = true');
+        expect(catchBody).to.include('retryButton.disabled = false');
+        expect(catchBody).to.not.include('setGithubUnavailable');
+        expect(source).to.not.include('qaap/auth/serverUnavailable');
+        expect(source).to.not.include('The Qaap server is not responding.');
     });
 
     it('keeps the pre-bundle gate in sync with the accessible contract', () => {
@@ -42,7 +57,8 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('id="qaap-login-retry"');
         expect(source).to.include('productionRuntime = config.productionRuntime === true');
         expect(source).to.include('!productionRuntime && config.skipAuth === true');
-        expect(source).to.include('retry && !productionRuntime');
+        expect(source).to.include('retry.hidden = true');
+        expect(source).to.include('retry.disabled = false');
         expect(source).to.include('.qaap-login-footer a:focus-visible');
         expect(source).to.include('cursor:not-allowed');
         expect(source).to.include('.qaap-login-btn[aria-busy="true"]{cursor:wait}');
@@ -52,6 +68,7 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('function showGateAndLoadBundle()');
         expect(source).to.include('if (skipped === false)');
         expect(source).to.include('return undefined;');
+        expect(source).to.not.include('The Qaap server is not responding.');
         expect(source).to.not.include('.qaap-login-btn:disabled{opacity:.85;cursor:wait}');
     });
 

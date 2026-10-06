@@ -441,6 +441,19 @@ export class MobileProjectsTranscriptLiveUi {
         ensureTranscriptConversationRefreshExtracted(this);
     }
 
+    /**
+     * Live channel (WebSocket / SSE) reconnected: events may have been missed while it was down, so
+     * always rehydrate the open task from the server and keep the active-task poll armed.
+     */
+    handleTranscriptTransportReconnected(): void {
+        if (!this.host.transcriptOpenSummaryId) {
+            return;
+        }
+        this.ensureTranscriptConversationRefresh();
+        this.ensureTranscriptLiveController().ensureActivePoll();
+        void this.refreshOpenTranscriptConversation({ forcePoll: true });
+    }
+
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public scheduleTranscriptVisualVerificationPoll(conversationId: string): void {
         scheduleTranscriptVisualVerificationPollExtracted(this, conversationId);
