@@ -1027,6 +1027,32 @@ describe('QaapDockerOrchestrator', () => {
             expect(fakeDocker.createdNetworks.some(network => network.Name.startsWith('qaap-egress-v1-'))).to.equal(false);
         });
 
+        it('passes QAAP_AGENT_LEDGER to the tenant backend only when the flag is on', async () => {
+            const previous = process.env.QAAP_AGENT_LEDGER;
+            try {
+                for (const flag of [undefined, 'on']) {
+                    if (flag === undefined) {
+                        delete process.env.QAAP_AGENT_LEDGER;
+                    } else {
+                        process.env.QAAP_AGENT_LEDGER = flag;
+                    }
+                    const usersRoot = configureDirectEgressEnvironment();
+                    const fakeDocker = createFakeTenantBackendDocker();
+                    const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+                    await ensureTenant(orchestrator, path.join(usersRoot, 'alice'), 'alice');
+                    const backend = fakeDocker.created.find(container => container.name === orchestrator.backendContainerNameForTenant('alice'));
+                    const ledgerEnv = (backend?.options.Env as string[] | undefined ?? []).filter(entry => entry.startsWith('QAAP_AGENT_LEDGER='));
+                    expect(ledgerEnv).to.deep.equal(flag ? ['QAAP_AGENT_LEDGER=on'] : []);
+                }
+            } finally {
+                if (previous === undefined) {
+                    delete process.env.QAAP_AGENT_LEDGER;
+                } else {
+                    process.env.QAAP_AGENT_LEDGER = previous;
+                }
+            }
+        });
+
         it('disconnects an existing worker and backend from direct egress when the allowlist proxy is enabled', async () => {
             const usersRoot = configureDirectEgressEnvironment();
             const fakeDocker = createFakeTenantBackendDocker();

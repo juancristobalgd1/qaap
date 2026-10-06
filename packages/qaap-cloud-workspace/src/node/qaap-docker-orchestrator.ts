@@ -32,6 +32,7 @@ import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusy
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
+import { QaapAgentRunLedger } from './qaap-agent-run-ledger';
 import {
     QAAP_TENANT_AGENT_STORAGE_DIRNAME,
     QAAP_TENANT_AGENT_STORAGE_ROOT_ENV,
@@ -1142,6 +1143,8 @@ export class QaapDockerOrchestrator {
                 `QAAP_TENANT_BACKEND_SECRET=${secret}`,
                 `QAAP_TENANT_LOGIN=${ownerLogin}`,
                 `QAAP_SQLITE_STORE_PATH=${TENANT_BACKEND_SQLITE_STORE_PATH}`,
+                // The agent-run ledger lives in this tenant's SQLite; with the flag off the env is unchanged.
+                ...(QaapAgentRunLedger.isEnabled() ? [`${QaapAgentRunLedger.FLAG_ENV}=on`] : []),
                 // Agent processes use the image's private non-root HOME and put package caches and
                 // harness databases on this tenant's disk-backed config mount.
                 `${QAAP_TENANT_AGENT_STORAGE_ROOT_ENV}=${this.getTenantBackendAgentStorageRoot()}`,
