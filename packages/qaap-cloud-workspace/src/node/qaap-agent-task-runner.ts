@@ -41,7 +41,7 @@ import {
     resolveAgentCliPrefixForEnv,
 } from './qaap-agent-cli-prefix';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
-import type { QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
+import { QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL, type QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
@@ -1412,6 +1412,16 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** HOME, npm prefix, uid/gid and cache env used by this caller's tenant-scoped npm install. */
     resolveAgentCliInstallTarget(ownerLogin?: string): QaapAgentCliInstallTarget {
         const cwd = this.resolveOwnerCwd(ownerLogin);
+        if (this.tenantSpawn.isContainerIsolationEnabled()) {
+            // Agents run in the tenant worker (`docker exec`), whose only persistent disk is the
+            // tenant's repos mount. A prefix resolved here is a path of this backend that the worker
+            // never sees, and npm would run with this backend's uid: refuse instead of installing.
+            return {
+                home: this.resolveAgentCliHome(cwd),
+                prefix: this.resolveAgentCliPrefix(cwd),
+                unavailableReason: QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL,
+            };
+        }
         let identity: { uid?: number; gid?: number };
         try {
             identity = this.resolveAgentSpawnIdentity(cwd);

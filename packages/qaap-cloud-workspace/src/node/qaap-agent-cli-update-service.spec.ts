@@ -12,6 +12,7 @@ import {
     describeQaapNpmInstallFailure,
     resolveQaapNpmWorkDirectories,
     type QaapAgentCliInstallTarget,
+    type QaapCliPrefixWritability,
     isInPlaceCliUpdateAllowed,
     QaapAgentCliUpdateService,
     QAAP_ALLOW_IN_PLACE_CLI_UPDATE,
@@ -46,8 +47,8 @@ class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
         return this.result;
     }
 
-    protected override async prepareInstallDirectoriesAsTarget(): Promise<boolean> {
-        return true;
+    protected override async prepareInstallDirectoriesAsTarget(): Promise<QaapCliPrefixWritability> {
+        return 'writable';
     }
 
     protected override async probeInstalled(): Promise<{ bin?: string; version?: string }> {
@@ -60,8 +61,8 @@ class NpmUpdateResultProbe extends QaapAgentCliUpdateService {
 }
 
 class ReadOnlyNpmUpdateProbe extends NpmUpdateResultProbe {
-    protected override async prepareInstallDirectoriesAsTarget(): Promise<boolean> {
-        return false;
+    protected override async prepareInstallDirectoriesAsTarget(): Promise<QaapCliPrefixWritability> {
+        return 'read-only';
     }
 }
 
