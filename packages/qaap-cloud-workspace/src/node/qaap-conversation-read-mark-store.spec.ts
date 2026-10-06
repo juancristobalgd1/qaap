@@ -10,6 +10,7 @@ import * as path from 'path';
 import { resolveQaapConversationAgentActivityAt } from '@theia/qaap-shared-core/lib/common/qaap-conversation-read-marks';
 import { QaapConversationReadMarkEndpoint } from './qaap-conversation-read-mark-endpoint';
 import { QaapConversationReadMarkStore } from './qaap-conversation-read-mark-store';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestReadMarkStore extends QaapConversationReadMarkStore {
     constructor(protected readonly databasePath: string) {
@@ -52,6 +53,8 @@ describe('QaapConversationReadMarkStore', () => {
     });
 
     afterEach(() => {
+        // Windows refuses to delete an open SQLite file: close the connection first.
+        QaapSqliteConnectionRegistry.shared.closeUnder(dir);
         fs.rmSync(dir, { recursive: true, force: true });
     });
 
