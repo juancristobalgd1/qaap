@@ -747,8 +747,6 @@ export class MobileWorkHubSessionsSidebar {
             return;
         }
         if (!pullRequests && !options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
-            // Skipped only while a tap/open settles: retry so the update is never lost.
-            this.scheduleDeferredRefresh();
             return;
         }
         const previousScrollTop = this.scrollHost.scrollTop;

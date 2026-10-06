@@ -155,7 +155,9 @@ export function shouldSkipSessionsSidebarListRenderExtracted(ctx: MobileProjects
 }
 
 export function shouldDeferSessionsSidebarListRefreshExtracted(ctx: MobileProjectsSessionsSidebarUiContext): boolean {
-    if (ctx.isSessionsSidebarInteractionGuardActive()) {
+    // Transient blockers defer (the sidebar retries) instead of skipping: an update that lands
+    // while a tap or an open settles must still be painted once it does.
+    if (ctx.isSessionsSidebarInteractionGuardActive() || ctx.sessionsSidebarOpeningConversationId) {
         return true;
     }
     const now = Date.now();
