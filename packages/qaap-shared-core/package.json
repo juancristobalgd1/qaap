@@ -9,6 +9,7 @@
     "@theia/ai-claude-code": "1.73.0",
     "@theia/ai-copilot": "1.73.0",
     "@theia/ai-core": "1.73.0",
+    "@theia/collaboration": "1.73.0",
     "@theia/core": "1.73.0",
     "@theia/filesystem": "1.73.0",
     "@theia/memory-inspector": "1.73.0",

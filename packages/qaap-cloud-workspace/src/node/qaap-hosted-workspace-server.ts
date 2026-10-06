@@ -38,6 +38,18 @@ export class QaapHostedWorkspaceServer extends DefaultWorkspaceServer {
         return this.filterOwnedRecents(recents);
     }
 
+    /**
+     * Upstream keeps one most recent workspace per backend process, whatever login set it. Hand out
+     * only a repository of the asking login; otherwise its own most recent one.
+     */
+    override async getMostRecentlyUsedWorkspace(): Promise<string | undefined> {
+        const uri = await super.getMostRecentlyUsedWorkspace();
+        if (!uri || (!isForbiddenHostedWorkspaceUri(new URI(uri)) && this.currentLoginOwnsWorkspaceUri(uri))) {
+            return uri;
+        }
+        return (await this.getRecentWorkspaces())[0];
+    }
+
     override async setMostRecentlyUsedWorkspace(rawUri: string): Promise<void> {
         if (rawUri && (isForbiddenHostedWorkspaceUri(new URI(rawUri)) || !this.currentLoginOwnsWorkspaceUri(rawUri))) {
             return;
