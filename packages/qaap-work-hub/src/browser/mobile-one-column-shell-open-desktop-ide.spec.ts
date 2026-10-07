@@ -14,7 +14,7 @@ import URI from '@theia/core/lib/common/uri';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
-import { onProjectsPanelOpenInIdeExtracted, openDesktopIdeExtracted, prepareDesktopIdeWorkspaceFromHubExtracted } from './mobile-one-column-shell-contribution-timeline';
+import { openDesktopIdeExtracted, prepareDesktopIdeWorkspaceFromHubExtracted } from './mobile-one-column-shell-contribution-timeline';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -41,8 +41,6 @@ interface Harness {
     readonly ctx: MobileOneColumnShellContributionContext;
     readonly opened: string[];
     readonly events: string[];
-    /** Projects opened as this page's workspace without a reload. */
-    readonly openedInPlace: string[];
     closed: number;
     prepared: number;
     /** Times the page allowed the plugin host to start. */
@@ -55,8 +53,6 @@ interface HarnessOptions {
     readonly shown?: MobileProjectEntry;
     readonly currentCwd?: string;
     readonly currentProjectMatches?: boolean;
-    /** `QaapWorkspaceService` can open a project in this page (only while no workspace is open). */
-    readonly inPlace?: boolean;
 }
 
 function harness(options: HarnessOptions = {}): Harness {
@@ -67,7 +63,6 @@ function harness(options: HarnessOptions = {}): Harness {
     const result: Harness = {
         opened: [],
         events: [],
-        openedInPlace: [],
         closed: 0,
         prepared: 0,
         pluginStarts: 0,
@@ -100,14 +95,6 @@ function harness(options: HarnessOptions = {}): Harness {
                 result.prepared++;
                 return cwdOf(project);
             },
-            openProjectWithoutReload: async (project: MobileProjectEntry): Promise<boolean> => {
-                if (!options.inPlace || options.currentCwd) {
-                    return false;
-                }
-                result.events.push(`in place ${project.id}`);
-                result.openedInPlace.push(project.id);
-                return true;
-            },
             openInCurrentWindowAsync: async (project: MobileProjectEntry): Promise<boolean> => {
                 const cwd = cwdOf(project) ?? project.id;
                 result.events.push(`open ${cwd}`);
@@ -115,11 +102,7 @@ function harness(options: HarnessOptions = {}): Harness {
                 return true;
             },
         },
-        workspaceService: {
-            opened: !!options.currentCwd,
-            close: async (): Promise<void> => { result.closed++; },
-        },
-        scheduleSnapAndUiRefresh: (): void => undefined,
+        workspaceService: { close: async (): Promise<void> => { result.closed++; } },
         pluginStartGate: { release: (): void => { result.pluginStarts++; } },
         prepareDesktopIdeWorkspaceFromHub: (selected?: string | MobileProjectEntry): Promise<boolean> =>
             prepareDesktopIdeWorkspaceFromHubExtracted(ctx, selected),
@@ -136,44 +119,7 @@ describe('openDesktopIdeExtracted', () => {
         document.body.replaceChildren();
     });
 
-    it('opens the project the hub shows in this page when the hub has no workspace (prod 2026-10-06: full reload, tree after ~22 s)', async () => {
-        // Hosted desktop hub at `/` without a hash: no workspace, so #202's "already open" check
-        // never matched and the click reloaded into `/#/workspace/repos/...`.
-        const h = harness({ shown: githubProject('shadcn-landing-page'), inPlace: true });
-        await openDesktopIdeExtracted(h.ctx);
-        expect(h.events).to.deep.equal(['ide', 'in place github:acme/shadcn-landing-page']);
-        expect(h.opened).to.deep.equal([]);
-        expect(h.closed).to.equal(0);
-        expect(h.pluginStarts).to.equal(1);
-    });
-
-    it('opens the project project-sessions resolves in this page when the hub has no workspace', async () => {
-        const h = harness({ inPlace: true });
-        const done = openDesktopIdeExtracted(h.ctx);
-        h.resolveProjects([recentProject('shadcn-landing-page', { pinned: true })]);
-        await done;
-        expect(h.openedInPlace).to.deep.equal([`recent:file://${REPOS}/shadcn-landing-page`]);
-        expect(h.opened).to.deep.equal([]);
-        expect(h.pluginStarts).to.equal(1);
-    });
-
-    it('still reloads to switch from another open workspace', async () => {
-        const h = harness({ shown: githubProject('shadcn-landing-page'), currentCwd: `${REPOS}/vitesse-lite`, inPlace: true });
-        await openDesktopIdeExtracted(h.ctx);
-        expect(h.openedInPlace).to.deep.equal([]);
-        expect(h.opened).to.deep.equal([`${REPOS}/shadcn-landing-page`]);
-        expect(h.pluginStarts).to.equal(0);
-    });
-
-    it('"Open in IDE" from the project list also opens in this page when the hub has no workspace', async () => {
-        const h = harness({ inPlace: true });
-        await onProjectsPanelOpenInIdeExtracted(h.ctx, githubProject('shadcn-landing-page'));
-        expect(h.events).to.deep.equal(['in place github:acme/shadcn-landing-page', 'ide']);
-        expect(h.opened).to.deep.equal([]);
-        expect(h.pluginStarts).to.equal(1);
-    });
-
-    it('reloads into the project the hub shows when it cannot open in place (cached github id, recent id in the fresh list)', async () => {
+    it('opens the project the hub shows on a cold hosted start (cached github id, recent id in the fresh list)', async () => {
         // Production 2026-10-05: no workspace root (hosted container), the hub painted from cached
         // project sessions, and the fresh list names the same repo `recent:file:///…`.
         const h = harness({ shown: githubProject('shadcn-landing-page') });

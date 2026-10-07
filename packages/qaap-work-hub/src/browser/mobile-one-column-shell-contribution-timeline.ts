@@ -267,17 +267,12 @@ function toDesktopIdeHubProject(ctx: MobileOneColumnShellContributionContext, pr
     };
 }
 
-/** Resolves `true` when the page reloads into the project's workspace (`false` when it opened in place). */
+/** Resolves `true` when the page reloads into the project's workspace. */
 async function openDesktopIdeProjectExtracted(ctx: MobileOneColumnShellContributionContext, project: MobileProjectEntry): Promise<boolean> {
     // The Hub can show a cached GitHub entry while Theia has the same repository open under a
     // different workspace path. Keep the current workspace in that case: WorkspaceService.open
     // reloads the page even when the workspace is already inside the selected repository.
     if (ctx.projectsService.projectMatchesCurrentWorkspace(project)) {
-        return false;
-    }
-    // A hosted desktop hub runs at `/` with no workspace (prod 2026-10-06): open the project in
-    // this page instead of reloading into it, which cost ~20 s (modules, backend, plugins again).
-    if (!ctx.workspaceService.opened && await ctx.projectsService.openProjectWithoutReload(project)) {
         return false;
     }
     let cwd = ctx.projectsService.getProjectCwd(project);
@@ -437,11 +432,6 @@ export async function onProjectsPanelOpenInIdeExtracted(ctx: MobileOneColumnShel
             return;
         }
         markPreferDesktopIde();
-        if (ctx.ideFallback && !ctx.workspaceService.opened && await ctx.projectsService.openProjectWithoutReload(project)) {
-            ctx.ideFallback.openDesktopIde();
-            ctx.pluginStartGate.release();
-            return;
-        }
         await ctx.projectsService.openInCurrentWindowAsync(project);
     } finally {
         if (!peekPreferDesktopIde()) {
