@@ -7,8 +7,12 @@ import URI from '@theia/core/lib/common/uri';
 import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { normalizeQaapPreviewProjectId } from './qaap-preview-identity';
 
+/** Every task worktree lives in `{tmpdir}/qaap-worktrees/{tenant}/{slug}` (`resolveQaapWorktreesRoot`). */
+const QAAP_WORKTREES_SEGMENT = 'qaap-worktrees';
+
 /**
- * Canonical identity of a Work Hub project for removal checks: `github:owner/repo`, lower-cased.
+ * Canonical identity of a Work Hub project for removal checks: `github:owner/repo`, lower-cased, or
+ * `worktree:tenant/slug` for a task worktree card (removed on its own, its source clone may still be listed).
  *
  * The hub addresses one clone through several keys: `github:owner/repo`,
  * `ws:file:///…/users/<login>/<owner>/<repo>`, `recent:file:///…`, a bare `file:` URI, or a
@@ -24,9 +28,10 @@ export function qaapProjectRemovalIdentity(projectKey: string | undefined, userR
     if (!trimmed) {
         return undefined;
     }
-    if (/^github:/i.test(trimmed)) {
-        const [owner, name] = trimmed.slice('github:'.length).split('/');
-        return owner && name ? `github:${owner}/${name}`.toLowerCase() : undefined;
+    const keyed = /^(github|worktree):/i.exec(trimmed);
+    if (keyed) {
+        const [owner, name] = trimmed.slice(keyed[0].length).split('/');
+        return owner && name ? `${keyed[1]}:${owner}/${name}`.toLowerCase() : undefined;
     }
     const location = normalizeQaapPreviewProjectId(trimmed);
     let filesystemPath: string;
@@ -37,8 +42,24 @@ export function qaapProjectRemovalIdentity(projectKey: string | undefined, userR
     } else {
         filesystemPath = location;
     }
-    const fullName = fullNameUnderUserReposRoot(filesystemPath, userReposRoot) ?? parseGithubFullNameFromWorkspacePath(filesystemPath);
-    return fullName ? `github:${fullName}` : undefined;
+    const fullName = fullNameUnderUserReposRoot(filesystemPath, userReposRoot);
+    if (fullName) {
+        return `github:${fullName}`;
+    }
+    const worktree = worktreeOfPath(filesystemPath);
+    if (worktree) {
+        return `worktree:${worktree}`;
+    }
+    const parsedFullName = parseGithubFullNameFromWorkspacePath(filesystemPath);
+    return parsedFullName ? `github:${parsedFullName}` : undefined;
+}
+
+/** `tenant/slug` (lower-cased) of a path in a task worktree. */
+function worktreeOfPath(filesystemPath: string): string | undefined {
+    const segments = filesystemPath.replace(/\\/g, '/').split('/').filter(Boolean);
+    const root = segments.lastIndexOf(QAAP_WORKTREES_SEGMENT);
+    const [tenant, slug] = root >= 0 ? segments.slice(root + 1) : [];
+    return tenant && slug ? `${tenant}/${slug}`.toLowerCase() : undefined;
 }
 
 function fullNameUnderUserReposRoot(filesystemPath: string, userReposRoot: string | undefined): string | undefined {

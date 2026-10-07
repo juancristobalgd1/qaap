@@ -27,6 +27,8 @@ export interface MobileProjectEntry {
     cost: string;
     pinned: boolean;
     uri?: URI;
+    /** Source clone (filesystem path) of a task worktree card, from its conversations' `parallelBaseCwd`. */
+    worktreeSourceCwd?: string;
     github?: {
         owner: string;
         name: string;

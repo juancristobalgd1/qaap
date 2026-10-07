@@ -36,6 +36,7 @@ interface RemovedRepositoryEndpoint {
     handleOpenGithubRepository(req: unknown, res: FakeResponse): Promise<void>;
     handleUpsertProjectSession(req: unknown, res: FakeResponse): void;
     handleProjectSessions(req: unknown, res: FakeResponse): void;
+    handleRemoveWorktreeProject(req: unknown, res: FakeResponse): void;
 }
 
 // Production bug: removing the open project deleted the clone, then the still-open hub re-registered
@@ -132,6 +133,25 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
         expect((res.body as { code?: string }).code).to.equal('repository_removed');
         expect(fs.existsSync(clonePath())).to.equal(false);
         expect(listedRepoKeys()).to.deep.equal([]);
+    });
+
+    // Production (juancristobalgd1): the card of task worktree 733cf503 came back after every removal.
+    it('keeps a removed task worktree card removed, whatever key the hub lists it under', () => {
+        const worktreeKey = 'ws:file:///tmp/qaap-worktrees/alice/733cf503';
+        endpoint.projectSessions.upsertForUser(login, { repoKey: worktreeKey });
+
+        const res = makeRes();
+        endpoint.handleRemoveWorktreeProject({ params: { slug: '733cf503' } }, res);
+        endpoint.handleUpsertProjectSession({ body: { repoKey: worktreeKey, agentState: 'working' } }, makeRes());
+        endpoint.handleRemoveWorktreeProject({ params: { slug: '..' } }, makeRes());
+
+        expect(res.statusCode).to.equal(200);
+        expect(listedRepoKeys()).to.deep.equal(['github:acme/shop']);
+        const listing = makeRes();
+        endpoint.handleProjectSessions({}, listing);
+        expect((listing.body as { removedProjects?: string[] }).removedProjects).to.deep.equal(['worktree:alice/733cf503']);
+        // A worktree removal is not a clone: nothing to forget through the repository contributions.
+        expect(removals).to.deep.equal([]);
     });
 
     it('does not let a project-session upsert bring a removed repository back', async () => {
@@ -332,6 +352,73 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
 
         expect(res.statusCode).to.equal(200);
         expect(clones).to.deep.equal(['acme/shop']);
+    });
+});
+
+// Production (juancristobalgd1, build 5f646fd80): the lazy migration ran on the first listing yet task worktree
+// 733cf503 of the removed vyyq stayed on disk, and nothing retried before the next backend restart.
+describe('QaapGithubOauthEndpoint forgets a removed repository independently of slow removal contributions', () => {
+
+    const login = 'juancristobalgd1';
+    const worktree = '/tmp/qaap-worktrees/juancristobalgd1/733cf503';
+    let deletedWorktrees: string[];
+    let contributionCalls: number;
+
+    const createEndpoint = (onRepositoryRemoved: () => Promise<void>): { forgetRemovedRepositories(login: string, identities: readonly string[]): void } => {
+        const instance = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(instance, {
+            reposRoot: '/workspace/repos',
+            forgottenRemovals: new Set<string>(),
+            listRepositoryWorktrees: async (_login: string, identity: string, userReposRoot: string) => {
+                expect([identity, userReposRoot]).to.deep.equal(['github:juancristobalgd1/vyyq', path.join('/workspace/repos', 'users', login)]);
+                return [worktree];
+            },
+            removeRepositoryWorktree: async (worktreePath: string) => {
+                deletedWorktrees.push(worktreePath);
+                return true;
+            },
+            removalContributions: {
+                getContributions: () => [{ onRepositoryRemoved: () => { contributionCalls++; return onRepositoryRemoved(); } }],
+            },
+        });
+        return instance as unknown as { forgetRemovedRepositories(login: string, identities: readonly string[]): void };
+    };
+
+    beforeEach(() => {
+        deletedWorktrees = [];
+        contributionCalls = 0;
+    });
+
+    const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 20));
+
+    it('deletes the task worktrees while a contribution is still waiting', async () => {
+        const endpoint = createEndpoint(() => new Promise<void>(() => undefined));
+
+        endpoint.forgetRemovedRepositories(login, ['github:juancristobalgd1/vyyq']);
+        await settle();
+
+        expect(deletedWorktrees).to.deep.equal([worktree]);
+    });
+
+    it('retries on the next listing when a contribution failed', async () => {
+        const endpoint = createEndpoint(async () => { throw new Error('terminal store busy'); });
+
+        endpoint.forgetRemovedRepositories(login, ['github:juancristobalgd1/vyyq']);
+        await settle();
+        endpoint.forgetRemovedRepositories(login, ['github:juancristobalgd1/vyyq']);
+        await settle();
+
+        expect(contributionCalls).to.equal(2);
+    });
+
+    it('never treats a removed worktree card as a repository to forget', async () => {
+        const endpoint = createEndpoint(async () => undefined);
+
+        endpoint.forgetRemovedRepositories(login, ['worktree:juancristobalgd1/733cf503']);
+        await settle();
+
+        expect(contributionCalls).to.equal(0);
+        expect(deletedWorktrees).to.deep.equal([]);
     });
 });
 

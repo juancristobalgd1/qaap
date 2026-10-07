@@ -33,11 +33,22 @@ export class QaapRemovedRepositoryCleanup implements QaapRepositoryRemovalContri
     @inject(QaapHostedWorkspaceServer)
     protected readonly workspaceServer: QaapHostedWorkspaceServer;
 
+    /**
+     * Each kind of state is forgotten on its own: archiving waits until the conversation store restored
+     * (task recovery, turn auto-resume: minutes after a restart), and the terminal sessions and recent
+     * workspaces it gated stayed behind (production, Oct 2026). Rejects when any of them failed.
+     */
     async onRepositoryRemoved(removal: QaapRepositoryRemoval): Promise<void> {
         const inRepository = (location: string | undefined): boolean => this.isInRemovedRepository(removal, location);
-        await this.archiveConversations(removal, inRepository);
-        await this.terminalSessions.deleteWorkspaces(removal.login, inRepository);
-        await this.workspaceServer.removeRecentWorkspacesOf(removal.login, inRepository);
+        const results = await Promise.allSettled([
+            this.terminalSessions.deleteWorkspaces(removal.login, inRepository),
+            this.workspaceServer.removeRecentWorkspacesOf(removal.login, inRepository),
+            this.archiveConversations(removal, inRepository),
+        ]);
+        const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        if (failure) {
+            throw failure.reason;
+        }
     }
 
     /** Archived, not deleted: the transcripts stay recoverable, the hub just stops listing them. */
