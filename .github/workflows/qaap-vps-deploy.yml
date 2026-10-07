@@ -29,6 +29,10 @@ on:
       - 'logo/**'
       - '.github/**'
       - 'examples/playwright/**'
+      # Test-only changes are proven by PR CI; they never change what runs in production.
+      - '**/*.spec.ts'
+      - '**/*.spec.tsx'
+      - '**/*.spec.js'
 
 concurrency:
   group: qaap-vps-deploy
@@ -160,14 +164,13 @@ jobs:
     name: Publish immutable GHCR image
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: [resolve_source, gate]
-    # Publish only after the gate passed, or after an explicit emergency skip. Failed gates never
-    # produce a deployable image.
+    # Build the image while the gate runs: the gate takes ~4 min and the build ~17 min, so waiting
+    # for the gate first only adds latency. The deploy job still requires the gate, so a failed gate
+    # never reaches the VPS; an image built for a failed gate is just an unused tag in GHCR.
+    needs: [resolve_source]
     if: >-
-      always()
-      && github.repository == 'juancristobalgd1/qaap'
+      github.repository == 'juancristobalgd1/qaap'
       && needs.resolve_source.result == 'success'
-      && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && github.event_name == 'workflow_dispatch' && inputs.skip_gate))
     permissions:
       contents: read
       packages: write
