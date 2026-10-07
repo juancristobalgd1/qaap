@@ -38,6 +38,7 @@ export type MobileProjectsServiceContextMember =
     | 'isBrowsableHubProject'
     | 'isPinned'
     | 'isProjectContainerWorkspace'
+    | 'isProjectRemovalPending'
     | 'labelProvider'
     | 'latestTimestamp'
     | 'loadGithubProjects'

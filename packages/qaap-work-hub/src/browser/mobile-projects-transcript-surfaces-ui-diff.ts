@@ -10,6 +10,7 @@ import { reconcileAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/comm
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { clearQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -21,6 +22,7 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
             return;
         }
         ctx.host.transcriptPreviewSuppressedByUser = false;
+        clearQaapPreviewDismissedByUser(qaapProjectPreviewDirectory(ctx.host.projectsService, project, ctx.host.preparedCwdByProjectId, summary.cwd));
         const launchGeneration = ++ctx.previewLaunchGeneration;
         const allowAgentFallback = options?.allowAgentFallback !== false;
         let previewTabRevealed = false;

@@ -16,6 +16,7 @@ import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { transcriptPreviewTabProbeModeExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
+import { clearQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 export function stopTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
     if (ctx.transcriptPreviewProbeTimer !== undefined) {
@@ -347,6 +348,7 @@ export async function switchTranscriptPreviewAppExtracted(ctx: MobileProjectsTra
 
     const launchGeneration = ++ctx.previewLaunchGeneration;
     ctx.host.transcriptPreviewSuppressedByUser = false;
+    clearQaapPreviewDismissedByUser(qaapProjectPreviewDirectory(ctx.host.projectsService, project, ctx.host.preparedCwdByProjectId, summary.cwd));
     ctx.host.transcriptPreviewRequestRunning = true;
     ctx.host.transcriptPreviewRequestPending = true;
     ctx.syncHeaderPreviewRunButton(project, summary);

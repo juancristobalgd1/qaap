@@ -30,6 +30,8 @@ import {
 } from './qaap-project-bootstrap-helpers';
 import { DEV_PORT_RECOVERY_MAX_ATTEMPTS } from './qaap-project-bootstrap-service';
 import { takePreviewStartupOutputListener } from './qaap-project-bootstrap-service-activity';
+import { clearQaapPreviewDismissedByUser } from './qaap-preview-user-dismissal';
+import { bootstrapPreviewDismissalDirectory } from './qaap-project-bootstrap-service-timeline';
 
 export async function runInstallExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
         const descriptor = ctx._descriptor;
@@ -375,6 +377,9 @@ export function resetExtracted(ctx: QaapProjectBootstrapServiceContext): void {
 }
 
 export async function focusPreviewExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
+        // Always a user action: the attach path below opens with `{ auto: true }` and would
+        // otherwise only stage while a previous close is remembered.
+        clearQaapPreviewDismissedByUser(bootstrapPreviewDismissalDirectory(ctx));
         const rememberedPort = ctx._previewUrl ? ctx.extractPort(ctx._previewUrl) : ctx._lastPort;
         if (rememberedPort !== undefined && !isReservedIdePort(rememberedPort)) {
             // The probe endpoint fails closed on unclaimed ports (SEC-8) — re-claim before probing
@@ -402,6 +407,9 @@ export async function focusPreviewExtracted(ctx: QaapProjectBootstrapServiceCont
 }
 
 export async function openExistingPreviewExtracted(ctx: QaapProjectBootstrapServiceContext, options?: { auto?: boolean }): Promise<void> {
+        if (!options?.auto) {
+            clearQaapPreviewDismissedByUser(bootstrapPreviewDismissalDirectory(ctx));
+        }
         // Default (user tap): if a ready URL was staged by the auto-open gate, honor the tap and
         // open it now. Agent/tool callers pass `{ auto: true }` to stage without navigating.
         if (ctx._previewUrl) {

@@ -62,6 +62,17 @@ describe('qaap-github-auth-client timeouts', () => {
         expect((await rejection(fetchQaapProjectSessions())).message).to.contain('took too long');
     });
 
+    it('marks an open as explicit only when the caller asks (the server never re-clones a removed project otherwise)', async () => {
+        const bodies: Array<BodyInit | null | undefined> = [];
+        nextFetch = async init => {
+            bodies.push(init?.body);
+            return new Response(JSON.stringify({ repository: {}, workspaceUri: 'file:///w' }), { status: 200 });
+        };
+        await openQaapGithubRepository('a', 'b');
+        await openQaapGithubRepository('a', 'b', { explicit: true });
+        expect(bodies).to.deep.equal([undefined, JSON.stringify({ explicit: true })]);
+    });
+
     it('reports a tenant proxy 504 on open/create as the same timeout, not a raw status', async () => {
         nextFetch = async () => new Response(JSON.stringify({ error: 'Tenant backend timed out' }), { status: 504 });
         expect((await rejection(openQaapGithubRepository('a', 'b'))).message).to.contain('took too long');

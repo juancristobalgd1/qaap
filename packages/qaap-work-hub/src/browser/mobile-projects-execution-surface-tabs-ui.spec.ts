@@ -18,6 +18,7 @@ import {
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import { clearQaapPreviewDismissedByUser, isQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 disableImportJSDOM();
 
@@ -481,6 +482,40 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             ui.dismissExecutionSurfaceSidebar();
             expect(toolbar.parentElement).to.equal(previewHost);
         } finally {
+            root.remove();
+            document.querySelectorAll('.theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop').forEach(element => element.remove());
+        }
+    });
+
+    it('remembers a user close of the Preview drawer until the user picks Preview again', () => {
+        const project = { id: 'p-preview-closed', name: 'Preview closed' } as MobileProjectEntry;
+        const summary = { id: 'conv-preview-closed', cwd: '/srv/fallback' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const root = document.createElement('div');
+        const previewHost = document.createElement('div');
+        previewHost.className = 'theia-mobile-transcript-preview';
+        root.append(previewHost);
+        document.body.append(root);
+        try {
+            const host = createHost({
+                root,
+                transcriptPreviewHost: previewHost,
+                transcriptOpenProject: project,
+                transcriptOpenSummary: summary,
+                projectsService: { getProjectCwd: () => '/srv/users/ana/acme/preview-closed' },
+            });
+            const ui = createUi(host);
+            host.executionSurfaceTabByProjectId.set(project.id, 'preview');
+            ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+
+            host.executionSurfaceSidebar!.element.querySelector<HTMLButtonElement>('.theia-mobile-execution-surface-sidebar-close')!.click();
+            expect(isQaapPreviewDismissedByUser('/srv/users/ana/acme/preview-closed')).to.equal(true);
+            expect(isQaapPreviewDismissedByUser('/srv/users/ana/acme/other')).to.equal(false);
+
+            const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
+            strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select-option[data-tab="preview"]')!.click();
+            expect(isQaapPreviewDismissedByUser('/srv/users/ana/acme/preview-closed')).to.equal(false);
+        } finally {
+            clearQaapPreviewDismissedByUser('/srv/users/ana/acme/preview-closed');
             root.remove();
             document.querySelectorAll('.theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop').forEach(element => element.remove());
         }

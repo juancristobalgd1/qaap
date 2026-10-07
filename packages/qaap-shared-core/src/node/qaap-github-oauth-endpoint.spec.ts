@@ -31,7 +31,7 @@ describe('QaapGithubOauthEndpoint.enrichSessionWithWorkspaceUri', () => {
     beforeEach(() => {
         reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-sessions-uri-'));
         endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
-        Object.assign(endpoint, { reposRoot });
+        Object.assign(endpoint, { reposRoot, projectSessions: { isRepositoryRemoved: () => false } });
     });
 
     afterEach(() => {
@@ -78,7 +78,7 @@ describe('QaapGithubOauthEndpoint skip-auth and on-disk clone sessions', () => {
     beforeEach(() => {
         reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-skip-sessions-'));
         endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
-        Object.assign(endpoint, { reposRoot });
+        Object.assign(endpoint, { reposRoot, projectSessions: { isRepositoryRemoved: () => false } });
     });
 
     afterEach(() => {
@@ -170,15 +170,13 @@ describe('QaapGithubOauthEndpoint.handleDeleteGithubRepository', () => {
                     this.deleted.push({ login: user, repoKey });
                     return true;
                 },
+                markRepositoryRemoved: () => undefined,
             },
             portRegistry: {
                 listForOwnerUnderRoot: () => [],
                 releasePreview: () => true,
             },
-            cleanGithubPathSegment: (value: string | undefined) => {
-                const decoded = typeof value === 'string' ? decodeURIComponent(value).trim() : '';
-                return /^[A-Za-z0-9_.-]+$/.test(decoded) ? decoded : undefined;
-            },
+            cleanGithubPathSegment: QaapGithubOauthEndpoint.prototype['cleanGithubPathSegment'],
             pathExists: async (target: string) => fs.existsSync(target),
             releasePreviewsForWorkspace: QaapGithubOauthEndpoint.prototype['releasePreviewsForWorkspace'],
         });
@@ -213,6 +211,24 @@ describe('QaapGithubOauthEndpoint.handleDeleteGithubRepository', () => {
             handleDeleteGithubRepository(req: { params: { owner: string; repo: string } }, response: typeof res): Promise<void>;
         }).handleDeleteGithubRepository({ params: { owner: '../etc', repo: 'hello' } }, res);
         expect(res.statusCode).to.equal(400);
+    });
+
+    it('never treats dot segments as a repository (x/.. would wipe every clone of the caller)', async () => {
+        const aliceClone = path.join(reposRoot, 'users', login, 'octocat', 'hello');
+        fs.mkdirSync(path.join(aliceClone, '.git'), { recursive: true });
+        for (const params of [
+            { owner: 'octocat', repo: '..' },
+            { owner: 'octocat', repo: '%2E%2E' },
+            { owner: '..', repo: '..' },
+            { owner: 'octocat', repo: '.' },
+        ]) {
+            const res = makeRes();
+            await (endpoint as unknown as {
+                handleDeleteGithubRepository(req: { params: { owner: string; repo: string } }, response: typeof res): Promise<void>;
+            }).handleDeleteGithubRepository({ params }, res);
+            expect(res.statusCode, JSON.stringify(params)).to.equal(400);
+        }
+        expect(fs.existsSync(aliceClone)).to.equal(true);
     });
 
     it('returns 401 and does not delete when the caller is not signed in', async () => {

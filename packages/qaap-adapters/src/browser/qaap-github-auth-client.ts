@@ -382,7 +382,15 @@ export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullReq
     return body as QaapGithubMergePullRequestResponse;
 }
 
-export async function openQaapGithubRepository(owner: string, name: string): Promise<QaapGithubOpenRepositoryResponse> {
+/**
+ * Opens (and clones when missing) a repository workspace. Pass `explicit` only for a user-initiated
+ * import: the server refuses to clone a project the user removed unless it is explicit.
+ */
+export async function openQaapGithubRepository(
+    owner: string,
+    name: string,
+    options: { readonly explicit?: boolean } = {},
+): Promise<QaapGithubOpenRepositoryResponse> {
     const url = `${QAAP_GITHUB_API_PATH}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/open`;
     // POST, not GET: this endpoint clones/pulls to disk, and SameSite=Lax only protects
     // non-GET requests from cross-site initiation.
@@ -392,7 +400,9 @@ export async function openQaapGithubRepository(owner: string, name: string): Pro
     );
     const response = await fetchQaapOrTimeoutError(
         url,
-        qaapAuthenticatedFetchInit({ method: 'POST' }),
+        qaapAuthenticatedFetchInit(options.explicit
+            ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ explicit: true }) }
+            : { method: 'POST' }),
         QAAP_GITHUB_WORKSPACE_TIMEOUT_MS,
         openTimedOut,
     );

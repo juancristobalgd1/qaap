@@ -33,7 +33,7 @@ export const DEFAULT_QAAP_REPOSITORY_IMPORT_API: QaapRepositoryImportApi = {
     get: fetchQaapGithubWorkspaceJob,
     cancel: cancelQaapGithubWorkspaceJob,
     legacy: request => request.kind === 'open'
-        ? openQaapGithubRepository(request.owner, request.name)
+        ? openQaapGithubRepository(request.owner, request.name, { explicit: true })
         : cloneQaapGithubRepository(request.repository),
 };
 

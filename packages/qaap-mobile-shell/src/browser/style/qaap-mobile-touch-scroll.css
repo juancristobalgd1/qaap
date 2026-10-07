@@ -113,14 +113,9 @@
   .theia-mobile-routine-sheet-panel,
   .theia-mobile-agent-transcript,
   .theia-mobile-agent-log-output,
-  .theia-mobile-work-hub-preferences-widget-host .preferences-editor-widget,
   .theia-mobile-work-hub-preferences-embed .settings-main-scroll-container,
   .theia-mobile-work-hub-preferences-embed .preferences-tree-widget,
   .theia-mobile-work-hub-billing-scroll,
-  .theia-mobile-work-hub-ai-config-embed .ai-configuration-list,
-  .theia-mobile-work-hub-ai-config-embed .ai-configuration-detail,
-  .theia-mobile-work-hub-ai-config-embed .ai-configuration-table-container,
-  .theia-mobile-work-hub-ai-config-embed .mcp-configuration-container,
   .theia-mobile-agent-activity-timeline:not(.theia-mod-cursor-trace) .theia-mobile-agent-activity-list.theia-mod-virtualized,
   .theia-mobile-agent-activity-terminal-stack,
   .theia-mobile-agent-activity-terminal-output,
@@ -179,6 +174,7 @@
   .theia-mobile-work-hub-settings-custom-content,
   .theia-mobile-work-hub-settings-embedded-widget .ai-skills-configuration-container,
   .theia-mobile-work-hub-settings-embedded-widget .mcp-configuration-container,
+  .theia-mobile-work-hub-settings-embedded-widget .qaap-harness-configuration-content,
   .theia-mobile-transcript-history-list,
   .theia-mobile-transcript-preview-devlog,
   .theia-mobile-agent-activity-thinking-body,
@@ -195,12 +191,14 @@
     overscroll-behavior-y: contain;
   }
 
-  /* Diff / code blocks pan on both axes. */
+  /* Diff / code blocks pan on both axes. They only overflow sideways, so only
+   * horizontal overscroll is contained: a vertical swipe that starts on a diff
+   * must keep chaining to the list or detail scroller around it. */
   .theia-mobile-work-hub-pull-request-diff,
   .theia-mobile-work-hub-pull-request-description-text pre {
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x pan-y;
-    overscroll-behavior: contain;
+    overscroll-behavior-x: contain;
   }
 
   /*
@@ -339,11 +337,20 @@
   }
 
   /*
-   * Execution surfaces (Changes / Preview / Files / diff hub) delegate scroll to
-   * nested hosts — do not re-enable overflow on the outer projects scroll shell.
+   * Execution surfaces (Changes / Preview / Files / diff hub) and inline Work Hub
+   * Settings (an absolute overlay with its own nav / content scrollers) delegate
+   * scroll to nested hosts — do not re-enable overflow on the outer projects
+   * scroll shell, or the whole sheet slides behind them.
    */
   #theia-app-shell .theia-mobile-projects.theia-mod-project-detail.theia-mod-project-surface-tools .theia-mobile-projects-scroll,
   #theia-app-shell .theia-mobile-projects.theia-mod-hub-diff .theia-mobile-projects-scroll {
+    overflow: hidden !important;
+    overflow-y: hidden !important;
+  }
+
+  /* Own rule: an engine without `:has()` drops the whole selector list, which
+   * must not take the execution-surface lock above with it. */
+  .theia-mobile-projects-scroll:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline) {
     overflow: hidden !important;
     overflow-y: hidden !important;
   }

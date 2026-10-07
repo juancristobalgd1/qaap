@@ -56,6 +56,11 @@ export interface MobileProjectsProjectActionsHost {
      * a reload, so reconciling a delete does not drop unrelated sidebar projects.
      */
     reconcileLoadedProjects?(projects: MobileProjectEntry[]): MobileProjectEntry[];
+    /** Hub shell selection; a removed project must not stay selected (its cwd prep would re-clone it). */
+    agentsHubSelectedProjectId?: string;
+    transcriptOpenProject?: MobileProjectEntry;
+    preparedCwdByProjectId?: Map<string, string>;
+    closeAgentsHubSession?(): void;
 }
 
 /** Repository card actions: rename, duplicate, clear tasks, clear failed tasks, remove. */
@@ -227,6 +232,28 @@ export class MobileProjectsProjectActionsUi {
         }
     }
 
+    /**
+     * Drop every hub reference to a project being removed, before the next render. Otherwise the
+     * shell keeps resolving it as the open project and preparing its cwd, which re-opens (on the
+     * server: re-clones) the repository and brings the card back. The hub then falls back to the
+     * next project, or to the no-project state.
+     */
+    protected forgetRemovedHubProject(project: MobileProjectEntry, previousProjects: readonly MobileProjectEntry[]): void {
+        const isRemoved = (candidate: MobileProjectEntry | undefined): boolean => !!candidate && (
+            candidate.id === project.id
+            || (!!project.uri && candidate.uri?.toString().toLowerCase() === project.uri.toString().toLowerCase())
+            || (!!project.github && candidate.github?.fullName.toLowerCase() === project.github.fullName.toLowerCase())
+        );
+        const selectedId = this.host.agentsHubSelectedProjectId;
+        if (selectedId && (selectedId === project.id || isRemoved(previousProjects.find(candidate => candidate.id === selectedId)))) {
+            this.host.agentsHubSelectedProjectId = undefined;
+        }
+        this.host.preparedCwdByProjectId?.delete(project.id);
+        if (isRemoved(this.host.transcriptOpenProject)) {
+            this.host.closeAgentsHubSession?.();
+        }
+    }
+
     async onRemoveProject(project: MobileProjectEntry): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
         if (!this.host.projectsService.canRemove(project)) {
@@ -248,6 +275,7 @@ export class MobileProjectsProjectActionsUi {
         projectsService.markProjectRemovalPending?.(project.id, project.uri);
         const removalAnimation = this.animateProjectRemoval(project);
         this.host.projects = previousProjects.filter(candidate => candidate.id !== project.id);
+        this.forgetRemovedHubProject(project, previousProjects);
         let settled = false;
         if (removalAnimation.started) {
             // Repaint the hub once the collapse animation ends, without waiting for the backend.
@@ -285,7 +313,11 @@ export class MobileProjectsProjectActionsUi {
             const projectCwd = projectsService.getProjectCwd?.(project)
                 ?? projectConversations.map(summary => summary.cwd).find(Boolean);
             if (projectCwd) {
-                await deleteAgentTasksForCwd(projectCwd);
+                // Task cleanup is secondary: a refusal (e.g. a legacy clone path the task
+                // endpoint does not own) must not keep the project itself from being removed.
+                await deleteAgentTasksForCwd(projectCwd).catch(error => {
+                    console.warn('[qaap-work-hub] agent task cleanup failed while removing a project', error);
+                });
             }
             const removed = await projectsService.removeProject(project);
             if (!removed) {
@@ -302,8 +334,12 @@ export class MobileProjectsProjectActionsUi {
                 reloaded = this.host.projects;
             }
             projectsService.clearProjectRemovalPending?.(project.id);
+            // Match the folder too: the same clone can come back under another id
+            // (`recent:` card removed, `github:` session listed).
+            const removedUri = project.uri?.toString().toLowerCase();
             const reconciled = (this.host.reconcileLoadedProjects?.(reloaded) ?? reloaded)
-                .filter(candidate => candidate.id !== project.id);
+                .filter(candidate => candidate.id !== project.id
+                    && (!removedUri || candidate.uri?.toString().toLowerCase() !== removedUri));
             await removalAnimation.promise;
             settled = true;
             this.host.projects = reconciled;

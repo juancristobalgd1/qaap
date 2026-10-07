@@ -32,6 +32,8 @@ import {
     qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
 import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
+import { isQaapPreviewDismissedByUser } from './qaap-preview-user-dismissal';
+import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import { ANSI_REGEX, DEV_PREVIEW_FALLBACK_MS, DEV_PREVIEW_OPEN_PROBE_ATTEMPTS, DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS, DEV_URL_REGEX, PORT_IN_USE_REGEX } from './qaap-project-bootstrap-service';
 
 export function scanDevOutputExtracted(ctx: QaapProjectBootstrapServiceContext, data: string, plan: { expectedPort?: number }): void {
@@ -192,6 +194,10 @@ export function resolvePrimaryPreviewTargetExtracted(ctx: QaapProjectBootstrapSe
 }
 
 export function mayAutoOpenPreviewNowExtracted(ctx: QaapProjectBootstrapServiceContext): boolean {
+        // The user closed this project's preview: automatic paths only stage the ready URL.
+        if (isQaapPreviewDismissedByUser(bootstrapPreviewDismissalDirectory(ctx))) {
+            return false;
+        }
         try {
             return ctx.previewAutoOpenGate?.() ?? true;
         } catch {
@@ -452,3 +458,15 @@ export function attachTerminalOsProcessIdExtracted(ctx: QaapProjectBootstrapServ
         }).catch(() => undefined);
 }
 
+/** Project directory whose "preview closed by the user" mark gates automatic opens. */
+export function bootstrapPreviewDismissalDirectory(ctx: Pick<QaapProjectBootstrapServiceContext, '_descriptor'>): string | undefined {
+        const rootUri = ctx._descriptor?.rootUri;
+        if (!rootUri) {
+            return undefined;
+        }
+        try {
+            return resolveWorkspaceHostFsPath(rootUri);
+        } catch {
+            return undefined;
+        }
+}

@@ -19,6 +19,8 @@ import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap
 import { resolveInteractiveAgentCliBin } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { clearQaapPreviewDismissedByUser, markQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { executionSurfacePreviewDirectory } from './mobile-projects-execution-surface-tabs-ui-render';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);
@@ -67,6 +69,7 @@ export function buildExecutionViewTabStripExtracted(ctx: MobileProjectsExecution
     const tabSpecs = ctx.executionSurfaceTabSpecs();
     const selectTab = (tab: TranscriptTab): void => {
         ctx.closeExecutionTabOverflowMenu();
+        recordUserPreviewSurfaceChoiceExtracted(ctx, tab);
         onSelect(tab);
     };
     const displayTabId = ctx.resolveExecutionSurfaceIconSelectDisplayTab(activeTab);
@@ -78,6 +81,23 @@ export function buildExecutionViewTabStripExtracted(ctx: MobileProjectsExecution
     ));
     applyExecutionSurfaceHeaderChrome(strip, activeTab);
     return strip;
+}
+
+/**
+ * A tab-strip pick is an explicit user choice: picking Preview lifts a previous "closed by the
+ * user" mark, leaving an open Preview for another surface records one.
+ */
+export function recordUserPreviewSurfaceChoiceExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab): void {
+    const project = ctx.resolveExecutionSurfaceProject() ?? ctx.host.transcriptOpenProject;
+    if (!project) {
+        return;
+    }
+    const directory = executionSurfacePreviewDirectory(ctx, project, ctx.host.transcriptOpenSummary);
+    if (tab === 'preview') {
+        clearQaapPreviewDismissedByUser(directory);
+    } else if (ctx.executionSurfaceTabForProject(project) === 'preview') {
+        markQaapPreviewDismissedByUser(directory);
+    }
 }
 
 export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): HTMLElement {

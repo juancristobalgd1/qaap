@@ -235,6 +235,40 @@ describe('mobile-projects-pull-requests-sidebar-ui', () => {
         expect(container.querySelector('.theia-mobile-work-hub-pull-requests-load-more')).to.equal(null);
     });
 
+    it('keeps the results scroll position when the sidebar rebuilds the list', async () => {
+        const { host } = createSearchHost(() => ({
+            pullRequests: [pullRequest({ number: 2 }), pullRequest({ number: 1 })],
+            page: 1,
+            hasMore: false,
+            signedIn: true,
+        }));
+        // jsdom has no layout: keep scrollTop per element so the rebuild can be observed.
+        const scrollTops = new WeakMap<Element, number>();
+        const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
+        Object.defineProperty(Element.prototype, 'scrollTop', {
+            configurable: true,
+            get(this: Element): number { return scrollTops.get(this) ?? 0; },
+            set(this: Element, value: number) { scrollTops.set(this, value); },
+        });
+        try {
+            const ui = new MobileProjectsPullRequestsSidebarUi(host);
+            const container = document.createElement('div');
+            document.body.append(container);
+            ui.render(container);
+            await flush();
+            container.querySelector('.theia-mobile-work-hub-pull-requests-results')!.scrollTop = 240;
+
+            // Inbox polling / forced sidebar refresh re-render the whole panel.
+            ui.render(container);
+
+            const results = container.querySelector('.theia-mobile-work-hub-pull-requests-results')!;
+            expect(results.querySelectorAll('.theia-mobile-work-hub-pull-request-item')).to.have.length(2);
+            expect(results.scrollTop).to.equal(240);
+        } finally {
+            Object.defineProperty(Element.prototype, 'scrollTop', original);
+        }
+    });
+
     it('keeps a separate paged list per state chip', async () => {
         const { host, requests } = createSearchHost(request => ({
             pullRequests: request.state === 'merged' ? [pullRequest({ number: 9, state: 'merged' })] : [pullRequest({ number: 1 })],

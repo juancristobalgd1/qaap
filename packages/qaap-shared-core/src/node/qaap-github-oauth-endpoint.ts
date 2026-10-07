@@ -300,7 +300,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     ): QaapProjectSessionSummary[] {
         const byKey = new Map(stored.map(session => [session.repoKey, session]));
         for (const disk of this.listOnDiskGithubCloneSessions(login)) {
-            if (!byKey.has(disk.repoKey)) {
+            if (!byKey.has(disk.repoKey) && !this.projectSessions.isRepositoryRemoved(login, disk.repoKey)) {
                 byKey.set(disk.repoKey, disk);
             }
         }
@@ -312,6 +312,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name' | 'fullName' | 'defaultBranch'>,
     ): void {
         const fullName = repository.fullName?.trim() || `${repository.owner}/${repository.name}`;
+        // Only reached after a clone/fetch the user asked for, so a removed project is welcome back.
+        this.projectSessions.clearRepositoryRemoved(userLogin, `github:${fullName}`);
         this.projectSessions.upsertForUser(userLogin, {
             repoKey: `github:${fullName}`,
             branch: repository.defaultBranch,
@@ -332,6 +334,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const body = (req.body ?? {}) as Partial<QaapProjectSessionUpsertRequest>;
         if (!body.repoKey || typeof body.repoKey !== 'string') {
             res.status(400).json({ error: 'repoKey is required' });
+            return;
+        }
+        if (this.projectSessions.isRepositoryRemoved(login, body.repoKey)) {
+            // Late hub traffic for a project the user removed (bootstrap phase, preview URL, chat sync)
+            // must not list it again.
+            res.json({ session: undefined });
             return;
         }
         const session = this.projectSessions.upsertForUser(login, {
@@ -701,6 +709,13 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'Invalid repository path' });
             return;
         }
+        // Opening clones a missing repository. Hub state can still point at a project the user just
+        // removed, so only an explicit import may clone it again; anything else would resurrect it.
+        const explicit = (req.body as { explicit?: unknown } | undefined)?.explicit === true;
+        if (!explicit && this.projectSessions.isRepositoryRemoved(auth.userLogin, `github:${owner}/${repoName}`)) {
+            res.status(410).json({ error: 'This project was removed. Import the repository again to restore it.', code: 'repository_removed' });
+            return;
+        }
         try {
             const repository = await this.resolveAccessibleRepository(stored.accessToken, owner, repoName);
             if (!repository) {
@@ -767,6 +782,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 await fs.rm(target, { recursive: true, force: true });
             }
             this.projectSessions.deleteForUser(login, `github:${owner}/${repoName}`);
+            this.projectSessions.markRepositoryRemoved(login, `github:${owner}/${repoName}`);
             res.json({ deleted: true, owner, repo: repoName });
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to remove repository workspace';
@@ -1032,7 +1048,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     protected cleanGithubPathSegment(value: string | undefined): string | undefined {
         const decoded = typeof value === 'string' ? decodeURIComponent(value).trim() : '';
-        if (!/^[A-Za-z0-9_.-]+$/.test(decoded)) {
+        // `.`/`..` pass the character class but resolve to the user's repos root (or above):
+        // a recursive delete of `x/..` would wipe every clone of the caller.
+        if (!/^[A-Za-z0-9_.-]+$/.test(decoded) || /^\.+$/.test(decoded)) {
             return undefined;
         }
         return decoded;

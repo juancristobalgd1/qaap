@@ -28,15 +28,21 @@
   display: none !important;
 }
 
+/* The outer sidebar scroller is locked in this mode and the results list owns
+   the scroll, below the tabs and chips. `!important` beats the mobile
+   native-scroll rule (qaap-mobile-touch-scroll.css) that forces the outer
+   host to scroll; otherwise the whole panel scrolled as one block. The flex
+   chain bounds every level: a `height: 100%` against the auto-height list
+   host resolved to auto, so the results never overflowed. */
 .theia-mobile-work-hub-sessions-sidebar.theia-mod-pull-requests .theia-mobile-work-hub-sessions-sidebar-scroll {
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden !important;
 }
 
-/* The outer sidebar scroller is locked in this mode, so bound the panel to it
-   and let the results list own the scroll (otherwise it grows unbounded and
-   can never scroll, on touch or with a mouse). */
+.theia-mobile-work-hub-sessions-sidebar.theia-mod-pull-requests .theia-mobile-work-hub-sessions-sidebar-list,
 .theia-mobile-work-hub-sessions-sidebar.theia-mod-pull-requests .theia-mobile-work-hub-pull-requests {
-  height: 100%;
+  flex: 1 1 0;
   min-height: 0;
 }
 

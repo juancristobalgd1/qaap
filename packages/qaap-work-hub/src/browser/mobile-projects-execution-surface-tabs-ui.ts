@@ -25,6 +25,9 @@ type TranscriptTab = ExecutionSurfaceTabId;
 /** Panel surface for execution-surface tab strips, overflow menu, and tab navigation. */
 export interface MobileProjectsExecutionSurfaceTabsHost {
     readonly executionSurfaceTabByProjectId: Map<string, TranscriptTab>;
+    /** Resolve the project directory that keys "preview closed by the user". */
+    readonly projectsService?: { getProjectCwd(project: MobileProjectEntry): string | undefined };
+    readonly preparedCwdByProjectId?: ReadonlyMap<string, string>;
     transcriptTabStrip: HTMLElement | undefined;
     transcriptSheet: HTMLElement | undefined;
     transcriptChatHost: HTMLElement | undefined;

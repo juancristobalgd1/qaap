@@ -249,6 +249,138 @@ describe('MobileProjectsProjectActionsUi', () => {
         expect(errors).to.deep.equal([]);
     });
 
+    it('does not let the same clone come back under another id after the delete', async () => {
+        const clone = URI.fromFilePath('/workspace/repos/users/ana/acme/shop');
+        const removed = { ...project(`recent:${clone.toString()}`), uri: clone };
+        const sameCloneAsGithub = { ...project('github:acme/shop'), uri: new URI(clone.toString().toUpperCase().replace('FILE:', 'file:')) };
+        const kept = project('kept');
+        const host = {
+            projects: [removed, kept],
+            projectsService: {
+                canRemove: () => true,
+                removeProject: async () => true,
+                loadProjects: async () => [sameCloneAsGithub, kept],
+            },
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
+            delegate: {},
+            render: () => undefined,
+        } as unknown as MobileProjectsProjectActionsHost;
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
+    });
+
+    it('forgets the removed project when it is the one open in the hub, so no render reopens (re-clones) it', async () => {
+        const clone = URI.fromFilePath('/workspace/repos/users/ana/acme/shop');
+        const removed = { ...project('github:acme/shop'), uri: clone };
+        const next = project('kept');
+        const resolvedOnRender: string[] = [];
+        let closedSessions = 0;
+        const host = {
+            projects: [removed, next],
+            agentsHubSelectedProjectId: removed.id,
+            transcriptOpenProject: removed,
+            preparedCwdByProjectId: new Map([[removed.id, clone.path.toString()]]),
+            closeAgentsHubSession: () => {
+                closedSessions++;
+                host.transcriptOpenProject = undefined;
+            },
+            projectsService: {
+                canRemove: () => true,
+                removeProject: async () => true,
+                loadProjects: async () => [next],
+            },
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
+            delegate: {},
+            // Like the hub shell: the open transcript project, else the selected one, gets its cwd prepared.
+            render: () => {
+                const shellProject = host.transcriptOpenProject
+                    ?? host.projects.find(candidate => candidate.id === host.agentsHubSelectedProjectId);
+                if (shellProject) {
+                    resolvedOnRender.push(shellProject.id);
+                }
+            },
+        } as unknown as MobileProjectsProjectActionsHost & {
+            agentsHubSelectedProjectId: string | undefined;
+            transcriptOpenProject: MobileProjectEntry | undefined;
+            preparedCwdByProjectId: Map<string, string>;
+        };
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(resolvedOnRender).to.not.include(removed.id);
+        expect(closedSessions).to.equal(1);
+        expect(host.agentsHubSelectedProjectId).to.equal(undefined);
+        expect(host.transcriptOpenProject).to.equal(undefined);
+        expect(host.preparedCwdByProjectId.has(removed.id)).to.equal(false);
+        expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
+    });
+
+    it('keeps the hub selection when another project is removed', async () => {
+        const removed = project('removed');
+        const open = project('open');
+        let closedSessions = 0;
+        const host = {
+            projects: [removed, open],
+            agentsHubSelectedProjectId: open.id,
+            transcriptOpenProject: open,
+            closeAgentsHubSession: () => { closedSessions++; },
+            projectsService: {
+                canRemove: () => true,
+                removeProject: async () => true,
+                loadProjects: async () => [open],
+            },
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
+            delegate: {},
+            render: () => undefined,
+        } as unknown as MobileProjectsProjectActionsHost & { agentsHubSelectedProjectId: string | undefined };
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(closedSessions).to.equal(0);
+        expect(host.agentsHubSelectedProjectId).to.equal(open.id);
+    });
+
+    it('still removes the project when the agent-task cleanup is refused', async () => {
+        const removed = project('removed');
+        const kept = project('kept');
+        let removeCalls = 0;
+        const errors: string[] = [];
+        const originalFetch = globalThis.fetch;
+        const originalWarn = console.warn;
+        globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 })) as typeof fetch;
+        console.warn = () => undefined;
+        try {
+            const host = {
+                projects: [removed, kept],
+                projectsService: {
+                    canRemove: () => true,
+                    getProjectCwd: () => '/workspace/repos/users/ana/acme/shop',
+                    removeProject: async () => { removeCalls++; return true; },
+                    loadProjects: async () => [kept],
+                },
+                cardMenuUi: { closeCardMenu: () => undefined },
+                confirmRemoveProject: async () => true,
+                delegate: {},
+                messageService: { error: (message: string) => { errors.push(message); } },
+                render: () => undefined,
+            } as unknown as MobileProjectsProjectActionsHost;
+
+            await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+            expect(removeCalls).to.equal(1);
+            expect(errors).to.deep.equal([]);
+            expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
+        } finally {
+            globalThis.fetch = originalFetch;
+            console.warn = originalWarn;
+        }
+    });
+
     it('resolveFailedTasksToClear keeps only the selected failed ids when provided', () => {
         const { resolveFailedTasksToClear } = require('./mobile-projects-project-actions-ui') as typeof import('./mobile-projects-project-actions-ui');
         const failed = [
