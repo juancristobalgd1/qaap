@@ -172,17 +172,11 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
 
 /**
  * A task worktree card (`<project>_<n>`) only hid a browser-local id, so the server's next listing brought it
- * back (production, Oct 2026). Its source clone already removed: delete that again, which also forgets the
- * worktree on the server. Otherwise the source is still a project: record the removal of this card alone.
+ * back (production, Oct 2026). Record the removal of this card alone on the server. Never delete its source
+ * repository from here: a browser-local removal of the source can be stale (re-imported on another device).
  */
 async function removeWorktreeProject(project: MobileProjectEntry, worktreeIdentity: string): Promise<void> {
-    const source = project.worktreeSourceCwd ? parseUserRepositoryCloneFromWorkspacePath(project.worktreeSourceCwd) : undefined;
-    const sourceIdentity = source ? `github:${source.owner}/${source.name}`.toLowerCase() : undefined;
-    if (source && sourceIdentity && readLocalRemovedProjects().has(sourceIdentity)) {
-        await deleteQaapGithubRepository(source.owner, source.name);
-    } else {
-        await deleteQaapWorktreeProject(worktreeIdentity.slice(worktreeIdentity.indexOf('/') + 1));
-    }
+    await deleteQaapWorktreeProject(worktreeIdentity.slice(worktreeIdentity.indexOf('/') + 1));
     removeLocalProjectSession(`ws:${project.uri!.toString()}`);
     setLocalProjectRemoved(worktreeIdentity, true);
 }

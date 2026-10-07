@@ -120,13 +120,15 @@ describe('removeProjectExtracted', () => {
             expect([...hidden]).to.include(worktreeCard().id);
         });
 
-        it('resolves to its removed source repository, whose delete also forgets the worktree', async () => {
+        // A browser-local removal of the source can be stale (re-imported on another device): removing the
+        // worktree card must never delete a repository, only record the card's own removal.
+        it('never deletes its source repository, even when this browser remembers it as removed', async () => {
             writeLocalRemovedProjects(new Set(['github:juancristobalgd1/vyyq']));
             const { ctx } = createContext();
 
             expect(await removeProjectExtracted(ctx, worktreeCard(VYYQ))).to.equal(true);
 
-            expect(requests).to.deep.equal([{ url: '/qaap/api/github/repositories/juancristobalgd1/vyyq', method: 'DELETE' }]);
+            expect(requests).to.deep.equal([{ url: '/qaap/api/github/worktrees/733cf503', method: 'DELETE' }]);
             expect([...readLocalRemovedProjects()].sort()).to.deep.equal(['github:juancristobalgd1/vyyq', 'worktree:juancristobalgd1/733cf503']);
         });
 

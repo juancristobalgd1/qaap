@@ -65,13 +65,17 @@ export const mergeConversationCwdProjects = (
     }
 
     const merged = projects.flatMap(project => {
-        if (!project.id.startsWith('ws:') || project.isCurrent) {
+        if (!project.id.startsWith('ws:')) {
             return [project];
         }
         const key = uriKey(project.uri);
         const worktreeSourceCwd = key ? worktreeSources.get(key) : undefined;
+        // Before the current-card shortcut: a worktree open right now must not keep a removed source's card.
         if (inRemovedProject(worktreeSourceCwd) || inRemovedProject(project.uri?.path.toString())) {
             return [];
+        }
+        if (project.isCurrent) {
+            return [project];
         }
         const label = labelFor(project.uri);
         const relabelled = label && label !== project.name ? { ...project, name: label } : project;

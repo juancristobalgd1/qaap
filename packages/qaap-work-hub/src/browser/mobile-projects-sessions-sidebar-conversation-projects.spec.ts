@@ -119,6 +119,12 @@ describe('mergeConversationCwdProjects for a removed project', () => {
         expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
     });
 
+    it('drops the current card of a worktree whose source project was removed', () => {
+        const merged = mergeConversationCwdProjects([{ ...cachedCard(LIVE_WT), isCurrent: true }, cachedCard(OTHER)], [archivedTask], () => false, removed);
+
+        expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
+    });
+
     it('remembers the source of a worktree card, so removing it can resolve the source repository', () => {
         const merged = mergeConversationCwdProjects([cachedCard(LIVE_WT)], [{ ...archivedTask, archived: false }]);
 
