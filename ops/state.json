@@ -16,29 +16,46 @@
   },
   "sha_prod": "d9d2f81757c5",
   "digest_sano": "d9d2f81757c534e0758ac12d6f062ec476e2c819",
-  "prs": [
-    {"n": 230, "rama": "fo/remove-path-sessions", "sha": "69cb44cb1267", "estado": "E0", "titulo": "quitar proyecto no vuelve (sesiones recent:/ws:, conversaciones, worktrees)", "bloqueo": "CI Windows: 2o arreglo de rutas Windows (cleanup worktrees) pusheado 14:05Z, CI corriendo; merge requiere E3+E4 en staging, que aun no existe"},
-    {"n": 203, "rama": "fo/deploy-speed", "sha": "1bd519d7c", "estado": "E0", "titulo": "velocidad del deploy (tenant image por digest)", "bloqueo": "draft; CI 12/12 verde; pasar a ready"},
-    {"n": 229, "rama": "fo/ide-explorer-open", "sha": "aba5960ba", "estado": "E0", "titulo": "Explorer visible al pasar de Work Hub a IDE", "bloqueo": "CI 13/13 verde; espera turno (regla max 2 PRs activos)"}
-  ],
+  "prs": {
+    "230": "E1 mergeado 5f646fd80723",
+    "229": "E1 mergeado f8c15709598d",
+    "203": "E1 mergeado 9f0cba6b15d6",
+    "flaky-quarantine": "abierto, CI"
+  },
   "prs_fuera_de_regla": {
     "nota": "Hay 11 PRs abiertos; la regla es max 2. Pendiente decision de Juan: cerrar o mantener en draft.",
-    "lista": [210, 214, 213, 212, 195, 193, 185, 165]
+    "lista": [
+      210,
+      214,
+      213,
+      212,
+      195,
+      193,
+      185,
+      165
+    ]
   },
   "agentes": [],
   "cola": [
-    "230 quitar proyecto (CI Windows en curso)",
-    "203 velocidad del deploy",
-    "secreto smoke post-deploy (QAAP_SMOKE_SESSION o QAAP_SMOKE_COOKIE; pedido a Juan)",
-    "staging en el mismo VPS (cabe: 18 GB RAM libres)",
-    "229 Explorer Work Hub->IDE",
-    "210 cerrar y rehacer desde master",
-    "212/214/213 solo si desbloquean un flujo critico"
+    "deploy 5f646fd -> E3 1280+375 -> E4 SQLite Juan",
+    "staging en VPS (8 oct)",
+    "secretos smoke/Claude (Juan)",
+    "confirmar 7 flujos (Juan)",
+    "#210 rehacer desde master",
+    "#212/#214/#213 reabrir cuando haya hueco"
   ],
   "deploy_medido": {
-    "runs": ["37584546362", "37570642730"],
+    "runs": [
+      "37584546362",
+      "37570642730"
+    ],
     "total_limpio_min": 35,
-    "pasos_min": {"Pre-deploy smoke gate": 3.5, "Publish immutable GHCR image (Build and push image ~13)": 13.5, "Verify exact candidate image": 2.5, "Deploy to VPS (Deploy over SSH 13-18)": 15.5},
+    "pasos_min": {
+      "Pre-deploy smoke gate": 3.5,
+      "Publish immutable GHCR image (Build and push image ~13)": 13.5,
+      "Verify exact candidate image": 2.5,
+      "Deploy to VPS (Deploy over SSH 13-18)": 15.5
+    },
     "nota": "Build de imagen y Deploy over SSH son ~80%. El run 37598792999 tardo 69 min por un rerun tras fallo de npm/keytar."
   },
   "viabilidad": {
@@ -50,7 +67,36 @@
     "vps_escritura": "Fo solo tiene SSH de lectura; staging se monta via workflow de Actions con la clave SSH del deploy."
   },
   "incidentes": [
-    {"fecha": "2026-10-07", "que": "quitar vyyq: dicho arreglado en prod (d9d2f81757c5) probado con cuenta de prueba; con datos de Juan seguia fallando", "leccion": "E4 obligatorio con datos reales"},
-    {"fecha": "2026-10-06", "que": "#209 dejo el Explorer vacio en prod; revertido en #223"}
+    {
+      "fecha": "2026-10-07",
+      "que": "quitar vyyq: dicho arreglado en prod (d9d2f81757c5) probado con cuenta de prueba; con datos de Juan seguia fallando",
+      "leccion": "E4 obligatorio con datos reales"
+    },
+    {
+      "fecha": "2026-10-06",
+      "que": "#209 dejo el Explorer vacio en prod; revertido en #223"
+    }
+  ],
+  "actualizado": "2026-10-07T14:41Z",
+  "prod": {
+    "build": "d9d2f81757c5",
+    "deploy_en_curso": {
+      "run": 37638485934,
+      "sha": "5f646fd80723",
+      "incluye": [
+        "#203",
+        "#229",
+        "#230"
+      ]
+    }
+  },
+  "decisiones_juan_2026-10-07_16:20": [
+    "merge #203",
+    "excepcion unica #230+#229 sin staging, E4 en prod con su SQLite",
+    "staging listo 8 oct max, luego sin excepciones",
+    "SQLite nunca sale del VPS",
+    "cuarentena flaky en ops/flaky.md",
+    "revisar cada 15 min con CI/deploy en curso",
+    "8 PRs sobrantes cerrados, ramas intactas"
   ]
 }
