@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, optional } from '@theia/core/shared/inversify';
+import { inject, injectable, named, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { json } from 'body-parser';
+import { ContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { spawn, type ChildProcess } from 'child_process';
@@ -39,8 +40,10 @@ import {
     isPathUnderUserWorkspace,
     parseGithubFullNameFromWorkspacePath,
     resolveQaapReposRoot,
+    resolveQaapWorktreesRoot,
     resolveRepositoryWorkspacePath,
     resolveUserReposRoot,
+    safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import {
@@ -70,6 +73,9 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
+import { QaapRepositoryRemovalContribution, type QaapRepositoryRemoval } from './qaap-repository-removal-contribution';
+import { QaapHostedWorktreeRegistry } from './qaap-hosted-worktree-registry';
+import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
 import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
@@ -178,6 +184,19 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubWorkspaceJobRegistry) @optional()
     protected readonly workspaceJobs: QaapGithubWorkspaceJobRegistry | undefined;
 
+    /** Higher layers forget their state of a removed clone (terminals, conversations, recent workspaces). */
+    @inject(ContributionProvider) @named(QaapRepositoryRemovalContribution) @optional()
+    protected readonly removalContributions: ContributionProvider<QaapRepositoryRemovalContribution> | undefined;
+
+    @inject(QaapHostedWorktreeRegistry) @optional()
+    protected readonly worktreeRegistry: QaapHostedWorktreeRegistry | undefined;
+
+    /** Task worktrees live in `{worktreesRoot}/{tenant}/{slug}`; their `.git` file points into the clone. */
+    protected readonly worktreesRoot = resolveQaapWorktreesRoot();
+
+    /** `login\0identity` of removals already forgotten by this process; see {@link forgetRemovedRepositories}. */
+    protected readonly forgottenRemovals = new Set<string>();
+
     configure(app: Application): void {
         app.use(json());
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
@@ -218,10 +237,126 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }
+        const removedProjects = this.projectSessions.listRemovedRepositories(login);
+        this.forgetRemovedRepositories(login, removedProjects);
         res.json({
             sessions: this.mergeOnDiskGithubSessions(login, this.projectSessions.listForUser(login))
                 .map(session => this.enrichSessionWithWorkspaceUri(login, session)),
+            removedProjects,
         });
+    }
+
+    /**
+     * Lazy migration: removals recorded before the delete also forgot path-keyed state (conversations,
+     * terminal sessions, recent workspaces, task worktrees) still have that state. Forget it in the
+     * background the first time this process lists such a project.
+     */
+    protected forgetRemovedRepositories(login: string, identities: readonly string[]): void {
+        for (const identity of identities) {
+            if (this.forgottenRemovals.has(`${login}\0${identity}`)) {
+                continue;
+            }
+            const [owner, repo] = identity.slice('github:'.length).split('/');
+            if (owner && repo) {
+                this.forgetRemovedRepository(login, owner, repo).catch(err =>
+                    console.warn('[qaap-oauth] Failed to forget removed repository state:', identity, err instanceof Error ? err.message : String(err)));
+            }
+        }
+    }
+
+    /**
+     * Everything but the project session store that still points at a removed clone: higher-layer state
+     * via {@link QaapRepositoryRemovalContribution}, then the task worktrees checked out from it.
+     */
+    protected async forgetRemovedRepository(login: string, owner: string, repo: string): Promise<void> {
+        const userReposRoot = resolveUserReposRoot(this.reposRoot, login);
+        const identity = `github:${owner}/${repo}`.toLowerCase();
+        this.forgottenRemovals.add(`${login}\0${identity}`);
+        const worktreePaths = await this.listRepositoryWorktrees(login, identity, userReposRoot);
+        const removal: QaapRepositoryRemoval = {
+            login,
+            identity,
+            clonePath: resolveRepositoryWorkspacePath(this.reposRoot, login, owner, repo),
+            userReposRoot,
+            worktreePaths,
+        };
+        for (const contribution of this.removalContributions?.getContributions() ?? []) {
+            try {
+                await contribution.onRepositoryRemoved(removal);
+            } catch (err) {
+                console.warn('[qaap-oauth] A removal contribution failed:', identity, err instanceof Error ? err.message : String(err));
+            }
+        }
+        for (const worktreePath of worktreePaths) {
+            if (!await this.removeRepositoryWorktree(worktreePath)) {
+                this.removeRepositoryWorktreeAsAgent(worktreePath).catch(err =>
+                    console.warn('[qaap-oauth] Failed to remove the worktree of a removed repository:', worktreePath, err instanceof Error ? err.message : String(err)));
+            }
+        }
+    }
+
+    /** The user's task worktrees whose `.git` file (`gitdir: <clone>/.git/worktrees/<id>`) points into the clone. */
+    protected async listRepositoryWorktrees(login: string, identity: string, userReposRoot: string): Promise<string[]> {
+        const tenantRoot = path.join(this.worktreesRoot, safeUserIdSegment(login) || '__anonymous__');
+        let entries: string[];
+        try {
+            // Never follow a tenant directory an agent replaced with a symlink.
+            if (!(await fs.lstat(tenantRoot)).isDirectory()) {
+                return [];
+            }
+            entries = await fs.readdir(tenantRoot);
+        } catch {
+            return [];
+        }
+        const worktrees: string[] = [];
+        for (const entry of entries.filter(name => !name.startsWith('.'))) {
+            const worktreePath = path.join(tenantRoot, entry);
+            const source = await this.readWorktreeSourceRepository(worktreePath);
+            if (source && qaapProjectRemovalIdentity(source, userReposRoot) === identity) {
+                worktrees.push(worktreePath);
+            }
+        }
+        return worktrees;
+    }
+
+    /** Clone a linked worktree was added from, read from its `.git` file; the clone itself may be gone. */
+    protected async readWorktreeSourceRepository(worktreePath: string): Promise<string | undefined> {
+        const gitFile = path.join(worktreePath, '.git');
+        try {
+            if (!(await fs.lstat(gitFile)).isFile()) {
+                return undefined;
+            }
+            const gitdir = /^gitdir:\s*(.+)$/m.exec(await fs.readFile(gitFile, 'utf8'))?.[1]?.trim();
+            if (!gitdir) {
+                return undefined;
+            }
+            const resolved = path.resolve(worktreePath, gitdir).split(path.sep).join('/');
+            const marker = resolved.lastIndexOf('/.git/worktrees/');
+            return marker > 0 ? resolved.slice(0, marker) : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * `git worktree remove`/`prune` need the clone, which is gone: delete the checkout directly. Resolves
+     * false when files this uid cannot delete (written by the agent) keep it in place.
+     */
+    protected async removeRepositoryWorktree(worktreePath: string): Promise<boolean> {
+        await fs.rm(worktreePath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined);
+        if (await this.pathExists(worktreePath)) {
+            return false;
+        }
+        this.worktreeRegistry?.unregister(worktreePath);
+        return true;
+    }
+
+    /** Same agent-identity delete {@link purgeRepositoryTrash} uses. */
+    protected async removeRepositoryWorktreeAsAgent(worktreePath: string): Promise<void> {
+        await this.removeAsRepositoryAgent(path.dirname(worktreePath), path.basename(worktreePath));
+        if (!await this.pathExists(worktreePath)) {
+            this.worktreeRegistry?.unregister(worktreePath);
+        }
     }
 
     /**
@@ -782,6 +917,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         this.projectSessions.deleteForUser(login, `github:${owner}/${repoName}`);
         this.projectSessions.markRepositoryRemoved(login, `github:${owner}/${repoName}`);
         this.releasePreviewsForWorkspace(login, target);
+        // Path-keyed state (task conversations, terminals, recent workspaces, worktrees) lists the project again.
+        await this.forgetRemovedRepository(login, owner, repoName).catch(err =>
+            console.warn('[qaap-oauth] Failed to forget removed repository state:', `${owner}/${repoName}`, err instanceof Error ? err.message : String(err)));
         const removed = await this.removeRepositoryWorkspace(target);
         if (!removed) {
             this.scheduleRepositoryWorkspaceCleanup(target);

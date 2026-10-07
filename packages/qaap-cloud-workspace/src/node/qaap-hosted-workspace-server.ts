@@ -71,6 +71,20 @@ export class QaapHostedWorkspaceServer extends DefaultWorkspaceServer {
         return path.join(directory, `recentworkspace-${segment}.json`);
     }
 
+    /**
+     * Drops the recent workspaces of `login` that `matches` selects, e.g. a removed clone that must not be
+     * offered again. Reads the raw list: upstream hides missing folders but keeps them on disk.
+     */
+    async removeRecentWorkspacesOf(login: string, matches: (uri: string) => boolean): Promise<void> {
+        await this.connections.runWithLogin(login, async () => {
+            const recentRoots = (await this.readRecentWorkspacePathsFromUserHome())?.recentRoots ?? [];
+            const kept = recentRoots.filter(uri => !uri || !matches(uri));
+            if (kept.length !== recentRoots.length) {
+                await this.writeToUserHome({ recentRoots: kept });
+            }
+        });
+    }
+
     protected filterOwnedRecents(recents: string[]): string[] {
         return recents.filter(uri => this.currentLoginOwnsWorkspaceUri(uri));
     }

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { bindRootContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QaapClientErrorEndpoint } from './qaap-client-error-endpoint';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
@@ -22,6 +23,7 @@ import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapLegacyGitCredentialCleanup } from './qaap-legacy-git-credential-cleanup';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapProductionBootGuardContribution } from './qaap-production-boot-guard';
+import { QaapRepositoryRemovalContribution } from './qaap-repository-removal-contribution';
 
 export default new ContainerModule(bind => {
     bind(QaapProductionBootGuardContribution).toSelf().inSingletonScope();
@@ -37,6 +39,7 @@ export default new ContainerModule(bind => {
     bind(QaapGithubInboxEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapGithubInboxEndpoint);
     bind(QaapProjectSessionStore).toSelf().inSingletonScope();
+    bindRootContributionProvider(bind, QaapRepositoryRemovalContribution);
     bind(QaapGithubWorkspaceJobRegistry).toSelf().inSingletonScope();
     // Sealed GitHub git as the backend uid; shared by the GitHub open/clone flow and the git-review push.
     bind(QaapHostedGitFetch).toSelf().inSingletonScope();

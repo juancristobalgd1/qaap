@@ -10,6 +10,8 @@ import { buildWorkHubSessionsSidebarRowFingerprint, buildWorkHubSessionsSidebarV
 import { expandConversationSlots, partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
+import { readLocalRemovedProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-session-cache';
+import { withoutRemovedMobileProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dedup';
 
 export function openWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
     const sidebar = ctx.ensureWorkHubSessionsSidebar();
@@ -57,13 +59,16 @@ export function mergeSessionsSidebarProjectsExtracted(ctx: MobileProjectsSession
     // Keep those real sessions reachable instead of claiming there is no history. Worktree
     // conversations are labelled `<projectName>_<n>` rather than by their hash directory.
     const projectsService = ctx.host.projectsService;
+    const removedProjects = readLocalRemovedProjects();
     projects = mergeConversationCwdProjects(
         projects,
         ctx.host.conversations?.threadStore?.listAllSummaries?.() ?? [],
         (projectId, uri) => projectsService.isProjectRemovalPending?.(projectId, uri) === true,
+        removedProjects,
     );
     const current = ctx.host.projectsService.resolveCurrentWorkspaceProject(projects);
-    if (!current) {
+    // A workspace still open on a removed clone must not bring its card back either.
+    if (!current || withoutRemovedMobileProjects([current], removedProjects, () => undefined).length === 0) {
         return [...projects];
     }
     const currentUri = current.uri?.toString();

@@ -76,3 +76,23 @@ describe('mergeConversationCwdProjects', () => {
         expect(merged).to.deep.equal([]);
     });
 });
+
+// Production (juancristobalgd1, Oct 7 2026): after vyyq was removed, its conversations (cwd in the clone,
+// or in the task worktree 733cf503 checked out from it) re-created a `ws:` card for it on every merge.
+describe('mergeConversationCwdProjects for a removed project', () => {
+    const VYYQ = '/workspace/repos/users/juancristobalgd1/juancristobalgd1/vyyq';
+    const TASK = '/opt/qaap-runtime/worktrees/juancristobalgd1/733cf503';
+    const OTHER = '/workspace/repos/users/juancristobalgd1/juancristobalgd1/other';
+    const removed = new Set(['github:juancristobalgd1/vyyq']);
+
+    it('never synthesizes a card from conversations in the removed clone or its worktrees', () => {
+        const merged = mergeConversationCwdProjects([], [
+            summary('chat', VYYQ, 1),
+            summary('sub', `${VYYQ}/web`, 2),
+            summary('task', TASK, 3, { parallelBaseCwd: VYYQ, worktreeOrdinal: 1 }),
+            summary('other', OTHER, 4),
+        ], () => false, removed);
+
+        expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
+    });
+});

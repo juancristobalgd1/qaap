@@ -69,6 +69,8 @@ import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineScheduler } from './qaap-work-hub-routine-scheduler';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
 import { QaapHostedWorkspaceServer } from './qaap-hosted-workspace-server';
+import { QaapRemovedRepositoryCleanup } from './qaap-removed-repository-cleanup';
+import { QaapRepositoryRemovalContribution } from '@theia/qaap-shared-core/lib/node/qaap-repository-removal-contribution';
 import { bindQaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
 import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
@@ -282,6 +284,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapBillingEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapBillingEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
+    // A removed clone's conversations, terminal sessions and recent workspaces must not list it again.
+    bind(QaapRemovedRepositoryCleanup).toSelf().inSingletonScope();
+    bind(QaapRepositoryRemovalContribution).toService(QaapRemovedRepositoryCleanup);
     // Headless server-side visual evidence — subscribes to the store on startup, so it must be
     // instantiated eagerly via the contribution provider (singletons are otherwise lazy).
     bind(QaapHeadlessVisualCaptureService).toSelf().inSingletonScope();

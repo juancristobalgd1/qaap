@@ -58,3 +58,36 @@ describe('QaapHostedWorkspaceServer.getMostRecentlyUsedWorkspace', () => {
         expect(await server.getMostRecentlyUsedWorkspace()).to.equal('');
     });
 });
+
+describe('QaapHostedWorkspaceServer.removeRecentWorkspacesOf', () => {
+
+    // A removed clone is gone from disk, so upstream already hides it from getRecentWorkspaces; the
+    // stored entry must still go, or it lists the project again if the folder ever reappears.
+    it("rewrites the login's stored recent workspaces, as that login, without the selected ones", async () => {
+        const server = new TestWorkspaceServer(undefined);
+        let storedFor: string | undefined;
+        let written: string[] | undefined;
+        Object.assign(server, {
+            connections: {
+                getCurrentLogin: (): string | undefined => server.login,
+                runWithLogin: async (login: string, fn: () => Promise<void>): Promise<void> => {
+                    server.login = login;
+                    await fn();
+                },
+            },
+            readRecentWorkspacePathsFromUserHome: async () => {
+                storedFor = server.login;
+                return { recentRoots: [ALICE_REPO, 'file:///workspace/repos/users/alice/acme/blog'] };
+            },
+            writeToUserHome: async (data: { recentRoots: string[] }) => {
+                written = data.recentRoots;
+            },
+        });
+        server.login = undefined;
+
+        await server.removeRecentWorkspacesOf('alice', uri => uri === ALICE_REPO);
+
+        expect(storedFor).to.equal('alice');
+        expect(written).to.deep.equal(['file:///workspace/repos/users/alice/acme/blog']);
+    });
+});

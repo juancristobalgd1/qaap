@@ -290,6 +290,12 @@ export interface QaapProjectSessionSummary {
 
 export interface QaapProjectSessionsResponse {
     readonly sessions: QaapProjectSessionSummary[];
+    /**
+     * `github:owner/repo` (lower-cased) of projects the user removed and has not imported again. The hub
+     * hides every card that resolves to one of them, whatever key it came from (path-keyed rows,
+     * recent workspaces, conversation cwds).
+     */
+    readonly removedProjects?: string[];
 }
 
 export interface QaapProjectSessionUpsertRequest {

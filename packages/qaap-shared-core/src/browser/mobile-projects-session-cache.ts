@@ -4,7 +4,9 @@
 // *****************************************************************************
 
 import type { QaapProjectSessionSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
 import {
+    MOBILE_PROJECTS_REMOVED_PROJECTS_BASE,
     MOBILE_PROJECTS_SESSION_CACHE_BASE,
     mobileProjectsUserStorageKey,
 } from './mobile-projects-user-storage';
@@ -102,4 +104,63 @@ export function mergeSessionMaps(
         }
     }
     return out;
+}
+
+/**
+ * Drop browser rows of projects the server reports as removed, whatever key they were recorded under:
+ * `ws:`/`recent:` rows are never reconciled against the server otherwise, so they kept listing the project.
+ */
+export function removeLocalSessionsOfRemovedProjects(
+    local: Map<string, QaapProjectSessionSummary>,
+    removedProjects: ReadonlySet<string>,
+): Map<string, QaapProjectSessionSummary> {
+    const reconciled = new Map(local);
+    if (removedProjects.size === 0) {
+        return reconciled;
+    }
+    for (const key of local.keys()) {
+        const identity = qaapProjectRemovalIdentity(key);
+        if (identity && removedProjects.has(identity)) {
+            reconciled.delete(key);
+        }
+    }
+    return reconciled;
+}
+
+/** `github:owner/repo` (lower-cased) of projects the user removed, as last reported by the server. */
+export function readLocalRemovedProjects(userLogin?: string): Set<string> {
+    if (typeof localStorage === 'undefined') {
+        return new Set();
+    }
+    try {
+        const parsed = JSON.parse(localStorage.getItem(mobileProjectsUserStorageKey(MOBILE_PROJECTS_REMOVED_PROJECTS_BASE, userLogin)) ?? '[]') as unknown;
+        return new Set(Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === 'string') : []);
+    } catch {
+        return new Set();
+    }
+}
+
+export function writeLocalRemovedProjects(removedProjects: ReadonlySet<string>, userLogin?: string): void {
+    if (typeof localStorage === 'undefined') {
+        return;
+    }
+    localStorage.setItem(mobileProjectsUserStorageKey(MOBILE_PROJECTS_REMOVED_PROJECTS_BASE, userLogin), JSON.stringify([...removedProjects]));
+}
+
+/** Record (or, once imported again, forget) a removal before the server's next listing reports it. */
+export function setLocalProjectRemoved(projectKey: string, removed: boolean, userLogin?: string): void {
+    const identity = qaapProjectRemovalIdentity(projectKey);
+    if (!identity) {
+        return;
+    }
+    const removedProjects = readLocalRemovedProjects(userLogin);
+    if (removedProjects.has(identity) === removed) {
+        return;
+    }
+    if (removed) {
+        removedProjects.add(identity);
+    } else {
+        removedProjects.delete(identity);
+    }
+    writeLocalRemovedProjects(removedProjects, userLogin);
 }
