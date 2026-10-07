@@ -161,7 +161,10 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
             expect(endpoint.projectSessions.isRepositoryRemoved(login, 'github:acme/shop')).to.equal(true);
             expect(listedRepoKeys()).to.deep.equal([]);
         } finally {
-            fs.chmodSync(stubborn, 0o755);
+            // Windows ignores the read-only bit on directories, so there the delete succeeds at once.
+            if (fs.existsSync(stubborn)) {
+                fs.chmodSync(stubborn, 0o755);
+            }
         }
     });
 
