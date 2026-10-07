@@ -10,6 +10,7 @@ import { buildWorkHubSessionsSidebarRowFingerprint, buildWorkHubSessionsSidebarV
 import { expandConversationSlots, partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
+import { readLocalRemovedProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-session-cache';
 
 export function openWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
     const sidebar = ctx.ensureWorkHubSessionsSidebar();
@@ -61,6 +62,7 @@ export function mergeSessionsSidebarProjectsExtracted(ctx: MobileProjectsSession
         projects,
         ctx.host.conversations?.threadStore?.listAllSummaries?.() ?? [],
         (projectId, uri) => projectsService.isProjectRemovalPending?.(projectId, uri) === true,
+        readLocalRemovedProjects(),
     );
     const current = ctx.host.projectsService.resolveCurrentWorkspaceProject(projects);
     if (!current) {

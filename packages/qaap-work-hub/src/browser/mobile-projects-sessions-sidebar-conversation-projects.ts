@@ -7,6 +7,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { resolveQaapWorktreeLabelsByCwd } from '@theia/qaap-shared-core/lib/common/qaap-worktree-label';
+import { qaapProjectRemovalIdentity } from '@theia/qaap-shared-core/lib/common/qaap-project-removal-identity';
 
 /** Id of the synthetic sidebar project that stands for a conversation cwd. */
 export const conversationCwdProjectId = (cwd: string): string => `ws:${FileUri.create(cwd).toString()}`;
@@ -22,12 +23,19 @@ const uriKey = (uri: { toString(): string } | undefined): string | undefined => 
  *
  * @param isRemovalPending projects the user is deleting right now — never re-synthesized from the
  *        thread store while the optimistic delete is in flight.
+ * @param removedProjects `github:owner/repo` identities the user removed: conversations whose cwd (or
+ *        worktree source, `parallelBaseCwd`) is in such a clone never bring its card back.
  */
 export const mergeConversationCwdProjects = (
     projects: readonly MobileProjectEntry[],
     summaries: readonly QaapAgentConversationSummaryDTO[],
     isRemovalPending: (projectId: string, uri: { toString(): string }) => boolean = () => false,
+    removedProjects: ReadonlySet<string> = new Set(),
 ): MobileProjectEntry[] => {
+    const inRemovedProject = (cwd: string | undefined): boolean => {
+        const identity = removedProjects.size > 0 ? qaapProjectRemovalIdentity(cwd) : undefined;
+        return !!identity && removedProjects.has(identity);
+    };
     const byUri = new Map<string, MobileProjectEntry>();
     for (const project of projects) {
         const key = uriKey(project.uri);
@@ -54,7 +62,7 @@ export const mergeConversationCwdProjects = (
     });
     const seen = new Set(merged.map(project => uriKey(project.uri)).filter((key): key is string => !!key));
     for (const summary of summaries) {
-        if (!summary.cwd) {
+        if (!summary.cwd || inRemovedProject(summary.cwd) || inRemovedProject(summary.parallelBaseCwd)) {
             continue;
         }
         const uri = FileUri.create(summary.cwd);
