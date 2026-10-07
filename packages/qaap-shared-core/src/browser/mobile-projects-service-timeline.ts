@@ -41,6 +41,12 @@ export async function prepareProjectCwdExtracted(ctx: MobileProjectsServiceConte
         if (!project.github) {
             return undefined;
         }
+        // Hub state (selected project, open transcript, tool tabs) can still reference a project the
+        // user just removed; opening it here would clone the repository straight back on the server.
+        const repoKey = `github:${project.github.fullName}`;
+        if (ctx.readHiddenProjectIds().has(repoKey) || ctx.isProjectRemovalPending(project.id) || ctx.isProjectRemovalPending(repoKey)) {
+            return undefined;
+        }
         try {
             const result = await openQaapGithubRepository(project.github.owner, project.github.name);
             return ctx.cwdFromFileUri(new URI(result.workspaceUri));

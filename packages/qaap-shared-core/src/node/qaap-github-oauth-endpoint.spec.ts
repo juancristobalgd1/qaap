@@ -31,7 +31,7 @@ describe('QaapGithubOauthEndpoint.enrichSessionWithWorkspaceUri', () => {
     beforeEach(() => {
         reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-sessions-uri-'));
         endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
-        Object.assign(endpoint, { reposRoot });
+        Object.assign(endpoint, { reposRoot, projectSessions: { isRepositoryRemoved: () => false } });
     });
 
     afterEach(() => {
@@ -78,7 +78,7 @@ describe('QaapGithubOauthEndpoint skip-auth and on-disk clone sessions', () => {
     beforeEach(() => {
         reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-skip-sessions-'));
         endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
-        Object.assign(endpoint, { reposRoot });
+        Object.assign(endpoint, { reposRoot, projectSessions: { isRepositoryRemoved: () => false } });
     });
 
     afterEach(() => {
@@ -170,6 +170,7 @@ describe('QaapGithubOauthEndpoint.handleDeleteGithubRepository', () => {
                     this.deleted.push({ login: user, repoKey });
                     return true;
                 },
+                markRepositoryRemoved: () => undefined,
             },
             portRegistry: {
                 listForOwnerUnderRoot: () => [],

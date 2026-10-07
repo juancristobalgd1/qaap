@@ -34,6 +34,9 @@ export class QaapProjectSessionStore {
     protected readonly storePath = resolveProjectSessionStorePath();
     protected readonly sqlitePath = resolveQaapSqlitePath(this.storePath);
     protected sqliteStore: QaapSqliteStore | undefined;
+    protected removalStore: QaapSqliteStore | undefined;
+    /** `login\0repoKey` (lower-cased) of clones the user removed from the hub; see {@link markRepositoryRemoved}. */
+    protected readonly removedRepositories = new Set<string>();
     protected persistTimer: NodeJS.Timeout | undefined;
     protected loaded = false;
 
@@ -69,6 +72,32 @@ export class QaapProjectSessionStore {
             this.byUser.delete(login);
         }
         this.schedulePersist();
+        return true;
+    }
+
+    /**
+     * Remember that the user removed this repository's clone. Until an explicit import clears it, the
+     * hub's background traffic for the old project (session upserts, implicit `/open`) must not bring
+     * the project back or clone it again. Persisted so it survives a backend restart.
+     */
+    markRepositoryRemoved(login: string, repoKey: string): void {
+        const key = this.removalKey(login, repoKey);
+        if (!this.removedRepositories.has(key)) {
+            this.removedRepositories.add(key);
+            this.persistRepositoryRemoval(key, true);
+        }
+    }
+
+    isRepositoryRemoved(login: string, repoKey: string): boolean {
+        return this.removedRepositories.has(this.removalKey(login, repoKey));
+    }
+
+    clearRepositoryRemoved(login: string, repoKey: string): boolean {
+        const key = this.removalKey(login, repoKey);
+        if (!this.removedRepositories.delete(key)) {
+            return false;
+        }
+        this.persistRepositoryRemoval(key, false);
         return true;
     }
 
@@ -120,6 +149,9 @@ export class QaapProjectSessionStore {
             } catch {
                 // A malformed legacy file must not hide valid SQLite state.
             }
+            for (const [key] of this.getRemovalStore().list<{ removedAt: string }>()) {
+                this.removedRepositories.add(key);
+            }
             for (const [key, session] of store.list<QaapProjectSessionSummary>()) {
                 const separator = key.indexOf('\0');
                 if (separator < 0) {
@@ -165,6 +197,26 @@ export class QaapProjectSessionStore {
         }
     }
 
+    protected persistRepositoryRemoval(key: string, removed: boolean): void {
+        if (!this.loaded) {
+            return;
+        }
+        try {
+            if (removed) {
+                this.getRemovalStore().set(key, { removedAt: new Date().toISOString() });
+            } else {
+                this.getRemovalStore().delete(key);
+            }
+        } catch (err) {
+            console.warn('[qaap] Could not persist removed repository:', err);
+        }
+    }
+
+    /** GitHub owner/repo names are case-insensitive, so removals match whatever case a client sends. */
+    protected removalKey(login: string, repoKey: string): string {
+        return this.storageKey(login, repoKey.toLowerCase());
+    }
+
     protected storageKey(login: string, repoKey: string): string {
         return `${login}\0${repoKey}`;
     }
@@ -174,6 +226,13 @@ export class QaapProjectSessionStore {
             databasePath: this.sqlitePath,
             namespace: 'project-sessions',
             legacyPath: this.storePath,
+        });
+    }
+
+    protected getRemovalStore(): QaapSqliteStore {
+        return this.removalStore ??= new QaapSqliteStore({
+            databasePath: this.sqlitePath,
+            namespace: 'project-removals',
         });
     }
 }

@@ -56,6 +56,11 @@ export interface MobileProjectsProjectActionsHost {
      * a reload, so reconciling a delete does not drop unrelated sidebar projects.
      */
     reconcileLoadedProjects?(projects: MobileProjectEntry[]): MobileProjectEntry[];
+    /** Hub shell selection; a removed project must not stay selected (its cwd prep would re-clone it). */
+    agentsHubSelectedProjectId?: string;
+    transcriptOpenProject?: MobileProjectEntry;
+    preparedCwdByProjectId?: Map<string, string>;
+    closeAgentsHubSession?(): void;
 }
 
 /** Repository card actions: rename, duplicate, clear tasks, clear failed tasks, remove. */
@@ -227,6 +232,28 @@ export class MobileProjectsProjectActionsUi {
         }
     }
 
+    /**
+     * Drop every hub reference to a project being removed, before the next render. Otherwise the
+     * shell keeps resolving it as the open project and preparing its cwd, which re-opens (on the
+     * server: re-clones) the repository and brings the card back. The hub then falls back to the
+     * next project, or to the no-project state.
+     */
+    protected forgetRemovedHubProject(project: MobileProjectEntry, previousProjects: readonly MobileProjectEntry[]): void {
+        const isRemoved = (candidate: MobileProjectEntry | undefined): boolean => !!candidate && (
+            candidate.id === project.id
+            || (!!project.uri && candidate.uri?.toString().toLowerCase() === project.uri.toString().toLowerCase())
+            || (!!project.github && candidate.github?.fullName.toLowerCase() === project.github.fullName.toLowerCase())
+        );
+        const selectedId = this.host.agentsHubSelectedProjectId;
+        if (selectedId && (selectedId === project.id || isRemoved(previousProjects.find(candidate => candidate.id === selectedId)))) {
+            this.host.agentsHubSelectedProjectId = undefined;
+        }
+        this.host.preparedCwdByProjectId?.delete(project.id);
+        if (isRemoved(this.host.transcriptOpenProject)) {
+            this.host.closeAgentsHubSession?.();
+        }
+    }
+
     async onRemoveProject(project: MobileProjectEntry): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
         if (!this.host.projectsService.canRemove(project)) {
@@ -248,6 +275,7 @@ export class MobileProjectsProjectActionsUi {
         projectsService.markProjectRemovalPending?.(project.id, project.uri);
         const removalAnimation = this.animateProjectRemoval(project);
         this.host.projects = previousProjects.filter(candidate => candidate.id !== project.id);
+        this.forgetRemovedHubProject(project, previousProjects);
         let settled = false;
         if (removalAnimation.started) {
             // Repaint the hub once the collapse animation ends, without waiting for the backend.
