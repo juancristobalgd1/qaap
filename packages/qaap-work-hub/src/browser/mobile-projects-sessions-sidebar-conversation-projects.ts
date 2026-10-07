@@ -15,6 +15,22 @@ export const conversationCwdProjectId = (cwd: string): string => `ws:${FileUri.c
 const uriKey = (uri: { toString(): string } | undefined): string | undefined => uri?.toString().toLowerCase();
 
 /**
+ * Source clone (`parallelBaseCwd`) of the task worktree at `uri`, from the conversations run in it, or
+ * `undefined` when `uri` is not a known task worktree.
+ */
+export const worktreeSourceCwdOf = (
+    uri: { toString(): string } | undefined,
+    summaries: readonly QaapAgentConversationSummaryDTO[],
+): string | undefined => {
+    const key = uriKey(uri);
+    if (!key) {
+        return undefined;
+    }
+    return summaries.find(summary => !!summary.cwd && !!summary.parallelBaseCwd
+        && uriKey(FileUri.create(summary.cwd)) === key)?.parallelBaseCwd;
+};
+
+/**
  * Add a synthetic project for every conversation cwd that no catalog project covers, so authenticated
  * history stays reachable before the repository catalog loads. Worktree conversations (cwd is a hash
  * directory under the worktrees root, `parallelBaseCwd` is the source repo) are named
