@@ -776,18 +776,50 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.status(403).json({ error: 'Forbidden' });
             return;
         }
-        try {
-            this.releasePreviewsForWorkspace(login, target);
-            if (await this.pathExists(target)) {
-                await fs.rm(target, { recursive: true, force: true });
-            }
-            this.projectSessions.deleteForUser(login, `github:${owner}/${repoName}`);
-            this.projectSessions.markRepositoryRemoved(login, `github:${owner}/${repoName}`);
-            res.json({ deleted: true, owner, repo: repoName });
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to remove repository workspace';
-            res.status(502).json({ error: message });
+        // Record the removal before touching the disk: the hub deletes the project's task transcripts in
+        // parallel, and those write checkpoint refs into the clone's .git while it is being deleted. If the
+        // directory delete loses that race the project must still stay removed (no card on reload).
+        this.projectSessions.deleteForUser(login, `github:${owner}/${repoName}`);
+        this.projectSessions.markRepositoryRemoved(login, `github:${owner}/${repoName}`);
+        this.releasePreviewsForWorkspace(login, target);
+        const removed = await this.removeRepositoryWorkspace(target);
+        if (!removed) {
+            this.scheduleRepositoryWorkspaceCleanup(target);
         }
+        res.json({ deleted: true, owner, repo: repoName, cleanupPending: !removed });
+    }
+
+    /**
+     * Deletes a clone, retrying while concurrent writers (checkpoint refs, a dying preview) recreate
+     * entries inside it. Resolves false when the directory is still there afterwards.
+     */
+    protected async removeRepositoryWorkspace(target: string): Promise<boolean> {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                if (!await this.pathExists(target)) {
+                    return true;
+                }
+                await fs.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+            } catch (err) {
+                console.warn('[qaap-oauth] Failed to remove repository workspace (will retry):', target, err instanceof Error ? err.message : String(err));
+            }
+            await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        }
+        return !await this.pathExists(target);
+    }
+
+    protected scheduleRepositoryWorkspaceCleanup(target: string, delaysMs: readonly number[] = [5_000, 30_000, 120_000]): void {
+        const [delay, ...rest] = delaysMs;
+        if (delay === undefined) {
+            console.error('[qaap-oauth] Giving up removing repository workspace:', target);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            if (!await this.removeRepositoryWorkspace(target)) {
+                this.scheduleRepositoryWorkspaceCleanup(target, rest);
+            }
+        }, delay);
+        timer.unref?.();
     }
 
     protected releasePreviewsForWorkspace(login: string, workspacePath: string): void {

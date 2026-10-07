@@ -145,6 +145,26 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
         expect(listedRepoKeys()).to.deep.equal(['github:acme/shop']);
     });
 
+    // Production bug (07 Oct): removing an open project raced the task-transcript deletes, which write
+    // checkpoint refs into the clone's .git while it is being deleted; fs.rm failed, the handler answered
+    // 502 before recording the removal, and the card came back on the next reload.
+    it('keeps the project removed when the clone cannot be deleted right away', async () => {
+        const stubborn = path.join(clonePath(), '.git', 'refs');
+        fs.mkdirSync(path.join(stubborn, 'qaap'), { recursive: true });
+        fs.writeFileSync(path.join(stubborn, 'qaap', 'checkpoint'), 'x');
+        fs.chmodSync(stubborn, 0o555);
+        try {
+            const res = makeRes();
+            await endpoint.handleDeleteGithubRepository({ params: { owner: 'acme', repo: 'shop' } }, res);
+
+            expect(res.statusCode).to.equal(200);
+            expect(endpoint.projectSessions.isRepositoryRemoved(login, 'github:acme/shop')).to.equal(true);
+            expect(listedRepoKeys()).to.deep.equal([]);
+        } finally {
+            fs.chmodSync(stubborn, 0o755);
+        }
+    });
+
     it('still opens (and clones) a repository that was never removed', async () => {
         fs.rmSync(clonePath(), { recursive: true, force: true });
 
