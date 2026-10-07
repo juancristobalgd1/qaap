@@ -15,9 +15,12 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import { buildStaticServeCommand } from '../common/qaap-project-bootstrap-static';
 import { buildQaapManagedShellInvocation, resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 
+// Quarantined flaky test (see ops/flaky.md): runs only with QAAP_RUN_QUARANTINED=1.
+const itQuarantined = process.env.QAAP_RUN_QUARANTINED === '1' ? it : it.skip;
+
 describe('qaap-project-bootstrap-shell', () => {
 
-    it('quotes project cwd correctly for POSIX shells', function (): void {
+    itQuarantined('quotes project cwd correctly for POSIX shells', function (): void {
         if (process.platform === 'win32') {
             this.skip();
         }
