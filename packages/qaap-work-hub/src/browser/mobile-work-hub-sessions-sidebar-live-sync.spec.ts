@@ -72,6 +72,25 @@ describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
 
     const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
+    /**
+     * Polls until the assertion block passes or the deadline expires. Fixed sleeps sized to the tap
+     * guard flaked on slow CI runners, where timers fire late; this waits for the real settle instead.
+     */
+    async function eventually(assertion: () => void, timeoutMs: number = SESSIONS_SIDEBAR_INTERACTION_GUARD_MS + 4000): Promise<void> {
+        const deadline = Date.now() + timeoutMs;
+        for (;;) {
+            try {
+                assertion();
+                return;
+            } catch (error) {
+                if (Date.now() >= deadline) {
+                    throw error;
+                }
+                await wait(50);
+            }
+        }
+    }
+
     function createHarness(initial: Record<string, RowState>): {
         sidebar: MobileWorkHubSessionsSidebar;
         ctx: MobileProjectsSessionsSidebarUiContext;
@@ -151,10 +170,10 @@ describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
         await wait(100);
         model.set('a', { status: 'idle', unread: true });
         sidebar.scheduleRefreshList();
-        await wait(800);
-
-        expect(row('a').dataset.status).to.equal('idle');
-        expect(row('a').classList.contains('theia-mod-unread-reply')).to.equal(true);
+        await eventually(() => {
+            expect(row('a').dataset.status).to.equal('idle');
+            expect(row('a').classList.contains('theia-mod-unread-reply')).to.equal(true);
+        });
     });
 
     it('opening A and then B clears the dot on A once the open settles, with no further events', async () => {
@@ -172,11 +191,11 @@ describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
         ctx.beginSessionsSidebarConversationActivation('b');
         host.transcriptOpenSummaryId = 'b';
         sidebar.refreshList();
-        await wait(SESSIONS_SIDEBAR_INTERACTION_GUARD_MS + 600);
-
-        expect(row('a').classList.contains('theia-mod-unread-reply')).to.equal(false);
-        expect(row('a').classList.contains('theia-mod-current')).to.equal(false);
-        expect(row('b').classList.contains('theia-mod-current')).to.equal(true);
+        await eventually(() => {
+            expect(row('a').classList.contains('theia-mod-unread-reply')).to.equal(false);
+            expect(row('a').classList.contains('theia-mod-current')).to.equal(false);
+            expect(row('b').classList.contains('theia-mod-current')).to.equal(true);
+        });
     });
 
     it('an update that lands during a tap is applied when the tap guard expires', async () => {
@@ -186,10 +205,10 @@ describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
         ctx.sessionsSidebarInteractionUntil = Date.now() + SESSIONS_SIDEBAR_INTERACTION_GUARD_MS;
         model.set('a', { status: 'idle', unread: true });
         sidebar.refreshList();
-        await wait(SESSIONS_SIDEBAR_INTERACTION_GUARD_MS + 600);
-
-        expect(row('a').dataset.status).to.equal('idle');
-        expect(row('a').classList.contains('theia-mod-unread-reply')).to.equal(true);
+        await eventually(() => {
+            expect(row('a').dataset.status).to.equal('idle');
+            expect(row('a').classList.contains('theia-mod-unread-reply')).to.equal(true);
+        });
     });
 
     it('the patch path never reports success or stamps row fingerprints while the tap guard blocks it', () => {
