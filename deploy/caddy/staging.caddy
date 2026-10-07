@@ -1,0 +1,11 @@
+# Staging site, imported by the production Caddyfile only when QAAP_STAGING_CADDY=staging.
+# Proxies to the staging container published on the host loopback (deploy/staging/compose.staging.yml).
+staging.{$QAAP_PUBLIC_HOST:localhost} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Robots-Tag "noindex, nofollow"
+	}
+	reverse_proxy host.docker.internal:{$QAAP_STAGING_PORT:4874}
+}
