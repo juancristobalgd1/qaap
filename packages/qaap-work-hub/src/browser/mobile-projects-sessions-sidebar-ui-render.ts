@@ -71,7 +71,10 @@ export function mergeSessionsSidebarProjectsExtracted(ctx: MobileProjectsSession
     const current = ctx.host.projectsService.resolveCurrentWorkspaceProject(projects);
     // A workspace still open on a removed clone must not bring its card back either, nor a task worktree
     // checked out from one (its own removal identity is `worktree:`, not the source's).
-    const sourceIdentity = current ? qaapProjectRemovalIdentity(worktreeSourceCwdOf(current.uri, summaries)) : undefined;
+    // Skip the scan over the history when nothing was removed (the common case).
+    const sourceIdentity = current && removedProjects.size > 0
+        ? qaapProjectRemovalIdentity(worktreeSourceCwdOf(current.uri, summaries))
+        : undefined;
     if (!current || withoutRemovedMobileProjects([current], removedProjects, () => undefined).length === 0
         || (!!sourceIdentity && removedProjects.has(sourceIdentity))) {
         return [...projects];
