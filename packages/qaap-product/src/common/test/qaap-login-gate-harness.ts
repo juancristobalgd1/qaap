@@ -15,11 +15,16 @@ export interface LoginGateResponse {
 }
 
 /** Answers a stubbed request; `call` counts earlier requests to the same pathname (0-based). */
-export type LoginGateResponder = (pathname: string, call: number) => LoginGateResponse | undefined;
+export type LoginGateResponder = (
+    pathname: string,
+    call: number,
+) => LoginGateResponse | undefined | Promise<LoginGateResponse | undefined>;
 
 export interface LoginGateOptions {
     /** Entries present in `localStorage` before the gate runs. */
     readonly localStorage?: Record<string, string>;
+    /** Extra markup in `<head>` (e.g. generated bundle stylesheet metadata). */
+    readonly headHtml?: string;
     /** Extra markup for `<body>` (e.g. Theia's `.theia-preload` splash). */
     readonly bodyHtml?: string;
     /** Runs against the page window before the gate script, e.g. to install fake timers. */
@@ -57,12 +62,15 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
     virtualConsole.on('error', (...args: unknown[]) => consoleErrors.push(args.map(String).join(' ')));
     const pageErrors: string[] = [];
     virtualConsole.on('jsdomError', (error: Error) => pageErrors.push(error.stack ?? error.message));
-    const dom = new JSDOM(`<!doctype html><html lang="es"><head></head><body>${options.bodyHtml ?? ''}</body></html>`, {
-        url,
-        runScripts: 'outside-only',
-        pretendToBeVisual: true,
-        virtualConsole,
-    });
+    const dom = new JSDOM(
+        `<!doctype html><html lang="es"><head>${options.headHtml ?? ''}</head><body>${options.bodyHtml ?? ''}</body></html>`,
+        {
+            url,
+            runScripts: 'outside-only',
+            pretendToBeVisual: true,
+            virtualConsole,
+        },
+    );
     const window = dom.window as unknown as Window & typeof globalThis & { eval(source: string): unknown };
     window.localStorage.setItem('localeId', 'es');
     for (const [key, value] of Object.entries(options.localStorage ?? {})) {
@@ -75,7 +83,7 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
         const call = calls.get(pathname) ?? 0;
         calls.set(pathname, call + 1);
         requests.push(pathname);
-        const response = responder(pathname, call) ?? { ok: false };
+        const response = await responder(pathname, call) ?? { ok: false };
         return { ok: response.ok, status: response.ok ? 200 : 503, json: async () => response.body };
     };
     const bundleAppended = new Promise<LoginGateBundleAppend>(resolve => {

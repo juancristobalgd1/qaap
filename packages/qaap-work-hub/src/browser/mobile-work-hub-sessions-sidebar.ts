@@ -16,6 +16,7 @@ import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-c
 import { setQaapClientErrorBuild } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
+import { TASK_TITLE_OVERFLOW_CLASS } from './mobile-projects-task-title-marquee';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -38,6 +39,9 @@ export const QAAP_SESSIONS_SIDEBAR_EDGE_SWIPE_DISMISS_MIN_DELTA = 40;
 const DISMISS_HINT_DURATION_MS = 4200;
 /** Quiet time after the last touch/scroll before the pull request list may be rebuilt (covers momentum). */
 const PULL_REQUEST_SCROLL_SETTLE_MS = 350;
+/** Title marquee measurement, written only on the laid-out list (see refreshTaskTitleMarquee). */
+const TASK_TITLE_OVERFLOW_CLASS_MARKUP = new RegExp(` ${TASK_TITLE_OVERFLOW_CLASS}(?=[ "])`, 'g');
+const TASK_TITLE_OVERFLOW_STYLE_MARKUP = / style="(?:--qaap-task-title-overflow:[^;"]*;?\s*)?"/g;
 const DESKTOP_SIDEBAR_MIN_WIDTH = 240;
 const DESKTOP_SIDEBAR_MAX_WIDTH = 460;
 const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
@@ -734,10 +738,8 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     scheduleRefreshList(): void {
-        if (this.delegate.shouldDeferSessionListRefresh?.()) {
-            this.scheduleDeferredRefresh();
-            return;
-        }
+        // The defer/throttle decision belongs to refreshList alone: asking here too would
+        // record a refresh that never painted and make the frame below defer itself forever.
         if (this.refreshListRaf) {
             return;
         }
@@ -781,8 +783,12 @@ export class MobileWorkHubSessionsSidebar {
             return;
         }
         const previousScrollTop = this.scrollHost.scrollTop;
-        const activeConversationId = this.listHost.contains(document.activeElement)
-            ? (document.activeElement?.closest<HTMLElement>('[data-qaap-conversation-id]')?.dataset.qaapConversationId)
+        // Carry only keyboard focus across the swap. A script focus matches :focus-visible, so
+        // restoring a row the pointer selected would run the hover marquee on it for good
+        // (title clipped and shifted left without an ellipsis, fade block at the end).
+        const activeElement = this.listHost.contains(document.activeElement) ? document.activeElement : undefined;
+        const activeConversationId = activeElement?.matches(':focus-visible')
+            ? activeElement.closest<HTMLElement>('[data-qaap-conversation-id]')?.dataset.qaapConversationId
             : undefined;
         if (pullRequests) {
             // The pull request UI keeps references to the container and results nodes it renders
@@ -800,7 +806,7 @@ export class MobileWorkHubSessionsSidebar {
         const nextList = document.createElement('div');
         nextList.className = this.listHost.className;
         this.delegate.renderSessionList(nextList);
-        if (!options?.force && this.listHost.innerHTML === nextList.innerHTML) {
+        if (!options?.force && this.sessionListMarkup(this.listHost) === this.sessionListMarkup(nextList)) {
             this.delegate.rememberSessionListFingerprint?.(this.listHost);
             this.updateProjectsHeading();
             return;
@@ -817,6 +823,17 @@ export class MobileWorkHubSessionsSidebar {
         if (this.visible) {
             this.ensureScrollTouchFallback();
         }
+    }
+
+    /**
+     * List markup without the title marquee measurement: the live titles carry it once laid
+     * out and a detached render never does, so comparing it would replace the list (and
+     * restart a running marquee) on every refresh of a list with a long title.
+     */
+    protected sessionListMarkup(host: HTMLElement): string {
+        return host.innerHTML
+            .replace(TASK_TITLE_OVERFLOW_CLASS_MARKUP, '')
+            .replace(TASK_TITLE_OVERFLOW_STYLE_MARKUP, '');
     }
 
     /**

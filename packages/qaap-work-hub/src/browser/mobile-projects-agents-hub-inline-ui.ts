@@ -53,6 +53,8 @@ export interface MobileProjectsAgentsHubInlineHost {
     agentsHubInlineExecutionRoot: HTMLElement | undefined;
     agentsHubInlineTabStrip: HTMLElement | undefined;
     replacingTranscriptSheet: boolean;
+    /** Owns the unread high-water mark; the inline transcript reports open/close here. */
+    unreadTrackerUi?: import('./mobile-projects-unread-tracker-ui').MobileProjectsUnreadTrackerUi;
     transcriptOpenSummaryId: string | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
@@ -715,6 +717,7 @@ export class MobileProjectsAgentsHubInlineUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
+        this.host.unreadTrackerUi?.markConversationOpened(summary);
         if (this.isSameInlineTranscriptOpen(project, summary)) {
             return;
         }
@@ -813,6 +816,7 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     closeAgentsHubSession(): void {
+        this.host.unreadTrackerUi?.markOpenConversationClosed();
         const closingProject = this.resolveAgentsHubShellProject();
         closingProject && this.host.executionSurfaceTabsUi.setExecutionSurfaceTab?.(closingProject, 'messages');
         if (this.host.transcriptLastConv) {

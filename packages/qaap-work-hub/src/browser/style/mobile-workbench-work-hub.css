@@ -10438,7 +10438,8 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   inset: 2px;
   border-radius: 999px;
   background: var(--theia-charts-blue, #4c9aff);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theia-charts-blue, #4c9aff) 22%, transparent);
+  /* 2px halo keeps dot + halo inside the 12px glyph box, clear of the project name. */
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theia-charts-blue, #4c9aff) 22%, transparent);
 }
 
 .theia-mobile-projects-row-glyph.theia-mod-workspace.theia-mod-unread::after {
@@ -11454,20 +11455,28 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 .theia-mobile-projects-task-title-row {
+  --qaap-task-title-row-gap: 8px;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--qaap-task-title-row-gap);
 }
 
 /* Unread agent reply: a small dot before the title, separate from the status glyph so a run that
-   finished fine keeps its real outcome icon instead of the "needs you" warning. */
+   finished fine keeps its real outcome icon instead of the "needs you" warning. The dot owns its
+   spacing (the title row's gap differs per surface) and is centred on the title's line box, so it
+   neither touches the text nor changes the row height. */
+.theia-mobile-projects-task-row.theia-mod-unread-reply .theia-mobile-projects-task-title-row {
+  --qaap-unread-dot-size: 7px;
+  --qaap-unread-dot-space: 10px;
+}
+
 .theia-mobile-projects-task-row.theia-mod-unread-reply .theia-mobile-projects-task-title-row::before {
   content: "";
-  flex: 0 0 auto;
+  flex: 0 0 var(--qaap-unread-dot-size);
   align-self: center;
-  width: 6px;
-  height: 6px;
-  margin-right: -2px;
+  width: var(--qaap-unread-dot-size);
+  height: var(--qaap-unread-dot-size);
+  margin-right: calc(var(--qaap-unread-dot-space) - var(--qaap-task-title-row-gap, 8px));
   border-radius: 999px;
   background: var(--theia-notificationsInfoIcon-foreground, var(--theia-focusBorder));
 }

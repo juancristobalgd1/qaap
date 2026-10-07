@@ -101,6 +101,7 @@ import {
 import { MobileProjectsHubTeamDataUi, type MobileProjectsHubTeamDataHost } from './mobile-projects-hub-team-data-ui';
 import { MobileProjectsConversationActionsUi, type MobileProjectsConversationActionsHost } from './mobile-projects-conversation-actions-ui';
 import { MobileProjectsAgentsHubInlineUi, type MobileProjectsAgentsHubInlineHost } from './mobile-projects-agents-hub-inline-ui';
+import { MobileProjectsUnreadTrackerUi, type MobileProjectsUnreadTrackerHost } from './mobile-projects-unread-tracker-ui';
 import {
     MobileProjectsBackgroundTaskUi,
     type MobileProjectsBackgroundTaskHost,
@@ -553,6 +554,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public readonly theiaChatSessionUi = new MobileProjectsTheiaChatSessionUi(this as unknown as MobileProjectsTheiaChatSessionHost);
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public readonly agentsHubInlineUi = new MobileProjectsAgentsHubInlineUi(this as unknown as MobileProjectsAgentsHubInlineHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly unreadTrackerUi = new MobileProjectsUnreadTrackerUi(this as unknown as MobileProjectsUnreadTrackerHost);
     /** Shared Changes · Preview · Files · Terminal tab per project (task surface + transcript sheet). */
     protected readonly executionSurfaceTabByProjectId = new Map<string, TranscriptTab>();
     protected projectDetailExpandedId: string | undefined;

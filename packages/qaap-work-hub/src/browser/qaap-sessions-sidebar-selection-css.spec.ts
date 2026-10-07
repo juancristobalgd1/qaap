@@ -12,7 +12,7 @@ describe('sessions sidebar selection CSS', () => {
     const css = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-sessions-sidebar.css'),
         'utf8',
-    );
+    ).replace(/\r\n/g, '\n');
 
     it('uses one gutter token for project rows, session pills, and list chrome', () => {
         expect(css).to.include('--qaap-sessions-row-gutter: 8px');
@@ -77,6 +77,15 @@ describe('sessions sidebar selection CSS', () => {
         // The start fade is only painted while the title is scrolled.
         expect(css).to.include('@keyframes qaap-task-title-marquee-start-fade');
         expect(css).to.match(/::before\s*\{[^}]*opacity:\s*0;[^}]*animation:\s*qaap-task-title-marquee-start-fade/s);
+    });
+
+    it('fades a running title into the row surface instead of painting a block at its end', () => {
+        expect(css).not.to.match(/theia-mod-title-overflow::(?:before|after)[^{]*\{[^}]*list-hoverBackground/s);
+        expect(css).to.match(/\.theia-mod-title-overflow::after[^{]*\{[^}]*linear-gradient\(\s*to left,\s*var\(--qaap-task-title-fade-surface\)/s);
+        // The selected row's surface is the one its hover/focus ::before paints.
+        expect(css).to.match(
+            /\.theia-mobile-projects-task-row\.theia-mod-current\s*\{\s*--qaap-task-title-fade-surface:\s*color-mix\(in srgb,[^;]*91%,[^;]*9%\);/s);
+        expect(css).to.match(/\.theia-mod-current\.theia-mod-menu-open::before\s*\{\s*background:\s*var\(--qaap-task-title-fade-surface\);/s);
     });
 
     it('gives resting titles more room and reserves the action slot on interaction', () => {

@@ -65,6 +65,23 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   It fails if the deploy workflow stops running `qaap-vps-update.sh`, if that script stops
   installing, enabling or verifying the guard before the switch, or if the allow-list changes.
 
+### Deploy runs the CI-verified image (never a VPS source build)
+
+- **Rule:** the root `Dockerfile` pins every base image as `name:version@sha256:<index digest>`, and
+  `scripts/qaap-vps-update.sh` exports `QAAP_THEIA_IMAGE` and pulls/verifies the GHCR image
+  **before** `run_runtime_state_check` or any other `docker compose run|up theia`.
+- **Why:** the runtime-state check starts a temporary `theia` container. Before the fix it ran while
+  `QAAP_THEIA_IMAGE` was still unset, so Compose resolved the fallback `qaap-theia:local`. The
+  post-deploy prune deletes that tag, so the next deploy (3452a58d3, Oct 6 2026) silently rebuilt
+  the whole image on the VPS from moving base tags, and `npm ci` failed compiling `native-keymap`;
+  production stayed on the previous release. The pull happens on the image CI already booted and
+  verified, so the VPS never needs a toolchain.
+- **Symptoms if broken:** the "Deploy over SSH" log shows `Image qaap-theia:local Pulling` →
+  `pull access denied` → `Image qaap-theia:local Building` and a Dockerfile build on the VPS.
+- **Bumping a base:** resolve the new index digest (`docker buildx imagetools inspect <tag>`), keep
+  the version tag next to it, and let the publish + verify jobs prove it before deploying.
+- **Guard:** `scripts/qaap-dockerfile-base-pin-check.test.sh` runs in the required `qaap-guards` job.
+
 ### 1. The portable rlimit fallback must exec the real command
 
 - **Rule:** in `packages/qaap-cloud-workspace/src/node/qaap-tenant-spawn-service.ts` (`applyResourceLimits`), the fallback script is `ulimit -v "$1" && ulimit -t "$2" && shift 2 && exec "$@"`. `$0` is the `qaap-resource-limited` label, `$1`/`$2` are the limits, `$3…` is the command. Shift exactly **2**.

@@ -13,6 +13,7 @@ import {
     QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_INSTALL_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS,
+    QAAP_AGENT_LOGIN_PROMPT_GRACE_MS,
     QaapAgentLoginFlow,
     type QaapAgentLoginFlowState,
 } from '../common/qaap-agent-login-flow';
@@ -33,6 +34,25 @@ const GROK_OUTPUT = [
     'Confirm this code in your browser:',
     '  S3DF-WCAM',
     'Waiting for authorization...',
+].join('\n');
+
+/** Gemini CLI 0.62 (Antigravity) folder-trust dialog, Ink box drawing stripped to text. */
+const GEMINI_TRUST_DIALOG_OUTPUT = [
+    'node -e \'…\' && NO_BROWSER=true GEMINI_CLI_TRUST_WORKSPACE=true gemini; echo "QAAP_LOGIN_EXIT:$?"',
+    '╭──────────────────────────────────────────────────────────────╮',
+    '│ Do you trust this folder?                                     │',
+    '│ Trusting a folder allows Gemini CLI to load its local configurations, including custom commands, hooks, MCP servers, agent skills, and settings. │',
+    '│ ● 1. Trust folder (repo)                                      │',
+    '│   2. Trust parent folder (workspace)                          │',
+    '│   3. Don\'t trust                                              │',
+    '╰──────────────────────────────────────────────────────────────╯',
+].join('\n');
+
+const GEMINI_LINK_OUTPUT = [
+    'Please visit the following URL to authorize the application:',
+    'https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=https%3A%2F%2Fcodeassist.google.com%2Fauthcode&access_type=offline'
+    + '&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform&response_type=code',
+    'Enter the authorization code:',
 ].join('\n');
 
 function createFlow(agentId: string): { flow: QaapAgentLoginFlow; states: QaapAgentLoginFlowState[] } {
@@ -115,12 +135,65 @@ describe('QaapAgentLoginFlow', () => {
         const { flow } = createFlow('codex');
         flow.restart(0);
         flow.tick(QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS);
-        expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'unavailable', tail: [] });
+        expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'prepare-timeout', tail: [] });
         flow.startInstall(0);
         flow.tick(QAAP_AGENT_LOGIN_INSTALL_TIMEOUT_MS - 1);
         expect(flow.state.phase).to.equal('installing');
         flow.tick(QAAP_AGENT_LOGIN_INSTALL_TIMEOUT_MS);
         expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'install-failed', tail: [] });
+    });
+
+    it('says which question a CLI stopped at instead of spinning until the link deadline', () => {
+        const { flow } = createFlow('antigravity');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.appendOutput(GEMINI_TRUST_DIALOG_OUTPUT, 1_000);
+        flow.tick(1_000 + QAAP_AGENT_LOGIN_PROMPT_GRACE_MS - 1);
+        expect(flow.state.phase, 'a link may still follow the question').to.equal('waiting');
+        flow.tick(1_000 + QAAP_AGENT_LOGIN_PROMPT_GRACE_MS);
+        const state = flow.state;
+        expect(state.phase).to.equal('failed');
+        if (state.phase === 'failed') {
+            expect(state.reason).to.equal('waiting-for-input');
+            expect(state.prompt).to.match(/^Trusting a folder allows Gemini CLI/);
+            expect(state.tail.join('\n')).to.include('Do you trust this folder?');
+        }
+        expect(1_000 + QAAP_AGENT_LOGIN_PROMPT_GRACE_MS).to.be.at.most(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+    });
+
+    it('shows the link when it follows a question within the grace period', () => {
+        const { flow } = createFlow('antigravity');
+        flow.commandStarted(0);
+        flow.appendOutput(GEMINI_TRUST_DIALOG_OUTPUT, 0);
+        flow.appendOutput(`\n${GEMINI_LINK_OUTPUT}`, 500);
+        flow.tick(QAAP_AGENT_LOGIN_PROMPT_GRACE_MS);
+        const state = flow.state;
+        expect(state.phase).to.equal('challenge');
+        if (state.phase === 'challenge') {
+            expect(state.challenge.url?.startsWith('https://accounts.google.com/o/oauth2/v2/auth')).to.equal(true);
+            expect(state.challenge.codeEntry).to.equal(true);
+        }
+    });
+
+    it('expects every sign-in link within 15 seconds', () => {
+        expect(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS).to.be.at.most(15_000);
+    });
+
+    it('starts each attempt without the previous attempt\'s question', () => {
+        const { flow } = createFlow('antigravity');
+        flow.commandStarted(0);
+        flow.appendOutput(GEMINI_TRUST_DIALOG_OUTPUT, 0);
+        flow.restart(100);
+        flow.commandStarted(200);
+        flow.tick(200 + QAAP_AGENT_LOGIN_PROMPT_GRACE_MS);
+        expect(flow.state.phase).to.equal('waiting');
+    });
+
+    it('reports why the sign-in terminal could not start', () => {
+        const { flow } = createFlow('antigravity');
+        flow.restart(0);
+        flow.terminalUnavailable('Host is not attached.');
+        expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'terminal-unavailable', tail: ['Host is not attached.'] });
     });
 
     it('ignores the echoed command line: a flag name is not a challenge', () => {
@@ -185,5 +258,31 @@ describe('createQaapAgentLoginDialog', () => {
         expect(retries).to.equal(1);
         controller.render({ phase: 'failed', reason: 'exited', exitCode: 1, tail: ['denied'] });
         expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent).to.contain('exit code 1');
+    });
+
+    it('names the question a stuck CLI asked, with no spinner', () => {
+        const controller = open({ onRetry: () => undefined });
+        controller.render({
+            phase: 'failed',
+            reason: 'waiting-for-input',
+            prompt: 'Do you trust this folder?',
+            tail: ['Do you trust this folder?'],
+        });
+        const status = controller.root.querySelector<HTMLElement>('.theia-mobile-agent-login-dialog-status')!;
+        expect(status.textContent).to.contain('stopped to ask a question');
+        expect(status.textContent).to.contain('"Do you trust this folder?"');
+        expect(status.querySelector('.codicon-loading')).to.equal(null);
+        expect(buttonLabels(controller.root)).to.include('Retry');
+    });
+
+    it('never answers a failed Retry with the generic unavailable message', () => {
+        const controller = open({ onRetry: () => undefined });
+        const status = (): string => controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent ?? '';
+        controller.render({ phase: 'failed', reason: 'prepare-timeout', tail: [] });
+        expect(status()).to.contain('did not start within 15 seconds');
+        controller.render({ phase: 'failed', reason: 'terminal-unavailable', tail: ['Host is not attached.'] });
+        expect(status()).to.contain('Could not open a terminal in this workspace');
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-output')?.textContent).to.equal('Host is not attached.');
+        expect(status()).to.not.contain('Secure sign-in is not available');
     });
 });

@@ -37,19 +37,33 @@ export interface QaapTranscriptLiveControllerDeps {
 }
 
 const REFRESH_DEBOUNCE_MS = 320;
-/** Poll GET /conversation while streaming when SSE is quiet (iOS Safari often drops EventSource). */
-const STREAMING_FALLBACK_POLL_MS = 3_000;
+/**
+ * Poll GET /conversation while a turn is active and live events are quiet (iOS Safari drops
+ * EventSource, the WebSocket can reconnect or miss deltas). First poll after 3s of silence,
+ * then back off by 1s per silent poll up to 5s.
+ */
+const ACTIVE_POLL_INITIAL_MS = 3_000;
+const ACTIVE_POLL_STEP_MS = 1_000;
+const ACTIVE_POLL_MAX_MS = 5_000;
+/**
+ * After a submit the local copy can still read `idle` until the server reports `streaming`;
+ * keep polling this long so that flip is never missed.
+ */
+const ACTIVE_POLL_SUBMIT_GRACE_MS = 15_000;
 
 /**
  * SSE-first live transcript coordinator. Message chunks are merged in the panel via
  * {@link applyConversationMessageDelta}; this class debounces refetches and applies lightweight
- * summary updates from SSE `updated` events. A fallback poll runs while streaming so mobile
- * browsers still advance the transcript when EventSource reconnects slowly or stalls.
+ * summary updates from SSE `updated` events. One fallback poll per watched conversation runs while
+ * its turn is active so the transcript still advances when the live channel drops, reconnects
+ * slowly or never delivers; it stops once the turn settles.
  */
 export class QaapTranscriptLiveController implements Disposable {
 
     protected refreshTimer: number | undefined;
-    protected streamingPollTimer: number | undefined;
+    protected activePollTimer: number | undefined;
+    protected activePollDelayMs = ACTIVE_POLL_INITIAL_MS;
+    protected activePollGraceUntil = 0;
     protected refreshInFlight = false;
     protected pendingForceSettle = false;
     protected scheduleRefresh: (() => void) | undefined;
@@ -78,8 +92,14 @@ export class QaapTranscriptLiveController implements Disposable {
         return this.scheduleRefresh;
     }
 
+    /** Whether {@link watch} is currently bound to `conversationId` (not a stale placeholder id). */
+    isWatchingConversation(conversationId: string): boolean {
+        return this.watchedConversationId === conversationId;
+    }
+
     watch(conversationId: string): void {
         this.watchedConversationId = conversationId;
+        this.activePollGraceUntil = 0;
         this.clearRefreshTimer();
         const scheduleRefresh = (): void => {
             if (!this.deps.isWatching(conversationId)) {
@@ -111,10 +131,12 @@ export class QaapTranscriptLiveController implements Disposable {
             const last = this.deps.getLastConv();
             if (last?.status === 'streaming') {
                 scheduleRefresh();
+                this.armActivePoll();
             }
         });
-        this.installVisibilityResume(conversationId, scheduleRefresh);
-        this.startStreamingFallbackPoll(conversationId, scheduleRefresh);
+        this.installVisibilityResume(conversationId);
+        this.clearActivePoll();
+        this.armActivePoll();
         void this.refreshNow();
     }
 
@@ -122,7 +144,7 @@ export class QaapTranscriptLiveController implements Disposable {
         this.watchedConversationId = undefined;
         this.scheduleRefresh = undefined;
         this.clearRefreshTimer();
-        this.clearStreamingFallbackPoll();
+        this.clearActivePoll();
         this.liveUpdatesDispose.dispose();
         this.liveUpdatesDispose = Disposable.NULL;
         this.visibilityListenerInstalled = false;
@@ -152,6 +174,9 @@ export class QaapTranscriptLiveController implements Disposable {
         const next = applyConversationSummaryDelta(last, summary);
         this.deps.setLastConv(next);
         this.deps.setOpenSummary(summary);
+        if (next.status === 'streaming') {
+            this.armActivePoll();
+        }
         if (wasStreaming && next.status !== 'streaming') {
             this.deps.setLastSseDeltaAt(undefined);
             this.deps.onApprovalRefresh();
@@ -231,6 +256,9 @@ export class QaapTranscriptLiveController implements Disposable {
             await this.deps.refreshConversation(options);
         } finally {
             this.refreshInFlight = false;
+            if (this.deps.getLastConv()?.status === 'streaming') {
+                this.armActivePoll();
+            }
             if (this.pendingForceSettle) {
                 this.pendingForceSettle = false;
                 void this.refreshNow({ forceStatusSettle: true });
@@ -245,65 +273,89 @@ export class QaapTranscriptLiveController implements Disposable {
         }
     }
 
-    protected startStreamingFallbackPoll(
-        conversationId: string,
-        scheduleRefresh: () => void,
-    ): void {
-        const setIntervalFn = typeof window !== 'undefined' ? window.setInterval.bind(window) : globalThis.setInterval;
-        if (typeof setIntervalFn !== 'function') {
+    /**
+     * Re-arm the active-task poll after a submit / retry / transport reconnect. Polling continues
+     * for a short grace period even while the local copy still reads idle.
+     */
+    ensureActivePoll(): void {
+        if (!this.watchedConversationId) {
             return;
         }
-        this.clearStreamingFallbackPoll();
-        this.streamingPollTimer = setIntervalFn(() => {
-            if (!this.deps.isWatching(conversationId)) {
-                this.clearStreamingFallbackPoll();
-                return;
-            }
-            if (!this.isDocumentVisible()) {
-                return;
-            }
-            const last = this.deps.getLastConv();
-            if (last?.status !== 'streaming') {
-                this.clearStreamingFallbackPoll();
-                return;
-            }
-            const sseAt = this.deps.getLastSseDeltaAt();
-            if (sseAt !== undefined && Date.now() - sseAt < REFRESH_DEBOUNCE_MS) {
-                return;
-            }
-            if (sseAt === undefined || Date.now() - sseAt >= STREAMING_FALLBACK_POLL_MS) {
-                void this.refreshNow({ forcePoll: true });
-                return;
-            }
-            scheduleRefresh();
-        }, STREAMING_FALLBACK_POLL_MS);
+        this.activePollGraceUntil = Date.now() + ACTIVE_POLL_SUBMIT_GRACE_MS;
+        this.armActivePoll();
     }
 
-    protected clearStreamingFallbackPoll(): void {
-        if (this.streamingPollTimer !== undefined) {
-            const clearIntervalFn = typeof window !== 'undefined' ? window.clearInterval.bind(window) : globalThis.clearInterval;
-            clearIntervalFn(this.streamingPollTimer);
-            this.streamingPollTimer = undefined;
+    /** Tab back in the foreground: always rehydrate from the server, the live channel may have missed events. */
+    handleDocumentVisible(): void {
+        const conversationId = this.watchedConversationId;
+        if (!conversationId || !this.isDocumentVisible() || !this.deps.isWatching(conversationId)) {
+            return;
+        }
+        this.scheduleRefresh?.();
+        void this.refreshNow({ forcePoll: true });
+        this.armActivePoll();
+    }
+
+    protected armActivePoll(): void {
+        if (this.activePollTimer !== undefined || !this.watchedConversationId) {
+            return;
+        }
+        this.activePollDelayMs = ACTIVE_POLL_INITIAL_MS;
+        this.scheduleActivePollTick();
+    }
+
+    protected scheduleActivePollTick(): void {
+        this.activePollTimer = window.setTimeout(() => {
+            this.activePollTimer = undefined;
+            this.runActivePollTick();
+        }, this.activePollDelayMs);
+    }
+
+    /** Active = not loaded yet, streaming, or just submitted. Settled turns stop the poll. */
+    protected isActivePollTarget(conversationId: string): boolean {
+        const last = this.deps.getLastConv();
+        if (!last || last.id !== conversationId) {
+            return true;
+        }
+        return last.status === 'streaming' || Date.now() < this.activePollGraceUntil;
+    }
+
+    protected runActivePollTick(): void {
+        const conversationId = this.watchedConversationId;
+        if (!conversationId || !this.deps.isWatching(conversationId)) {
+            return;
+        }
+        // Hidden tabs stop polling; the visibility handler rehydrates and re-arms on return.
+        if (!this.isDocumentVisible() || !this.isActivePollTarget(conversationId)) {
+            return;
+        }
+        const sseAt = this.deps.getLastSseDeltaAt();
+        if (sseAt !== undefined && Date.now() - sseAt < ACTIVE_POLL_INITIAL_MS) {
+            this.activePollDelayMs = ACTIVE_POLL_INITIAL_MS;
+            this.scheduleActivePollTick();
+            return;
+        }
+        void this.refreshNow({ forcePoll: true });
+        this.activePollDelayMs = Math.min(this.activePollDelayMs + ACTIVE_POLL_STEP_MS, ACTIVE_POLL_MAX_MS);
+        this.scheduleActivePollTick();
+    }
+
+    protected clearActivePoll(): void {
+        if (this.activePollTimer !== undefined) {
+            window.clearTimeout(this.activePollTimer);
+            this.activePollTimer = undefined;
         }
     }
 
-    /** Resume debounced refetch + fallback poll when the tab returns to the foreground. */
-    protected installVisibilityResume(
-        conversationId: string,
-        scheduleRefresh: () => void,
-    ): void {
+    /** Rehydrate + re-arm the active poll when the tab returns to the foreground. */
+    protected installVisibilityResume(conversationId: string): void {
         if (this.visibilityListenerInstalled || typeof document === 'undefined') {
             return;
         }
         this.visibilityListenerInstalled = true;
         const onVisible = (): void => {
-            if (!this.isDocumentVisible() || !this.deps.isWatching(conversationId)) {
-                return;
-            }
-            const last = this.deps.getLastConv();
-            if (last?.status === 'streaming') {
-                scheduleRefresh();
-                void this.refreshNow({ forcePoll: true });
+            if (this.watchedConversationId === conversationId) {
+                this.handleDocumentVisible();
             }
         };
         document.addEventListener('visibilitychange', onVisible);

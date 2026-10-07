@@ -21,6 +21,7 @@ import {
 } from './mobile-projects-session-cache';
 import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
 import { QAAP_USER_REPOS_SEGMENT } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { parseUserRepositoryCloneFromWorkspacePath } from '../common/qaap-user-repository-clone-path';
 
 export async function renameProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
         const dialog = new SingleTextInputDialog({
@@ -134,6 +135,14 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
             return true;
         }
         if (project.uri) {
+            // A clone listed from the recent-workspace catalog has no `github` metadata, but it is
+            // still a server-side clone that counts against the plan's active-repo limit. Delete it
+            // on the server too, otherwise "Remove" only hides it and the slot never frees.
+            const clone = parseUserRepositoryCloneFromWorkspacePath(project.uri.path.toString());
+            if (clone) {
+                await deleteQaapGithubRepository(clone.owner, clone.name);
+                removeLocalProjectSession(`github:${clone.owner}/${clone.name}`);
+            }
             await ctx.workspaceService.removeRecentWorkspace(project.uri.toString());
             // The recent-workspace service can briefly return a stale snapshot after removal.
             // Persisting the id as hidden makes the removal stable across immediate refreshes,

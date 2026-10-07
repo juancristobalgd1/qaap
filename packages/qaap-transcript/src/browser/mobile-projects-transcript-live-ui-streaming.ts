@@ -22,7 +22,7 @@ import {
     shouldReportTranscriptPreviewBootstrapFailure,
     toTranscriptPreviewBootstrapSnapshot,
 } from '../common/qaap-transcript-preview-bootstrap-failure';
-import { reportPreviewBootstrapFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { agentActivityField, reportPreviewBootstrapFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { agentMessageHasVisualVerificationMarker } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
@@ -89,6 +89,7 @@ export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptL
             status: renderConv.status,
             updatedAt: renderConv.updatedAt,
             lastMessageRole: eventMessage.role,
+            lastAgentActivityAt: agentActivityField(renderConv, renderConv.status).lastAgentActivityAt,
             lastMessagePreview: excerptTranscriptThought(
                 resolveMessagePreviewText(eventMessage),
                 160,

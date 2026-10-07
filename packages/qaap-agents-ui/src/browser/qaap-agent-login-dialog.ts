@@ -9,7 +9,11 @@ import {
     localizeAddApiKeyInSettingsCta,
     localizeAgentSettingsApiKeyLoginMessage,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
-import type { QaapAgentLoginFlowState } from '../common/qaap-agent-login-flow';
+import {
+    QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS,
+    QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS,
+    type QaapAgentLoginFlowState,
+} from '../common/qaap-agent-login-flow';
 import { resolveAgentLoginDialogSubtitle } from './qaap-agent-login-instructions';
 
 export interface QaapAgentLoginDialogController {
@@ -71,7 +75,28 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
         case 'timeout':
             return nls.localize(
                 'qaap/mobileProjects/agentLoginDialogTimedOut',
-                '{0} did not show a sign-in link. Its last output is below.',
+                '{0} did not show a sign-in link within {1} seconds. Its last output is below.',
+                agentLabel,
+                String(Math.round(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS / 1000)),
+            );
+        case 'waiting-for-input':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogWaitingForInput',
+                '{0} stopped to ask a question instead of showing a sign-in link: "{1}". The sign-in terminal cannot answer it. Retry, or answer it once in a workspace terminal.',
+                agentLabel,
+                state.prompt ?? '',
+            );
+        case 'prepare-timeout':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogPrepareTimedOut',
+                'The workspace terminal for {0} did not start within {1} seconds. The workspace may still be starting: retry in a moment.',
+                agentLabel,
+                String(Math.round(QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS / 1000)),
+            );
+        case 'terminal-unavailable':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogTerminalUnavailable',
+                'Could not open a terminal in this workspace to sign in to {0}. The error is below.',
                 agentLabel,
             );
         case 'exited':

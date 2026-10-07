@@ -18,6 +18,12 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { MobileProjectsTranscriptSheetUi, type MobileProjectsTranscriptSheetHost } from './mobile-projects-transcript-sheet-ui';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import {
+    MobileProjectsConversationIndexUi,
+    type MobileProjectsConversationIndexHost,
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
+import { MobileProjectsUnreadTrackerUi } from './mobile-projects-unread-tracker-ui';
 
 disableImportJSDOM();
 
@@ -29,7 +35,7 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         document.body.replaceChildren();
     });
 
-    function summary(overrides: Partial<QaapAgentConversationSummaryDTO> = {}): QaapAgentConversationSummaryDTO {
+    function summary(overrides: Partial<QaapAgentConversationSummaryDTO> & { lastAgentActivityAt?: number } = {}): QaapAgentConversationSummaryDTO {
         return {
             id: 'conv-1',
             cwd: '/workspace',
@@ -164,6 +170,97 @@ describe('MobileProjectsTranscriptSheetUi', () => {
             teardownAgentsHubShell: () => undefined,
         } as unknown as WorkHubTranscriptBridge;
     }
+
+    function attachUnreadTracker(
+        host: MobileProjectsTranscriptSheetHost,
+        store: Map<string, QaapAgentConversationSummaryDTO>,
+    ): MobileProjectsConversationFlags {
+        window.localStorage.clear();
+        const flags = new MobileProjectsConversationFlags();
+        host.unreadTrackerUi = new MobileProjectsUnreadTrackerUi({
+            conversationFlags: flags,
+            conversations: { findSummaryById: id => store.get(id) },
+            get transcriptOpenSummaryId(): string | undefined { return host.transcriptOpenSummaryId; },
+            get transcriptOpenSummary(): QaapAgentConversationSummaryDTO | undefined { return host.transcriptOpenSummary; },
+            get visible(): boolean { return host.visible; },
+        });
+        return flags;
+    }
+
+    it('marks the conversation read when the transcript sheet opens, whatever row opened it', async () => {
+        const host = createHost();
+        const listSnapshot = summary({ lastMessageRole: 'agent', updatedAt: 10 });
+        // The store already saw a newer agent tick than the row the user tapped.
+        const flags = attachUnreadTracker(host, new Map([['conv-1', { ...listSnapshot, updatedAt: 15 }]]));
+
+        await new MobileProjectsTranscriptSheetUi(host, createWorkHub()).openTranscriptSheet(project(), listSnapshot);
+
+        expect(flags.getLastSeen('conv-1')).to.equal(15);
+    });
+
+    /**
+     * The #206 regression: the specs above only checked the read mark right after one open. Leaving A
+     * for B saves A's composer prefs (an async PATCH) and the server bumps A's `updatedAt` after the
+     * close was recorded — only the rendered unread state, checked after the second open, shows it.
+     */
+    it('opening another conversation keeps the previous one read after its composer prefs are saved', async () => {
+        const host = createHost();
+        const store = new Map<string, QaapAgentConversationSummaryDTO>([
+            ['conv-a', summary({ id: 'conv-a', lastMessageRole: 'agent', updatedAt: 10, lastAgentActivityAt: 10 })],
+            ['conv-b', summary({ id: 'conv-b', lastMessageRole: 'agent', updatedAt: 20, lastAgentActivityAt: 20 })],
+        ]);
+        const flags = attachUnreadTracker(host, store);
+        let prefsSaved: Promise<void> = Promise.resolve();
+        host.transcriptStickyComposerUi = {
+            ...host.transcriptStickyComposerUi,
+            flushTranscriptComposerPrefs: (_project: MobileProjectEntry, previous: QaapAgentConversationSummaryDTO) => prefsSaved = (async () => {
+                await Promise.resolve();
+                // PATCH response: same agent activity, newer updatedAt.
+                store.set(previous.id, { ...previous, updatedAt: 40 });
+            })(),
+        } as never;
+        const index = new MobileProjectsConversationIndexUi({ conversationFlags: flags } as unknown as MobileProjectsConversationIndexHost);
+        const ui = new MobileProjectsTranscriptSheetUi(host, createWorkHub());
+
+        await ui.openTranscriptSheet(project(), store.get('conv-a')!);
+        await ui.openTranscriptSheet(project(), store.get('conv-b')!);
+        await prefsSaved;
+
+        expect(store.get('conv-a')!.updatedAt).to.equal(40);
+        expect(index.isConversationUnread(store.get('conv-a')!)).to.equal(false);
+        expect(index.isConversationUnread(store.get('conv-b')!)).to.equal(false);
+    });
+
+    it('marks the conversation read when the Agents Hub opens it inline', async () => {
+        const host = createHost();
+        const flags = attachUnreadTracker(host, new Map());
+        let inlineOpened = false;
+        const workHub = {
+            ...createWorkHub(),
+            isAgentsHubLanding: () => true,
+            openInlineTranscript: async () => { inlineOpened = true; },
+        } as unknown as WorkHubTranscriptBridge;
+
+        await new MobileProjectsTranscriptSheetUi(host, workHub).openTranscriptSheet(project(), summary({ lastMessageRole: 'agent', updatedAt: 12 }));
+
+        expect(inlineOpened).to.equal(true);
+        expect(flags.getLastSeen('conv-1')).to.equal(12);
+    });
+
+    it('records the last known update when the sheet closes', async () => {
+        const host = createHost();
+        const store = new Map([['conv-1', summary({ lastMessageRole: 'agent', updatedAt: 10 })]]);
+        const flags = attachUnreadTracker(host, store);
+        const ui = new MobileProjectsTranscriptSheetUi(host, createWorkHub());
+        await ui.openTranscriptSheet(project(), store.get('conv-1')!);
+        host.visible = false;
+        store.set('conv-1', summary({ lastMessageRole: 'agent', updatedAt: 25 }));
+
+        ui.closeTranscriptSheet();
+
+        expect(flags.getLastSeen('conv-1')).to.equal(25);
+        expect(host.transcriptOpenSummaryId).to.equal(undefined);
+    });
 
     it('keeps an empty shell for the open placeholder (no preview message)', () => {
         const ui = new MobileProjectsTranscriptSheetUi(createHost(), createWorkHub());

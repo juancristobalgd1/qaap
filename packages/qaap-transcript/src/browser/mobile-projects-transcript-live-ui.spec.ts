@@ -295,6 +295,84 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         composerHost.remove();
     });
 
+    it('ensureTranscriptConversationRefresh re-watches the real task when the controller still watches the pending placeholder', () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        const createdSummary = {
+            id: 'conv-new',
+            cwd: '/repo',
+            agentId: 'opencode',
+            title: 'New task',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 10,
+            messageCount: 1,
+        };
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        const liveUiAny = liveUi as unknown as {
+            refreshOpenTranscriptConversation: (options?: { forcePoll?: boolean }) => Promise<void>;
+            isWatchingOpenTranscript: (id: string) => boolean;
+            resolveTranscriptRefreshContext: () => unknown;
+            scheduleTranscriptConversationRefresh: (project: unknown, summary: { id: string }, chatHost: HTMLElement) => void;
+            ensureTranscriptLiveController: () => { watch: (id: string) => void; stopWatch: () => void; onScheduleRefresh: (() => void) | undefined };
+            ensureTranscriptConversationRefresh: () => void;
+        };
+        liveUiAny.refreshOpenTranscriptConversation = async () => undefined;
+        liveUiAny.isWatchingOpenTranscript = id => id === host.transcriptOpenSummaryId;
+        const watched: string[] = [];
+        liveUiAny.scheduleTranscriptConversationRefresh = (_project, summary) => { watched.push(summary.id); };
+        liveUiAny.resolveTranscriptRefreshContext = () => ({ project: {}, summary: createdSummary, chatHost });
+
+        // Task opened as the "new chat" placeholder, then the submit swaps in the created id.
+        host.transcriptOpenSummaryId = 'pending-new-chat-1';
+        const controller = liveUiAny.ensureTranscriptLiveController();
+        controller.watch('pending-new-chat-1');
+        host.transcriptScheduleRefresh = controller.onScheduleRefresh;
+        host.transcriptOpenSummaryId = 'conv-new';
+        host.transcriptLastConv = { ...createdSummary, messages: [{ id: 'u1', role: 'user', content: 'hi', createdAt: 5 }] };
+
+        try {
+            liveUiAny.ensureTranscriptConversationRefresh();
+            expect(watched).to.deep.equal(['conv-new']);
+        } finally {
+            controller.stopWatch();
+            chatHost.remove();
+            composerHost.remove();
+        }
+    });
+
+    it('handleTranscriptTransportReconnected rehydrates from the server and re-arms the active poll', () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        const liveUiAny = liveUi as unknown as {
+            refreshOpenTranscriptConversation: (options?: { forcePoll?: boolean }) => Promise<void>;
+            ensureTranscriptConversationRefresh: () => void;
+            ensureTranscriptLiveController: () => { ensureActivePoll: () => void };
+            handleTranscriptTransportReconnected: () => void;
+        };
+        const refreshes: Array<{ forcePoll?: boolean } | undefined> = [];
+        let ensured = 0;
+        let armed = 0;
+        liveUiAny.refreshOpenTranscriptConversation = async options => { refreshes.push(options); };
+        liveUiAny.ensureTranscriptConversationRefresh = () => { ensured++; };
+        liveUiAny.ensureTranscriptLiveController = () => ({ ensureActivePoll: () => { armed++; } });
+        host.transcriptOpenSummaryId = 'conv-1';
+        try {
+            liveUiAny.handleTranscriptTransportReconnected();
+            expect(refreshes).to.deep.equal([{ forcePoll: true }]);
+            expect(ensured).to.equal(1);
+            expect(armed).to.equal(1);
+        } finally {
+            chatHost.remove();
+            composerHost.remove();
+        }
+    });
+
     it('onTranscriptUserMessageSubmitted sets preview pending without switching execution tab', () => {
         const chatHost = document.createElement('div');
         const composerHost = document.createElement('div');

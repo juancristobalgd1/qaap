@@ -182,6 +182,12 @@ export interface QaapAgentCliInstallTarget {
     readonly user?: string;
     /** Extra child env for the agent (e.g. relocated npm cache on a read-only rootfs). */
     readonly env?: Readonly<Record<string, string | undefined>>;
+    /**
+     * Set by the caller when this backend cannot install for the tenant at all (for example its
+     * agents run in a tenant worker container that never sees this prefix). The service then refuses
+     * with this message and never runs npm or probes the prefix.
+     */
+    readonly unavailableReason?: string;
 }
 
 export interface QaapNpmAgentTarget {
@@ -202,6 +208,23 @@ interface ResolvedNpmInstallTarget extends QaapAgentCliInstallTarget {
 /** Message for a harness whose CLI has no package this server can install. */
 export function packagelessHarnessInstallMessage(label: string): string {
     return `${label} has no installable package on this server yet. Ask your administrator to add it to the Qaap image.`;
+}
+
+/** Harness installs are refused on a backend that runs agents in tenant worker containers. */
+export const QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL = 'Harness updates are not available on this server: agents run in an isolated '
+    + 'tenant container that this backend cannot install into. Ask your administrator to enable per-tenant backends '
+    + '(QAAP_BACKEND_PER_TENANT=1) or to update the Qaap image; nothing was changed.';
+
+/** Outcome of creating and checking the npm prefix as the agent uid before npm runs. */
+export type QaapCliPrefixWritability = 'writable' | 'read-only' | 'not-writable';
+
+/** One actionable sentence for a prefix the agent uid cannot write; nothing was installed. */
+export function describeQaapCliPrefixUnwritable(label: string, writability: Exclude<QaapCliPrefixWritability, 'writable'>): string {
+    return writability === 'read-only'
+        ? `${label} was not installed: the harness folder for your account is on a read-only filesystem on this server. `
+            + 'Ask your administrator to enable persistent per-tenant agent storage; nothing was changed.'
+        : `${label} was not installed: the harness folder for your account is not writable by your agent user. `
+            + 'Ask your administrator to fix its ownership; nothing was changed.';
 }
 
 /** Private npm work area inside the prefix: npm's HOME, cache, logs and temporary files. */
@@ -356,7 +379,7 @@ export class QaapAgentCliUpdateService {
 
     /** Whether this target can install whitelisted packages without running npm as a foreign or root uid. */
     isInstallSupportedForTarget(target?: QaapAgentCliInstallTarget): boolean {
-        if (!this.isUpdateCheckEnabled() || (!target && !this.isInPlaceCliUpdateAllowed())) {
+        if (!this.isUpdateCheckEnabled() || (!target && !this.isInPlaceCliUpdateAllowed()) || target?.unavailableReason) {
             return false;
         }
         const resolved = this.resolveNpmInstallTarget(target);
@@ -433,6 +456,9 @@ export class QaapAgentCliUpdateService {
                 message: `${tracked.label} is not updated in-place. Rebuild the Qaap image (or bump QAIQ_REF) to pick up a newer CLI.`,
             };
         }
+        if (requestedTarget?.unavailableReason) {
+            return { ok: false, id: tracked.id, reason: 'refused', message: requestedTarget.unavailableReason };
+        }
         if (!this.isInstallSupportedForTarget(requestedTarget)) {
             return {
                 ok: false,
@@ -479,12 +505,15 @@ export class QaapAgentCliUpdateService {
         npmPackage: string,
         target: ResolvedNpmInstallTarget,
     ): Promise<QaapAgentCliUpdateResult> {
-        if (!await this.prepareInstallDirectoriesAsTarget(target)) {
+        const writability = await this.prepareInstallDirectoriesAsTarget(target);
+        if (writability !== 'writable') {
+            // Checked before npm runs, so the user never gets npm's raw `ENOENT`/`EROFS … mkdir`.
+            console.warn(`[qaap-cli-update] ${npmPackage} not installed: prefix ${target.prefix} is ${writability} for uid ${target.uid}.`);
             return {
                 ok: false,
                 id: tracked.id,
                 reason: 'refused',
-                message: 'Installation requires a writable tenant directory; the CLI prefix is read-only or owned by another user.',
+                message: describeQaapCliPrefixUnwritable(tracked.label, writability),
             };
         }
         const install = await this.runNpmInstall(npmPackage, target, !!tracked.requiresInstallScripts);
@@ -702,6 +731,9 @@ export class QaapAgentCliUpdateService {
     }
 
     protected resolveNpmInstallTarget(target?: QaapAgentCliInstallTarget): ResolvedNpmInstallTarget | undefined {
+        if (target?.unavailableReason) {
+            return undefined;
+        }
         const uid = this.resolveInstallUid(target);
         if (uid === undefined) {
             return undefined;
@@ -770,27 +802,29 @@ export class QaapAgentCliUpdateService {
      * CAP_DAC_OVERRIDE, so it can neither hand a directory it created to the agent uid nor see what that
      * uid can reach: the directories are created by the agent uid itself (`setpriv … mkdir -p`).
      */
-    protected async prepareInstallDirectoriesAsTarget(target: ResolvedNpmInstallTarget): Promise<boolean> {
+    protected async prepareInstallDirectoriesAsTarget(target: ResolvedNpmInstallTarget): Promise<QaapCliPrefixWritability> {
         const work = resolveQaapNpmWorkDirectories(target.prefix);
         const directories = [target.prefix, work.home, work.cache, work.logs, work.tmp];
         const currentUid = this.backendUid();
         if (currentUid !== 0 || target.uid === 0) {
             if (currentUid !== undefined && currentUid !== target.uid) {
-                return false;
+                return 'not-writable';
             }
             try {
                 for (const directory of directories) {
                     await fs.promises.mkdir(directory, { recursive: true });
                 }
                 await fs.promises.access(target.prefix, fs.constants.W_OK);
-                return true;
-            } catch {
-                return false;
+                return 'writable';
+            } catch (error) {
+                return (error as NodeJS.ErrnoException)?.code === 'EROFS' || await this.isOnReadOnlyFilesystem(target.prefix)
+                    ? 'read-only'
+                    : 'not-writable';
             }
         }
         const setpriv = this.resolveSetprivExecutable();
         if (!setpriv) {
-            return false;
+            return 'not-writable';
         }
         const result = await this.runBoundedProcess(setpriv, [
             ...buildQaapSetprivDropArgs(target.uid, target.gid),
@@ -798,7 +832,36 @@ export class QaapAgentCliUpdateService {
             '/bin/sh', '-c', 'umask 022 && mkdir -p -- "$@" && test -w "$1"',
             'qaap-agent-cli-prefix-prepare', ...directories,
         ], { cwd: '/', env: { PATH: '/usr/bin:/bin' }, timeoutMs: PREFIX_WRITABLE_PROBE_TIMEOUT_MS });
-        return !result.error && result.status === 0;
+        if (!result.error && result.status === 0) {
+            return 'writable';
+        }
+        return /\bEROFS\b|read-only file system/i.test(result.stderr) || await this.isOnReadOnlyFilesystem(target.prefix)
+            ? 'read-only'
+            : 'not-writable';
+    }
+
+    /**
+     * Whether the nearest existing ancestor of `directory` sits on a read-only mount. `access(W_OK)`
+     * reports `EROFS` for every uid, including a root backend without CAP_DAC_OVERRIDE.
+     */
+    protected async isOnReadOnlyFilesystem(directory: string): Promise<boolean> {
+        let current = path.resolve(directory);
+        for (;;) {
+            try {
+                await fs.promises.access(current, fs.constants.W_OK);
+                return false;
+            } catch (error) {
+                const code = (error as NodeJS.ErrnoException)?.code;
+                if (code === 'EROFS') {
+                    return true;
+                }
+                const parent = path.dirname(current);
+                if (code !== 'ENOENT' || parent === current) {
+                    return false;
+                }
+                current = parent;
+            }
+        }
     }
 
     /** Absolute, root-owned `setpriv` from a system directory — never resolved through PATH. */

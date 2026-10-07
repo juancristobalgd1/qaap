@@ -6,6 +6,7 @@
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createGzip } from 'node:zlib';
@@ -13,6 +14,11 @@ import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const qaapRoot = path.dirname(resolvePackagePath('@theia/qaap-product', root));
+const requireFromBrowserScript = createRequire(import.meta.url);
+const { patchIndexForFreshAssets: patchFreshAssets } = requireFromBrowserScript(
+    path.join(qaapRoot, 'resources', 'qaap-frontend-asset-policy.cjs'),
+);
 const libFrontend = path.join(root, 'lib', 'frontend');
 const srcFrontend = path.join(root, 'src-gen', 'frontend');
 const srcIndex = path.join(srcFrontend, 'index.html');
@@ -61,23 +67,7 @@ function patchIndexForFreshAssets(indexPath) {
     if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss) || !fs.existsSync(bundleJs)) {
         return;
     }
-    let html = fs.readFileSync(indexPath, 'utf8');
-    // qaap-login-gate.js injects bundle.js late (after its own checks); start fetching the
-    // ES module entry while the page parses. The href gets the same stamp below that the
-    // gate derives from bundle.css, so the preloaded module is the one it imports.
-    if (!html.includes('rel="modulepreload" href="./bundle.js')) {
-        html = html.replace('</head>', '<link rel="modulepreload" href="./bundle.js">\n</head>');
-    }
-    html = html.replace(
-        /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
-        `./bundle.css?qaap-build=${BUILD_VERSION}`,
-    ).replace(
-        /\.\/bundle\.js(?:\?[^"'\s>]*)?/g,
-        `./bundle.js?qaap-build=${BUILD_VERSION}`,
-    ).replace(
-        /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
-        `./qaap-login-gate.js?qaap-build=${BUILD_VERSION}`,
-    );
+    const html = patchFreshAssets(fs.readFileSync(indexPath, 'utf8'), BUILD_VERSION);
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
@@ -152,7 +142,6 @@ copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));
 
 try {
-    const qaapRoot = path.dirname(resolvePackagePath('@theia/qaap-product', root));
     const gate = path.join(qaapRoot, 'resources', 'qaap-login-gate.js');
     copyIfExists(gate, path.join(libFrontend, 'qaap-login-gate.js'));
     const legal = path.join(qaapRoot, 'resources', 'legal');
