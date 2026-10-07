@@ -67,6 +67,8 @@ import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-c
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { QaapKeybindingRegistry } from '@theia/qaap-shared-core/lib/browser/qaap-keybinding-registry';
+import { bindQaapWorkspaceService } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-service';
+import { bindQaapWorkspacePreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-preference-provider';
 import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/browser/qaap-build-freshness-contribution';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
@@ -161,7 +163,7 @@ import { QaapVsxExtensionsMobileContribution } from '@theia/qaap-shared-core/lib
 import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/preference-layout';
 import { QaapPreferenceLayoutProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-layout-provider';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
-export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
+export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync, onActivation) => {
     // The preference sync contribution is part of this Work Hub container. Install the tenant
     // User-scope provider decorator here as well as in the product bindings module so standalone
     // Work Hub and tenant child containers cannot fall back to the shared process-wide settings.
@@ -173,6 +175,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // The registry is shared by the application and every widget. Keeping the
     // Qaap override singleton preserves contributions registered during startup.
     rebind(KeybindingRegistry).to(QaapKeybindingRegistry).inSingletonScope();
+    // The desktop Work Hub (no workspace) opens the IDE on a project without reloading the page.
+    bindQaapWorkspaceService(bind, rebind, isBound);
+    bindQaapWorkspacePreferenceProvider(bind, onActivation);
     // Work Hub command palette shows hub-relevant commands only; IDE keeps the full list.
     rebind(QuickCommandService).to(QaapQuickCommandService).inSingletonScope();
     // AI Features Settings: prioritize Qaap BYOK providers; omit Theia leftover groups.
