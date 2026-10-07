@@ -14,7 +14,11 @@ services:
     cpus: 2
     pids_limit: 2048
     ports:
-      - "127.0.0.1:${QAAP_STAGING_PORT:-4874}:${QAAP_STAGING_PORT:-4874}"
+      - "127.0.0.1:4874:4874"
+    networks:
+      - default
+      # Production Caddy reaches staging by container name on this network.
+      - qaap_edge
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
@@ -23,7 +27,7 @@ services:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=1536
       HOST: 0.0.0.0
-      PORT: "${QAAP_STAGING_PORT:-4874}"
+      PORT: "4874"
       SHELL: /bin/bash
       THEIA_SHELL: /bin/bash
       QAAP_OAUTH_PUBLIC_URL: https://staging.${QAAP_PUBLIC_HOST:?set QAAP_PUBLIC_HOST}
@@ -36,3 +40,7 @@ services:
       - /opt/qaap-staging/parallel:/tmp/qaap-parallel
       - /opt/qaap-staging/auth:/home/theia/.qaap
       - /opt/qaap-staging/theia-user:/home/theia/.theia
+networks:
+  qaap_edge:
+    external: true
+    name: qaap_default

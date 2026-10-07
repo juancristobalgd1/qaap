@@ -1,5 +1,5 @@
-# Staging site, imported by the production Caddyfile only when QAAP_STAGING_CADDY=staging.
-# Proxies to the staging container published on the host loopback (deploy/staging/compose.staging.yml).
+# Staging site. The staging workflow copies this file into deploy/caddy/staging-enabled/ while staging runs.
+# Proxies to the staging container over the production compose network (deploy/staging/compose.staging.yml).
 staging.{$QAAP_PUBLIC_HOST:localhost} {
 	encode zstd gzip
 	header {
@@ -7,5 +7,5 @@ staging.{$QAAP_PUBLIC_HOST:localhost} {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Robots-Tag "noindex, nofollow"
 	}
-	reverse_proxy host.docker.internal:{$QAAP_STAGING_PORT:4874}
+	reverse_proxy qaap-staging-theia:4874
 }

@@ -16,5 +16,5 @@ Objetivo: ningún merge a master sin E3 (cuenta de prueba) + E4 (copia de los da
 4. Solo entonces merge -> deploy prod con el mismo digest.
 
 ## Pendiente
-- Fo: workflow (.github/workflows/qaap-staging-deploy.yml), compose (deploy/staging/compose.staging.yml) y Caddy (deploy/caddy/staging.caddy) escritos en local; falta push (token con Contents/Workflows write) y en el VPS: /opt/qaap-staging/staging.env con un OAuth app de staging (callback https://staging.<host>/...), QAAP_STAGING_CADDY=staging en .env de Caddy y montar staging.caddy en /etc/caddy.
+- Uso: Actions > "Qaap staging deploy" > Run workflow (action=deploy con la imagen @sha256 del build a probar; action=stop al terminar). El workflow escribe /opt/qaap-staging/staging.env desde los secretos QAAP_STAGING_GITHUB_CLIENT_ID/SECRET del environment Preview, levanta qaap-staging-theia en la red qaap_default y publica https://staging.<host> copiando staging.caddy a deploy/caddy/staging-enabled/ y recargando Caddy (stop lo retira). Falta: app OAuth de GitHub para staging (callback https://staging.161.97.69.219.sslip.io/qaap/oauth/github/callback) y sus 2 secretos en Preview.
 - Juan: nada más salvo ese permiso.

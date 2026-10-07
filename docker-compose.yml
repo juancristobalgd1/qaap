@@ -284,6 +284,8 @@ services:
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./deploy/caddy/previews:/etc/caddy/previews:ro
+      # Staging site (ops/STAGING.md): empty unless the staging workflow enabled it.
+      - ./deploy/caddy/staging-enabled:/etc/caddy/staging-enabled:ro
       - caddy_data:/data
       - caddy_config:/config
 
