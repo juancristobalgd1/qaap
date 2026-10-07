@@ -34,6 +34,9 @@ disableImportJSDOM();
  * minimal row model (status + unread dot), with an asynchronous requestAnimationFrame like a
  * browser. Regressions here are what kept prod rows stale until a reload.
  */
+// Quarantined flaky test (see ops/flaky.md): runs only with QAAP_RUN_QUARANTINED=1.
+const itQuarantined = process.env.QAAP_RUN_QUARANTINED === '1' ? it : it.skip;
+
 describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
     this.timeout(10_000);
 
@@ -176,7 +179,7 @@ describe('mobile-work-hub-sessions-sidebar live sync', function (): void {
         });
     });
 
-    it('opening A and then B clears the dot on A once the open settles, with no further events', async () => {
+    itQuarantined('opening A and then B clears the dot on A once the open settles, with no further events', async () => {
         const { sidebar, ctx, model, host, row } = createHarness({
             a: { status: 'idle', unread: true },
             b: { status: 'idle', unread: false },

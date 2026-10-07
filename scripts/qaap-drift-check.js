@@ -90,6 +90,8 @@ const base = resolveDiffBase();
 const ALLOWED = [
     /^packages\/qaap-/,
     /^scripts\/qaap-/,
+    // Qaap launch operations (rules, live state, flaky quarantine list); docs only, no product code.
+    /^ops\//,
     // Qaap Playwright harness seam: isolate the local app config, preview registry,
     // and port for browser tests so runs do not mutate or terminate a developer's app.
     /^examples\/playwright\/configs\/playwright\.config\.ts$/,
