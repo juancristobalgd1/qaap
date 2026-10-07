@@ -42,6 +42,18 @@ export class QaapTerminalSessionStore {
         await this.writeAll(all);
     }
 
+    /** Deletes the owner's terminal sessions whose workspace key `matches` selects; resolves how many went. */
+    async deleteWorkspaces(ownerLogin: string, matches: (workspaceKey: string) => boolean): Promise<number> {
+        const prefix = this.storageKey('', ownerLogin);
+        const all = await this.readAll();
+        const doomed = Object.keys(all).filter(key => key.startsWith(prefix) && matches(key.slice(prefix.length)));
+        if (doomed.length > 0) {
+            doomed.forEach(key => delete all[key]);
+            await this.writeAll(all);
+        }
+        return doomed.length;
+    }
+
     protected storageKey(workspaceKey: string, ownerLogin?: string): string {
         const owner = ownerLogin?.trim().toLowerCase();
         return owner ? `user:${encodeURIComponent(owner)}:${workspaceKey}` : workspaceKey;
