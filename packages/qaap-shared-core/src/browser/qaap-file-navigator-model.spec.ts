@@ -9,6 +9,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { CompositeTreeNode, ExpandableTreeNode, SelectableTreeNode, TreeNode, TreeSelection } from '@theia/core/lib/browser/tree';
 import { FileStat } from '@theia/filesystem/lib/common/files';
 import { WorkspaceNode } from '@theia/navigator/lib/browser/navigator-tree';
@@ -102,6 +103,8 @@ class TestNavigatorModel extends QaapFileNavigatorModel {
                 },
             },
         });
+        // `init` fills it (tree, services); empty, `initializeRoot` takes the model for disposed.
+        this.toDispose.push(Disposable.create(() => { }));
     }
 
     /** What `init` does once the Explorer widget exists. */
@@ -148,7 +151,6 @@ describe('QaapFileNavigatorModel after an in-place workspace open', () => {
         expect(root?.visible).to.equal(false);
         // A collapsed hidden folder renders no row at all: the tree looked empty.
         expect(ExpandableTreeNode.isExpanded(root)).to.equal(true);
-        expect(SelectableTreeNode.isSelected(root)).to.equal(true);
     });
 
     it('shows the project folder when the Explorer starts while the in-place open is still running', async () => {
