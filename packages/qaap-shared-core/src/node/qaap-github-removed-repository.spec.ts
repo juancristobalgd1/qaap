@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -168,6 +169,64 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
         }
     });
 
+    // Production bug (07 Oct): the agent uid owns `.git/objects/xx/*` and `.git/refs/qaap/checkpoints/*`, so
+    // this uid could not delete them and the folder stayed at the repository path for good.
+    it('frees the repository path at once by moving an undeletable clone to the trash', async () => {
+        const stubborn = path.join(clonePath(), '.git', 'refs', 'qaap');
+        fs.mkdirSync(path.join(stubborn, 'checkpoints'), { recursive: true });
+        fs.writeFileSync(path.join(stubborn, 'checkpoints', 'turn'), 'x');
+        fs.chmodSync(stubborn, 0o555);
+        const ownerDir = path.dirname(clonePath());
+        try {
+            const res = makeRes();
+            await endpoint.handleDeleteGithubRepository({ params: { owner: 'acme', repo: 'shop' } }, res);
+
+            expect(res.statusCode).to.equal(200);
+            expect(fs.existsSync(clonePath())).to.equal(false);
+            if (process.platform !== 'win32') {
+                const trashed = fs.readdirSync(ownerDir).filter(entry => entry.startsWith('.qaap-trash-shop-'));
+                expect(trashed).to.have.length(1);
+                expect(fs.existsSync(path.join(ownerDir, trashed[0], '.git', 'refs', 'qaap', 'checkpoints', 'turn'))).to.equal(true);
+            }
+            expect(listedRepoKeys()).to.deep.equal([]);
+        } finally {
+            makeTreeWritable(reposRoot);
+        }
+    });
+
+    it('empties the trash with the agent identity when this uid cannot delete it', async () => {
+        const ownerDir = path.dirname(clonePath());
+        const trashed = path.join(ownerDir, '.qaap-trash-shop-1-abcd');
+        const stubborn = path.join(trashed, '.git', 'objects', 'ab');
+        fs.mkdirSync(stubborn, { recursive: true });
+        fs.writeFileSync(path.join(stubborn, 'cdef'), 'blob');
+        fs.chmodSync(path.join(stubborn, 'cdef'), 0o444);
+        fs.chmodSync(stubborn, 0o555);
+        const calls: Array<{ file: string; args: readonly string[]; cwd: string }> = [];
+        Object.assign(endpoint, {
+            tenantProcess: {
+                resolveProcessEnv: (_cwd: string, base: NodeJS.ProcessEnv) => base,
+                spawnArgvPreparedAsync: async (file: string, args: readonly string[], options: { cwd: string }) => {
+                    calls.push({ file, args, cwd: options.cwd });
+                    // The agent owns these directories, so it may delete what it wrote.
+                    makeTreeWritable(trashed);
+                    return spawn(file, [...args], { cwd: options.cwd, stdio: 'ignore' });
+                },
+            },
+        });
+        try {
+            await (endpoint as unknown as { purgeRepositoryTrash(directory: string): Promise<void> }).purgeRepositoryTrash(ownerDir);
+
+            expect(fs.existsSync(trashed)).to.equal(false);
+            expect(fs.existsSync(clonePath())).to.equal(true);
+            if (process.platform !== 'win32') {
+                expect(calls).to.deep.equal([{ file: 'rm', args: ['-rf', '--', './.qaap-trash-shop-1-abcd'], cwd: ownerDir }]);
+            }
+        } finally {
+            makeTreeWritable(reposRoot);
+        }
+    });
+
     it('still opens (and clones) a repository that was never removed', async () => {
         fs.rmSync(clonePath(), { recursive: true, force: true });
 
@@ -176,5 +235,74 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
 
         expect(res.statusCode).to.equal(200);
         expect(clones).to.deep.equal(['acme/shop']);
+    });
+});
+
+/** Undo the read-only bits a test set so the temporary tree can be deleted. */
+function makeTreeWritable(root: string): void {
+    if (!fs.existsSync(root)) {
+        return;
+    }
+    fs.chmodSync(root, 0o755);
+    if (fs.statSync(root).isDirectory()) {
+        for (const entry of fs.readdirSync(root)) {
+            makeTreeWritable(path.join(root, entry));
+        }
+    }
+}
+
+// Production bug (07 Oct): a removal that could not delete the agent's files left `<repo>/.git` without
+// HEAD, and importing the repository again failed with "fatal: not a git repository".
+describe('QaapGithubOauthEndpoint re-imports a repository over a broken clone', () => {
+
+    let scratch: string;
+
+    beforeEach(() => {
+        scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-reclone-'));
+    });
+
+    afterEach(() => {
+        makeTreeWritable(scratch);
+        fs.rmSync(scratch, { recursive: true, force: true });
+    });
+
+    const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+
+    it('moves a leftover .git without HEAD aside and clones cleanly', async () => {
+        const origin = path.join(scratch, 'origin');
+        fs.mkdirSync(origin);
+        git(origin, 'init', '--quiet');
+        fs.writeFileSync(path.join(origin, 'README.md'), 'shop');
+        fs.writeFileSync(path.join(origin, 'app.js'), 'console.log(1);');
+        git(origin, 'add', '.');
+        git(origin, '-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '--quiet', '-m', 'init');
+
+        const reposRoot = path.join(scratch, 'repos');
+        const target = path.join(reposRoot, 'users', 'alice', 'acme', 'shop');
+        const leftover = path.join(target, '.git');
+        fs.mkdirSync(path.join(leftover, 'objects', 'ab'), { recursive: true });
+        fs.writeFileSync(path.join(leftover, 'objects', 'ab', 'cdef'), 'blob');
+        fs.chmodSync(path.join(leftover, 'objects', 'ab', 'cdef'), 0o444);
+        fs.mkdirSync(path.join(leftover, 'refs', 'qaap', 'checkpoints', 'conversation'), { recursive: true });
+        fs.writeFileSync(path.join(leftover, 'refs', 'qaap', 'checkpoints', 'conversation', 'turn'), 'x');
+        // Written by the agent uid: this uid cannot delete what is inside.
+        fs.chmodSync(path.join(leftover, 'refs', 'qaap'), 0o555);
+
+        const projectSessions = new InMemoryProjectSessionStore();
+        projectSessions.markRepositoryRemoved('alice', 'github:acme/shop');
+        const instance = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(instance, { reposRoot, projectSessions, gitOperationTimeoutMs: 60_000, workspacePrepareTimeoutMs: 60_000 });
+        const workspace = await (instance as unknown as {
+            ensureRepositoryWorkspace(repository: { owner: string; name: string; cloneUrl: string }, token: undefined, login: string): Promise<string>;
+        }).ensureRepositoryWorkspace({ owner: 'acme', name: 'shop', cloneUrl: origin }, undefined, 'alice');
+
+        expect(workspace).to.equal(target);
+        expect(git(target, 'rev-parse', 'HEAD')).to.equal(git(origin, 'rev-parse', 'HEAD'));
+        expect(fs.readFileSync(path.join(target, 'README.md'), 'utf8')).to.equal('shop');
+        expect(fs.existsSync(path.join(target, '.git', 'refs', 'qaap'))).to.equal(false);
+        if (process.platform !== 'win32') {
+            const trashed = fs.readdirSync(path.dirname(target)).filter(entry => entry.startsWith('.qaap-trash-shop-'));
+            expect(trashed).to.have.length(1);
+        }
     });
 });
