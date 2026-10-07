@@ -70,7 +70,12 @@ export class QaapRemovedRepositoryCleanup implements QaapRepositoryRemovalContri
             return false;
         }
         const target = normalizeQaapPreviewProjectId(location);
-        const fsPath = path.resolve(/^file:\/\//i.test(target) ? FileUri.fsPath(target) : target);
-        return removal.worktreePaths.some(worktree => fsPath === worktree || fsPath.startsWith(`${worktree}${path.sep}`));
+        // Resolve both sides: on Windows a cwd may mix `/` and `\\` and differ in case from the registered worktree.
+        const comparable = (value: string): string => {
+            const resolved = path.resolve(value);
+            return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+        };
+        const fsPath = comparable(/^file:\/\//i.test(target) ? FileUri.fsPath(target) : target);
+        return removal.worktreePaths.map(comparable).some(worktree => fsPath === worktree || fsPath.startsWith(`${worktree}${path.sep}`));
     }
 }
