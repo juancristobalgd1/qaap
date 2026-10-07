@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
+import type { QaapRepositoryRemoval } from './qaap-repository-removal-contribution';
 
 class InMemoryProjectSessionStore extends QaapProjectSessionStore {
     protected override schedulePersist(): void {
@@ -45,6 +46,8 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
     let reposRoot: string;
     let endpoint: RemovedRepositoryEndpoint;
     let clones: string[];
+    let worktreesRoot: string;
+    let removals: QaapRepositoryRemoval[];
 
     const makeRes = (): FakeResponse => {
         const res: FakeResponse = {
@@ -69,6 +72,8 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
     beforeEach(() => {
         reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-removed-repo-'));
         clones = [];
+        removals = [];
+        worktreesRoot = path.join(reposRoot, '.worktrees');
         const instance = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
         Object.assign(instance, {
             reposRoot,
@@ -86,6 +91,11 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
                 return clonePath();
             },
             pathExists: async (target: string) => fs.existsSync(target),
+            worktreesRoot,
+            forgottenRemovals: new Set<string>(),
+            removalContributions: {
+                getContributions: () => [{ onRepositoryRemoved: async (removal: QaapRepositoryRemoval) => { removals.push(removal); } }],
+            },
         });
         endpoint = instance as unknown as RemovedRepositoryEndpoint;
         fs.mkdirSync(path.join(clonePath(), '.git'), { recursive: true });
@@ -262,6 +272,44 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
             endpoint.handleUpsertProjectSession({ body: { repoKey: `recent:${cloneUri()}`, previewUrl: 'https://preview.example/shop' } }, makeRes());
 
             expect(listedRepoKeys()).to.deep.equal([]);
+        });
+
+        // Same production account: a task worktree of vyyq (`.git` → `<clone>/.git/worktrees/733cf503`) and
+        // conversations whose cwd is in the clone or in that worktree outlived the clone.
+        const addTaskWorktree = (slug: string, sourceClone: string): string => {
+            const worktree = path.join(worktreesRoot, login, slug);
+            fs.mkdirSync(worktree, { recursive: true });
+            fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(sourceClone, '.git', 'worktrees', slug)}\n`);
+            fs.writeFileSync(path.join(worktree, 'index.html'), '<h1>task</h1>');
+            return worktree;
+        };
+
+        it('hands the clone and its task worktrees to the removal contributions, then deletes the worktrees', async () => {
+            const taskWorktree = addTaskWorktree('733cf503', clonePath());
+            const otherWorktree = addTaskWorktree('0badc0de', path.join(reposRoot, 'users', login, 'acme', 'blog'));
+
+            await removeRepository();
+
+            expect(removals).to.have.length(1);
+            expect(removals[0]).to.deep.include({ login, identity: 'github:acme/shop', clonePath: clonePath() });
+            expect(removals[0].worktreePaths).to.deep.equal([taskWorktree]);
+            expect(fs.existsSync(taskWorktree)).to.equal(false);
+            expect(fs.existsSync(otherWorktree)).to.equal(true);
+        });
+
+        it('forgets that state once per process for a removal recorded before this fix', async () => {
+            fs.rmSync(clonePath(), { recursive: true, force: true });
+            endpoint.projectSessions.deleteForUser(login, 'github:acme/shop');
+            endpoint.projectSessions.markRepositoryRemoved(login, 'github:acme/shop');
+
+            const res = makeRes();
+            endpoint.handleProjectSessions({}, res);
+            endpoint.handleProjectSessions({}, makeRes());
+            // Forgetting runs in the background, not on the listing's critical path.
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect((res.body as { removedProjects?: string[] }).removedProjects).to.deep.equal(['github:acme/shop']);
+            expect(removals.map(removal => removal.identity)).to.deep.equal(['github:acme/shop']);
         });
 
         it('lists them again once the repository is explicitly re-imported', async () => {

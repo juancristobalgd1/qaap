@@ -159,6 +159,8 @@ describe('QaapGithubOauthEndpoint.handleDeleteGithubRepository', () => {
         endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
         Object.assign(endpoint, {
             reposRoot,
+            worktreesRoot: path.join(reposRoot, '.worktrees'),
+            forgottenRemovals: new Set<string>(),
             auth: {
                 authenticate: () => ({ kind: 'authenticated', userLogin: login }),
                 resolveUserLogin: () => login,

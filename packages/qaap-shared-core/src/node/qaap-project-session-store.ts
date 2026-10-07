@@ -7,7 +7,9 @@ import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+import { resolveQaapReposRoot, resolveUserReposRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type { QaapProjectSessionSummary, QaapProjectSessionUpsertRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
 
 const PERSIST_DEBOUNCE_MS = 100;
 
@@ -33,6 +35,8 @@ export class QaapProjectSessionStore {
     protected readonly byUser = new Map<string, Map<string, QaapProjectSessionSummary>>();
     protected readonly storePath = resolveProjectSessionStorePath();
     protected readonly sqlitePath = resolveQaapSqlitePath(this.storePath);
+    /** Resolves path-keyed sessions (`ws:file:///…/users/<login>/<owner>/<repo>`) to their `github:` identity. */
+    protected readonly reposRoot = resolveQaapReposRoot();
     protected sqliteStore: QaapSqliteStore | undefined;
     protected removalStore: QaapSqliteStore | undefined;
     /** `login\0repoKey` (lower-cased) of clones the user removed from the hub; see {@link markRepositoryRemoved}. */
@@ -45,22 +49,42 @@ export class QaapProjectSessionStore {
         this.loadFromDisk();
     }
 
+    /**
+     * Sessions of projects the user removed are never listed, whatever key they were recorded under; they
+     * are dropped on the way (lazy migration of removals recorded before path-keyed sessions were deleted).
+     */
     listForUser(login: string): QaapProjectSessionSummary[] {
         const map = this.byUser.get(login);
-        return map ? [...map.values()] : [];
+        if (!map) {
+            return [];
+        }
+        if (this.hasRemovals(login)) {
+            const removed = [...map.keys()].filter(repoKey => this.isRepositoryRemoved(login, repoKey));
+            if (removed.length > 0) {
+                removed.forEach(repoKey => map.delete(repoKey));
+                if (map.size === 0) {
+                    this.byUser.delete(login);
+                }
+                this.schedulePersist();
+            }
+        }
+        return [...map.values()];
     }
 
+    /**
+     * Deletes every session of the project `repoKey` identifies: besides `github:owner/repo` (any case), the
+     * hub also records the clone as `ws:file:///…` and `recent:file:///…`, and those list it again.
+     */
     deleteForUser(login: string, repoKey: string): boolean {
         const map = this.byUser.get(login);
         if (!map) {
             return false;
         }
-        // GitHub owner/repo names are case-insensitive: a session recorded as `github:Acme/Shop`
-        // must go when the clone is removed as `github:acme/shop`, or the project comes back.
         const normalizedRepoKey = repoKey.toLowerCase();
+        const identity = this.projectIdentity(login, repoKey);
         let deleted = false;
         for (const key of [...map.keys()]) {
-            if (key.toLowerCase() === normalizedRepoKey) {
+            if (key.toLowerCase() === normalizedRepoKey || (identity && this.projectIdentity(login, key) === identity)) {
                 map.delete(key);
                 deleted = true;
             }
@@ -88,8 +112,21 @@ export class QaapProjectSessionStore {
         }
     }
 
+    /** `repoKey` may be any key the hub uses for the clone (`github:`, `ws:`/`recent:` URI, `file:` URI or a path in it). */
     isRepositoryRemoved(login: string, repoKey: string): boolean {
-        return this.removedRepositories.has(this.removalKey(login, repoKey));
+        if (this.removedRepositories.has(this.removalKey(login, repoKey))) {
+            return true;
+        }
+        const identity = this.projectIdentity(login, repoKey);
+        return !!identity && this.removedRepositories.has(this.storageKey(login, identity));
+    }
+
+    /** `github:owner/repo` (lower-cased) of every project the user removed and has not imported again. */
+    listRemovedRepositories(login: string): string[] {
+        const prefix = this.storageKey(login, '');
+        return [...this.removedRepositories]
+            .filter(key => key.startsWith(prefix))
+            .map(key => key.slice(prefix.length));
     }
 
     clearRepositoryRemoved(login: string, repoKey: string): boolean {
@@ -210,6 +247,21 @@ export class QaapProjectSessionStore {
         } catch (err) {
             console.warn('[qaap] Could not persist removed repository:', err);
         }
+    }
+
+    protected hasRemovals(login: string): boolean {
+        const prefix = this.storageKey(login, '');
+        for (const key of this.removedRepositories) {
+            if (key.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** `github:owner/repo` (lower-cased) of a session key, resolving clone paths against the user's repos root. */
+    protected projectIdentity(login: string, repoKey: string): string | undefined {
+        return qaapProjectRemovalIdentity(repoKey, resolveUserReposRoot(this.reposRoot, login));
     }
 
     /** GitHub owner/repo names are case-insensitive, so removals match whatever case a client sends. */
