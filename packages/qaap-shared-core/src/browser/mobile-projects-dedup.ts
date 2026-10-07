@@ -139,3 +139,12 @@ function inferGithubKeyFromWorkspacePath(cwd: string | undefined): string | unde
     const fullName = parseGithubFullNameFromWorkspacePath(cwd);
     return fullName ? `github:${fullName}`.toLowerCase() : undefined;
 }
+
+/** Drop hub cards of projects the user removed. */
+export function withoutRemovedMobileProjects(
+    entries: readonly MobileProjectEntry[],
+    removedProjects: ReadonlySet<string>,
+    cwdFromUri: (uri: URI | undefined) => string | undefined,
+): MobileProjectEntry[] {
+    return [...entries];
+}

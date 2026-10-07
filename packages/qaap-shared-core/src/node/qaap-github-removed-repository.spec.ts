@@ -227,6 +227,55 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
         }
     });
 
+    // Production bug (07 Oct, juancristobalgd1/vyyq): the removal was recorded under `github:owner/repo`
+    // only; the clone's `recent:file:///…` and `ws:file:///…` sessions survived and listed it again.
+    describe('path-keyed sessions of the clone', () => {
+        const cloneUri = (): string => `file://${clonePath().split(path.sep).join('/').replace(/^\/?/, '/')}`;
+
+        // The temporary repos root is not called `repos`; production resolves paths against the real root.
+        beforeEach(() => Object.assign(endpoint.projectSessions, { reposRoot }));
+
+        it('removes them with the repository and never lists them again', async () => {
+            endpoint.projectSessions.upsertForUser(login, { repoKey: `recent:${cloneUri()}`, agentState: 'working', lastTask: 'Starting dev server…' });
+            endpoint.projectSessions.upsertForUser(login, { repoKey: `ws:${cloneUri()}` });
+
+            await removeRepository();
+
+            expect(listedRepoKeys()).to.deep.equal([]);
+            expect(endpoint.projectSessions.listForUser(login)).to.deep.equal([]);
+        });
+
+        it('hides them when the removal was recorded before this fix (lazy migration)', () => {
+            endpoint.projectSessions.deleteForUser(login, 'github:acme/shop');
+            fs.rmSync(clonePath(), { recursive: true, force: true });
+            endpoint.projectSessions.upsertForUser(login, { repoKey: `recent:${cloneUri()}`, agentState: 'working', previewUrl: 'https://preview.example/shop' });
+            endpoint.projectSessions.upsertForUser(login, { repoKey: `ws:${cloneUri()}` });
+            endpoint.projectSessions.markRepositoryRemoved(login, 'github:acme/shop');
+
+            expect(listedRepoKeys()).to.deep.equal([]);
+        });
+
+        it('ignores late ws:/recent: upserts for the removed clone', async () => {
+            await removeRepository();
+
+            endpoint.handleUpsertProjectSession({ body: { repoKey: `ws:${cloneUri()}`, agentState: 'working' } }, makeRes());
+            endpoint.handleUpsertProjectSession({ body: { repoKey: `recent:${cloneUri()}`, previewUrl: 'https://preview.example/shop' } }, makeRes());
+
+            expect(listedRepoKeys()).to.deep.equal([]);
+        });
+
+        it('lists them again once the repository is explicitly re-imported', async () => {
+            await removeRepository();
+            const res = makeRes();
+            await endpoint.handleOpenGithubRepository({ params: { owner: 'acme', repo: 'shop' }, body: { explicit: true } }, res);
+            expect(res.statusCode).to.equal(200);
+
+            endpoint.handleUpsertProjectSession({ body: { repoKey: `ws:${cloneUri()}` } }, makeRes());
+
+            expect(listedRepoKeys().sort()).to.deep.equal(['github:acme/shop', `ws:${cloneUri()}`]);
+        });
+    });
+
     it('still opens (and clones) a repository that was never removed', async () => {
         fs.rmSync(clonePath(), { recursive: true, force: true });
 

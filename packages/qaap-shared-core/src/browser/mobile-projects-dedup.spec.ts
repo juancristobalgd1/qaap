@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
-import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
+import { deduplicateMobileProjectEntries, withoutRemovedMobileProjects } from './mobile-projects-dedup';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 const ctx = {
@@ -298,4 +298,34 @@ describe('mobile-projects-dedup', () => {
         expect(deduped.map(candidate => candidate.id)).to.deep.equal([first.id, second.id]);
     });
 
+});
+
+// Production (juancristobalgd1, Oct 7 2026): vyyq was removed (`github:` removal recorded), but its
+// `recent:`/`ws:` rows and the open workspace kept listing it in the hub.
+describe('withoutRemovedMobileProjects', () => {
+
+    const clone = 'file:///workspace/repos/users/juancristobalgd1/juancristobalgd1/vyyq';
+    const removed = new Set(['github:juancristobalgd1/vyyq']);
+
+    it('drops every card of a removed repository, whatever key it carries', () => {
+        const entries = [
+            project({ id: `recent:${clone}`, name: 'vyyq', uri: new URI(clone) }),
+            project({ id: `ws:${clone}`, name: 'vyyq', uri: new URI(clone), isCurrent: true }),
+            project({ id: 'github:JuanCristobalGD1/vyyq', name: 'vyyq' }),
+            project({
+                id: 'custom:vyyq', name: 'vyyq',
+                github: { owner: 'juancristobalgd1', name: 'vyyq', fullName: 'juancristobalgd1/vyyq', htmlUrl: '', private: false },
+            }),
+            project({ id: 'ws:file:///workspace/repos/users/juancristobalgd1/juancristobalgd1/other', name: 'other',
+                uri: new URI('file:///workspace/repos/users/juancristobalgd1/juancristobalgd1/other') }),
+        ];
+
+        expect(withoutRemovedMobileProjects(entries, removed, ctx.cwdFromUri).map(entry => entry.id))
+            .to.deep.equal(['ws:file:///workspace/repos/users/juancristobalgd1/juancristobalgd1/other']);
+    });
+
+    it('keeps everything when nothing was removed', () => {
+        const entries = [project({ id: `recent:${clone}`, name: 'vyyq', uri: new URI(clone) })];
+        expect(withoutRemovedMobileProjects(entries, new Set(), ctx.cwdFromUri)).to.deep.equal(entries);
+    });
 });

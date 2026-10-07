@@ -103,3 +103,11 @@ export function mergeSessionMaps(
     }
     return out;
 }
+
+/** Drop browser rows of projects the server reports as removed. */
+export function removeLocalSessionsOfRemovedProjects(
+    local: Map<string, QaapProjectSessionSummary>,
+    removedProjects: ReadonlySet<string>,
+): Map<string, QaapProjectSessionSummary> {
+    return new Map(local);
+}

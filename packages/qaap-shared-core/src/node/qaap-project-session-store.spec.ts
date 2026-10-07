@@ -42,3 +42,44 @@ describe('QaapProjectSessionStore removed repositories', () => {
         expect(store.isRepositoryRemoved('alice', 'github:acme/shop')).to.equal(false);
     });
 });
+
+// Production (juancristobalgd1, Oct 7 2026): the removal was recorded under `github:owner/repo`, but the
+// project's path-keyed sessions (`recent:file:///…`, `ws:file:///…`) survived and listed it again.
+describe('QaapProjectSessionStore removed repositories and path-keyed sessions', () => {
+
+    const login = 'juancristobalgd1';
+    const clone = 'file:///workspace/repos/users/juancristobalgd1/juancristobalgd1/vyyq';
+
+    it('treats ws:, recent:, file: and cwd keys of a removed clone as removed', () => {
+        const store = new InMemoryProjectSessionStore();
+        store.markRepositoryRemoved(login, 'github:juancristobalgd1/vyyq');
+
+        expect(store.isRepositoryRemoved(login, `ws:${clone}`)).to.equal(true);
+        expect(store.isRepositoryRemoved(login, `recent:${clone}`)).to.equal(true);
+        expect(store.isRepositoryRemoved(login, clone)).to.equal(true);
+        expect(store.isRepositoryRemoved(login, '/workspace/repos/users/juancristobalgd1/juancristobalgd1/vyyq/web')).to.equal(true);
+        expect(store.isRepositoryRemoved(login, 'ws:file:///workspace/repos/users/juancristobalgd1/juancristobalgd1/other')).to.equal(false);
+    });
+
+    it('does not list path-keyed sessions of a removed repository', () => {
+        const store = new InMemoryProjectSessionStore();
+        store.upsertForUser(login, { repoKey: `recent:${clone}`, agentState: 'working', lastTask: 'Starting dev server…', previewUrl: 'https://preview.example/vyyq' });
+        store.upsertForUser(login, { repoKey: `ws:${clone}` });
+        store.upsertForUser(login, { repoKey: 'github:juancristobalgd1/other' });
+        store.markRepositoryRemoved(login, 'github:juancristobalgd1/vyyq');
+
+        expect(store.listForUser(login).map(session => session.repoKey)).to.deep.equal(['github:juancristobalgd1/other']);
+    });
+
+    it('deletes every session of the repository, whatever key the hub used', () => {
+        const store = new InMemoryProjectSessionStore();
+        store.upsertForUser(login, { repoKey: `recent:${clone}` });
+        store.upsertForUser(login, { repoKey: `ws:${clone}` });
+        store.upsertForUser(login, { repoKey: 'github:JuanCristobalGD1/vyyq' });
+        store.upsertForUser(login, { repoKey: 'github:juancristobalgd1/other' });
+
+        expect(store.deleteForUser(login, 'github:juancristobalgd1/vyyq')).to.equal(true);
+
+        expect(store.listForUser(login).map(session => session.repoKey)).to.deep.equal(['github:juancristobalgd1/other']);
+    });
+});
