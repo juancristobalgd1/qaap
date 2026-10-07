@@ -1,0 +1,56 @@
+{
+  "updated_at": "2026-10-07T14:10:00Z",
+  "deadline": "2026-10-16",
+  "freeze_new_features_from": "2026-10-13",
+  "flujos_criticos": {
+    "estado": "PROPUESTA, pendiente de confirmar por Juan",
+    "lista": [
+      "1. Entrar con GitHub (OAuth) y ver mis proyectos en Work Hub, escritorio y movil",
+      "2. Anadir proyecto (clonar repo) y quitar proyecto: el quitado no vuelve tras recargar",
+      "3. Lanzar una tarea a un agente, ver su progreso en vivo y el punto azul de no leido correcto",
+      "4. Preview del proyecto: abrir, cerrar y que no se reabra sola",
+      "5. Pasar de Work Hub a IDE (escritorio) con Explorer visible y sin recarga",
+      "6. Movil: carga de Work Hub en 2 s (retorno) / 4 s (primera vez), sin codigo del IDE",
+      "7. La sesion sobrevive a un deploy (sin state_lost ni volver a iniciar sesion)"
+    ]
+  },
+  "sha_prod": "d9d2f81757c5",
+  "digest_sano": "d9d2f81757c534e0758ac12d6f062ec476e2c819",
+  "prs": [
+    {"n": 230, "rama": "fo/remove-path-sessions", "sha": "69cb44cb1267", "estado": "E0", "titulo": "quitar proyecto no vuelve (sesiones recent:/ws:, conversaciones, worktrees)", "bloqueo": "CI Windows: 2o arreglo de rutas Windows (cleanup worktrees) pusheado 14:05Z, CI corriendo; merge requiere E3+E4 en staging, que aun no existe"},
+    {"n": 203, "rama": "fo/deploy-speed", "sha": "1bd519d7c", "estado": "E0", "titulo": "velocidad del deploy (tenant image por digest)", "bloqueo": "draft; CI 12/12 verde; pasar a ready"},
+    {"n": 229, "rama": "fo/ide-explorer-open", "sha": "aba5960ba", "estado": "E0", "titulo": "Explorer visible al pasar de Work Hub a IDE", "bloqueo": "CI 13/13 verde; espera turno (regla max 2 PRs activos)"}
+  ],
+  "prs_fuera_de_regla": {
+    "nota": "Hay 11 PRs abiertos; la regla es max 2. Pendiente decision de Juan: cerrar o mantener en draft.",
+    "lista": [210, 214, 213, 212, 195, 193, 185, 165]
+  },
+  "agentes": [],
+  "cola": [
+    "230 quitar proyecto (CI Windows en curso)",
+    "203 velocidad del deploy",
+    "secreto smoke post-deploy (QAAP_SMOKE_SESSION o QAAP_SMOKE_COOKIE; pedido a Juan)",
+    "staging en el mismo VPS (cabe: 18 GB RAM libres)",
+    "229 Explorer Work Hub->IDE",
+    "210 cerrar y rehacer desde master",
+    "212/214/213 solo si desbloquean un flujo critico"
+  ],
+  "deploy_medido": {
+    "runs": ["37584546362", "37570642730"],
+    "total_limpio_min": 35,
+    "pasos_min": {"Pre-deploy smoke gate": 3.5, "Publish immutable GHCR image (Build and push image ~13)": 13.5, "Verify exact candidate image": 2.5, "Deploy to VPS (Deploy over SSH 13-18)": 15.5},
+    "nota": "Build de imagen y Deploy over SSH son ~80%. El run 37598792999 tardo 69 min por un rerun tras fallo de npm/keytar."
+  },
+  "viabilidad": {
+    "actions_minutos": "OK: repo publico, minutos de runners estandar gratis (factura neta 0). Ojo: los logs de Actions son publicos.",
+    "vps_ram": "OK: 24 GB, 18 GB disponibles, 8 cores, 188 GB disco libres. Staging cabe.",
+    "claude_en_runner": "VIABLE pero bloqueado: hay token de larga duracion (cuenta hermano) valido para CLAUDE_CODE_OAUTH_TOKEN, pero el token GitHub de Fo no puede crear secretos (403). Juan debe anadir el secreto o dar permiso Secrets.",
+    "codex_revisor": "OK en el sandbox: codex exec responde con gpt-6-luna max (14:06Z). En runner no hace falta: revisar un diff no necesita build.",
+    "smoke_post_deploy": "Falta secreto QAAP_SMOKE_SESSION/QAAP_SMOKE_COOKIE; Fo no puede crear secretos.",
+    "vps_escritura": "Fo solo tiene SSH de lectura; staging se monta via workflow de Actions con la clave SSH del deploy."
+  },
+  "incidentes": [
+    {"fecha": "2026-10-07", "que": "quitar vyyq: dicho arreglado en prod (d9d2f81757c5) probado con cuenta de prueba; con datos de Juan seguia fallando", "leccion": "E4 obligatorio con datos reales"},
+    {"fecha": "2026-10-06", "que": "#209 dejo el Explorer vacio en prod; revertido en #223"}
+  ]
+}
