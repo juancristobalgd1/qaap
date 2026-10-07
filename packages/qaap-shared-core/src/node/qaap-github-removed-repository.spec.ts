@@ -93,6 +93,8 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
     });
 
     afterEach(() => {
+        // A clone the delete could not remove sits read-only in the trash.
+        makeTreeWritable(reposRoot);
         fs.rmSync(reposRoot, { recursive: true, force: true });
     });
 
@@ -163,9 +165,7 @@ describe('QaapGithubOauthEndpoint removed repositories stay removed', () => {
             expect(listedRepoKeys()).to.deep.equal([]);
         } finally {
             // Windows ignores the read-only bit on directories, so there the delete succeeds at once.
-            if (fs.existsSync(stubborn)) {
-                fs.chmodSync(stubborn, 0o755);
-            }
+            makeTreeWritable(reposRoot);
         }
     });
 

@@ -423,6 +423,7 @@ describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
         const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
         Object.assign(endpoint, {
             reposRoot,
+            projectSessions: { isRepositoryRemoved: () => false },
             runGit: async (args: string[], _token: string | undefined, cwd: string) => {
                 if (args[0] === 'clone') {
                     fs.mkdirSync(path.join(cwd, args[args.length - 1], '.git'), { recursive: true });
