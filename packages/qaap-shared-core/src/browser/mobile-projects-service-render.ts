@@ -27,6 +27,7 @@ import {
     requestMobileProjectsPanelDismiss,
     requestMobileProjectsPanelRestore,
 } from './mobile-projects-open';
+import { setLocalProjectRemoved } from './mobile-projects-session-cache';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QaapWorkspaceService } from './qaap-workspace-service';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
@@ -620,6 +621,8 @@ export async function importGithubProjectExtracted(ctx: MobileProjectsServiceCon
 
 export function registerGithubWorkspaceProjectExtracted(ctx: MobileProjectsServiceContext, repository: QaapGithubRepositorySummary, uri: URI): void {
         clearHiddenProjectIdExtracted(ctx, `github:${repository.fullName}`);
+        // Imported again: the server cleared the removal, so the cached one must not hide the new card.
+        setLocalProjectRemoved(`github:${repository.fullName}`, false);
         ctx.touchGithubRepositoryActivity(repository);
         const custom = ctx.readCustomProjects();
         const id = `custom:${uri.toString()}`;

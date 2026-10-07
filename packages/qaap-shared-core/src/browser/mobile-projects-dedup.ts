@@ -6,6 +6,7 @@
 import URI from '@theia/core/lib/common/uri';
 import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
 
 export interface MobileProjectDedupContext {
     normalizeName(name: string | undefined): string | undefined;
@@ -140,11 +141,27 @@ function inferGithubKeyFromWorkspacePath(cwd: string | undefined): string | unde
     return fullName ? `github:${fullName}`.toLowerCase() : undefined;
 }
 
-/** Drop hub cards of projects the user removed. */
+/**
+ * Drop hub cards of projects the user removed (`github:owner/repo` identities, see
+ * {@link qaapProjectRemovalIdentity}), whether the card carries the GitHub repository, a
+ * `ws:`/`recent:` id or only a clone path. The server stays authoritative: re-importing clears the removal.
+ */
 export function withoutRemovedMobileProjects(
     entries: readonly MobileProjectEntry[],
     removedProjects: ReadonlySet<string>,
     cwdFromUri: (uri: URI | undefined) => string | undefined,
 ): MobileProjectEntry[] {
-    return [...entries];
+    if (removedProjects.size === 0) {
+        return [...entries];
+    }
+    const isRemoved = (key: string | undefined): boolean => {
+        const identity = qaapProjectRemovalIdentity(key);
+        return !!identity && removedProjects.has(identity);
+    };
+    return entries.filter(entry => !(
+        (entry.github && isRemoved(`github:${entry.github.fullName}`))
+        || isRemoved(entry.id)
+        || isRemoved(entry.uri?.toString())
+        || isRemoved(cwdFromUri(entry.uri))
+    ));
 }

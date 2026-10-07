@@ -11,6 +11,7 @@ export const MOBILE_PROJECTS_HIDDEN_IDS_BASE = 'qaap.mobileProjects.hiddenIds';
 export const MOBILE_PROJECTS_PINNED_IDS_BASE = 'qaap.mobileProjects.pinnedIds';
 export const MOBILE_PROJECTS_DISPLAY_NAMES_BASE = 'qaap.mobileProjects.displayNames';
 export const MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE = 'qaap.mobileProjects.customProjects';
+export const MOBILE_PROJECTS_REMOVED_PROJECTS_BASE = 'qaap.mobileProjects.removedProjects';
 
 /** Resolve a browser cache key scoped to the signed-in GitHub/GitLab login. */
 export function mobileProjectsUserStorageKey(baseKey: string, userLogin?: string): string {

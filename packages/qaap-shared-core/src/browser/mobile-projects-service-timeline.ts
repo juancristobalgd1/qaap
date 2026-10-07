@@ -24,8 +24,11 @@ import {
     mergeSessionMaps,
     patchLocalProjectSession,
     readLocalProjectSessions,
+    readLocalRemovedProjects,
+    removeLocalSessionsOfRemovedProjects,
     removeStaleLocalGithubSessions,
     writeLocalProjectSessions,
+    writeLocalRemovedProjects,
 } from './mobile-projects-session-cache';
 import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
@@ -249,7 +252,12 @@ export async function loadSessionMapExtracted(ctx: MobileProjectsServiceContext)
             const remoteMap = new Map(remote.sessions.map(s => [s.repoKey, s]));
             // A server-side delete must also evict an older browser session row;
             // otherwise the merge would resurrect the project on the next refresh.
-            const reconciledLocal = removeStaleLocalGithubSessions(local, remoteMap);
+            // The server is authoritative for removals too; older backends do not report them.
+            const removedProjects = remote.removedProjects ? new Set(remote.removedProjects) : readLocalRemovedProjects();
+            if (remote.removedProjects) {
+                writeLocalRemovedProjects(removedProjects);
+            }
+            const reconciledLocal = removeLocalSessionsOfRemovedProjects(removeStaleLocalGithubSessions(local, remoteMap), removedProjects);
             const merged = mergeSessionMaps(reconciledLocal, remoteMap);
             writeLocalProjectSessions(merged);
             return merged;

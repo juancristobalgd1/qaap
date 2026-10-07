@@ -17,9 +17,11 @@ import {
 import { isUserRepositoryFilesystemPath, isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
 import {
     readLocalProjectSessions,
+    readLocalRemovedProjects,
     removeLocalProjectSession,
+    setLocalProjectRemoved,
 } from './mobile-projects-session-cache';
-import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
+import { deduplicateMobileProjectEntries, withoutRemovedMobileProjects } from './mobile-projects-dedup';
 import { QAAP_USER_REPOS_SEGMENT } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { parseUserRepositoryCloneFromWorkspacePath } from '../common/qaap-user-repository-clone-path';
 
@@ -102,6 +104,7 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
         if (github) {
             await deleteQaapGithubRepository(github.owner, github.name);
             removeLocalProjectSession(`github:${github.fullName}`);
+            setLocalProjectRemoved(`github:${github.fullName}`, true);
             const hiddenIds = ctx.readHiddenProjectIds();
             hiddenIds.add(project.id);
             hiddenIds.add(`github:${github.fullName}`);
@@ -142,6 +145,7 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
             if (clone) {
                 await deleteQaapGithubRepository(clone.owner, clone.name);
                 removeLocalProjectSession(`github:${clone.owner}/${clone.name}`);
+                setLocalProjectRemoved(`github:${clone.owner}/${clone.name}`, true);
             }
             await ctx.workspaceService.removeRecentWorkspace(project.uri.toString());
             // The recent-workspace service can briefly return a stale snapshot after removal.
@@ -230,9 +234,14 @@ export function peekCachedProjectsExtracted(ctx: MobileProjectsServiceContext): 
 
         return ctx.overlayActiveTasks(ctx.sortProjectsByRecent(
             ctx.collapseCurrentWorkspaceDuplicates(
-                entries.filter(project => ctx.isBrowsableHubProject(project)),
+                withoutRemovedHubProjects(ctx, entries.filter(project => ctx.isBrowsableHubProject(project))),
             ),
         ));
+}
+
+/** A removed project stays off the hub whatever still names it: path-keyed rows, recent workspaces, the open workspace. */
+function withoutRemovedHubProjects(ctx: MobileProjectsServiceContext, entries: readonly MobileProjectEntry[]): MobileProjectEntry[] {
+        return withoutRemovedMobileProjects(entries, readLocalRemovedProjects(), uri => ctx.cwdFromFileUri(uri));
 }
 
 export function isBrowsableHubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): boolean {
@@ -482,7 +491,7 @@ export async function loadProjectsExtracted(ctx: MobileProjectsServiceContext): 
 
         return ctx.overlayActiveTasks(ctx.sortProjectsByRecent(
             ctx.collapseCurrentWorkspaceDuplicates(
-                entries.filter(project => ctx.isBrowsableHubProject(project)),
+                withoutRemovedHubProjects(ctx, entries.filter(project => ctx.isBrowsableHubProject(project))),
             ).filter(p => !hiddenIds.has(p.id)),
         ));
 }

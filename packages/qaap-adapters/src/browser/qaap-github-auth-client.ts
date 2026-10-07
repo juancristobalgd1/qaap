@@ -231,7 +231,12 @@ export async function fetchQaapProjectSessions(): Promise<QaapProjectSessionsRes
         return { sessions: [] };
     }
     const body = await response.json() as Partial<QaapProjectSessionsResponse>;
-    return { sessions: Array.isArray(body.sessions) ? body.sessions : [] };
+    return {
+        sessions: Array.isArray(body.sessions) ? body.sessions : [],
+        ...(Array.isArray(body.removedProjects)
+            ? { removedProjects: body.removedProjects.filter((key): key is string => typeof key === 'string') }
+            : {}),
+    };
 }
 
 export async function upsertQaapProjectSession(patch: QaapProjectSessionUpsertRequest): Promise<QaapProjectSessionSummary | undefined> {
