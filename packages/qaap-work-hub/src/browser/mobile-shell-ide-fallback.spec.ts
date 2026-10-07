@@ -89,6 +89,8 @@ describe('mobile-shell-ide-fallback', () => {
             ensureDesktopSidePanelSizes: async () => { calls.push('ensureDesktopSidePanelSizes'); },
             requestFullShellRelayout: () => { calls.push('requestFullShellRelayout'); },
             syncOverlayEdgeSwipeZones: () => { calls.push('syncOverlayEdgeSwipeZones'); },
+            isDesktopIdeSidePanelExpanded: () => true,
+            revealDesktopIdeExplorer: async () => { calls.push('revealDesktopIdeExplorer'); },
             ...overrides?.host,
         } as MobileShellIdeFallbackHost & { calls: string[]; panel?: MobileProjectsPanel };
         panel = {

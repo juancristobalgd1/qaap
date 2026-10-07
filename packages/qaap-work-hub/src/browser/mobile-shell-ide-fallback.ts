@@ -9,6 +9,7 @@ import {
     clearPreferDesktopIde,
     markPreferAgentsSurface,
     markPreferDesktopIde,
+    peekPreferDesktopIde,
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
@@ -37,6 +38,9 @@ export interface MobileShellIdeFallbackHost {
     ensureDesktopSidePanelSizes(): Promise<void>;
     requestFullShellRelayout(): void;
     syncOverlayEdgeSwipeZones(): void;
+    isDesktopIdeSidePanelExpanded(): boolean;
+    /** Show the left side panel with the Explorer active, sized for the desktop IDE. */
+    revealDesktopIdeExplorer(): Promise<void>;
 }
 
 export interface MobileShellIdeFallbackOptions {
@@ -85,6 +89,14 @@ export class MobileShellIdeFallbackController {
         this.host.leaveMobileLayout();
         this.host.syncOverlayEdgeSwipeZones();
         this.host.onMediaChange();
+        // A Work Hub boot skips the Explorer's layout init and the desktop split starts with the
+        // sidebars collapsed, so nothing else opens the side panel: the IDE showed an empty main
+        // area until the user found "Toggle Side Panel" (prod d9d2f81).
+        if (!this.sessionState.desktopIdeSidePanelClosedByUser) {
+            this.host.revealDesktopIdeExplorer().catch(error => {
+                console.warn('[qaap-mobile-shell] could not reveal the Explorer in the desktop IDE', error);
+            });
+        }
         window.requestAnimationFrame(() => {
             void this.host.ensureDesktopSidePanelSizes();
             this.host.requestFullShellRelayout();
@@ -93,6 +105,10 @@ export class MobileShellIdeFallbackController {
 
     /** IDE | Agents switch from classic IDE — restore the Agents execution shell. */
     returnToAgentsFromDesktopIde(): void {
+        if (peekPreferDesktopIde()) {
+            // Read before the Work Hub hides the IDE side panels: a closed panel here is the user's choice.
+            this.sessionState.desktopIdeSidePanelClosedByUser = !this.host.isDesktopIdeSidePanelExpanded();
+        }
         this.host.cancelAgentsBootstrap();
         clearPreferDesktopIde();
         markPreferAgentsSurface();

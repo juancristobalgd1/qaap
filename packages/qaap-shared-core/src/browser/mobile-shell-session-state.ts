@@ -21,6 +21,12 @@ export class MobileShellSessionState {
     /** Prevents duplicate `restoreAgentsSurfaceAfterReload` calls during mobile layout bootstrap. */
     agentsBootstrapStarted = false;
 
+    /**
+     * True when the user left the desktop IDE for the Work Hub with the left side panel closed.
+     * The next Work Hub -> IDE switch then keeps it closed instead of revealing the Explorer.
+     */
+    desktopIdeSidePanelClosedByUser = false;
+
     /** Bumped to cancel in-flight Agents bootstrap when the user opens the desktop IDE. */
     agentsBootstrapEpoch = 0;
 
