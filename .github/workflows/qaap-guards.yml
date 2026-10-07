@@ -84,6 +84,10 @@ jobs:
       # (doc/qaap-ci-invariants.md, "Deploy runs the CI-verified image").
       - name: Dockerfile base image pin regression
         run: bash scripts/qaap-dockerfile-base-pin-check.test.sh
+      # Fails if the VPS deploy goes back to streaming the whole image into the rootless tenant
+      # daemon with `docker save | docker load` instead of pulling the pinned digest.
+      - name: Tenant image seed regression
+        run: bash scripts/qaap-vps-tenant-image.test.sh
       - name: Required mobile E2E workflow regression
         run: node --test scripts/qaap-mobile-required-ci.test.js
 

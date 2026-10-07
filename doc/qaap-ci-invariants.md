@@ -82,6 +82,27 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   the version tag next to it, and let the publish + verify jobs prove it before deploying.
 - **Guard:** `scripts/qaap-dockerfile-base-pin-check.test.sh` runs in the required `qaap-guards` job.
 
+### Tenant image seed of the rootless daemon (VPS)
+
+- **Rule:** when the deploy pins a GHCR digest (`--image name:tag@sha256:…`), the rootless tenant
+  daemon pulls that exact digest and tags it with the tenant tag (`preload_tenant_image` in
+  `scripts/qaap-vps-tenant-image.sh`). The GHCR package is public, so the pull is **anonymous**: an
+  empty `DOCKER_CONFIG` on the host client that talks to the rootless socket (bind source of the
+  Theia container's `DOCKER_HOST`), or inside Theia when the host cannot reach it. The deploy's
+  `docker login` token is never sent to the rootless daemon (its uid is the uid tenant containers
+  map to) nor passed into the Theia container or a tenant (#188). The pulled image must have the
+  host image id and carry the pinned digest in `RepoDigests`; otherwise, or if the pull fails
+  (e.g. the package became private), it falls back to `docker save | docker load`. A pinned deploy
+  never pulls the mutable tag: without a host image to copy it fails with a clear error and the
+  previous tenant tag stays in place. Local builds (no digest) always use `save | load`.
+- **Why:** `docker save | docker exec -i <theia> docker load` streams the whole multi-GB image,
+  uncompressed, on every deploy (each deploy is a new image): tens of minutes of the deploy. A
+  registry pull only downloads the layers that changed.
+- **Symptoms if broken:** deploy logs show `loading host build of … into rootless Docker` on every
+  pinned deploy (slow but correct); or tenants fail with "No such image" if the tag is not applied.
+- **Guard:** `scripts/qaap-vps-tenant-image.test.sh` (fake Docker) runs in the required
+  `qaap-guards` job.
+
 ### 1. The portable rlimit fallback must exec the real command
 
 - **Rule:** in `packages/qaap-cloud-workspace/src/node/qaap-tenant-spawn-service.ts` (`applyResourceLimits`), the fallback script is `ulimit -v "$1" && ulimit -t "$2" && shift 2 && exec "$@"`. `$0` is the `qaap-resource-limited` label, `$1`/`$2` are the limits, `$3…` is the command. Shift exactly **2**.

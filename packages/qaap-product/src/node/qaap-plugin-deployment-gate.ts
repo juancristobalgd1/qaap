@@ -19,6 +19,7 @@ export class QaapPluginDeploymentGate {
 
     protected readonly deferred = new Deferred<void>();
     protected isRequested = false;
+    protected isInitialDeploymentSettled = false;
 
     get requested(): boolean {
         return this.isRequested;
@@ -27,6 +28,21 @@ export class QaapPluginDeploymentGate {
     /** Settles once plugin deployment has been requested. */
     get whenRequested(): Promise<void> {
         return this.deferred.promise;
+    }
+
+    /**
+     * True while the deployment started by the first {@link request} runs. Its completion event
+     * would only make an already-listing IDE page sync again (see `QaapHostedPluginServerImpl`).
+     */
+    get initialDeploymentPending(): boolean {
+        return this.isRequested && !this.isInitialDeploymentSettled;
+    }
+
+    /** Records the deployment started by the first request; it is no longer pending once it settles. */
+    trackInitialDeployment(deployment: Promise<void>): Promise<void> {
+        return deployment.finally(() => {
+            this.isInitialDeploymentSettled = true;
+        });
     }
 
     request(): void {

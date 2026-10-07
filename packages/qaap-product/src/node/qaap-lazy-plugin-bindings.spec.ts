@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { Container, ContainerModule } from '@theia/core/shared/inversify';
 import { ContributionProvider } from '@theia/core/lib/common/contribution-provider';
+import { Deferred } from '@theia/core/lib/common/promise-util';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { Emitter } from '@theia/core/lib/common/event';
 import { ILogger } from '@theia/core/lib/common/logger';
@@ -16,7 +17,7 @@ import { LocalizationProvider } from '@theia/core/lib/node/i18n/localization-pro
 import { LocalizationServerImpl } from '@theia/core/lib/node/i18n/localization-server';
 import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connection-container-module';
 import { ExtPluginApiProvider } from '@theia/plugin-ext/lib/common/plugin-ext-api-contribution';
-import { DeployedPlugin, HostedPluginServer, PluginDeployer, PluginIdentifiers } from '@theia/plugin-ext/lib/common/plugin-protocol';
+import { DeployedPlugin, HostedPluginClient, HostedPluginServer, PluginDeployer, PluginIdentifiers } from '@theia/plugin-ext/lib/common/plugin-protocol';
 import { HostedPluginSupport } from '@theia/plugin-ext/lib/hosted/node/hosted-plugin';
 import { HostedPluginLocalizationService } from '@theia/plugin-ext/lib/hosted/node/hosted-plugin-localization-service';
 import { PluginDeployerHandlerImpl } from '@theia/plugin-ext/lib/hosted/node/plugin-deployer-handler-impl';
@@ -45,11 +46,13 @@ async function stateOf(promise: Promise<unknown>): Promise<'settled' | 'pending'
 
 class FakePluginDeployer {
     starts = 0;
+    /** When set, `start()` stays pending until the test resolves it (a deployment in progress). */
+    pendingStart: Deferred<void> | undefined;
     protected readonly onDidDeployEmitter = new Emitter<void>();
     readonly onDidDeploy = this.onDidDeployEmitter.event;
     start(): Promise<void> {
         this.starts++;
-        return Promise.resolve();
+        return this.pendingStart?.promise ?? Promise.resolve();
     }
     fireDidDeploy(): void {
         this.onDidDeployEmitter.fire();
@@ -151,6 +154,50 @@ describe('Qaap lazy plugin deployment (tenant backend)', () => {
         await QaapHostedPluginServer.requestPlugins(ide.server);
         expect(await listing).to.deep.equal([PLUGIN_ID]);
         expect(ide.hostedPlugin.hostForks).to.equal(1);
+    });
+
+    it('does not make the requesting IDE page load plugins again when the lazy deployment completes', async () => {
+        const { container, deployer } = createBackend();
+        deployer.pendingStart = new Deferred<void>();
+        for (const contribution of container.getAll<BackendApplicationContribution>(BackendApplicationContribution)) {
+            await contribution.initialize?.();
+        }
+        const ide = connect(container);
+        let reloads = 0;
+        ide.server.setClient({ postMessage: async () => undefined, log: () => undefined, onDidDeploy: () => reloads++ } as HostedPluginClient);
+        await settle();
+
+        await QaapHostedPluginServer.requestPlugins(ide.server);
+        await settle();
+        expect(deployer.starts).to.equal(1);
+        // The deployment's own completion event: the page's first listing already waited for it.
+        deployer.fireDidDeploy();
+        deployer.pendingStart.resolve();
+        await settle();
+        expect(reloads).to.equal(0);
+
+        // A later install or uninstall still makes the page sync.
+        deployer.fireDidDeploy();
+        expect(reloads).to.equal(1);
+    });
+
+    it('forwards every deploy event during the initial deployment after the first', async () => {
+        const { container, deployer } = createBackend();
+        deployer.pendingStart = new Deferred<void>();
+        for (const contribution of container.getAll<BackendApplicationContribution>(BackendApplicationContribution)) {
+            await contribution.initialize?.();
+        }
+        const ide = connect(container);
+        let reloads = 0;
+        ide.server.setClient({ postMessage: async () => undefined, log: () => undefined, onDidDeploy: () => reloads++ } as HostedPluginClient);
+        await settle();
+        await QaapHostedPluginServer.requestPlugins(ide.server);
+        await settle();
+
+        // E.g. a plugin install racing the initial deployment: one of the two events still reaches the page.
+        deployer.fireDidDeploy();
+        deployer.fireDidDeploy();
+        expect(reloads).to.equal(1);
     });
 
     it('answers localization requests without waiting for a deployment nobody requested', async () => {
