@@ -790,22 +790,113 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /**
-     * Deletes a clone, retrying while concurrent writers (checkpoint refs, a dying preview) recreate
-     * entries inside it. Resolves false when the directory is still there afterwards.
+     * Frees the clone's path. What this uid cannot delete, notably the git objects and checkpoint refs
+     * the agent uid writes into `.git` (also while the delete runs), goes to the trash and is purged in
+     * the background. Resolves false when the directory is still there afterwards.
      */
     protected async removeRepositoryWorkspace(target: string): Promise<boolean> {
-        for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-                if (!await this.pathExists(target)) {
-                    return true;
-                }
-                await fs.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-            } catch (err) {
-                console.warn('[qaap-oauth] Failed to remove repository workspace (will retry):', target, err instanceof Error ? err.message : String(err));
-            }
-            await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        if (!await this.pathExists(target)) {
+            return true;
+        }
+        try {
+            await fs.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        } catch (err) {
+            console.warn('[qaap-oauth] Failed to remove repository workspace, moving it to the trash:', target, err instanceof Error ? err.message : String(err));
+        }
+        if (await this.pathExists(target) && await this.moveRepositoryWorkspaceToTrash(target)) {
+            this.purgeRepositoryTrash(path.dirname(target)).catch(() => undefined);
         }
         return !await this.pathExists(target);
+    }
+
+    /** Hidden sibling name prefix of a clone moved to the trash. */
+    protected repositoryTrashPrefix(target: string): string {
+        return `.qaap-trash-${path.basename(target)}-`;
+    }
+
+    /**
+     * Renames `target` to a hidden sibling, which needs write access to the owner directory only, not
+     * to the agent-owned files inside. It stays in the same directory on purpose: moving a directory
+     * to another parent also needs write access to the directory itself (its `..` entry). Dot-prefixed
+     * names are skipped by repo listings and are invalid repo names.
+     */
+    protected async moveRepositoryWorkspaceToTrash(target: string): Promise<boolean> {
+        const trashed = path.join(path.dirname(target), `${this.repositoryTrashPrefix(target)}${Date.now()}-${randomBytes(4).toString('hex')}`);
+        try {
+            await fs.rename(target, trashed);
+            return true;
+        } catch (err) {
+            console.warn('[qaap-oauth] Failed to move repository workspace to the trash:', target, err instanceof Error ? err.message : String(err));
+            return false;
+        }
+    }
+
+    /**
+     * Deletes the trashed clones in an owner directory. What this uid cannot delete is deleted by the
+     * agent identity that wrote it (the tenant worker / dropped uid), with no more rights than the agent has.
+     */
+    protected async purgeRepositoryTrash(ownerDirectory: string): Promise<void> {
+        let entries: string[];
+        try {
+            // Never follow an owner directory an agent replaced with a symlink out of its workspace.
+            if (!(await fs.lstat(ownerDirectory)).isDirectory()) {
+                return;
+            }
+            entries = await fs.readdir(ownerDirectory);
+        } catch {
+            return;
+        }
+        for (const entry of entries.filter(name => name.startsWith('.qaap-trash-'))) {
+            const trashed = path.join(ownerDirectory, entry);
+            await fs.rm(trashed, { recursive: true, force: true }).catch(() => undefined);
+            if (!await this.pathExists(trashed)) {
+                continue;
+            }
+            try {
+                await this.removeAsRepositoryAgent(ownerDirectory, entry);
+            } catch (err) {
+                console.warn('[qaap-oauth] Failed to purge trashed repository workspace:', trashed, err instanceof Error ? err.message : String(err));
+            }
+        }
+    }
+
+    /** `rm -rf` of `entry` (relative, so it means the same inside the tenant worker) as the tenant. */
+    protected async removeAsRepositoryAgent(ownerDirectory: string, entry: string, timeoutMs = 5 * 60_000): Promise<void> {
+        if (!this.tenantProcess) {
+            throw new Error('the tenant worker is not bound');
+        }
+        const env: NodeJS.ProcessEnv = {};
+        for (const key of ['PATH', 'DOCKER_HOST', 'LANG', 'LC_ALL']) {
+            const value = process.env[key];
+            if (value) {
+                env[key] = value;
+            }
+        }
+        const child = await this.tenantProcess.spawnArgvPreparedAsync('rm', ['-rf', '--', `./${entry}`], {
+            cwd: ownerDirectory,
+            env: this.tenantProcess.resolveProcessEnv(ownerDirectory, env),
+            stdio: ['ignore', 'ignore', 'pipe'],
+            detached: true,
+        });
+        await new Promise<void>((resolve, reject) => {
+            let stderr = '';
+            const timer = setTimeout(() => child.kill(), timeoutMs);
+            child.stderr?.on('data', (chunk: Buffer) => {
+                stderr = (stderr + chunk.toString()).slice(-2000);
+            });
+            child.once('error', err => {
+                clearTimeout(timer);
+                reject(err);
+            });
+            child.once('close', code => {
+                clearTimeout(timer);
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(stderr.trim() || `rm exited with ${code}`));
+                }
+            });
+        });
     }
 
     protected scheduleRepositoryWorkspaceCleanup(target: string, delaysMs: readonly number[] = [5_000, 30_000, 120_000]): void {
@@ -1192,6 +1283,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         report({ phase: 'preparing', percent: 4 });
         await fs.mkdir(path.dirname(target), { recursive: true });
         await this.removeStaleCloneStaging(target);
+        await this.moveUnusableWorkspaceToTrash(target, userLogin, repository);
+        this.purgeRepositoryTrash(path.dirname(target)).catch(() => undefined);
         if (await this.isGitRepository(target)) {
             // SEC-1/C-3: the open flow only fetches (refs + objects, NO checkout, so no clean/smudge
             // filter runs); the working tree fast-forwards on the tenant's next git operation under the
@@ -1257,6 +1350,26 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
         }
         return target;
+    }
+
+    /**
+     * Moves aside what a removal left at `target` so the import clones cleanly: a project the user
+     * removed (its delete may have failed), or a `.git` git no longer accepts, e.g. the agent-owned
+     * objects and checkpoint refs this uid could not delete ("fatal: not a git repository").
+     */
+    protected async moveUnusableWorkspaceToTrash(
+        target: string,
+        userLogin: string,
+        repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name'>,
+    ): Promise<void> {
+        if (!await this.pathExists(target)) {
+            return;
+        }
+        const removed = this.projectSessions.isRepositoryRemoved(userLogin, `github:${repository.owner}/${repository.name}`);
+        const brokenGit = !await this.isGitRepository(target) && await this.pathExists(path.join(target, '.git'));
+        if (removed || brokenGit) {
+            await this.moveRepositoryWorkspaceToTrash(target);
+        }
     }
 
     /**
@@ -1462,6 +1575,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         let count = 0;
         for (const owner of owners) {
+            if (owner.startsWith('.')) {
+                continue;
+            }
             const ownerPath = path.join(userRoot, owner);
             let repos: string[] = [];
             try {
@@ -1474,7 +1590,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 continue;
             }
             for (const repo of repos) {
-                if (await this.isGitRepository(path.join(ownerPath, repo))) {
+                // Staging clones and trashed clones are not active repositories.
+                if (!repo.startsWith('.') && await this.isGitRepository(path.join(ownerPath, repo))) {
                     count += 1;
                 }
             }
@@ -1504,9 +1621,20 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async isGitRepository(target: string): Promise<boolean> {
+        const gitPath = path.join(target, '.git');
         try {
-            const stat = await fs.stat(path.join(target, '.git'));
-            return stat.isDirectory() || stat.isFile();
+            const stat = await fs.stat(gitPath);
+            if (stat.isFile()) {
+                // `gitdir:` file of a linked worktree.
+                return true;
+            }
+            if (!stat.isDirectory()) {
+                return false;
+            }
+            // What git itself requires of a repository directory. A delete that could not remove the
+            // agent's files leaves `.git/objects` and `.git/refs/qaap` without HEAD.
+            await Promise.all(['HEAD', 'objects', 'refs'].map(entry => fs.stat(path.join(gitPath, entry))));
+            return true;
         } catch {
             return false;
         }

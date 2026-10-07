@@ -97,6 +97,7 @@ describe('QaapGithubOauthEndpoint hosted clone/fetch (token boundary)', function
             reposRoot,
             gitOperationTimeoutMs: 60_000,
             workspacePrepareTimeoutMs: 60_000,
+            projectSessions: { isRepositoryRemoved: () => false },
             hostedFetch: fetcher,
             hostedPush: { push: async (request: QaapHostedGitPushRequest) => { pushes.push(request); } },
             // The tenant worker: records what the agent uid would receive, then runs plain local git.
