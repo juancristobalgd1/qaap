@@ -102,6 +102,10 @@ describe('qaap-agent-failure-message', () => {
     it('extractAgentLogFailureHint surfaces JSON and terminal error lines', () => {
         expect(extractAgentLogFailureHint('{"error":{"message":"provider rejected the request"}}'))
             .to.equal('provider rejected the request');
+        // opencode run --format json error event (NamedError shape: { name, data: { message } }).
+        expect(extractAgentLogFailureHint(
+            '{"type":"error","timestamp":1,"sessionID":"ses_1","error":{"name":"UnknownError","data":{"message":"Unexpected server error err_ded1d204"}}}',
+        )).to.equal('Unexpected server error err_ded1d204');
         expect(extractAgentLogFailureHint('info\nError: something went wrong\n'))
             .to.equal('Error: something went wrong');
         expect(extractAgentLogFailureHint(
