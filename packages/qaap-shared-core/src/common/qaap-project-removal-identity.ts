@@ -45,12 +45,17 @@ function fullNameUnderUserReposRoot(filesystemPath: string, userReposRoot: strin
     if (!userReposRoot) {
         return undefined;
     }
-    const separatorsOnly = (value: string): string => value.trim().replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
-    const root = separatorsOnly(userReposRoot);
-    const candidate = separatorsOnly(filesystemPath);
-    if (!root || !candidate.startsWith(`${root}/`)) {
+    // Windows: `C:\\…` roots meet `/C:/…` or `/c:/…` URI paths; drive letters and NTFS paths are case-insensitive.
+    const comparable = (value: string): string => value.trim().replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '')
+        .replace(/^\/(?=[a-z]:\/)/i, '');
+    const root = comparable(userReposRoot);
+    const candidate = comparable(filesystemPath);
+    const isWindowsPath = /^[a-z]:\//i.test(root);
+    const rootPrefix = `${root}/`;
+    const under = isWindowsPath ? candidate.toLowerCase().startsWith(rootPrefix.toLowerCase()) : candidate.startsWith(rootPrefix);
+    if (!root || !under) {
         return undefined;
     }
-    const [owner, name] = candidate.slice(root.length + 1).split('/');
+    const [owner, name] = candidate.slice(rootPrefix.length).split('/');
     return owner && name ? `${owner}/${name}`.toLowerCase() : undefined;
 }
