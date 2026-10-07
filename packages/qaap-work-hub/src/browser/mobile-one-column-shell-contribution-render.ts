@@ -308,6 +308,12 @@ export function initIdeFallbackControllerExtracted(ctx: MobileOneColumnShellCont
         ensureDesktopSidePanelSizes: () => ctx.ensureDesktopSidePanelSizes(),
         requestFullShellRelayout: () => ctx.requestFullShellRelayout(),
         syncOverlayEdgeSwipeZones: () => ctx.syncOverlayEdgeSwipeZones(),
+        isDesktopIdeSidePanelExpanded: () => ctx.shell.isExpanded('left'),
+        revealDesktopIdeExplorer: async () => {
+            // `FileNavigatorCommands.FOCUS` by id: the Work Hub shell must not import navigator code.
+            await ctx.commands.executeCommand('workbench.files.action.focusFilesExplorer');
+            await ctx.ensureDesktopSidePanelSizes();
+        },
     };
     ctx.ideFallback = new MobileShellIdeFallbackController({
         host: ctx.ideFallbackHost,
