@@ -21,4 +21,4 @@ Objetivo: ningún merge a master sin E3 (cuenta de prueba) + E4 (copia de los da
 
 ## Probar una rama (sin tocar producción)
 - Actions > "Qaap staging deploy" > Run workflow con action=build y ref=<rama o commit>: construye `ghcr.io/juancristobalgd1/qaap:staging-<sha>` (usa la caché de producción solo para leer), la despliega en staging y deja el digest en el resumen del run. Producción no se toca: `qaap-vps-deploy.yml` con input branch SÍ despliega a prod, no usarlo para esto.
-- Desde la CLI, se puede lanzar desde la propia rama antes de mergear el workflow: `gh workflow run "Qaap staging deploy" --ref <rama-del-workflow> -f action=build -f ref=<rama a probar>`.
+- Solo el workflow de master despliega en staging (tiene los secretos y el SSH). Lanzado desde otra rama (`--ref`), action=build construye la imagen pero no la despliega: esa copia del workflow no es de confianza. Para probar este mismo cambio antes de mergearlo: build desde su rama y luego action=deploy desde master con el digest del resumen.

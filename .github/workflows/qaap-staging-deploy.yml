@@ -115,13 +115,18 @@ jobs:
           REF="${{ steps.source.outputs.tag }}@${{ steps.build.outputs.digest }}"
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
           echo "Staging image: \`$REF\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "Built from a non-master workflow ref: not staged. Stage it with action=deploy from master." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   stage:
     needs: build
     name: Staging ${{ inputs.action == 'build' && 'deploy' || inputs.action }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: always() && github.repository == 'juancristobalgd1/qaap' && (inputs.action != 'build' || needs.build.result == 'success')
+    # Secrets and SSH only from the trusted workflow on master: a dispatch from another
+    # branch runs that branch's copy of this file, so it may build but never stage.
+    if: always() && github.repository == 'juancristobalgd1/qaap' && github.ref == 'refs/heads/master' && (inputs.action != 'build' || needs.build.result == 'success')
     environment: Preview
     steps:
       - name: Validate inputs
