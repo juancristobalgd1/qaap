@@ -1,0 +1,11 @@
+# Staging site. The staging workflow copies this file into deploy/caddy/staging-enabled/ while staging runs.
+# Proxies to the staging container over the production compose network (deploy/staging/compose.staging.yml).
+staging.{$QAAP_PUBLIC_HOST:localhost} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Robots-Tag "noindex, nofollow"
+	}
+	reverse_proxy qaap-staging-theia:4874
+}

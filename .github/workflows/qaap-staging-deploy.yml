@@ -1,0 +1,119 @@
+name: Qaap staging deploy
+
+# Manual only: never runs from pull requests, forks or pushes (ops/STAGING.md).
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy (start or update staging) or stop (take it down and unpublish it)
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, stop]
+      image:
+        description: Immutable GHCR image to stage (ghcr.io/...@sha256:...), required for deploy
+        required: false
+        type: string
+      copy_operator_data:
+        description: Refresh the staging copy of the operator's data (copied inside the VPS only)
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: qaap-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    name: Staging ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.repository == 'juancristobalgd1/qaap'
+    environment: Preview
+    steps:
+      - name: Validate inputs
+        env:
+          ACTION: ${{ inputs.action }}
+          IMAGE: ${{ inputs.image }}
+        run: |
+          if [ "$ACTION" = "deploy" ] && ! [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image must be an immutable ghcr.io reference with @sha256 digest"
+            exit 1
+          fi
+
+      - name: Run on the VPS over SSH
+        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
+        env:
+          ACTION: ${{ inputs.action }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+          QAAP_STAGING_IMAGE: ${{ inputs.image }}
+          COPY_DATA: ${{ inputs.copy_operator_data }}
+          # Separate GitHub OAuth app for https://staging.<host> (Preview environment secrets).
+          STAGING_CLIENT_ID: ${{ secrets.QAAP_STAGING_GITHUB_CLIENT_ID }}
+          STAGING_CLIENT_SECRET: ${{ secrets.QAAP_STAGING_GITHUB_CLIENT_SECRET }}
+        with:
+          host: ${{ secrets.QAAP_VPS_HOST }}
+          username: ${{ secrets.QAAP_VPS_USER }}
+          key: ${{ secrets.QAAP_VPS_SSH_KEY }}
+          port: ${{ secrets.QAAP_VPS_SSH_PORT }}
+          command_timeout: 25m
+          envs: ACTION,GHCR_USERNAME,GHCR_TOKEN,QAAP_STAGING_IMAGE,COPY_DATA,STAGING_CLIENT_ID,STAGING_CLIENT_SECRET
+          script: |
+            set -euo pipefail
+            REPO_DIR="${{ secrets.QAAP_VPS_REPO_DIR || '/opt/qaap' }}"
+            STAGE=/opt/qaap-staging
+            ENABLED="$REPO_DIR/deploy/caddy/staging-enabled"
+            reload_caddy() { docker exec qaap-caddy-1 caddy reload --config /etc/caddy/Caddyfile; }
+            cd "$REPO_DIR"
+            QAAP_PUBLIC_HOST="$(sed -n 's/^QAAP_PUBLIC_HOST=//p' .env)"
+            if [ "$ACTION" = "stop" ]; then
+              rm -f "$ENABLED/staging.caddy"
+              reload_caddy
+              QAAP_STAGING_IMAGE=unused QAAP_PUBLIC_HOST="$QAAP_PUBLIC_HOST" \
+                docker compose -p qaap-staging -f deploy/staging/compose.staging.yml down
+              echo "staging stopped and unpublished"
+              exit 0
+            fi
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+            mkdir -p "$STAGE"/{workspace,worktrees,parallel,auth/users,theia-user}
+            if [ -n "$STAGING_CLIENT_ID" ] && [ -n "$STAGING_CLIENT_SECRET" ]; then
+              ( umask 077; printf 'QAAP_GITHUB_CLIENT_ID=%s\nQAAP_GITHUB_CLIENT_SECRET=%s\n' "$STAGING_CLIENT_ID" "$STAGING_CLIENT_SECRET" > "$STAGE/staging.env" )
+            fi
+            test -f "$STAGE/staging.env" || { echo "::error::no staging OAuth app: set QAAP_STAGING_GITHUB_CLIENT_ID/SECRET in the Preview environment"; exit 1; }
+            if [ "$COPY_DATA" = "true" ]; then
+              # Consistent online copy with SQLite's backup API, inside the VPS. Never leaves the host.
+              python3 - <<'PY'
+            import os, sqlite3
+            src_root, dst_root = '/opt/qaap-runtime/auth/users', '/opt/qaap-staging/auth/users'
+            for login in ('juancristobalgd1', 'jcristgd'):
+                src = os.path.join(src_root, login, 'tenant.sqlite')
+                if not os.path.exists(src):
+                    continue
+                os.makedirs(os.path.join(dst_root, login), exist_ok=True)
+                dst = os.path.join(dst_root, login, 'tenant.sqlite')
+                with sqlite3.connect(f'file:{src}?mode=ro', uri=True) as s, sqlite3.connect(dst) as d:
+                    s.backup(d)
+                print('copied', login)
+            PY
+            fi
+            docker pull "$QAAP_STAGING_IMAGE"
+            QAAP_STAGING_IMAGE="$QAAP_STAGING_IMAGE" QAAP_PUBLIC_HOST="$QAAP_PUBLIC_HOST" \
+              docker compose -p qaap-staging -f deploy/staging/compose.staging.yml up -d --no-build --force-recreate
+            healthy=0
+            for i in $(seq 1 60); do
+              if curl -fsS -m 5 http://127.0.0.1:4874/qaap/api/health >/dev/null; then healthy=1; break; fi
+              sleep 5
+            done
+            if [ "$healthy" != 1 ]; then
+              echo "::error::staging did not become healthy"; docker logs --tail 80 qaap-staging-theia || true; exit 1
+            fi
+            cp deploy/caddy/staging.caddy "$ENABLED/staging.caddy"
+            reload_caddy
+            echo "staging healthy at https://staging.$QAAP_PUBLIC_HOST"

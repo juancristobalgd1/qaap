@@ -1,0 +1,46 @@
+# Staging qaap (ops/STAGING.md). Same VPS as production, separate compose project and data.
+#   docker compose -p qaap-staging -f deploy/staging/compose.staging.yml up -d --no-build
+# QAAP_STAGING_IMAGE must be an immutable GHCR reference (tag@sha256:...): staging never builds.
+name: qaap-staging
+services:
+  theia-staging:
+    init: true
+    image: ${QAAP_STAGING_IMAGE:?set QAAP_STAGING_IMAGE to the GHCR digest to promote}
+    container_name: qaap-staging-theia
+    restart: "no"
+    # Production keeps priority: staging is capped and stopped when not in use.
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 2
+    pids_limit: 2048
+    ports:
+      - "127.0.0.1:4874:4874"
+    networks:
+      - default
+      # Production Caddy reaches staging by container name on this network.
+      - qaap_edge
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - /opt/qaap-staging/staging.env
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=1536
+      HOST: 0.0.0.0
+      PORT: "4874"
+      SHELL: /bin/bash
+      THEIA_SHELL: /bin/bash
+      QAAP_OAUTH_PUBLIC_URL: https://staging.${QAAP_PUBLIC_HOST:?set QAAP_PUBLIC_HOST}
+      # Only the operator and the test account: staging is never public.
+      QAAP_BETA_ALLOWED_LOGINS: juancristobalgd1,jcristgd
+      QAAP_OPERATOR_LOGINS: juancristobalgd1
+    volumes:
+      - /opt/qaap-staging/workspace:/workspace
+      - /opt/qaap-staging/worktrees:/tmp/qaap-worktrees
+      - /opt/qaap-staging/parallel:/tmp/qaap-parallel
+      - /opt/qaap-staging/auth:/home/theia/.qaap
+      - /opt/qaap-staging/theia-user:/home/theia/.theia
+networks:
+  qaap_edge:
+    external: true
+    name: qaap_default

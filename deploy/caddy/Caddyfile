@@ -19,3 +19,7 @@
 # Isolated preview origins (optional). The glob matches nothing unless QAAP_PREVIEW_CADDY_SITE is
 # set (see docker-compose.yml), and an unmatched import glob is not an error.
 import /etc/caddy/previews/{$QAAP_PREVIEW_CADDY_SITE:disabled}.caddy*
+
+# Staging site (ops/STAGING.md). The staging workflow copies staging.caddy into staging-enabled/
+# and reloads Caddy; the folder is empty otherwise, and an unmatched import glob is not an error.
+import /etc/caddy/staging-enabled/*.caddy

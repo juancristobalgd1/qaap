@@ -1,0 +1,102 @@
+{
+  "updated_at": "2026-10-07T14:10:00Z",
+  "deadline": "2026-10-16",
+  "freeze_new_features_from": "2026-10-13",
+  "flujos_criticos": {
+    "estado": "PROPUESTA, pendiente de confirmar por Juan",
+    "lista": [
+      "1. Entrar con GitHub (OAuth) y ver mis proyectos en Work Hub, escritorio y movil",
+      "2. Anadir proyecto (clonar repo) y quitar proyecto: el quitado no vuelve tras recargar",
+      "3. Lanzar una tarea a un agente, ver su progreso en vivo y el punto azul de no leido correcto",
+      "4. Preview del proyecto: abrir, cerrar y que no se reabra sola",
+      "5. Pasar de Work Hub a IDE (escritorio) con Explorer visible y sin recarga",
+      "6. Movil: carga de Work Hub en 2 s (retorno) / 4 s (primera vez), sin codigo del IDE",
+      "7. La sesion sobrevive a un deploy (sin state_lost ni volver a iniciar sesion)"
+    ]
+  },
+  "sha_prod": "d9d2f81757c5",
+  "digest_sano": "d9d2f81757c534e0758ac12d6f062ec476e2c819",
+  "prs": {
+    "230": "E1 mergeado 5f646fd80723",
+    "229": "E1 mergeado f8c15709598d",
+    "203": "E1 mergeado 9f0cba6b15d6",
+    "flaky-quarantine": "abierto, CI"
+  },
+  "prs_fuera_de_regla": {
+    "nota": "Hay 11 PRs abiertos; la regla es max 2. Pendiente decision de Juan: cerrar o mantener en draft.",
+    "lista": [
+      210,
+      214,
+      213,
+      212,
+      195,
+      193,
+      185,
+      165
+    ]
+  },
+  "agentes": [],
+  "cola": [
+    "deploy 5f646fd -> E3 1280+375 -> E4 SQLite Juan",
+    "staging en VPS (8 oct)",
+    "secretos smoke/Claude (Juan)",
+    "confirmar 7 flujos (Juan)",
+    "#210 rehacer desde master",
+    "#212/#214/#213 reabrir cuando haya hueco"
+  ],
+  "deploy_medido": {
+    "runs": [
+      "37584546362",
+      "37570642730"
+    ],
+    "total_limpio_min": 35,
+    "pasos_min": {
+      "Pre-deploy smoke gate": 3.5,
+      "Publish immutable GHCR image (Build and push image ~13)": 13.5,
+      "Verify exact candidate image": 2.5,
+      "Deploy to VPS (Deploy over SSH 13-18)": 15.5
+    },
+    "nota": "Build de imagen y Deploy over SSH son ~80%. El run 37598792999 tardo 69 min por un rerun tras fallo de npm/keytar."
+  },
+  "viabilidad": {
+    "actions_minutos": "OK: repo publico, minutos de runners estandar gratis (factura neta 0). Ojo: los logs de Actions son publicos.",
+    "vps_ram": "OK: 24 GB, 18 GB disponibles, 8 cores, 188 GB disco libres. Staging cabe.",
+    "claude_en_runner": "VIABLE pero bloqueado: hay token de larga duracion (cuenta hermano) valido para CLAUDE_CODE_OAUTH_TOKEN, pero el token GitHub de Fo no puede crear secretos (403). Juan debe anadir el secreto o dar permiso Secrets.",
+    "codex_revisor": "OK en el sandbox: codex exec responde con gpt-6-luna max (14:06Z). En runner no hace falta: revisar un diff no necesita build.",
+    "smoke_post_deploy": "Falta secreto QAAP_SMOKE_SESSION/QAAP_SMOKE_COOKIE; Fo no puede crear secretos.",
+    "vps_escritura": "Fo solo tiene SSH de lectura; staging se monta via workflow de Actions con la clave SSH del deploy."
+  },
+  "incidentes": [
+    {
+      "fecha": "2026-10-07",
+      "que": "quitar vyyq: dicho arreglado en prod (d9d2f81757c5) probado con cuenta de prueba; con datos de Juan seguia fallando",
+      "leccion": "E4 obligatorio con datos reales"
+    },
+    {
+      "fecha": "2026-10-06",
+      "que": "#209 dejo el Explorer vacio en prod; revertido en #223"
+    }
+  ],
+  "actualizado": "2026-10-07T14:41Z",
+  "prod": {
+    "build": "d9d2f81757c5",
+    "deploy_en_curso": {
+      "run": 37638485934,
+      "sha": "5f646fd80723",
+      "incluye": [
+        "#203",
+        "#229",
+        "#230"
+      ]
+    }
+  },
+  "decisiones_juan_2026-10-07_16:20": [
+    "merge #203",
+    "excepcion unica #230+#229 sin staging, E4 en prod con su SQLite",
+    "staging listo 8 oct max, luego sin excepciones",
+    "SQLite nunca sale del VPS",
+    "cuarentena flaky en ops/flaky.md",
+    "revisar cada 15 min con CI/deploy en curso",
+    "8 PRs sobrantes cerrados, ramas intactas"
+  ]
+}
