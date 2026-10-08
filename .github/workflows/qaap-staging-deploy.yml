@@ -196,6 +196,10 @@ jobs:
                 print('copied', login)
             PY
             fi
+            # Same owner as production's /opt/qaap-runtime: the rootless daemon maps it to the
+            # container user. Root-owned binds fail with EACCES on /home/theia/.qaap.
+            OWNER="$(stat -c %u:%g /opt/qaap-runtime/auth)"
+            chown -R "$OWNER" "$STAGE"/workspace "$STAGE"/worktrees "$STAGE"/parallel "$STAGE"/auth "$STAGE"/theia-user
             docker pull "$QAAP_STAGING_IMAGE"
             QAAP_STAGING_IMAGE="$QAAP_STAGING_IMAGE" QAAP_PUBLIC_HOST="$QAAP_PUBLIC_HOST" \
               docker compose -p qaap-staging -f deploy/staging/compose.staging.yml up -d --no-build --force-recreate
