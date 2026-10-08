@@ -32,6 +32,7 @@ import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusy
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
+import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import {
     QAAP_TENANT_AGENT_STORAGE_DIRNAME,
     QAAP_TENANT_AGENT_STORAGE_ROOT_ENV,
@@ -474,6 +475,10 @@ export class QaapDockerOrchestrator {
             });
             return containers.flatMap(container => {
                 const labels = container.Labels ?? {};
+                if (!isInQaapDockerNamespace(labels)) {
+                    // Another control plane (staging next to production) owns it: never adopt or reap it.
+                    return [];
+                }
                 const tenantLogin = labels['com.qaap.tenant-login']?.trim().toLowerCase();
                 const kind = labels['com.qaap.tenant-backend'] === 'true'
                     ? 'backend'
@@ -753,27 +758,27 @@ export class QaapDockerOrchestrator {
     protected containerNameFor(repoKey: string, ownerLogin?: string): string {
         const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
         const hash = crypto.createHash('sha256').update(`${tenant}\u0000${repoKey}`).digest('hex').slice(0, 12);
-        return `${QAAP_CONTAINER_PREFIX}${hash}`;
+        return qaapDockerName(`${QAAP_CONTAINER_PREFIX}${hash}`);
     }
 
     /** Stable container name: all repositories, previews, jobs and terminals for a tenant share it. */
     containerNameForTenant(ownerLogin?: string): string {
         const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
         const hash = crypto.createHash('sha256').update(`tenant\u0000${tenant}`).digest('hex').slice(0, 12);
-        return `qaap-tenant-${hash}`;
+        return qaapDockerName(`qaap-tenant-${hash}`);
     }
 
     /** One Docker network per tenant prevents workers from joining a shared bridge. */
     tenantNetworkNameFor(ownerLogin?: string): string {
         const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
         const hash = crypto.createHash('sha256').update(`tenant-network\u0000${tenant}`).digest('hex').slice(0, 12);
-        return `${QAAP_TENANT_NETWORK_PREFIX}${hash}`;
+        return qaapDockerName(`${QAAP_TENANT_NETWORK_PREFIX}${hash}`);
     }
 
     protected tenantDirectEgressNetworkNameFor(ownerLogin?: string): string {
         const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
         const hash = crypto.createHash('sha256').update(`tenant-direct-egress\u0000${tenant}`).digest('hex').slice(0, 12);
-        return `${QAAP_TENANT_DIRECT_EGRESS_NETWORK_PREFIX}${hash}`;
+        return qaapDockerName(`${QAAP_TENANT_DIRECT_EGRESS_NETWORK_PREFIX}${hash}`);
     }
 
     protected tenantDirectEgressNetworkFor(networkMode: string, ownerLogin?: string): string | undefined {
@@ -953,6 +958,7 @@ export class QaapDockerOrchestrator {
                 ],
                 Labels: {
                     'com.qaap.managed': 'true',
+                    ...qaapDockerNamespaceLabels(),
                     'com.qaap.tenant-container': 'true',
                     'com.qaap.tenant-name': name,
                     'com.qaap.tenant-login': (ownerLogin?.trim() || '__anonymous__').toLowerCase(),
@@ -1012,19 +1018,19 @@ export class QaapDockerOrchestrator {
     protected backendContainerNameForTenant(ownerLogin?: string): string {
         const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
         const hash = crypto.createHash('sha256').update(`tenant-backend\u0000${tenant}`).digest('hex').slice(0, 12);
-        return `qaap-backend-${hash}`;
+        return qaapDockerName(`qaap-backend-${hash}`);
     }
 
     protected backendIngressRelayNameForTenant(ownerLogin?: string): string {
         const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
         const hash = crypto.createHash('sha256').update(`tenant-backend-ingress\u0000${tenant}`).digest('hex').slice(0, 12);
-        return `qaap-ingress-${hash}`;
+        return qaapDockerName(`qaap-ingress-${hash}`);
     }
 
     protected backendIngressNetworkNameForTenant(ownerLogin?: string): string {
         const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
         const hash = crypto.createHash('sha256').update(`tenant-ingress-network\u0000${tenant}`).digest('hex').slice(0, 12);
-        return `${QAAP_TENANT_INGRESS_NETWORK_PREFIX}${hash}`;
+        return qaapDockerName(`${QAAP_TENANT_INGRESS_NETWORK_PREFIX}${hash}`);
     }
 
     protected tenantBackendSecret(ownerLogin: string): string {
@@ -1180,6 +1186,7 @@ export class QaapDockerOrchestrator {
                 ExposedPorts: { [`${TENANT_BACKEND_PORT}/tcp`]: {} },
                 Labels: {
                     'com.qaap.managed': 'true',
+                    ...qaapDockerNamespaceLabels(),
                     'com.qaap.tenant-backend': 'true',
                     'com.qaap.tenant-name': name,
                     'com.qaap.tenant-login': ownerLogin.toLowerCase(),
@@ -1337,6 +1344,7 @@ export class QaapDockerOrchestrator {
                 ExposedPorts: { [`${TENANT_BACKEND_PORT}/tcp`]: {} },
                 Labels: {
                     'com.qaap.managed': 'true',
+                    ...qaapDockerNamespaceLabels(),
                     'com.qaap.tenant-backend-ingress-relay': 'true',
                     'com.qaap.tenant-name': relayName,
                     'com.qaap.tenant-login': ownerLogin.toLowerCase(),
@@ -2318,6 +2326,7 @@ export class QaapDockerOrchestrator {
                 CheckDuplicate: true,
                 Labels: {
                     'com.qaap.managed': 'true',
+                    ...qaapDockerNamespaceLabels(),
                     'com.qaap.tenant-network': 'true',
                     'com.qaap.tenant-network-name': networkName,
                 },
@@ -2381,6 +2390,7 @@ export class QaapDockerOrchestrator {
                 CheckDuplicate: true,
                 Labels: {
                     'com.qaap.managed': 'true',
+                    ...qaapDockerNamespaceLabels(),
                     'com.qaap.tenant-egress-network': 'true',
                     'com.qaap.tenant-login': tenantLogin,
                 },
@@ -2455,6 +2465,7 @@ export class QaapDockerOrchestrator {
                 CheckDuplicate: true,
                 Labels: {
                     'com.qaap.managed': 'true',
+                    ...qaapDockerNamespaceLabels(),
                     'com.qaap.tenant-ingress-network': 'true',
                     'com.qaap.tenant-login': ownerLogin.toLowerCase(),
                 },
@@ -2514,7 +2525,7 @@ export class QaapDockerOrchestrator {
     protected tenantEgressProxyNameFor(ownerLogin?: string): string {
         const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
         const hash = crypto.createHash('sha256').update(`tenant-egress-proxy\u0000${tenant}`).digest('hex').slice(0, 12);
-        return `qaap-egress-${hash}`;
+        return qaapDockerName(`qaap-egress-${hash}`);
     }
 
     protected async ensureTenantEgressProxyAttached(docker: Dockerode, networkName: string, ownerLogin?: string): Promise<void> {
@@ -2575,13 +2586,14 @@ export class QaapDockerOrchestrator {
             Cmd: ['squid', '-N', '-f', '/etc/squid/squid.conf'],
             Labels: {
                 'com.qaap.managed': 'true',
+                ...qaapDockerNamespaceLabels(),
                 'com.qaap.tenant-egress-proxy': 'true',
                 'com.qaap.tenant-login': tenant.toLowerCase(),
             },
             HostConfig: {
                 // Attach the outbound network first so Squid keeps its default route there when
                 // the isolated tenant interface is added next.
-                NetworkMode: QAAP_TENANT_EGRESS_UPLINK,
+                NetworkMode: qaapDockerName(QAAP_TENANT_EGRESS_UPLINK),
                 CapDrop: ['ALL'],
                 SecurityOpt: ['no-new-privileges:true'],
                 ReadonlyRootfs: true,
@@ -2617,7 +2629,7 @@ export class QaapDockerOrchestrator {
     protected async ensureTenantEgressUplink(docker: Dockerode): Promise<Dockerode.Network> {
         let network: Dockerode.Network;
         try {
-            network = docker.getNetwork(QAAP_TENANT_EGRESS_UPLINK);
+            network = docker.getNetwork(qaapDockerName(QAAP_TENANT_EGRESS_UPLINK));
             const inspect = await network.inspect() as {
                 Name?: string;
                 Driver?: string;
@@ -2626,7 +2638,7 @@ export class QaapDockerOrchestrator {
                 Options?: Record<string, string>;
             };
             if (!this.tenantEgressUplinkMatches(inspect)) {
-                throw new Error(`Tenant egress uplink ${QAAP_TENANT_EGRESS_UPLINK} has an unexpected configuration.`);
+                throw new Error(`Tenant egress uplink ${qaapDockerName(QAAP_TENANT_EGRESS_UPLINK)} has an unexpected configuration.`);
             }
             return network;
         } catch (error) {
@@ -2636,15 +2648,15 @@ export class QaapDockerOrchestrator {
         }
         try {
             network = await docker.createNetwork({
-                Name: QAAP_TENANT_EGRESS_UPLINK,
+                Name: qaapDockerName(QAAP_TENANT_EGRESS_UPLINK),
                 Driver: 'bridge',
                 Internal: false,
                 CheckDuplicate: true,
-                Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-egress-uplink': 'true' },
+                Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-egress-uplink': 'true', ...qaapDockerNamespaceLabels() },
                 Options: { 'com.docker.network.bridge.enable_icc': 'false' },
             });
         } catch (error) {
-            this.warnIfTenantNetworkAddressPoolIsExhausted(QAAP_TENANT_EGRESS_UPLINK, error);
+            this.warnIfTenantNetworkAddressPoolIsExhausted(qaapDockerName(QAAP_TENANT_EGRESS_UPLINK), error);
             throw error;
         }
         const inspect = await network.inspect() as {
@@ -2655,7 +2667,7 @@ export class QaapDockerOrchestrator {
             Options?: Record<string, string>;
         };
         if (!this.tenantEgressUplinkMatches(inspect)) {
-            throw new Error(`Tenant egress uplink ${QAAP_TENANT_EGRESS_UPLINK} was not created with the required configuration.`);
+            throw new Error(`Tenant egress uplink ${qaapDockerName(QAAP_TENANT_EGRESS_UPLINK)} was not created with the required configuration.`);
         }
         return network;
     }
@@ -2667,7 +2679,7 @@ export class QaapDockerOrchestrator {
         Labels?: Record<string, string>;
         Options?: Record<string, string>;
     }): boolean {
-        return network.Name === QAAP_TENANT_EGRESS_UPLINK
+        return network.Name === qaapDockerName(QAAP_TENANT_EGRESS_UPLINK)
             && network.Driver === 'bridge'
             && network.Internal === false
             && network.Labels?.['com.qaap.managed'] === 'true'
@@ -2703,7 +2715,7 @@ export class QaapDockerOrchestrator {
             && raw.Config?.Image === image
             && raw.Config?.User === 'proxy'
             && raw.Config?.Cmd?.join('\u0000') === ['squid', '-N', '-f', '/etc/squid/squid.conf'].join('\u0000')
-            && host.NetworkMode === QAAP_TENANT_EGRESS_UPLINK
+            && host.NetworkMode === qaapDockerName(QAAP_TENANT_EGRESS_UPLINK)
             && host.CapDrop?.includes('ALL') === true
             && host.SecurityOpt?.includes('no-new-privileges:true') === true
             && host.ReadonlyRootfs === true
@@ -2712,7 +2724,7 @@ export class QaapDockerOrchestrator {
             && (!host.PidMode || host.PidMode === 'private')
             && (!host.IpcMode || host.IpcMode === 'private')
             && Object.keys(raw.NetworkSettings?.Networks ?? {}).length === 2
-            && raw.NetworkSettings?.Networks?.[QAAP_TENANT_EGRESS_UPLINK] !== undefined
+            && raw.NetworkSettings?.Networks?.[qaapDockerName(QAAP_TENANT_EGRESS_UPLINK)] !== undefined
             && raw.NetworkSettings?.Networks?.[tenantNetwork]?.Aliases?.includes(QAAP_TENANT_EGRESS_PROXY_ALIAS) === true;
     }
 

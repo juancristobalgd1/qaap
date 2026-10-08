@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import * as fs from 'fs';
 import { injectable } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
@@ -19,7 +20,19 @@ export class QaapProductionBootGuardContribution implements BackendApplicationCo
         if (readiness.ready) {
             return;
         }
-        console.error(`[qaap-security] ${readiness.fatalReason}`);
+        reportQaapFatalBootReason(readiness.fatalReason ?? 'production readiness check failed');
         process.exit(1);
+    }
+}
+
+/**
+ * Theia redirects `console` to its asynchronous logger, so a `console.error` right before
+ * `process.exit` never reaches `docker logs`. Write the reason synchronously to stderr instead.
+ */
+export function reportQaapFatalBootReason(reason: string, writeSync: (fd: number, text: string) => unknown = fs.writeSync): void {
+    try {
+        writeSync(2, `[qaap-security] ${reason}\n`);
+    } catch {
+        // stderr is gone: the exit code is the only signal left.
     }
 }

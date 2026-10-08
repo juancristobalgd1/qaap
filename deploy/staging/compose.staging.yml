@@ -23,6 +23,8 @@ services:
       - "host.docker.internal:host-gateway"
     env_file:
       - /opt/qaap-staging/staging.env
+      # QAAP_TENANT_BACKEND_MASTER_SECRET: staging's own, generated once on the VPS, never production's.
+      - /opt/qaap-staging/tenant-secret.env
     environment:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=1536
@@ -33,13 +35,44 @@ services:
       QAAP_OAUTH_PUBLIC_URL: https://staging.${QAAP_PUBLIC_HOST:?set QAAP_PUBLIC_HOST}
       # Only the operator and the test account: staging is never public.
       QAAP_BETA_ALLOWED_LOGINS: juancristobalgd1,jcristgd
-      QAAP_OPERATOR_LOGINS: juancristobalgd1
+      QAAP_OPERATOR_LOGINS: juancristobalgd1,jcristgd
+      # Same runtime shape as production (backend per tenant on the rootless daemon), but every
+      # container and network it creates is prefixed "stg-" and labelled com.qaap.namespace=stg.
+      # Production ignores them and staging never sees production's (qaap-docker-namespace.ts).
+      # Requires a production build that already understands QAAP_DOCKER_NAMESPACE.
+      QAAP_DOCKER_NAMESPACE: stg
+      QAAP_CLOUD_MODE: docker
+      QAAP_SKIP_AUTH: "false"
+      QAAP_BACKEND_PER_TENANT: "1"
+      QAAP_TENANT_CONTAINER_ISOLATION: "1"
+      QAAP_TENANT_NETWORK_MODE: isolated-bridge
+      QAAP_DOCKER_ROOTLESS: "1"
+      DOCKER_HOST: unix:///run/user/1000/docker.sock
+      QAAP_DOCKER_NODES: '[{"id":"default","dockerHost":"unix:///run/user/1000/docker.sock","advertiseHost":"172.18.0.1","publishHostIp":"127.0.0.1"}]'
+      QAAP_THEIA_IMAGE: ${QAAP_STAGING_IMAGE}
+      QAAP_TENANT_DOCKER_IMAGE: ${QAAP_STAGING_IMAGE}
+      # Host paths the daemon bind-mounts into tenant containers: staging's, never /opt/qaap-runtime.
+      QAAP_DOCKER_REMOTE_REPOS_ROOT: /opt/qaap-staging/workspace/repos
+      QAAP_DOCKER_REMOTE_WORKTREES_ROOT: /opt/qaap-staging/worktrees
+      QAAP_DOCKER_REMOTE_PARALLEL_ROOT: /opt/qaap-staging/parallel
+      QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT: /opt/qaap-staging/auth/users
+      QAAP_TENANT_HOME_ROOT: /home/qaap-tenants
+      # Small tenants: all of staging stays well under production's headroom.
+      QAAP_TENANT_MEMORY_LIMIT: "1610612736"
+      QAAP_TENANT_CPU_LIMIT: "1"
+      QAAP_TENANT_PIDS_LIMIT: "256"
+      QAAP_TENANT_TMPFS_SIZE: 256m
+      # Previews only for the two operators, as in production.
+      QAAP_PREVIEW_BASE_DOMAIN: qaaq-preview.duckdns.org
+      QAAP_PREVIEW_ALLOW_SAME_SITE: "0"
     volumes:
       - /opt/qaap-staging/workspace:/workspace
       - /opt/qaap-staging/worktrees:/tmp/qaap-worktrees
       - /opt/qaap-staging/parallel:/tmp/qaap-parallel
       - /opt/qaap-staging/auth:/home/theia/.qaap
       - /opt/qaap-staging/theia-user:/home/theia/.theia
+      - /opt/qaap-staging/tenant-homes:/home/qaap-tenants
+      - /run/user/1000/docker.sock:/run/user/1000/docker.sock
 networks:
   qaap_edge:
     external: true

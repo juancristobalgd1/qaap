@@ -1764,4 +1764,30 @@ describe('QaapDockerOrchestrator tenant backend build prediction', () => {
         orchestrator.getDocker = async () => fakeDocker(() => new Promise(() => undefined), imageWithBuild('abc1234'));
         expect(await orchestrator.predictTenantBackendBuild('alice')).to.equal(undefined);
     });
+
+    describe('docker namespace (staging next to production)', () => {
+        const saved = process.env.QAAP_DOCKER_NAMESPACE;
+        afterEach(() => {
+            if (saved === undefined) {
+                delete process.env.QAAP_DOCKER_NAMESPACE;
+            } else {
+                process.env.QAAP_DOCKER_NAMESPACE = saved;
+            }
+        });
+
+        it('keeps the production tenant container name byte for byte without a namespace', () => {
+            delete process.env.QAAP_DOCKER_NAMESPACE;
+            const name = access(new QaapDockerOrchestrator()).containerNameForTenant('JuanCristobalGD1');
+            expect(name).to.match(/^qaap-tenant-[0-9a-f]{12}$/);
+        });
+
+        it('never reuses a production tenant container name from a namespaced control plane', () => {
+            delete process.env.QAAP_DOCKER_NAMESPACE;
+            const production = access(new QaapDockerOrchestrator()).containerNameForTenant('juancristobalgd1');
+            process.env.QAAP_DOCKER_NAMESPACE = 'stg';
+            const staging = access(new QaapDockerOrchestrator()).containerNameForTenant('juancristobalgd1');
+            expect(staging).to.equal(`stg-${production}`);
+            expect(staging).to.not.equal(production);
+        });
+    });
 });

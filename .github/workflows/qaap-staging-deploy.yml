@@ -170,12 +170,19 @@ jobs:
               reload_caddy
               QAAP_STAGING_IMAGE=unused QAAP_PUBLIC_HOST="$QAAP_PUBLIC_HOST" \
                 docker compose -p qaap-staging -f deploy/staging/compose.staging.yml down
+              # Tenant containers/networks staging created (namespace stg only; production has no such label).
+              docker ps -aq --filter label=com.qaap.namespace=stg | xargs -r docker rm -f
+              docker network ls -q --filter label=com.qaap.namespace=stg | xargs -r docker network rm || true
               echo "staging stopped and unpublished"
               exit 0
             fi
             trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-            mkdir -p "$STAGE"/{workspace,worktrees,parallel,auth/users,theia-user}
+            mkdir -p "$STAGE"/{workspace/repos,worktrees,parallel,auth/users,theia-user,tenant-homes}
+            # Staging's own tenant-backend master secret, created once; production's is never read.
+            if [ ! -s "$STAGE/tenant-secret.env" ]; then
+              ( umask 077; printf 'QAAP_TENANT_BACKEND_MASTER_SECRET=%s\n' "$(openssl rand -hex 32)" > "$STAGE/tenant-secret.env" )
+            fi
             if [ -n "$STAGING_CLIENT_ID" ] && [ -n "$STAGING_CLIENT_SECRET" ]; then
               ( umask 077; printf 'QAAP_GITHUB_CLIENT_ID=%s\nQAAP_GITHUB_CLIENT_SECRET=%s\n' "$STAGING_CLIENT_ID" "$STAGING_CLIENT_SECRET" > "$STAGE/staging.env" )
             fi
@@ -199,7 +206,7 @@ jobs:
             # Same owner as production's /opt/qaap-runtime: the rootless daemon maps it to the
             # container user. Root-owned binds fail with EACCES on /home/theia/.qaap.
             OWNER="$(stat -c %u:%g /opt/qaap-runtime/auth)"
-            chown -R "$OWNER" "$STAGE"/workspace "$STAGE"/worktrees "$STAGE"/parallel "$STAGE"/auth "$STAGE"/theia-user
+            chown -R "$OWNER" "$STAGE"/workspace "$STAGE"/worktrees "$STAGE"/parallel "$STAGE"/auth "$STAGE"/theia-user "$STAGE"/tenant-homes
             docker pull "$QAAP_STAGING_IMAGE"
             QAAP_STAGING_IMAGE="$QAAP_STAGING_IMAGE" QAAP_PUBLIC_HOST="$QAAP_PUBLIC_HOST" \
               docker compose -p qaap-staging -f deploy/staging/compose.staging.yml up -d --no-build --force-recreate
