@@ -5,13 +5,17 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: deploy (start or update staging) or stop (take it down and unpublish it)
+        description: deploy (stage an existing image), build (build a branch image, then stage it) or stop (take it down and unpublish it)
         required: true
         default: deploy
         type: choice
-        options: [deploy, stop]
+        options: [deploy, build, stop]
       image:
         description: Immutable GHCR image to stage (ghcr.io/...@sha256:...), required for deploy
+        required: false
+        type: string
+      ref:
+        description: Branch or commit to build for staging, required for build (never deployed to production)
         required: false
         type: string
       copy_operator_data:
@@ -29,17 +33,106 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    name: Build staging image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.repository == 'juancristobalgd1/qaap' && inputs.action == 'build'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.published.outputs.ref }}
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    steps:
+      - name: Validate ref
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          if [ -z "$REF" ]; then
+            echo "::error::ref is required for build"
+            exit 1
+          fi
+
+      - name: Checkout ref to stage
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve source and staging tag
+        id: source
+        shell: bash
+        run: |
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          QAIQ_SHA="$(sed -n 's/^ARG QAIQ_COMMIT=//p' Dockerfile | tr -d '\r')"
+          if [[ ! "$QAIQ_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Dockerfile must pin an exact QAIQ commit" >&2
+            exit 1
+          fi
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SOURCE_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          echo "qaiq=$QAIQ_SHA" >> "$GITHUB_OUTPUT"
+          # staging- prefix keeps branch images apart from the production tags (<full sha>).
+          echo "tag=${REGISTRY}/${IMAGE_NAME}:staging-${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build and push staging image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.source.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+          build-args: |
+            QAAP_BUILD_SHA=${{ steps.source.outputs.short_sha }}
+            QAIQ_COMMIT=${{ steps.source.outputs.qaiq }}
+            CACHE_BUST=${{ steps.source.outputs.qaiq }}
+          # Reads the production layer cache, writes only its own scope so staging never evicts it.
+          cache-from: |
+            type=gha,scope=qaap-production
+            type=gha,scope=qaap-staging
+          cache-to: type=gha,mode=max,scope=qaap-staging,ignore-error=true
+
+      - name: Export immutable image reference
+        id: published
+        shell: bash
+        run: |
+          REF="${{ steps.source.outputs.tag }}@${{ steps.build.outputs.digest }}"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Staging image: \`$REF\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "Built from a non-master workflow ref: not staged. Stage it with action=deploy from master." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   stage:
-    name: Staging ${{ inputs.action }}
+    needs: build
+    name: Staging ${{ inputs.action == 'build' && 'deploy' || inputs.action }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.repository == 'juancristobalgd1/qaap'
+    # Secrets and SSH only from the trusted workflow on master: a dispatch from another
+    # branch runs that branch's copy of this file, so it may build but never stage.
+    if: always() && github.repository == 'juancristobalgd1/qaap' && github.ref == 'refs/heads/master' && (inputs.action != 'build' || needs.build.result == 'success')
     environment: Preview
     steps:
       - name: Validate inputs
         env:
-          ACTION: ${{ inputs.action }}
-          IMAGE: ${{ inputs.image }}
+          ACTION: ${{ inputs.action == 'build' && 'deploy' || inputs.action }}
+          IMAGE: ${{ inputs.action == 'build' && needs.build.outputs.ref || inputs.image }}
         run: |
           if [ "$ACTION" = "deploy" ] && ! [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::image must be an immutable ghcr.io reference with @sha256 digest"
@@ -49,10 +142,10 @@ jobs:
       - name: Run on the VPS over SSH
         uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
         env:
-          ACTION: ${{ inputs.action }}
+          ACTION: ${{ inputs.action == 'build' && 'deploy' || inputs.action }}
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-          QAAP_STAGING_IMAGE: ${{ inputs.image }}
+          QAAP_STAGING_IMAGE: ${{ inputs.action == 'build' && needs.build.outputs.ref || inputs.image }}
           COPY_DATA: ${{ inputs.copy_operator_data }}
           # Separate GitHub OAuth app for https://staging.<host> (Preview environment secrets).
           STAGING_CLIENT_ID: ${{ secrets.QAAP_STAGING_GITHUB_CLIENT_ID }}
@@ -103,6 +196,10 @@ jobs:
                 print('copied', login)
             PY
             fi
+            # Same owner as production's /opt/qaap-runtime: the rootless daemon maps it to the
+            # container user. Root-owned binds fail with EACCES on /home/theia/.qaap.
+            OWNER="$(stat -c %u:%g /opt/qaap-runtime/auth)"
+            chown -R "$OWNER" "$STAGE"/workspace "$STAGE"/worktrees "$STAGE"/parallel "$STAGE"/auth "$STAGE"/theia-user
             docker pull "$QAAP_STAGING_IMAGE"
             QAAP_STAGING_IMAGE="$QAAP_STAGING_IMAGE" QAAP_PUBLIC_HOST="$QAAP_PUBLIC_HOST" \
               docker compose -p qaap-staging -f deploy/staging/compose.staging.yml up -d --no-build --force-recreate
