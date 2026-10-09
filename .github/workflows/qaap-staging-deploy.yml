@@ -218,6 +218,17 @@ jobs:
             if [ "$healthy" != 1 ]; then
               echo "::error::staging did not become healthy"; docker logs --tail 80 qaap-staging-theia || true; exit 1
             fi
+            # Tenant backends run on the rootless daemon mounted into Theia, not on the host daemon
+            # that pulled the serving image above; seed it with the same pinned digest production uses,
+            # or the first login fails with "No such image".
+            . scripts/qaap-vps-tenant-image.sh
+            for _ in $(seq 1 60); do docker exec qaap-staging-theia docker info >/dev/null 2>&1 && break; sleep 1; done
+            host_id="$(docker image inspect "$QAAP_STAGING_IMAGE" --format '{{.Id}}')"
+            pull_tenant_image_digest qaap-staging-theia "${QAAP_STAGING_IMAGE%@*}" "$(tenant_image_digest_ref "$QAAP_STAGING_IMAGE")" "$host_id"
+            if ! docker exec qaap-staging-theia docker image inspect "$QAAP_STAGING_IMAGE" >/dev/null 2>&1; then
+              echo "::error::staging tenant image missing from rootless Docker"; exit 1
+            fi
+            echo "staging tenant image ready in rootless Docker"
             cp deploy/caddy/staging.caddy "$ENABLED/staging.caddy"
             reload_caddy
             echo "staging healthy at https://staging.$QAAP_PUBLIC_HOST"
