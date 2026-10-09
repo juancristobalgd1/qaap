@@ -171,8 +171,9 @@ jobs:
               QAAP_STAGING_IMAGE=unused QAAP_PUBLIC_HOST="$QAAP_PUBLIC_HOST" \
                 docker compose -p qaap-staging -f deploy/staging/compose.staging.yml down
               # Tenant containers/networks staging created (namespace stg only; production has no such label).
-              docker ps -aq --filter label=com.qaap.namespace=stg | xargs -r docker rm -f
-              docker network ls -q --filter label=com.qaap.namespace=stg | xargs -r docker network rm || true
+              R="docker -H unix:///run/user/1000/docker.sock"
+              $R ps -aq --filter label=com.qaap.namespace=stg | xargs -r $R rm -f
+              $R network ls -q --filter label=com.qaap.namespace=stg | xargs -r $R network rm || true
               echo "staging stopped and unpublished"
               exit 0
             fi
@@ -187,6 +188,13 @@ jobs:
               ( umask 077; printf 'QAAP_GITHUB_CLIENT_ID=%s\nQAAP_GITHUB_CLIENT_SECRET=%s\n' "$STAGING_CLIENT_ID" "$STAGING_CLIENT_SECRET" > "$STAGE/staging.env" )
             fi
             test -f "$STAGE/staging.env" || { echo "::error::no staging OAuth app: set QAAP_STAGING_GITHUB_CLIENT_ID/SECRET in the Preview environment"; exit 1; }
+            # Same tenant uid as production (/opt/qaap/.env): root inside the rootless daemon maps to the
+            # host account that owns the bind mounts. The image default (1000) maps to a subuid, so the
+            # tenant backend gets EACCES on its own folders and imports fail with "not writable".
+            sed -i '/^QAAP_TENANT_CONTAINER_[UG]ID=/d' "$STAGE/staging.env"
+            printf 'QAAP_TENANT_CONTAINER_UID=0\nQAAP_TENANT_CONTAINER_GID=0\n' >> "$STAGE/staging.env"
+            # Staging tenants live on the rootless daemon; drop them so they are recreated with that uid.
+            docker -H unix:///run/user/1000/docker.sock ps -aq --filter label=com.qaap.namespace=stg | xargs -r docker -H unix:///run/user/1000/docker.sock rm -f
             if [ "$COPY_DATA" = "true" ]; then
               # Consistent online copy with SQLite's backup API, inside the VPS. Never leaves the host.
               python3 - <<'PY'
