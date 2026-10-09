@@ -17,6 +17,7 @@ import { createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjec
 import { MobileProjectsSessionsSidebarUi, type MobileProjectsSessionsSidebarHost } from './mobile-projects-sessions-sidebar-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
+import { writeLocalRemovedProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-session-cache';
 
 disableImportJSDOM();
 
@@ -94,6 +95,33 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         await ui.prepareSessionsSidebarData();
 
         expect(host.projects).to.deep.equal([ephemeral]);
+    });
+
+    // Production (juancristobalgd1, vyyq_1): a task worktree open right now must not bring back the card
+    // of a worktree whose source project was removed; its removal identity is `worktree:`, not the source's.
+    it('mergeSessionsSidebarProjects never re-adds the current worktree of a removed source project', () => {
+        const worktree = '/tmp/qaap-worktrees/juancristobalgd1/733cf503';
+        const current = {
+            id: `ws:file://${worktree}`,
+            name: 'vyyq_1',
+            status: 'working',
+            uri: { toString: () => `file://${worktree}`, path: { toString: () => worktree } },
+            isCurrent: true,
+        } as unknown as MobileProjectEntry;
+        writeLocalRemovedProjects(new Set(['github:juancristobalgd1/vyyq']));
+        const ctx = {
+            host: {
+                conversations: { threadStore: { listAllSummaries: () => [{
+                    id: '5e9656ec', cwd: worktree, parallelBaseCwd: '/workspace/repos/users/juancristobalgd1/juancristobalgd1/vyyq',
+                    worktreeOrdinal: 1, archived: true,
+                }] } },
+                projectsService: { resolveCurrentWorkspaceProject: () => current },
+            },
+        };
+
+        const projects = mergeSessionsSidebarProjectsExtracted(ctx as unknown as MobileProjectsSessionsSidebarUiContext, []);
+
+        expect(projects.map(project => project.id)).to.deep.equal([]);
     });
 
     it('renders Projects section for projects that have no agent sessions yet', () => {

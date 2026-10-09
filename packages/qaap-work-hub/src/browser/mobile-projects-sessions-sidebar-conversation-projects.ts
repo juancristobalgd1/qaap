@@ -15,6 +15,22 @@ export const conversationCwdProjectId = (cwd: string): string => `ws:${FileUri.c
 const uriKey = (uri: { toString(): string } | undefined): string | undefined => uri?.toString().toLowerCase();
 
 /**
+ * Source clone (`parallelBaseCwd`) of the task worktree at `uri`, from the conversations run in it, or
+ * `undefined` when `uri` is not a known task worktree.
+ */
+export const worktreeSourceCwdOf = (
+    uri: { toString(): string } | undefined,
+    summaries: readonly QaapAgentConversationSummaryDTO[],
+): string | undefined => {
+    const key = uriKey(uri);
+    if (!key) {
+        return undefined;
+    }
+    return summaries.find(summary => !!summary.cwd && !!summary.parallelBaseCwd
+        && uriKey(FileUri.create(summary.cwd)) === key)?.parallelBaseCwd;
+};
+
+/**
  * Add a synthetic project for every conversation cwd that no catalog project covers, so authenticated
  * history stays reachable before the repository catalog loads. Worktree conversations (cwd is a hash
  * directory under the worktrees root, `parallelBaseCwd` is the source repo) are named
@@ -23,8 +39,12 @@ const uriKey = (uri: { toString(): string } | undefined): string | undefined => 
  *
  * @param isRemovalPending projects the user is deleting right now — never re-synthesized from the
  *        thread store while the optimistic delete is in flight.
- * @param removedProjects `github:owner/repo` identities the user removed: conversations whose cwd (or
- *        worktree source, `parallelBaseCwd`) is in such a clone never bring its card back.
+ * @param removedProjects identities the user removed (see `qaapProjectRemovalIdentity`): conversations whose
+ *        cwd (or worktree source, `parallelBaseCwd`) is in such a clone never bring its card back, and a
+ *        catalog or cached card of a worktree checked out from such a clone is dropped.
+ *
+ * Archived conversations never add a card: the hub does not list them, and the server archives the
+ * conversations of a removed project, whose card they would otherwise bring back.
  */
 export const mergeConversationCwdProjects = (
     projects: readonly MobileProjectEntry[],
@@ -53,16 +73,33 @@ export const mergeConversationCwdProjects = (
         return key ? labelsByUri.get(key) : undefined;
     };
 
-    const merged = projects.map(project => {
-        if (!project.id.startsWith('ws:') || project.isCurrent) {
-            return project;
+    const worktreeSources = new Map<string, string>();
+    for (const summary of summaries) {
+        if (summary.cwd && summary.parallelBaseCwd) {
+            worktreeSources.set(uriKey(FileUri.create(summary.cwd))!, summary.parallelBaseCwd);
+        }
+    }
+
+    const merged = projects.flatMap(project => {
+        if (!project.id.startsWith('ws:')) {
+            return [project];
+        }
+        const key = uriKey(project.uri);
+        const worktreeSourceCwd = key ? worktreeSources.get(key) : undefined;
+        // Before the current-card shortcut: a worktree open right now must not keep a removed source's card.
+        if (inRemovedProject(worktreeSourceCwd) || inRemovedProject(project.uri?.path.toString())) {
+            return [];
+        }
+        if (project.isCurrent) {
+            return [project];
         }
         const label = labelFor(project.uri);
-        return label && label !== project.name ? { ...project, name: label } : project;
+        const relabelled = label && label !== project.name ? { ...project, name: label } : project;
+        return [worktreeSourceCwd && worktreeSourceCwd !== relabelled.worktreeSourceCwd ? { ...relabelled, worktreeSourceCwd } : relabelled];
     });
     const seen = new Set(merged.map(project => uriKey(project.uri)).filter((key): key is string => !!key));
     for (const summary of summaries) {
-        if (!summary.cwd || inRemovedProject(summary.cwd) || inRemovedProject(summary.parallelBaseCwd)) {
+        if (!summary.cwd || summary.archived || inRemovedProject(summary.cwd) || inRemovedProject(summary.parallelBaseCwd)) {
             continue;
         }
         const uri = FileUri.create(summary.cwd);
@@ -76,7 +113,7 @@ export const mergeConversationCwdProjects = (
         }
         seen.add(key);
         merged.push({
-            id, name: labelFor(uri) ?? uri.path.base, uri,
+            id, name: labelFor(uri) ?? uri.path.base, uri, ...(summary.parallelBaseCwd ? { worktreeSourceCwd: summary.parallelBaseCwd } : {}),
             color: 'var(--theia-descriptionForeground)', branch: '', status: 'idle',
             task: '', progress: 0, agents: [], lastActive: '', tokens: '—', cost: '—', pinned: false, isCurrent: false
         });

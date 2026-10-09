@@ -13,6 +13,7 @@ import type { MobileProjectsServiceContext } from './mobile-projects-service-con
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { cwdFromFileUriExtracted } from './mobile-projects-service-timeline';
 import { githubCloneOfProjectWorkspace, removeProjectExtracted } from './mobile-projects-service-streaming';
+import { readLocalRemovedProjects, writeLocalRemovedProjects } from './mobile-projects-session-cache';
 
 disableImportJSDOM();
 
@@ -95,6 +96,49 @@ describe('removeProjectExtracted', () => {
         expect(error).to.be.instanceOf(Error);
         expect((error as Error).message).to.equal('Forbidden');
         expect(hidden.size).to.equal(0);
+    });
+
+    // Production (juancristobalgd1): the card vyyq_1 of task worktree 733cf503 only got a browser-local hidden
+    // id, so it came back on reload. Its removal must be recorded where the server lists it again.
+    describe('a task worktree card', () => {
+        const WORKTREE = '/tmp/qaap-worktrees/juancristobalgd1/733cf503';
+        const VYYQ = '/workspace/repos/users/juancristobalgd1/juancristobalgd1/vyyq';
+        const worktreeCard = (worktreeSourceCwd?: string): MobileProjectEntry => {
+            const uri = URI.fromFilePath(WORKTREE);
+            return { id: `ws:${uri.toString()}`, name: 'vyyq_1', uri, isCurrent: false, worktreeSourceCwd } as MobileProjectEntry;
+        };
+
+        beforeEach(() => localStorage.clear());
+
+        it('records the removal under its own key on the server when its source is unknown', async () => {
+            const { ctx, hidden } = createContext();
+
+            expect(await removeProjectExtracted(ctx, worktreeCard())).to.equal(true);
+
+            expect(requests).to.deep.equal([{ url: '/qaap/api/github/worktrees/733cf503', method: 'DELETE' }]);
+            expect([...readLocalRemovedProjects()]).to.deep.equal(['worktree:juancristobalgd1/733cf503']);
+            expect([...hidden]).to.include(worktreeCard().id);
+        });
+
+        // A browser-local removal of the source can be stale (re-imported on another device): removing the
+        // worktree card must never delete a repository, only record the card's own removal.
+        it('never deletes its source repository, even when this browser remembers it as removed', async () => {
+            writeLocalRemovedProjects(new Set(['github:juancristobalgd1/vyyq']));
+            const { ctx } = createContext();
+
+            expect(await removeProjectExtracted(ctx, worktreeCard(VYYQ))).to.equal(true);
+
+            expect(requests).to.deep.equal([{ url: '/qaap/api/github/worktrees/733cf503', method: 'DELETE' }]);
+            expect([...readLocalRemovedProjects()].sort()).to.deep.equal(['github:juancristobalgd1/vyyq', 'worktree:juancristobalgd1/733cf503']);
+        });
+
+        it('never deletes a source repository that is still listed', async () => {
+            const { ctx } = createContext();
+
+            await removeProjectExtracted(ctx, worktreeCard(VYYQ));
+
+            expect(requests).to.deep.equal([{ url: '/qaap/api/github/worktrees/733cf503', method: 'DELETE' }]);
+        });
     });
 
     it('never maps a sub-folder or a foreign layout to a whole-repository delete', () => {

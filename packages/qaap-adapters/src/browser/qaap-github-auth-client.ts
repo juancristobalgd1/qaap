@@ -439,6 +439,23 @@ export async function deleteQaapGithubRepository(owner: string, name: string): P
     }
 }
 
+/** Remove the card of the caller's task worktree `slug` from the hub for good (the source clone stays). */
+export async function deleteQaapWorktreeProject(slug: string): Promise<void> {
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/worktrees/${encodeURIComponent(slug)}`,
+        qaapAuthenticatedFetchInit({ method: 'DELETE' }),
+        QAAP_GITHUB_DELETE_TIMEOUT_MS,
+        () => nls.localize(
+            'qaap/githubDelete/timedOut',
+            'Removing the repository took too long. Please try again.'
+        ),
+    );
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || `Failed to remove the worktree (${response.status})`);
+    }
+}
+
 export async function createQaapGithubRepository(request: QaapGithubCreateRepositoryRequest): Promise<QaapGithubOpenRepositoryResponse> {
     // Creating also clones the new repository into the workspace, so it gets the workspace budget.
     const createTimedOut = (): string => nls.localize(

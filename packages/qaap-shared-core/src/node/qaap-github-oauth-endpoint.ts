@@ -218,6 +218,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.delete(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo`, (req, res) => {
             void this.handleDeleteGithubRepository(req, res);
         });
+        app.delete(`${QAAP_GITHUB_API_PATH}/worktrees/:slug`, (req, res) => this.handleRemoveWorktreeProject(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, (req, res) => this.handleGithubPullRequests(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, (req, res) => this.handleSearchGithubPullRequests(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, (req, res) => this.handleGithubPullRequestDetail(req, res));
@@ -253,7 +254,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
      */
     protected forgetRemovedRepositories(login: string, identities: readonly string[]): void {
         for (const identity of identities) {
-            if (this.forgottenRemovals.has(`${login}\0${identity}`)) {
+            // `worktree:` removals hide one task card; its source clone is not removed.
+            if (!identity.startsWith('github:') || this.forgottenRemovals.has(`${login}\0${identity}`)) {
                 continue;
             }
             const [owner, repo] = identity.slice('github:'.length).split('/');
@@ -266,13 +268,24 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     /**
      * Everything but the project session store that still points at a removed clone: higher-layer state
-     * via {@link QaapRepositoryRemovalContribution}, then the task worktrees checked out from it.
+     * via {@link QaapRepositoryRemovalContribution} and the task worktrees checked out from it, each on its
+     * own. A contribution can wait minutes (the conversation store restores first after a restart), and the
+     * worktrees used to wait for it. A failed step leaves the removal to be forgotten again on the next listing.
      */
     protected async forgetRemovedRepository(login: string, owner: string, repo: string): Promise<void> {
         const userReposRoot = resolveUserReposRoot(this.reposRoot, login);
         const identity = `github:${owner}/${repo}`.toLowerCase();
-        this.forgottenRemovals.add(`${login}\0${identity}`);
-        const worktreePaths = await this.listRepositoryWorktrees(login, identity, userReposRoot);
+        const forgottenKey = `${login}\0${identity}`;
+        this.forgottenRemovals.add(forgottenKey);
+        let failed = false;
+        const step = (description: string, work: () => Promise<unknown>): Promise<void> => work().then(() => undefined, err => {
+            failed = true;
+            console.warn(`[qaap-oauth] ${description}:`, identity, err instanceof Error ? err.message : String(err));
+        });
+        let worktreePaths: string[] = [];
+        await step('Failed to list the worktrees of a removed repository', async () => {
+            worktreePaths = await this.listRepositoryWorktrees(login, identity, userReposRoot);
+        });
         const removal: QaapRepositoryRemoval = {
             login,
             identity,
@@ -280,18 +293,18 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             userReposRoot,
             worktreePaths,
         };
-        for (const contribution of this.removalContributions?.getContributions() ?? []) {
-            try {
-                await contribution.onRepositoryRemoved(removal);
-            } catch (err) {
-                console.warn('[qaap-oauth] A removal contribution failed:', identity, err instanceof Error ? err.message : String(err));
-            }
-        }
-        for (const worktreePath of worktreePaths) {
-            if (!await this.removeRepositoryWorktree(worktreePath)) {
-                this.removeRepositoryWorktreeAsAgent(worktreePath).catch(err =>
-                    console.warn('[qaap-oauth] Failed to remove the worktree of a removed repository:', worktreePath, err instanceof Error ? err.message : String(err)));
-            }
+        await Promise.all([
+            ...(this.removalContributions?.getContributions() ?? [])
+                .map(contribution => step('A removal contribution failed', () => contribution.onRepositoryRemoved(removal))),
+            ...worktreePaths.map(worktreePath => step('Failed to remove the worktree of a removed repository', async () => {
+                if (!await this.removeRepositoryWorktree(worktreePath)) {
+                    this.removeRepositoryWorktreeAsAgent(worktreePath).catch(err =>
+                        console.warn('[qaap-oauth] Failed to remove the worktree of a removed repository:', worktreePath, err instanceof Error ? err.message : String(err)));
+                }
+            })),
+        ]);
+        if (failed) {
+            this.forgottenRemovals.delete(forgottenKey);
         }
     }
 
@@ -876,6 +889,34 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             const message = err instanceof Error ? err.message : 'Failed to prepare repository workspace';
             res.status(502).json({ error: message });
         }
+    }
+
+    /**
+     * Remove the card of the caller's task worktree `{worktreesRoot}/{login}/{slug}` from the hub for good:
+     * it has no clone of its own to delete, and a removal only the browser remembered came back on reload
+     * (production, Oct 2026). Recorded as `worktree:{login}/{slug}`, like {@link qaapProjectRemovalIdentity}
+     * resolves every key of the card. The worktree and its source clone stay on disk.
+     */
+    protected handleRemoveWorktreeProject(req: Request, res: Response): void {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const login = this.auth.resolveUserLogin(auth);
+        if (!login) {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const slug = this.cleanGithubPathSegment(req.params.slug);
+        if (!slug) {
+            res.status(400).json({ error: 'Invalid worktree' });
+            return;
+        }
+        const identity = `worktree:${safeUserIdSegment(login) || '__anonymous__'}/${slug}`.toLowerCase();
+        this.projectSessions.deleteForUser(login, identity);
+        this.projectSessions.markRepositoryRemoved(login, identity);
+        res.json({ removed: true, slug });
     }
 
     /**

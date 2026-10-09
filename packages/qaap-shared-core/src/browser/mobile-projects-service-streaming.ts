@@ -6,6 +6,7 @@ import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     deleteQaapGithubRepository,
+    deleteQaapWorktreeProject,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type {
     QaapProjectSessionSummary,
@@ -24,6 +25,7 @@ import {
 import { deduplicateMobileProjectEntries, withoutRemovedMobileProjects } from './mobile-projects-dedup';
 import { QAAP_USER_REPOS_SEGMENT } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { parseUserRepositoryCloneFromWorkspacePath } from '../common/qaap-user-repository-clone-path';
+import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
 
 export async function renameProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
         const dialog = new SingleTextInputDialog({
@@ -137,6 +139,15 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
             ctx.writeHiddenProjectIds(hiddenIds);
             return true;
         }
+        const worktreeIdentity = project.uri ? qaapProjectRemovalIdentity(project.uri.toString()) : undefined;
+        if (project.uri && worktreeIdentity?.startsWith('worktree:')) {
+            await removeWorktreeProject(project, worktreeIdentity);
+            await ctx.workspaceService.removeRecentWorkspace(project.uri.toString());
+            const hiddenIds = ctx.readHiddenProjectIds();
+            hiddenIds.add(project.id);
+            ctx.writeHiddenProjectIds(hiddenIds);
+            return true;
+        }
         if (project.uri) {
             // A clone listed from the recent-workspace catalog has no `github` metadata, but it is
             // still a server-side clone that counts against the plan's active-repo limit. Delete it
@@ -157,6 +168,17 @@ export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, 
             return true;
         }
         return false;
+}
+
+/**
+ * A task worktree card (`<project>_<n>`) only hid a browser-local id, so the server's next listing brought it
+ * back (production, Oct 2026). Record the removal of this card alone on the server. Never delete its source
+ * repository from here: a browser-local removal of the source can be stale (re-imported on another device).
+ */
+async function removeWorktreeProject(project: MobileProjectEntry, worktreeIdentity: string): Promise<void> {
+    await deleteQaapWorktreeProject(worktreeIdentity.slice(worktreeIdentity.indexOf('/') + 1));
+    removeLocalProjectSession(`ws:${project.uri!.toString()}`);
+    setLocalProjectRemoved(worktreeIdentity, true);
 }
 
 /**

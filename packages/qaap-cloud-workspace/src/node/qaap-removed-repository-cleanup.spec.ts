@@ -36,7 +36,7 @@ describe('QaapRemovedRepositoryCleanup', () => {
     const userReposRoot = '/workspace/repos/users/juancristobalgd1';
     const clone = `${userReposRoot}/juancristobalgd1/vyyq`;
     const other = `${userReposRoot}/juancristobalgd1/other`;
-    const worktree = '/opt/qaap-runtime/worktrees/juancristobalgd1/733cf503';
+    const worktree = '/tmp/qaap-worktrees/juancristobalgd1/733cf503';
     const removal: QaapRepositoryRemoval = {
         login,
         identity: 'github:juancristobalgd1/vyyq',
@@ -96,6 +96,29 @@ describe('QaapRemovedRepositoryCleanup', () => {
             `user:${login}:ws:file://${other}`,
             `user:mallory:ws:file://${clone}`,
         ]);
+        expect(recentRoots).to.deep.equal([`file://${other}`]);
+    });
+
+    // The lazy migration on this build left `user:juancristobalgd1:ws:file:///workspace/repos/…/vyyq` behind: the
+    // conversation store restores (task recovery, turn auto-resume) before it can archive, and every later step waited on it.
+    it('forgets terminal sessions and recent workspaces while the conversation store is still restoring', async () => {
+        Object.assign((cleanup as unknown as { conversations: object }).conversations, { whenReady: () => new Promise<void>(() => undefined) });
+
+        void cleanup.onRepositoryRemoved(removal);
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(Object.keys(terminals.rows)).to.not.include('user:juancristobalgd1:ws:file:///workspace/repos/users/juancristobalgd1/juancristobalgd1/vyyq');
+        expect(recentRoots).to.deep.equal([`file://${other}`]);
+    });
+
+    it('forgets terminal sessions even when archiving the conversations fails', async () => {
+        Object.assign((cleanup as unknown as { conversations: object }).conversations, {
+            listAllGroupedByCwd: () => { throw new Error('conversation store unavailable'); },
+        });
+
+        await cleanup.onRepositoryRemoved(removal).catch(() => undefined);
+
+        expect(Object.keys(terminals.rows)).to.have.length(2);
         expect(recentRoots).to.deep.equal([`file://${other}`]);
     });
 

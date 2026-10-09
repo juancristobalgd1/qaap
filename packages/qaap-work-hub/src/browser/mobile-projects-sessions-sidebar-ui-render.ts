@@ -2,7 +2,7 @@ import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-s
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
 import type { SessionsSidebarConversationEntry } from './mobile-projects-sessions-sidebar-ui';
-import { mergeConversationCwdProjects } from './mobile-projects-sessions-sidebar-conversation-projects';
+import { mergeConversationCwdProjects, worktreeSourceCwdOf } from './mobile-projects-sessions-sidebar-conversation-projects';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
@@ -12,6 +12,7 @@ import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@t
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
 import { readLocalRemovedProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-session-cache';
 import { withoutRemovedMobileProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dedup';
+import { qaapProjectRemovalIdentity } from '@theia/qaap-shared-core/lib/common/qaap-project-removal-identity';
 
 export function openWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
     const sidebar = ctx.ensureWorkHubSessionsSidebar();
@@ -60,15 +61,22 @@ export function mergeSessionsSidebarProjectsExtracted(ctx: MobileProjectsSession
     // conversations are labelled `<projectName>_<n>` rather than by their hash directory.
     const projectsService = ctx.host.projectsService;
     const removedProjects = readLocalRemovedProjects();
+    const summaries = ctx.host.conversations?.threadStore?.listAllSummaries?.() ?? [];
     projects = mergeConversationCwdProjects(
         projects,
-        ctx.host.conversations?.threadStore?.listAllSummaries?.() ?? [],
+        summaries,
         (projectId, uri) => projectsService.isProjectRemovalPending?.(projectId, uri) === true,
         removedProjects,
     );
     const current = ctx.host.projectsService.resolveCurrentWorkspaceProject(projects);
-    // A workspace still open on a removed clone must not bring its card back either.
-    if (!current || withoutRemovedMobileProjects([current], removedProjects, () => undefined).length === 0) {
+    // A workspace still open on a removed clone must not bring its card back either, nor a task worktree
+    // checked out from one (its own removal identity is `worktree:`, not the source's).
+    // Skip the scan over the history when nothing was removed (the common case).
+    const sourceIdentity = current && removedProjects.size > 0
+        ? qaapProjectRemovalIdentity(worktreeSourceCwdOf(current.uri, summaries))
+        : undefined;
+    if (!current || withoutRemovedMobileProjects([current], removedProjects, () => undefined).length === 0
+        || (!!sourceIdentity && removedProjects.has(sourceIdentity))) {
         return [...projects];
     }
     const currentUri = current.uri?.toString();

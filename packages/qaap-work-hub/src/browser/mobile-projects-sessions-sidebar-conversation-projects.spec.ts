@@ -95,4 +95,39 @@ describe('mergeConversationCwdProjects for a removed project', () => {
 
         expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
     });
+
+    // Same account: the archived conversation 5e9656ec of task worktree 733cf503 (checked out from vyyq,
+    // ordinal 1) kept a cached `ws:` card labelled vyyq_1 alive; removing it brought it straight back.
+    const LIVE_WT = '/tmp/qaap-worktrees/juancristobalgd1/733cf503';
+    const archivedTask = summary('5e9656ec', LIVE_WT, 3, { parallelBaseCwd: VYYQ, worktreeOrdinal: 1, archived: true });
+    const cachedCard = (cwd: string): MobileProjectEntry => ({
+        ...baseProject(FileUri.create(cwd).path.base), id: conversationCwdProjectId(cwd), uri: FileUri.create(cwd),
+    });
+
+    it('never synthesizes a card from an archived conversation', () => {
+        const merged = mergeConversationCwdProjects([], [
+            summary('archived', OTHER, 1, { archived: true }),
+            { ...archivedTask, parallelBaseCwd: OTHER },
+        ]);
+
+        expect(merged).to.deep.equal([]);
+    });
+
+    it('drops a cached card of a worktree whose source project was removed', () => {
+        const merged = mergeConversationCwdProjects([cachedCard(LIVE_WT), cachedCard(OTHER)], [archivedTask], () => false, removed);
+
+        expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
+    });
+
+    it('drops the current card of a worktree whose source project was removed', () => {
+        const merged = mergeConversationCwdProjects([{ ...cachedCard(LIVE_WT), isCurrent: true }, cachedCard(OTHER)], [archivedTask], () => false, removed);
+
+        expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
+    });
+
+    it('remembers the source of a worktree card, so removing it can resolve the source repository', () => {
+        const merged = mergeConversationCwdProjects([cachedCard(LIVE_WT)], [{ ...archivedTask, archived: false }]);
+
+        expect(merged.map(project => [project.name, project.worktreeSourceCwd])).to.deep.equal([['vyyq_1', VYYQ]]);
+    });
 });

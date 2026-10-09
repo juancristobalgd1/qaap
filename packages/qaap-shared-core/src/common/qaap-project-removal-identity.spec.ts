@@ -26,6 +26,16 @@ describe('qaapProjectRemovalIdentity', () => {
             .to.equal('github:acme/shop');
     });
 
+    // Production (juancristobalgd1): the task worktree card vyyq_1 resolved to nothing, so its removal was never recorded.
+    it('resolves a task worktree to its own removal key', () => {
+        const identity = 'worktree:juancristobalgd1/733cf503';
+        expect(qaapProjectRemovalIdentity('/tmp/qaap-worktrees/juancristobalgd1/733cf503')).to.equal(identity);
+        expect(qaapProjectRemovalIdentity('ws:file:///tmp/qaap-worktrees/juancristobalgd1/733cf503')).to.equal(identity);
+        expect(qaapProjectRemovalIdentity('/tmp/qaap-worktrees/juancristobalgd1/733cf503/web', '/workspace/repos/users/juancristobalgd1')).to.equal(identity);
+        expect(qaapProjectRemovalIdentity('worktree:JuanCristobalGD1/733CF503')).to.equal(identity);
+        expect(qaapProjectRemovalIdentity('/tmp/qaap-worktrees/juancristobalgd1')).to.equal(undefined);
+    });
+
     it('does not resolve paths outside the user repos root', () => {
         expect(qaapProjectRemovalIdentity('recent:file:///D:/other/acme/shop', 'C:\\repos\\users\\alice')).to.equal(undefined);
     });
