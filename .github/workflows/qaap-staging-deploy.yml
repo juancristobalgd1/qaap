@@ -198,16 +198,33 @@ jobs:
             if [ "$COPY_DATA" = "true" ]; then
               # Consistent online copy with SQLite's backup API, inside the VPS. Never leaves the host.
               python3 - <<'PY'
-            import os, sqlite3
+            import os, shutil, sqlite3
             src_root, dst_root = '/opt/qaap-runtime/auth/users', '/opt/qaap-staging/auth/users'
+            # Everything the sidebar and Work Hub read (tenant state, agent conversations and tasks,
+            # opencode sessions, recent workspaces), so a card seen in production shows up here too.
+            # The agent's package cache and opencode snapshots/logs/mirrors stay behind (gigabytes).
+            SKIP_DIRS = {'.qaap-agent-storage/cache', '.qaap-agent-storage/data/opencode/snapshot',
+                         '.qaap-agent-storage/data/opencode/log', '.qaap-agent-storage/data/opencode/repos'}
+            SIDE_FILES = ('-wal', '-shm', '-journal')
             for login in ('juancristobalgd1', 'jcristgd'):
-                src = os.path.join(src_root, login, 'tenant.sqlite')
-                if not os.path.exists(src):
+                src_user = os.path.join(src_root, login)
+                if not os.path.isfile(os.path.join(src_user, 'tenant.sqlite')):
                     continue
-                os.makedirs(os.path.join(dst_root, login), exist_ok=True)
-                dst = os.path.join(dst_root, login, 'tenant.sqlite')
-                with sqlite3.connect(f'file:{src}?mode=ro', uri=True) as s, sqlite3.connect(dst) as d:
-                    s.backup(d)
+                dst_user = os.path.join(dst_root, login)
+                for dirpath, dirnames, filenames in os.walk(src_user):
+                    rel = os.path.relpath(dirpath, src_user)
+                    dirnames[:] = [d for d in dirnames if os.path.normpath(os.path.join(rel, d)) not in SKIP_DIRS]
+                    os.makedirs(os.path.join(dst_user, rel), exist_ok=True)
+                    for name in filenames:
+                        src, dst = os.path.join(dirpath, name), os.path.join(dst_user, rel, name)
+                        if name.endswith(SIDE_FILES) or os.path.islink(src):
+                            continue
+                        if name.endswith(('.sqlite', '.db')):
+                            # SQLite backup API: consistent copy of a live database, WAL included.
+                            with sqlite3.connect(f'file:{src}?mode=ro', uri=True) as s, sqlite3.connect(dst) as d:
+                                s.backup(d)
+                        else:
+                            shutil.copy2(src, dst)
                 print('copied', login)
             PY
             fi
