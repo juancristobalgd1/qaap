@@ -83,3 +83,41 @@ describe('QaapProjectSessionStore removed repositories and path-keyed sessions',
         expect(store.listForUser(login).map(session => session.repoKey)).to.deep.equal(['github:juancristobalgd1/other']);
     });
 });
+
+describe('QaapProjectSessionStore activity ordering', () => {
+    const login = 'alice';
+    const repoKey = 'github:acme/shop';
+
+    function storeWithSession(): { store: InMemoryProjectSessionStore; lastActiveAt: string } {
+        const store = new InMemoryProjectSessionStore();
+        store.upsertForUser(login, { repoKey, branch: 'main', agentState: 'idle', lastTask: 'Fix login' });
+        const lastActiveAt = '2026-01-01T00:00:00.000Z';
+        Object.assign(store.listForUser(login)[0], { lastActiveAt });
+        return { store, lastActiveAt };
+    }
+
+    it('stamps lastActiveAt when a project session is first recorded', () => {
+        const store = new InMemoryProjectSessionStore();
+        const session = store.upsertForUser(login, { repoKey });
+        expect(session.lastActiveAt).to.be.a('string');
+    });
+
+    it('keeps lastActiveAt when the project is only opened, previewed or bootstrapped', () => {
+        const { store, lastActiveAt } = storeWithSession();
+        store.upsertForUser(login, { repoKey, branch: 'main' });
+        store.upsertForUser(login, { repoKey, previewUrl: 'https://preview.example/shop' });
+        store.upsertForUser(login, { repoKey, bootstrapPhase: 'ready' });
+        store.upsertForUser(login, { repoKey, agentState: 'idle', lastTask: 'Fix login' });
+        expect(store.listForUser(login)[0].lastActiveAt).to.equal(lastActiveAt);
+    });
+
+    it('bumps lastActiveAt for new activity: a new task or a running agent', () => {
+        const { store, lastActiveAt } = storeWithSession();
+        const afterTask = store.upsertForUser(login, { repoKey, lastTask: 'Add checkout' });
+        expect(afterTask.lastActiveAt).to.not.equal(lastActiveAt);
+
+        Object.assign(store.listForUser(login)[0], { lastActiveAt });
+        const afterRun = store.upsertForUser(login, { repoKey, agentState: 'working' });
+        expect(afterRun.lastActiveAt).to.not.equal(lastActiveAt);
+    });
+});

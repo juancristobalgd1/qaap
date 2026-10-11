@@ -5,6 +5,7 @@
 
 import type { QaapProjectSessionSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
+import { isQaapProjectSessionActivity } from '../common/qaap-project-session-activity';
 import {
     MOBILE_PROJECTS_REMOVED_PROJECTS_BASE,
     MOBILE_PROJECTS_SESSION_CACHE_BASE,
@@ -51,10 +52,13 @@ export function writeLocalProjectSessions(map: Map<string, QaapProjectSessionSum
 export function patchLocalProjectSession(patch: QaapProjectSessionSummary, userLogin?: string): void {
     const map = readLocalProjectSessions(userLogin);
     const existing = map.get(patch.repoKey);
+    const lastActiveAt = isQaapProjectSessionActivity(existing, patch) || !existing?.lastActiveAt
+        ? patch.lastActiveAt ?? new Date().toISOString()
+        : existing.lastActiveAt;
     map.set(patch.repoKey, {
         ...existing,
         ...patch,
-        lastActiveAt: patch.lastActiveAt ?? new Date().toISOString(),
+        lastActiveAt,
     });
     writeLocalProjectSessions(map, userLogin);
 }

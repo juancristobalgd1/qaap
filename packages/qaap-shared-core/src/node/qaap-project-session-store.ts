@@ -10,6 +10,7 @@ import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/
 import { resolveQaapReposRoot, resolveUserReposRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type { QaapProjectSessionSummary, QaapProjectSessionUpsertRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
+import { isQaapProjectSessionActivity } from '../common/qaap-project-session-activity';
 
 const PERSIST_DEBOUNCE_MS = 100;
 
@@ -152,7 +153,9 @@ export class QaapProjectSessionStore {
             cost: patch.cost ?? existing?.cost,
             agentState: patch.agentState ?? existing?.agentState,
             lastTask: patch.lastTask ?? existing?.lastTask,
-            lastActiveAt: new Date().toISOString(),
+            lastActiveAt: isQaapProjectSessionActivity(existing, patch) || !existing?.lastActiveAt
+                ? new Date().toISOString()
+                : existing.lastActiveAt,
             previewUrl: patch.previewUrl ?? existing?.previewUrl,
             bootstrapPhase: patch.bootstrapPhase ?? existing?.bootstrapPhase,
         };

@@ -81,7 +81,6 @@ export async function recordProjectSessionExtracted(ctx: MobileProjectsServiceCo
             lastTask: patch.lastTask,
             previewUrl: patch.previewUrl,
             bootstrapPhase: patch.bootstrapPhase,
-            lastActiveAt: new Date().toISOString(),
         };
         patchLocalProjectSession(row);
         if (readQaapSignedIn()) {
@@ -122,10 +121,10 @@ export function touchProjectActivityExtracted(ctx: MobileProjectsServiceContext,
 }
 
 export function touchProjectSessionExtracted(ctx: MobileProjectsServiceContext, repoKey: string, branch: string): void {
+        // Opening a project is not activity: the cache and server keep its `lastActiveAt` (list order).
         const row: QaapProjectSessionSummary = {
             repoKey,
             branch: branch || 'main',
-            lastActiveAt: new Date().toISOString(),
         };
         patchLocalProjectSession(row);
         if (readQaapSignedIn()) {
@@ -324,7 +323,7 @@ export function githubRepositoryToProjectExtracted(ctx: MobileProjectsServiceCon
         const id = `github:${repo.fullName}`;
         const name = ctx.resolveDisplayName(id, repo.name);
         const isCurrent = repo.fullName.toLowerCase() === currentFullName;
-        const lastActiveAt = isCurrent ? new Date().toISOString() : repo.updatedAt;
+        const lastActiveAt = repo.updatedAt;
         const workspaceUri = isCurrent ? ctx.workspaceService.workspace?.resource : undefined;
         return {
             id,
