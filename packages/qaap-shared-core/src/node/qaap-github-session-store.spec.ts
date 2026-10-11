@@ -26,6 +26,20 @@ class TestGithubSessionStore extends QaapGithubSessionStore {
         this.sessionsListSyncedAt = 0;
     }
 
+    /** Simulates `ms` passing for an issued OAuth state (as stored in SQLite). */
+    ageOAuthState(state: string, ms: number): void {
+        const key = `oauth:${state}`;
+        const store = this.getSqliteStore();
+        const record = store.get<{ createdAt: number }>(key);
+        if (record) {
+            store.set(key, { ...record, createdAt: record.createdAt - ms });
+        }
+    }
+
+    writeRawOAuthState(state: string, value: unknown): void {
+        this.getSqliteStore().set(`oauth:${state}`, value);
+    }
+
     /** Many simulated processes live in one test process: skip the process-level signal hooks. */
     protected override installShutdownHandlers(): void { }
 
@@ -36,6 +50,8 @@ class TestGithubSessionStore extends QaapGithubSessionStore {
 }
 
 const alice = { accessToken: 't', user: { provider: 'github' as const, login: 'alice', name: 'Alice' } };
+const browserA = 'browser-a-binding';
+const browserB = 'browser-b-binding';
 
 describe('QaapGithubSessionStore (shared SQLite file across backends)', () => {
     let dir: string;
@@ -60,28 +76,74 @@ describe('QaapGithubSessionStore (shared SQLite file across backends)', () => {
     it('consumes an OAuth state created by another process sharing the store', () => {
         const processA = new TestGithubSessionStore().start();
         const processB = new TestGithubSessionStore().start();
-        const state = processA.createOAuthState();
-        expect(processB.consumeOAuthState(state)).to.equal(true);
+        const state = processA.createOAuthState(browserA);
+        expect(processB.consumeOAuthState(state, browserA).valid).to.equal(true);
         // Single use, also across processes.
-        expect(processA.consumeOAuthState(state)).to.equal(false);
-        expect(processB.consumeOAuthState(state)).to.equal(false);
+        expect(processA.consumeOAuthState(state, browserA).valid).to.equal(false);
+        expect(processB.consumeOAuthState(state, browserA).valid).to.equal(false);
     });
 
     it('rejects unknown and missing states', () => {
         const store = new TestGithubSessionStore().start();
-        expect(store.consumeOAuthState(undefined)).to.equal(false);
-        expect(store.consumeOAuthState('not-a-state')).to.equal(false);
+        expect(store.consumeOAuthState(undefined, browserA)).to.deep.equal({ valid: false });
+        expect(store.consumeOAuthState('not-a-state', browserA)).to.deep.equal({ valid: false });
+    });
+
+    it('completes a state issued before the backend restarted (deploy)', () => {
+        const beforeRestart = new TestGithubSessionStore().start();
+        const state = beforeRestart.createOAuthState(browserA);
+        QaapSqliteConnectionRegistry.shared.closeUnder(dir);
+        const afterRestart = new TestGithubSessionStore().start();
+        expect(afterRestart.consumeOAuthState(state, browserA)).to.deep.equal({ valid: true, attempt: 1 });
+    });
+
+    it('keeps the states of several tabs of the same browser valid, in any order', () => {
+        const store = new TestGithubSessionStore().start();
+        const tab1 = store.createOAuthState(browserA);
+        const tab2 = store.createOAuthState(browserA);
+        expect(store.consumeOAuthState(tab2, browserA).valid).to.equal(true);
+        expect(store.consumeOAuthState(tab1, browserA).valid).to.equal(true);
+    });
+
+    it('rejects a state presented by another browser, and burns it', () => {
+        const store = new TestGithubSessionStore().start();
+        const state = store.createOAuthState(browserA, 2);
+        expect(store.consumeOAuthState(state, browserB)).to.deep.equal({ valid: false, attempt: 2 });
+        expect(store.consumeOAuthState(state, undefined).valid).to.equal(false);
+        expect(store.consumeOAuthState(state, browserA).valid).to.equal(false);
+    });
+
+    it('rejects an expired state', () => {
+        const store = new TestGithubSessionStore().start();
+        const state = store.createOAuthState(browserA);
+        store.ageOAuthState(state, 11 * 60 * 1000);
+        expect(store.consumeOAuthState(state, browserA)).to.deep.equal({ valid: false, attempt: 1 });
+    });
+
+    it('stores only a hash of the browser binding', () => {
+        const store = new TestGithubSessionStore().start();
+        store.createOAuthState(browserA);
+        expect(fs.readdirSync(dir).some(name => fs.readFileSync(path.join(dir, name)).includes(browserA))).to.equal(false);
+    });
+
+    it('honours an unexpired unbound state written by the previous build, once', () => {
+        const store = new TestGithubSessionStore().start();
+        store.writeRawOAuthState('legacy', Date.now());
+        store.writeRawOAuthState('legacy-expired', Date.now() - 11 * 60 * 1000);
+        expect(store.consumeOAuthState('legacy', undefined).valid).to.equal(true);
+        expect(store.consumeOAuthState('legacy', undefined).valid).to.equal(false);
+        expect(store.consumeOAuthState('legacy-expired', undefined).valid).to.equal(false);
     });
 
     it('does not wipe keys written by another process when flushing', () => {
         const processA = new TestGithubSessionStore().start();
         const processB = new TestGithubSessionStore().start();
-        const state = processA.createOAuthState();
+        const state = processA.createOAuthState(browserA);
         processB.createSession({ accessToken: 't', user: { provider: 'github', login: 'alice', name: 'Alice' } });
         processB.flushPendingPersist();
         const processC = new TestGithubSessionStore().start();
         expect(processC.listSessions().map(session => session.user.login)).to.deep.equal(['alice']);
-        expect(processC.consumeOAuthState(state)).to.equal(true);
+        expect(processC.consumeOAuthState(state, browserA).valid).to.equal(true);
     });
 
     it('persists session deletion per key', () => {

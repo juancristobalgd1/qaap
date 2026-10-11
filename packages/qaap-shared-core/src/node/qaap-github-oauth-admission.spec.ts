@@ -40,6 +40,7 @@ class TestOAuthResponse {
     body: unknown;
     location: string | undefined;
     readonly headers = new Map<string, string>();
+    readonly setCookies: string[] = [];
 
     status(code: number): this {
         this.statusCode = code;
@@ -70,6 +71,18 @@ class TestOAuthResponse {
         this.headers.set(name.toLowerCase(), value);
         return this;
     }
+
+    append(name: string, value: string): this {
+        if (name.toLowerCase() === 'set-cookie') {
+            this.setCookies.push(value);
+        }
+        return this;
+    }
+
+    /** `name=value` of the cookie set under `name`. */
+    cookie(name: string): string | undefined {
+        return this.setCookies.find(value => value.startsWith(`${name}=`))?.split(';', 1)[0];
+    }
 }
 
 class TestOAuthEndpoint extends QaapGithubOauthEndpoint {
@@ -80,13 +93,13 @@ class TestOAuthEndpoint extends QaapGithubOauthEndpoint {
 
     start(): TestOAuthResponse {
         const response = new TestOAuthResponse();
-        this.handleOAuthStart({} as Request, response as unknown as Response);
+        this.handleOAuthStart({ headers: { host: 'qaap.test' }, query: {} } as unknown as Request, response as unknown as Response);
         return response;
     }
 
-    async callback(code: string, state: string): Promise<TestOAuthResponse> {
+    async callback(code: string, state: string, browserCookie: string): Promise<TestOAuthResponse> {
         const response = new TestOAuthResponse();
-        await this.handleOAuthCallback({ query: { code, state }, headers: {} } as unknown as Request, response as unknown as Response);
+        await this.handleOAuthCallback({ query: { code, state }, headers: { cookie: browserCookie } } as unknown as Request, response as unknown as Response);
         return response;
     }
 
@@ -145,11 +158,10 @@ describe('Qaap GitHub OAuth beta admission', () => {
                 expect(authorizeUrl.hostname).to.equal('github.com');
                 const state = authorizeUrl.searchParams.get('state')!;
 
-                const callback = await endpoint.callback(login, state);
+                const callback = await endpoint.callback(login, state, start.cookie('qaap_oauth_binding')!);
                 expect(callback.statusCode).to.equal(302);
                 expect(callback.location).to.contain('qaap_oauth=github');
-                const setCookie = callback.headers.get('set-cookie')!;
-                const cookie = setCookie.split(';', 1)[0];
+                const cookie = callback.cookie(QAAP_AUTH_SESSION_COOKIE)!;
                 const sessionId = decodeURIComponent(cookie.slice(`${QAAP_AUTH_SESSION_COOKIE}=`.length));
                 const stored: QaapGithubStoredSession | undefined = store.getSession(sessionId);
                 expect(stored?.user.login).to.equal(login);

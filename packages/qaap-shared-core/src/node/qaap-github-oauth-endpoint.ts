@@ -68,10 +68,10 @@ import {
     parseGithubPullRequestStateFilter,
     parseGithubPullRequestViewFilter,
 } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
-import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
+import { readQaapGithubOAuthConfig, type QaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapApiTokenStore } from './qaap-api-token-store';
-import { QaapGithubSessionStore } from './qaap-github-session-store';
+import { QAAP_GITHUB_OAUTH_STATE_MAX_AGE_MS, QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapRepositoryRemovalContribution, type QaapRepositoryRemoval } from './qaap-repository-removal-contribution';
 import { QaapHostedWorktreeRegistry } from './qaap-hosted-worktree-registry';
@@ -94,6 +94,12 @@ import {
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
 const THEIA_EMPTY_WINDOW_HASH = '!empty';
+/** Per-browser secret the OAuth `state` is bound to. Scoped to `/start` and `/callback` only. */
+const QAAP_GITHUB_OAUTH_BINDING_COOKIE = 'qaap_oauth_binding';
+/** Set when a failed callback restarted the sign-in automatically, so it happens only once. */
+const QAAP_GITHUB_OAUTH_RETRY_COOKIE = 'qaap_oauth_retry';
+const QAAP_GITHUB_OAUTH_COOKIE_PATH = '/qaap/oauth/github';
+const QAAP_GITHUB_OAUTH_BINDING_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const GIT_OPERATION_TIMEOUT_MS = 120_000;
 /**
  * One deadline for preparing a repository workspace (fetch, or clone + empty-repo seed). With the
@@ -503,13 +509,27 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         res.json({ session });
     }
 
-    protected handleOAuthStart(_req: Request, res: Response): void {
+    protected handleOAuthStart(req: Request, res: Response): void {
         const config = readQaapGithubOAuthConfig();
         if (!config) {
             res.status(503).send('GitHub OAuth is not configured (QAAP_GITHUB_CLIENT_ID, QAAP_GITHUB_CLIENT_SECRET, QAAP_OAUTH_PUBLIC_URL).');
             return;
         }
-        const state = this.sessions.createOAuthState();
+        const retry = req.query.retry === '1';
+        const publicHost = new URL(config.publicUrl).host;
+        if (req.headers.host?.toLowerCase() !== publicHost && req.query.canonical !== '1') {
+            // GitHub returns to the public URL: the browser-binding cookie must be set on that host.
+            // `canonical=1` makes this hop happen once even behind a proxy that rewrites Host.
+            res.redirect(302, `${config.publicUrl}${QAAP_GITHUB_OAUTH_START_PATH}?canonical=1${retry ? '&retry=1' : ''}`);
+            return;
+        }
+        // Reuse the browser's binding so states started in other tabs stay valid.
+        const existingBinding = this.readRequestCookie(req, QAAP_GITHUB_OAUTH_BINDING_COOKIE);
+        const binding = existingBinding && QAAP_GITHUB_OAUTH_BINDING_PATTERN.test(existingBinding)
+            ? existingBinding
+            : randomBytes(32).toString('base64url');
+        const state = this.sessions.createOAuthState(binding, retry ? 2 : 1);
+        res.append('Set-Cookie', this.oauthCookie(config, QAAP_GITHUB_OAUTH_BINDING_COOKIE, binding, QAAP_GITHUB_OAUTH_STATE_MAX_AGE_MS / 1000));
         const authorizeUrl = new URL(GITHUB_AUTHORIZE_URL);
         authorizeUrl.searchParams.set('client_id', config.clientId);
         authorizeUrl.searchParams.set('redirect_uri', config.callbackUrl);
@@ -538,14 +558,14 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             this.redirectAfterOAuth(res, config.publicUrl, false, 'missing_code');
             return;
         }
-        if (!this.sessions.consumeOAuthState(state)) {
-            console.error('[qaap-oauth] OAuth state is unknown or expired (backend likely restarted between /start and /callback). state=', state);
-            this.redirectAfterOAuth(res, config.publicUrl, false, 'state_lost');
+        const stateCheck = this.sessions.consumeOAuthState(state, this.readRequestCookie(req, QAAP_GITHUB_OAUTH_BINDING_COOKIE));
+        if (!stateCheck.valid) {
+            this.handleInvalidOAuthState(req, res, config, stateCheck.attempt);
             return;
         }
+        res.append('Set-Cookie', this.oauthCookie(config, QAAP_GITHUB_OAUTH_RETRY_COOKIE, '', 0));
         try {
-            const accessToken = await exchangeGithubCode(config, code);
-            const user = await fetchGithubUser(accessToken);
+            const { accessToken, user } = await this.exchangeOAuthCode(config, code);
             const previousSessionId = this.auth.resolveSessionId(req);
             if (previousSessionId) {
                 this.endSession(previousSessionId);
@@ -559,6 +579,36 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
             this.redirectAfterOAuth(res, config.publicUrl, false, message);
         }
+    }
+
+    /**
+     * A callback whose state is unknown, expired, already used or bound to another browser. The
+     * code is never exchanged. If the browser already holds a valid session (a replayed callback)
+     * it just continues; otherwise the sign-in restarts automatically once, then reports state_lost.
+     */
+    protected handleInvalidOAuthState(req: Request, res: Response, config: QaapGithubOAuthConfig, attempt: number | undefined): void {
+        if (this.auth.resolveSessionId(req)) {
+            console.warn('[qaap-oauth] Ignoring an invalid OAuth state from a browser that is already signed in.');
+            this.redirectAfterOAuth(res, config.publicUrl, true);
+            return;
+        }
+        const alreadyRetried = attempt !== undefined
+            ? attempt > 1
+            : this.readRequestCookie(req, QAAP_GITHUB_OAUTH_RETRY_COOKIE) === '1';
+        if (!alreadyRetried) {
+            console.warn('[qaap-oauth] OAuth state is unknown, expired or from another browser; restarting the sign-in once.');
+            res.append('Set-Cookie', this.oauthCookie(config, QAAP_GITHUB_OAUTH_RETRY_COOKIE, '1', QAAP_GITHUB_OAUTH_STATE_MAX_AGE_MS / 1000));
+            res.redirect(302, `${config.publicUrl}${QAAP_GITHUB_OAUTH_START_PATH}?retry=1`);
+            return;
+        }
+        console.error('[qaap-oauth] OAuth state is unknown, expired or from another browser after the automatic retry.');
+        res.append('Set-Cookie', this.oauthCookie(config, QAAP_GITHUB_OAUTH_RETRY_COOKIE, '', 0));
+        this.redirectAfterOAuth(res, config.publicUrl, false, 'state_lost');
+    }
+
+    protected async exchangeOAuthCode(config: QaapGithubOAuthConfig, code: string): Promise<QaapGithubStoredSession> {
+        const accessToken = await exchangeGithubCode(config, code);
+        return { accessToken, user: await fetchGithubUser(accessToken) };
     }
 
     protected handleHealth(_req: Request, res: Response): void {
@@ -2151,9 +2201,34 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         return `Path=/; HttpOnly; SameSite=Lax${secure}`;
     }
 
+    /**
+     * OAuth flow cookies: host-only (no Domain), sent only to `/qaap/oauth/github/*`, and
+     * `SameSite=Lax` because the callback is a top-level GET navigation from github.com
+     * (`Strict` would drop them there).
+     */
+    protected oauthCookie(config: QaapGithubOAuthConfig, name: string, value: string, maxAgeSeconds: number): string {
+        const secure = config.publicUrl.startsWith('https://') ? '; Secure' : '';
+        return `${name}=${value}; Path=${QAAP_GITHUB_OAUTH_COOKIE_PATH}; HttpOnly; SameSite=Lax${secure}; Max-Age=${maxAgeSeconds}`;
+    }
+
+    protected readRequestCookie(req: Pick<Request, 'headers'>, name: string): string | undefined {
+        const header = req.headers.cookie;
+        if (typeof header !== 'string') {
+            return undefined;
+        }
+        for (const part of header.split(';')) {
+            const eq = part.indexOf('=');
+            if (eq > 0 && part.slice(0, eq).trim() === name) {
+                return part.slice(eq + 1).trim() || undefined;
+            }
+        }
+        return undefined;
+    }
+
     protected setSessionCookie(res: Response, sessionId: string): void {
         const maxAge = 30 * 24 * 60 * 60;
-        res.setHeader(
+        // Appended: the callback may also be clearing the OAuth retry cookie.
+        res.append(
             'Set-Cookie',
             `${QAAP_AUTH_SESSION_COOKIE}=${encodeURIComponent(sessionId)}; ${this.sessionCookieFlags()}; Max-Age=${maxAge}`
         );

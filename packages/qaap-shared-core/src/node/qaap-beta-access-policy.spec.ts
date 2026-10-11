@@ -92,11 +92,11 @@ describe('Qaap beta admission', () => {
 
     it('rejects expired OAuth state at consumption and prevents replay', () => {
         const store = new BetaSessionStore({});
-        const expired = store.createOAuthState();
+        const expired = store.createOAuthState('browser');
         store.expireState(expired);
-        expect(store.consumeOAuthState(expired)).to.equal(false);
-        const fresh = store.createOAuthState();
-        expect(store.consumeOAuthState(fresh)).to.equal(true);
-        expect(store.consumeOAuthState(fresh)).to.equal(false);
+        expect(store.consumeOAuthState(expired, 'browser').valid).to.equal(false);
+        const fresh = store.createOAuthState('browser');
+        expect(store.consumeOAuthState(fresh, 'browser').valid).to.equal(true);
+        expect(store.consumeOAuthState(fresh, 'browser').valid).to.equal(false);
     });
 });
