@@ -4,14 +4,24 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as express from '@theia/core/shared/express';
+import { BackendApplicationPath } from '@theia/core/lib/node';
 import {
     qaapFrontendStaticHeaders,
     qaapIsImmutableHashedChunkPath,
     qaapPreferredStaticEncoding,
+    QaapFrontendStaticServer,
     resolveQaapLegalPagesDir,
 } from './qaap-immutable-chunk-cache-contribution';
+
+class StaticAssetServerHarness extends QaapFrontendStaticServer {
+    serve(req: express.Request, res: express.Response, next: express.NextFunction): Promise<void> {
+        return this.servePrecompressedAsset(req, res, next);
+    }
+}
 
 describe('qaap immutable frontend asset policy', () => {
 
@@ -64,6 +74,77 @@ describe('qaap immutable frontend asset policy', () => {
         expect(qaapPreferredStaticEncoding('br;q=0, gzip;q=0.8', true, true)).to.equal('gzip');
         expect(qaapPreferredStaticEncoding('br;q=0, gzip;q=0', true, true)).to.equal(undefined);
         expect(qaapPreferredStaticEncoding('gzip', false, true)).to.equal('gzip');
+    });
+
+    it('serves precompressed hashed assets with Vary and keeps gzip as the fallback', async () => {
+        const frontendDir = path.join(BackendApplicationPath, 'lib', 'frontend');
+        const missingDirectories: string[] = [];
+        let directory = frontendDir;
+        while (!fs.existsSync(directory)) {
+            missingDirectories.push(directory);
+            directory = path.dirname(directory);
+        }
+        fs.mkdirSync(frontendDir, { recursive: true });
+
+        const hash = randomBytes(6).toString('hex').toUpperCase();
+        const filename = `bundle-${hash}.js`;
+        const sourcePath = path.join(frontendDir, filename);
+        const brotliPath = `${sourcePath}.br`;
+        const gzipPath = `${sourcePath}.gz`;
+        fs.writeFileSync(sourcePath, 'source');
+        fs.writeFileSync(brotliPath, 'brotli');
+        fs.writeFileSync(gzipPath, 'gzip');
+
+        try {
+            const server = new StaticAssetServerHarness();
+            const serve = async (acceptEncoding: string): Promise<{
+                headers: Record<string, string>;
+                sentPath: string | undefined;
+                nextCalled: boolean;
+            }> => {
+                const headers: Record<string, string> = {};
+                let sentPath: string | undefined;
+                let nextCalled = false;
+                const req = {
+                    method: 'GET',
+                    path: `/${filename}`,
+                    get: (name: string) => name.toLowerCase() === 'accept-encoding' ? acceptEncoding : undefined,
+                } as unknown as express.Request;
+                const res = {
+                    setHeader: (name: string, value: string | number) => { headers[name] = String(value); },
+                    sendFile: (filePath: string, _options: unknown, callback: () => void) => {
+                        sentPath = filePath;
+                        callback();
+                    },
+                } as unknown as express.Response;
+
+                await server.serve(req, res, () => { nextCalled = true; });
+                return { headers, sentPath, nextCalled };
+            };
+
+            const brotli = await serve('br, gzip');
+            expect(brotli.sentPath).to.equal(brotliPath);
+            expect(brotli.headers).to.include({
+                'Cache-Control': 'public, max-age=31536000, immutable',
+                'Content-Encoding': 'br',
+                'Content-Type': 'text/javascript',
+                Vary: 'Accept-Encoding',
+            });
+            expect(brotli.nextCalled).to.equal(false);
+
+            const gzip = await serve('br;q=0, gzip');
+            expect(gzip.sentPath).to.equal(gzipPath);
+            expect(gzip.headers['Content-Encoding']).to.equal('gzip');
+            expect(gzip.headers.Vary).to.equal('Accept-Encoding');
+            expect(gzip.nextCalled).to.equal(false);
+        } finally {
+            fs.rmSync(sourcePath, { force: true });
+            fs.rmSync(brotliPath, { force: true });
+            fs.rmSync(gzipPath, { force: true });
+            for (const missingDirectory of missingDirectories) {
+                fs.rmdirSync(missingDirectory);
+            }
+        }
     });
 
     it('does not match non-hashed frontend assets', () => {

@@ -197,7 +197,7 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
             return;
         }
 
-        const encodedPath = `${sourcePath}.${encoding}`;
+        const encodedPath = `${sourcePath}.${encoding === 'gzip' ? 'gz' : encoding}`;
         res.setHeader('Content-Encoding', encoding);
         res.setHeader('Content-Type', contentType);
         res.sendFile(encodedPath, { cacheControl: false }, error => {
