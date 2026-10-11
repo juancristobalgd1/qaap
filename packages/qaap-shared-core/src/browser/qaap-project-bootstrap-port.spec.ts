@@ -224,6 +224,40 @@ describe('qaap-project-bootstrap-port', () => {
         }
     });
 
+    it('passes the allocated port to a nested `theia start` that hardcodes or omits --port', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const directory = mkdtempSync(join(tmpdir(), 'qaap-preview-port-'));
+        const theia = join(directory, 'theia');
+        const runner = join(directory, 'start-browser.cjs');
+        try {
+            writeFileSync(theia, 'process.stdout.write(JSON.stringify({ port: process.env.PORT, argv: process.argv.slice(2) }));');
+            // Mirrors qaap's own start:browser: a wrapper script spawns `theia start --port 3000`.
+            writeFileSync(runner, [
+                "const { execFileSync } = require('child_process');",
+                `const run = args => JSON.parse(execFileSync(process.execPath, [${JSON.stringify(theia)}, ...args], { encoding: 'utf8' }));`,
+                "process.stdout.write(JSON.stringify([",
+                "    run(['start', '--hostname=::', '--port', '3000']),",
+                "    run(['start', '--port=3000', '--log-level=warn']),",
+                "    run(['start', '--log-level=warn']),",
+                "    run(['rebuild:browser']),",
+                ']));',
+            ].join('\n'));
+            const command = wrapDevCommandForPort(`node ${JSON.stringify(runner)}`, 3001, 'node-generic', false);
+            const [hardcoded, inline, omitted, otherCommand] = JSON.parse(
+                execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' }),
+            ) as { port: string; argv: string[] }[];
+            expect(hardcoded.argv).to.deep.equal(['start', '--hostname=::', '--port', '3001']);
+            expect(inline.argv).to.deep.equal(['start', '--port=3001', '--log-level=warn']);
+            expect(omitted.argv).to.deep.equal(['start', '--log-level=warn', '--port', '3001']);
+            expect(otherCommand.argv).to.deep.equal(['rebuild:browser']);
+            expect(hardcoded.port).to.equal('3001');
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
+
     it('pickNextDevPort advances past conflicts, prior attempts, and the IDE listener', () => {
         expect(pickNextDevPort(5173, [], 3000)).to.equal(5174);
         expect(pickNextDevPort(5173, [5174, 5175], 3000)).to.equal(5176);
