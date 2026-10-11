@@ -1153,6 +1153,63 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         }
     });
 
+    it('keeps the event loop responsive during cold HOME ACL repair batches', async () => {
+        class ResponsiveRepairTestService extends AgentHomeAccessTestService {
+            private blockedSynchronously = false;
+
+            repair(directory: string, uid: number): boolean {
+                return this.repairAgentAccessTree(directory, uid);
+            }
+
+            protected override runTenantAccessCommand(file: string, args: readonly string[], timeoutMs?: number): boolean {
+                if (!this.blockedSynchronously && file === 'setfacl' && args.some(argument => argument.includes('u:1001:rwX'))) {
+                    this.blockedSynchronously = true;
+                    const deadline = Date.now() + 240;
+                    while (Date.now() < deadline) {
+                        // Model one slow setfacl batch without depending on runner ACL capabilities.
+                    }
+                }
+                return super.runTenantAccessCommand(file, args, timeoutMs);
+            }
+
+            async runTenantAccessCommandAsync(file: string, args: readonly string[]): Promise<boolean> {
+                if (file === 'setfacl' && args.some(argument => argument.includes('u:1001:rwX'))) {
+                    await new Promise<void>(resolve => setTimeout(resolve, 240));
+                }
+                return true;
+            }
+        }
+
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-responsive-'));
+        const tree = path.join(root, 'cache');
+        fs.mkdirSync(tree);
+        for (let index = 0; index < 300; index++) {
+            fs.writeFileSync(path.join(tree, `entry-${index}.json`), '{}');
+        }
+        const service = new ResponsiveRepairTestService();
+        const timestamps: number[] = [];
+        const startedAt = Date.now();
+        const interval = setInterval(() => timestamps.push(Date.now()), 10);
+        try {
+            const asynchronousRepair = (service as unknown as {
+                repairAgentAccessTreeAsync?: (directory: string, uid: number) => Promise<boolean>;
+            }).repairAgentAccessTreeAsync;
+            const repaired = asynchronousRepair
+                ? await asynchronousRepair.call(service, tree, 1001)
+                : service.repair(tree, 1001);
+            const finishedAt = Date.now();
+            clearInterval(interval);
+            timestamps.push(finishedAt);
+
+            expect(repaired).to.equal(true);
+            expect(Math.max(...timestamps.map((at, index) => at - (index === 0 ? startedAt : timestamps[index - 1]!))))
+                .to.be.lessThan(200);
+        } finally {
+            clearInterval(interval);
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('does not write the storage sentinel when the agent cannot create a directory in HOME/.config', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-probe-denied-'));
         const configRoot = path.join(root, 'config');
