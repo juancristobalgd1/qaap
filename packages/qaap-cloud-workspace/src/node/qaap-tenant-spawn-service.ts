@@ -71,7 +71,6 @@ const DEFAULT_AGENT_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_AGENT_CPU_LIMIT_CORES = 2;
 const SYSTEMD_RUN_PROBE_TIMEOUT_MS = 3000;
 const QAAP_TENANT_AGENT_ACCESS_VERSION = 1;
-const QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS = 600_000;
 
 /**
  * Single source of truth for spawning a workspace-scoped child process under the correct OS identity
@@ -943,9 +942,6 @@ export class QaapTenantSpawnService {
         }
         try {
             this.ensureAgentHomeDirectory(home, uid);
-            if (!this.runTenantAccessCommand('setfacl', ['-b', '-k', '--', home])) {
-                throw new Error(`Could not lock existing files under agent HOME ${home} during access repair.`);
-            }
             if (!this.repairAgentAccessTree(home, uid)) {
                 throw new Error(`Could not repair existing files under agent HOME ${home}.`);
             }
@@ -970,7 +966,7 @@ export class QaapTenantSpawnService {
             return false;
         }
         const probe = path.join(home, '.config', `.qaap-write-probe-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-        const script = 'const fs = require("node:fs"); const entry = process.argv[1]; fs.mkdirSync(entry, { mode: 0o700 }); fs.rmdirSync(entry);';
+        const script = 'const fs = require(\'node:fs\'); const entry = process.argv[1]; fs.mkdirSync(entry, { mode: 0o700 }); fs.rmdirSync(entry);';
         return this.runTenantAccessCommand(setpriv, [
             '--reuid', String(uid), '--regid', String(gid), '--clear-groups', '--', process.execPath, '-e', script, probe,
         ]);
@@ -1058,10 +1054,10 @@ export class QaapTenantSpawnService {
         if (stats.uid !== this.backendOwnerUid()) {
             return true;
         }
-        return this.repairOwnedAgentAccessDirectory(directory, uid);
+        return this.repairOwnedAgentAccessDirectory(directory, uid, stats.dev);
     }
 
-    protected repairOwnedAgentAccessDirectory(directory: string, uid: number): boolean {
+    protected repairOwnedAgentAccessDirectory(directory: string, uid: number, device: number): boolean {
         const acl = `u:${uid}:rwx,g::---,o::---,d:u:${uid}:rwx,d:g::---,d:o::---`;
         try {
             // Lock and clear each backend-owned directory before reading it. Agent-owned children
@@ -1073,11 +1069,11 @@ export class QaapTenantSpawnService {
             for (const name of this.readAgentAccessDirectory(directory)) {
                 const entry = path.join(directory, name);
                 const stats = this.lstatIfPresent(entry);
-                if (!stats || stats.isSymbolicLink() || stats.uid !== this.backendOwnerUid()) {
+                if (!stats || stats.isSymbolicLink() || stats.dev !== device || stats.uid !== this.backendOwnerUid()) {
                     continue;
                 }
                 if (stats.isDirectory()) {
-                    if (!this.repairOwnedAgentAccessDirectory(entry, uid)) {
+                    if (!this.repairOwnedAgentAccessDirectory(entry, uid, device)) {
                         return false;
                     }
                 } else if (stats.isFile() && !this.applyPrivateAgentFileAcl(entry, uid)) {
