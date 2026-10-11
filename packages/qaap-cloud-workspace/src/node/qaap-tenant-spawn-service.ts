@@ -33,6 +33,7 @@ import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import {
     QaapTenantPersistentHome,
     type QaapTenantPersistentHomeOwner,
+    type QaapTenantPersistentHomeLinkResult,
     QAAP_PERSISTENT_HOME_DIRECTORIES,
     QAAP_PERSISTENT_HOME_FILES,
 } from './qaap-tenant-persistent-home';
@@ -853,11 +854,14 @@ export class QaapTenantSpawnService {
                 ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
                 : undefined;
             const persistentHome = QaapTenantAgentStorageEnv.homeDir(root);
-            const changedEntries = this.linkPersistentTenantHome(home, persistentHome, owner);
+            const linkResult = this.linkPersistentTenantHome(home, persistentHome, owner);
+            if (!linkResult.complete) {
+                return;
+            }
             if (identity?.uid !== undefined && identity.uid > 0) {
                 this.applyPrivateAgentDirectoryAcl(persistentHome, identity.uid, true);
                 this.applyPersistentAgentHomeEntryAcls(persistentHome, identity.uid);
-                this.repairTenantAgentStorageTrees(root, identity.uid, changedEntries);
+                this.repairTenantAgentStorageTrees(root, identity.uid, linkResult.changedEntries);
                 const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
                 if (!configRoot) {
                     throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
@@ -878,8 +882,8 @@ export class QaapTenantSpawnService {
     }
 
     /** Overridable in tests. */
-    protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): string[] {
-        return QaapTenantPersistentHome.link(home, persistentHome, owner);
+    protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): QaapTenantPersistentHomeLinkResult {
+        return QaapTenantPersistentHome.linkWithStatus(home, persistentHome, owner);
     }
 
     /**
@@ -937,6 +941,17 @@ export class QaapTenantSpawnService {
         if (storageIsUnderConfigRoot) {
             let directory = path.dirname(resolvedStorageRoot);
             while (!traversalDirectories.has(directory)) {
+                traversalDirectories.add(directory);
+                directory = path.dirname(directory);
+            }
+        } else {
+            let directory = path.dirname(resolvedStorageRoot);
+            const filesystemRoot = path.parse(directory).root;
+            while (directory !== filesystemRoot) {
+                const stats = this.lstatIfPresent(directory);
+                if (!stats || stats.uid !== this.backendOwnerUid()) {
+                    break;
+                }
                 traversalDirectories.add(directory);
                 directory = path.dirname(directory);
             }
