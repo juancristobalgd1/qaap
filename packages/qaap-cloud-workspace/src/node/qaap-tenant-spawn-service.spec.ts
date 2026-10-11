@@ -110,6 +110,19 @@ class TenantBackendAclTestService extends QaapTenantSpawnService {
     }
 }
 
+class AgentHomeAccessTestService extends TenantBackendAclTestService {
+    accessCommandsSucceed = true;
+
+    protected override runTenantAccessCommand(file: string, args: readonly string[]): boolean {
+        this.commands.push({ file, args });
+        return this.accessCommandsSucceed;
+    }
+
+    protected override linkPersistentTenantHome(): void {
+        // Keep this test focused on storage access preparation; the persistent-home spec covers links.
+    }
+}
+
 const reposRoot = resolveQaapReposRoot();
 const tenantCwd = path.join(reposRoot, 'users', 'alice', 'octocat', 'hello');
 
@@ -665,7 +678,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
     });
 
     it('keeps the non-root per-tenant backend on its existing HOME ownership path', () => {
-        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
         const original = envKeys.map(key => process.env[key]);
         process.env.QAAP_BACKEND_PER_TENANT = '1';
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
@@ -690,6 +703,66 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
                     process.env[key] = value;
                 }
             });
+        }
+    });
+
+    it('fails before returning a root-backend HOME when ACL preparation is denied (no CAP_CHOWN profile)', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-no-chown-'));
+        const configRoot = path.join(root, 'config');
+        fs.mkdirSync(configRoot);
+        const envKeys = ['QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = configRoot;
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = path.join(root, 'storage');
+        const service = new AgentHomeAccessTestService();
+        service.accessCommandsSucceed = false;
+        try {
+            expect(() => service.resolveProcessEnv(tenantCwd, {})).to.throw(/Could not prepare.*agent uid 1001/i);
+        } finally {
+            envKeys.forEach((key, index) => {
+                const value = original[index];
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            });
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('uses a persistent access-repair sentinel instead of rescanning existing tenant storage', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-sentinel-'));
+        const configRoot = path.join(root, 'config');
+        fs.mkdirSync(configRoot);
+        const envKeys = ['QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = configRoot;
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = path.join(root, 'storage');
+        try {
+            const first = new AgentHomeAccessTestService();
+            first.resolveProcessEnv(tenantCwd, {});
+            expect(first.commands.some(command => command.file === 'find')).to.equal(true);
+
+            const restarted = new AgentHomeAccessTestService();
+            restarted.resolveProcessEnv(tenantCwd, {});
+            expect(restarted.commands.some(command => command.file === 'find')).to.equal(false);
+        } finally {
+            envKeys.forEach((key, index) => {
+                const value = original[index];
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            });
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
