@@ -127,7 +127,16 @@ export namespace QaapTenantPersistentHome {
         const linkPath = resolveEntry(home, entry);
         const target = resolveEntry(persistentHome, entry);
         const current = lstat(linkPath);
-        const targetStats = lstat(target);
+        const targetState = lstatLinkTarget(target);
+        if (targetState.inaccessible) {
+            // The agent may own a private 0700 persistent HOME that this backend cannot search.
+            // Keep tmpfs state untouched, or install the expected link when HOME has no entry.
+            if (!current) {
+                fs.symlinkSync(target, linkPath);
+            }
+            return false;
+        }
+        const targetStats = targetState.stats;
         if (targetStats?.isSymbolicLink()) {
             throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
         }
@@ -199,6 +208,21 @@ export namespace QaapTenantPersistentHome {
             throw new Error(`Refusing a persistent agent HOME entry outside ${resolvedRoot}.`);
         }
         return resolvedEntry;
+    }
+
+    function lstatLinkTarget(entry: string): { stats?: fs.Stats; inaccessible: boolean } {
+        try {
+            return { stats: fs.lstatSync(entry), inaccessible: false };
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT') {
+                return { inaccessible: false };
+            }
+            if (code === 'EACCES') {
+                return { inaccessible: true };
+            }
+            throw error;
+        }
     }
 
     function tryChown(directory: string, owner: QaapTenantPersistentHomeOwner, chown: QaapTenantPersistentHomeChown): void {
