@@ -39,6 +39,8 @@ export interface QaapTenantPersistentHomeOwner {
     readonly gid: number;
 }
 
+export type QaapTenantPersistentHomeChown = (path: string, uid: number, gid: number) => void;
+
 /**
  * Links the credential entries of a volatile tenant HOME to a directory on the tenant's private,
  * disk-backed storage. Existing entries in HOME (written before the link existed) are moved over.
@@ -47,19 +49,31 @@ export interface QaapTenantPersistentHomeOwner {
  */
 export namespace QaapTenantPersistentHome {
 
-    export function link(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): void {
-        ensureDirectory(home, owner);
-        ensureDirectory(persistentHome, owner);
+    export function link(
+        home: string,
+        persistentHome: string,
+        owner?: QaapTenantPersistentHomeOwner,
+        chown: QaapTenantPersistentHomeChown = fs.chownSync
+    ): void {
+        ensureDirectory(home, owner, chown);
+        ensureDirectory(persistentHome);
+        if (owner) {
+            fs.chmodSync(persistentHome, 0o1700);
+        }
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
-            linkEntry(home, persistentHome, entry, true, owner);
+            linkEntry(home, persistentHome, entry, true, owner, chown);
         }
         for (const entry of QAAP_PERSISTENT_HOME_FILES) {
-            linkEntry(home, persistentHome, entry, false, owner);
+            linkEntry(home, persistentHome, entry, false, owner, chown);
         }
     }
 
     /** Create a directory path one component at a time and reject symlink components. */
-    export function ensureDirectory(directory: string, owner?: QaapTenantPersistentHomeOwner): void {
+    export function ensureDirectory(
+        directory: string,
+        owner?: QaapTenantPersistentHomeOwner,
+        chown: QaapTenantPersistentHomeChown = fs.chownSync
+    ): void {
         const resolved = path.resolve(directory);
         const root = path.parse(resolved).root;
         let current = root;
@@ -81,11 +95,27 @@ export namespace QaapTenantPersistentHome {
             }
         }
         if (owner) {
-            tryChown(resolved, owner);
+            tryChown(resolved, owner, chown);
+            const stats = lstat(resolved);
+            if (!stats || stats.isSymbolicLink() || !stats.isDirectory()) {
+                throw new Error(`Refusing to set permissions on a missing or symbolic-link directory: ${resolved}`);
+            }
+            const mode = stats.mode & 0o7777;
+            const privateMode = (mode | 0o700) & ~0o077;
+            if (privateMode !== mode) {
+                fs.chmodSync(resolved, privateMode);
+            }
         }
     }
 
-    function linkEntry(home: string, persistentHome: string, entry: string, directory: boolean, owner?: QaapTenantPersistentHomeOwner): void {
+    function linkEntry(
+        home: string,
+        persistentHome: string,
+        entry: string,
+        directory: boolean,
+        owner?: QaapTenantPersistentHomeOwner,
+        chown: QaapTenantPersistentHomeChown = fs.chownSync
+    ): void {
         const linkPath = resolveEntry(home, entry);
         const target = resolveEntry(persistentHome, entry);
         const current = lstat(linkPath);
@@ -95,8 +125,16 @@ export namespace QaapTenantPersistentHome {
         }
         if (current?.isSymbolicLink()) {
             if (fs.readlinkSync(linkPath) === target) {
-                if (directory && targetStats && !targetStats.isDirectory()) {
-                    throw new Error(`Persistent agent HOME entry is not a directory: ${target}`);
+                if (directory) {
+                    if (targetStats && !targetStats.isDirectory()) {
+                        throw new Error(`Persistent agent HOME entry is not a directory: ${target}`);
+                    }
+                    ensureDirectory(target);
+                    if (owner) {
+                        fs.chmodSync(target, 0o700);
+                    }
+                } else if (targetStats && owner) {
+                    fs.chmodSync(target, targetStats.mode & 0o7700);
                 }
                 return;
             }
@@ -108,7 +146,15 @@ export namespace QaapTenantPersistentHome {
             fs.rmSync(linkPath, { recursive: true, force: true });
         }
         if (directory) {
-            ensureDirectory(target, owner);
+            ensureDirectory(target);
+            if (owner) {
+                fs.chmodSync(target, 0o700);
+            }
+        } else if (owner) {
+            const targetStatsAfterCopy = lstat(target);
+            if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink()) {
+                fs.chmodSync(target, targetStatsAfterCopy.mode & 0o7700);
+            }
         }
         // A missing file target is fine: the CLI creates it through the link on first write.
         fs.symlinkSync(target, linkPath);
@@ -123,7 +169,7 @@ export namespace QaapTenantPersistentHome {
         return resolvedEntry;
     }
 
-    function tryChown(directory: string, owner: QaapTenantPersistentHomeOwner): void {
+    function tryChown(directory: string, owner: QaapTenantPersistentHomeOwner, chown: QaapTenantPersistentHomeChown): void {
         const stats = lstat(directory);
         if (!stats || stats.isSymbolicLink()) {
             throw new Error(`Refusing to change ownership of a missing or symbolic-link directory: ${directory}`);
@@ -132,7 +178,7 @@ export namespace QaapTenantPersistentHome {
             return;
         }
         try {
-            fs.chownSync(directory, owner.uid, owner.gid);
+            chown(directory, owner.uid, owner.gid);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'EPERM') {
                 throw error;

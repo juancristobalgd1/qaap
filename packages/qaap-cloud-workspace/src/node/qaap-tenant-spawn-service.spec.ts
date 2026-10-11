@@ -112,14 +112,20 @@ class TenantBackendAclTestService extends QaapTenantSpawnService {
 
 class AgentHomeAccessTestService extends TenantBackendAclTestService {
     accessCommandsSucceed = true;
+    readonly linkedHomes: Array<{ home: string; persistentHome: string; owner?: { uid: number; gid: number } }> = [];
 
     protected override runTenantAccessCommand(file: string, args: readonly string[]): boolean {
         this.commands.push({ file, args });
         return this.accessCommandsSucceed;
     }
 
-    protected override linkPersistentTenantHome(): void {
+    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): void {
+        this.linkedHomes.push({ home, persistentHome, ...(owner ? { owner } : {}) });
         // Keep this test focused on storage access preparation; the persistent-home spec covers links.
+    }
+
+    protected override ensureTenantBackendHomeAccess(): void {
+        // The production storage ACL commands are captured above; keep the test away from /tmp/qaap-home.
     }
 }
 
@@ -710,8 +716,9 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-no-chown-'));
         const configRoot = path.join(root, 'config');
         fs.mkdirSync(configRoot);
-        const envKeys = ['QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
         const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_BACKEND_PER_TENANT = '0';
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
         process.env.QAAP_AGENT_UID = '1001';
         process.env.QAAP_AGENT_GID = '1001';
@@ -720,7 +727,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const service = new AgentHomeAccessTestService();
         service.accessCommandsSucceed = false;
         try {
-            expect(() => service.resolveProcessEnv(tenantCwd, {})).to.throw(/Could not prepare.*agent uid 1001/i);
+            expect(() => service.resolveProcessEnv(tenantCwd, {})).to.throw(/private writable home for the agent/i);
         } finally {
             envKeys.forEach((key, index) => {
                 const value = original[index];
@@ -738,8 +745,9 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-sentinel-'));
         const configRoot = path.join(root, 'config');
         fs.mkdirSync(configRoot);
-        const envKeys = ['QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
         const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_BACKEND_PER_TENANT = '0';
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
         process.env.QAAP_AGENT_UID = '1001';
         process.env.QAAP_AGENT_GID = '1001';
@@ -749,10 +757,47 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
             const first = new AgentHomeAccessTestService();
             first.resolveProcessEnv(tenantCwd, {});
             expect(first.commands.some(command => command.file === 'find')).to.equal(true);
+            expect(first.commands.some(command => command.file === 'setfacl' && command.args.some(argument => argument.includes('g::---,o::---')))).to.equal(true);
 
             const restarted = new AgentHomeAccessTestService();
             restarted.resolveProcessEnv(tenantCwd, {});
             expect(restarted.commands.some(command => command.file === 'find')).to.equal(false);
+        } finally {
+            envKeys.forEach((key, index) => {
+                const value = original[index];
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            });
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps the per-tenant production HOME and agent identity when ACL preparation is enabled', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-per-tenant-'));
+        const configRoot = path.join(root, 'config');
+        fs.mkdirSync(configRoot);
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_BACKEND_PER_TENANT = '1';
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = configRoot;
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = path.join(root, 'storage');
+        const service = new AgentHomeAccessTestService();
+        try {
+            const env = service.resolveProcessEnv(tenantCwd, {});
+            expect(env.HOME).to.equal('/tmp/qaap-home');
+            expect(service.linkedHomes).to.deep.equal([{
+                home: '/tmp/qaap-home',
+                persistentHome: path.join(root, 'storage', 'home'),
+                owner: { uid: 1001, gid: 1001 },
+            }]);
+            expect(service.commands.some(command => command.file === 'setfacl')).to.equal(true);
+            expect(service.commands.some(command => command.file === 'find')).to.equal(true);
         } finally {
             envKeys.forEach((key, index) => {
                 const value = original[index];

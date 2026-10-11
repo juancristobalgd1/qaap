@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -89,69 +88,32 @@ describe('QaapTenantPersistentHome', () => {
         expect(fs.statSync(config).mode & 0o777).to.equal(0o750);
     });
 
-    it('lets the dropped agent create OpenCode config through inaccessible HOME and copied state', function () {
-        const backendUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
-        const backendGid = typeof process.getgid === 'function' ? process.getgid() : undefined;
-        if (backendUid === undefined || backendGid === undefined
-            || (backendUid === 0 && (process.platform !== 'linux' || !fs.existsSync('/usr/bin/setpriv')))) {
-            this.skip();
-            return;
-        }
+    it('continues preparing persistent links when chown returns EPERM (rootless profile without CAP_CHOWN)', () => {
+        fs.mkdirSync(path.join(home, '.config'), { recursive: true });
+        fs.writeFileSync(path.join(home, '.config', 'opencode.json'), '{}');
+        const deniedChowns: string[] = [];
+        const chownWithoutCapability = (entry: string): void => {
+            deniedChowns.push(entry);
+            throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' });
+        };
 
-        const agentUid = backendUid === 0 ? 1001 : backendUid;
-        const agentGid = backendUid === 0 ? 1001 : backendGid;
-        const owner = { uid: agentUid, gid: agentGid };
-        const config = path.join(persistentHome, '.config');
-        const existingConfig = path.join(config, 'opencode.json');
-        const local = path.join(home, '.local');
+        QaapTenantPersistentHome.link(home, persistentHome, { uid: 1001, gid: 1001 }, chownWithoutCapability);
 
-        fs.mkdirSync(config, { recursive: true });
-        fs.writeFileSync(existingConfig, '{}');
-        fs.mkdirSync(path.join(local, 'share'), { recursive: true });
-        fs.writeFileSync(path.join(local, 'share', 'agent-state.json'), '{}');
+        expect(deniedChowns).to.include(home);
+        expect(deniedChowns).not.to.include(persistentHome);
+        expect(fs.lstatSync(path.join(home, '.config')).isSymbolicLink()).to.equal(true);
+        expect(fs.readFileSync(path.join(persistentHome, '.config', 'opencode.json'), 'utf8')).to.equal('{}');
+        expect(fs.statSync(home).mode & 0o077).to.equal(0);
+        expect(fs.statSync(persistentHome).mode & 0o077).to.equal(0);
+    });
 
-        // On a root backend this is the observed root:root 0700 state. On an unprivileged test
-        // runner, mode 000 models the same effective denial without requiring chown privileges.
-        fs.chmodSync(root, 0o711);
-        fs.chmodSync(path.join(root, 'tmpfs'), 0o711);
-        fs.chmodSync(path.join(root, 'disk'), 0o711);
-        const inaccessibleMode = backendUid === 0 ? 0o700 : 0o000;
-        const inaccessibleFileMode = backendUid === 0 ? 0o600 : 0o000;
-        for (const entry of [
-            existingConfig,
-            path.join(local, 'share', 'agent-state.json'),
-        ]) {
-            fs.chmodSync(entry, inaccessibleFileMode);
-        }
-        for (const entry of [config, persistentHome, path.join(local, 'share'), local, home]) {
-            fs.chmodSync(entry, inaccessibleMode);
-        }
+    it('rejects a symlink in a persistent HOME root instead of operating through it', () => {
+        const target = path.join(root, 'outside');
+        fs.mkdirSync(target);
+        fs.mkdirSync(path.dirname(persistentHome), { recursive: true });
+        fs.symlinkSync(target, persistentHome);
 
-        QaapTenantPersistentHome.link(home, persistentHome, owner);
-
-        expect(fs.statSync(home).uid).to.equal(agentUid);
-        expect(fs.statSync(persistentHome).uid).to.equal(agentUid);
-        expect(fs.statSync(config).uid).to.equal(agentUid);
-        expect(fs.statSync(existingConfig).uid).to.equal(agentUid);
-        expect(fs.statSync(local).uid).to.equal(agentUid);
-        expect(fs.statSync(path.join(local, 'share')).uid).to.equal(agentUid);
-        expect(fs.statSync(path.join(local, 'share', 'agent-state.json')).uid).to.equal(agentUid);
-        expect(fs.statSync(home).mode & 0o700).to.equal(0o700);
-        expect(fs.statSync(config).mode & 0o700).to.equal(0o700);
-        expect(fs.statSync(existingConfig).mode & 0o600).to.equal(0o600);
-        expect(fs.statSync(path.join(local, 'share')).mode & 0o700).to.equal(0o700);
-        expect(fs.statSync(path.join(local, 'share', 'agent-state.json')).mode & 0o600).to.equal(0o600);
-        expect(fs.statSync(config).mode & 0o077).to.equal(0);
-        expect(fs.statSync(existingConfig).mode & 0o077).to.equal(0);
-
-        const opencodeConfig = path.join(home, '.config', 'opencode');
-        const command = backendUid === 0
-            ? spawnSync('/usr/bin/setpriv', [
-                '--reuid', String(agentUid), '--regid', String(agentGid), '--clear-groups', '--', '/bin/mkdir', opencodeConfig,
-            ], { encoding: 'utf8' })
-            : spawnSync('/bin/mkdir', [opencodeConfig], { encoding: 'utf8' });
-        expect(command.error?.message ?? command.stderr).to.equal('');
-        expect(command.status).to.equal(0);
-        expect(fs.statSync(opencodeConfig).uid).to.equal(agentUid);
+        expect(() => QaapTenantPersistentHome.link(home, persistentHome)).to.throw(/symlink/i);
+        expect(fs.readdirSync(target)).to.deep.equal([]);
     });
 });
