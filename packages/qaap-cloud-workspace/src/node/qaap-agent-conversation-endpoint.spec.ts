@@ -387,3 +387,86 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
         expect(h.applied).to.have.length(0);
     });
 });
+
+describe('QaapAgentConversationEndpoint project clone missing from disk', () => {
+    const cwd = '/workspace/repos/users/alice/octo/app';
+    const error = 'I cannot find the repository octo/app on the server and could not clone it again: no access.';
+
+    function buildEndpoint(recovered: unknown): { endpoint: QaapAgentConversationEndpoint; created: unknown[]; posted: string[]; recoveredCwds: string[] } {
+        const created: unknown[] = [];
+        const posted: string[] = [];
+        const recoveredCwds: string[] = [];
+        const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+        Object.assign(endpoint, {
+            clientRequestDedup: new Map<string, string>(),
+            clientRequestInFlight: new Set<string>(),
+            store: {
+                create: (request: unknown) => { created.push(request); return { id: 'conv-1', cwd }; },
+                get: () => ({ id: 'conv-1', cwd, ownerLogin: 'alice' }),
+                getActiveTaskIdsForConversation: () => [],
+                postUserMessage: (_id: string, content: string) => { posted.push(content); return { id: 'conv-1', messages: [] }; },
+            },
+            auth: {
+                ...fakeAuth(),
+                // The plain resolver denies a cwd whose clone is gone; the recovery re-clones it.
+                resolveOwnedRepositoryCwd: () => ({ kind: 'denied' }),
+            },
+            cloneRecovery: {
+                resolveOwnedRepositoryCwd: async (_ctx: unknown, rawCwd: string) => { recoveredCwds.push(rawCwd); return recovered; },
+            },
+            requireAuth: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+        });
+        return { endpoint, created, posted, recoveredCwds };
+    }
+
+    const create = (endpoint: QaapAgentConversationEndpoint, res: FakeRes): Promise<void> =>
+        (endpoint as unknown as { handleCreate(req: unknown, res: unknown): Promise<void> })
+            .handleCreate({ body: { cwd: 'github:octo/app', message: 'fix it' } }, res);
+    const post = (endpoint: QaapAgentConversationEndpoint, res: FakeRes): Promise<void> =>
+        (endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> })
+            .handlePostMessage({ params: { id: 'conv-1' }, body: { content: 'and now this' } }, res);
+
+    it('starts a new conversation in the re-cloned project', async () => {
+        const { endpoint, created } = buildEndpoint({ kind: 'ok', cwd });
+        const res = fakeRes();
+        await create(endpoint, res);
+        expect(res.statusCode).to.equal(201);
+        expect((created[0] as { cwd: string }).cwd).to.equal(cwd);
+    });
+
+    it('answers a readable error instead of a cwd error when the clone cannot be restored', async () => {
+        const { endpoint, created } = buildEndpoint({ kind: 'clone-failed', error });
+        const res = fakeRes();
+        await create(endpoint, res);
+        expect(res.statusCode).to.equal(422);
+        expect(res.body).to.deep.equal({ error, code: 'repository_clone_unavailable' });
+        expect(created).to.deep.equal([]);
+    });
+
+    it('re-clones the project of an existing conversation before the next message', async () => {
+        const { endpoint, posted, recoveredCwds } = buildEndpoint({ kind: 'ok', cwd });
+        const res = fakeRes();
+        await post(endpoint, res);
+        expect(recoveredCwds).to.deep.equal([cwd]);
+        expect(res.statusCode).to.equal(202);
+        expect(posted).to.deep.equal(['and now this']);
+    });
+
+    it('fails a follow-up message with the readable error when the clone cannot be restored', async () => {
+        const { endpoint, posted } = buildEndpoint({ kind: 'clone-failed', error });
+        const res = fakeRes();
+        await post(endpoint, res);
+        expect(res.statusCode).to.equal(422);
+        expect(res.body).to.deep.equal({ error, code: 'repository_clone_unavailable' });
+        expect(posted).to.deep.equal([]);
+    });
+
+    it('does not block a follow-up message on anything but a failed restore', async () => {
+        // A worktree conversation's cwd is not a project clone: the resolver denies it, the send proceeds.
+        const { endpoint, posted } = buildEndpoint({ kind: 'denied' });
+        const res = fakeRes();
+        await post(endpoint, res);
+        expect(res.statusCode).to.equal(202);
+        expect(posted).to.deep.equal(['and now this']);
+    });
+});

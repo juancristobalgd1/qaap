@@ -759,3 +759,60 @@ describe('QaapGithubOauthEndpoint create repository when the clone fails', () =>
         expect(error).to.contain('Open it from your repository list to clone it');
     });
 });
+
+describe('QaapGithubOauthEndpoint.restoreMissingRepositoryClone', () => {
+    const ctx = { kind: 'authenticated', userLogin: 'alice', sessionId: 's', session: { accessToken: 'tok', user: { login: 'alice' } } } as const;
+    const repository = { owner: 'octo', name: 'app', fullName: 'octo/app', cloneUrl: 'https://github.com/octo/app.git' };
+
+    function build(patch: Record<string, unknown>): { endpoint: QaapGithubOauthEndpoint; ensured: unknown[][]; remembered: unknown[] } {
+        const ensured: unknown[][] = [];
+        const remembered: unknown[] = [];
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            projectSessions: { isRepositoryRemoved: () => false },
+            resolveAccessibleRepository: async () => repository,
+            ensureRepositoryWorkspace: async (...args: unknown[]) => { ensured.push(args); return '/repos/users/alice/octo/app'; },
+            rememberGithubCloneSession: (_login: string, repo: unknown) => { remembered.push(repo); },
+            ...patch,
+        });
+        return { endpoint, ensured, remembered };
+    }
+
+    const restore = (endpoint: QaapGithubOauthEndpoint): Promise<string> =>
+        (endpoint as unknown as {
+            restoreMissingRepositoryClone(c: typeof ctx, owner: string, repo: string): Promise<string>;
+        }).restoreMissingRepositoryClone(ctx, 'octo', 'app');
+
+    it('clones the repository with the caller\'s own token into their canonical path, like opening it', async () => {
+        const { endpoint, ensured, remembered } = build({});
+        expect(await restore(endpoint)).to.equal('/repos/users/alice/octo/app');
+        expect(ensured).to.have.length(1);
+        expect(ensured[0].slice(0, 3)).to.deep.equal([repository, 'tok', 'alice']);
+        expect(remembered).to.deep.equal([repository]);
+    });
+
+    it('refuses a repository the caller can no longer reach on GitHub', async () => {
+        const { endpoint, ensured } = build({ resolveAccessibleRepository: async () => undefined });
+        let message = '';
+        await restore(endpoint).catch(error => { message = error.message; });
+        expect(message).to.match(/no longer exists on GitHub|do not have access/);
+        expect(ensured).to.deep.equal([]);
+    });
+
+    it('does not resurrect a project the user removed', async () => {
+        const { endpoint, ensured } = build({ projectSessions: { isRepositoryRemoved: () => true } });
+        let message = '';
+        await restore(endpoint).catch(error => { message = error.message; });
+        expect(message).to.match(/removed/);
+        expect(ensured).to.deep.equal([]);
+    });
+
+    it('turns a git failure into a readable reason without credentials', async () => {
+        const { endpoint } = build({
+            ensureRepositoryWorkspace: async () => { throw new Error('fatal: unable to access \'https://x-access-token:secret@github.com/octo/app.git/\': Could not resolve host: github.com'); },
+        });
+        let message = '';
+        await restore(endpoint).catch(error => { message = error.message; });
+        expect(message).to.equal('Could not download the repository from GitHub. Check that GitHub is reachable and try again.');
+    });
+});
