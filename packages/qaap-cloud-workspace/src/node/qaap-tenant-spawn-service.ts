@@ -511,6 +511,36 @@ export class QaapTenantSpawnService {
         return !result.error && result.status === 0;
     }
 
+    protected runTenantAccessCommandAsync(file: string, args: readonly string[], timeoutMs = QAAP_TENANT_AGENT_ACCESS_COMMAND_TIMEOUT_MS): Promise<boolean> {
+        return new Promise(resolve => {
+            let finished = false;
+            let timer: NodeJS.Timeout | undefined;
+            const finish = (success: boolean): void => {
+                if (finished) {
+                    return;
+                }
+                finished = true;
+                if (timer) {
+                    clearTimeout(timer);
+                }
+                resolve(success);
+            };
+            let child: ChildProcess;
+            try {
+                child = spawn(file, [...args], { stdio: 'ignore' });
+            } catch {
+                finish(false);
+                return;
+            }
+            timer = setTimeout(() => {
+                child.kill('SIGKILL');
+                finish(false);
+            }, timeoutMs);
+            child.once('error', () => finish(false));
+            child.once('close', (code, signal) => finish(code === 0 && signal === null));
+        });
+    }
+
     /**
      * Async lifecycle gate for Docker mode. Every asynchronous process owner must await this before
      * calling the synchronous child-process APIs. A rejected Docker create/inspect is propagated;
@@ -521,6 +551,7 @@ export class QaapTenantSpawnService {
         this.assertTenantCwdInProduction(cwd);
         if (!this.isContainerIsolationEnabled()) {
             this.prepareTenantIsolation(cwd);
+            await this.prepareTenantBackendAgentHomeAsync();
             return;
         }
         const segment = this.resolveTenantSegment(cwd);
@@ -532,6 +563,36 @@ export class QaapTenantSpawnService {
             throw new Error('Container isolation is enabled but the Docker orchestrator is unavailable.');
         }
         await this.dockerOrchestrator.ensureTenantContainer(segment, tenantRoot);
+        await this.prepareTenantBackendAgentHomeAsync();
+    }
+
+    /** Prepare the cold tenant-backend HOME without blocking the caller's event loop. */
+    protected async prepareTenantBackendAgentHomeAsync(): Promise<void> {
+        if (!this.isTenantBackendMode()) {
+            return;
+        }
+        const home = QAAP_TENANT_BACKEND_HOME;
+        const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
+        const uid = identity?.uid !== undefined && identity.uid > 0 ? identity.uid : undefined;
+        const root = QaapTenantAgentStorageEnv.resolveRoot(
+            process.env,
+            QaapTenantAgentStorageEnv.defaultTenantBackendRoot(process.env),
+        );
+        try {
+            if (root) {
+                await this.ensureTenantAgentStorageAsync(root, uid);
+                await this.ensurePersistentTenantBackendHomeAsync(home, root, identity);
+            }
+            if (uid !== undefined) {
+                await this.ensureTenantBackendHomeAccessAsync(home, uid, identity?.gid ?? uid);
+            }
+        } catch (error) {
+            if (uid !== undefined) {
+                throw this.agentHomeAccessError(error);
+            }
+            console.warn(`[qaap-security] could not prepare tenant backend HOME ${home}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     /** Recursive ownership repair seam, kept separate so the once-per-backend behavior is testable. */
