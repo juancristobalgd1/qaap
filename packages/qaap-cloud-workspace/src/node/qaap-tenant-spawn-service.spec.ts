@@ -43,6 +43,12 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
         this.preparedAgentStorageRoots.add(root);
     }
 
+    protected override grantTenantAgentStorageAccess(_configRoot: string, _root: string, _uid: number): void { }
+    protected override ensureTenantBackendHomeAccess(_home: string, _uid: number): void { }
+    protected override applyPersistentAgentHomeEntryAcls(_persistentHome: string, _uid: number): void { }
+    protected override repairTenantAgentStorageTrees(_root: string, _uid: number, _changedEntries: readonly string[]): void { }
+    protected override applyPrivateAgentDirectoryAcl(_directory: string, _uid: number, _defaults: boolean): void { }
+
     /** Persistent HOME links the service requested (never touches the real filesystem in tests). */
     linkedHomes: Array<{ home: string; persistentHome: string; owner?: { uid: number; gid: number } }> = [];
 
@@ -640,6 +646,8 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
     const original = process.env.QAAP_AGENT_UID_PER_USER;
     const originalContainerHome = process.env.QAAP_TENANT_CONTAINER_HOME;
     const originalTenantBackendMode = process.env.QAAP_TENANT_BACKEND_MODE;
+    const originalTenantConfigRoot = process.env.QAAP_TENANT_CONFIG_ROOT;
+    const originalTenantAgentStorageRoot = process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
     afterEach(() => {
         if (original === undefined) {
             delete process.env.QAAP_AGENT_UID_PER_USER;
@@ -655,6 +663,16 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
             delete process.env.QAAP_TENANT_BACKEND_MODE;
         } else {
             process.env.QAAP_TENANT_BACKEND_MODE = originalTenantBackendMode;
+        }
+        for (const [key, value] of [
+            ['QAAP_TENANT_CONFIG_ROOT', originalTenantConfigRoot],
+            ['QAAP_TENANT_AGENT_STORAGE_ROOT', originalTenantAgentStorageRoot],
+        ] as const) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
         }
     });
 
