@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { QaapTenantPersistentHome } from './qaap-tenant-persistent-home';
+import { QaapTenantPersistentHome, type QaapTenantPersistentHomeLinkResult } from './qaap-tenant-persistent-home';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv; shell?: boolean } }
@@ -52,9 +52,9 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     /** Persistent HOME links the service requested (never touches the real filesystem in tests). */
     linkedHomes: Array<{ home: string; persistentHome: string; owner?: { uid: number; gid: number } }> = [];
 
-    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): string[] {
+    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): QaapTenantPersistentHomeLinkResult {
         this.linkedHomes.push({ home, persistentHome, ...(owner ? { owner } : {}) });
-        return [];
+        return { changedEntries: [], complete: true };
     }
 
     protected override isBackendRoot(): boolean {
@@ -136,10 +136,10 @@ class AgentHomeAccessTestService extends TenantBackendAclTestService {
         return '/usr/bin/setpriv';
     }
 
-    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): string[] {
+    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): QaapTenantPersistentHomeLinkResult {
         this.linkedHomes.push({ home, persistentHome, ...(owner ? { owner } : {}) });
         // Keep this test focused on storage access preparation; the persistent-home spec covers links.
-        return [];
+        return { changedEntries: [], complete: true };
     }
 
     protected override ensureTenantBackendHomeAccess(_home: string, uid: number): void {
@@ -801,9 +801,9 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const svc = new class extends TestTenantSpawnService {
             linkAttempts = 0;
 
-            protected override linkPersistentTenantHome(): string[] {
+            protected override linkPersistentTenantHome(): QaapTenantPersistentHomeLinkResult {
                 this.linkAttempts++;
-                return Object.assign([] as string[], { complete: false });
+                return { changedEntries: [], complete: false };
             }
         }();
         svc.backendRoot = true;
@@ -904,12 +904,12 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
                 });
             }
 
-            protected override linkPersistentTenantHome(_requestedHome: string, target: string, owner?: { uid: number; gid: number }): string[] {
+            protected override linkPersistentTenantHome(_requestedHome: string, target: string, owner?: { uid: number; gid: number }): QaapTenantPersistentHomeLinkResult {
                 const deniedChown = (entry: string): void => {
                     this.deniedChowns.push(entry);
                     throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' });
                 };
-                return QaapTenantPersistentHome.link(home, target, owner, deniedChown);
+                return QaapTenantPersistentHome.linkWithStatus(home, target, owner, deniedChown);
             }
         }();
         try {

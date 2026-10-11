@@ -196,7 +196,7 @@ describe('QaapTenantPersistentHome', () => {
             return actualLstatSync(entry);
         }) as typeof fs.lstatSync);
 
-        const result = QaapTenantPersistentHome.link(home, persistentHome) as unknown as { complete?: boolean };
+        const result = QaapTenantPersistentHome.linkWithStatus(home, persistentHome);
         expect(result.complete).to.equal(false);
         expect(fs.lstatSync(config).isDirectory()).to.equal(true);
         expect(fs.readFileSync(path.join(config, 'settings.json'), 'utf8')).to.equal('temporary');
