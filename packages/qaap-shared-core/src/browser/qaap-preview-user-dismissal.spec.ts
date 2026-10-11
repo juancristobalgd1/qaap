@@ -119,4 +119,43 @@ describe('qaap-preview-user-dismissal', () => {
         expect(opens.map(event => event.type)).to.deep.equal(['qaap-bootstrap-preview-opened']);
         expect(isQaapPreviewDismissedByUser('/srv/users/ana/acme/shop')).to.equal(false);
     });
+
+    it('a run that restarts on a reallocated port (busy :3000 -> :3001) does not reopen a closed preview', async () => {
+        const opened: string[] = [];
+        const ctx = {
+            _descriptor: { rootUri: new URI('file:///srv/users/ana/acme/qaap') },
+            previewAutoOpenGate: undefined,
+            activePreviewClaim: undefined,
+            activePreviewConversationId: 'conv',
+            _previewUrl: undefined as string | undefined,
+            _forwardedPorts: [],
+            forwardedPortsEmitter: { fire: () => undefined },
+            ensurePreviewProcessIdForConversation: () => undefined,
+            extractPort: () => undefined,
+            claimDevPreviewPort: async () => undefined,
+            reconcileSupersededPreviewClaim: async () => undefined,
+            resolvePrimaryPreviewTarget: (port: number, url: string) => ({ port, url }),
+            persistPhase: () => undefined,
+            setPhase: () => undefined,
+            syncHubSession: () => undefined,
+            markPortOpened: () => undefined,
+            openPreviewWidget: async (url: string) => { opened.push(url); },
+            syncMiniBrowserPreviewSuspensionAfterOpen: () => undefined,
+        } as unknown as QaapProjectBootstrapServiceContext;
+        const mutable = ctx as unknown as {
+            mayAutoOpenPreviewNow: () => boolean;
+            openPreview: (url: string, primary?: boolean, options?: { auto?: boolean }) => Promise<void>;
+        };
+        mutable.mayAutoOpenPreviewNow = () => timeline.mayAutoOpenPreviewNowExtracted(ctx);
+        mutable.openPreview = (url, primary, options) => activity.openPreviewExtracted(ctx, url, primary, options);
+
+        markQaapPreviewDismissedByUser('/srv/users/ana/acme/qaap');
+        // The restarted server is found ready on its new port (attach / fallback path).
+        timeline.recordForwardedPortExtracted(ctx, 3001, 'http://127.0.0.1:3001/', { alreadyReady: true });
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(opened).to.deep.equal([]);
+        expect(ctx._previewUrl).to.contain('3001');
+        expect(isQaapPreviewDismissedByUser('/srv/users/ana/acme/qaap')).to.equal(true);
+    });
 });
