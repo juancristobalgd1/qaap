@@ -291,6 +291,49 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
+    it('does not grant traversal through an external storage parent owned by another uid', () => {
+        class OwnedParentAclTestService extends TenantBackendAclTestService {
+            foreignParent = '';
+
+            grant(configRoot: string, root: string, uid: number): void {
+                this.grantTenantAgentStorageAccess(configRoot, root, uid);
+            }
+
+            protected override lstatIfPresent(entry: string): fs.Stats | undefined {
+                const stats = super.lstatIfPresent(entry);
+                if (stats && path.resolve(entry) === this.foreignParent) {
+                    return new Proxy(stats, {
+                        get: (target, property, receiver) => property === 'uid'
+                            ? this.backendOwnerUid() + 1
+                            : Reflect.get(target, property, receiver),
+                    });
+                }
+                return stats;
+            }
+        }
+
+        const service = new OwnedParentAclTestService();
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-storage-owner-acl-'));
+        const configRoot = path.join(tempRoot, 'config');
+        const foreignParent = path.join(tempRoot, 'foreign');
+        const root = path.join(foreignParent, 'storage');
+        fs.mkdirSync(configRoot);
+        fs.mkdirSync(root, { recursive: true });
+        service.foreignParent = foreignParent;
+        try {
+            service.grant(configRoot, root, 1001);
+
+            const traversalCommands = service.commands.filter(command => command.file === 'setfacl'
+                && command.args.includes('-m')
+                && command.args.some(argument => argument === 'u:1001:--x'));
+            expect(traversalCommands.some(command => command.args.includes(root))).to.equal(true);
+            expect(traversalCommands.some(command => command.args.includes(foreignParent))).to.equal(false);
+            expect(traversalCommands.some(command => command.args.includes(path.parse(root).root))).to.equal(false);
+        } finally {
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+    });
+
     it('allows a dropped uid to create OpenCode config from root-owned 0700 HOME without CAP_CHOWN', function () {
         const backendUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
         if (process.platform !== 'linux' || backendUid !== 0
