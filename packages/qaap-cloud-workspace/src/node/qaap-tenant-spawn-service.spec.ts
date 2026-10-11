@@ -1038,6 +1038,67 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         }
     });
 
+    it('repairs HOME and storage traversal ACLs and upgrades the storage sentinel', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-traversal-'));
+        const configRoot = path.join(root, 'config');
+        const storageRoot = path.join(configRoot, '.qaap-agent-storage');
+        const home = path.join(root, 'qaap-home');
+        fs.mkdirSync(path.join(storageRoot, 'cache'), { recursive: true });
+        fs.mkdirSync(path.join(storageRoot, 'data'), { recursive: true });
+        fs.mkdirSync(path.join(storageRoot, 'home'), { recursive: true });
+        fs.mkdirSync(configRoot, { recursive: true });
+        fs.mkdirSync(path.join(home, '.config'), { recursive: true, mode: 0o700 });
+        const oldMarker = path.join(storageRoot, '.qaap-agent-access-v1-1001');
+        fs.writeFileSync(oldMarker, '1:1001');
+        const marker = path.join(storageRoot, '.qaap-agent-access-v2-1001');
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_BACKEND_PER_TENANT = '0';
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = configRoot;
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = storageRoot;
+        const service = new class extends AgentHomeAccessTestService {
+            storageDirectoryReads = 0;
+
+            constructor() {
+                super();
+                this.homeAccessRoot = home;
+            }
+
+            protected override readAgentAccessDirectory(directory: string): string[] {
+                if (directory.startsWith(storageRoot + path.sep)) {
+                    this.storageDirectoryReads++;
+                }
+                return super.readAgentAccessDirectory(directory);
+            }
+        }();
+        try {
+            service.resolveProcessEnv(tenantCwd, {});
+
+            const hasAcl = (target: string, acl: string): boolean => service.commands.some(command => command.file === 'setfacl'
+                && command.args.includes(target)
+                && command.args.includes('-m')
+                && command.args.some(argument => argument.includes(acl)));
+            expect(hasAcl(home, 'u:1001:rwx,g::---,o::---')).to.equal(true);
+            expect(hasAcl(storageRoot, 'u:1001:--x')).to.equal(true);
+            expect(hasAcl(configRoot, 'u:1001:--x')).to.equal(true);
+            expect(service.storageDirectoryReads).to.be.greaterThan(0);
+            expect(fs.readFileSync(marker, 'utf8')).to.equal('2:1001');
+        } finally {
+            envKeys.forEach((key, index) => {
+                const value = original[index];
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            });
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('uses a persistent access-repair sentinel instead of rescanning existing tenant storage', () => {
         class AccessScanTestService extends AgentHomeAccessTestService {
             directoryReads = 0;
