@@ -53,13 +53,21 @@ export class QaapLoginContribution implements FrontendApplicationContribution {
             window.dispatchEvent(new Event('qaap-auth-open-first-repo'));
             this.requestWorkbenchLayoutRefresh();
         } else if (oauthResult === 'error') {
-            const detail = oauthErrorReason
-                ? nls.localize('qaap/auth/githubConnectFailedWithReason', 'GitHub sign-in failed: {0}', oauthErrorReason)
-                : nls.localize('qaap/auth/githubConnectFailed', 'GitHub sign-in failed.');
-            this.messages.error(detail);
+            this.messages.error(this.describeOAuthFailure(oauthErrorReason));
             console.error('[qaap-auth] OAuth callback returned error.', oauthErrorReason ?? '(no reason)');
         }
         await this.syncLoginGateWithSession();
+    }
+
+    protected describeOAuthFailure(reason: string | undefined): string {
+        if (reason === 'state_lost') {
+            // Reported only after the backend already restarted the sign-in once by itself.
+            return nls.localize('qaap/auth/githubConnectStateLost',
+                'GitHub sign-in could not be completed: it expired or was finished in another browser or app. Sign in again from this browser.');
+        }
+        return reason
+            ? nls.localize('qaap/auth/githubConnectFailedWithReason', 'GitHub sign-in failed: {0}', reason)
+            : nls.localize('qaap/auth/githubConnectFailed', 'GitHub sign-in failed.');
     }
 
     protected requestWorkbenchLayoutRefresh(): void {
