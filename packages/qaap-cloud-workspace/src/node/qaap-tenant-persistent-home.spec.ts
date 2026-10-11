@@ -162,6 +162,26 @@ describe('QaapTenantPersistentHome', () => {
         expect(fs.readlinkSync(path.join(home, '.config'))).to.equal(target);
     });
 
+    it('tolerates EACCES inspecting a HOME entry already owned by the agent', () => {
+        fs.mkdirSync(path.join(home, '.config'), { recursive: true });
+        fs.mkdirSync(path.join(persistentHome, '.config'), { recursive: true });
+        fs.chmodSync(home, 0o700);
+        fs.symlinkSync(path.join(persistentHome, '.config'), path.join(home, '.config'));
+
+        const homeConfig = path.join(home, '.config');
+        const persistentConfig = path.join(persistentHome, '.config');
+        const actualLstatSync = fs.lstatSync;
+        sinon.stub(fs, 'lstatSync').callsFake(((entry: fs.PathLike) => {
+            const resolved = path.resolve(String(entry));
+            if (resolved === homeConfig || resolved === persistentConfig) {
+                throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+            }
+            return actualLstatSync(entry);
+        }) as typeof fs.lstatSync);
+
+        expect(() => QaapTenantPersistentHome.link(home, persistentHome, { uid: 1001, gid: 1001 })).not.to.throw();
+    });
+
     it('skips symlinks and entries on another device while migrating a preexisting HOME directory', () => {
         const config = path.join(home, '.config');
         const outside = path.join(root, 'outside.json');
