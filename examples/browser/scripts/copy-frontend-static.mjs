@@ -6,10 +6,11 @@
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createGzip } from 'node:zlib';
+import { constants as zlibConstants, createBrotliCompress, createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
 
@@ -41,9 +42,64 @@ if (!copyIfExists(srcIndex, libIndex)) {
     console.warn('[qaap] src-gen/frontend/index.html missing — run: npx theia generate');
 }
 
-const BUNDLE_SCRIPT = '<script type="text/javascript" src="./bundle.js" charset="utf-8"></script>';
+// The generated index loads the entry directly; earlier syncs may already have stamped or hashed it.
+const BUNDLE_SCRIPT = /<script type="text\/javascript" src="\.\/bundle(?:-[A-Z0-9]+)?\.js(?:\?[^"]*)?" charset="utf-8"><\/script>/;
 const GATE_SCRIPT = '<script type="text/javascript" src="./qaap-login-gate.js" charset="utf-8"></script>';
 const BUILD_VERSION = Date.now().toString(36);
+
+function readEntryAssetManifest(manifestPath) {
+    try {
+        return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch {
+        return undefined;
+    }
+}
+
+function publishHashedEntryAssets(entryPrefix) {
+    const assetManifestPath = path.join(libFrontend, `.qaap-${entryPrefix}-assets.json`);
+    const sources = {
+        javascript: path.join(libFrontend, `${entryPrefix}.js`),
+        stylesheet: path.join(libFrontend, `${entryPrefix}.css`),
+    };
+    if (!Object.values(sources).every(source => fs.existsSync(source))) {
+        return undefined;
+    }
+
+    const previous = readEntryAssetManifest(assetManifestPath);
+    const current = {};
+    for (const [kind, source] of Object.entries(sources)) {
+        const bytes = fs.readFileSync(source);
+        const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 12).toUpperCase();
+        const extension = path.extname(source);
+        const filename = `${entryPrefix}-${hash}${extension}`;
+        const destination = path.join(libFrontend, filename);
+        if (!fs.existsSync(destination)) {
+            fs.writeFileSync(destination, bytes);
+        }
+        current[kind] = `./${filename}`;
+    }
+
+    const keep = new Set([
+        ...Object.values(current),
+        ...Object.values(previous?.current ?? {}),
+    ].map(value => path.basename(value)));
+    const oldHashedAsset = new RegExp(`^${entryPrefix}-[A-F0-9]{12}\\.(?:js|css)(?:\\.(?:gz|br))?$`);
+    for (const name of fs.readdirSync(libFrontend)) {
+        if (oldHashedAsset.test(name) && !keep.has(name.replace(/\.(?:gz|br)$/, ''))) {
+            fs.unlinkSync(path.join(libFrontend, name));
+        }
+    }
+
+    const manifest = {
+        buildVersion: BUILD_VERSION,
+        current,
+        previous: previous?.current,
+    };
+    const temporaryManifest = `${assetManifestPath}.tmp`;
+    fs.writeFileSync(temporaryManifest, `${JSON.stringify(manifest)}\n`, 'utf8');
+    fs.renameSync(temporaryManifest, assetManifestPath);
+    return manifest;
+}
 
 function patchIndexForLoginGate(indexPath) {
     if (!fs.existsSync(indexPath) || !fs.existsSync(path.join(libFrontend, 'qaap-login-gate.js'))) {
@@ -51,9 +107,9 @@ function patchIndexForLoginGate(indexPath) {
     }
     let html = fs.readFileSync(indexPath, 'utf8');
     if (html.includes('qaap-login-gate.js')) {
-        return;
-    }
-    if (html.includes(BUNDLE_SCRIPT)) {
+        // Already gated: only make sure no direct bundle load survived an earlier sync.
+        html = html.replace(BUNDLE_SCRIPT, '');
+    } else if (BUNDLE_SCRIPT.test(html)) {
         html = html.replace(BUNDLE_SCRIPT, GATE_SCRIPT);
     } else {
         html = html.replace('</body>', `    ${GATE_SCRIPT}\n</body>`);
@@ -61,13 +117,11 @@ function patchIndexForLoginGate(indexPath) {
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
-function patchIndexForFreshAssets(indexPath) {
-    const bundleCss = path.join(libFrontend, 'bundle.css');
-    const bundleJs = path.join(libFrontend, 'bundle.js');
-    if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss) || !fs.existsSync(bundleJs)) {
+function patchIndexForFreshAssets(indexPath, entryAssets) {
+    if (!fs.existsSync(indexPath) || !entryAssets) {
         return;
     }
-    const html = patchFreshAssets(fs.readFileSync(indexPath, 'utf8'), BUILD_VERSION);
+    const html = patchFreshAssets(fs.readFileSync(indexPath, 'utf8'), BUILD_VERSION, entryAssets.current);
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
@@ -126,24 +180,24 @@ function verifyFrontendChunkGraph() {
 // Fail before stamping index.html: a stamped shell pointing at a broken bundle is what a
 // browser would pick up on the next reload.
 verifyFrontendChunkGraph();
+const entryAssets = publishHashedEntryAssets('bundle');
+// The gate must be in place before the index is patched to load it instead of the bundle.
+copyIfExists(path.join(qaapRoot, 'resources', 'qaap-login-gate.js'), path.join(libFrontend, 'qaap-login-gate.js'));
 patchIndexForLoginGate(libIndex);
-// The development browser can retain generated assets across reloads. Give the
-// non-hashed entry points (CSS, JS bundle, login gate) a build version so the new
-// visual contract is fetched as one coherent build. Chunks below the bundle are
-// content-hashed and need no stamp (see verifyFrontendChunkGraph).
-patchIndexForFreshAssets(libIndex);
+// bundle.js/bundle.css are republished as content-addressed `bundle-<hash>` copies (served
+// immutable, like the chunks below them). The small login gate keeps a build version so the
+// HTML and the authentication handoff update together.
+patchIndexForFreshAssets(libIndex, entryAssets);
 // `theia start` serves the generated source index directly in development, while
 // the bundled/static server serves lib/frontend/index.html. Keep both entry points
 // versioned so a browser cannot bypass the fresh bundle through the dev server.
 patchIndexForLoginGate(srcIndex);
-patchIndexForFreshAssets(srcIndex);
+patchIndexForFreshAssets(srcIndex, entryAssets);
 copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 // Service worker must sit at the same scope as index.html so it can control the whole app.
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));
 
 try {
-    const gate = path.join(qaapRoot, 'resources', 'qaap-login-gate.js');
-    copyIfExists(gate, path.join(libFrontend, 'qaap-login-gate.js'));
     const legal = path.join(qaapRoot, 'resources', 'legal');
     if (fs.existsSync(legal)) {
         fs.cpSync(legal, path.join(libFrontend, 'legal'), { recursive: true });
@@ -157,52 +211,59 @@ if (fs.existsSync(media)) {
     fs.cpSync(media, path.join(libFrontend, 'media'), { recursive: true });
 }
 
-// Pre-compress large assets so the Express server (serveGzipped) can serve .gz directly.
-// This converts the 37 MB bundle.js into ~9 MB — a critical mobile performance win.
-const GZIP_EXTS = /\.(js|css|wasm|svg|html|json)$/i;
-const GZIP_MIN_BYTES = 1024; // skip tiny files where gzip overhead isn't worth it
-// Level 9 costs several times the CPU of level 6 for ~1-2% smaller output: only worth it
-// for production bundles. Development builds (`npm run bundle`) use level 6. serveGzipped
-// falls back to the uncompressed file when no .gz companion exists, so either is safe.
+// Pre-compress static assets. gzip covers everything Theia's serveGzipped handler serves; the
+// content-hashed entry/chunk files also get Brotli, which QaapFrontendStaticServer negotiates
+// from Accept-Encoding before Theia's gzip-only handler (~15-20% fewer bytes on a phone).
+const COMPRESSIBLE_EXTS = /\.(js|css|wasm|svg|html|json)$/i;
+const BROTLI_TARGET = /^(?:bundle|chunk)-[A-Z0-9]+\.(?:js|css)$/;
+const PRECOMPRESS_MIN_BYTES = 1024; // skip tiny files where compression overhead isn't worth it
 const PRODUCTION = process.argv.includes('--production')
     || process.argv.some((arg, i, argv) => arg === '--mode=production' || (arg === '--mode' && argv[i + 1] === 'production'))
     || process.env.NODE_ENV === 'production';
 const GZIP_LEVEL = PRODUCTION ? 9 : 6;
+const BROTLI_QUALITY = PRODUCTION ? 8 : 4;
 
-async function gzipFile(filePath) {
+async function precompressFile(filePath, encoding) {
     const stat = fs.statSync(filePath);
-    if (stat.size < GZIP_MIN_BYTES) { return; }
-    const gzPath = filePath + '.gz';
+    if (stat.size < PRECOMPRESS_MIN_BYTES) { return; }
+    const compressedPath = `${filePath}.${encoding}`;
     const srcMtime = stat.mtimeMs;
-    if (fs.existsSync(gzPath)) {
-        const gzMtime = fs.statSync(gzPath).mtimeMs;
-        if (gzMtime >= srcMtime) { return; } // already up-to-date
+    if (fs.existsSync(compressedPath)) {
+        const compressedMtime = fs.statSync(compressedPath).mtimeMs;
+        if (compressedMtime >= srcMtime) { return; }
     }
+    const compressor = encoding === 'br'
+        ? createBrotliCompress({ params: { [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY } })
+        : createGzip({ level: GZIP_LEVEL });
     await pipeline(
         fs.createReadStream(filePath),
-        createGzip({ level: GZIP_LEVEL }),
-        fs.createWriteStream(gzPath)
+        compressor,
+        fs.createWriteStream(compressedPath)
     );
 }
 
-const gzipTargets = fs.readdirSync(libFrontend)
-    .filter(f => GZIP_EXTS.test(f) && !f.endsWith('.gz'))
+const compressionTargets = fs.readdirSync(libFrontend)
+    .filter(f => COMPRESSIBLE_EXTS.test(f) && !f.startsWith('.'))
     .map(f => path.join(libFrontend, f));
 
-const gzipResults = await Promise.allSettled(gzipTargets.map(gzipFile));
-const failed = gzipResults.filter(r => r.status === 'rejected');
+const compressionResults = await Promise.allSettled(compressionTargets.flatMap(filePath => [
+    BROTLI_TARGET.test(path.basename(filePath)) ? precompressFile(filePath, 'br') : Promise.resolve(),
+    precompressFile(filePath, 'gz'),
+]));
+const failed = compressionResults.filter(r => r.status === 'rejected');
 if (failed.length) {
-    console.warn('[qaap] gzip failed for some files:', failed.map(r => r.reason).join(', '));
+    console.warn('[qaap] static precompression failed for some files:', failed.map(r => r.reason).join(', '));
 }
-
-const compressed = gzipTargets.filter((_, i) => gzipResults[i].status === 'fulfilled');
+const compressed = compressionTargets.filter((_, i) =>
+    compressionResults[i * 2].status === 'fulfilled' || compressionResults[i * 2 + 1].status === 'fulfilled');
 if (compressed.length) {
-    const sizes = compressed.map(f => {
-        const orig = fs.statSync(f).size;
-        const gz = fs.existsSync(f + '.gz') ? fs.statSync(f + '.gz').size : orig;
-        return `${path.basename(f)}: ${(orig / 1e6).toFixed(1)} MB → ${(gz / 1e6).toFixed(1)} MB`;
+    const sizes = compressed.map(filePath => {
+        const original = fs.statSync(filePath).size;
+        const brotli = fs.existsSync(`${filePath}.br`) ? fs.statSync(`${filePath}.br`).size : original;
+        const gzip = fs.existsSync(`${filePath}.gz`) ? fs.statSync(`${filePath}.gz`).size : original;
+        return `${path.basename(filePath)}: ${(original / 1e6).toFixed(1)} MB → ${(brotli / 1e6).toFixed(1)} MB br / ${(gzip / 1e6).toFixed(1)} MB gzip`;
     });
-    console.log('[qaap] gzipped:', sizes.join(', '));
+    console.log('[qaap] precompressed:', sizes.join(', '));
 }
 
 // Stale code-split chunks are pruned by esbuild.mjs (qaap-prune-stale-chunks) right after the

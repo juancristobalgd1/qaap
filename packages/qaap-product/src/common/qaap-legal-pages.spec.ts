@@ -52,6 +52,6 @@ describe('Qaap legal pages', () => {
         expect(sync).to.include('qaap-frontend-asset-policy.cjs');
         const policy = fs.readFileSync(path.join(productRoot, 'resources/qaap-frontend-asset-policy.cjs'), 'utf8');
         expect(policy).to.include('qaap-build=');
-        expect(policy).to.include('bundle\\.css');
+        expect(policy).to.include('bundle(?:-[A-Z0-9]+)?\\.css');
     });
 });

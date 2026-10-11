@@ -25,11 +25,16 @@ describe('Qaap frontend asset policy', () => {
     ].join('');
 
     it('does not expose IDE JS or CSS to an unauthenticated phone document', () => {
-        const html = patchIndexForFreshAssets(source, 'test-build');
+        const html = patchIndexForFreshAssets(source, 'test-build', {
+            javascript: './bundle-A1A1A1A1A1A1.js',
+            stylesheet: './bundle-B2B2B2B2B2B2.css',
+        });
         const dom = parseIndex(html, true);
         try {
             expect(dom.window.document.querySelector('meta[name="qaap-bundle-css"]')?.getAttribute('content'))
-                .to.equal('./bundle.css?qaap-build=test-build');
+                .to.equal('./bundle-B2B2B2B2B2B2.css');
+            expect(dom.window.document.querySelector('meta[name="qaap-bundle-js"]')?.getAttribute('content'))
+                .to.equal('./bundle-A1A1A1A1A1A1.js');
             expect(dom.window.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
             expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(0);
             expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(0);
@@ -40,42 +45,57 @@ describe('Qaap frontend asset policy', () => {
         }
     });
 
-    it('keeps the original bundle stylesheet on desktop while the gate controls bundle JS', () => {
-        const html = patchIndexForFreshAssets(source, 'desktop-build');
+    it('keeps the hashed desktop stylesheet and modulepreload while the gate controls bundle JS', () => {
+        const html = patchIndexForFreshAssets(source, 'desktop-build', {
+            javascript: './bundle-A1A1A1A1A1A1.js',
+            stylesheet: './bundle-B2B2B2B2B2B2.css',
+        });
         const dom = parseIndex(html, false);
         try {
-            const stylesheet = dom.window.document.querySelector('link[href*="bundle.css"]');
-            expect(stylesheet?.getAttribute('href')).to.equal('./bundle.css?qaap-build=desktop-build');
-            expect(dom.window.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(1);
-            const bundlePreload = dom.window.document.querySelector('link[rel~="modulepreload"][href*="bundle.js"]');
-            expect(bundlePreload?.getAttribute('href')).to.equal('./bundle.js?qaap-build=desktop-build');
-            expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(1);
+            const stylesheet = dom.window.document.querySelector('link[href*="bundle-"]');
+            expect(stylesheet?.getAttribute('href')).to.equal('./bundle-B2B2B2B2B2B2.css');
+            expect(dom.window.document.querySelectorAll('link[href*="bundle-"]')).to.have.length(2);
+            const bundlePreload = dom.window.document.querySelector('link[rel~="modulepreload"][href*="bundle-"]');
+            expect(bundlePreload?.getAttribute('href')).to.equal('./bundle-A1A1A1A1A1A1.js');
             expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(1);
         } finally {
             dom.window.close();
         }
     });
 
-    it('is idempotent: re-patching an already patched index keeps every inline script valid', () => {
+    it('refreshes hashed entry metadata idempotently and keeps desktop inline scripts valid', () => {
         // The Docker build runs copy-frontend-static twice (bundle:production + an explicit
         // run), and src-gen/frontend/index.html is patched in place, so the second pass sees
         // the escaped link inside the first pass's document.write() string.
         const generated = [
             '<!doctype html><html><head>',
             '<link rel="preload" href="./bundle.css" as="style" onload="this.onload=null;this.rel=\'stylesheet\'">',
+            '<link href="./bundle.js" rel="modulepreload">',
             '<noscript><link rel="stylesheet" href="./bundle.css"></noscript>',
             '</head><body><script src="./qaap-login-gate.js"></script></body></html>',
         ].join('');
-        const once = patchIndexForFreshAssets(generated, 'first-build');
-        const twice = patchIndexForFreshAssets(once, 'second-build');
-        for (const [, script] of twice.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+        const once = patchIndexForFreshAssets(generated, 'first-build', {
+            javascript: './bundle-111111111111.js',
+            stylesheet: './bundle-222222222222.css',
+        });
+        const twice = patchIndexForFreshAssets(once, 'second-build', {
+            javascript: './bundle-333333333333.js',
+            stylesheet: './bundle-444444444444.css',
+        });
+        for (const [, script] of twice.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) {
             expect(() => new vm.Script(script)).not.to.throw();
         }
-        expect(twice).to.equal(once.replace(/first-build/g, 'second-build'));
+        expect(twice).not.to.match(/bundle-(111111111111|222222222222)/);
+        expect(twice).to.include('./bundle-333333333333.js');
+        expect(twice).to.include('./bundle-444444444444.css');
+        expect((twice.match(/data-qaap-desktop-asset=/g) || [])).to.have.length(3);
         const dom = parseIndex(twice, false);
         try {
-            expect(dom.window.document.querySelector('link[rel="preload"][href*="bundle.css"]')?.getAttribute('href'))
-                .to.equal('./bundle.css?qaap-build=second-build');
+            expect(dom.window.document.querySelectorAll('meta[name="qaap-bundle-js"]')).to.have.length(1);
+            expect(dom.window.document.querySelector('meta[name="qaap-bundle-css"]')?.getAttribute('content'))
+                .to.equal('./bundle-444444444444.css');
+            expect(dom.window.document.querySelector('meta[name="qaap-bundle-js"]')?.getAttribute('content'))
+                .to.equal('./bundle-333333333333.js');
         } finally {
             dom.window.close();
         }

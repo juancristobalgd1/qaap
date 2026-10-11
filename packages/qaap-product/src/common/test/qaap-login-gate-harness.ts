@@ -89,7 +89,7 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
     const bundleAppended = new Promise<LoginGateBundleAppend>(resolve => {
         const appendChild = window.Node.prototype.appendChild;
         window.Node.prototype.appendChild = function <T extends Node> (this: Node, child: T): T {
-            if (child instanceof window.HTMLScriptElement && child.src.includes('bundle.js')) {
+            if (child instanceof window.HTMLScriptElement && /\/bundle(?:-[A-Z0-9]+)?\.js/.test(child.src)) {
                 resolve({
                     script: child,
                     localeId: window.localStorage.getItem('localeId'),

@@ -6,12 +6,21 @@
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { qaapIsImmutableHashedChunkPath, resolveQaapLegalPagesDir } from './qaap-immutable-chunk-cache-contribution';
+import {
+    qaapFrontendStaticHeaders,
+    qaapIsImmutableHashedChunkPath,
+    qaapPreferredStaticEncoding,
+    resolveQaapLegalPagesDir,
+} from './qaap-immutable-chunk-cache-contribution';
 
-describe('qaap-immutable-chunk-cache-contribution patterns', () => {
+describe('qaap immutable frontend asset policy', () => {
 
-    it('matches hashed chunk js/css assets, including .map and .gz suffixes', () => {
+    it('matches hashed entries and chunks, including .map and compression suffixes', () => {
         const samples = [
+            '/bundle-ABCD1234.js',
+            '/bundle-ABCD1234.css',
+            '/bundle-ABCD1234.js.br',
+            '/bundle-ABCD1234.css.gz',
             '/chunk-ABCD1234.js',
             '/chunk-ABCD1234.css',
             '/chunk-ABCD1234.js.map',
@@ -24,6 +33,33 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         for (const sample of samples) {
             expect(qaapIsImmutableHashedChunkPath(sample), sample).to.equal(true);
         }
+    });
+
+    it('sets immutable headers only on hashed entry/chunk assets and keeps the shell revalidated', () => {
+        const frontendDir = path.resolve('app/lib/frontend');
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'bundle-A1B2C3D4.js'), frontendDir))
+            .to.deep.equal({ 'Cache-Control': 'public, max-age=31536000, immutable' });
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'chunk-A1B2C3D4.css.br'), frontendDir))
+            .to.deep.equal({ 'Cache-Control': 'public, max-age=31536000, immutable' });
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'bundle.js'), frontendDir)).to.deep.equal({});
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'index.html'), frontendDir))
+            .to.deep.equal({ 'Cache-Control': 'no-cache' });
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'service-worker.js'), frontendDir))
+            .to.deep.equal({
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Service-Worker-Allowed': '/',
+                'Content-Type': 'application/javascript; charset=utf-8',
+            });
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'bundle-A1B2C3D4.js'), path.join(frontendDir, 'nested')))
+            .to.deep.equal({});
+    });
+
+    it('negotiates Brotli before gzip while respecting quality values', () => {
+        expect(qaapPreferredStaticEncoding('br, gzip', true, true)).to.equal('br');
+        expect(qaapPreferredStaticEncoding('gzip;q=1, br;q=0.7', true, true)).to.equal('gzip');
+        expect(qaapPreferredStaticEncoding('br;q=0, gzip;q=0.8', true, true)).to.equal('gzip');
+        expect(qaapPreferredStaticEncoding('br;q=0, gzip;q=0', true, true)).to.equal(undefined);
+        expect(qaapPreferredStaticEncoding('gzip', false, true)).to.equal('gzip');
     });
 
     it('does not match non-hashed frontend assets', () => {
