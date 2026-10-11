@@ -44,7 +44,7 @@ export type QaapTenantPersistentHomeChown = (path: string, uid: number, gid: num
 /**
  * Links the credential entries of a volatile tenant HOME to a directory on the tenant's private,
  * disk-backed storage. Existing entries in HOME (written before the link existed) are moved over.
- * Ownership changes are best effort and limited to each link's root directory; recursive access
+ * Ownership changes are best effort and limited to the volatile HOME root; recursive access
  * repair is performed with ACLs by the spawn service so it does not need CAP_CHOWN.
  */
 export namespace QaapTenantPersistentHome {

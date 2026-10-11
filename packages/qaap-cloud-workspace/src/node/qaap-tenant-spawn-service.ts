@@ -71,6 +71,7 @@ const DEFAULT_AGENT_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_AGENT_CPU_LIMIT_CORES = 2;
 const SYSTEMD_RUN_PROBE_TIMEOUT_MS = 3000;
 const QAAP_TENANT_AGENT_ACCESS_VERSION = 1;
+const QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS = 600_000;
 
 /**
  * Single source of truth for spawning a workspace-scoped child process under the correct OS identity
@@ -503,8 +504,8 @@ export class QaapTenantSpawnService {
         this.preparedTenantBackendAgentRoots.add(root);
     }
 
-    protected runTenantAccessCommand(file: string, args: readonly string[]): boolean {
-        const result = spawnSync(file, [...args], { stdio: 'ignore', timeout: 120_000 });
+    protected runTenantAccessCommand(file: string, args: readonly string[], timeoutMs = 120_000): boolean {
+        const result = spawnSync(file, [...args], { stdio: 'ignore', timeout: timeoutMs });
         return !result.error && result.status === 0;
     }
 
@@ -873,8 +874,8 @@ export class QaapTenantSpawnService {
     }
 
     /**
-     * Create the storage directories (0700) in this container so the first tool that uses them does
-     * not race another one creating the parent. Best effort: tools create missing dirs themselves.
+     * Create the storage directories in this container before any agent tool uses them. A root
+     * backend that drops agents to another uid fails closed unless private ACL access is ready.
      */
     protected ensureTenantAgentStorage(root: string): void {
         if (this.preparedAgentStorageRoots.has(root)) {
@@ -1000,10 +1001,10 @@ export class QaapTenantSpawnService {
         QaapTenantPersistentHome.ensureDirectory(directory);
         const acl = `u:${uid}:rwx,g::---,o::---,d:u:${uid}:rwx,d:g::---,d:o::---`;
         const fileAcl = `u:${uid}:rwX,g::---,o::---`;
-        const directories = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-b', '-k', '--', '{}', '+'])
-            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-m', acl, '--', '{}', '+']);
-        const files = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-b', '--', '{}', '+'])
-            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-m', fileAcl, '--', '{}', '+']);
+        const directories = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-b', '-k', '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS)
+            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-m', acl, '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
+        const files = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-b', '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS)
+            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-m', fileAcl, '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
         return directories && files;
     }
 

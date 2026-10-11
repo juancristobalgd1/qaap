@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapTenantPersistentHome } from './qaap-tenant-persistent-home';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv; shell?: boolean } }
@@ -126,8 +127,20 @@ class AgentHomeAccessTestService extends TenantBackendAclTestService {
         return [];
     }
 
-    protected override ensureTenantBackendHomeAccess(): void {
+    protected override ensureTenantBackendHomeAccess(_home: string, _uid: number): void {
         // The production storage ACL commands are captured above; keep the test away from /tmp/qaap-home.
+    }
+}
+
+class RealTenantAgentAclTestService extends QaapTenantSpawnService {
+    protected override isBackendRoot(): boolean { return true; }
+
+    prepare(home: string, persistentHome: string, uid: number): void {
+        this.applyPrivateAgentDirectoryAcl(home, uid, true);
+        this.applyPrivateAgentDirectoryAcl(persistentHome, uid, true);
+        if (!this.repairAgentAccessTree(persistentHome, uid)) {
+            throw new Error('Failed to repair persistent HOME ACLs.');
+        }
     }
 }
 
@@ -229,24 +242,79 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
-    it('re-grants the dropped agent uid on harness state written while agents ran as root', () => {
+    it('sets private ACLs on agent storage roots before the one-time tree repair', () => {
         class StorageAclTestService extends TenantBackendAclTestService {
             grant(configRoot: string, root: string, uid: number): void {
                 this.grantTenantAgentStorageAccess(configRoot, root, uid);
             }
         }
         const service = new StorageAclTestService();
-        const root = '/home/theia/.qaap/.qaap-agent-storage';
-        service.grant('/home/theia/.qaap', root, 1001);
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-storage-acl-'));
+        const root = path.join(tempRoot, 'storage');
+        const configRoot = path.join(tempRoot, 'config');
+        fs.mkdirSync(configRoot);
+        try {
+            service.grant(configRoot, root, 1001);
 
-        const finds = service.commands.filter(command => command.file === 'find');
-        // Existing root-owned dirs and files (opencode.db, opencode.log) under cache and data.
-        expect(finds).to.have.length(4);
-        for (const dir of [`${root}/cache`, `${root}/data`]) {
-            const forDir = finds.filter(command => command.args[0] === dir);
-            expect(forDir.map(command => command.args[command.args.indexOf('-type') + 1])).to.deep.equal(['d', 'f']);
-            expect(forDir[0]?.args).to.include.members(['-uid', '0', 'u:1001:rwx,d:u:1001:rwx']);
-            expect(forDir[1]?.args).to.include.members(['-uid', '0', 'u:1001:rwX']);
+            const aclCommands = service.commands.filter(command => command.file === 'setfacl');
+            expect(service.commands.some(command => command.file === 'find')).to.equal(false);
+            expect(aclCommands.some(command => command.args.includes(`u:1001:--x`))).to.equal(true);
+            for (const dir of [root, `${root}/cache`, `${root}/data`, `${root}/home`]) {
+                expect(aclCommands.some(command => command.args.includes(dir)
+                    && command.args.some(argument => argument.includes('u:1001:rwx,g::---,o::---,d:u:1001:rwx')))).to.equal(true);
+            }
+        } finally {
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('allows a dropped uid to create OpenCode config from root-owned 0700 HOME without CAP_CHOWN', function () {
+        const backendUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+        if (process.platform !== 'linux' || backendUid !== 0
+            || !fs.existsSync('/usr/bin/setfacl') || !fs.existsSync('/usr/bin/getfacl') || !fs.existsSync('/usr/bin/setpriv')) {
+            this.skip();
+            return;
+        }
+        const agentUid = 1001;
+        const agentGid = 1001;
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-acl-e2e-'));
+        const home = path.join(root, 'qaap-home');
+        const persistentHome = path.join(root, 'storage', 'home');
+        const config = path.join(persistentHome, '.config');
+        fs.mkdirSync(config, { recursive: true, mode: 0o700 });
+        fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(path.join(config, 'opencode.json'), '{}', { mode: 0o644 });
+        fs.symlinkSync(config, path.join(home, '.config'));
+        fs.chmodSync(root, 0o711);
+        fs.chmodSync(home, 0o700);
+        fs.chmodSync(persistentHome, 0o700);
+        fs.chmodSync(config, 0o700);
+
+        const chownWithoutCapability = (): never => {
+            throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' });
+        };
+        try {
+            QaapTenantPersistentHome.link(home, persistentHome, { uid: agentUid, gid: agentGid }, chownWithoutCapability);
+            new RealTenantAgentAclTestService().prepare(home, persistentHome, agentUid);
+
+            const mkdir = spawnSync('/usr/bin/setpriv', [
+                '--reuid', String(agentUid), '--regid', String(agentGid), '--clear-groups', '--',
+                '/bin/mkdir', path.join(home, '.config', 'opencode'),
+            ], { encoding: 'utf8' });
+            expect(mkdir.error?.message ?? mkdir.stderr).to.equal('');
+            expect(mkdir.status).to.equal(0);
+            expect(fs.statSync(home).uid).to.equal(0);
+            expect(fs.statSync(config).uid).to.equal(0);
+            expect(fs.statSync(path.join(home, '.config', 'opencode')).uid).to.equal(agentUid);
+
+            const acl = spawnSync('/usr/bin/getfacl', ['-cp', config], { encoding: 'utf8' });
+            expect(acl.status).to.equal(0);
+            expect(acl.stdout).to.contain(`user:${agentUid}:rwx`);
+            expect(acl.stdout).to.contain('group::---');
+            expect(acl.stdout).to.contain('other::---');
+        } finally {
+            fs.chmodSync(root, 0o700);
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
@@ -760,6 +828,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
             first.resolveProcessEnv(tenantCwd, {});
             expect(first.commands.some(command => command.file === 'find')).to.equal(true);
             expect(first.commands.some(command => command.file === 'setfacl' && command.args.some(argument => argument.includes('g::---,o::---')))).to.equal(true);
+            expect(first.commands.filter(command => command.file === 'find').every(command => command.args.includes('-P') && command.args.includes('-xdev'))).to.equal(true);
 
             const restarted = new AgentHomeAccessTestService();
             restarted.resolveProcessEnv(tenantCwd, {});
