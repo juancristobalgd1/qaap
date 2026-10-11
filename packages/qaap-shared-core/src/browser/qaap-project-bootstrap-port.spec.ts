@@ -237,7 +237,7 @@ describe('qaap-project-bootstrap-port', () => {
             writeFileSync(runner, [
                 "const { execFileSync } = require('child_process');",
                 `const run = args => JSON.parse(execFileSync(process.execPath, [${JSON.stringify(theia)}, ...args], { encoding: 'utf8' }));`,
-                "process.stdout.write(JSON.stringify([",
+                'process.stdout.write(JSON.stringify([',
                 "    run(['start', '--hostname=::', '--port', '3000']),",
                 "    run(['start', '--port=3000', '--log-level=warn']),",
                 "    run(['start', '--log-level=warn']),",
