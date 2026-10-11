@@ -149,8 +149,16 @@ export namespace QaapTenantPersistentHome {
             fs.unlinkSync(linkPath);
         } else if (current) {
             // Written into the tmpfs before the link existed: this is the newest state, keep it.
-            // fs.cpSync preserves symlinks as links and does not traverse their targets.
-            fs.cpSync(linkPath, target, { recursive: true, force: true, dereference: false });
+            // Do not bring symlinks or mounted subtrees from the volatile HOME into persistent storage.
+            fs.cpSync(linkPath, target, {
+                recursive: true,
+                force: true,
+                dereference: false,
+                filter: source => {
+                    const stats = fs.lstatSync(source);
+                    return !stats.isSymbolicLink() && stats.dev === current.dev;
+                }
+            });
             fs.rmSync(linkPath, { recursive: true, force: true });
             if (directory) {
                 ensureDirectory(target);
