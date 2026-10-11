@@ -124,7 +124,7 @@ function loadServiceWorker(): LoadedServiceWorker {
     return worker;
 }
 
-function navigation(pathAndQuery: string, preload: object | undefined): { event: ServiceWorkerFetchEvent; responses: Array<Promise<object>> } {
+function navigation(pathAndQuery: string, preload: object | undefined | Error): { event: ServiceWorkerFetchEvent; responses: Array<Promise<object>> } {
     const responses: Array<Promise<object>> = [];
     const event: ServiceWorkerFetchEvent = {
         request: {
@@ -135,7 +135,7 @@ function navigation(pathAndQuery: string, preload: object | undefined): { event:
             destination: 'document',
             headers: { has: () => false, get: () => undefined }
         },
-        preloadResponse: Promise.resolve(preload),
+        preloadResponse: preload instanceof Error ? Promise.reject(preload) : Promise.resolve(preload),
         respondWith: response => responses.push(response)
     };
     return { event, responses };
@@ -163,5 +163,13 @@ describe('FrontendGenerator service worker navigation preload', () => {
         expect(responses).to.have.length(1);
         expect(await responses[0]).to.deep.equal({ fromNetwork: true });
         expect(worker.networkRequests).to.deep.equal([ORIGIN + '/qaap/oauth/github/start']);
+    });
+
+    it('falls back to the network once when the navigation preload failed', async () => {
+        const worker = loadServiceWorker();
+        const { event, responses } = navigation('/qaap/oauth/github/start', new Error('offline'));
+        worker.dispatchFetch(event);
+        expect(await responses[0]).to.deep.equal({ fromNetwork: true });
+        expect(worker.networkRequests).to.have.length(1);
     });
 });

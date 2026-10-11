@@ -541,7 +541,12 @@ async function handleNavigate(event) {
 
 // Bypassed navigations (OAuth, auth, API): never cached, no offline fallback, and sent at most once.
 async function passThroughNavigate(event) {
-    const preload = event.preloadResponse ? await event.preloadResponse : undefined;
+    let preload;
+    try {
+        preload = event.preloadResponse ? await event.preloadResponse : undefined;
+    } catch (_) {
+        // The preload failed on the network: retry it once, as the browser would have.
+    }
     return preload || fetch(event.request);
 }
 
