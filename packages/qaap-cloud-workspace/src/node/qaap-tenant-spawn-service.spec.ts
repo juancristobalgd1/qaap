@@ -757,6 +757,60 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         expect(env).to.include({ PATH: '/usr/bin', HOME: '/tmp/qaap-home' });
     });
 
+    it('shares one in-flight persistent HOME migration between concurrent async preparations', async () => {
+        let releaseMigration!: () => void;
+        const migrationGate = new Promise<void>(resolve => releaseMigration = resolve);
+        class ConcurrentPreparationTestService extends TestTenantSpawnService {
+            linkCount = 0;
+
+            prepare(home: string, root: string): Promise<void> {
+                this.preparedAgentStorageRoots.add(root);
+                return this.ensurePersistentTenantBackendHomeAsync(home, root);
+            }
+
+            protected override async linkPersistentTenantHomeAsync(): Promise<QaapTenantPersistentHomeLinkResult> {
+                this.linkCount++;
+                await migrationGate;
+                return { changedEntries: [], complete: true };
+            }
+        }
+        const service = new ConcurrentPreparationTestService();
+        const home = '/tmp/qaap-concurrent-home';
+        const root = '/tmp/qaap-concurrent-storage';
+        const first = service.prepare(home, root);
+        const second = service.prepare(home, root);
+        let secondFinished = false;
+        void second.then(() => secondFinished = true);
+
+        expect(service.linkCount).to.equal(1);
+        await Promise.resolve();
+        expect(secondFinished).to.equal(false);
+
+        releaseMigration();
+        await Promise.all([first, second]);
+        expect(secondFinished).to.equal(true);
+        expect(service.linkCount).to.equal(1);
+    });
+
+    it('keeps async HOME resolution off the synchronous overlay when persistent linking is incomplete', async () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = 'off';
+        class IncompleteAsyncPreparationTestService extends TestTenantSpawnService {
+            protected override async prepareTenantBackendAgentHomeAsync(): Promise<void> {
+                // Model linkWithStatusAsync returning incomplete without marking the HOME prepared.
+            }
+
+            override tenantHomeEnvOverlay(): never {
+                throw new Error('synchronous HOME overlay was used');
+            }
+        }
+        const service = new IncompleteAsyncPreparationTestService();
+
+        const env = await service.resolveProcessEnvAsync(tenantCwd, { PATH: '/usr/bin' });
+
+        expect(env).to.include({ PATH: '/usr/bin', HOME: '/tmp/qaap-home' });
+    });
+
     it('points HOME/USER at the tenant home when a uid drop applies', () => {
         process.env.QAAP_AGENT_UID_PER_USER = '1';
         const svc = new TestTenantSpawnService();
@@ -1218,6 +1272,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
             timestamps.push(finishedAt);
 
             expect(repaired).to.equal(true);
+            expect(finishedAt - startedAt).to.be.at.least(220);
             expect(Math.max(...timestamps.map((at, index) => at - (index === 0 ? startedAt : timestamps[index - 1]!))))
                 .to.be.lessThan(200);
         } finally {
