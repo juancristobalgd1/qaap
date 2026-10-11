@@ -910,6 +910,61 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         }
     });
 
+    it('skips agent-owned private storage subtrees and writes the sentinel after preparation', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-mixed-tree-'));
+        const configRoot = path.join(root, 'config');
+        const storageRoot = path.join(root, 'storage');
+        const cacheRoot = path.join(storageRoot, 'cache');
+        const agentPrivateDirectory = path.join(cacheRoot, 'agent-private');
+        fs.mkdirSync(agentPrivateDirectory, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(path.join(agentPrivateDirectory, 'secret'), 'agent-owned');
+        fs.mkdirSync(configRoot);
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_BACKEND_PER_TENANT = '0';
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = configRoot;
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = storageRoot;
+        const service = new class extends AgentHomeAccessTestService {
+            protected override lstatIfPresent(entry: string): fs.Stats | undefined {
+                const stats = super.lstatIfPresent(entry);
+                if (entry === agentPrivateDirectory && stats) {
+                    return new Proxy(stats, {
+                        get: (target, property, receiver) => property === 'uid' ? 1001 : Reflect.get(target, property, receiver),
+                    });
+                }
+                return stats;
+            }
+
+            protected override runTenantAccessCommand(file: string, args: readonly string[]): boolean {
+                this.commands.push({ file, args });
+                // Model find(1) being unable to traverse the agent-owned 0700 directory.
+                return !(file === 'find' && args[0] === '-P' && args[1] === cacheRoot);
+            }
+
+            protected override ensureTenantBackendHomeAccess(_home: string, _uid: number): void { }
+        }();
+        try {
+            expect(() => service.resolveProcessEnv(tenantCwd, {})).not.to.throw();
+
+            const marker = path.join(storageRoot, '.qaap-agent-access-v1-1001');
+            expect(fs.readFileSync(marker, 'utf8')).to.equal('1:1001');
+            expect(service.commands.some(command => command.file === 'find' && command.args[1] === cacheRoot)).to.equal(false);
+        } finally {
+            envKeys.forEach((key, index) => {
+                const value = original[index];
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            });
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('uses a persistent access-repair sentinel instead of rescanning existing tenant storage', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-sentinel-'));
         const configRoot = path.join(root, 'config');
