@@ -54,18 +54,24 @@ export namespace QaapTenantPersistentHome {
         persistentHome: string,
         owner?: QaapTenantPersistentHomeOwner,
         chown: QaapTenantPersistentHomeChown = fs.chownSync
-    ): void {
+    ): string[] {
         ensureDirectory(home, owner, chown);
         ensureDirectory(persistentHome);
         if (owner) {
             fs.chmodSync(persistentHome, 0o1700);
         }
+        const changedEntries: string[] = [];
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
-            linkEntry(home, persistentHome, entry, true, owner, chown);
+            if (linkEntry(home, persistentHome, entry, true, owner, chown)) {
+                changedEntries.push(resolveEntry(persistentHome, entry));
+            }
         }
         for (const entry of QAAP_PERSISTENT_HOME_FILES) {
-            linkEntry(home, persistentHome, entry, false, owner, chown);
+            if (linkEntry(home, persistentHome, entry, false, owner, chown)) {
+                changedEntries.push(resolveEntry(persistentHome, entry));
+            }
         }
+        return changedEntries;
     }
 
     /** Create a directory path one component at a time and reject symlink components. */
@@ -115,7 +121,7 @@ export namespace QaapTenantPersistentHome {
         directory: boolean,
         owner?: QaapTenantPersistentHomeOwner,
         chown: QaapTenantPersistentHomeChown = fs.chownSync
-    ): void {
+    ): boolean {
         const linkPath = resolveEntry(home, entry);
         const target = resolveEntry(persistentHome, entry);
         const current = lstat(linkPath);
@@ -136,7 +142,7 @@ export namespace QaapTenantPersistentHome {
                 } else if (targetStats && owner) {
                     fs.chmodSync(target, targetStats.mode & 0o7700);
                 }
-                return;
+                return false;
             }
             fs.unlinkSync(linkPath);
         } else if (current) {
@@ -144,6 +150,19 @@ export namespace QaapTenantPersistentHome {
             // fs.cpSync preserves symlinks as links and does not traverse their targets.
             fs.cpSync(linkPath, target, { recursive: true, force: true, dereference: false });
             fs.rmSync(linkPath, { recursive: true, force: true });
+            if (directory) {
+                ensureDirectory(target);
+                if (owner) {
+                    fs.chmodSync(target, 0o700);
+                }
+            } else if (owner) {
+                const targetStatsAfterCopy = lstat(target);
+                if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink()) {
+                    fs.chmodSync(target, targetStatsAfterCopy.mode & 0o7700);
+                }
+            }
+            fs.symlinkSync(target, linkPath);
+            return true;
         }
         if (directory) {
             ensureDirectory(target);
@@ -158,6 +177,7 @@ export namespace QaapTenantPersistentHome {
         }
         // A missing file target is fine: the CLI creates it through the link on first write.
         fs.symlinkSync(target, linkPath);
+        return false;
     }
 
     function resolveEntry(root: string, entry: string): string {

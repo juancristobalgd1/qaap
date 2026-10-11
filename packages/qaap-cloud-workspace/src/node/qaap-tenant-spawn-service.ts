@@ -30,7 +30,12 @@ import {
 import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
-import { QaapTenantPersistentHome, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
+import {
+    QaapTenantPersistentHome,
+    type QaapTenantPersistentHomeOwner,
+    QAAP_PERSISTENT_HOME_DIRECTORIES,
+    QAAP_PERSISTENT_HOME_FILES,
+} from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 /** How the spawned process's stdio streams are wired. */
@@ -844,9 +849,12 @@ export class QaapTenantSpawnService {
             const owner = identity?.uid !== undefined && identity.uid > 0
                 ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
                 : undefined;
-            this.linkPersistentTenantHome(home, QaapTenantAgentStorageEnv.homeDir(root), owner);
+            const persistentHome = QaapTenantAgentStorageEnv.homeDir(root);
+            const changedEntries = this.linkPersistentTenantHome(home, persistentHome, owner);
             if (identity?.uid !== undefined && identity.uid > 0) {
-                this.repairTenantAgentStorageTrees(root, identity.uid);
+                this.applyPrivateAgentDirectoryAcl(persistentHome, identity.uid, true);
+                this.applyPersistentAgentHomeEntryAcls(persistentHome, identity.uid);
+                this.repairTenantAgentStorageTrees(root, identity.uid, changedEntries);
             }
             this.persistentTenantHomes.add(home);
         } catch (error) {
@@ -860,8 +868,8 @@ export class QaapTenantSpawnService {
     }
 
     /** Overridable in tests. */
-    protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): void {
-        QaapTenantPersistentHome.link(home, persistentHome, owner);
+    protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): string[] {
+        return QaapTenantPersistentHome.link(home, persistentHome, owner);
     }
 
     /**
@@ -928,7 +936,42 @@ export class QaapTenantSpawnService {
         }
     }
 
-    protected repairTenantAgentStorageTrees(root: string, uid: number): void {
+    protected applyPersistentAgentHomeEntryAcls(persistentHome: string, uid: number): void {
+        for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
+            const target = path.join(persistentHome, entry);
+            const stats = this.lstatIfPresent(target);
+            if (stats?.isSymbolicLink()) {
+                throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
+            }
+            if (stats?.isDirectory()) {
+                this.applyPrivateAgentDirectoryAcl(target, uid, true);
+            }
+        }
+        for (const entry of QAAP_PERSISTENT_HOME_FILES) {
+            const target = path.join(persistentHome, entry);
+            const stats = this.lstatIfPresent(target);
+            if (stats?.isSymbolicLink()) {
+                throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
+            }
+            if (stats?.isFile()) {
+                this.applyPrivateAgentFileAcl(target, uid);
+            }
+        }
+    }
+
+    protected repairTenantAgentStorageTrees(root: string, uid: number, changedEntries: readonly string[]): void {
+        for (const entry of changedEntries) {
+            const stats = this.lstatIfPresent(entry);
+            if (!stats || stats.isSymbolicLink()) {
+                throw new Error(`Refusing a missing or symbolic-link agent storage entry: ${entry}`);
+            }
+            const repaired = stats.isDirectory()
+                ? this.repairAgentAccessTree(entry, uid)
+                : stats.isFile() && this.applyPrivateAgentFileAcl(entry, uid);
+            if (!repaired) {
+                throw new Error(`Could not repair copied agent state at ${entry}.`);
+            }
+        }
         const marker = path.join(root, `.qaap-agent-access-v${QAAP_TENANT_AGENT_ACCESS_VERSION}-${uid}`);
         const markerStatus = this.lstatIfPresent(marker);
         if (markerStatus?.isFile() && !markerStatus.isSymbolicLink()
@@ -962,6 +1005,12 @@ export class QaapTenantSpawnService {
         const files = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-b', '--', '{}', '+'])
             && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-m', fileAcl, '--', '{}', '+']);
         return directories && files;
+    }
+
+    protected applyPrivateAgentFileAcl(file: string, uid: number): boolean {
+        const cleared = this.runTenantAccessCommand('setfacl', ['-b', '--', file]);
+        const applied = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwX,g::---,o::---`, '--', file]);
+        return cleared && applied;
     }
 
     protected applyPrivateAgentDirectoryAcl(directory: string, uid: number, defaults: boolean): void {

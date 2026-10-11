@@ -45,8 +45,9 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     /** Persistent HOME links the service requested (never touches the real filesystem in tests). */
     linkedHomes: Array<{ home: string; persistentHome: string; owner?: { uid: number; gid: number } }> = [];
 
-    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): void {
+    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): string[] {
         this.linkedHomes.push({ home, persistentHome, ...(owner ? { owner } : {}) });
+        return [];
     }
 
     protected override isBackendRoot(): boolean {
@@ -119,9 +120,10 @@ class AgentHomeAccessTestService extends TenantBackendAclTestService {
         return this.accessCommandsSucceed;
     }
 
-    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): void {
+    protected override linkPersistentTenantHome(home: string, persistentHome: string, owner?: { uid: number; gid: number }): string[] {
         this.linkedHomes.push({ home, persistentHome, ...(owner ? { owner } : {}) });
         // Keep this test focused on storage access preparation; the persistent-home spec covers links.
+        return [];
     }
 
     protected override ensureTenantBackendHomeAccess(): void {
