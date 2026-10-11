@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as sinon from 'sinon';
 import { QaapTenantPersistentHome } from './qaap-tenant-persistent-home';
 
 describe('QaapTenantPersistentHome', () => {
@@ -19,6 +20,8 @@ describe('QaapTenantPersistentHome', () => {
         home = path.join(root, 'tmpfs', 'qaap-home');
         persistentHome = path.join(root, 'disk', 'home');
     });
+
+    afterEach(() => sinon.restore());
 
     afterEach(() => {
         for (const entry of [
@@ -105,6 +108,64 @@ describe('QaapTenantPersistentHome', () => {
         expect(fs.readFileSync(path.join(persistentHome, '.config', 'opencode.json'), 'utf8')).to.equal('{}');
         expect(fs.statSync(home).mode & 0o077).to.equal(0);
         expect(fs.statSync(persistentHome).mode & 0o077).to.equal(0);
+    });
+
+    it('does not chmod a persistent HOME root owned by another uid', () => {
+        fs.mkdirSync(persistentHome, { recursive: true });
+        const actualLstatSync = fs.lstatSync;
+        sinon.stub(fs, 'lstatSync').callsFake(((entry: fs.PathLike) => {
+            const stats = actualLstatSync(entry);
+            if (path.resolve(String(entry)) === persistentHome) {
+                return new Proxy(stats, {
+                    get: (target, property, receiver) => property === 'uid'
+                        ? stats.uid + 1
+                        : Reflect.get(target, property, receiver)
+                });
+            }
+            return stats;
+        }) as typeof fs.lstatSync);
+        const actualChmodSync = fs.chmodSync;
+        const chmod = sinon.stub(fs, 'chmodSync').callsFake(((entry: fs.PathLike, mode: fs.Mode) => {
+            if (path.resolve(String(entry)) === persistentHome) {
+                throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' });
+            }
+            actualChmodSync(entry, mode);
+        }) as typeof fs.chmodSync);
+
+        expect(() => QaapTenantPersistentHome.link(home, persistentHome, { uid: 1001, gid: 1001 }, () => undefined)).not.to.throw();
+        expect(chmod.calledWith(persistentHome, 0o1700)).to.equal(false);
+    });
+
+    it('skips symlinks and entries on another device while migrating a preexisting HOME directory', () => {
+        const config = path.join(home, '.config');
+        const outside = path.join(root, 'outside.json');
+        const mounted = path.join(config, 'mounted');
+        fs.mkdirSync(mounted, { recursive: true });
+        fs.writeFileSync(path.join(config, 'settings.json'), '{}');
+        fs.writeFileSync(path.join(mounted, 'secret.json'), 'mounted');
+        fs.writeFileSync(outside, 'outside');
+        fs.symlinkSync(outside, path.join(config, 'outside-link.json'));
+
+        const actualLstatSync = fs.lstatSync;
+        sinon.stub(fs, 'lstatSync').callsFake(((entry: fs.PathLike) => {
+            const stats = actualLstatSync(entry);
+            if (path.resolve(String(entry)) === mounted) {
+                return new Proxy(stats, {
+                    get: (target, property, receiver) => property === 'dev'
+                        ? stats.dev + 1
+                        : Reflect.get(target, property, receiver)
+                });
+            }
+            return stats;
+        }) as typeof fs.lstatSync);
+
+        QaapTenantPersistentHome.link(home, persistentHome);
+
+        const persistentConfig = path.join(persistentHome, '.config');
+        expect(fs.readFileSync(path.join(persistentConfig, 'settings.json'), 'utf8')).to.equal('{}');
+        expect(fs.existsSync(path.join(persistentConfig, 'mounted'))).to.equal(false);
+        expect(fs.existsSync(path.join(persistentConfig, 'outside-link.json'))).to.equal(false);
+        expect(fs.readFileSync(outside, 'utf8')).to.equal('outside');
     });
 
     it('rejects a symlink in a persistent HOME root instead of operating through it', () => {
