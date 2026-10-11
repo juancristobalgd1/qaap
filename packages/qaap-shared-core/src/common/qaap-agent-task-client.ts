@@ -661,7 +661,14 @@ export async function createAgentTask(body: QaapCreateAgentTaskBody): Promise<Qa
     });
     if (!response.ok) {
         const text = await response.text();
-        throw new Error(text || response.statusText);
+        let message = text || response.statusText;
+        try {
+            // The server's readable `error` (e.g. a missing clone that could not be restored), not raw JSON.
+            message = (JSON.parse(text) as { error?: string }).error || message;
+        } catch {
+            // Non-JSON error body — keep the raw text.
+        }
+        throw new Error(message);
     }
     return response.json() as Promise<QaapAgentTaskCreated>;
 }

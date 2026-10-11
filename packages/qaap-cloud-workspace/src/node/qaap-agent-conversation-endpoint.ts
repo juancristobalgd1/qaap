@@ -41,6 +41,10 @@ import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import { QaapAgentGoalLoopError, QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import type { QaapAgentGoalLoopResponse, QaapStartAgentGoalLoopRequest } from '../common/qaap-agent-goal-loop';
 import {
+    QAAP_REPOSITORY_CLONE_UNAVAILABLE_CODE,
+    QaapMissingCloneRecovery,
+} from '@theia/qaap-shared-core/lib/node/qaap-missing-clone-recovery';
+import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
@@ -73,6 +77,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    /** Clones a project again when its clone is missing from disk; absent, a missing clone is denied. */
+    @inject(QaapMissingCloneRecovery) @optional()
+    protected readonly cloneRecovery: QaapMissingCloneRecovery | undefined;
 
     protected conversationHasLiveRun(conversationId: string, conv: QaapAgentConversation): boolean {
         return conv.status === 'streaming' && this.store.getActiveTaskIdsForConversation(conversationId).length > 0;
@@ -283,7 +291,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/retry`, (req, res) => {
             void (async () => {
-                if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                const owned = this.getConversationIfOwned(req, res, req.params.id);
+                if (!owned || !await this.restoreMissingClone(this.auth.authenticate(req), owned.cwd, res)) {
                     return;
                 }
                 try {
@@ -475,11 +484,17 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         // Normalize the client-supplied cwd to the caller's canonical per-user repository path.
         // Legacy/flat, bare-name, and container-root cwds are resolved (or rejected) here so the
         // agent always runs under `/workspace/repos/users/{login}/{owner}/{repo}` in production.
-        const resolvedCwd = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+        const resolvedCwd = this.cloneRecovery
+            ? await this.cloneRecovery.resolveOwnedRepositoryCwd(ctx, body.cwd)
+            : this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
         if (resolvedCwd.kind === 'needs-project') {
             // A container cwd would hand the agent every repo at once (wrong scope, massive LLM
             // context). The client must send a repository path.
             res.status(400).json({ error: 'Select a project first — this path is the workspace container, not a repository.' });
+            return;
+        }
+        if (resolvedCwd.kind === 'clone-failed') {
+            res.status(422).json({ error: resolvedCwd.error, code: QAAP_REPOSITORY_CLONE_UNAVAILABLE_CODE });
             return;
         }
         if (resolvedCwd.kind !== 'ok') {
@@ -567,6 +582,19 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         }
     }
 
+    /**
+     * Before a turn runs in an existing conversation, clone its project again when the clone is gone
+     * from disk. False once a readable 422 was sent because that clone could not be restored.
+     */
+    protected async restoreMissingClone(ctx: QaapGithubAuthContext, cwd: string, res: Response): Promise<boolean> {
+        const resolved = this.cloneRecovery ? await this.cloneRecovery.resolveOwnedRepositoryCwd(ctx, cwd) : undefined;
+        if (resolved?.kind === 'clone-failed') {
+            res.status(422).json({ error: resolved.error, code: QAAP_REPOSITORY_CLONE_UNAVAILABLE_CODE });
+            return false;
+        }
+        return true;
+    }
+
     protected async handlePostMessage(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as Partial<QaapPostAgentMessageRequest>;
         const content = typeof body.content === 'string' ? body.content.trim() : '';
@@ -591,6 +619,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     : QAAP_DEFAULT_DELIVERY_MODE;
             const parent = this.store.get(req.params.id);
             const ctx = this.auth.authenticate(req);
+            if (parent && !await this.restoreMissingClone(ctx, parent.cwd, res)) {
+                return;
+            }
             await this.warmBilling(this.auth.resolveUserLogin(ctx) ?? parent?.ownerLogin);
             const conv = this.store.postUserMessage(
                 req.params.id,

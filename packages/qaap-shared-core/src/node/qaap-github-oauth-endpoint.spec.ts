@@ -773,6 +773,7 @@ describe('QaapGithubOauthEndpoint.restoreMissingRepositoryClone', () => {
             resolveAccessibleRepository: async () => repository,
             ensureRepositoryWorkspace: async (...args: unknown[]) => { ensured.push(args); return '/repos/users/alice/octo/app'; },
             rememberGithubCloneSession: (_login: string, repo: unknown) => { remembered.push(repo); },
+            auth: { logSecurityEvent: () => undefined },
             ...patch,
         });
         return { endpoint, ensured, remembered };

@@ -34,6 +34,10 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import {
+    QAAP_REPOSITORY_CLONE_UNAVAILABLE_CODE,
+    QaapMissingCloneRecovery,
+} from '@theia/qaap-shared-core/lib/node/qaap-missing-clone-recovery';
 import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
@@ -80,6 +84,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
 
     @inject(QaapBillingStore) @optional()
     protected readonly billingStore: QaapBillingStore | undefined;
+
+    /** Clones a project again when its clone is missing from disk; absent, a missing clone is denied. */
+    @inject(QaapMissingCloneRecovery) @optional()
+    protected readonly cloneRecovery: QaapMissingCloneRecovery | undefined;
 
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/storage-health`, (req, res) => {
@@ -617,9 +625,15 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // Normalized to the owner's canonical per-user repository path (see resolveOwnedRepositoryCwd).
         let cwd = body.cwd;
         if (ctx.kind === 'authenticated') {
-            const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+            const resolved = this.cloneRecovery
+                ? await this.cloneRecovery.resolveOwnedRepositoryCwd(ctx, body.cwd)
+                : this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
             if (resolved.kind === 'needs-project') {
                 res.status(400).json({ error: 'Select a project first — this path is the workspace container, not a repository.' });
+                return;
+            }
+            if (resolved.kind === 'clone-failed') {
+                res.status(422).json({ error: resolved.error, code: QAAP_REPOSITORY_CLONE_UNAVAILABLE_CODE });
                 return;
             }
             if (resolved.kind !== 'ok') {

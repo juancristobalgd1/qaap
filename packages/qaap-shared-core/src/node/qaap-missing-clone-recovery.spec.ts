@@ -22,7 +22,8 @@ describe('QaapMissingCloneRecovery', () => {
     const clonePath = (login: string, owner: string, repo: string): string => path.join(reposRoot, 'users', login, owner, repo);
 
     beforeEach(() => {
-        reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-missing-clone-'));
+        // Ends in `repos` like production's `/workspace/repos`, so legacy-path derivation applies.
+        reposRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-missing-clone-')), 'repos');
         fs.mkdirSync(path.join(reposRoot, 'users', 'alice'), { recursive: true });
         fs.mkdirSync(clonePath('bob', 'octo', 'secret'), { recursive: true });
         guard = new QaapGithubAuthGuard();
@@ -47,7 +48,7 @@ describe('QaapMissingCloneRecovery', () => {
     });
 
     afterEach(() => {
-        fs.rmSync(reposRoot, { recursive: true, force: true });
+        fs.rmSync(path.dirname(reposRoot), { recursive: true, force: true });
     });
 
     it('re-clones a missing project named by its github: key and resolves its canonical clone', async () => {

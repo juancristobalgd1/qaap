@@ -242,7 +242,7 @@ describe('create requests surface the server error text', () => {
 
     it('createAgentTask throws the JSON error message, not the raw body', async () => {
         failWith(422, JSON.stringify({ error: readable, code: 'repository_clone_unavailable' }));
-        const error = await createAgentTask({ cwd: 'github:octo/app', prompt: 'fix it' }).catch((e: Error) => e);
+        const error = await createAgentTask({ cwd: 'github:octo/app', prompt: 'fix it', agent: 'codex' }).catch((e: Error) => e);
         expect((error as Error).message).to.equal(readable);
     });
 
