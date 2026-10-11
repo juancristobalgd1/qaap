@@ -108,7 +108,7 @@ export namespace QaapTenantPersistentHome {
             }
             const mode = stats.mode & 0o7777;
             const privateMode = (mode | 0o700) & ~0o077;
-            if (privateMode !== mode) {
+            if (privateMode !== mode && stats.uid === backendOwnerUid()) {
                 fs.chmodSync(resolved, privateMode);
             }
         }
@@ -136,10 +136,10 @@ export namespace QaapTenantPersistentHome {
                         throw new Error(`Persistent agent HOME entry is not a directory: ${target}`);
                     }
                     ensureDirectory(target);
-                    if (owner) {
+                    if (owner && targetStats?.uid === backendOwnerUid()) {
                         fs.chmodSync(target, 0o700);
                     }
-                } else if (targetStats && owner) {
+                } else if (targetStats && owner && targetStats.uid === backendOwnerUid()) {
                     fs.chmodSync(target, targetStats.mode & 0o7700);
                 }
                 return false;
@@ -152,12 +152,13 @@ export namespace QaapTenantPersistentHome {
             fs.rmSync(linkPath, { recursive: true, force: true });
             if (directory) {
                 ensureDirectory(target);
-                if (owner) {
+                const targetStatsAfterCopy = lstat(target);
+                if (owner && targetStatsAfterCopy?.uid === backendOwnerUid()) {
                     fs.chmodSync(target, 0o700);
                 }
             } else if (owner) {
                 const targetStatsAfterCopy = lstat(target);
-                if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink()) {
+                if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink() && targetStatsAfterCopy.uid === backendOwnerUid()) {
                     fs.chmodSync(target, targetStatsAfterCopy.mode & 0o7700);
                 }
             }
@@ -166,12 +167,13 @@ export namespace QaapTenantPersistentHome {
         }
         if (directory) {
             ensureDirectory(target);
-            if (owner) {
+            const targetStatsAfterEnsure = lstat(target);
+            if (owner && targetStatsAfterEnsure?.uid === backendOwnerUid()) {
                 fs.chmodSync(target, 0o700);
             }
         } else if (owner) {
             const targetStatsAfterCopy = lstat(target);
-            if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink()) {
+            if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink() && targetStatsAfterCopy.uid === backendOwnerUid()) {
                 fs.chmodSync(target, targetStatsAfterCopy.mode & 0o7700);
             }
         }
@@ -206,6 +208,10 @@ export namespace QaapTenantPersistentHome {
             // Rootless container backends have SETUID/SETGID but not CAP_CHOWN. The caller grants
             // the agent an ACL after linking, while the container owner can still chmod this tree.
         }
+    }
+
+    function backendOwnerUid(): number {
+        return typeof process.getuid === 'function' ? process.getuid() : 0;
     }
 
     function lstat(entry: string): fs.Stats | undefined {
