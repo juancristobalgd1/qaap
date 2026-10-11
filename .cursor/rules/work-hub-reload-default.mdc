@@ -18,6 +18,7 @@ El modo movil lo define `MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY` (`(max-width: 767
 
 - `qaap.mobileProjects.preferDesktopIde` / `qaap.mobileProjects.explicitDesktopIde` — eleccion explicita del IDE en escritorio; al entrar en modo movil se limpian ambas claves.
 - `qaap.mobileProjects.preferAgentsSurface` / `qaap.mobileProjects.dismissPanel` — usuario esta en Work Hub.
+- `qaap.workHub.openTask` — tarea abierta en Work Hub (`{projectId, conversationId}`), escrita en `pagehide`; F5 la reabre si sigue existiendo y no esta archivada (`qaap-work-hub-open-task-restore.ts`). No elige superficie.
 
 No persistir en `localStorage`, query/hash, backend, ni layout restore como selector de superficie inicial.
 
@@ -37,6 +38,7 @@ No persistir en `localStorage`, query/hash, backend, ni layout restore como sele
 - Open IDE en escritorio → F5 → IDE clasico.
 - IDE clasico → modo movil → Work Hub y preferencia IDE limpiada.
 - Nueva pestana / sessionStorage vacio → Work Hub por defecto.
+- Tarea B abierta en Work Hub → F5 → tarea B abierta (no "Ready when you are"); si B se borro → estado vacio.
 - En el modo movil la paleta no lista "Open IDE" y ningun control abre la superficie IDE clasica.
 - "Back to Work Hub" limpia la preferencia IDE y marca Agents surface.
 

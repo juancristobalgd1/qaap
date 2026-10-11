@@ -261,6 +261,52 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         expect(sessionState.agentsBootstrapStarted).to.equal(true);
     });
 
+    it('reload reopens the task that was open instead of "Ready when you are"', async () => {
+        const project = { id: 'github:acme/shop', name: 'shop' };
+        const summary = { id: 'conv-b', title: 'Task B' };
+        const opened: string[] = [];
+        // Before F5: task B is on screen when the page unloads.
+        const before = createController({
+            host: {
+                getProjectsPanel: () => ({
+                    transcriptController: { state: { transcriptOpenProject: project, transcriptOpenSummaryId: summary.id } },
+                }) as unknown as MobileProjectsPanel,
+            },
+        });
+        expect(before.controller).to.not.equal(undefined);
+        window.dispatchEvent(new window.Event('pagehide'));
+
+        // After F5: a fresh panel loads its lists and reopens task B.
+        const openState: { transcriptOpenSummaryId?: string } = {};
+        const { controller } = createController({
+            host: {
+                createProjectsPanel: homeMode => ({
+                    isHomeMode: () => homeMode,
+                    isVisible: () => false,
+                    show: async () => undefined,
+                    hide: () => undefined,
+                    dispose: () => undefined,
+                    node: document.createElement('div'),
+                    getHubView: () => 'tasks',
+                    preferComposerSurface: () => undefined,
+                    isAgentsHubExecutionSurfaceReady: () => false,
+                    isAgentsHubShellActive: () => false,
+                    ensureAgentsHubExecutionShellRendered: () => undefined,
+                    projects: [project],
+                    conversations: { findSummaryById: (id: string) => id === summary.id ? summary : undefined },
+                    transcriptController: { state: openState },
+                    openConversationSummary: async (_project: unknown, opening: { id: string }) => {
+                        opened.push(opening.id);
+                        openState.transcriptOpenSummaryId = opening.id;
+                    },
+                }) as unknown as MobileProjectsPanel,
+            },
+        });
+        await controller.restoreAgentsSurfaceAfterReload();
+        await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+        expect(opened).to.deep.equal(['conv-b']);
+    });
+
     it('cancelAgentsBootstrap prevents stale restore completion', async () => {
         const { controller, host } = createController();
         expect(controller.tryBootstrapMobileAgentsChat()).to.equal(true);

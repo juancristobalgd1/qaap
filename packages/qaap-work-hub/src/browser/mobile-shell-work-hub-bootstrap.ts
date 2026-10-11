@@ -24,6 +24,13 @@ import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
+import {
+    forgetWorkHubOpenTask,
+    peekWorkHubOpenTask,
+    rememberWorkHubOpenTask,
+    restoreWorkHubOpenTask,
+    type QaapWorkHubOpenTask,
+} from './qaap-work-hub-open-task-restore';
 
 export interface MobileShellWorkHubBootstrapHost {
     isMobileActive(): boolean;
@@ -76,7 +83,21 @@ export class MobileShellWorkHubBootstrapController {
         this.workspaceService = options.workspaceService;
         this.projectsService = options.projectsService;
         this.sessionState = options.sessionState;
+        window.addEventListener('pagehide', this.rememberOpenTaskForReload);
     }
+
+    /** F5 snapshot: the task on screen when the page unloads is the one the reload reopens. */
+    protected readonly rememberOpenTaskForReload = (): void => {
+        const panel = this.host.getProjectsPanel();
+        const state = panel?.transcriptController?.state;
+        const project = state?.transcriptOpenProject;
+        const conversationId = state?.transcriptOpenSummaryId;
+        if (project && conversationId && !peekPreferDesktopIde()) {
+            rememberWorkHubOpenTask(project.id, conversationId);
+        } else {
+            forgetWorkHubOpenTask();
+        }
+    };
 
     /** Paint Work Hub immediately; hydrate workspace-dependent state once MRU restore is ready. */
     async bootstrapWorkHubSurfaceAfterLayout(): Promise<void> {
@@ -240,6 +261,8 @@ export class MobileShellWorkHubBootstrapController {
 
     /** After reload: return to the Agents execution shell instead of restoring IDE editor tabs. */
     async restoreAgentsSurfaceAfterReload(epoch: number = this.sessionState.agentsBootstrapEpoch): Promise<void> {
+        // Read before any panel teardown below can close (and forget) the transcript.
+        const openTask = peekWorkHubOpenTask();
         try {
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 return;
@@ -280,6 +303,9 @@ export class MobileShellWorkHubBootstrapController {
             markPreferAgentsSurface();
             this.host.syncWorkHubSessionsSidebarLayout();
             void this.finishAgentsSurfaceBootstrap(epoch, panel);
+            if (openTask) {
+                void this.restoreOpenTaskAfterReload(epoch, panel, openTask);
+            }
         } finally {
             if (epoch === this.sessionState.agentsBootstrapEpoch) {
                 this.sessionState.agentsBootstrapStarted = false;
@@ -290,6 +316,18 @@ export class MobileShellWorkHubBootstrapController {
                 clearMobileWorkHubBootGuard();
             }
         }
+    }
+
+    /** After F5: reopen the task that was open instead of landing on "Ready when you are". */
+    protected async restoreOpenTaskAfterReload(epoch: number, panel: MobileProjectsPanel, openTask: QaapWorkHubOpenTask): Promise<void> {
+        await restoreWorkHubOpenTask(openTask, {
+            projects: () => panel.projects,
+            findSummary: conversationId => panel.conversations?.findSummaryById(conversationId),
+            isStillWanted: () => this.shouldContinueAgentsBootstrap(epoch)
+                && this.host.getProjectsPanel() === panel
+                && !panel.transcriptController?.state.transcriptOpenSummaryId,
+            open: (project, summary) => panel.openConversationSummary(project, summary),
+        });
     }
 
     /** Collapse restored IDE side sheets before revealing Work Hub (avoids Explorer flash). */
