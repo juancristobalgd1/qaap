@@ -11,9 +11,12 @@ const root = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '')
 const isWindows = process.platform === 'win32';
 const npm = isWindows ? 'npm.cmd' : 'npm';
 const command = isWindows ? (process.env.ComSpec || 'cmd.exe') : npm;
+// A Qaap preview of this repo hands over a port it verified free (QAAP_PREVIEW_PORT); :3000 is
+// usually the IDE that runs the preview. QAAP_DEV_PORT is the manual override.
+const port = [process.env.QAAP_PREVIEW_PORT, process.env.QAAP_DEV_PORT].find(value => /^\d{2,5}$/.test(value ?? '')) ?? '3000';
 const args = isWindows
-    ? ['/d', '/s', '/c', `${npm} run start -- --hostname=:: --port 3000`]
-    : ['run', 'start', '--', '--hostname=::', '--port', '3000'];
+    ? ['/d', '/s', '/c', `${npm} run start -- --hostname=:: --port ${port}`]
+    : ['run', 'start', '--', '--hostname=::', '--port', port];
 const env = {
     ...process.env,
     QAAP_SKIP_AUTH: process.env.QAAP_SKIP_AUTH || '1',
