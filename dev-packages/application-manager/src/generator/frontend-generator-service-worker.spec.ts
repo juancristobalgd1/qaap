@@ -22,6 +22,18 @@ class TestFrontendGenerator extends FrontendGenerator {
     registrationScript(): string {
         return this.compileServiceWorkerRegistration();
     }
+
+    serviceWorkerScript(): string {
+        return this.compileServiceWorker();
+    }
+
+    protected override resolveServiceWorkerVersion(): string {
+        return 'test';
+    }
+
+    protected override getPwaManifestConfig(): undefined {
+        return undefined;
+    }
 }
 
 interface RegistrationPage {
@@ -72,5 +84,84 @@ describe('FrontendGenerator service worker registration', () => {
         page.fireControllerChange();
         page.fireControllerChange();
         expect(page.reloads).to.equal(1);
+    });
+});
+
+interface ServiceWorkerFetchEvent {
+    request: object;
+    preloadResponse: Promise<object | undefined>;
+    respondWith(response: Promise<object>): void;
+}
+
+interface LoadedServiceWorker {
+    networkRequests: string[];
+    dispatchFetch(event: ServiceWorkerFetchEvent): void;
+}
+
+const ORIGIN = 'https://qaap.203-0-113-7.sslip.io';
+
+function loadServiceWorker(): LoadedServiceWorker {
+    const generator = Object.create(TestFrontendGenerator.prototype) as TestFrontendGenerator;
+    Object.assign(generator, { pck: { props: { frontend: { config: { applicationName: 'Qaap' } } } } });
+    const listeners = new Map<string, (event: ServiceWorkerFetchEvent) => void>();
+    const worker: LoadedServiceWorker = {
+        networkRequests: [],
+        dispatchFetch: event => listeners.get('fetch')?.(event)
+    };
+    vm.runInNewContext(generator.serviceWorkerScript(), {
+        self: {
+            location: { origin: ORIGIN },
+            addEventListener: (type: string, listener: (event: ServiceWorkerFetchEvent) => void) => listeners.set(type, listener)
+        },
+        fetch: (request: { url: string }) => {
+            worker.networkRequests.push(request.url);
+            return Promise.resolve({ fromNetwork: true });
+        },
+        caches: { open: () => Promise.reject(new Error('no cache in tests')), match: () => Promise.resolve(undefined) },
+        URL,
+        console
+    });
+    return worker;
+}
+
+function navigation(pathAndQuery: string, preload: object | undefined): { event: ServiceWorkerFetchEvent; responses: Array<Promise<object>> } {
+    const responses: Array<Promise<object>> = [];
+    const event: ServiceWorkerFetchEvent = {
+        request: {
+            method: 'GET',
+            url: ORIGIN + pathAndQuery,
+            mode: 'navigate',
+            cache: 'default',
+            destination: 'document',
+            headers: { has: () => false, get: () => undefined }
+        },
+        preloadResponse: Promise.resolve(preload),
+        respondWith: response => responses.push(response)
+    };
+    return { event, responses };
+}
+
+describe('FrontendGenerator service worker navigation preload', () => {
+
+    it('answers a bypassed OAuth callback navigation with its preload response (one request, not two)', async () => {
+        // With navigation preload enabled the browser has already sent the callback request when the
+        // fetch event fires. Returning without respondWith makes it send the callback a second time:
+        // the first request consumes the single-use OAuth state and the second fails with state_lost.
+        const worker = loadServiceWorker();
+        const preload = { preloaded: true };
+        const { event, responses } = navigation('/qaap/oauth/github/callback?code=c&state=s', preload);
+        worker.dispatchFetch(event);
+        expect(responses).to.have.length(1);
+        expect(await responses[0]).to.equal(preload);
+        expect(worker.networkRequests).to.deep.equal([]);
+    });
+
+    it('fetches a bypassed navigation from the network exactly once when there is no preload', async () => {
+        const worker = loadServiceWorker();
+        const { event, responses } = navigation('/qaap/oauth/github/start', undefined);
+        worker.dispatchFetch(event);
+        expect(responses).to.have.length(1);
+        expect(await responses[0]).to.deep.equal({ fromNetwork: true });
+        expect(worker.networkRequests).to.deep.equal([ORIGIN + '/qaap/oauth/github/start']);
     });
 });

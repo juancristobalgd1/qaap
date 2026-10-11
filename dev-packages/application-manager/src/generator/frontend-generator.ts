@@ -405,7 +405,8 @@ export class FrontendGenerator extends AbstractGenerator {
  *   - navigations: network-first with an offline fallback to the cached shell.
  *   - application code (js/css): network-first so a redeploy is always served consistently.
  *   - other static assets (wasm/fonts/media/icons): stale-while-revalidate, same-origin only.
- *   - non-GET, Range requests, WebSocket-adjacent and plugin/file/api endpoints: pass-through.
+ *   - non-GET, Range requests, WebSocket-adjacent and plugin/file/api endpoints: pass-through
+ *     (bypassed navigations reuse the navigation preload response so they reach the server once).
  */
 'use strict';
 
@@ -486,7 +487,14 @@ self.addEventListener('fetch', event => {
     let url;
     try { url = new URL(req.url); } catch (_) { return; }
     if (url.origin !== self.location.origin) return;
-    if (BYPASS_PATHS.some(rx => rx.test(url.pathname))) return;
+    if (BYPASS_PATHS.some(rx => rx.test(url.pathname))) {
+        // Navigation preload already sent this navigation to the server. Falling through to the
+        // browser would send it again: a replayed OAuth callback fails with state_lost.
+        if (req.mode === 'navigate') {
+            event.respondWith(passThroughNavigate(event));
+        }
+        return;
+    }
 
     if (req.mode === 'navigate' || (req.destination === '' && req.headers.get('accept')?.includes('text/html'))) {
         event.respondWith(handleNavigate(event));
@@ -529,6 +537,12 @@ async function handleNavigate(event) {
         const cached = (await cache.match(req)) || (await cache.match('./index.html')) || (await cache.match('./'));
         return cached || new Response('Offline', { status: 503, statusText: 'Offline', headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     }
+}
+
+// Bypassed navigations (OAuth, auth, API): never cached, no offline fallback, and sent at most once.
+async function passThroughNavigate(event) {
+    const preload = event.preloadResponse ? await event.preloadResponse : undefined;
+    return preload || fetch(event.request);
 }
 
 async function staleWhileRevalidate(req) {
