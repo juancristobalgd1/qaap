@@ -133,8 +133,7 @@ import { activateMobileIdeHeaderViewExtracted, closeStaleMainPreviewWidgetExtrac
 
 export const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
 
-/** Grace after the frontend reaches 'ready' before the last-resort blank-shell recovery guard runs. */
-export const LAYOUT_RECOVERY_GRACE_MS = 2000;
+export { LAYOUT_RECOVERY_GRACE_MS } from './mobile-shell-layout-recovery';
 
 /**
  * Narrow-viewport workbench: full-width editor, side panels as sheets, bottom activity strip,
@@ -561,13 +560,14 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return isWorkHubSurfacePresentInDomExtracted(this);
     }
 
-    protected armLayoutRecoveryGuard(): void {
-        armLayoutRecoveryGuardExtracted(this);
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public armLayoutRecoveryGuard(waited = 0): void {
+        armLayoutRecoveryGuardExtracted(this, waited);
     }
 
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
-    public async runLayoutRecoveryGuard(): Promise<void> {
-        return runLayoutRecoveryGuardExtracted(this);
+    public async runLayoutRecoveryGuard(waited = 0): Promise<void> {
+        return runLayoutRecoveryGuardExtracted(this, waited);
     }
 
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */

@@ -14,12 +14,27 @@ export const SHELL_LAYOUT_STORAGE_KEY = 'layout';
 /** SessionStorage flag set once a layout-recovery reload has been attempted, to prevent reload loops. */
 export const QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY = 'qaap.layoutRecovery.attempted';
 
+/** Grace after the frontend reaches 'ready' before the last-resort blank-shell recovery guard runs. */
+export const LAYOUT_RECOVERY_GRACE_MS = 2000;
+
+/**
+ * Re-checks (each {@link LAYOUT_RECOVERY_GRACE_MS} apart) the recovery guard grants a Work Hub mount
+ * that is still in flight before treating it as hung: 60 s, above the slowest cold loads seen.
+ */
+export const LAYOUT_RECOVERY_MAX_WAITS = 30;
+
 export interface LayoutRecoveryDecisionInput {
     /**
      * A Work Hub surface (the projects panel root, an agents transcript, or an active-transcript
      * body chrome) is mounted in the DOM. When true the boot succeeded and no recovery is needed.
      */
     workHubSurfacePresent: boolean;
+    /**
+     * A Work Hub mount is still in flight (the Agents bootstrap awaits the workspace, the project
+     * list and the panel before anything is in the DOM). An empty DOM then is a slow boot, not a
+     * poisoned layout: reloading would start the frontend a second time.
+     */
+    workHubMountPending: boolean;
     /** The user explicitly chose the classic desktop IDE this session (Work Hub contract opt-out). */
     preferDesktopIde: boolean;
     /** A layout-recovery reload was already attempted this session (see {@link QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY}). */
@@ -29,6 +44,8 @@ export interface LayoutRecoveryDecisionInput {
 export type LayoutRecoveryDecision =
     /** Boot is healthy or the IDE was chosen — do nothing. */
     | 'noop'
+    /** The Work Hub is still mounting — check again later instead of reloading a healthy boot. */
+    | 'wait'
     /** The Work Hub never mounted and no recovery ran yet — clear the poisoned layout and reload once. */
     | 'recover'
     /** The Work Hub is still absent after a recovery reload — stop to avoid an infinite reload loop. */
@@ -43,6 +60,9 @@ export type LayoutRecoveryDecision =
 export function decideLayoutRecovery(input: LayoutRecoveryDecisionInput): LayoutRecoveryDecision {
     if (input.preferDesktopIde || input.workHubSurfacePresent) {
         return 'noop';
+    }
+    if (input.workHubMountPending) {
+        return 'wait';
     }
     if (input.recoveryAlreadyAttempted) {
         return 'abort-loop';

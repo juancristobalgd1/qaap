@@ -15,6 +15,7 @@ describe('mobile-shell-layout-recovery', () => {
 
     const base: LayoutRecoveryDecisionInput = {
         workHubSurfacePresent: false,
+        workHubMountPending: false,
         preferDesktopIde: false,
         recoveryAlreadyAttempted: false,
     };
@@ -54,6 +55,18 @@ describe('mobile-shell-layout-recovery', () => {
         expect(decideLayoutRecovery({ ...base, recoveryAlreadyAttempted: true })).to.equal('abort-loop');
     });
 
+    it('waits instead of reloading while a Work Hub mount is still in flight', () => {
+        // A cold boot whose Agents bootstrap is still awaiting the workspace and the project list
+        // has nothing in the DOM yet; reloading it started the frontend twice.
+        expect(decideLayoutRecovery({ ...base, workHubMountPending: true })).to.equal('wait');
+        expect(decideLayoutRecovery({ ...base, workHubMountPending: true, recoveryAlreadyAttempted: true })).to.equal('wait');
+    });
+
+    it('keeps the IDE opt-out and a mounted hub as no-ops while a mount is pending', () => {
+        expect(decideLayoutRecovery({ ...base, workHubMountPending: true, preferDesktopIde: true })).to.equal('noop');
+        expect(decideLayoutRecovery({ ...base, workHubMountPending: true, workHubSurfacePresent: true })).to.equal('noop');
+    });
+
     describe('full matrix (hub x ide x attempted)', () => {
         const expected: Record<string, string> = {
             // hubPresent | preferIde | attempted
@@ -71,6 +84,7 @@ describe('mobile-shell-layout-recovery', () => {
             it(`hub=${hub} ide=${ide} attempted=${attempted} -> ${decision}`, () => {
                 expect(decideLayoutRecovery({
                     workHubSurfacePresent: hub,
+                    workHubMountPending: false,
                     preferDesktopIde: ide,
                     recoveryAlreadyAttempted: attempted,
                 })).to.equal(decision);

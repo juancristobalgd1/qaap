@@ -31,13 +31,14 @@ import { hasDesktopSessionsSidebarCollapsed } from './mobile-work-hub-sessions-s
 import { QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import {
     decideLayoutRecovery,
+    LAYOUT_RECOVERY_GRACE_MS,
+    LAYOUT_RECOVERY_MAX_WAITS,
     QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY,
     SHELL_LAYOUT_STORAGE_KEY,
 } from './mobile-shell-layout-recovery';
 import {
     MOBILE_BOTTOM_OPEN_CLASS,
 } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
-import { LAYOUT_RECOVERY_GRACE_MS } from './mobile-one-column-shell-contribution';
 
 export function isWorkHubSurfacePresentInDomExtracted(ctx: MobileOneColumnShellContributionContext): boolean {
     if (ctx.projectsPanel?.isVisible()) {
@@ -54,23 +55,29 @@ export function isWorkHubSurfacePresentInDomExtracted(ctx: MobileOneColumnShellC
         || !!document.querySelector('.theia-mobile-agent-transcript-real-chat');
 }
 
-export function armLayoutRecoveryGuardExtracted(ctx: MobileOneColumnShellContributionContext): void {
+export function armLayoutRecoveryGuardExtracted(ctx: MobileOneColumnShellContributionContext, waited = 0): void {
     if (peekPreferDesktopIde() || typeof window === 'undefined') {
         return;
     }
     const timeout = window.setTimeout(() => {
-        void ctx.runLayoutRecoveryGuard();
+        void ctx.runLayoutRecoveryGuard(waited);
     }, LAYOUT_RECOVERY_GRACE_MS);
     ctx.toDispose.push(Disposable.create(() => window.clearTimeout(timeout)));
 }
 
-export async function runLayoutRecoveryGuardExtracted(ctx: MobileOneColumnShellContributionContext): Promise<void> {
+export async function runLayoutRecoveryGuardExtracted(ctx: MobileOneColumnShellContributionContext, waited = 0): Promise<void> {
     const decision = decideLayoutRecovery({
         workHubSurfacePresent: ctx.isWorkHubSurfacePresentInDom(),
+        // A bootstrap that never settles stops counting as pending, so a hung mount still recovers.
+        workHubMountPending: ctx.sessionState.agentsBootstrapStarted && waited < LAYOUT_RECOVERY_MAX_WAITS,
         preferDesktopIde: peekPreferDesktopIde(),
         recoveryAlreadyAttempted: ctx.hasLayoutRecoveryBeenAttempted(),
     });
     if (decision === 'noop') {
+        return;
+    }
+    if (decision === 'wait') {
+        ctx.armLayoutRecoveryGuard(waited + 1);
         return;
     }
     if (decision === 'abort-loop') {

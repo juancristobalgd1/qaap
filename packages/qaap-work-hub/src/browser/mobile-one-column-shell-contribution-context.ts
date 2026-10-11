@@ -23,6 +23,7 @@ export type MobileOneColumnShellContributionContextMember =
     | 'appearanceModeService'
     | 'armAgentsSurfaceWatchdog'
     | 'armBootGuardSafetyTimeout'
+    | 'armLayoutRecoveryGuard'
     | 'backgroundContext'
     | 'bootstrapMobilePreviewInBackground'
     | 'bottomBarController'
