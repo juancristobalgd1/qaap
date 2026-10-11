@@ -38,9 +38,10 @@ export function qaapFrontendStaticHeaders(filePath: string, frontendDir: string)
     } else if (base === 'manifest.webmanifest') {
         headers['Cache-Control'] = 'no-cache';
         headers['Content-Type'] = 'application/manifest+json; charset=utf-8';
-    } else if (base === 'index.html' || base === 'secondary-window.html') {
+    } else if (base === 'index.html' || base === 'secondary-window.html' || base === 'bundle.js' || base === 'bundle.css') {
         // The shell HTML is small and references hashed asset URLs — never cache it
-        // long-term, otherwise stale shells will reference deleted bundle hashes.
+        // long-term, otherwise stale shells will reference deleted bundle hashes. The
+        // unhashed development/fallback entries also need to be revalidated every time.
         headers['Cache-Control'] = 'no-cache';
     } else if (path.dirname(filePath) === frontendDir && qaapIsImmutableHashedChunkPath(base)) {
         // Hashed assets only ever live at the top level of lib/frontend — nested
@@ -108,15 +109,15 @@ export function resolveQaapLegalPagesDir(): string {
 }
 
 /**
- * Serves `lib/frontend` with long-term caching for hashed, content-addressed chunks,
+ * Serves `lib/frontend` with long-term caching for hashed, content-addressed entries and chunks,
  * and the packaged `/legal/*` Terms of Use and Privacy Notice (no bundle required).
  *
  * The generated `src-gen/backend/server.js` only binds its default static server when no
  * {@link BackendApplicationServer} is bound yet (`if (!container.isBound(...))`), so this binding
  * is the sanctioned seam to own frontend static serving. It replicates the generated defaults
  * (service worker / manifest / shell HTML must never be cached long-term) and adds the
- * chunk-immutable branch: `Cache-Control: public, max-age=31536000, immutable` for hashed chunks,
- * while `bundle.js` and other non-hashed assets keep the default revalidated behavior.
+ * immutable branch: `Cache-Control: public, max-age=31536000, immutable` for hashed assets,
+ * while the shell and unhashed entry points are explicitly revalidated.
  */
 @injectable()
 export class QaapFrontendStaticServer implements BackendApplicationServer {
@@ -199,7 +200,7 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
         const encodedPath = `${sourcePath}.${encoding}`;
         res.setHeader('Content-Encoding', encoding);
         res.setHeader('Content-Type', contentType);
-        res.sendFile(encodedPath, error => {
+        res.sendFile(encodedPath, { cacheControl: false }, error => {
             if (error) {
                 next(error);
             }

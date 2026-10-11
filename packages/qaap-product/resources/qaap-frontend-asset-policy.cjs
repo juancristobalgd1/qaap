@@ -24,7 +24,7 @@ function updateMeta(html, name, content) {
 }
 
 /**
- * Keep IDE entry assets out of the phone's unauthenticated document load.
+ * Keep frontend entry assets out of the phone's unauthenticated document load.
  * Desktop writes each original link at the same parser position, preserving the
  * render-blocking stylesheet and modulepreload behavior. The login gate reads
  * the entry JS/CSS URLs from metadata after sign-in.

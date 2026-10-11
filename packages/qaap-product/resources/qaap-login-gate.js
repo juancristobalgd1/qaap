@@ -420,7 +420,7 @@
     function activateBundleStylesheet() {
         var stylesheetMeta = document.querySelector('meta[name="qaap-bundle-css"]');
         var href = stylesheetMeta && stylesheetMeta.getAttribute('content');
-        var links = document.querySelectorAll('link[rel="stylesheet"]');
+        var links = document.querySelectorAll('link[href]');
         for (var i = 0; i < links.length; i++) {
             var linked = links[i].getAttribute('href') || '';
             if (linked === href || /(?:^|\/)bundle(?:-[A-Z0-9]+)?\.css(?:[?#]|$)/.test(linked)) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Syncs generated frontend static files into lib/frontend (Qaap login gate + index.html)
- * and creates .gz companion files for large JS/CSS assets so the Express server can serve
+ * and creates compressed companions for frontend assets so the Express server can serve
  * pre-compressed content (37 MB bundle.js → ~9 MB gzipped).
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */

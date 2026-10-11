@@ -24,7 +24,7 @@ describe('Qaap frontend asset policy', () => {
         '</head><body><script src="./qaap-login-gate.js"></script></body></html>',
     ].join('');
 
-    it('does not expose IDE JS or CSS to an unauthenticated phone document', () => {
+    it('does not request the entry assets on a phone before session confirmation', () => {
         const html = patchIndexForFreshAssets(source, 'test-build', {
             javascript: './bundle-A1A1A1A1A1A1.js',
             stylesheet: './bundle-B2B2B2B2B2B2.css',
@@ -37,6 +37,7 @@ describe('Qaap frontend asset policy', () => {
                 .to.equal('./bundle-A1A1A1A1A1A1.js');
             expect(dom.window.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
             expect(dom.window.document.querySelectorAll('link[href*="bundle.js"]')).to.have.length(0);
+            expect(dom.window.document.querySelectorAll('link[href*="bundle-"]')).to.have.length(0);
             expect(dom.window.document.querySelectorAll('link[rel~="modulepreload"]')).to.have.length(0);
             expect(dom.window.document.querySelector('script[src*="qaap-login-gate.js"]')?.getAttribute('src'))
                 .to.equal('./qaap-login-gate.js?qaap-build=test-build');

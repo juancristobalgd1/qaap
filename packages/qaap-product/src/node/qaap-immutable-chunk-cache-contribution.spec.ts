@@ -35,13 +35,16 @@ describe('qaap immutable frontend asset policy', () => {
         }
     });
 
-    it('sets immutable headers only on hashed entry/chunk assets and keeps the shell revalidated', () => {
+    it('sets immutable headers only on hashed assets and revalidates the shell and unhashed entries', () => {
         const frontendDir = path.resolve('app/lib/frontend');
         expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'bundle-A1B2C3D4.js'), frontendDir))
             .to.deep.equal({ 'Cache-Control': 'public, max-age=31536000, immutable' });
         expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'chunk-A1B2C3D4.css.br'), frontendDir))
             .to.deep.equal({ 'Cache-Control': 'public, max-age=31536000, immutable' });
-        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'bundle.js'), frontendDir)).to.deep.equal({});
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'bundle.js'), frontendDir))
+            .to.deep.equal({ 'Cache-Control': 'no-cache' });
+        expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'bundle.css'), frontendDir))
+            .to.deep.equal({ 'Cache-Control': 'no-cache' });
         expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'index.html'), frontendDir))
             .to.deep.equal({ 'Cache-Control': 'no-cache' });
         expect(qaapFrontendStaticHeaders(path.join(frontendDir, 'service-worker.js'), frontendDir))
@@ -56,6 +59,7 @@ describe('qaap immutable frontend asset policy', () => {
 
     it('negotiates Brotli before gzip while respecting quality values', () => {
         expect(qaapPreferredStaticEncoding('br, gzip', true, true)).to.equal('br');
+        expect(qaapPreferredStaticEncoding('br, gzip', false, true)).to.equal('gzip');
         expect(qaapPreferredStaticEncoding('gzip;q=1, br;q=0.7', true, true)).to.equal('gzip');
         expect(qaapPreferredStaticEncoding('br;q=0, gzip;q=0.8', true, true)).to.equal('gzip');
         expect(qaapPreferredStaticEncoding('br;q=0, gzip;q=0', true, true)).to.equal(undefined);

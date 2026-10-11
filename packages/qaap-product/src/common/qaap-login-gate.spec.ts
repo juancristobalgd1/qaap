@@ -104,7 +104,10 @@ describe('Qaap login gate', () => {
     describe('cold start probes', () => {
         it('renders the mobile sign-in gate immediately while auth probes are still pending', async () => {
             const run = start(() => new Promise<undefined>(() => undefined), undefined, {
-                headHtml: '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=test">',
+                headHtml: [
+                    '<meta name="qaap-bundle-css" content="./bundle-B2B2B2B2B2B2.css">',
+                    '<meta name="qaap-bundle-js" content="./bundle-A1A1A1A1A1A1.js">',
+                ].join(''),
                 beforeRun: window => {
                     window.matchMedia = (query: string): MediaQueryList => ({
                         matches: query === '(max-width: 767px), (pointer: coarse)',
@@ -124,7 +127,9 @@ describe('Qaap login gate', () => {
             expect(Date.now() - startedAt).to.be.lessThan(2000);
             expect(run.document.getElementById('qaap-login-github')?.textContent).to.contain('Sign in with GitHub');
             expect(run.document.querySelectorAll('script[src*="bundle.js"]')).to.have.length(0);
+            expect(run.document.querySelectorAll('script[src*="bundle-"]')).to.have.length(0);
             expect(run.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
+            expect(run.document.querySelectorAll('link[href*="bundle-"]')).to.have.length(0);
             expect((run.window as unknown as { __qaapBundleLoading?: boolean }).__qaapBundleLoading).to.equal(undefined);
         });
 
