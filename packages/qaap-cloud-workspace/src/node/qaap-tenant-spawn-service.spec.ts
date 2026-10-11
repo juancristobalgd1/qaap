@@ -792,6 +792,45 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         expect(service.linkCount).to.equal(1);
     });
 
+    it('does not spawn after cancellation during async isolation preparation', async () => {
+        let releasePreparation!: () => void;
+        let markPreparationStarted!: () => void;
+        const preparation = new Promise<void>(resolve => releasePreparation = resolve);
+        const preparationStarted = new Promise<void>(resolve => markPreparationStarted = resolve);
+        class AbortablePreparedSpawnService extends TestTenantSpawnService {
+            override async prepareTenantIsolationAsync(): Promise<void> {
+                markPreparationStarted();
+                await preparation;
+            }
+        }
+        const service = new AbortablePreparedSpawnService();
+        const controller = new AbortController();
+        const spawnAsync = service.spawnArgvPreparedAsync.bind(service) as unknown as (
+            file: string,
+            args: readonly string[],
+            options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ['ignore', 'pipe', 'pipe']; signal: AbortSignal }
+        ) => Promise<ChildProcess>;
+        const spawning = spawnAsync('npm', [], {
+            cwd: tenantCwd,
+            env: { PATH: '/usr/bin' },
+            stdio: ['ignore', 'pipe', 'pipe'],
+            signal: controller.signal,
+        });
+
+        await preparationStarted;
+        controller.abort();
+        releasePreparation();
+        let rejected = false;
+        try {
+            await spawning;
+        } catch {
+            rejected = true;
+        }
+
+        expect(rejected).to.equal(true);
+        expect(service.launches).to.have.length(0);
+    });
+
     it('keeps async HOME resolution off the synchronous overlay when persistent linking is incomplete', async () => {
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
         process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = 'off';

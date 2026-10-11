@@ -790,12 +790,19 @@ export class QaapTenantSpawnService {
     async spawnArgvPreparedAsync(
         file: string,
         args: readonly string[],
-        options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean },
+        options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean; signal?: AbortSignal },
     ): Promise<ChildProcess> {
+        const { signal, ...spawnOptions } = options;
+        if (signal?.aborted) {
+            throw signal.reason ?? new Error('Tenant process launch was cancelled.');
+        }
         const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
         await this.prepareTenantIsolationAsync(cwd);
-        return this.spawnArgvPrepared(file, args, { ...options, cwd });
+        if (signal?.aborted) {
+            throw signal.reason ?? new Error('Tenant process launch was cancelled.');
+        }
+        return this.spawnArgvPrepared(file, args, { ...spawnOptions, cwd });
     }
 
     /**
@@ -890,8 +897,18 @@ export class QaapTenantSpawnService {
         return QaapTenantAgentStorageEnv.build(root);
     }
 
+    /** Build the tenant-backend HOME variables without invoking any synchronous preparation. */
+    protected tenantBackendAgentHomeEnvOverlay(): QaapTenantHomeEnvOverlay {
+        const user = this.isBackendRoot() ? 'qaap-agent' : 'theia';
+        const fallback = QaapTenantAgentStorageEnv.defaultTenantBackendRoot(process.env);
+        const root = QaapTenantAgentStorageEnv.resolveRoot(process.env, fallback);
+        const storageEnv = root ? QaapTenantAgentStorageEnv.build(root) : {};
+        return { HOME: QAAP_TENANT_BACKEND_HOME, USER: user, LOGNAME: user, ...storageEnv };
+    }
+
     protected readonly preparedAgentStorageRoots = new Set<string>();
     protected readonly persistentTenantHomes = new Set<string>();
+    protected readonly pendingPersistentTenantHomes = new Map<string, Promise<void>>();
     protected readonly preparedTenantBackendHomes = new Set<string>();
     protected readonly pendingAgentStorageAccessMarkers = new Map<string, string>();
 
@@ -902,7 +919,7 @@ export class QaapTenantSpawnService {
      * backend restart, an idle stop and a redeploy. Skipped when the operator disabled the storage.
      */
     protected ensurePersistentTenantBackendHome(home: string): void {
-        if (this.persistentTenantHomes.has(home)) {
+        if (this.persistentTenantHomes.has(home) || this.pendingPersistentTenantHomes.has(home)) {
             return;
         }
         const root = QaapTenantAgentStorageEnv.resolveRoot(process.env, QaapTenantAgentStorageEnv.defaultTenantBackendRoot(process.env));
@@ -942,37 +959,50 @@ export class QaapTenantSpawnService {
         }
     }
 
-    protected async ensurePersistentTenantBackendHomeAsync(home: string, root: string, identity?: { uid?: number; gid?: number }): Promise<void> {
+    protected ensurePersistentTenantBackendHomeAsync(home: string, root: string, identity?: { uid?: number; gid?: number }): Promise<void> {
         if (this.persistentTenantHomes.has(home) || !this.preparedAgentStorageRoots.has(root)) {
-            return;
+            return Promise.resolve();
         }
-        try {
-            const owner = identity?.uid !== undefined && identity.uid > 0
-                ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
-                : undefined;
-            const persistentHome = QaapTenantAgentStorageEnv.homeDir(root);
-            const linkResult = await this.linkPersistentTenantHomeAsync(home, persistentHome, owner);
-            if (!linkResult.complete) {
-                return;
-            }
-            if (identity?.uid !== undefined && identity.uid > 0) {
-                await this.applyPrivateAgentDirectoryAclAsync(persistentHome, identity.uid, true);
-                await this.applyPersistentAgentHomeEntryAclsAsync(persistentHome, identity.uid);
-                await this.repairTenantAgentStorageTreesAsync(root, identity.uid, linkResult.changedEntries);
-                const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
-                if (!configRoot) {
-                    throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
+        const pending = this.pendingPersistentTenantHomes.get(home);
+        if (pending) {
+            return pending;
+        }
+        let preparation: Promise<void>;
+        preparation = Promise.resolve().then(async () => {
+            try {
+                const owner = identity?.uid !== undefined && identity.uid > 0
+                    ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
+                    : undefined;
+                const persistentHome = QaapTenantAgentStorageEnv.homeDir(root);
+                const linkResult = await this.linkPersistentTenantHomeAsync(home, persistentHome, owner);
+                if (!linkResult.complete) {
+                    return;
                 }
-                await this.grantTenantAgentStorageAccessAsync(configRoot, root, identity.uid);
+                if (identity?.uid !== undefined && identity.uid > 0) {
+                    await this.applyPrivateAgentDirectoryAclAsync(persistentHome, identity.uid, true);
+                    await this.applyPersistentAgentHomeEntryAclsAsync(persistentHome, identity.uid);
+                    await this.repairTenantAgentStorageTreesAsync(root, identity.uid, linkResult.changedEntries);
+                    const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
+                    if (!configRoot) {
+                        throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
+                    }
+                    await this.grantTenantAgentStorageAccessAsync(configRoot, root, identity.uid);
+                }
+                this.persistentTenantHomes.add(home);
+            } catch (error) {
+                if (identity?.uid !== undefined && identity.uid > 0) {
+                    throw this.agentHomeAccessError(error);
+                }
+                console.warn(`[qaap-security] could not persist agent sign-in state of ${home}: `
+                    + `${error instanceof Error ? error.message : String(error)}`);
             }
-            this.persistentTenantHomes.add(home);
-        } catch (error) {
-            if (identity?.uid !== undefined && identity.uid > 0) {
-                throw this.agentHomeAccessError(error);
+        }).finally(() => {
+            if (this.pendingPersistentTenantHomes.get(home) === preparation) {
+                this.pendingPersistentTenantHomes.delete(home);
             }
-            console.warn(`[qaap-security] could not persist agent sign-in state of ${home}: `
-                + `${error instanceof Error ? error.message : String(error)}`);
-        }
+        });
+        this.pendingPersistentTenantHomes.set(home, preparation);
+        return preparation;
     }
 
     /** Overridable in tests. */
@@ -1680,6 +1710,9 @@ export class QaapTenantSpawnService {
     async resolveProcessEnvAsync(cwd: string, base: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> {
         cwd = this.canonicalizeCwd(cwd);
         await this.prepareTenantBackendAgentHomeAsync();
+        if (this.isTenantBackendMode()) {
+            return { ...base, ...this.tenantBackendAgentHomeEnvOverlay() };
+        }
         return { ...base, ...this.tenantHomeEnvOverlay(cwd) };
     }
 

@@ -13,7 +13,7 @@
 
 import { nls } from '@theia/core';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { execFile } from 'child_process';
+import { execFile, type ChildProcess } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { promisify } from 'util';
@@ -319,23 +319,59 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                 baseEnv[key] = value;
             }
         }
-        let child;
+        const cancelled = Symbol('verification cancelled');
+        let child: ChildProcess | undefined;
+        let aborted = false;
+        let resolveAborted!: () => void;
+        const abortSignal = new Promise<typeof cancelled>(resolve => resolveAborted = () => resolve(cancelled));
+        const abort = (): void => {
+            aborted = true;
+            child?.kill();
+            resolveAborted();
+        };
+        context.signal.addEventListener('abort', abort, { once: true });
         try {
-            child = await this.tenantSpawn.spawnArgvPreparedAsync('npm', ['run', script], {
-                cwd: context.cwd,
-                env: await this.tenantSpawn.resolveProcessEnvAsync(context.cwd, baseEnv),
-                stdio: ['ignore', 'pipe', 'pipe'],
-                detached: true,
-            });
+            const env = await Promise.race([
+                this.tenantSpawn.resolveProcessEnvAsync(context.cwd, baseEnv),
+                abortSignal,
+            ]);
+            if (env === cancelled || context.signal.aborted) {
+                context.signal.removeEventListener('abort', abort);
+                return 'Verification was cancelled.';
+            }
+            const spawned = await Promise.race([
+                this.tenantSpawn.spawnArgvPreparedAsync('npm', ['run', script], {
+                    cwd: context.cwd,
+                    env,
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    detached: true,
+                    signal: context.signal,
+                }),
+                abortSignal,
+            ]);
+            if (spawned === cancelled || context.signal.aborted) {
+                spawned !== cancelled && spawned.kill();
+                context.signal.removeEventListener('abort', abort);
+                return 'Verification was cancelled.';
+            }
+            child = spawned;
         } catch (error) {
+            context.signal.removeEventListener('abort', abort);
+            if (aborted || context.signal.aborted) {
+                return 'Verification was cancelled.';
+            }
             return `Could not start tenant verification: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        const spawnedChild = child;
+        if (!spawnedChild) {
+            context.signal.removeEventListener('abort', abort);
+            return 'Verification was cancelled.';
         }
         return new Promise(resolve => {
             let stdout = '';
             let stderr = '';
             let settled = false;
             let timedOut = false;
-            let aborted = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
             const finish = (result: string | undefined): void => {
                 if (settled) {
@@ -359,19 +395,15 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                     stderr += value;
                 }
                 if (stdout.length + stderr.length > MAX_VERIFY_OUTPUT_BYTES * 8) {
-                    child.kill();
+                    spawnedChild.kill();
                     finish(`Verification output exceeded ${MAX_VERIFY_OUTPUT_BYTES * 8} bytes.`);
                 }
             };
-            const abort = (): void => {
-                aborted = true;
-                child.kill();
-            };
-            child.stdout?.on('data', chunk => collect('stdout', chunk));
-            child.stderr?.on('data', chunk => collect('stderr', chunk));
-            child.on('error', error => finish(`Tenant verification failed to start: ${error.message}`));
-            child.on('close', code => {
-                if (aborted) {
+            spawnedChild.stdout?.on('data', chunk => collect('stdout', chunk));
+            spawnedChild.stderr?.on('data', chunk => collect('stderr', chunk));
+            spawnedChild.on('error', error => finish(`Tenant verification failed to start: ${error.message}`));
+            spawnedChild.on('close', code => {
+                if (aborted || context.signal.aborted) {
                     finish('Verification was cancelled.');
                 } else if (timedOut) {
                     finish(`Verification timed out after ${Math.ceil(VERIFY_SCRIPT_TIMEOUT_MS / 60_000)} minutes.`);
@@ -385,10 +417,9 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                     }));
                 }
             });
-            context.signal.addEventListener('abort', abort, { once: true });
             timeout = setTimeout(() => {
                 timedOut = true;
-                child.kill();
+                spawnedChild.kill();
             }, VERIFY_SCRIPT_TIMEOUT_MS);
         });
     }
