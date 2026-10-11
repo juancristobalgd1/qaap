@@ -1008,7 +1008,7 @@ export class QaapTenantSpawnService {
     protected applyPersistentAgentHomeEntryAcls(persistentHome: string, uid: number): void {
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
             const target = path.join(persistentHome, entry);
-            const stats = this.lstatIfPresent(target);
+            const stats = this.lstatPersistentAgentHomeEntry(target);
             if (stats?.isSymbolicLink()) {
                 throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
             }
@@ -1018,7 +1018,7 @@ export class QaapTenantSpawnService {
         }
         for (const entry of QAAP_PERSISTENT_HOME_FILES) {
             const target = path.join(persistentHome, entry);
-            const stats = this.lstatIfPresent(target);
+            const stats = this.lstatPersistentAgentHomeEntry(target);
             if (stats?.isSymbolicLink()) {
                 throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
             }
@@ -1185,6 +1185,18 @@ export class QaapTenantSpawnService {
             return fs.lstatSync(entry);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return undefined;
+            }
+            throw error;
+        }
+    }
+
+    protected lstatPersistentAgentHomeEntry(entry: string): fs.Stats | undefined {
+        try {
+            return this.lstatIfPresent(entry);
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'EACCES') {
                 return undefined;
             }
             throw error;

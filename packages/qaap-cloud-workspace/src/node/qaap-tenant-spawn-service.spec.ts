@@ -921,6 +921,61 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         }
     });
 
+    it('does not abort startup when persistent agent-owned HOME entries return EACCES', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-private-eacces-'));
+        const configRoot = path.join(root, 'config');
+        const storageRoot = path.join(root, 'storage');
+        const persistentHome = path.join(storageRoot, 'home');
+        const persistentConfig = path.join(persistentHome, '.config');
+        const home = path.join(root, 'qaap-home');
+        fs.mkdirSync(persistentConfig, { recursive: true, mode: 0o700 });
+        fs.mkdirSync(path.join(home, '.config'), { recursive: true, mode: 0o700 });
+        fs.mkdirSync(configRoot);
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_BACKEND_PER_TENANT = '0';
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = configRoot;
+        process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = storageRoot;
+        const service = new class extends AgentHomeAccessTestService {
+            constructor() {
+                super();
+                this.homeAccessRoot = home;
+            }
+
+            protected override lstatIfPresent(entry: string): fs.Stats | undefined {
+                const resolved = path.resolve(entry);
+                if (resolved === persistentConfig) {
+                    throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+                }
+                const stats = super.lstatIfPresent(entry);
+                if (resolved === persistentHome && stats) {
+                    return new Proxy(stats, {
+                        get: (target, property, receiver) => property === 'uid'
+                            ? 1001
+                            : Reflect.get(target, property, receiver),
+                    });
+                }
+                return stats;
+            }
+        }();
+        try {
+            expect(() => service.resolveProcessEnv(tenantCwd, {})).not.to.throw();
+        } finally {
+            envKeys.forEach((key, index) => {
+                const value = original[index];
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            });
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('skips agent-owned private storage subtrees and writes the sentinel after preparation', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-mixed-tree-'));
         const configRoot = path.join(root, 'config');
