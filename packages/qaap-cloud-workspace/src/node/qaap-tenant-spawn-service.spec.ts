@@ -1001,6 +1001,31 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         }
     });
 
+    it('batches ACL commands while repairing backend-owned files', () => {
+        class BatchedRepairTestService extends AgentHomeAccessTestService {
+            repair(directory: string, uid: number): boolean {
+                return this.repairAgentAccessTree(directory, uid);
+            }
+        }
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-batch-'));
+        const tree = path.join(root, 'cache');
+        fs.mkdirSync(tree);
+        const files = Array.from({ length: 24 }, (_, index) => path.join(tree, `entry-${index}.json`));
+        files.forEach(file => fs.writeFileSync(file, '{}'));
+        const service = new BatchedRepairTestService();
+        try {
+            expect(service.repair(tree, 1001)).to.equal(true);
+
+            const aclCommands = service.commands.filter(command => command.file === 'setfacl');
+            const fileAclCommands = aclCommands.filter(command => command.args.some(argument => argument.includes('u:1001:rwX')));
+            expect(aclCommands.length).to.be.lessThan(8);
+            expect(fileAclCommands).to.have.length(1);
+            expect(fileAclCommands[0]!.args.filter(argument => files.includes(argument))).to.have.length(files.length);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('does not write the storage sentinel when the agent cannot create a directory in HOME/.config', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-home-probe-denied-'));
         const configRoot = path.join(root, 'config');
