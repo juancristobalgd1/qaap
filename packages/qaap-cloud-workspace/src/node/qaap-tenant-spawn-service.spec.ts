@@ -867,6 +867,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
                 persistentHome: path.join(root, 'storage', 'home'),
                 owner: { uid: 1001, gid: 1001 },
             }]);
+            expect(service.resolveSpawnIdentity(tenantCwd)).to.deep.equal({ uid: 1001, gid: 1001 });
             expect(service.commands.some(command => command.file === 'setfacl')).to.equal(true);
             expect(service.commands.some(command => command.file === 'find')).to.equal(true);
         } finally {
