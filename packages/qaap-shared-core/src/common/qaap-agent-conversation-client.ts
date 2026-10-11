@@ -736,7 +736,7 @@ export async function createConversation(
         signal,
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await buildPostMessageError(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -847,6 +847,7 @@ export class QaapConversationMessageError extends Error {
     }
 }
 
+/** The server's JSON `error` text (e.g. a missing clone that could not be restored), else the raw body. */
 async function buildPostMessageError(response: Response): Promise<Error> {
     const text = await response.text();
     let message = text || response.statusText;

@@ -246,6 +246,10 @@ export class QaapGithubAuthGuard {
         }
         // 2. Derive {owner, repo} from a `github:` key or a legacy/new repository path.
         const derived = this.deriveOwnerRepoFromCwd(trimmed);
+        if (derived && !(this.isRepositorySegment(derived.owner) && this.isRepositorySegment(derived.repo))) {
+            // `github:octo/..` would rebuild to the caller's user root (every repository at once).
+            return { kind: 'denied' };
+        }
         if (derived) {
             const candidate = resolveRepositoryWorkspacePath(this.reposRoot, login, derived.owner, derived.repo);
             return this.acceptOwnedRepositoryCwd(login, candidate);
@@ -260,6 +264,61 @@ export class QaapGithubAuthGuard {
         }
         // 4. A workspace container (`/workspace`, repos root, user root, owner dir) — no single repo.
         return { kind: 'needs-project' };
+    }
+
+    /**
+     * The caller's own canonical clone that `rawCwd` names but that is absent from disk, so it may be
+     * cloned again before an agent runs there. Only a `github:owner/repo` key or a path lexically inside
+     * the caller's own tree qualifies — another user's path never does. `undefined` when anything already
+     * sits at the clone path, or when an existing directory on the way is a symlink: a clone through it
+     * could land outside the caller's tree.
+     */
+    missingOwnedRepositoryClone(userLogin: string | undefined, rawCwd: string | undefined): { owner: string; repo: string; path: string } | undefined {
+        const login = userLogin?.trim();
+        const trimmed = rawCwd?.trim();
+        if (!login || !trimmed) {
+            return undefined;
+        }
+        const userRoot = resolveUserReposRoot(this.reposRoot, login);
+        let derived: { owner: string; repo: string } | undefined;
+        if (/^github:/.test(trimmed)) {
+            derived = this.deriveOwnerRepoFromCwd(trimmed);
+        } else if (isPathUnderUserWorkspace(trimmed, this.reposRoot, login)) {
+            const [owner, repo] = path.relative(userRoot, normalizeIsolationPath(trimmed)).split(/[\\/]/);
+            derived = owner && repo ? { owner, repo } : undefined;
+        }
+        if (!derived || !this.isRepositorySegment(derived.owner) || !this.isRepositorySegment(derived.repo)) {
+            return undefined;
+        }
+        const clonePath = resolveRepositoryWorkspacePath(this.reposRoot, login, derived.owner, derived.repo);
+        if (!isPathUnderUserWorkspace(clonePath, this.reposRoot, login) || isUserWorkspaceContainerPath(clonePath, this.reposRoot, login)) {
+            return undefined;
+        }
+        // The owner directory is the only level between the user root and the clone.
+        if (!this.isMissingOrRealDirectory(path.dirname(clonePath))) {
+            this.logSecurityEvent('symlink_escape_denied', { userLogin: login, targetPath: clonePath });
+            return undefined;
+        }
+        try {
+            fs.lstatSync(clonePath);
+            return undefined;
+        } catch {
+            return { ...derived, path: clonePath };
+        }
+    }
+
+    protected isMissingOrRealDirectory(dir: string): boolean {
+        try {
+            const stat = fs.lstatSync(dir);
+            return stat.isDirectory() && !stat.isSymbolicLink();
+        } catch (error) {
+            return (error as NodeJS.ErrnoException).code === 'ENOENT';
+        }
+    }
+
+    /** A GitHub owner/repository name segment; `.`/`..` would climb out of the clone path. */
+    protected isRepositorySegment(value: string): boolean {
+        return /^[A-Za-z0-9_.-]+$/.test(value) && !/^\.+$/.test(value);
     }
 
     /** Extract `{owner, repo}` from a cwd, PRESERVING case (disk lookups are case-sensitive on Linux). */
