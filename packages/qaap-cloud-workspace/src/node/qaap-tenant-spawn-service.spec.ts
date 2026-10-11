@@ -826,9 +826,16 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         try {
             const first = new AgentHomeAccessTestService();
             first.resolveProcessEnv(tenantCwd, {});
-            expect(first.commands.some(command => command.file === 'find')).to.equal(true);
+            const firstRepair = first.commands.findIndex(command => command.file === 'find');
+            expect(firstRepair).to.be.greaterThan(-1);
             expect(first.commands.some(command => command.file === 'setfacl' && command.args.some(argument => argument.includes('g::---,o::---')))).to.equal(true);
             expect(first.commands.filter(command => command.file === 'find').every(command => command.args.includes('-P') && command.args.includes('-xdev'))).to.equal(true);
+            const storageRoot = path.join(root, 'storage');
+            const storageRootGrant = first.commands.findIndex(command => command.file === 'setfacl'
+                && command.args.includes(storageRoot)
+                && command.args.includes('-m')
+                && command.args.some(argument => argument.includes('u:1001:rwx,g::---,o::---')));
+            expect(storageRootGrant).to.be.greaterThan(firstRepair);
 
             const restarted = new AgentHomeAccessTestService();
             restarted.resolveProcessEnv(tenantCwd, {});
