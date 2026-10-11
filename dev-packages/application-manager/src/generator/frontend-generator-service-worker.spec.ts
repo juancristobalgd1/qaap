@@ -26,16 +26,18 @@ class TestFrontendGenerator extends FrontendGenerator {
 
 interface RegistrationPage {
     reloads: number;
+    location: { search: string };
     fireControllerChange(): void;
 }
 
-function loadRegistrationScript(initialController: object | undefined): RegistrationPage {
+function loadRegistrationScript(initialController: object | undefined, search = ''): RegistrationPage {
     const generator = Object.create(TestFrontendGenerator.prototype) as TestFrontendGenerator;
     const html = generator.registrationScript();
     const js = html.replace(/^\s*<script[^>]*>/, '').replace(/<\/script>\s*$/, '');
     const listeners: Array<() => void> = [];
     const page: RegistrationPage = {
         reloads: 0,
+        location: { search },
         fireControllerChange: () => listeners.forEach(listener => listener())
     };
     const serviceWorker = {
@@ -50,7 +52,7 @@ function loadRegistrationScript(initialController: object | undefined): Registra
     vm.runInNewContext(js, {
         navigator: { serviceWorker },
         document: { readyState: 'complete', addEventListener: () => { } },
-        window: { location: { search: '' } },
+        window: { location: page.location },
         location: { reload: () => { page.reloads++; } },
         setInterval: () => 0
     });
@@ -63,6 +65,22 @@ describe('FrontendGenerator service worker registration', () => {
         // clients.claim() on the first install fires controllerchange. Reloading there starts the
         // frontend twice ("loading modules..." twice) on every fresh profile.
         const page = loadRegistrationScript(undefined);
+        page.fireControllerChange();
+        expect(page.reloads).to.equal(0);
+    });
+
+    it('never reloads a normal load whose service worker is already active', () => {
+        // Same build: the update check finds identical bytes, so no controllerchange is fired.
+        const page = loadRegistrationScript({});
+        expect(page.reloads).to.equal(0);
+    });
+
+    it('does not reload an OAuth landing after the login gate stripped its query', () => {
+        // The gate removes `qaap_oauth` with replaceState once the session resolves; a takeover
+        // landing after that (signed-out pages come from the control plane, signed-in ones from a
+        // tenant on another build) reloaded the frontend while it was still booting.
+        const page = loadRegistrationScript({}, '?qaap_oauth=github');
+        page.location.search = '';
         page.fireControllerChange();
         expect(page.reloads).to.equal(0);
     });

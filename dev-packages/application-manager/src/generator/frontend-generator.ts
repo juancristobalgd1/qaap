@@ -352,11 +352,13 @@ export class FrontendGenerator extends AbstractGenerator {
             // page): nothing was served by an older SW then, and a reload would start the
             // frontend a second time while it is still booting.
             'var hadController=!!navigator.serviceWorker.controller;',
+            // Read the OAuth landing once: the login gate strips `qaap_oauth` with replaceState as
+            // soon as the session resolves, and a takeover after that would boot the page twice.
+            'var oauthLanding=window.location.search.indexOf("qaap_oauth")>=0;',
             'var reloaded=false;',
             'navigator.serviceWorker.addEventListener("controllerchange",function(){',
             'if(!hadController){hadController=true;return;}',
-            'if(reloaded)return;',
-            'if(window.location.search.indexOf("qaap_oauth=")>=0)return;',
+            'if(reloaded||oauthLanding)return;',
             'reloaded=true;try{location.reload();}catch(_){}});',
             '})();'
         ].join('');
