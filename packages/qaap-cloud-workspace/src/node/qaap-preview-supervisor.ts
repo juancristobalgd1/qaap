@@ -180,11 +180,11 @@ export class QaapPreviewSupervisor {
         // SEC-1: the dev server runs workspace-controlled code (package script or validated argv plan),
         // so it MUST drop to the tenant uid — otherwise a malicious repo's `dev` script runs as root and
         // defeats uid-per-user isolation. spawnArgvPrepared enforces the fail-closed policy, provisions
-        // + chowns the tenant tree, and wraps the command in `setpriv --clear-groups`. resolveProcessEnv
-        // points HOME/USER at the tenant's writable home. No-op when uid-per-user is off / not root.
+        // + chowns the tenant tree, and wraps the command in `setpriv --clear-groups`. The async env
+        // resolver prepares tenant-backend HOME before returning HOME/USER. No-op outside that mode.
         let child: ChildProcess;
         try {
-            const env = this.tenantSpawn.resolveProcessEnv(cwd, { ...childProcessEnv(), PORT: String(port), BROWSER: 'none' });
+            const env = await this.tenantSpawn.resolveProcessEnvAsync(cwd, { ...childProcessEnv(), PORT: String(port), BROWSER: 'none' });
             child = await this.tenantSpawn.spawnArgvPreparedAsync(plan.command, plan.args, { cwd, env });
         } catch (error) {
             const refused: QaapPreviewProcessRecord = {

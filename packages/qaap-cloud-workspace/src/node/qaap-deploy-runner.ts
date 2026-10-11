@@ -88,7 +88,7 @@ export class QaapDeployRunner {
             // SEC-1: a deploy runs the tenant's own build (e.g. `vercel deploy`) with cwd = the tenant
             // repo — tenant-controlled code. The async gate makes Docker provisioning part of the
             // lifecycle and fails closed instead of falling back to the backend host.
-            const env = this.tenantSpawn.resolveProcessEnv(options.cwd, options.env);
+            const env = await this.tenantSpawn.resolveProcessEnvAsync(options.cwd, options.env);
             child = await this.tenantSpawn.spawnArgvPreparedAsync(command, args, { cwd: options.cwd, env });
         } catch (error) {
             return { stdout: '', stderr: error instanceof Error ? error.message : String(error), exitCode: 1 };

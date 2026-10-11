@@ -1676,6 +1676,13 @@ export class QaapTenantSpawnService {
         return { ...base, ...this.tenantHomeEnvOverlay(this.canonicalizeCwd(cwd)) };
     }
 
+    /** Async environment resolution for callers that will launch through an async spawn lifecycle. */
+    async resolveProcessEnvAsync(cwd: string, base: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> {
+        cwd = this.canonicalizeCwd(cwd);
+        await this.prepareTenantBackendAgentHomeAsync();
+        return { ...base, ...this.tenantHomeEnvOverlay(cwd) };
+    }
+
     /**
      * Provision `dir` (and its ancestors) so a tenant-uid process can create children under it — used
      * before `git worktree add {dir}/{slug}` so the tenant can create the new worktree. `dir` is chowned

@@ -91,7 +91,7 @@ export class QaapAgentHookProcessRunner {
     protected async spawnHook(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<ChildProcess> {
         return this.tenantSpawn.spawnPreparedAsync(command, {
             cwd,
-            env: this.tenantSpawn.resolveProcessEnv(cwd, env),
+            env: await this.tenantSpawn.resolveProcessEnvAsync(cwd, env),
             stdio: ['pipe', 'pipe', 'pipe'],
         });
     }

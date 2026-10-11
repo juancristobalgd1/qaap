@@ -323,7 +323,7 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
         try {
             child = await this.tenantSpawn.spawnArgvPreparedAsync('npm', ['run', script], {
                 cwd: context.cwd,
-                env: this.tenantSpawn.resolveProcessEnv(context.cwd, baseEnv),
+                env: await this.tenantSpawn.resolveProcessEnvAsync(context.cwd, baseEnv),
                 stdio: ['ignore', 'pipe', 'pipe'],
                 detached: true,
             });
@@ -465,7 +465,7 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
         }
         const child = await this.tenantSpawn.spawnArgvPreparedAsync('git', args, {
             cwd: context.cwd,
-            env: this.tenantSpawn.resolveProcessEnv(context.cwd, baseEnv),
+            env: await this.tenantSpawn.resolveProcessEnvAsync(context.cwd, baseEnv),
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: true,
         });

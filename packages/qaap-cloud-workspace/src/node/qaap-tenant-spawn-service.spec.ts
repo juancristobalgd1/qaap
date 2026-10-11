@@ -736,6 +736,27 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         }
     });
 
+    it('awaits tenant-backend HOME preparation before resolving an async process environment', async () => {
+        class OrderedPreparationTestService extends TestTenantSpawnService {
+            homePrepared = false;
+
+            protected override async prepareTenantBackendAgentHomeAsync(): Promise<void> {
+                await new Promise<void>(resolve => setImmediate(resolve));
+                this.homePrepared = true;
+            }
+
+            override tenantHomeEnvOverlay(_cwd: string): { HOME: string } {
+                expect(this.homePrepared).to.equal(true);
+                return { HOME: '/tmp/qaap-home' };
+            }
+        }
+        const service = new OrderedPreparationTestService();
+
+        const env = await service.resolveProcessEnvAsync(tenantCwd, { PATH: '/usr/bin' });
+
+        expect(env).to.include({ PATH: '/usr/bin', HOME: '/tmp/qaap-home' });
+    });
+
     it('points HOME/USER at the tenant home when a uid drop applies', () => {
         process.env.QAAP_AGENT_UID_PER_USER = '1';
         const svc = new TestTenantSpawnService();
