@@ -49,7 +49,7 @@ import {
     disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
     delay as delayHelper,
 } from './qaap-project-bootstrap-helpers';
-import { buildShellInvocationExtracted, disposeRestoredPreviewTerminalsExtracted, failDevRunExtracted, openPreviewExtracted, openPreviewWidgetExtracted, previewWidgetKeyExtracted, reconcileRestoredPreviewTerminalsExtracted, refreshDescriptorAfterInstallExtracted, spawnCommandExtracted, spawnCommandWithRetryExtracted, syncMiniBrowserPreviewSuspensionAfterOpenExtracted, toUserFacingDevErrorExtracted, watchAttachedDevTerminalExtracted } from './qaap-project-bootstrap-service-activity';
+import { type QaapDevRunFailureOptions, buildShellInvocationExtracted, disposeRestoredPreviewTerminalsExtracted, failDevRunExtracted, openPreviewExtracted, openPreviewWidgetExtracted, previewWidgetKeyExtracted, reconcileRestoredPreviewTerminalsExtracted, refreshDescriptorAfterInstallExtracted, spawnCommandExtracted, spawnCommandWithRetryExtracted, syncMiniBrowserPreviewSuspensionAfterOpenExtracted, toUserFacingDevErrorExtracted, watchAttachedDevTerminalExtracted } from './qaap-project-bootstrap-service-activity';
 import { adoptSupersedingPreviewClaimExtracted, bindPreviewConversationExtracted, buildDevSpawnPlanExtracted, claimPreviewExecutionExtracted, describeRunnableAppExtracted, ensurePreviewProcessIdForConversationExtracted, getBootstrapFailureDetailExtracted, getMissingDescriptorHintExtracted, initExtracted, reconcileSupersededPreviewClaimExtracted, refreshFromProjectRootExtracted, rememberActivePreviewClaimExtracted, reserveActivePreviewExtracted, resolveDevPlanExtracted, resolveInstallPlanExtracted, selectMonorepoAppExtracted, stopManagedDevServerForAppSwitchExtracted, switchMonorepoAppExtracted } from './qaap-project-bootstrap-service-render';
 import { cancelActivePreviewLaunchExtracted, focusPreviewExtracted, openExistingPreviewExtracted, refreshFromCurrentWorkspaceExtracted, refreshFromRootExtracted, resetExtracted, runDevServerExtracted, runInstallExtracted, scheduleRefreshFromCurrentWorkspaceExtracted, skipExtracted, startDevServerExtracted } from './qaap-project-bootstrap-service-streaming';
 import { adoptExistingPreviewIdentityExtracted, attachTerminalOsProcessIdExtracted, claimDevPreviewPortExtracted, collectProbePortsExtracted, extractPortExtracted, healPreviewClaimToListeningPortExtracted, markPortOpenedExtracted, mayAutoOpenPreviewNowExtracted, monitorPreviewProcessLifetimeExtracted, openPrimaryPreviewWhenReadyExtracted, probeBelongsToActiveProjectExtracted, recordForwardedPortExtracted, resolvePrimaryPreviewTargetExtracted, scanDevOutputExtracted, scanForDevUrlExtracted, scheduleDevPreviewFallbackExtracted, tryAttachToExistingServerExtracted } from './qaap-project-bootstrap-service-timeline';
@@ -670,8 +670,9 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public async failDevRun(message: string, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, runId: number,): Promise<void> {
-        return failDevRunExtracted(this, message, plan, runId);
+    public async failDevRun(message: string, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, runId: number,
+        options?: QaapDevRunFailureOptions,): Promise<void> {
+        return failDevRunExtracted(this, message, plan, runId, options);
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

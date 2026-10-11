@@ -38,6 +38,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
     let disableJSDOM: (() => void) | undefined;
     let activity: typeof import('./qaap-project-bootstrap-service-activity');
     let streaming: typeof import('./qaap-project-bootstrap-service-streaming');
+    let describeDevProcessExit: typeof import('./qaap-project-bootstrap-dev-errors').describeDevProcessExit;
 
     before(() => {
         disableJSDOM = enableJSDOM();
@@ -52,6 +53,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
         } as NodeJS.Module;
         activity = require('./qaap-project-bootstrap-service-activity');
         streaming = require('./qaap-project-bootstrap-service-streaming');
+        ({ describeDevProcessExit } = require('./qaap-project-bootstrap-dev-errors'));
     });
 
     after(() => disableJSDOM?.());
@@ -175,6 +177,27 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             window.clearTimeout(ctx.previewAutoRetryTimer);
 
             expect(ctx.previewAutoRetryAttempts).to.equal(1);
+        });
+
+        it('reports a clean exit without a listener with its port and last output instead of retrying', async () => {
+            const output = '2026-10-11T10:00:00.000Z root INFO Configuration directory URI: file:///root/.theia\n'
+                + '2026-10-11T10:00:00.100Z root ERROR SQLite errcode 14 (non-fatal)\n';
+            const { ctx, attachCalls } = failingRunContext({
+                devOutputTail: output,
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            const exit = describeDevProcessExit(0, output, 3001);
+
+            await activity.failDevRunExtracted(ctx, exit.message, PLAN, 7, { exitedWithoutListening: exit.exitedWithoutListening });
+
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            // A daemonizing command may still have left a server behind: attach is tried first.
+            expect(attachCalls()).to.equal(1);
+            expect(ctx._error).to.contain('exited with code 0 without listening on port 3001');
+            expect(ctx._error).to.contain('SQLite errcode 14 (non-fatal)');
         });
 
         it('handles a later failure of the same run once the first one settled', async () => {
