@@ -220,12 +220,15 @@ describe('QaapTenantPersistentHome', () => {
     it('does not copy or remove a HOME entry that is itself a mount point', () => {
         const config = path.join(home, '.config');
         fs.mkdirSync(config, { recursive: true });
+        fs.mkdirSync(path.join(persistentHome, '.config'), { recursive: true });
         fs.writeFileSync(path.join(config, 'mounted-secret.json'), 'mounted');
+        fs.writeFileSync(path.join(persistentHome, '.config', 'mounted-secret.json'), 'existing');
 
         const actualLstatSync = fs.lstatSync;
         sinon.stub(fs, 'lstatSync').callsFake(((entry: fs.PathLike) => {
+            const resolved = path.resolve(String(entry));
             const stats = actualLstatSync(entry);
-            if (path.resolve(String(entry)) === config) {
+            if (resolved === config || resolved.startsWith(`${config}${path.sep}`)) {
                 return new Proxy(stats, {
                     get: (target, property, receiver) => property === 'dev'
                         ? stats.dev + 1
@@ -239,7 +242,7 @@ describe('QaapTenantPersistentHome', () => {
 
         expect(fs.lstatSync(config).isDirectory()).to.equal(true);
         expect(fs.readFileSync(path.join(config, 'mounted-secret.json'), 'utf8')).to.equal('mounted');
-        expect(fs.existsSync(path.join(persistentHome, '.config', 'mounted-secret.json'))).to.equal(false);
+        expect(fs.readFileSync(path.join(persistentHome, '.config', 'mounted-secret.json'), 'utf8')).to.equal('existing');
     });
 
     it('rejects a symlink in a persistent HOME root instead of operating through it', () => {

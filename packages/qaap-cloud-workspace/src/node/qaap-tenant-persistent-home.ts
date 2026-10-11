@@ -62,14 +62,18 @@ export namespace QaapTenantPersistentHome {
         if (owner && lstat(persistentHome)?.uid === backendOwnerUid()) {
             fs.chmodSync(persistentHome, 0o1700);
         }
+        const homeDevice = lstat(home)?.dev;
+        if (homeDevice === undefined) {
+            throw new Error(`Cannot determine the device of persistent agent HOME: ${home}`);
+        }
         const changedEntries: string[] = [];
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
-            if (linkEntry(home, persistentHome, entry, true, owner, chown)) {
+            if (linkEntry(home, persistentHome, entry, true, homeDevice, owner, chown)) {
                 changedEntries.push(resolveEntry(persistentHome, entry));
             }
         }
         for (const entry of QAAP_PERSISTENT_HOME_FILES) {
-            if (linkEntry(home, persistentHome, entry, false, owner, chown)) {
+            if (linkEntry(home, persistentHome, entry, false, homeDevice, owner, chown)) {
                 changedEntries.push(resolveEntry(persistentHome, entry));
             }
         }
@@ -121,6 +125,7 @@ export namespace QaapTenantPersistentHome {
         persistentHome: string,
         entry: string,
         directory: boolean,
+        homeDevice: number,
         owner?: QaapTenantPersistentHomeOwner,
         chown: QaapTenantPersistentHomeChown = fs.chownSync
     ): boolean {
@@ -172,10 +177,10 @@ export namespace QaapTenantPersistentHome {
                 dereference: false,
                 filter: source => {
                     const stats = fs.lstatSync(source);
-                    return !stats.isSymbolicLink() && stats.dev === current.dev;
+                    return !stats.isSymbolicLink() && stats.dev === homeDevice;
                 }
             });
-            const sourceRemoved = removeEntryWithinDevice(linkPath, current.dev);
+            const sourceRemoved = removeEntryWithinDevice(linkPath, homeDevice);
             if (directory) {
                 ensureDirectory(target);
                 const targetStatsAfterCopy = lstat(target);
