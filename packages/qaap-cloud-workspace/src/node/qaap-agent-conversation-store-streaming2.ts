@@ -56,6 +56,21 @@ export function cancelRunExtracted(ctx: QaapAgentConversationStoreContext, id: s
         return next;
 }
 
+/** Conversation fields written by the composer preference flush; changing them is not task activity. */
+const COMPOSER_PREFERENCE_KEYS: ReadonlySet<keyof QaapAgentConversation> = new Set<keyof QaapAgentConversation>([
+    'agentId', 'agentModel', 'qaiqModel', 'interactionModeId', 'approvalPolicyId', 'toolApprovalRules',
+]);
+
+function conversationFieldEquals(current: unknown, next: unknown): boolean {
+    if (current === next) {
+        return true;
+    }
+    if (current && next && typeof current === 'object' && typeof next === 'object') {
+        return JSON.stringify(current) === JSON.stringify(next);
+    }
+    return false;
+}
+
 export function updateExtracted(ctx: QaapAgentConversationStoreContext, id: string, request: QaapUpdateAgentConversationRequest): QaapAgentConversation | undefined {
         const conv = ctx.conversations.get(id);
         if (!conv) {
@@ -123,10 +138,15 @@ export function updateExtracted(ctx: QaapAgentConversationStoreContext, id: stri
                 network: request.toolApprovalRules.network === true,
             };
         }
-        if (Object.keys(patch).length === 0) {
+        const changedKeys = (Object.keys(patch) as Array<keyof typeof patch>)
+            .filter(key => !conversationFieldEquals(conv[key], patch[key]));
+        if (changedKeys.length === 0) {
             return conv;
         }
-        const next: QaapAgentConversation = { ...conv, ...patch, updatedAt: Date.now() };
+        // Composer preferences are flushed whenever the user leaves a task; they are not activity,
+        // so they must not bump `updatedAt` (which orders the task list) and move the task to the top.
+        const isActivity = changedKeys.some(key => !COMPOSER_PREFERENCE_KEYS.has(key));
+        const next: QaapAgentConversation = { ...conv, ...patch, updatedAt: isActivity ? Date.now() : conv.updatedAt };
         ctx.conversations.set(id, next);
         ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
         void ctx.persist();
