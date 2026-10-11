@@ -126,7 +126,14 @@ export namespace QaapTenantPersistentHome {
     ): boolean {
         const linkPath = resolveEntry(home, entry);
         const target = resolveEntry(persistentHome, entry);
-        const current = lstat(linkPath);
+        const currentState = lstatLinkTarget(linkPath);
+        if (currentState.inaccessible) {
+            // HOME may already be owned by the agent and mode 0700. Treat an entry that the
+            // backend cannot inspect the same as an inaccessible persistent target and retry
+            // preparation on a later request.
+            return false;
+        }
+        const current = currentState.stats;
         const targetState = lstatLinkTarget(target);
         if (targetState.inaccessible) {
             // The agent may own a private 0700 persistent HOME that this backend cannot search.

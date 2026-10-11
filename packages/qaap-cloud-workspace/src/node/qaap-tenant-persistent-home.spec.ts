@@ -163,6 +163,7 @@ describe('QaapTenantPersistentHome', () => {
     });
 
     it('tolerates EACCES inspecting a HOME entry already owned by the agent', () => {
+        fs.mkdirSync(home, { recursive: true });
         fs.mkdirSync(path.join(persistentHome, '.config'), { recursive: true });
         fs.chmodSync(home, 0o700);
         fs.symlinkSync(path.join(persistentHome, '.config'), path.join(home, '.config'));
