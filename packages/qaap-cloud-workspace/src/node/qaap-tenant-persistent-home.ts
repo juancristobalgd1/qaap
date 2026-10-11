@@ -192,6 +192,9 @@ export namespace QaapTenantPersistentHome {
         } else if (current) {
             // Written into the tmpfs before the link existed: this is the newest state, keep it.
             // Do not bring symlinks or mounted subtrees from the volatile HOME into persistent storage.
+            if (current.dev !== homeDevice) {
+                return { changed: false, complete: false };
+            }
             fs.cpSync(linkPath, target, {
                 recursive: true,
                 force: true,
