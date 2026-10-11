@@ -938,7 +938,7 @@ export class QaapTenantSpawnService {
             return;
         }
         try {
-            QaapTenantPersistentHome.ensureDirectory(home, { uid, gid: uid });
+            this.ensureAgentHomeDirectory(home, uid);
             if (!this.runTenantAccessCommand('setfacl', ['-b', '-k', '--', home])) {
                 throw new Error(`Could not lock existing files under agent HOME ${home} during access repair.`);
             }
@@ -949,6 +949,11 @@ export class QaapTenantSpawnService {
         } catch (error) {
             throw this.agentHomeAccessError(error);
         }
+    }
+
+    /** Overridable for capability-profile tests; mode and ACLs provide access when chown is denied. */
+    protected ensureAgentHomeDirectory(home: string, uid: number): void {
+        QaapTenantPersistentHome.ensureDirectory(home, { uid, gid: uid });
     }
 
     protected applyPersistentAgentHomeEntryAcls(persistentHome: string, uid: number): void {
