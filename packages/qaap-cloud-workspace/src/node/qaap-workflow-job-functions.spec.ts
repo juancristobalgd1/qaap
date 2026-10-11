@@ -29,6 +29,10 @@ class TenantVerifyFunctions extends QaapWorkflowJobFunctions {
     runTenant(context: QaapJobFunctionContext, script: string): Promise<string | undefined> {
         return this.runVerificationScriptInTenant(context, script);
     }
+
+    runTenantGit(context: QaapJobFunctionContext, args: readonly string[]): Promise<string> {
+        return this.gitInTenant(context, args);
+    }
 }
 
 class TestVerifyFunctions extends QaapWorkflowJobFunctions {
@@ -96,6 +100,41 @@ describe('QaapWorkflowJobFunctions.verify', () => {
         const result = await running;
 
         expect(result).to.equal('Verification was cancelled.');
+        expect(spawnCount).to.equal(0);
+    });
+
+    it('does not spawn tenant git when cancellation arrives while HOME preparation is pending', async () => {
+        let finishPreparation!: (env: NodeJS.ProcessEnv) => void;
+        let markPreparationStarted!: () => void;
+        const preparation = new Promise<NodeJS.ProcessEnv>(resolve => finishPreparation = resolve);
+        const preparationStarted = new Promise<void>(resolve => markPreparationStarted = resolve);
+        let spawnCount = 0;
+        const tenantSpawn = {
+            resolveProcessEnvAsync: async () => {
+                markPreparationStarted();
+                return preparation;
+            },
+            spawnArgvPreparedAsync: async () => {
+                spawnCount++;
+                throw new Error('git spawn should not be reached after cancellation');
+            },
+        } as unknown as QaapTenantSpawnService;
+        const contribution = new TenantVerifyFunctions(tenantSpawn);
+        const controller = new AbortController();
+        const jobContext = { ...context(dir), signal: controller.signal };
+        const running = contribution.runTenantGit(jobContext, ['status']);
+
+        await preparationStarted;
+        controller.abort();
+        let rejected = false;
+        try {
+            await running;
+        } catch {
+            rejected = true;
+        }
+        finishPreparation({ HOME: '/tmp/qaap-home' });
+
+        expect(rejected).to.equal(true);
         expect(spawnCount).to.equal(0);
     });
 
