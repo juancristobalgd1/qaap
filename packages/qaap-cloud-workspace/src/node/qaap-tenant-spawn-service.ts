@@ -856,6 +856,13 @@ export class QaapTenantSpawnService {
                 this.applyPrivateAgentDirectoryAcl(persistentHome, identity.uid, true);
                 this.applyPersistentAgentHomeEntryAcls(persistentHome, identity.uid);
                 this.repairTenantAgentStorageTrees(root, identity.uid, changedEntries);
+                const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
+                if (!configRoot) {
+                    throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
+                }
+                // Keep the storage root inaccessible to the agent until the one-time repair has
+                // finished. This prevents a dropped agent from racing the path-based ACL walk.
+                this.grantTenantAgentStorageAccess(configRoot, root, identity.uid);
             }
             this.persistentTenantHomes.add(home);
         } catch (error) {
@@ -894,7 +901,12 @@ export class QaapTenantSpawnService {
                     throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
                 }
                 fs.chmodSync(root, 0o1700);
-                this.grantTenantAgentStorageAccess(configRoot, root, uid);
+                for (const directory of [root, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
+                    fs.chmodSync(directory, directory === root ? 0o1700 : 0o700);
+                    if (!this.runTenantAccessCommand('setfacl', ['-b', '-k', '--', directory])) {
+                        throw new Error(`Could not lock agent storage directory ${directory} during access repair.`);
+                    }
+                }
             } else {
                 fs.chmodSync(root, 0o700);
             }
@@ -927,7 +939,9 @@ export class QaapTenantSpawnService {
         }
         try {
             QaapTenantPersistentHome.ensureDirectory(home, { uid, gid: uid });
-            this.applyPrivateAgentDirectoryAcl(home, uid, true);
+            if (!this.runTenantAccessCommand('setfacl', ['-b', '-k', '--', home])) {
+                throw new Error(`Could not lock existing files under agent HOME ${home} during access repair.`);
+            }
             if (!this.repairAgentAccessTree(home, uid)) {
                 throw new Error(`Could not repair existing files under agent HOME ${home}.`);
             }
@@ -999,13 +1013,21 @@ export class QaapTenantSpawnService {
 
     protected repairAgentAccessTree(directory: string, uid: number): boolean {
         QaapTenantPersistentHome.ensureDirectory(directory);
+        fs.chmodSync(directory, 0o700);
+        if (!this.runTenantAccessCommand('setfacl', ['-b', '-k', '--', directory])) {
+            return false;
+        }
         const acl = `u:${uid}:rwx,g::---,o::---,d:u:${uid}:rwx,d:g::---,d:o::---`;
         const fileAcl = `u:${uid}:rwX,g::---,o::---`;
-        const directories = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-b', '-k', '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS)
-            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-m', acl, '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
-        const files = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-b', '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS)
-            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-m', fileAcl, '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
-        return directories && files;
+        // Reset and grant file ACLs before directories. The final depth-first directory pass
+        // makes the locked root accessible only after every child has been repaired; -P and
+        // -xdev keep the walk inside this tree and do not follow symlinks or cross mounts.
+        const clearedDirectories = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-b', '-k', '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
+        const clearedFiles = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-b', '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
+        const files = clearedFiles && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-m', fileAcl, '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
+        const directories = clearedDirectories && files
+            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-depth', '-type', 'd', '-exec', 'setfacl', '-m', acl, '--', '{}', '+'], QAAP_TENANT_AGENT_ACCESS_SCAN_TIMEOUT_MS);
+        return directories;
     }
 
     protected applyPrivateAgentFileAcl(file: string, uid: number): boolean {
