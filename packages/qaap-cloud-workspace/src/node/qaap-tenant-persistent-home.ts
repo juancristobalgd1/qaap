@@ -33,7 +33,7 @@ export const QAAP_PERSISTENT_HOME_FILES: readonly string[] = [
     '.openclaude.json',
 ];
 
-/** Optional owner applied to created entries when the backend runs as root and drops agents to a uid. */
+/** Optional owner attempted for newly-created HOME directories. ACLs provide access if chown is denied. */
 export interface QaapTenantPersistentHomeOwner {
     readonly uid: number;
     readonly gid: number;
@@ -42,14 +42,14 @@ export interface QaapTenantPersistentHomeOwner {
 /**
  * Links the credential entries of a volatile tenant HOME to a directory on the tenant's private,
  * disk-backed storage. Existing entries in HOME (written before the link existed) are moved over.
+ * Ownership changes are best effort and limited to each link's root directory; recursive access
+ * repair is performed with ACLs by the spawn service so it does not need CAP_CHOWN.
  */
 export namespace QaapTenantPersistentHome {
 
     export function link(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): void {
         ensureDirectory(home, owner);
         ensureDirectory(persistentHome, owner);
-        applyOwner(home, owner, true);
-        applyOwner(persistentHome, owner, true);
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
             linkEntry(home, persistentHome, entry, true, owner);
         }
@@ -58,67 +58,98 @@ export namespace QaapTenantPersistentHome {
         }
     }
 
+    /** Create a directory path one component at a time and reject symlink components. */
+    export function ensureDirectory(directory: string, owner?: QaapTenantPersistentHomeOwner): void {
+        const resolved = path.resolve(directory);
+        const root = path.parse(resolved).root;
+        let current = root;
+        for (const component of resolved.slice(root.length).split(path.sep).filter(Boolean)) {
+            current = path.join(current, component);
+            let stats = lstat(current);
+            if (!stats) {
+                try {
+                    fs.mkdirSync(current, { mode: 0o700 });
+                } catch (error) {
+                    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+                        throw error;
+                    }
+                }
+                stats = lstat(current);
+            }
+            if (!stats || stats.isSymbolicLink() || !stats.isDirectory()) {
+                throw new Error(`Refusing to use a non-directory or symlink in persistent agent HOME: ${current}`);
+            }
+        }
+        if (owner) {
+            tryChown(resolved, owner);
+        }
+    }
+
     function linkEntry(home: string, persistentHome: string, entry: string, directory: boolean, owner?: QaapTenantPersistentHomeOwner): void {
-        const linkPath = path.join(home, entry);
-        const target = path.join(persistentHome, entry);
+        const linkPath = resolveEntry(home, entry);
+        const target = resolveEntry(persistentHome, entry);
         const current = lstat(linkPath);
+        const targetStats = lstat(target);
+        if (targetStats?.isSymbolicLink()) {
+            throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
+        }
         if (current?.isSymbolicLink()) {
             if (fs.readlinkSync(linkPath) === target) {
+                if (directory && targetStats && !targetStats.isDirectory()) {
+                    throw new Error(`Persistent agent HOME entry is not a directory: ${target}`);
+                }
                 return;
             }
             fs.unlinkSync(linkPath);
         } else if (current) {
-            // Written into the tmpfs before the link existed: it is the newest state, keep it.
-            fs.cpSync(linkPath, target, { recursive: true, force: true });
+            // Written into the tmpfs before the link existed: this is the newest state, keep it.
+            // fs.cpSync preserves symlinks as links and does not traverse their targets.
+            fs.cpSync(linkPath, target, { recursive: true, force: true, dereference: false });
             fs.rmSync(linkPath, { recursive: true, force: true });
-            applyOwner(target, owner, true);
         }
         if (directory) {
             ensureDirectory(target, owner);
         }
         // A missing file target is fine: the CLI creates it through the link on first write.
         fs.symlinkSync(target, linkPath);
-        if (owner) {
-            fs.lchownSync(linkPath, owner.uid, owner.gid);
-        }
     }
 
-    function ensureDirectory(directory: string, owner?: QaapTenantPersistentHomeOwner): void {
-        if (!lstat(directory)) {
-            fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    function resolveEntry(root: string, entry: string): string {
+        const resolvedRoot = path.resolve(root);
+        const resolvedEntry = path.resolve(resolvedRoot, entry);
+        if (!resolvedEntry.startsWith(`${resolvedRoot}${path.sep}`)) {
+            throw new Error(`Refusing a persistent agent HOME entry outside ${resolvedRoot}.`);
         }
-        applyOwner(directory, owner, false);
+        return resolvedEntry;
     }
 
-    function applyOwner(entry: string, owner: QaapTenantPersistentHomeOwner | undefined, recursive: boolean): void {
-        if (!owner) {
+    function tryChown(directory: string, owner: QaapTenantPersistentHomeOwner): void {
+        const stats = lstat(directory);
+        if (!stats || stats.isSymbolicLink()) {
+            throw new Error(`Refusing to change ownership of a missing or symbolic-link directory: ${directory}`);
+        }
+        if (stats.uid === owner.uid && stats.gid === owner.gid) {
             return;
         }
-        const current = lstat(entry);
-        if (!current || current.isSymbolicLink()) {
-            return;
-        }
-        if (current.uid !== owner.uid || current.gid !== owner.gid) {
-            fs.chownSync(entry, owner.uid, owner.gid);
-        }
-        const mode = fs.statSync(entry).mode & 0o7777;
-        const ownerAccess = current.isDirectory() ? 0o700 : current.isFile() ? 0o600 : 0;
-        const safeMode = mode | ownerAccess;
-        if (safeMode !== mode) {
-            fs.chmodSync(entry, safeMode);
-        }
-        if (recursive && current.isDirectory()) {
-            for (const child of fs.readdirSync(entry)) {
-                applyOwner(path.join(entry, child), owner, true);
+        try {
+            fs.chownSync(directory, owner.uid, owner.gid);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EPERM') {
+                throw error;
             }
+            // Rootless container backends have SETUID/SETGID but not CAP_CHOWN. The caller grants
+            // the agent an ACL after linking, while the container owner can still chmod this tree.
         }
     }
 
     function lstat(entry: string): fs.Stats | undefined {
         try {
             return fs.lstatSync(entry);
-        } catch {
-            return undefined;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return undefined;
+            }
+            throw error;
         }
     }
 }

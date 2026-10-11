@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
+import { nls } from '@theia/core/lib/common/nls';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -64,6 +65,7 @@ interface QaapProcessInvocation {
 const DEFAULT_AGENT_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_AGENT_CPU_LIMIT_CORES = 2;
 const SYSTEMD_RUN_PROBE_TIMEOUT_MS = 3000;
+const QAAP_TENANT_AGENT_ACCESS_VERSION = 1;
 
 /**
  * Single source of truth for spawning a workspace-scoped child process under the correct OS identity
@@ -771,6 +773,10 @@ export class QaapTenantSpawnService {
             const user = this.isBackendRoot() ? 'qaap-agent' : 'theia';
             const storageEnv = this.tenantAgentStorageEnv();
             this.ensurePersistentTenantBackendHome(QAAP_TENANT_BACKEND_HOME);
+            const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
+            if (identity?.uid !== undefined && identity.uid > 0) {
+                this.ensureTenantBackendHomeAccess(QAAP_TENANT_BACKEND_HOME, identity.uid);
+            }
             return { HOME: QAAP_TENANT_BACKEND_HOME, USER: user, LOGNAME: user, ...storageEnv };
         }
         if (this.isContainerIsolationEnabled()) {
@@ -817,6 +823,7 @@ export class QaapTenantSpawnService {
 
     protected readonly preparedAgentStorageRoots = new Set<string>();
     protected readonly persistentTenantHomes = new Set<string>();
+    protected readonly preparedTenantBackendHomes = new Set<string>();
 
     /**
      * Link the CLI credential entries of the tmpfs HOME to the tenant's disk-backed storage, once
@@ -838,8 +845,15 @@ export class QaapTenantSpawnService {
                 ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
                 : undefined;
             this.linkPersistentTenantHome(home, QaapTenantAgentStorageEnv.homeDir(root), owner);
+            if (identity?.uid !== undefined && identity.uid > 0) {
+                this.repairTenantAgentStorageTrees(root, identity.uid);
+            }
             this.persistentTenantHomes.add(home);
         } catch (error) {
+            const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
+            if (identity?.uid !== undefined && identity.uid > 0) {
+                throw this.agentHomeAccessError(error);
+            }
             console.warn(`[qaap-security] could not persist agent sign-in state of ${home}: `
                 + `${error instanceof Error ? error.message : String(error)}`);
         }
@@ -858,40 +872,133 @@ export class QaapTenantSpawnService {
         if (this.preparedAgentStorageRoots.has(root)) {
             return;
         }
+        const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
+        const uid = identity?.uid !== undefined && identity.uid > 0 ? identity.uid : undefined;
         try {
+            QaapTenantPersistentHome.ensureDirectory(root);
             for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
-                fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+                QaapTenantPersistentHome.ensureDirectory(dir);
             }
-            fs.chmodSync(root, 0o700);
-            const uid = Number.parseInt(process.env.QAAP_AGENT_UID?.trim() ?? '', 10);
             const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
-            if (Number.isInteger(uid) && uid > 0 && configRoot) {
+            if (uid !== undefined) {
+                if (!configRoot) {
+                    throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
+                }
+                fs.chmodSync(root, 0o1700);
                 this.grantTenantAgentStorageAccess(configRoot, root, uid);
+            } else {
+                fs.chmodSync(root, 0o700);
             }
             this.preparedAgentStorageRoots.add(root);
         } catch (error) {
+            if (uid !== undefined) {
+                throw this.agentHomeAccessError(error);
+            }
             console.warn(`[qaap-security] could not prepare tenant agent storage ${root}: `
                 + `${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
     protected grantTenantAgentStorageAccess(configRoot: string, root: string, uid: number): void {
-        const configAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, configRoot]);
-        const rootAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx`, root]);
-        const childAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]);
-        if (!configAcl || !rootAcl || !childAcl) {
-            throw new Error(`Could not grant agent uid ${uid} access to its private tenant cache at ${root}.`);
+        QaapTenantPersistentHome.ensureDirectory(configRoot);
+        QaapTenantPersistentHome.ensureDirectory(root);
+        const configAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, '--', configRoot]);
+        if (!configAcl) {
+            throw new Error(`Could not grant agent uid ${uid} access through tenant config root ${configRoot}.`);
         }
-        // Harness state written while agents still ran as root (opencode.db, its log, caches) keeps
-        // root:root 0755/0644 and default ACLs only cover new entries; without this the dropped-uid
-        // agent fails on its own log file (PermissionDenied: FileSystem.open .../opencode.log).
-        for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]) {
-            const dirs = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']);
-            const files = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']);
-            if (!dirs || !files) {
-                throw new Error(`Could not grant agent uid ${uid} access to existing harness state under ${dir}.`);
+        this.applyPrivateAgentDirectoryAcl(root, uid, true);
+        for (const directory of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
+            this.applyPrivateAgentDirectoryAcl(directory, uid, true);
+        }
+    }
+
+    protected ensureTenantBackendHomeAccess(home: string, uid: number): void {
+        if (this.preparedTenantBackendHomes.has(home)) {
+            return;
+        }
+        try {
+            QaapTenantPersistentHome.ensureDirectory(home, { uid, gid: uid });
+            this.applyPrivateAgentDirectoryAcl(home, uid, true);
+            if (!this.repairAgentAccessTree(home, uid)) {
+                throw new Error(`Could not repair existing files under agent HOME ${home}.`);
+            }
+            this.preparedTenantBackendHomes.add(home);
+        } catch (error) {
+            throw this.agentHomeAccessError(error);
+        }
+    }
+
+    protected repairTenantAgentStorageTrees(root: string, uid: number): void {
+        const marker = path.join(root, `.qaap-agent-access-v${QAAP_TENANT_AGENT_ACCESS_VERSION}-${uid}`);
+        const markerStatus = this.lstatIfPresent(marker);
+        if (markerStatus?.isFile() && !markerStatus.isSymbolicLink()
+            && markerStatus.uid === (typeof process.getuid === 'function' ? process.getuid() : markerStatus.uid)
+            && this.readAccessMarker(marker) === `${QAAP_TENANT_AGENT_ACCESS_VERSION}:${uid}`) {
+            return;
+        }
+        if (markerStatus) {
+            fs.unlinkSync(marker);
+        }
+        for (const directory of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
+            if (!this.repairAgentAccessTree(directory, uid)) {
+                throw new Error(`Could not repair existing tenant agent data under ${directory}.`);
             }
         }
+        const descriptor = fs.openSync(marker, 'wx', 0o600);
+        try {
+            fs.writeFileSync(descriptor, `${QAAP_TENANT_AGENT_ACCESS_VERSION}:${uid}`);
+            fs.fsyncSync(descriptor);
+        } finally {
+            fs.closeSync(descriptor);
+        }
+    }
+
+    protected repairAgentAccessTree(directory: string, uid: number): boolean {
+        QaapTenantPersistentHome.ensureDirectory(directory);
+        const acl = `u:${uid}:rwx,g::---,o::---,d:u:${uid}:rwx,d:g::---,d:o::---`;
+        const fileAcl = `u:${uid}:rwX,g::---,o::---`;
+        const directories = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-b', '-k', '--', '{}', '+'])
+            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'd', '-exec', 'setfacl', '-m', acl, '--', '{}', '+']);
+        const files = this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-b', '--', '{}', '+'])
+            && this.runTenantAccessCommand('find', ['-P', directory, '-xdev', '-type', 'f', '-exec', 'setfacl', '-m', fileAcl, '--', '{}', '+']);
+        return directories && files;
+    }
+
+    protected applyPrivateAgentDirectoryAcl(directory: string, uid: number, defaults: boolean): void {
+        QaapTenantPersistentHome.ensureDirectory(directory);
+        const acl = `u:${uid}:rwx,g::---,o::---${defaults ? `,d:u:${uid}:rwx,d:g::---,d:o::---` : ''}`;
+        const cleared = this.runTenantAccessCommand('setfacl', ['-b', '-k', '--', directory]);
+        const applied = this.runTenantAccessCommand('setfacl', ['-m', acl, '--', directory]);
+        if (!cleared || !applied) {
+            throw new Error(`Could not grant agent uid ${uid} private access to ${directory}.`);
+        }
+    }
+
+    protected lstatIfPresent(entry: string): fs.Stats | undefined {
+        try {
+            return fs.lstatSync(entry);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return undefined;
+            }
+            throw error;
+        }
+    }
+
+    protected readAccessMarker(marker: string): string | undefined {
+        try {
+            return fs.readFileSync(marker, 'utf8');
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected agentHomeAccessError(error: unknown): Error {
+        console.warn('[qaap-security] agent HOME access could not be guaranteed:', error instanceof Error ? error.message : String(error));
+        return new Error(nls.localize(
+            'qaap/tenantAgentHome/accessUnavailable',
+            'Could not prepare a private writable home for the agent. Please try again or contact your administrator.'
+        ));
     }
 
     /**
