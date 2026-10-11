@@ -279,6 +279,9 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             expect(aclCommands.some(command => command.args.includes(`u:1001:--x`))).to.equal(true);
             expect(aclCommands.some(command => command.args.includes(root)
                 && command.args.some(argument => argument.includes('u:1001:--x')))).to.equal(true);
+            expect(aclCommands.some(command => command.args.includes(tempRoot)
+                && command.args.some(argument => argument.includes('u:1001:--x')))).to.equal(true);
+            expect(aclCommands.some(command => command.args.includes(path.parse(root).root))).to.equal(false);
             for (const dir of [`${root}/cache`, `${root}/data`, `${root}/home`]) {
                 expect(aclCommands.some(command => command.args.includes(dir)
                     && command.args.some(argument => argument.includes('u:1001:rwx,g::---,o::---,d:u:1001:rwx')))).to.equal(true);
@@ -658,6 +661,8 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
     const originalTenantBackendMode = process.env.QAAP_TENANT_BACKEND_MODE;
     const originalTenantConfigRoot = process.env.QAAP_TENANT_CONFIG_ROOT;
     const originalTenantAgentStorageRoot = process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+    const originalAgentUid = process.env.QAAP_AGENT_UID;
+    const originalAgentGid = process.env.QAAP_AGENT_GID;
     afterEach(() => {
         if (original === undefined) {
             delete process.env.QAAP_AGENT_UID_PER_USER;
@@ -677,6 +682,8 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         for (const [key, value] of [
             ['QAAP_TENANT_CONFIG_ROOT', originalTenantConfigRoot],
             ['QAAP_TENANT_AGENT_STORAGE_ROOT', originalTenantAgentStorageRoot],
+            ['QAAP_AGENT_UID', originalAgentUid],
+            ['QAAP_AGENT_GID', originalAgentGid],
         ] as const) {
             if (value === undefined) {
                 delete process.env[key];
@@ -783,6 +790,28 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
                 process.env.QAAP_AGENT_UID = originalAgentUid;
             }
         }
+    });
+
+    it('retries persistent HOME preparation when a normal entry could not be linked', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_CONFIG_ROOT = '/home/theia/.qaap';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        delete process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+        const svc = new class extends TestTenantSpawnService {
+            linkAttempts = 0;
+
+            protected override linkPersistentTenantHome(): string[] {
+                this.linkAttempts++;
+                return Object.assign([] as string[], { complete: false });
+            }
+        }();
+        svc.backendRoot = true;
+
+        svc.resolveProcessEnv(tenantCwd, {});
+        svc.resolveProcessEnv(tenantCwd, {});
+
+        expect(svc.linkAttempts).to.equal(2);
     });
 
     it('keeps the non-root per-tenant backend on its existing HOME ownership path', () => {

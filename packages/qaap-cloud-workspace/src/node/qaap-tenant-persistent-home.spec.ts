@@ -182,6 +182,32 @@ describe('QaapTenantPersistentHome', () => {
         expect(() => QaapTenantPersistentHome.link(home, persistentHome, { uid: 1001, gid: 1001 })).not.to.throw();
     });
 
+    it('reports an inaccessible persistent destination with a normal HOME entry as incomplete and retries it', () => {
+        const config = path.join(home, '.config');
+        const persistentConfig = path.join(persistentHome, '.config');
+        fs.mkdirSync(config, { recursive: true });
+        fs.writeFileSync(path.join(config, 'settings.json'), 'temporary');
+
+        const actualLstatSync = fs.lstatSync;
+        sinon.stub(fs, 'lstatSync').callsFake(((entry: fs.PathLike) => {
+            if (path.resolve(String(entry)) === persistentConfig) {
+                throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+            }
+            return actualLstatSync(entry);
+        }) as typeof fs.lstatSync);
+
+        const result = QaapTenantPersistentHome.link(home, persistentHome) as unknown as { complete?: boolean };
+        expect(result.complete).to.equal(false);
+        expect(fs.lstatSync(config).isDirectory()).to.equal(true);
+        expect(fs.readFileSync(path.join(config, 'settings.json'), 'utf8')).to.equal('temporary');
+
+        sinon.restore();
+        QaapTenantPersistentHome.link(home, persistentHome);
+
+        expect(fs.lstatSync(config).isSymbolicLink()).to.equal(true);
+        expect(fs.readFileSync(path.join(persistentConfig, 'settings.json'), 'utf8')).to.equal('temporary');
+    });
+
     it('skips symlinks and entries on another device while migrating a preexisting HOME directory', () => {
         const config = path.join(home, '.config');
         const outside = path.join(root, 'outside.json');
