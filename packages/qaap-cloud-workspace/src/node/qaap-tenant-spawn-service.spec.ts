@@ -664,6 +664,35 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         }
     });
 
+    it('keeps the non-root per-tenant backend on its existing HOME ownership path', () => {
+        const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
+        const original = envKeys.map(key => process.env[key]);
+        process.env.QAAP_BACKEND_PER_TENANT = '1';
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_CONFIG_ROOT = '/tenant/config';
+        delete process.env.QAAP_TENANT_AGENT_STORAGE_ROOT;
+        try {
+            const svc = new TestTenantSpawnService();
+            svc.backendRoot = false;
+            const env = svc.resolveProcessEnv(tenantCwd, {});
+
+            expect(env.HOME).to.equal('/tmp/qaap-home');
+            expect(svc.linkedHomes).to.deep.equal([{
+                home: '/tmp/qaap-home',
+                persistentHome: '/tenant/config/.qaap-agent-storage/home',
+            }]);
+        } finally {
+            envKeys.forEach((key, index) => {
+                const value = original[index];
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            });
+        }
+    });
+
     it('honours an explicit agent storage root and an explicit opt-out', () => {
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
         process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = '/srv/cache/';

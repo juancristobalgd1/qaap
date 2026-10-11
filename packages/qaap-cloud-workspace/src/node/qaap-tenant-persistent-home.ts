@@ -48,6 +48,8 @@ export namespace QaapTenantPersistentHome {
     export function link(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): void {
         ensureDirectory(home, owner);
         ensureDirectory(persistentHome, owner);
+        applyOwner(home, owner, true);
+        applyOwner(persistentHome, owner, true);
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
             linkEntry(home, persistentHome, entry, true, owner);
         }
@@ -82,10 +84,9 @@ export namespace QaapTenantPersistentHome {
     }
 
     function ensureDirectory(directory: string, owner?: QaapTenantPersistentHomeOwner): void {
-        if (lstat(directory)) {
-            return;
+        if (!lstat(directory)) {
+            fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
         }
-        fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
         applyOwner(directory, owner, false);
     }
 
@@ -93,8 +94,20 @@ export namespace QaapTenantPersistentHome {
         if (!owner) {
             return;
         }
-        fs.chownSync(entry, owner.uid, owner.gid);
-        if (recursive && fs.statSync(entry).isDirectory()) {
+        const current = lstat(entry);
+        if (!current || current.isSymbolicLink()) {
+            return;
+        }
+        if (current.uid !== owner.uid || current.gid !== owner.gid) {
+            fs.chownSync(entry, owner.uid, owner.gid);
+        }
+        const mode = fs.statSync(entry).mode & 0o7777;
+        const ownerAccess = current.isDirectory() ? 0o700 : current.isFile() ? 0o600 : 0;
+        const safeMode = mode | ownerAccess;
+        if (safeMode !== mode) {
+            fs.chmodSync(entry, safeMode);
+        }
+        if (recursive && current.isDirectory()) {
             for (const child of fs.readdirSync(entry)) {
                 applyOwner(path.join(entry, child), owner, true);
             }
