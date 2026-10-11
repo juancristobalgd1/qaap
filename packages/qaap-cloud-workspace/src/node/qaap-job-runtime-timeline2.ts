@@ -14,7 +14,7 @@ import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { INDEX_MODE, JOB_PRUNE_START_DELAY_MS, MAX_RETRY_ATTEMPTS, STORE_MODE } from './qaap-job-runtime';
 import { QaapJobRequestError } from './qaap-job-runtime';
 
-export function buildChildEnvExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): NodeJS.ProcessEnv {
+export function buildChildEnvExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): Promise<NodeJS.ProcessEnv> {
         const env: NodeJS.ProcessEnv = {};
         for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'TMPDIR', 'TMP', 'TEMP']) {
             if (process.env[key] !== undefined) {
@@ -25,7 +25,7 @@ export function buildChildEnvExtracted(ctx: QaapJobRuntimeContext, job: QaapJob)
         env.CI = process.env.CI ?? '1';
         env.QAAP_JOB_ID = job.id;
         env.QAAP_JOB_RESOURCE_CLASS = job.resourceClass;
-        return ctx.tenantSpawn.resolveProcessEnv(job.cwd, env);
+        return ctx.tenantSpawn.resolveProcessEnvAsync(job.cwd, env);
 }
 
 export async function resolveFunctionWorkspacePathExtracted(ctx: QaapJobRuntimeContext, cwd: string, relativePath: string): Promise<string> {
@@ -277,4 +277,3 @@ export function removeGraphRecordExtracted(ctx: QaapJobRuntimeContext, id: strin
             );
         }
 }
-

@@ -128,7 +128,7 @@ export interface QaapJobRuntimeContext {
     replaceJob(id: string, patch: Partial<QaapJob>): QaapJob;
     terminateProcessTree(id: string, child: ChildProcess): void;
     reapProcessGroupAfterExit(child: ChildProcess): void;
-    buildChildEnv(job: QaapJob): NodeJS.ProcessEnv;
+    buildChildEnv(job: QaapJob): Promise<NodeJS.ProcessEnv>;
     resolveFunctionWorkspacePath(cwd: string, relativePath: string): Promise<string>;
 
     // ─── Persistence / retention / limits ───────────────────────────────────

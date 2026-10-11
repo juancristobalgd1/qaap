@@ -173,13 +173,18 @@ export function runJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): void 
 }
 
 export function runCommandJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): void {
-        try {
-            if (!job.command) {
+        void Promise.resolve().then(async () => {
+            const command = job.command;
+            if (!command) {
                 throw new Error('Command job has no command.');
             }
-            const child = ctx.tenantSpawn.spawnPrepared(job.command, {
+            const env = await ctx.buildChildEnv(job);
+            if (ctx.jobs.get(job.id)?.state !== 'running') {
+                return;
+            }
+            const child = ctx.tenantSpawn.spawnPrepared(command, {
                 cwd: job.cwd,
-                env: ctx.buildChildEnv(job),
+                env,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 detached: true,
             });
@@ -198,10 +203,13 @@ export function runCommandJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob)
                 ctx.terminateProcessTree(job.id, child);
                 ctx.handleAttemptFailure(job.id, 'timed_out');
             });
-        } catch (error) {
+        }).catch(error => {
+            if (ctx.jobs.get(job.id)?.state !== 'running') {
+                return;
+            }
             ctx.appendOutput(job.id, `${error instanceof Error ? error.message : String(error)}\n`);
             ctx.handleAttemptFailure(job.id, 'failed');
-        }
+        });
 }
 
 export function runFunctionJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): void {
@@ -427,4 +435,3 @@ export function reapProcessGroupAfterExitExtracted(ctx: QaapJobRuntimeContext, c
             globalThis.process.kill(-child.pid, 'SIGKILL');
         } catch { /* no residual descendants */ }
 }
-

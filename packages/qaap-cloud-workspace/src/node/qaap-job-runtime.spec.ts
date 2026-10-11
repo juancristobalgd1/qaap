@@ -116,6 +116,7 @@ function buildHarness(usePersistence = false): RuntimeHarness {
     Object.assign(runtime, {
         tenantSpawn: {
             resolveProcessEnv: (_cwd: string, env: NodeJS.ProcessEnv) => env,
+            resolveProcessEnvAsync: async (_cwd: string, env: NodeJS.ProcessEnv) => env,
             spawnPrepared: () => {
                 const child = new FakeChildProcess();
                 children.push(child);
@@ -131,6 +132,10 @@ function buildHarness(usePersistence = false): RuntimeHarness {
     return { runtime, children, functions };
 }
 
+function flushChildSpawns(): Promise<void> {
+    return new Promise(resolve => setImmediate(resolve));
+}
+
 const request = (command: string, overrides: Partial<QaapCreateCommandJobRequest> = {}): QaapCreateCommandJobRequest => ({
     command,
     cwd: '/workspace/repos/users/alice/org/repo',
@@ -139,21 +144,63 @@ const request = (command: string, overrides: Partial<QaapCreateCommandJobRequest
 
 describe('QaapJobRuntime', () => {
 
-    it('enforces a resource-lane cap and drains the oldest queued job', () => {
+    it('enforces a resource-lane cap and drains the oldest queued job', async () => {
         const { runtime, children } = buildHarness();
         runtime.limits.cpu = 1;
 
         const first = runtime.create(request('first', { resourceClass: 'cpu' }), 'alice').job;
         const second = runtime.create(request('second', { resourceClass: 'cpu' }), 'alice').job;
+        await flushChildSpawns();
 
         expect(runtime.get(first.id)?.state).to.equal('running');
         expect(runtime.get(second.id)?.state).to.equal('queued');
         expect(children).to.have.length(1);
 
         children[0].close(0);
+        await flushChildSpawns();
         expect(runtime.get(first.id)?.state).to.equal('succeeded');
         expect(runtime.get(second.id)?.state).to.equal('running');
         expect(children).to.have.length(2);
+    });
+
+    it('waits for tenant HOME preparation before spawning a command job', async () => {
+        let finishPreparation!: () => void;
+        let markPreparationStarted!: () => void;
+        let markSpawned!: () => void;
+        const preparation = new Promise<void>(resolve => finishPreparation = resolve);
+        const preparationStarted = new Promise<void>(resolve => markPreparationStarted = resolve);
+        const spawned = new Promise<void>(resolve => markSpawned = resolve);
+        const { runtime, children } = buildHarness();
+        let spawnHome: string | undefined;
+        Object.assign(runtime, {
+            tenantSpawn: {
+                resolveProcessEnv: (_cwd: string, env: NodeJS.ProcessEnv) => ({ ...env, HOME: '/tmp/qaap-home' }),
+                resolveProcessEnvAsync: async (_cwd: string, env: NodeJS.ProcessEnv) => {
+                    markPreparationStarted();
+                    await preparation;
+                    return { ...env, HOME: '/tmp/qaap-home' };
+                },
+                spawnPrepared: (_command: string, options: { env: NodeJS.ProcessEnv }) => {
+                    spawnHome = options.env.HOME;
+                    const child = new FakeChildProcess();
+                    children.push(child);
+                    markSpawned();
+                    return child as unknown as ChildProcess;
+                },
+            },
+        });
+
+        const job = runtime.create(request('needs persistent HOME'), 'alice').job;
+
+        expect(children).to.have.length(0);
+        await preparationStarted;
+        expect(runtime.get(job.id)?.state).to.equal('running');
+        expect(children).to.have.length(0);
+
+        finishPreparation();
+        await spawned;
+        expect(children).to.have.length(1);
+        expect(spawnHome).to.equal('/tmp/qaap-home');
     });
 
     it('scopes get, getGraph and cancel to the requesting owner', () => {
@@ -170,12 +217,13 @@ describe('QaapJobRuntime', () => {
         expect(runtime.cancel(job.id, 'alice')?.state).to.equal('cancelled');
     });
 
-    it('allows concurrent readers but gives a writer an exclusive workspace lease', () => {
+    it('allows concurrent readers but gives a writer an exclusive workspace lease', async () => {
         const { runtime, children } = buildHarness();
         const first = runtime.create(request('read one', { workspaceAccess: 'read', resourceClass: 'io' }), 'alice').job;
         const second = runtime.create(request('read two', { workspaceAccess: 'read', resourceClass: 'network' }), 'alice').job;
         const writer = runtime.create(request('write', { workspaceAccess: 'write' }), 'alice').job;
         const lateReader = runtime.create(request('late read', { workspaceAccess: 'read', resourceClass: 'io' }), 'alice').job;
+        await flushChildSpawns();
 
         expect(runtime.get(first.id)?.state).to.equal('running');
         expect(runtime.get(second.id)?.state).to.equal('running');
@@ -186,6 +234,7 @@ describe('QaapJobRuntime', () => {
         children[0].close(0);
         expect(runtime.get(writer.id)?.state).to.equal('queued');
         children[1].close(0);
+        await flushChildSpawns();
         expect(runtime.get(writer.id)?.state).to.equal('running');
         expect(runtime.get(lateReader.id)?.state).to.equal('queued');
         children[2].close(0);
@@ -217,7 +266,7 @@ describe('QaapJobRuntime', () => {
         expect(runtime.get(aliceQueued.id)?.state).to.equal('queued');
     });
 
-    it('uses graph dependencies to release parallel child jobs after a parent succeeds', () => {
+    it('uses graph dependencies to release parallel child jobs after a parent succeeds', async () => {
         const { runtime, children } = buildHarness();
         const parent = runtime.create(request('prepare', { workspaceAccess: 'read' }), 'alice').job;
         const left = runtime.create(request('left', {
@@ -230,20 +279,23 @@ describe('QaapJobRuntime', () => {
             dependsOn: [parent.id],
             workspaceAccess: 'read',
         }), 'alice').job;
+        await flushChildSpawns();
 
         expect(runtime.get(left.id)?.state).to.equal('waiting');
         expect(runtime.get(right.id)?.state).to.equal('waiting');
         children[0].close(0);
+        await flushChildSpawns();
 
         expect(runtime.get(left.id)?.state).to.equal('running');
         expect(runtime.get(right.id)?.state).to.equal('running');
         expect(children).to.have.length(3);
     });
 
-    it('propagates a dependency failure without spawning downstream work', () => {
+    it('propagates a dependency failure without spawning downstream work', async () => {
         const { runtime, children } = buildHarness();
         const parent = runtime.create(request('prepare'), 'alice').job;
         const child = runtime.create(request('consume', { dependsOn: [parent.id] }), 'alice').job;
+        await flushChildSpawns();
 
         children[0].close(1);
 
@@ -252,12 +304,13 @@ describe('QaapJobRuntime', () => {
         expect(children).to.have.length(1);
     });
 
-    it('deduplicates identical requests and rejects key reuse with different work', () => {
+    it('deduplicates identical requests and rejects key reuse with different work', async () => {
         const { runtime, children } = buildHarness();
         const original = request('once', { idempotencyKey: 'operation:42' });
 
         const first = runtime.create(original, 'alice');
         const replay = runtime.create(original, 'alice');
+        await flushChildSpawns();
 
         expect(first.created).to.equal(true);
         expect(replay.created).to.equal(false);
@@ -361,7 +414,7 @@ describe('QaapJobRuntime', () => {
         }
     });
 
-    it('creates a complete DAG atomically and fans out ready child nodes', () => {
+    it('creates a complete DAG atomically and fans out ready child nodes', async () => {
         const { runtime, children } = buildHarness();
         const result = runtime.createGraph({
             idempotencyKey: 'pipeline:1',
@@ -377,6 +430,7 @@ describe('QaapJobRuntime', () => {
                 }),
             }],
         }, 'alice');
+        await flushChildSpawns();
 
         expect(result.created).to.equal(true);
         expect(result.jobs.prepare.state).to.equal('running');
@@ -384,6 +438,7 @@ describe('QaapJobRuntime', () => {
         expect(result.jobs.right.state).to.equal('waiting');
         expect(children).to.have.length(1);
         children[0].close(0);
+        await flushChildSpawns();
         expect(runtime.get(result.jobs.left.id)?.state).to.equal('running');
         expect(runtime.get(result.jobs.right.id)?.state).to.equal('running');
         expect(children).to.have.length(3);
@@ -402,11 +457,12 @@ describe('QaapJobRuntime', () => {
         expect(children).to.have.length(0);
     });
 
-    it('deduplicates a whole graph and rejects graph-key reuse with a different DAG', () => {
+    it('deduplicates a whole graph and rejects graph-key reuse with a different DAG', async () => {
         const { runtime, children } = buildHarness();
         const graph = { idempotencyKey: 'graph:stable', nodes: [{ key: 'only', request: request('same') }] };
         const first = runtime.createGraph(graph, 'alice');
         const replay = runtime.createGraph(graph, 'alice');
+        await flushChildSpawns();
 
         expect(replay.created).to.equal(false);
         expect(replay.graph.id).to.equal(first.graph.id);
@@ -421,10 +477,12 @@ describe('QaapJobRuntime', () => {
         const job = runtime.create(request('flaky', {
             retryPolicy: { maxAttempts: 3, initialBackoffMs: 5, multiplier: 2, maxBackoffMs: 5 },
         }), 'alice').job;
+        await flushChildSpawns();
 
         children[0].close(1);
         expect(runtime.get(job.id)?.state).to.equal('retry_wait');
         await new Promise(resolve => setTimeout(resolve, 10));
+        await flushChildSpawns();
         expect(runtime.get(job.id)?.state).to.equal('running');
         expect(runtime.get(job.id)?.attempt).to.equal(2);
         children[1].close(0);
@@ -438,9 +496,11 @@ describe('QaapJobRuntime', () => {
         const job = runtime.create(request('always fails', {
             retryPolicy: { maxAttempts: 2, initialBackoffMs: 0, maxBackoffMs: 0 },
         }), 'alice').job;
+        await flushChildSpawns();
 
         children[0].close(1);
         await new Promise(resolve => setTimeout(resolve, 1));
+        await flushChildSpawns();
         children[1].close(1);
 
         expect(runtime.get(job.id)?.state).to.equal('failed');
@@ -448,13 +508,15 @@ describe('QaapJobRuntime', () => {
         expect(children).to.have.length(2);
     });
 
-    it('cancels a running process and releases its scheduler slot', () => {
+    it('cancels a running process and releases its scheduler slot', async () => {
         const { runtime, children } = buildHarness();
         runtime.limits.cpu = 1;
         const first = runtime.create(request('long', { resourceClass: 'cpu' }), 'alice').job;
         const second = runtime.create(request('next', { resourceClass: 'cpu' }), 'alice').job;
+        await flushChildSpawns();
 
         runtime.cancel(first.id);
+        await flushChildSpawns();
 
         expect(children[0].signals).to.deep.equal(['SIGTERM']);
         expect(runtime.get(first.id)?.state).to.equal('cancelled');
@@ -468,6 +530,7 @@ describe('QaapJobRuntime', () => {
         const queued = runtime.create(request('queued', {
             cwd: '/workspace/repos/users/alice/org/other',
         }), 'alice').job;
+        await flushChildSpawns();
 
         await runtime.shutdown();
 
@@ -477,7 +540,7 @@ describe('QaapJobRuntime', () => {
         expect(children).to.have.length(1);
     });
 
-    it('restores queued work but marks a process lost during restart as interrupted', () => {
+    it('restores queued work but marks a process lost during restart as interrupted', async () => {
         const { runtime, children } = buildHarness();
         runtime.exposeRestore({
             version: 1,
@@ -499,6 +562,7 @@ describe('QaapJobRuntime', () => {
             logs: { lost: 'partial output' },
         });
         runtime.exposeDrain();
+        await flushChildSpawns();
 
         expect(runtime.get('lost')?.state).to.equal('interrupted');
         expect(runtime.get('lost')?.log).to.equal('partial output');
@@ -506,7 +570,7 @@ describe('QaapJobRuntime', () => {
         expect(children).to.have.length(1);
     });
 
-    it('resumes a durable retry deadline after restart and retains structured results', () => {
+    it('resumes a durable retry deadline after restart and retains structured results', async () => {
         const { runtime, children } = buildHarness();
         runtime.exposeRestore({
             version: 2,
@@ -533,6 +597,7 @@ describe('QaapJobRuntime', () => {
             graphs: [],
         });
         runtime.exposeDrain();
+        await flushChildSpawns();
 
         expect(runtime.get('retry')?.state).to.equal('running');
         expect(runtime.get('retry')?.attempt).to.equal(2);
