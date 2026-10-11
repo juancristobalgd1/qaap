@@ -185,10 +185,11 @@ describe('QaapTenantPersistentHome', () => {
             return stats;
         }) as typeof fs.lstatSync);
 
-        QaapTenantPersistentHome.link(home, persistentHome);
+        const changedEntries = QaapTenantPersistentHome.link(home, persistentHome);
 
         const persistentConfig = path.join(persistentHome, '.config');
         expect(fs.readFileSync(path.join(persistentConfig, 'settings.json'), 'utf8')).to.equal('{}');
+        expect(changedEntries).to.include(persistentConfig);
         expect(fs.existsSync(path.join(persistentConfig, 'mounted'))).to.equal(false);
         expect(fs.existsSync(path.join(persistentConfig, 'outside-link.json'))).to.equal(false);
         expect(fs.readFileSync(path.join(mounted, 'secret.json'), 'utf8')).to.equal('mounted');
