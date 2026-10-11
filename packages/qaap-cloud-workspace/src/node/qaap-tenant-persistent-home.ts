@@ -127,7 +127,16 @@ export namespace QaapTenantPersistentHome {
         const linkPath = resolveEntry(home, entry);
         const target = resolveEntry(persistentHome, entry);
         const current = lstat(linkPath);
-        const targetStats = lstat(target);
+        const targetState = lstatLinkTarget(target);
+        if (targetState.inaccessible) {
+            // The agent may own a private 0700 persistent HOME that this backend cannot search.
+            // Keep tmpfs state untouched, or install the expected link when HOME has no entry.
+            if (!current) {
+                fs.symlinkSync(target, linkPath);
+            }
+            return false;
+        }
+        const targetStats = targetState.stats;
         if (targetStats?.isSymbolicLink()) {
             throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
         }
@@ -159,7 +168,7 @@ export namespace QaapTenantPersistentHome {
                     return !stats.isSymbolicLink() && stats.dev === current.dev;
                 }
             });
-            fs.rmSync(linkPath, { recursive: true, force: true });
+            const sourceRemoved = removeEntryWithinDevice(linkPath, current.dev);
             if (directory) {
                 ensureDirectory(target);
                 const targetStatsAfterCopy = lstat(target);
@@ -171,6 +180,9 @@ export namespace QaapTenantPersistentHome {
                 if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink() && targetStatsAfterCopy.uid === backendOwnerUid()) {
                     fs.chmodSync(target, targetStatsAfterCopy.mode & 0o7700);
                 }
+            }
+            if (!sourceRemoved) {
+                return true;
             }
             fs.symlinkSync(target, linkPath);
             return true;
@@ -199,6 +211,54 @@ export namespace QaapTenantPersistentHome {
             throw new Error(`Refusing a persistent agent HOME entry outside ${resolvedRoot}.`);
         }
         return resolvedEntry;
+    }
+
+    function lstatLinkTarget(entry: string): { stats?: fs.Stats; inaccessible: boolean } {
+        try {
+            return { stats: fs.lstatSync(entry), inaccessible: false };
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT') {
+                return { inaccessible: false };
+            }
+            if (code === 'EACCES') {
+                return { inaccessible: true };
+            }
+            throw error;
+        }
+    }
+
+    function removeEntryWithinDevice(entry: string, device: number): boolean {
+        const stats = lstat(entry);
+        if (!stats) {
+            return true;
+        }
+        if (stats.dev !== device) {
+            return false;
+        }
+        if (stats.isSymbolicLink() || !stats.isDirectory()) {
+            fs.unlinkSync(entry);
+            return true;
+        }
+        let complete = true;
+        for (const name of fs.readdirSync(entry)) {
+            if (!removeEntryWithinDevice(path.join(entry, name), device)) {
+                complete = false;
+            }
+        }
+        if (!complete) {
+            return false;
+        }
+        try {
+            fs.rmdirSync(entry);
+            return true;
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'EBUSY' || code === 'ENOTEMPTY') {
+                return false;
+            }
+            throw error;
+        }
     }
 
     function tryChown(directory: string, owner: QaapTenantPersistentHomeOwner, chown: QaapTenantPersistentHomeChown): void {

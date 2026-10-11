@@ -136,6 +136,32 @@ describe('QaapTenantPersistentHome', () => {
         expect(chmod.calledWith(persistentHome, 0o1700)).to.equal(false);
     });
 
+    it('keeps an existing link when the agent-owned persistent HOME is not searchable by the backend', () => {
+        fs.mkdirSync(persistentHome, { recursive: true });
+        fs.mkdirSync(home, { recursive: true });
+        const target = path.join(persistentHome, '.config');
+        fs.symlinkSync(target, path.join(home, '.config'));
+        const actualLstatSync = fs.lstatSync;
+        sinon.stub(fs, 'lstatSync').callsFake(((entry: fs.PathLike) => {
+            const resolved = path.resolve(String(entry));
+            if (resolved === target) {
+                throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+            }
+            const stats = actualLstatSync(entry);
+            if (resolved === persistentHome) {
+                return new Proxy(stats, {
+                    get: (value, property, receiver) => property === 'uid'
+                        ? 1001
+                        : Reflect.get(value, property, receiver),
+                });
+            }
+            return stats;
+        }) as typeof fs.lstatSync);
+
+        expect(() => QaapTenantPersistentHome.link(home, persistentHome, { uid: 1001, gid: 1001 })).not.to.throw();
+        expect(fs.readlinkSync(path.join(home, '.config'))).to.equal(target);
+    });
+
     it('skips symlinks and entries on another device while migrating a preexisting HOME directory', () => {
         const config = path.join(home, '.config');
         const outside = path.join(root, 'outside.json');
@@ -159,12 +185,15 @@ describe('QaapTenantPersistentHome', () => {
             return stats;
         }) as typeof fs.lstatSync);
 
-        QaapTenantPersistentHome.link(home, persistentHome);
+        const changedEntries = QaapTenantPersistentHome.link(home, persistentHome);
 
         const persistentConfig = path.join(persistentHome, '.config');
         expect(fs.readFileSync(path.join(persistentConfig, 'settings.json'), 'utf8')).to.equal('{}');
+        expect(changedEntries).to.include(persistentConfig);
         expect(fs.existsSync(path.join(persistentConfig, 'mounted'))).to.equal(false);
         expect(fs.existsSync(path.join(persistentConfig, 'outside-link.json'))).to.equal(false);
+        expect(fs.readFileSync(path.join(mounted, 'secret.json'), 'utf8')).to.equal('mounted');
+        expect(fs.lstatSync(config).isDirectory()).to.equal(true);
         expect(fs.readFileSync(outside, 'utf8')).to.equal('outside');
     });
 
