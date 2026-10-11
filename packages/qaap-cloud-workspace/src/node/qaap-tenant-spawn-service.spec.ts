@@ -1161,7 +1161,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
                 return this.repairAgentAccessTree(directory, uid);
             }
 
-            protected override runTenantAccessCommand(file: string, args: readonly string[], timeoutMs?: number): boolean {
+            protected override runTenantAccessCommand(file: string, args: readonly string[]): boolean {
                 if (!this.blockedSynchronously && file === 'setfacl' && args.some(argument => argument.includes('u:1001:rwX'))) {
                     this.blockedSynchronously = true;
                     const deadline = Date.now() + 240;
@@ -1169,7 +1169,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
                         // Model one slow setfacl batch without depending on runner ACL capabilities.
                     }
                 }
-                return super.runTenantAccessCommand(file, args, timeoutMs);
+                return super.runTenantAccessCommand(file, args);
             }
 
             async runTenantAccessCommandAsync(file: string, args: readonly string[]): Promise<boolean> {
