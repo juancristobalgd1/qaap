@@ -285,7 +285,7 @@ export class QaapJobRuntime implements QaapJobRuntimeContext {
     }
 
     /** @internal Used by the extracted qaap-job-runtime-* modules. */
-    public buildChildEnv(job: QaapJob): NodeJS.ProcessEnv {
+    public buildChildEnv(job: QaapJob): Promise<NodeJS.ProcessEnv> {
         return buildChildEnvExtracted(this, job);
     }
 
