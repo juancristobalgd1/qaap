@@ -21,6 +21,22 @@ describe('QaapTenantPersistentHome', () => {
     });
 
     afterEach(() => {
+        for (const entry of [
+            root,
+            path.join(root, 'tmpfs'),
+            path.join(root, 'disk'),
+            home,
+            persistentHome,
+            path.join(persistentHome, '.config'),
+            path.join(home, '.local'),
+            path.join(home, '.local', 'share'),
+        ]) {
+            try {
+                fs.chmodSync(entry, 0o700);
+            } catch {
+                // The entry may not have been created by this test.
+            }
+        }
         fs.rmSync(root, { recursive: true, force: true });
     });
 
@@ -50,5 +66,54 @@ describe('QaapTenantPersistentHome', () => {
         expect(fs.lstatSync(path.join(home, '.gemini')).isSymbolicLink()).to.equal(true);
         expect(fs.readFileSync(path.join(persistentHome, '.gemini', 'oauth_creds.json'), 'utf8')).to.equal('tmpfs');
         expect(fs.readlinkSync(path.join(home, '.claude'))).to.equal(path.join(persistentHome, '.claude'));
+    });
+
+    it('leaves existing ownership and permissions alone when a per-tenant backend has no agent owner', () => {
+        const config = path.join(persistentHome, '.config');
+        fs.mkdirSync(config, { recursive: true });
+        fs.mkdirSync(home, { recursive: true });
+        fs.symlinkSync(config, path.join(home, '.config'));
+        fs.chmodSync(home, 0o710);
+        fs.chmodSync(persistentHome, 0o750);
+        fs.chmodSync(config, 0o750);
+
+        const homeOwner = fs.statSync(home).uid;
+        const configOwner = fs.statSync(config).uid;
+        QaapTenantPersistentHome.link(home, persistentHome);
+
+        expect(fs.statSync(home).uid).to.equal(homeOwner);
+        expect(fs.statSync(home).mode & 0o777).to.equal(0o710);
+        expect(fs.statSync(persistentHome).mode & 0o777).to.equal(0o750);
+        expect(fs.statSync(config).uid).to.equal(configOwner);
+        expect(fs.statSync(config).mode & 0o777).to.equal(0o750);
+    });
+
+    it('continues preparing persistent links when chown returns EPERM (rootless profile without CAP_CHOWN)', () => {
+        fs.mkdirSync(path.join(home, '.config'), { recursive: true });
+        fs.writeFileSync(path.join(home, '.config', 'opencode.json'), '{}');
+        const deniedChowns: string[] = [];
+        const chownWithoutCapability = (entry: string): void => {
+            deniedChowns.push(entry);
+            throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' });
+        };
+
+        QaapTenantPersistentHome.link(home, persistentHome, { uid: 1001, gid: 1001 }, chownWithoutCapability);
+
+        expect(deniedChowns).to.include(home);
+        expect(deniedChowns).not.to.include(persistentHome);
+        expect(fs.lstatSync(path.join(home, '.config')).isSymbolicLink()).to.equal(true);
+        expect(fs.readFileSync(path.join(persistentHome, '.config', 'opencode.json'), 'utf8')).to.equal('{}');
+        expect(fs.statSync(home).mode & 0o077).to.equal(0);
+        expect(fs.statSync(persistentHome).mode & 0o077).to.equal(0);
+    });
+
+    it('rejects a symlink in a persistent HOME root instead of operating through it', () => {
+        const target = path.join(root, 'outside');
+        fs.mkdirSync(target);
+        fs.mkdirSync(path.dirname(persistentHome), { recursive: true });
+        fs.symlinkSync(target, persistentHome);
+
+        expect(() => QaapTenantPersistentHome.link(home, persistentHome)).to.throw(/symlink/i);
+        expect(fs.readdirSync(target)).to.deep.equal([]);
     });
 });
