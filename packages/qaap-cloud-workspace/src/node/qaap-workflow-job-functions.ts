@@ -484,6 +484,9 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
 
     /** Keep workflow git inspection behind the same tenant boundary as verification commands. */
     protected async gitInTenant(context: QaapJobFunctionContext, args: readonly string[]): Promise<string> {
+        if (context.signal.aborted) {
+            throw context.signal.reason ?? new Error('Workflow git operation was cancelled.');
+        }
         const baseEnv: NodeJS.ProcessEnv = {
             GIT_CONFIG_NOSYSTEM: '1',
             GIT_TERMINAL_PROMPT: '0',
@@ -494,12 +497,52 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                 baseEnv[key] = value;
             }
         }
-        const child = await this.tenantSpawn.spawnArgvPreparedAsync('git', args, {
-            cwd: context.cwd,
-            env: await this.tenantSpawn.resolveProcessEnvAsync(context.cwd, baseEnv),
-            stdio: ['ignore', 'pipe', 'pipe'],
-            detached: true,
-        });
+        const cancelled = Symbol('workflow git operation cancelled');
+        let child: ChildProcess | undefined;
+        let resolveAborted!: () => void;
+        const abortSignal = new Promise<typeof cancelled>(resolve => resolveAborted = () => resolve(cancelled));
+        const abort = (): void => {
+            child?.kill();
+            resolveAborted();
+        };
+        context.signal.addEventListener('abort', abort, { once: true });
+        try {
+            const env = await Promise.race([
+                this.tenantSpawn.resolveProcessEnvAsync(context.cwd, baseEnv),
+                abortSignal,
+            ]);
+            if (env === cancelled || context.signal.aborted) {
+                throw context.signal.reason ?? new Error('Workflow git operation was cancelled.');
+            }
+            const spawned = await Promise.race([
+                this.tenantSpawn.spawnArgvPreparedAsync('git', args, {
+                    cwd: context.cwd,
+                    env,
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    detached: true,
+                    signal: context.signal,
+                }),
+                abortSignal,
+            ]);
+            if (spawned === cancelled || context.signal.aborted) {
+                if (spawned !== cancelled) {
+                    spawned.kill();
+                }
+                throw context.signal.reason ?? new Error('Workflow git operation was cancelled.');
+            }
+            child = spawned;
+        } catch (error) {
+            context.signal.removeEventListener('abort', abort);
+            if (context.signal.aborted) {
+                throw context.signal.reason ?? new Error('Workflow git operation was cancelled.');
+            }
+            throw error;
+        }
+        const spawnedChild = child;
+        if (!spawnedChild) {
+            context.signal.removeEventListener('abort', abort);
+            throw new Error('Workflow git operation was cancelled.');
+        }
         return new Promise((resolve, reject) => {
             let stdout = '';
             let stderr = '';
@@ -516,9 +559,6 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                 context.signal.removeEventListener('abort', abort);
                 callback();
             };
-            const abort = (): void => {
-                child.kill();
-            };
             const collect = (target: 'stdout' | 'stderr', chunk: unknown): void => {
                 if (target === 'stdout') {
                     stdout += String(chunk);
@@ -526,14 +566,14 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                     stderr += String(chunk);
                 }
                 if (stdout.length + stderr.length > MAX_DIFF_BYTES * 4) {
-                    child.kill();
+                    spawnedChild.kill();
                     finish(() => reject(new Error(`Git output exceeded ${MAX_DIFF_BYTES * 4} bytes.`)));
                 }
             };
-            child.stdout?.on('data', chunk => collect('stdout', chunk));
-            child.stderr?.on('data', chunk => collect('stderr', chunk));
-            child.on('error', error => finish(() => reject(error)));
-            child.on('close', code => finish(() => {
+            spawnedChild.stdout?.on('data', chunk => collect('stdout', chunk));
+            spawnedChild.stderr?.on('data', chunk => collect('stderr', chunk));
+            spawnedChild.on('error', error => finish(() => reject(error)));
+            spawnedChild.on('close', code => finish(() => {
                 if (code === 0) {
                     resolve(stdout);
                 } else if (context.signal.aborted) {
@@ -542,9 +582,8 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                     reject(new Error(stderr.trim() || `git exited with status ${code}`));
                 }
             }));
-            context.signal.addEventListener('abort', abort, { once: true });
             timeout = setTimeout(() => {
-                child.kill();
+                spawnedChild.kill();
                 finish(() => reject(new Error(`Git operation timed out after ${Math.ceil(GIT_TIMEOUT_MS / 1000)} seconds.`)));
             }, GIT_TIMEOUT_MS);
         });

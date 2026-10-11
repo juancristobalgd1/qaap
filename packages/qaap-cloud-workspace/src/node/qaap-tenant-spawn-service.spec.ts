@@ -782,8 +782,8 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         let secondFinished = false;
         void second.then(() => secondFinished = true);
 
-        expect(service.linkCount).to.equal(1);
         await Promise.resolve();
+        expect(service.linkCount).to.equal(1);
         expect(secondFinished).to.equal(false);
 
         releaseMigration();
