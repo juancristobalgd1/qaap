@@ -593,20 +593,12 @@ export function compareSessionsSidebarProjectOrderExtracted(ctx: MobileProjectsS
             }
             return a.name.localeCompare(b.name);
         }
-        // 'default': running tasks first, then current, then selected, then recent activity, then name.
+        // 'default': running tasks first, then recent activity, then name. Opening or selecting a
+        // project is not activity, so the current / selected project keeps its place in the list.
         const aRunning = ctx.host.conversationIndexUi.countRunningTasks(a) > 0 ? 1 : 0;
         const bRunning = ctx.host.conversationIndexUi.countRunningTasks(b) > 0 ? 1 : 0;
         if (aRunning !== bRunning) {
             return bRunning - aRunning;
-        }
-        if (a.isCurrent !== b.isCurrent) {
-            return a.isCurrent ? -1 : 1;
-        }
-        const selectedId = ctx.host.agentsHubSelectedProjectId;
-        const aSelected = selectedId && a.id === selectedId ? 1 : 0;
-        const bSelected = selectedId && b.id === selectedId ? 1 : 0;
-        if (aSelected !== bSelected) {
-            return bSelected - aSelected;
         }
         const aTime = a.lastActiveAt ? Date.parse(a.lastActiveAt) : NaN;
         const bTime = b.lastActiveAt ? Date.parse(b.lastActiveAt) : NaN;

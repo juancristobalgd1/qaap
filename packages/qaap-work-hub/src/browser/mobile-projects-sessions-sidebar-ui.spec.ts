@@ -249,7 +249,7 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(icon?.querySelectorAll('path')).to.have.lengthOf(2);
     });
 
-    it('compareSessionsSidebarProjectOrder prefers current then most recent activity', () => {
+    it('compareSessionsSidebarProjectOrder orders by recent activity; opening a project does not move it', () => {
         const older = {
             id: 'older',
             name: 'Older',
@@ -269,12 +269,26 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
             lastActiveAt: '2026-02-01T00:00:00.000Z',
         } as MobileProjectEntry;
         const host = {
-            agentsHubSelectedProjectId: undefined,
+            agentsHubSelectedProjectId: 'older',
             conversationIndexUi: { countRunningTasks: () => 0 },
         } as unknown as MobileProjectsSessionsSidebarHost;
         const ui = new MobileProjectsSessionsSidebarUi(host);
+        // `older` is the project the user just opened (selected) and `current` is the open workspace:
+        // neither jumps to the top, only activity (`lastActiveAt`) orders the list.
         const ordered = [older, newer, current].sort((a, b) => ui.compareSessionsSidebarProjectOrder(a, b));
-        expect(ordered.map(p => p.id)).to.deep.equal(['current', 'newer', 'older']);
+        expect(ordered.map(p => p.id)).to.deep.equal(['newer', 'current', 'older']);
+    });
+
+    it('compareSessionsSidebarProjectOrder still lifts a project whose task is running', () => {
+        const idle = { id: 'idle', name: 'Idle', lastActiveAt: '2026-07-01T00:00:00.000Z' } as MobileProjectEntry;
+        const running = { id: 'running', name: 'Running', lastActiveAt: '2026-01-01T00:00:00.000Z' } as MobileProjectEntry;
+        const host = {
+            agentsHubSelectedProjectId: undefined,
+            conversationIndexUi: { countRunningTasks: (project: MobileProjectEntry) => project.id === 'running' ? 1 : 0 },
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        const ordered = [idle, running].sort((a, b) => ui.compareSessionsSidebarProjectOrder(a, b));
+        expect(ordered.map(p => p.id)).to.deep.equal(['running', 'idle']);
     });
 
     it('ensureSessionsSidebarActiveProjectExpanded keeps the selected project open after defaults', () => {
