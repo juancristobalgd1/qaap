@@ -168,7 +168,7 @@ export namespace QaapTenantPersistentHome {
                     return !stats.isSymbolicLink() && stats.dev === current.dev;
                 }
             });
-            fs.rmSync(linkPath, { recursive: true, force: true });
+            const sourceRemoved = removeEntryWithinDevice(linkPath, current.dev);
             if (directory) {
                 ensureDirectory(target);
                 const targetStatsAfterCopy = lstat(target);
@@ -180,6 +180,9 @@ export namespace QaapTenantPersistentHome {
                 if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink() && targetStatsAfterCopy.uid === backendOwnerUid()) {
                     fs.chmodSync(target, targetStatsAfterCopy.mode & 0o7700);
                 }
+            }
+            if (!sourceRemoved) {
+                return true;
             }
             fs.symlinkSync(target, linkPath);
             return true;
@@ -220,6 +223,39 @@ export namespace QaapTenantPersistentHome {
             }
             if (code === 'EACCES') {
                 return { inaccessible: true };
+            }
+            throw error;
+        }
+    }
+
+    function removeEntryWithinDevice(entry: string, device: number): boolean {
+        const stats = lstat(entry);
+        if (!stats) {
+            return true;
+        }
+        if (stats.dev !== device) {
+            return false;
+        }
+        if (stats.isSymbolicLink() || !stats.isDirectory()) {
+            fs.unlinkSync(entry);
+            return true;
+        }
+        let complete = true;
+        for (const name of fs.readdirSync(entry)) {
+            if (!removeEntryWithinDevice(path.join(entry, name), device)) {
+                complete = false;
+            }
+        }
+        if (!complete) {
+            return false;
+        }
+        try {
+            fs.rmdirSync(entry);
+            return true;
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'EBUSY' || code === 'ENOTEMPTY') {
+                return false;
             }
             throw error;
         }

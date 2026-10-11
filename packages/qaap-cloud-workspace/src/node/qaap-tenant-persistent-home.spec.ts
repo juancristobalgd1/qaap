@@ -191,6 +191,8 @@ describe('QaapTenantPersistentHome', () => {
         expect(fs.readFileSync(path.join(persistentConfig, 'settings.json'), 'utf8')).to.equal('{}');
         expect(fs.existsSync(path.join(persistentConfig, 'mounted'))).to.equal(false);
         expect(fs.existsSync(path.join(persistentConfig, 'outside-link.json'))).to.equal(false);
+        expect(fs.readFileSync(path.join(mounted, 'secret.json'), 'utf8')).to.equal('mounted');
+        expect(fs.lstatSync(config).isDirectory()).to.equal(true);
         expect(fs.readFileSync(outside, 'utf8')).to.equal('outside');
     });
 
