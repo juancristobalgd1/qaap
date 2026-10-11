@@ -57,7 +57,9 @@ export namespace QaapTenantPersistentHome {
     ): string[] {
         ensureDirectory(home, owner, chown);
         ensureDirectory(persistentHome);
-        if (owner) {
+        // A rootless backend without CAP_FOWNER can only chmod what it owns; storage the agent
+        // already owns is left alone (the agent can use it as is).
+        if (owner && lstat(persistentHome)?.uid === backendOwnerUid()) {
             fs.chmodSync(persistentHome, 0o1700);
         }
         const changedEntries: string[] = [];
