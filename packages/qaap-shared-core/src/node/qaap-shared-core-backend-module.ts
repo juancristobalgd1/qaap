@@ -13,6 +13,7 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubInboxEndpoint } from './qaap-github-inbox-endpoint';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
+import { QaapMissingCloneRecovery } from './qaap-missing-clone-recovery';
 import { QaapGithubWorkspaceJobRegistry } from './qaap-github-workspace-jobs';
 import { QaapHostedGitFetch } from './qaap-hosted-git-fetch';
 import { QaapHostedGitPush } from './qaap-hosted-git-push';
@@ -47,6 +48,7 @@ export default new ContainerModule(bind => {
     bind(QaapHostedWorktreeRegistry).toSelf().inSingletonScope();
     bind(QaapGithubOauthEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapGithubOauthEndpoint);
+    bind(QaapMissingCloneRecovery).toSelf().inSingletonScope();
     bind(QaapDevPreviewPortRegistry).toSelf().inSingletonScope();
     bind(QaapDevPreviewEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapDevPreviewEndpoint);

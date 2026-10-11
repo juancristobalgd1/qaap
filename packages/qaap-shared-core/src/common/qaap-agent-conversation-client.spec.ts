@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     conversationToSummary,
+    createConversation,
     isFailedRunSummary,
     isLastTurnCancelled,
     latestConversationTurnHasError,
@@ -13,6 +14,7 @@ import {
     preferQaapConversationSummary,
     type QaapAgentConversationSummaryDTO,
 } from './qaap-agent-conversation-client';
+import { createAgentTask } from './qaap-agent-task-client';
 
 const summary = (partial: Partial<QaapAgentConversationSummaryDTO> = {}): QaapAgentConversationSummaryDTO => ({
     id: 'conversation-1',
@@ -218,5 +220,35 @@ describe('latest-turn failure in client summaries', () => {
             ],
         });
         expect(summary.status).to.equal('failed');
+    });
+});
+
+describe('create requests surface the server error text', () => {
+    const originalFetch = globalThis.fetch;
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    const failWith = (status: number, body: string): void => {
+        globalThis.fetch = (async () => new Response(body, { status, statusText: 'Unprocessable Entity' })) as typeof fetch;
+    };
+    const readable = 'I cannot find the repository octo/app on the server and could not clone it again: no access.';
+
+    it('createConversation throws the JSON error message, not the raw body', async () => {
+        failWith(422, JSON.stringify({ error: readable, code: 'repository_clone_unavailable' }));
+        const error = await createConversation({ cwd: 'github:octo/app' }).catch((e: Error) => e);
+        expect((error as Error).message).to.equal(readable);
+    });
+
+    it('createAgentTask throws the JSON error message, not the raw body', async () => {
+        failWith(422, JSON.stringify({ error: readable, code: 'repository_clone_unavailable' }));
+        const error = await createAgentTask({ cwd: 'github:octo/app', prompt: 'fix it', agent: 'codex' }).catch((e: Error) => e);
+        expect((error as Error).message).to.equal(readable);
+    });
+
+    it('keeps a non-JSON error body as is', async () => {
+        failWith(500, 'Internal Server Error');
+        const error = await createConversation({ cwd: 'github:octo/app' }).catch((e: Error) => e);
+        expect((error as Error).message).to.equal('Internal Server Error');
     });
 });
