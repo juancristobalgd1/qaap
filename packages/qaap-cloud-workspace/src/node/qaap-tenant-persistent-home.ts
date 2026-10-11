@@ -99,6 +99,40 @@ export namespace QaapTenantPersistentHome {
         return { changedEntries, complete };
     }
 
+    export async function linkWithStatusAsync(
+        home: string,
+        persistentHome: string,
+        owner?: QaapTenantPersistentHomeOwner,
+    ): Promise<QaapTenantPersistentHomeLinkResult> {
+        await ensureDirectoryAsync(home, owner);
+        await ensureDirectoryAsync(persistentHome);
+        const persistentStats = await lstatAsync(persistentHome);
+        if (owner && persistentStats?.uid === backendOwnerUid()) {
+            await fs.promises.chmod(persistentHome, 0o1700);
+        }
+        const homeDevice = (await lstatAsync(home))?.dev;
+        if (homeDevice === undefined) {
+            throw new Error(`Cannot determine the device of persistent agent HOME: ${home}`);
+        }
+        const changedEntries: string[] = [];
+        let complete = true;
+        for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
+            const result = await linkEntryAsync(home, persistentHome, entry, true, homeDevice, owner);
+            if (result.changed) {
+                changedEntries.push(resolveEntry(persistentHome, entry));
+            }
+            complete = complete && result.complete;
+        }
+        for (const entry of QAAP_PERSISTENT_HOME_FILES) {
+            const result = await linkEntryAsync(home, persistentHome, entry, false, homeDevice, owner);
+            if (result.changed) {
+                changedEntries.push(resolveEntry(persistentHome, entry));
+            }
+            complete = complete && result.complete;
+        }
+        return { changedEntries, complete };
+    }
+
     /** Create a directory path one component at a time and reject symlink components. */
     export function ensureDirectory(
         directory: string,
@@ -136,6 +170,52 @@ export namespace QaapTenantPersistentHome {
             if (privateMode !== mode && stats.uid === backendOwnerUid()) {
                 fs.chmodSync(resolved, privateMode);
             }
+        }
+    }
+
+    export async function ensureDirectoryAsync(
+        directory: string,
+        owner?: QaapTenantPersistentHomeOwner,
+    ): Promise<void> {
+        const resolved = path.resolve(directory);
+        const root = path.parse(resolved).root;
+        let current = root;
+        for (const component of resolved.slice(root.length).split(path.sep).filter(Boolean)) {
+            current = path.join(current, component);
+            let stats = await lstatAsync(current);
+            if (!stats) {
+                try {
+                    await fs.promises.mkdir(current, { mode: 0o700 });
+                } catch (error) {
+                    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+                        throw error;
+                    }
+                }
+                stats = await lstatAsync(current);
+            }
+            if (!stats || stats.isSymbolicLink() || !stats.isDirectory()) {
+                throw new Error(`Refusing to use a non-directory or symlink in persistent agent HOME: ${current}`);
+            }
+        }
+        if (!owner) {
+            return;
+        }
+        try {
+            await fs.promises.chown(resolved, owner.uid, owner.gid);
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code !== 'EPERM' && code !== 'EACCES') {
+                throw error;
+            }
+        }
+        const stats = await lstatAsync(resolved);
+        if (!stats || stats.isSymbolicLink() || !stats.isDirectory()) {
+            throw new Error(`Refusing to set permissions on a missing or symbolic-link directory: ${resolved}`);
+        }
+        const mode = stats.mode & 0o7777;
+        const privateMode = (mode | 0o700) & ~0o077;
+        if (privateMode !== mode && stats.uid === backendOwnerUid()) {
+            await fs.promises.chmod(resolved, privateMode);
         }
     }
 
@@ -240,6 +320,98 @@ export namespace QaapTenantPersistentHome {
         return { changed: false, complete: true };
     }
 
+    async function linkEntryAsync(
+        home: string,
+        persistentHome: string,
+        entry: string,
+        directory: boolean,
+        homeDevice: number,
+        owner?: QaapTenantPersistentHomeOwner,
+    ): Promise<{ changed: boolean; complete: boolean }> {
+        const linkPath = resolveEntry(home, entry);
+        const target = resolveEntry(persistentHome, entry);
+        const currentState = await lstatLinkTargetAsync(linkPath);
+        if (currentState.inaccessible) {
+            return { changed: false, complete: false };
+        }
+        const current = currentState.stats;
+        const targetState = await lstatLinkTargetAsync(target);
+        if (targetState.inaccessible) {
+            if (!current) {
+                await fs.promises.symlink(target, linkPath);
+                return { changed: false, complete: true };
+            }
+            const alreadyLinked = current.isSymbolicLink() && await fs.promises.readlink(linkPath) === target;
+            return { changed: false, complete: alreadyLinked };
+        }
+        const targetStats = targetState.stats;
+        if (targetStats?.isSymbolicLink()) {
+            throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
+        }
+        if (current?.isSymbolicLink()) {
+            if (await fs.promises.readlink(linkPath) === target) {
+                if (directory) {
+                    if (targetStats && !targetStats.isDirectory()) {
+                        throw new Error(`Persistent agent HOME entry is not a directory: ${target}`);
+                    }
+                    await ensureDirectoryAsync(target);
+                    if (owner && targetStats?.uid === backendOwnerUid()) {
+                        await fs.promises.chmod(target, 0o700);
+                    }
+                } else if (targetStats && owner && targetStats.uid === backendOwnerUid()) {
+                    await fs.promises.chmod(target, targetStats.mode & 0o7700);
+                }
+                return { changed: false, complete: true };
+            }
+            await fs.promises.unlink(linkPath);
+        } else if (current) {
+            if (current.dev !== homeDevice) {
+                return { changed: false, complete: false };
+            }
+            await fs.promises.cp(linkPath, target, {
+                recursive: true,
+                force: true,
+                dereference: false,
+                filter: async source => {
+                    const stats = await lstatAsync(source);
+                    return !!stats && !stats.isSymbolicLink() && stats.dev === homeDevice;
+                },
+            });
+            const sourceRemoved = await removeEntryWithinDeviceAsync(linkPath, homeDevice);
+            if (directory) {
+                await ensureDirectoryAsync(target);
+                const targetStatsAfterCopy = await lstatAsync(target);
+                if (owner && targetStatsAfterCopy?.uid === backendOwnerUid()) {
+                    await fs.promises.chmod(target, 0o700);
+                }
+            } else if (owner) {
+                const targetStatsAfterCopy = await lstatAsync(target);
+                if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink() && targetStatsAfterCopy.uid === backendOwnerUid()) {
+                    await fs.promises.chmod(target, targetStatsAfterCopy.mode & 0o7700);
+                }
+            }
+            if (!sourceRemoved) {
+                return { changed: true, complete: false };
+            }
+            await fs.promises.symlink(target, linkPath);
+            return { changed: true, complete: true };
+        }
+        if (directory) {
+            await ensureDirectoryAsync(target);
+            const targetStatsAfterEnsure = await lstatAsync(target);
+            if (owner && targetStatsAfterEnsure?.uid === backendOwnerUid()) {
+                await fs.promises.chmod(target, 0o700);
+            }
+        } else if (owner) {
+            const targetStatsAfterCopy = await lstatAsync(target);
+            if (targetStatsAfterCopy && !targetStatsAfterCopy.isSymbolicLink() && targetStatsAfterCopy.uid === backendOwnerUid()) {
+                await fs.promises.chmod(target, targetStatsAfterCopy.mode & 0o7700);
+            }
+        }
+        await fs.promises.symlink(target, linkPath);
+        return { changed: false, complete: true };
+    }
+
     function resolveEntry(root: string, entry: string): string {
         const resolvedRoot = path.resolve(root);
         const resolvedEntry = path.resolve(resolvedRoot, entry);
@@ -252,6 +424,21 @@ export namespace QaapTenantPersistentHome {
     function lstatLinkTarget(entry: string): { stats?: fs.Stats; inaccessible: boolean } {
         try {
             return { stats: fs.lstatSync(entry), inaccessible: false };
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT') {
+                return { inaccessible: false };
+            }
+            if (code === 'EACCES') {
+                return { inaccessible: true };
+            }
+            throw error;
+        }
+    }
+
+    async function lstatLinkTargetAsync(entry: string): Promise<{ stats?: fs.Stats; inaccessible: boolean }> {
+        try {
+            return { stats: await fs.promises.lstat(entry), inaccessible: false };
         } catch (error) {
             const code = (error as NodeJS.ErrnoException).code;
             if (code === 'ENOENT') {
@@ -292,6 +479,50 @@ export namespace QaapTenantPersistentHome {
             const code = (error as NodeJS.ErrnoException).code;
             if (code === 'EBUSY' || code === 'ENOTEMPTY') {
                 return false;
+            }
+            throw error;
+        }
+    }
+
+    async function removeEntryWithinDeviceAsync(entry: string, device: number): Promise<boolean> {
+        const stats = await lstatAsync(entry);
+        if (!stats) {
+            return true;
+        }
+        if (stats.dev !== device) {
+            return false;
+        }
+        if (stats.isSymbolicLink() || !stats.isDirectory()) {
+            await fs.promises.unlink(entry);
+            return true;
+        }
+        let complete = true;
+        for (const name of await fs.promises.readdir(entry)) {
+            if (!await removeEntryWithinDeviceAsync(path.join(entry, name), device)) {
+                complete = false;
+            }
+        }
+        if (!complete) {
+            return false;
+        }
+        try {
+            await fs.promises.rmdir(entry);
+            return true;
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'EBUSY' || code === 'ENOTEMPTY') {
+                return false;
+            }
+            throw error;
+        }
+    }
+
+    async function lstatAsync(entry: string): Promise<fs.Stats | undefined> {
+        try {
+            return await fs.promises.lstat(entry);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return undefined;
             }
             throw error;
         }

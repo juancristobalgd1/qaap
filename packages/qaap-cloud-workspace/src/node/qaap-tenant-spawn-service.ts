@@ -942,9 +942,46 @@ export class QaapTenantSpawnService {
         }
     }
 
+    protected async ensurePersistentTenantBackendHomeAsync(home: string, root: string, identity?: { uid?: number; gid?: number }): Promise<void> {
+        if (this.persistentTenantHomes.has(home) || !this.preparedAgentStorageRoots.has(root)) {
+            return;
+        }
+        try {
+            const owner = identity?.uid !== undefined && identity.uid > 0
+                ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
+                : undefined;
+            const persistentHome = QaapTenantAgentStorageEnv.homeDir(root);
+            const linkResult = await this.linkPersistentTenantHomeAsync(home, persistentHome, owner);
+            if (!linkResult.complete) {
+                return;
+            }
+            if (identity?.uid !== undefined && identity.uid > 0) {
+                await this.applyPrivateAgentDirectoryAclAsync(persistentHome, identity.uid, true);
+                await this.applyPersistentAgentHomeEntryAclsAsync(persistentHome, identity.uid);
+                await this.repairTenantAgentStorageTreesAsync(root, identity.uid, linkResult.changedEntries);
+                const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
+                if (!configRoot) {
+                    throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
+                }
+                await this.grantTenantAgentStorageAccessAsync(configRoot, root, identity.uid);
+            }
+            this.persistentTenantHomes.add(home);
+        } catch (error) {
+            if (identity?.uid !== undefined && identity.uid > 0) {
+                throw this.agentHomeAccessError(error);
+            }
+            console.warn(`[qaap-security] could not persist agent sign-in state of ${home}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
     /** Overridable in tests. */
     protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): QaapTenantPersistentHomeLinkResult {
         return QaapTenantPersistentHome.linkWithStatus(home, persistentHome, owner);
+    }
+
+    protected linkPersistentTenantHomeAsync(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): Promise<QaapTenantPersistentHomeLinkResult> {
+        return QaapTenantPersistentHome.linkWithStatusAsync(home, persistentHome, owner);
     }
 
     /**
@@ -983,6 +1020,45 @@ export class QaapTenantSpawnService {
             this.preparedAgentStorageRoots.add(root);
         } catch (error) {
             if (uid !== undefined) {
+                throw this.agentHomeAccessError(error);
+            }
+            console.warn(`[qaap-security] could not prepare tenant agent storage ${root}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    protected async ensureTenantAgentStorageAsync(root: string, uid?: number): Promise<void> {
+        if (this.preparedAgentStorageRoots.has(root)) {
+            return;
+        }
+        const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
+        const agentUid = uid ?? (identity?.uid !== undefined && identity.uid > 0 ? identity.uid : undefined);
+        try {
+            await QaapTenantPersistentHome.ensureDirectoryAsync(root);
+            for (const directory of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
+                await QaapTenantPersistentHome.ensureDirectoryAsync(directory);
+            }
+            const configRoot = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
+            if (agentUid !== undefined) {
+                if (!configRoot) {
+                    throw new Error('QAAP_TENANT_CONFIG_ROOT is required to prepare the agent storage mount.');
+                }
+                for (const directory of [root, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
+                    const stats = await this.lstatIfPresentAsync(directory);
+                    if (stats && stats.uid !== this.backendOwnerUid()) {
+                        continue;
+                    }
+                    await fs.promises.chmod(directory, directory === root ? 0o1700 : 0o700);
+                    if (!await this.runTenantAccessCommandAsync('setfacl', ['-b', '-k', '--', directory])) {
+                        throw new Error(`Could not lock agent storage directory ${directory} during access repair.`);
+                    }
+                }
+            } else {
+                await fs.promises.chmod(root, 0o700);
+            }
+            this.preparedAgentStorageRoots.add(root);
+        } catch (error) {
+            if (agentUid !== undefined) {
                 throw this.agentHomeAccessError(error);
             }
             console.warn(`[qaap-security] could not prepare tenant agent storage ${root}: `
@@ -1031,6 +1107,47 @@ export class QaapTenantSpawnService {
         }
     }
 
+    protected async grantTenantAgentStorageAccessAsync(configRoot: string, root: string, uid: number): Promise<void> {
+        await QaapTenantPersistentHome.ensureDirectoryAsync(configRoot);
+        await QaapTenantPersistentHome.ensureDirectoryAsync(root);
+        const resolvedConfigRoot = path.resolve(configRoot);
+        const resolvedStorageRoot = path.resolve(root);
+        const relativeStorageRoot = path.relative(resolvedConfigRoot, resolvedStorageRoot);
+        const storageIsUnderConfigRoot = relativeStorageRoot === ''
+            || (!relativeStorageRoot.startsWith(`..${path.sep}`) && relativeStorageRoot !== '..' && !path.isAbsolute(relativeStorageRoot));
+        const traversalDirectories = new Set<string>([resolvedConfigRoot, resolvedStorageRoot]);
+        if (storageIsUnderConfigRoot) {
+            let directory = path.dirname(resolvedStorageRoot);
+            while (!traversalDirectories.has(directory)) {
+                traversalDirectories.add(directory);
+                directory = path.dirname(directory);
+            }
+        } else {
+            let directory = path.dirname(resolvedStorageRoot);
+            const filesystemRoot = path.parse(directory).root;
+            while (directory !== filesystemRoot) {
+                const stats = await this.lstatIfPresentAsync(directory);
+                if (!stats || stats.uid !== this.backendOwnerUid()) {
+                    break;
+                }
+                traversalDirectories.add(directory);
+                directory = path.dirname(directory);
+            }
+        }
+        for (const directory of traversalDirectories) {
+            const stats = await this.lstatIfPresentAsync(directory);
+            if (!stats || stats.uid !== this.backendOwnerUid()) {
+                continue;
+            }
+            if (!await this.runTenantAccessCommandAsync('setfacl', ['-m', `u:${uid}:--x`, '--', directory])) {
+                throw new Error(`Could not grant agent uid ${uid} traversal access to ${directory}.`);
+            }
+        }
+        for (const directory of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
+            await this.applyPrivateAgentDirectoryAclAsync(directory, uid, true);
+        }
+    }
+
     protected ensureTenantBackendHomeAccess(home: string, uid: number): void {
         if (this.preparedTenantBackendHomes.has(home)) {
             return;
@@ -1045,6 +1162,26 @@ export class QaapTenantSpawnService {
                 throw new Error(`Agent uid ${uid} could not create a directory in ${path.join(home, '.config')}.`);
             }
             this.writePendingAgentStorageAccessMarkers();
+            this.preparedTenantBackendHomes.add(home);
+        } catch (error) {
+            throw this.agentHomeAccessError(error);
+        }
+    }
+
+    protected async ensureTenantBackendHomeAccessAsync(home: string, uid: number, gid: number): Promise<void> {
+        if (this.preparedTenantBackendHomes.has(home)) {
+            return;
+        }
+        try {
+            await QaapTenantPersistentHome.ensureDirectoryAsync(home, { uid, gid });
+            if (!await this.repairAgentAccessTreeAsync(home, uid)) {
+                throw new Error(`Could not repair existing files under agent HOME ${home}.`);
+            }
+            await this.applyPrivateAgentDirectoryAclAsync(home, uid, true);
+            if (!await this.probeAgentConfigWritableAsync(home, uid, gid)) {
+                throw new Error(`Agent uid ${uid} could not create a directory in ${path.join(home, '.config')}.`);
+            }
+            await this.writePendingAgentStorageAccessMarkersAsync();
             this.preparedTenantBackendHomes.add(home);
         } catch (error) {
             throw this.agentHomeAccessError(error);
@@ -1068,6 +1205,18 @@ export class QaapTenantSpawnService {
         ]);
     }
 
+    protected async probeAgentConfigWritableAsync(home: string, uid: number, gid: number): Promise<boolean> {
+        const setpriv = this.resolveSetprivExecutable();
+        if (!setpriv) {
+            return false;
+        }
+        const probe = path.join(home, '.config', `.qaap-write-probe-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+        const script = 'const fs = require(\'node:fs\'); const entry = process.argv[1]; fs.mkdirSync(entry, { mode: 0o700 }); fs.rmdirSync(entry);';
+        return this.runTenantAccessCommandAsync(setpriv, [
+            '--reuid', String(uid), '--regid', String(gid), '--clear-groups', '--', process.execPath, '-e', script, probe,
+        ]);
+    }
+
     protected writePendingAgentStorageAccessMarkers(): void {
         for (const [marker, value] of this.pendingAgentStorageAccessMarkers) {
             const descriptor = fs.openSync(marker, 'wx', 0o600);
@@ -1076,6 +1225,19 @@ export class QaapTenantSpawnService {
                 fs.fsyncSync(descriptor);
             } finally {
                 fs.closeSync(descriptor);
+            }
+            this.pendingAgentStorageAccessMarkers.delete(marker);
+        }
+    }
+
+    protected async writePendingAgentStorageAccessMarkersAsync(): Promise<void> {
+        for (const [marker, value] of this.pendingAgentStorageAccessMarkers) {
+            const descriptor = await fs.promises.open(marker, 'wx', 0o600);
+            try {
+                await descriptor.writeFile(value);
+                await descriptor.sync();
+            } finally {
+                await descriptor.close();
             }
             this.pendingAgentStorageAccessMarkers.delete(marker);
         }
@@ -1100,6 +1262,29 @@ export class QaapTenantSpawnService {
             }
             if (stats?.isFile() && stats.uid === this.backendOwnerUid()) {
                 this.applyPrivateAgentFileAcl(target, uid);
+            }
+        }
+    }
+
+    protected async applyPersistentAgentHomeEntryAclsAsync(persistentHome: string, uid: number): Promise<void> {
+        for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
+            const target = path.join(persistentHome, entry);
+            const stats = await this.lstatPersistentAgentHomeEntryAsync(target);
+            if (stats?.isSymbolicLink()) {
+                throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
+            }
+            if (stats?.isDirectory() && stats.uid === this.backendOwnerUid()) {
+                await this.applyPrivateAgentDirectoryAclAsync(target, uid, true);
+            }
+        }
+        for (const entry of QAAP_PERSISTENT_HOME_FILES) {
+            const target = path.join(persistentHome, entry);
+            const stats = await this.lstatPersistentAgentHomeEntryAsync(target);
+            if (stats?.isSymbolicLink()) {
+                throw new Error(`Refusing a symlink in persistent agent HOME: ${target}`);
+            }
+            if (stats?.isFile() && stats.uid === this.backendOwnerUid()) {
+                await this.applyPrivateAgentFileAclAsync(target, uid);
             }
         }
     }
@@ -1138,6 +1323,40 @@ export class QaapTenantSpawnService {
         this.pendingAgentStorageAccessMarkers.set(marker, `${QAAP_TENANT_AGENT_ACCESS_VERSION}:${uid}`);
     }
 
+    protected async repairTenantAgentStorageTreesAsync(root: string, uid: number, changedEntries: readonly string[]): Promise<void> {
+        for (const entry of changedEntries) {
+            const stats = await this.lstatIfPresentAsync(entry);
+            if (!stats || stats.isSymbolicLink()) {
+                throw new Error(`Refusing a missing or symbolic-link agent storage entry: ${entry}`);
+            }
+            if (stats.uid !== this.backendOwnerUid()) {
+                continue;
+            }
+            const repaired = stats.isDirectory()
+                ? await this.repairAgentAccessTreeAsync(entry, uid)
+                : stats.isFile() && await this.applyPrivateAgentFileAclAsync(entry, uid);
+            if (!repaired) {
+                throw new Error(`Could not repair copied agent state at ${entry}.`);
+            }
+        }
+        const marker = path.join(root, `.qaap-agent-access-v${QAAP_TENANT_AGENT_ACCESS_VERSION}-${uid}`);
+        const markerStatus = await this.lstatIfPresentAsync(marker);
+        if (markerStatus?.isFile() && !markerStatus.isSymbolicLink()
+            && markerStatus.uid === (typeof process.getuid === 'function' ? process.getuid() : markerStatus.uid)
+            && await this.readAccessMarkerAsync(marker) === `${QAAP_TENANT_AGENT_ACCESS_VERSION}:${uid}`) {
+            return;
+        }
+        if (markerStatus) {
+            await fs.promises.unlink(marker);
+        }
+        for (const directory of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
+            if (!await this.repairAgentAccessTreeAsync(directory, uid)) {
+                throw new Error(`Could not repair existing tenant agent data under ${directory}.`);
+            }
+        }
+        this.pendingAgentStorageAccessMarkers.set(marker, `${QAAP_TENANT_AGENT_ACCESS_VERSION}:${uid}`);
+    }
+
     protected repairAgentAccessTree(directory: string, uid: number): boolean {
         let stats = this.lstatIfPresent(directory);
         if (!stats) {
@@ -1151,6 +1370,21 @@ export class QaapTenantSpawnService {
             return true;
         }
         return this.repairOwnedAgentAccessDirectory(directory, uid, stats.dev);
+    }
+
+    protected async repairAgentAccessTreeAsync(directory: string, uid: number): Promise<boolean> {
+        let stats = await this.lstatIfPresentAsync(directory);
+        if (!stats) {
+            await QaapTenantPersistentHome.ensureDirectoryAsync(directory);
+            stats = await this.lstatIfPresentAsync(directory);
+        }
+        if (!stats || stats.isSymbolicLink() || !stats.isDirectory()) {
+            return false;
+        }
+        if (stats.uid !== this.backendOwnerUid()) {
+            return true;
+        }
+        return this.repairOwnedAgentAccessDirectoryAsync(directory, uid, stats.dev);
     }
 
     protected repairOwnedAgentAccessDirectory(directory: string, uid: number, device: number): boolean {
@@ -1185,6 +1419,36 @@ export class QaapTenantSpawnService {
         }
     }
 
+    protected async repairOwnedAgentAccessDirectoryAsync(directory: string, uid: number, device: number): Promise<boolean> {
+        const directoryAcl = `u:${uid}:rwx,g::---,o::---,d:u:${uid}:rwx,d:g::---,d:o::---`;
+        const fileAcl = `u:${uid}:rwX,g::---,o::---`;
+        const directories: string[] = [];
+        const files: string[] = [];
+        try {
+            await fs.promises.chmod(directory, 0o700);
+            if (!await this.runTenantAccessCommandAsync('setfacl', ['-b', '-k', '--', directory])) {
+                return false;
+            }
+            if (!await this.collectOwnedAgentAccessEntriesAsync(directory, device, directories, files)) {
+                return false;
+            }
+            for (const entry of directories) {
+                await fs.promises.chmod(entry, 0o700);
+            }
+            if (!await this.runBatchedAgentAccessCommandAsync(['-b', '-k'], directories)
+                || !await this.runBatchedAgentAccessCommandAsync(['-b', '-m', fileAcl], files)) {
+                return false;
+            }
+            return this.runBatchedAgentAccessCommandAsync(['-b', '-k', '-m', directoryAcl], directories);
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if ((code === 'EACCES' || code === 'EPERM') && (await this.lstatIfPresentAsync(directory))?.uid === uid) {
+                return true;
+            }
+            return false;
+        }
+    }
+
     protected collectOwnedAgentAccessEntries(directory: string, device: number, directories: string[], files: string[]): boolean {
         const stats = this.lstatIfPresent(directory);
         if (!stats || stats.isSymbolicLink() || stats.dev !== device || stats.uid !== this.backendOwnerUid() || !stats.isDirectory()) {
@@ -1209,6 +1473,30 @@ export class QaapTenantSpawnService {
         return true;
     }
 
+    protected async collectOwnedAgentAccessEntriesAsync(directory: string, device: number, directories: string[], files: string[]): Promise<boolean> {
+        const stats = await this.lstatIfPresentAsync(directory);
+        if (!stats || stats.isSymbolicLink() || stats.dev !== device || stats.uid !== this.backendOwnerUid() || !stats.isDirectory()) {
+            return true;
+        }
+        await fs.promises.chmod(directory, 0o700);
+        directories.push(directory);
+        for (const name of await this.readAgentAccessDirectoryAsync(directory)) {
+            const entry = path.join(directory, name);
+            const child = await this.lstatIfPresentAsync(entry);
+            if (!child || child.isSymbolicLink() || child.dev !== device || child.uid !== this.backendOwnerUid()) {
+                continue;
+            }
+            if (child.isDirectory()) {
+                if (!await this.collectOwnedAgentAccessEntriesAsync(entry, device, directories, files)) {
+                    return false;
+                }
+            } else if (child.isFile()) {
+                files.push(entry);
+            }
+        }
+        return true;
+    }
+
     protected runBatchedAgentAccessCommand(args: readonly string[], entries: readonly string[]): boolean {
         for (let offset = 0; offset < entries.length; offset += QAAP_TENANT_AGENT_ACCESS_BATCH_SIZE) {
             const batch = entries.slice(offset, offset + QAAP_TENANT_AGENT_ACCESS_BATCH_SIZE);
@@ -1219,8 +1507,25 @@ export class QaapTenantSpawnService {
         return true;
     }
 
+    protected async runBatchedAgentAccessCommandAsync(args: readonly string[], entries: readonly string[]): Promise<boolean> {
+        for (let offset = 0; offset < entries.length; offset += QAAP_TENANT_AGENT_ACCESS_BATCH_SIZE) {
+            const batch = entries.slice(offset, offset + QAAP_TENANT_AGENT_ACCESS_BATCH_SIZE);
+            if (!await this.runTenantAccessCommandAsync('setfacl', [...args, '--', ...batch], QAAP_TENANT_AGENT_ACCESS_COMMAND_TIMEOUT_MS)) {
+                return false;
+            }
+            if (offset + batch.length < entries.length) {
+                await new Promise<void>(resolve => setImmediate(resolve));
+            }
+        }
+        return true;
+    }
+
     protected readAgentAccessDirectory(directory: string): string[] {
         return fs.readdirSync(directory);
+    }
+
+    protected async readAgentAccessDirectoryAsync(directory: string): Promise<string[]> {
+        return fs.promises.readdir(directory);
     }
 
     protected applyPrivateAgentFileAcl(file: string, uid: number): boolean {
@@ -1232,6 +1537,21 @@ export class QaapTenantSpawnService {
             return true;
         }
         return this.runTenantAccessCommand(
+            'setfacl',
+            ['-b', '-m', `u:${uid}:rwX,g::---,o::---`, '--', file],
+            QAAP_TENANT_AGENT_ACCESS_COMMAND_TIMEOUT_MS,
+        );
+    }
+
+    protected async applyPrivateAgentFileAclAsync(file: string, uid: number): Promise<boolean> {
+        const stats = await this.lstatIfPresentAsync(file);
+        if (!stats || stats.isSymbolicLink()) {
+            return false;
+        }
+        if (stats.uid !== this.backendOwnerUid()) {
+            return true;
+        }
+        return this.runTenantAccessCommandAsync(
             'setfacl',
             ['-b', '-m', `u:${uid}:rwX,g::---,o::---`, '--', file],
             QAAP_TENANT_AGENT_ACCESS_COMMAND_TIMEOUT_MS,
@@ -1256,9 +1576,38 @@ export class QaapTenantSpawnService {
         }
     }
 
+    protected async applyPrivateAgentDirectoryAclAsync(directory: string, uid: number, defaults: boolean): Promise<void> {
+        const existing = await this.lstatIfPresentAsync(directory);
+        if (existing && existing.uid !== this.backendOwnerUid()) {
+            return;
+        }
+        await QaapTenantPersistentHome.ensureDirectoryAsync(directory);
+        const stats = await this.lstatIfPresentAsync(directory);
+        if (!stats || stats.isSymbolicLink() || !stats.isDirectory() || stats.uid !== this.backendOwnerUid()) {
+            return;
+        }
+        const acl = `u:${uid}:rwx,g::---,o::---${defaults ? `,d:u:${uid}:rwx,d:g::---,d:o::---` : ''}`;
+        const cleared = await this.runTenantAccessCommandAsync('setfacl', ['-b', '-k', '--', directory]);
+        const applied = await this.runTenantAccessCommandAsync('setfacl', ['-m', acl, '--', directory]);
+        if (!cleared || !applied) {
+            throw new Error(`Could not grant agent uid ${uid} private access to ${directory}.`);
+        }
+    }
+
     protected lstatIfPresent(entry: string): fs.Stats | undefined {
         try {
             return fs.lstatSync(entry);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return undefined;
+            }
+            throw error;
+        }
+    }
+
+    protected async lstatIfPresentAsync(entry: string): Promise<fs.Stats | undefined> {
+        try {
+            return await fs.promises.lstat(entry);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
                 return undefined;
@@ -1279,9 +1628,29 @@ export class QaapTenantSpawnService {
         }
     }
 
+    protected async lstatPersistentAgentHomeEntryAsync(entry: string): Promise<fs.Stats | undefined> {
+        try {
+            return await this.lstatIfPresentAsync(entry);
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'EACCES') {
+                return undefined;
+            }
+            throw error;
+        }
+    }
+
     protected readAccessMarker(marker: string): string | undefined {
         try {
             return fs.readFileSync(marker, 'utf8');
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected async readAccessMarkerAsync(marker: string): Promise<string | undefined> {
+        try {
+            return await fs.promises.readFile(marker, 'utf8');
         } catch {
             return undefined;
         }
