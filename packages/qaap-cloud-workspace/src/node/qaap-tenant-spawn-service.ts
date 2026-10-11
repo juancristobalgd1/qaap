@@ -70,7 +70,7 @@ interface QaapProcessInvocation {
 const DEFAULT_AGENT_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_AGENT_CPU_LIMIT_CORES = 2;
 const SYSTEMD_RUN_PROBE_TIMEOUT_MS = 3000;
-const QAAP_TENANT_AGENT_ACCESS_VERSION = 1;
+const QAAP_TENANT_AGENT_ACCESS_VERSION = 2;
 
 /**
  * Single source of truth for spawning a workspace-scoped child process under the correct OS identity
@@ -926,11 +926,28 @@ export class QaapTenantSpawnService {
     protected grantTenantAgentStorageAccess(configRoot: string, root: string, uid: number): void {
         QaapTenantPersistentHome.ensureDirectory(configRoot);
         QaapTenantPersistentHome.ensureDirectory(root);
-        const configAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, '--', configRoot]);
-        if (!configAcl) {
-            throw new Error(`Could not grant agent uid ${uid} access through tenant config root ${configRoot}.`);
+        const resolvedConfigRoot = path.resolve(configRoot);
+        const resolvedStorageRoot = path.resolve(root);
+        const relativeStorageRoot = path.relative(resolvedConfigRoot, resolvedStorageRoot);
+        const storageIsUnderConfigRoot = relativeStorageRoot === ''
+            || (!relativeStorageRoot.startsWith(`..${path.sep}`) && relativeStorageRoot !== '..' && !path.isAbsolute(relativeStorageRoot));
+        const traversalDirectories = new Set<string>([resolvedConfigRoot, resolvedStorageRoot]);
+        if (storageIsUnderConfigRoot) {
+            let directory = path.dirname(resolvedStorageRoot);
+            while (!traversalDirectories.has(directory)) {
+                traversalDirectories.add(directory);
+                directory = path.dirname(directory);
+            }
         }
-        this.applyPrivateAgentDirectoryAcl(root, uid, true);
+        for (const directory of traversalDirectories) {
+            const stats = this.lstatIfPresent(directory);
+            if (!stats || stats.uid !== this.backendOwnerUid()) {
+                continue;
+            }
+            if (!this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, '--', directory])) {
+                throw new Error(`Could not grant agent uid ${uid} traversal access to ${directory}.`);
+            }
+        }
         for (const directory of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
             this.applyPrivateAgentDirectoryAcl(directory, uid, true);
         }
@@ -945,6 +962,7 @@ export class QaapTenantSpawnService {
             if (!this.repairAgentAccessTree(home, uid)) {
                 throw new Error(`Could not repair existing files under agent HOME ${home}.`);
             }
+            this.applyPrivateAgentDirectoryAcl(home, uid, true);
             if (!this.probeAgentConfigWritable(home, uid, resolveAgentSpawnIdentityFromEnv(process.env, true).gid ?? uid)) {
                 throw new Error(`Agent uid ${uid} could not create a directory in ${path.join(home, '.config')}.`);
             }

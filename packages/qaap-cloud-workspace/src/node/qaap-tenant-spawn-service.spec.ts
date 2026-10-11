@@ -277,7 +277,9 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             const aclCommands = service.commands.filter(command => command.file === 'setfacl');
             expect(service.commands.some(command => command.file === 'find')).to.equal(false);
             expect(aclCommands.some(command => command.args.includes(`u:1001:--x`))).to.equal(true);
-            for (const dir of [root, `${root}/cache`, `${root}/data`, `${root}/home`]) {
+            expect(aclCommands.some(command => command.args.includes(root)
+                && command.args.some(argument => argument.includes('u:1001:--x')))).to.equal(true);
+            for (const dir of [`${root}/cache`, `${root}/data`, `${root}/home`]) {
                 expect(aclCommands.some(command => command.args.includes(dir)
                     && command.args.some(argument => argument.includes('u:1001:rwx,g::---,o::---,d:u:1001:rwx')))).to.equal(true);
             }
@@ -938,7 +940,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         process.env.QAAP_AGENT_GID = '1001';
         process.env.QAAP_TENANT_CONFIG_ROOT = configRoot;
         process.env.QAAP_TENANT_AGENT_STORAGE_ROOT = storageRoot;
-        const marker = path.join(storageRoot, '.qaap-agent-access-v1-1001');
+        const marker = path.join(storageRoot, '.qaap-agent-access-v2-1001');
         const service = new class extends AgentHomeAccessTestService {
             privateDirectoryReadAttempted = false;
             markerExistedAtProbe: boolean | undefined;
@@ -976,7 +978,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         try {
             expect(() => service.resolveProcessEnv(tenantCwd, {})).not.to.throw();
 
-            expect(fs.readFileSync(marker, 'utf8')).to.equal('1:1001');
+            expect(fs.readFileSync(marker, 'utf8')).to.equal('2:1001');
             expect(service.markerExistedAtProbe).to.equal(false);
             expect(service.privateDirectoryReadAttempted).to.equal(false);
             expect(service.commands.some(command => command.file === 'setfacl' && command.args.includes(cacheRoot))).to.equal(true);
@@ -1004,7 +1006,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const configRoot = path.join(root, 'config');
         const home = path.join(root, 'qaap-home');
         const storageRoot = path.join(root, 'storage');
-        const marker = path.join(storageRoot, '.qaap-agent-access-v1-1001');
+        const marker = path.join(storageRoot, '.qaap-agent-access-v2-1001');
         fs.mkdirSync(configRoot);
         fs.mkdirSync(path.join(home, '.config'), { recursive: true, mode: 0o700 });
         const envKeys = ['QAAP_BACKEND_PER_TENANT', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_TENANT_CONFIG_ROOT', 'QAAP_TENANT_AGENT_STORAGE_ROOT'] as const;
@@ -1132,7 +1134,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
             const storageRootGrant = first.commands.findIndex(command => command.file === 'setfacl'
                 && command.args.includes(storageRoot)
                 && command.args.includes('-m')
-                && command.args.some(argument => argument.includes('u:1001:rwx,g::---,o::---')));
+                && command.args.some(argument => argument.includes('u:1001:--x')));
             expect(storageRootGrant).to.be.greaterThan(firstRepair);
             const homeRepair = first.commands.findIndex(command => command.file === 'setfacl'
                 && command.args.includes(first.homeAccessRoot!) && command.args.includes('-b'));
