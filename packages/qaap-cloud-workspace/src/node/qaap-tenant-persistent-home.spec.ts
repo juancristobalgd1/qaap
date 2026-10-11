@@ -264,11 +264,13 @@ describe('QaapTenantPersistentHome', () => {
             return stats;
         }) as typeof fs.lstatSync);
 
-        QaapTenantPersistentHome.link(home, persistentHome);
+        const result = QaapTenantPersistentHome.linkWithStatus(home, persistentHome);
 
         expect(fs.lstatSync(config).isDirectory()).to.equal(true);
         expect(fs.readFileSync(path.join(config, 'mounted-secret.json'), 'utf8')).to.equal('mounted');
         expect(fs.readFileSync(path.join(persistentHome, '.config', 'mounted-secret.json'), 'utf8')).to.equal('existing');
+        expect(result.changedEntries).not.to.include(path.join(persistentHome, '.config'));
+        expect(result.complete).to.equal(false);
     });
 
     it('rejects a symlink in a persistent HOME root instead of operating through it', () => {
