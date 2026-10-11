@@ -315,6 +315,10 @@ export class MobileProjectsCardMenuUi {
         return menu;
     }
 
+    isCardMenuOpen(): boolean {
+        return this.openMenu !== undefined;
+    }
+
     toggleCardMenu(card: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void {
         if (this.openMenu && (this.openMenu === menu || this.openMenuAnchor === menuBtn)) {
             this.closeCardMenu();

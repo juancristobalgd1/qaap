@@ -208,11 +208,15 @@ describe('MobileProjectsCardMenuUi.toggleCardMenu', () => {
         const btn = document.createElement('button');
         root.append(card, btn);
         const menu1 = document.createElement('div');
+        expect(ui.isCardMenuOpen()).to.equal(false);
         ui.toggleCardMenu(card, menu1, btn);
         expect(menu1.classList.contains('theia-mod-open')).to.equal(true);
+        // The sessions sidebar holds reorders while a menu is open, so a tap lands on the same project.
+        expect(ui.isCardMenuOpen()).to.equal(true);
         const menu2 = document.createElement('div');
         ui.toggleCardMenu(card, menu2, btn);
         expect(menu1.classList.contains('theia-mod-open')).to.equal(false);
         expect(menu2.classList.contains('theia-mod-open')).to.equal(false);
+        expect(ui.isCardMenuOpen()).to.equal(false);
     });
 });

@@ -70,6 +70,8 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     rememberSessionListFingerprint?(listHost: HTMLElement): void;
     /** Bind pointer guard on the list host once (prevents click loss during refresh). */
     onSessionListHostReady?(listHost: HTMLElement): void;
+    /** Whether a project / task options menu opened from the list is showing. */
+    isSessionListMenuOpen?(): boolean;
 }
 
 export interface MobileWorkHubSettingsSidebarSection {
@@ -159,6 +161,16 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly onListTouchEnd = (): void => {
         this.listTouchActive = false;
         this.listScrollActiveUntil = Date.now() + PULL_REQUEST_SCROLL_SETTLE_MS;
+    };
+    /** A mouse pointer is over the list: rows must not move under it. */
+    protected listPointerInside = false;
+    protected readonly onListPointerEnter = (event: PointerEvent): void => {
+        if (event.pointerType === 'mouse') {
+            this.listPointerInside = true;
+        }
+    };
+    protected readonly onListPointerLeave = (): void => {
+        this.listPointerInside = false;
     };
     protected readonly onListScrollActivity = (): void => {
         this.listScrollActiveUntil = Date.now() + PULL_REQUEST_SCROLL_SETTLE_MS;
@@ -313,6 +325,8 @@ export class MobileWorkHubSessionsSidebar {
         this.scrollHost.addEventListener('touchstart', this.onListTouchStart, { capture: true, passive: true });
         this.scrollHost.addEventListener('touchend', this.onListTouchEnd, { capture: true, passive: true });
         this.scrollHost.addEventListener('touchcancel', this.onListTouchEnd, { capture: true, passive: true });
+        this.scrollHost.addEventListener('pointerenter', this.onListPointerEnter);
+        this.scrollHost.addEventListener('pointerleave', this.onListPointerLeave);
         this.listHost = document.createElement('div');
         this.listHost.className = 'theia-mobile-work-hub-sessions-sidebar-list';
         this.scrollHost.append(this.listHost);
@@ -811,6 +825,12 @@ export class MobileWorkHubSessionsSidebar {
             this.updateProjectsHeading();
             return;
         }
+        if (!options?.force && this.isUserInteractingWithList() && this.reordersRenderedRows(nextList)) {
+            // Opening a task or new activity elsewhere must not move rows under the user's pointer or
+            // behind an open options menu (a tap would land on another project): retry once they leave.
+            this.scheduleDeferredRefresh();
+            return;
+        }
         this.listHost.replaceChildren(...Array.from(nextList.childNodes));
         this.scrollHost.scrollTop = previousScrollTop;
         this.updateProjectsHeading();
@@ -823,6 +843,32 @@ export class MobileWorkHubSessionsSidebar {
         if (this.visible) {
             this.ensureScrollTouchFallback();
         }
+    }
+
+    protected isUserInteractingWithList(): boolean {
+        return this.listPointerInside
+            || this.isListScrollGestureActive()
+            || this.delegate.isSessionListMenuOpen?.() === true;
+    }
+
+    /** Whether rows present in both lists would change their relative order. */
+    protected reordersRenderedRows(nextList: HTMLElement): boolean {
+        const current = this.renderedRowKeys(this.listHost);
+        const next = this.renderedRowKeys(nextList);
+        const nextKeys = new Set(next);
+        const currentKeys = new Set(current);
+        const kept = current.filter(key => nextKeys.has(key));
+        const nextKept = next.filter(key => currentKeys.has(key));
+        return kept.some((key, index) => key !== nextKept[index]);
+    }
+
+    protected renderedRowKeys(host: HTMLElement): string[] {
+        const keys = new Set<string>();
+        for (const row of Array.from(host.querySelectorAll<HTMLElement>('[data-qaap-project-id], [data-qaap-conversation-id]'))) {
+            const projectId = row.dataset.qaapProjectId;
+            keys.add(projectId !== undefined ? `project:${projectId}` : `conversation:${row.dataset.qaapConversationId}`);
+        }
+        return [...keys];
     }
 
     /**

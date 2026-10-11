@@ -418,6 +418,98 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(renderCalls).to.equal(2);
     });
 
+    describe('never reorders rows while the user interacts with the list', () => {
+        const pendingTimers: Array<ReturnType<typeof setTimeout>> = [];
+
+        beforeEach(() => {
+            const currentWindow = (global as { window?: Window }).window;
+            (global as { window?: Window }).window = {
+                ...currentWindow,
+                setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) => {
+                    const timer = setTimeout(callback, delayMs ?? 0);
+                    pendingTimers.push(timer);
+                    return timer as unknown as number;
+                },
+                clearTimeout: (id: number) => clearTimeout(id),
+            } as unknown as Window;
+        });
+
+        afterEach(() => {
+            pendingTimers.splice(0).forEach(timer => clearTimeout(timer));
+        });
+
+        function orderedSidebar(order: () => string[], menuOpen: () => boolean = () => false): MobileWorkHubSessionsSidebar {
+            const sidebar = new MobileWorkHubSessionsSidebar({
+                renderSessionList: host => {
+                    for (const id of order()) {
+                        const row = document.createElement('div');
+                        row.dataset.qaapProjectId = id;
+                        row.textContent = id;
+                        host.append(row);
+                    }
+                },
+                isSessionListMenuOpen: menuOpen,
+                onNewChat: () => undefined,
+                onClose: () => undefined,
+            });
+            document.body.append(sidebar.node);
+            return sidebar;
+        }
+
+        const renderedOrder = (sidebar: MobileWorkHubSessionsSidebar): string[] =>
+            Array.from(sidebar.node.querySelectorAll<HTMLElement>('[data-qaap-project-id]')).map(row => row.dataset.qaapProjectId!);
+
+        function hover(sidebar: MobileWorkHubSessionsSidebar, type: 'pointerenter' | 'pointerleave'): void {
+            // `window` is stubbed in these tests: take the Event constructor from the jsdom document.
+            const DomEvent = sidebar.node.ownerDocument.defaultView!.Event;
+            const event = new DomEvent(type) as PointerEvent;
+            Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+            sidebar.getScrollElement().dispatchEvent(event);
+        }
+
+        it('holds a reorder while the pointer is over the list and applies it once the pointer leaves', () => {
+            let order = ['a', 'b', 'c'];
+            const sidebar = orderedSidebar(() => order);
+            sidebar.refreshList();
+
+            hover(sidebar, 'pointerenter');
+            order = ['c', 'a', 'b'];
+            sidebar.refreshList();
+            expect(renderedOrder(sidebar)).to.deep.equal(['a', 'b', 'c']);
+
+            hover(sidebar, 'pointerleave');
+            sidebar.refreshList();
+            expect(renderedOrder(sidebar)).to.deep.equal(['c', 'a', 'b']);
+        });
+
+        it('holds a reorder while a project or task options menu is open', () => {
+            let order = ['a', 'b'];
+            let menuOpen = false;
+            const sidebar = orderedSidebar(() => order, () => menuOpen);
+            sidebar.refreshList();
+
+            menuOpen = true;
+            order = ['b', 'a'];
+            sidebar.refreshList();
+            expect(renderedOrder(sidebar)).to.deep.equal(['a', 'b']);
+
+            menuOpen = false;
+            sidebar.refreshList();
+            expect(renderedOrder(sidebar)).to.deep.equal(['b', 'a']);
+        });
+
+        it('still paints changes that keep the order (a new row) while hovered', () => {
+            let order = ['a', 'b'];
+            const sidebar = orderedSidebar(() => order);
+            sidebar.refreshList();
+
+            hover(sidebar, 'pointerenter');
+            order = ['a', 'b', 'new'];
+            sidebar.refreshList();
+            expect(renderedOrder(sidebar)).to.deep.equal(['a', 'b', 'new']);
+        });
+    });
+
     it('preserves scroll and focused conversation across list refresh', () => {
         let label = 'First';
         const sidebar = new MobileWorkHubSessionsSidebar({

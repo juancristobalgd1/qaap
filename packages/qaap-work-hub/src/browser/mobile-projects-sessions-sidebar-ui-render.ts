@@ -106,6 +106,7 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSession
             tryPatchSessionList: host => ctx.tryPatchSessionsSidebarList(host),
             rememberSessionListFingerprint: host => ctx.rememberSessionsSidebarListFingerprint(host),
             shouldDeferSessionListRefresh: () => ctx.shouldDeferSessionsSidebarListRefresh(),
+            isSessionListMenuOpen: () => ctx.host.cardMenuUi.isCardMenuOpen(),
             onSessionListHostReady: host => {
                 ctx.bindSessionsSidebarInteractionGuard(host);
                 ctx.bindSessionsSidebarThreadStoreSubscriptions();
