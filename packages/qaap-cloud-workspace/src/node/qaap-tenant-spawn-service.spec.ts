@@ -1157,8 +1157,8 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         class ResponsiveRepairTestService extends AgentHomeAccessTestService {
             private blockedSynchronously = false;
 
-            repair(directory: string, uid: number): boolean {
-                return this.repairAgentAccessTree(directory, uid);
+            repairAsync(directory: string, uid: number): Promise<boolean> {
+                return this.repairAgentAccessTreeAsync(directory, uid);
             }
 
             protected override runTenantAccessCommand(file: string, args: readonly string[]): boolean {
@@ -1172,7 +1172,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
                 return super.runTenantAccessCommand(file, args);
             }
 
-            async runTenantAccessCommandAsync(file: string, args: readonly string[]): Promise<boolean> {
+            protected override async runTenantAccessCommandAsync(file: string, args: readonly string[]): Promise<boolean> {
                 if (file === 'setfacl' && args.some(argument => argument.includes('u:1001:rwX'))) {
                     await new Promise<void>(resolve => setTimeout(resolve, 240));
                 }
@@ -1191,12 +1191,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const startedAt = Date.now();
         const interval = setInterval(() => timestamps.push(Date.now()), 10);
         try {
-            const asynchronousRepair = (service as unknown as {
-                repairAgentAccessTreeAsync?: (directory: string, uid: number) => Promise<boolean>;
-            }).repairAgentAccessTreeAsync;
-            const repaired = asynchronousRepair
-                ? await asynchronousRepair.call(service, tree, 1001)
-                : service.repair(tree, 1001);
+            const repaired = await service.repairAsync(tree, 1001);
             const finishedAt = Date.now();
             clearInterval(interval);
             timestamps.push(finishedAt);
