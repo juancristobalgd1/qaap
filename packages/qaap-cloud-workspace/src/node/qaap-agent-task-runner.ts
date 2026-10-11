@@ -745,12 +745,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return 'unknown';
         }
         try {
-            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
+            const resolvedEnv = await this.tenantSpawn.resolveProcessEnvAsync(tenantCwd, { ...process.env });
             // An inherited OPENAI_API_KEY makes `codex login status` report the key, not the sign-in.
-            const env = stripSignInOnlyAgentApiKeyEnv({
-                ...process.env,
-                ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
-            }, agentId);
+            const env = stripSignInOnlyAgentApiKeyEnv(resolvedEnv, agentId);
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
             const prefix = this.resolveAgentCliPrefix(tenantCwd);
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);

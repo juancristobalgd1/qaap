@@ -6,6 +6,7 @@
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -567,11 +568,26 @@ export class QaapTenantSpawnService {
     }
 
     /** Prepare the cold tenant-backend HOME without blocking the caller's event loop. */
-    protected async prepareTenantBackendAgentHomeAsync(): Promise<void> {
+    protected prepareTenantBackendAgentHomeAsync(): Promise<void> {
         if (!this.isTenantBackendMode()) {
-            return;
+            return Promise.resolve();
         }
         const home = QAAP_TENANT_BACKEND_HOME;
+        const pending = this.pendingTenantBackendHomePreparations.get(home);
+        if (pending) {
+            return pending;
+        }
+        let preparation: Promise<void>;
+        preparation = Promise.resolve().then(() => this.prepareTenantBackendAgentHomeOnceAsync(home)).finally(() => {
+            if (this.pendingTenantBackendHomePreparations.get(home) === preparation) {
+                this.pendingTenantBackendHomePreparations.delete(home);
+            }
+        });
+        this.pendingTenantBackendHomePreparations.set(home, preparation);
+        return preparation;
+    }
+
+    protected async prepareTenantBackendAgentHomeOnceAsync(home: string): Promise<void> {
         const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
         const uid = identity?.uid !== undefined && identity.uid > 0 ? identity.uid : undefined;
         const root = QaapTenantAgentStorageEnv.resolveRoot(
@@ -752,6 +768,15 @@ export class QaapTenantSpawnService {
         args: readonly string[],
         options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean },
     ): ChildProcess {
+        return this.spawnArgvPreparedInternal(file, args, options);
+    }
+
+    protected spawnArgvPreparedInternal(
+        file: string,
+        args: readonly string[],
+        options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean },
+        cancellationId?: string,
+    ): ChildProcess {
         const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
         this.prepareTenantIsolation(cwd);
@@ -767,8 +792,14 @@ export class QaapTenantSpawnService {
             if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
                 throw new Error('Refusing to spawn: the validated tenant container has not been prepared.');
             }
-            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot, options.env);
-            return this.launchProcess(wrapped.file, wrapped.args, spawnOptions);
+            const wrapped = cancellationId
+                ? this.wrapCancellableTenantProcess(segment, cwd, file, args, tenantRoot, options.env, cancellationId)
+                : this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot, options.env);
+            const child = this.launchProcess(wrapped.file, wrapped.args, spawnOptions);
+            if (cancellationId) {
+                this.attachTenantProcessCancellation(child, segment, cwd, tenantRoot, options.env, cancellationId);
+            }
+            return child;
         }
         const identity = this.resolveSpawnIdentity(cwd);
         this.assertDropIsComplete(identity);
@@ -802,7 +833,138 @@ export class QaapTenantSpawnService {
         if (signal?.aborted) {
             throw signal.reason ?? new Error('Tenant process launch was cancelled.');
         }
-        return this.spawnArgvPrepared(file, args, { ...spawnOptions, cwd });
+        const cancellationId = this.isContainerIsolationEnabled() ? randomUUID() : undefined;
+        return this.spawnArgvPreparedInternal(file, args, { ...spawnOptions, cwd }, cancellationId);
+    }
+
+    /**
+     * `docker exec` signals only its local CLI. Run the command in a worker-side session so the
+     * cancellation exec can signal the entire git/npm process group and stop the worker if that fails.
+     */
+    protected wrapCancellableTenantProcess(
+        ownerLogin: string,
+        cwd: string,
+        file: string,
+        args: readonly string[],
+        tenantRoot: string,
+        environment: NodeJS.ProcessEnv,
+        cancellationId: string,
+    ): { file: string; args: string[] } {
+        const pidFile = `/tmp/.qaap-exec-${cancellationId}.pid`;
+        const cancelFile = `/tmp/.qaap-exec-${cancellationId}.cancel`;
+        const script = 'pid_file=$1; cancel_file=$2; shift 2; umask 077; '
+            + 'command -v setsid >/dev/null 2>&1 || { echo "setsid is required for cancellable tenant execs" >&2; exit 127; }; '
+            + 'setsid /bin/sh -c \'pid_file=$1; cancel_file=$2; shift 2; '
+            + 'printf "%s\\n" "$$" > "$pid_file"; '
+            + 'if [ -e "$cancel_file" ]; then kill -TERM -$$ 2>/dev/null || true; fi; exec "$@"\' '
+            + 'qaap-tenant-process "$pid_file" "$cancel_file" "$@" & child=$!; '
+            + 'wait "$child"; status=$?; rm -f "$pid_file" "$cancel_file"; exit "$status"';
+        return this.dockerOrchestrator!.wrapShellForTenantContainer(
+            ownerLogin,
+            cwd,
+            '/bin/sh',
+            ['-c', script, 'qaap-tenant-exec', pidFile, cancelFile, file, ...args],
+            tenantRoot,
+            environment,
+        );
+    }
+
+    protected attachTenantProcessCancellation(
+        child: ChildProcess,
+        ownerLogin: string,
+        cwd: string,
+        tenantRoot: string,
+        environment: NodeJS.ProcessEnv,
+        cancellationId: string,
+    ): void {
+        const localKill = child.kill.bind(child);
+        let cancellationStarted = false;
+        Object.defineProperty(child, 'kill', {
+            configurable: true,
+            value: (signal?: NodeJS.Signals | number): boolean => {
+                if (cancellationStarted) {
+                    return true;
+                }
+                cancellationStarted = true;
+                const signalName = typeof signal === 'string' && /^SIG[A-Z0-9]+$/.test(signal)
+                    ? signal.slice(3)
+                    : 'TERM';
+                const pidFile = `/tmp/.qaap-exec-${cancellationId}.pid`;
+                const cancelFile = `/tmp/.qaap-exec-${cancellationId}.cancel`;
+                const script = 'pid_file=$1; cancel_file=$2; signal=$3; umask 077; '
+                    + ': > "$cancel_file"; attempt=0; '
+                    + 'while [ ! -s "$pid_file" ] && [ "$attempt" -lt 50 ]; do sleep 0.1; attempt=$((attempt + 1)); done; '
+                    + 'if [ ! -s "$pid_file" ]; then exit 0; fi; '
+                    + 'read -r pid < "$pid_file"; case "$pid" in ""|*[!0-9]*) exit 1;; esac; '
+                    + 'kill -"$signal" -"$pid" 2>/dev/null || true; attempt=0; '
+                    + 'while [ "$attempt" -lt 20 ]; do if ! kill -0 -"$pid" 2>/dev/null; then exit 0; fi; '
+                    + 'sleep 0.1; attempt=$((attempt + 1)); done; '
+                    + 'kill -KILL -"$pid" 2>/dev/null || true; attempt=0; '
+                    + 'while [ "$attempt" -lt 20 ]; do if ! kill -0 -"$pid" 2>/dev/null; then exit 0; fi; '
+                    + 'sleep 0.1; attempt=$((attempt + 1)); done; exit 1';
+                let finished = false;
+                let containerStopStarted = false;
+                let timeout: ReturnType<typeof setTimeout> | undefined;
+                const finish = (): void => {
+                    if (finished) {
+                        return;
+                    }
+                    finished = true;
+                    if (timeout) {
+                        clearTimeout(timeout);
+                    }
+                    localKill(signal);
+                };
+                const stopTenantContainerThenFinish = (): void => {
+                    if (finished || containerStopStarted) {
+                        return;
+                    }
+                    containerStopStarted = true;
+                    if (timeout) {
+                        clearTimeout(timeout);
+                    }
+                    void Promise.resolve()
+                        .then(() => this.dockerOrchestrator!.stopTenantContainer(ownerLogin))
+                        .catch(error => {
+                            console.warn('[qaap-security] could not stop tenant container after exec cancellation failed:', error);
+                        })
+                        .finally(finish);
+                };
+                let cancelChild: ChildProcess;
+                try {
+                    const wrapped = this.dockerOrchestrator!.wrapShellForTenantContainer(
+                        ownerLogin,
+                        cwd,
+                        '/bin/sh',
+                        ['-c', script, 'qaap-tenant-cancel', pidFile, cancelFile, signalName],
+                        tenantRoot,
+                        environment,
+                    );
+                    cancelChild = this.launchProcess(wrapped.file, wrapped.args, {
+                        cwd,
+                        detached: true,
+                        env: environment,
+                        stdio: 'ignore',
+                    });
+                } catch {
+                    stopTenantContainerThenFinish();
+                    return true;
+                }
+                cancelChild.once('error', stopTenantContainerThenFinish);
+                cancelChild.once('close', (code, cancelSignal) => {
+                    if (code === 0 && cancelSignal === null) {
+                        finish();
+                    } else {
+                        stopTenantContainerThenFinish();
+                    }
+                });
+                timeout = setTimeout(() => {
+                    cancelChild.kill('SIGKILL');
+                    stopTenantContainerThenFinish();
+                }, 5_000);
+                return true;
+            },
+        });
     }
 
     /**
@@ -848,11 +1010,6 @@ export class QaapTenantSpawnService {
             // keep agent CLI configuration writable there while caches/data use the tenant mount.
             const user = this.isBackendRoot() ? 'qaap-agent' : 'theia';
             const storageEnv = this.tenantAgentStorageEnv();
-            this.ensurePersistentTenantBackendHome(QAAP_TENANT_BACKEND_HOME);
-            const identity = this.isBackendRoot() ? resolveAgentSpawnIdentityFromEnv(process.env, true) : undefined;
-            if (identity?.uid !== undefined && identity.uid > 0) {
-                this.ensureTenantBackendHomeAccess(QAAP_TENANT_BACKEND_HOME, identity.uid);
-            }
             return { HOME: QAAP_TENANT_BACKEND_HOME, USER: user, LOGNAME: user, ...storageEnv };
         }
         if (this.isContainerIsolationEnabled()) {
@@ -891,9 +1048,6 @@ export class QaapTenantSpawnService {
         if (!root) {
             return {};
         }
-        if (this.isTenantBackendMode()) {
-            this.ensureTenantAgentStorage(root);
-        }
         return QaapTenantAgentStorageEnv.build(root);
     }
 
@@ -909,6 +1063,7 @@ export class QaapTenantSpawnService {
     protected readonly preparedAgentStorageRoots = new Set<string>();
     protected readonly persistentTenantHomes = new Set<string>();
     protected readonly pendingPersistentTenantHomes = new Map<string, Promise<void>>();
+    protected readonly pendingTenantBackendHomePreparations = new Map<string, Promise<void>>();
     protected readonly preparedTenantBackendHomes = new Set<string>();
     protected readonly pendingAgentStorageAccessMarkers = new Map<string, string>();
 
@@ -1203,7 +1358,7 @@ export class QaapTenantSpawnService {
             return;
         }
         try {
-            await QaapTenantPersistentHome.ensureDirectoryAsync(home, { uid, gid });
+            await this.ensureAgentHomeDirectoryAsync(home, uid, gid);
             if (!await this.repairAgentAccessTreeAsync(home, uid)) {
                 throw new Error(`Could not repair existing files under agent HOME ${home}.`);
             }
@@ -1221,6 +1376,11 @@ export class QaapTenantSpawnService {
     /** Overridable for capability-profile tests; mode and ACLs provide access when chown is denied. */
     protected ensureAgentHomeDirectory(home: string, uid: number): void {
         QaapTenantPersistentHome.ensureDirectory(home, { uid, gid: uid });
+    }
+
+    /** Async counterpart used by cold HOME preparation. */
+    protected ensureAgentHomeDirectoryAsync(home: string, uid: number, gid: number): Promise<void> {
+        return QaapTenantPersistentHome.ensureDirectoryAsync(home, { uid, gid });
     }
 
     protected probeAgentConfigWritable(home: string, uid: number, gid: number): boolean {

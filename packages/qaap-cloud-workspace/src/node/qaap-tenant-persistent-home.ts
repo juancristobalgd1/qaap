@@ -40,6 +40,7 @@ export interface QaapTenantPersistentHomeOwner {
 }
 
 export type QaapTenantPersistentHomeChown = (path: string, uid: number, gid: number) => void;
+export type QaapTenantPersistentHomeAsyncChown = (path: string, uid: number, gid: number) => Promise<void>;
 
 export interface QaapTenantPersistentHomeLinkResult {
     readonly changedEntries: string[];
@@ -176,6 +177,7 @@ export namespace QaapTenantPersistentHome {
     export async function ensureDirectoryAsync(
         directory: string,
         owner?: QaapTenantPersistentHomeOwner,
+        chown: QaapTenantPersistentHomeAsyncChown = (entry, uid, gid) => fs.promises.chown(entry, uid, gid),
     ): Promise<void> {
         const resolved = path.resolve(directory);
         const root = path.parse(resolved).root;
@@ -201,7 +203,7 @@ export namespace QaapTenantPersistentHome {
             return;
         }
         try {
-            await fs.promises.chown(resolved, owner.uid, owner.gid);
+            await chown(resolved, owner.uid, owner.gid);
         } catch (error) {
             const code = (error as NodeJS.ErrnoException).code;
             if (code !== 'EPERM' && code !== 'EACCES') {
