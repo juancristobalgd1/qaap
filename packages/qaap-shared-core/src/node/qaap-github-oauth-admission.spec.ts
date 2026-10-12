@@ -155,7 +155,7 @@ describe('Qaap GitHub OAuth beta admission', () => {
                 expect(stored?.user.login).to.equal(login);
 
                 const sessionResponse = endpoint.session(cookie);
-                expect(sessionResponse.body).to.deep.equal({ signedIn: true, user: stored?.user });
+                expect(sessionResponse.body).to.deep.equal({ signedIn: true, user: stored?.user, mobileEntry: true });
             }
             expect(store.listSessions().map(session => session.user.login).sort()).to.deep.equal(['alice', 'bob']);
         } finally {
