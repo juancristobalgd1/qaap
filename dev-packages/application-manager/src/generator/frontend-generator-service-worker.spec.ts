@@ -19,6 +19,9 @@ import * as vm from 'vm';
 import { FrontendGenerator } from './frontend-generator';
 
 class TestFrontendGenerator extends FrontendGenerator {
+    serviceWorkerScript(): string {
+        return this.compileServiceWorker();
+    }
     registrationScript(): string {
         return this.compileServiceWorkerRegistration();
     }
@@ -72,5 +75,83 @@ describe('FrontendGenerator service worker registration', () => {
         page.fireControllerChange();
         page.fireControllerChange();
         expect(page.reloads).to.equal(1);
+    });
+});
+
+interface SwHarness {
+    fetches: string[];
+    /** Dispatches a GET for `path`; returns the handled response body, or undefined when passed through. */
+    request(path: string): Promise<string | undefined>;
+}
+
+function loadServiceWorker(): SwHarness {
+    const generator = Object.create(TestFrontendGenerator.prototype) as TestFrontendGenerator;
+    const self = generator as unknown as { pck: unknown; options: unknown };
+    self.pck = { pck: { version: '1.0.0' }, props: { frontend: { config: { applicationName: 'Qaap' } } } };
+    self.options = { mode: 'production' };
+    const js = generator.serviceWorkerScript();
+    const stores = new Map<string, Map<string, string>>();
+    const fetches: string[] = [];
+    const listeners: Record<string, (event: unknown) => void> = {};
+    const makeResponse = (body: string, ok = true): object => ({ ok, type: 'basic', body, clone: () => makeResponse(body, ok) });
+    const caches = {
+        keys: async () => [...stores.keys()],
+        delete: async (name: string) => stores.delete(name),
+        open: async (name: string) => {
+            const store = stores.get(name) ?? new Map<string, string>();
+            stores.set(name, store);
+            return {
+                match: async (req: { url: string }) => store.has(req.url) ? makeResponse(store.get(req.url)!) : undefined,
+                put: async (req: { url: string }, res: { body: string }) => { store.set(req.url, res.body); },
+                add: async () => { }
+            };
+        }
+    };
+    const context = {
+        URL, Request: class { }, Response: class { constructor(public body: string, public init?: object) { } },
+        console, caches,
+        fetch: async (req: { url: string }) => { fetches.push(req.url); return makeResponse('net:' + req.url); },
+        self: {
+            location: { origin: 'https://app.test' },
+            skipWaiting: () => { },
+            addEventListener: (type: string, listener: (event: unknown) => void) => { listeners[type] = listener; }
+        }
+    };
+    vm.runInNewContext(js, context);
+    return {
+        fetches,
+        request: async (path: string) => {
+            let handled: Promise<{ body: string }> | undefined;
+            listeners['fetch']({
+                request: { method: 'GET', url: 'https://app.test' + path, mode: 'no-cors', cache: 'default', destination: 'script', headers: { has: () => false, get: () => '' } },
+                respondWith: (p: Promise<{ body: string }>) => { handled = p; }
+            });
+            return handled ? (await handled).body : undefined;
+        }
+    };
+}
+
+describe('FrontendGenerator service worker caching strategy', () => {
+
+    it('serves content-hashed chunks cache-first (second request does not hit the network)', async () => {
+        const sw = loadServiceWorker();
+        expect(await sw.request('/chunk-ABC123XY.js')).to.equal('net:https://app.test/chunk-ABC123XY.js');
+        expect(await sw.request('/chunk-ABC123XY.js')).to.equal('net:https://app.test/chunk-ABC123XY.js');
+        expect(sw.fetches).to.have.length(1);
+    });
+
+    it('keeps the bundle.js entry network-first', async () => {
+        const sw = loadServiceWorker();
+        await sw.request('/bundle.js');
+        await sw.request('/bundle.js');
+        expect(sw.fetches).to.have.length(2);
+    });
+
+    it('evicts caches of other versions on activate', () => {
+        const generator = Object.create(TestFrontendGenerator.prototype) as TestFrontendGenerator;
+        (generator as unknown as { pck: unknown }).pck = { pck: { version: '1.0.0' }, props: { frontend: { config: { applicationName: 'Qaap' } } } };
+        (generator as unknown as { options: unknown }).options = { mode: 'production' };
+        const js = generator.serviceWorkerScript();
+        expect(js).to.contain("name !== SHELL_CACHE && name !== RUNTIME_CACHE");
     });
 });

@@ -404,6 +404,7 @@ export class FrontendGenerator extends AbstractGenerator {
  *   - activate: evict caches that don't match the current version.
  *   - navigations: network-first with an offline fallback to the cached shell.
  *   - application code (js/css): network-first so a redeploy is always served consistently.
+ *   - content-hashed chunks (chunk-HASH.js/css): cache-first (immutable); bundle.js stays network-first.
  *   - other static assets (wasm/fonts/media/icons): stale-while-revalidate, same-origin only.
  *   - non-GET, Range requests, WebSocket-adjacent and plugin/file/api endpoints: pass-through.
  */
@@ -436,6 +437,10 @@ const BYPASS_PATHS = [
 // Application code: bundle.js, webpack chunks and bundle.css. Served network-first so a fresh
 // deploy is always picked up as a consistent whole.
 const SCRIPT_EXT = /\\.(?:js|css)(?:$|\\?)/i;
+// esbuild content-hashed chunks (chunk-<HASH>.js|css): the name changes whenever the bytes do, so they
+// are immutable and served cache-first. bundle.js (the entry) stays network-first and always names
+// the current chunks. The runtime cache is versioned, so a new epoch/build evicts them on activate.
+const HASHED_CHUNK = /\\/chunk-[A-Za-z0-9_-]{6,}\\.(?:js|css)$/;
 // Immutable-ish assets: safe to serve stale while revalidating.
 const ASSET_EXT = /\\.(?:woff2?|ttf|otf|eot|svg|png|jpg|jpeg|gif|webp|ico|wasm)(?:$|\\?)/i;
 
@@ -492,6 +497,10 @@ self.addEventListener('fetch', event => {
         event.respondWith(handleNavigate(event));
         return;
     }
+    if (HASHED_CHUNK.test(url.pathname)) {
+        event.respondWith(cacheFirst(req));
+        return;
+    }
     if (SCRIPT_EXT.test(url.pathname)) {
         event.respondWith(networkFirst(req));
         return;
@@ -515,6 +524,22 @@ async function networkFirst(req) {
     } catch (_) {
         const cached = await cache.match(req);
         return cached || new Response('', { status: 504, statusText: 'Gateway Timeout' });
+    }
+}
+
+// Cache-first for content-hashed chunks: a hit never touches the network; a miss is fetched and stored.
+async function cacheFirst(req) {
+    const cache = await caches.open(RUNTIME_CACHE);
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    try {
+        const res = await fetch(req);
+        if (res && res.ok && (res.type === 'basic' || res.type === 'default')) {
+            cache.put(req, res.clone()).catch(() => {});
+        }
+        return res;
+    } catch (_) {
+        return new Response('', { status: 504, statusText: 'Gateway Timeout' });
     }
 }
 

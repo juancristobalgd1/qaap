@@ -65,7 +65,7 @@ import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import { MenuContribution } from '@theia/core/lib/common/menu';
-import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
+import { ShellLayoutRestorer, ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { QaapKeybindingRegistry } from '@theia/qaap-shared-core/lib/browser/qaap-keybinding-registry';
 import { bindQaapWorkspaceService } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-service';
 import { bindQaapWorkspacePreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-preference-provider';
@@ -74,6 +74,7 @@ import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/brow
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
+import { QaapShellLayoutRestorer } from './qaap-shell-layout-restorer';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
 import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
@@ -235,6 +236,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapAgentCliUpdateContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateContribution);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);
+    rebind(ShellLayoutRestorer).to(QaapShellLayoutRestorer).inSingletonScope();
     bind(QaapShellLayoutRestoreContribution).toSelf().inSingletonScope();
     bind(ShellLayoutTransformer).toService(QaapShellLayoutRestoreContribution);
     bind(QaapDesktopTerminalLayoutContribution).toSelf().inSingletonScope();
