@@ -1,6 +1,7 @@
 import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
@@ -275,7 +276,9 @@ export function syncTerminalAgentTuiTriggerExtracted(ctx: MobileProjectsExecutio
 }
 
 export function executionSurfaceTabSpecsExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): Array<{ id: TranscriptTab; label: string; icon: string }> {
-    if (peekPreferDesktopIde()) {
+    // The classic IDE never opens in mobile mode, so a stale desktop-IDE preference (sessionStorage)
+    // must not strip the Work Hub surfaces there.
+    if (!matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
         return [
             { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
         ];
