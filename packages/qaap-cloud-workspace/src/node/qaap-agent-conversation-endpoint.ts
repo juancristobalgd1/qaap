@@ -26,9 +26,12 @@ import {
     QaapWorktreeApplyAction,
 } from '../common/qaap-agent-conversation';
 import {
+    QAAP_AGENT_CONVERSATION_LIVE_PROTOCOL_V2,
     QAAP_AGENT_CONVERSATION_WS_PATH,
     parseQaapAgentConversationWsClientMessage,
 } from '../common/qaap-agent-conversation-ws';
+import { QaapConversationLiveSession } from './qaap-conversation-live-session';
+import { parseQaapConversationEventId, type QaapConversationLogEntry } from './qaap-conversation-event-log';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapAgUiEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
@@ -52,6 +55,8 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
 const SSE_HEARTBEAT_MS = 25_000;
+/** A v2 socket that never sends `hello` is served a full `resync` after this long. */
+const WS_V2_HELLO_TIMEOUT_MS = 3_000;
 const VISUAL_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
 const WS_PING_MS = 25_000;
@@ -119,6 +124,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!ctx) {
                 return;
             }
+            // Snapshot cut: flush the batcher, then read cursor and state in the same tick.
+            const cursor = this.snapshotCursor();
             const groups = this.filterGroups(ctx, this.store.listAllGroupedByCwd());
             if (req.query.peek === '1') {
                 // Existence/count probe (onboarding guards) — skips serializing the full
@@ -134,6 +141,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             res.json({
                 groups,
+                // Snapshot cut: flush first so the groups and the cursor describe the same instant.
+                ...cursor,
             } satisfies QaapAgentConversationAllResponse);
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/stream`, (req, res) => {
@@ -165,11 +174,13 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             });
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
+            // Snapshot cut: flush first so `{epoch, seq}` covers every event reflected in the document.
+            const cursor = this.snapshotCursor();
             const conv = this.getConversationIfOwned(req, res, req.params.id);
             if (!conv) {
                 return;
             }
-            res.json(conv);
+            res.json({ ...conv, ...cursor });
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/messages`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
@@ -409,26 +420,58 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 client.close(4401, 'Not signed in');
                 return;
             }
-            const snapshot = {
-                type: 'snapshot',
-                groups: this.filterGroups(ctx, this.store.listAllGroupedByCwd()),
-            };
-            client.send(JSON.stringify(snapshot));
+            const requestUrl = new URL(request.url ?? '', `http://${request.headers.host}`);
+            const v2 = requestUrl.searchParams.get('v') === QAAP_AGENT_CONVERSATION_LIVE_PROTOCOL_V2;
+            const session = v2 ? new QaapConversationLiveSession({
+                log: this.store.eventLog,
+                isOwned: entry => this.entryIsOwned(ctx, entry),
+                flush: () => this.store.sseBatcher.flush(),
+                buildGroups: () => this.filterGroups(ctx, this.store.listAllGroupedByCwd()),
+                send: frame => {
+                    if (client.readyState === WsClient.OPEN) {
+                        client.send(frame);
+                    }
+                },
+            }) : undefined;
+            let helloTimer: ReturnType<typeof setTimeout> | undefined;
+            let subscription: { dispose(): void };
+            if (session) {
+                // v2: nothing is sent until `hello` names the resume cursor; a silent client gets a resync.
+                helloTimer = setTimeout(() => {
+                    helloTimer = undefined;
+                    session.hello(undefined, undefined, []);
+                }, WS_V2_HELLO_TIMEOUT_MS);
+                subscription = this.store.onDidChangeStamped(entry => session.onEntry(entry));
+            } else {
+                const snapshot = {
+                    type: 'snapshot',
+                    groups: this.filterGroups(ctx, this.store.listAllGroupedByCwd()),
+                };
+                client.send(JSON.stringify(snapshot));
 
-            const subscription = this.store.onDidChange(event => {
-                if (client.readyState !== WsClient.OPEN) {
-                    return;
-                }
-                if (!this.eventIsOwned(ctx, event)) {
-                    return;
-                }
-                client.send(JSON.stringify(event));
-            });
+                subscription = this.store.onDidChange(event => {
+                    if (client.readyState !== WsClient.OPEN) {
+                        return;
+                    }
+                    if (!this.eventIsOwned(ctx, event)) {
+                        return;
+                    }
+                    client.send(JSON.stringify(event));
+                });
+            }
 
             client.on('message', data => {
                 try {
                     const parsed = parseQaapAgentConversationWsClientMessage(JSON.parse(String(data)));
                     if (!parsed) {
+                        return;
+                    }
+                    if (session && (parsed.op === 'hello' || parsed.op === 'focus' || parsed.op === 'unfocus' || parsed.op === 'ping')) {
+                        if (parsed.op === 'hello' && helloTimer !== undefined) {
+                            clearTimeout(helloTimer);
+                            helloTimer = undefined;
+                        }
+                        session.handle(parsed);
                         return;
                     }
                     if (parsed.op === 'cancel') {
@@ -452,7 +495,11 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     // App-level heartbeat: browser JS never sees WS protocol pings, so also send a
                     // visible frame the client can use to keep its transport-liveness clock fresh
                     // while the model is slow to produce its first token.
-                    client.send(JSON.stringify({ type: 'heartbeat' }));
+                    if (session) {
+                        session.heartbeat();
+                    } else {
+                        client.send(JSON.stringify({ type: 'heartbeat' }));
+                    }
                 } else {
                     clearInterval(ping);
                 }
@@ -460,11 +507,26 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
             const cleanup = (): void => {
                 clearInterval(ping);
+                if (helloTimer !== undefined) {
+                    clearTimeout(helloTimer);
+                    helloTimer = undefined;
+                }
                 subscription.dispose();
             };
             client.on('close', cleanup);
             client.on('error', cleanup);
         });
+    }
+
+    /** Flushes the SSE batcher and returns the live-feed cursor matching the store state right now. */
+    protected snapshotCursor(): { epoch: string; seq: number } {
+        this.store.sseBatcher.flush();
+        return { epoch: this.store.eventLog.epoch, seq: this.store.eventLog.seq };
+    }
+
+    /** Owner filter for a logged event, applied at send time. */
+    protected entryIsOwned(ctx: QaapGithubAuthContext, entry: QaapConversationLogEntry): boolean {
+        return this.eventIsOwned(ctx, entry.event);
     }
 
     protected async handleCreate(req: Request, res: Response): Promise<void> {
@@ -973,16 +1035,33 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         res.flushHeaders?.();
         res.write(': qaap-agent-conversations stream\n\n');
 
-        const subscription = this.store.onDidChange(event => {
-            if (!this.eventIsOwned(ctx, event)) {
+        const log = this.store.eventLog;
+        const writeEntry = (entry: QaapConversationLogEntry): void => {
+            if (!this.entryIsOwned(ctx, entry)) {
                 return;
             }
-            res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-        });
+            // `id:` makes EventSource (and our explicit reconnect) resumable; the data stays the v1 payload.
+            res.write(`id: ${log.epoch}:${entry.seq}\nevent: ${entry.event.type}\ndata: ${entry.json}\n\n`);
+        };
+        // Clients that send no cursor behave exactly as before (live events only).
+        const lastEventIdRaw = firstString(req.headers['last-event-id']) ?? firstString(req.query.lastEventId);
+        if (lastEventIdRaw) {
+            this.store.sseBatcher.flush();
+            const cursor = parseQaapConversationEventId(lastEventIdRaw);
+            const replay = cursor ? log.resume(cursor.epoch, cursor.seq) : undefined;
+            if (replay) {
+                replay.forEach(writeEntry);
+            } else {
+                const resync = { type: 'resync', epoch: log.epoch, seq: log.seq, groups: this.filterGroups(ctx, this.store.listAllGroupedByCwd()) };
+                res.write(`id: ${log.epoch}:${log.seq}\nevent: resync\ndata: ${JSON.stringify(resync)}\n\n`);
+            }
+        }
+
+        const subscription = this.store.onDidChangeStamped(writeEntry);
         // Named `heartbeat` event (not just a `:` comment) so EventSource surfaces it to JS: the
         // client refreshes its transport-liveness clock and won't mislabel a slow-but-live turn as
         // a dropped connection.
-        const heartbeat = setInterval(() => res.write('event: heartbeat\ndata: {}\n\n'), SSE_HEARTBEAT_MS);
+        const heartbeat = setInterval(() => res.write(`id: ${log.epoch}:${log.seq}\nevent: heartbeat\ndata: {}\n\n`), SSE_HEARTBEAT_MS);
 
         const cleanup = (): void => {
             clearInterval(heartbeat);
@@ -1144,6 +1223,11 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         // 'parallel-run' carries the run's base cwd — scope its diff stats to the owner.
         return this.auth.ownsWorkspacePath(ctx, event.cwd);
     }
+}
+
+function firstString(value: unknown): string | undefined {
+    const first = Array.isArray(value) ? value[0] : value;
+    return typeof first === 'string' && first.length > 0 ? first : undefined;
 }
 
 function parseRequestToolApprovalRules(
