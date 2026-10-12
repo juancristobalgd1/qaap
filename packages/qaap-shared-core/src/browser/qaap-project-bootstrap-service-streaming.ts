@@ -472,7 +472,17 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
             ctx.setPhase('idle');
             return;
         }
+        const devRunGeneration = ctx.devRunGeneration;
+        const installGeneration = ctx.installGeneration;
         const descriptor = await ctx.detector.detect(resource);
+        if ((devRunGeneration !== ctx.devRunGeneration || installGeneration !== ctx.installGeneration)
+            && ctx._descriptor?.rootUri.toString() === nextRootKey) {
+            // A run/install for this same root started (or a newer refresh reset the session)
+            // while `detect` was in flight. Applying this older snapshot would flip `starting` back
+            // to `ready-to-run` under the live process: its "Local: http://…" line is then ignored,
+            // the preview never stages, and the server is orphaned on its port.
+            return;
+        }
         ctx._descriptor = descriptor;
         ctx._previewUrl = undefined;
         ctx._error = undefined;

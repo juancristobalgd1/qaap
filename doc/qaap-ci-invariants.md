@@ -152,6 +152,8 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 
 - `qaap-transcript-preview-flow`: the one-column Work Hub opens Preview in the execution-surface drawer (`data-surface="preview"`) and keeps the inline conversation on `data-active-surface="messages"`. The spec requires the proxied iframe inside an active Preview surface, inline or drawer. Do not loosen it further.
 - `qaap-recovery-preview-resilience`: identity previews are `/qaap-preview/<id>/` and never contain the port; read the recovered port from `lastPort` on `window.__qaapBootstrap.getState()`.
+- `qaap-transcript-preview-flow` triggers `runDevServer()` as soon as a descriptor is detected, while the Work Hub load can still have another `refreshFromRoot` awaiting `detect`. `refreshFromRootExtracted` must not apply that snapshot when a run/install for the same root started meanwhile (generation check). Otherwise the phase drops back to `ready-to-run` under the live process: `devOutputTail` shows Vite listening, `forwardedPorts` is empty, and the server is orphaned (the retry then lands one port higher). The `cloud-ws-*` project in the snapshot is the test's own temp workspace, not a leftover.
+- `openDesktopIdeViaAccountMenu` returns `false` when the account menu does not open, so `openDesktopIde()` retries. A throwing wait there caused the `.theia-qaap-account-menu` timeouts.
 - The workflow uploads `test-results/` on failure; keep it for diagnosis.
 
 ## Mock agent provider in CI

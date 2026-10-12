@@ -289,4 +289,59 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(disposed).to.deep.equal([]);
         });
     });
+
+    describe('workspace refresh racing a dev run', () => {
+        const ROOT = URI.fromFilePath(PROJECT_CWD);
+        const DESCRIPTOR = { name: 'app', rootUri: ROOT, nodeModulesPresent: true, apps: [] };
+
+        const refreshContext = (detect: () => Promise<unknown>): {
+            ctx: QaapProjectBootstrapServiceContext; phases: string[];
+        } => {
+            const phases: string[] = [];
+            const state = {
+                _phase: 'ready-to-run',
+                _descriptor: DESCRIPTOR,
+                devRunGeneration: 1,
+                installGeneration: 1,
+                resetBootstrapSessionForWorkspace: () => {
+                    state.devRunGeneration++;
+                    state.installGeneration++;
+                },
+                clearForwardedPorts: () => undefined,
+                detector: { detect },
+                readPersisted: () => undefined,
+                scheduleDevPreviewWarmup: () => undefined,
+                setPhase: (phase: string) => {
+                    phases.push(phase);
+                    state._phase = phase;
+                },
+            };
+            return { ctx: state as unknown as QaapProjectBootstrapServiceContext, phases };
+        };
+
+        it('keeps a dev run that started while detection was in flight', async () => {
+            let resolveDetect: (descriptor: unknown) => void = () => undefined;
+            const { ctx, phases } = refreshContext(() => new Promise(resolve => {
+                resolveDetect = resolve;
+            }));
+
+            const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
+            // runDevServer → startDevServer bumps the run generation and enters `starting`.
+            ctx.devRunGeneration++;
+            ctx.setPhase('starting');
+            resolveDetect({ ...DESCRIPTOR });
+            await refresh;
+
+            expect(phases).to.deep.equal(['starting']);
+            expect(ctx._phase).to.equal('starting');
+        });
+
+        it('applies the detected descriptor when nothing started meanwhile', async () => {
+            const { ctx, phases } = refreshContext(async () => ({ ...DESCRIPTOR }));
+
+            await streaming.refreshFromRootExtracted(ctx, ROOT);
+
+            expect(phases).to.deep.equal(['ready-to-run']);
+        });
+    });
 });
