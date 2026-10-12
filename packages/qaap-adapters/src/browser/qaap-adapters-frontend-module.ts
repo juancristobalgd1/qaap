@@ -18,6 +18,8 @@ import { MiniBrowser } from '@theia/mini-browser/lib/browser/mini-browser';
 import { MiniBrowserContent } from '@theia/mini-browser/lib/browser/mini-browser-content';
 import { QaapMiniBrowser } from './qaap-mini-browser';
 import { QaapMiniBrowserContent } from './qaap-mini-browser-content';
+import { LocationMapper } from '@theia/mini-browser/lib/browser/location-mapper-service';
+import { QaapLocationWithoutSchemeMapper } from './qaap-mini-browser-location-mapper';
 import { QaapMiniBrowserOpenHandler } from './qaap-mini-browser-open-handler';
 import { DefaultQaapMiniBrowserLifecycle } from './default-qaap-mini-browser-lifecycle';
 import { DefaultQaapMonacoQuickInputAdapter } from './default-qaap-monaco-quick-input-adapter';
@@ -58,6 +60,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
 
     bind(QaapMiniBrowser).toSelf();
     rebind(MiniBrowser).to(QaapMiniBrowser);
+
+    bind(QaapLocationWithoutSchemeMapper).toSelf().inSingletonScope();
+    bind(LocationMapper).toService(QaapLocationWithoutSchemeMapper);
 
     bind(QaapMiniBrowserContent).toSelf();
     rebind(MiniBrowserContent).to(QaapMiniBrowserContent);
