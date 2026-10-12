@@ -14,7 +14,7 @@ import {
 import { hasQaapLeftRightSplitPanel } from '@theia/qaap-shell/lib/browser/qaap-shell-layout';
 import { QaapSidePanelHandler } from '@theia/qaap-shell/lib/browser/qaap-side-panel-handler';
 import {
-    clearMobileWorkHubBootGuard,
+    releaseMobileWorkHubBootGuardOnTimeout,
     markPreferAgentsSurface,
     peekPreferDesktopIde,
     shouldBootstrapMobileAgentsChat,
@@ -164,8 +164,9 @@ export function recoverEmptyAgentsSurfaceExtracted(ctx: MobileOneColumnShellCont
 export function armBootGuardSafetyTimeoutExtracted(ctx: MobileOneColumnShellContributionContext): void {
     const timeout = window.setTimeout(() => {
         if (document.documentElement.classList.contains('theia-mobile-workhub-boot')) {
-            console.warn('[qaap-mobile-shell] Boot guard still active after 15s — clearing to prevent blank screen');
-            clearMobileWorkHubBootGuard();
+            console.warn('[qaap-mobile-shell] Boot guard still active after 15s — Work Hub not mounted yet');
+            // Mobile never reveals the IDE shell: keep the guard + connecting placeholder instead.
+            releaseMobileWorkHubBootGuardOnTimeout();
         }
     }, 15000);
     ctx.toDispose.push(Disposable.create(() => window.clearTimeout(timeout)));

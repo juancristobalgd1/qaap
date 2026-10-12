@@ -19,6 +19,37 @@
     /** Set when this tab reloads into the classic IDE; the IDE never reads Work Hub data at boot. */
     var bootsIntoIde = false;
 
+    /** Mirrors showMobileWorkHubConnectingPlaceholder() in @theia/qaap-shared-core (same ids). */
+    function showConnectingPlaceholder() {
+        if (document.getElementById('qaap-mobile-workhub-connecting')) {
+            return;
+        }
+        if (!document.getElementById('qaap-mobile-workhub-connecting-styles')) {
+            var style = document.createElement('style');
+            style.id = 'qaap-mobile-workhub-connecting-styles';
+            style.textContent = [
+                '#qaap-mobile-workhub-connecting{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;',
+                'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;',
+                'background:#f5f5f5;background:var(--q-bg,var(--qaap-bg,#f5f5f5));',
+                'color:#6b6b6b;font:500 14px/1.4 system-ui,-apple-system,sans-serif}',
+                '#qaap-mobile-workhub-connecting .qaap-mobile-workhub-connecting-logo{width:64px;height:64px;',
+                'background:var(--theia-workbench-brand-logo-url,none) center/contain no-repeat}'
+            ].join('');
+            (document.head || document.documentElement).appendChild(style);
+        }
+        var root = document.createElement('div');
+        root.id = 'qaap-mobile-workhub-connecting';
+        root.setAttribute('role', 'status');
+        var logo = document.createElement('div');
+        logo.className = 'qaap-mobile-workhub-connecting-logo';
+        logo.setAttribute('aria-hidden', 'true');
+        var label = document.createElement('div');
+        label.textContent = 'Connecting\u2026';
+        root.appendChild(logo);
+        root.appendChild(label);
+        (document.body || document.documentElement).appendChild(root);
+    }
+
     /**
      * Mobile Work Hub boot guard — runs before bundle.js so the IDE shell never flashes
      * behind the Agents chat while layout + workspace restore finish loading.
@@ -100,6 +131,12 @@
             // Only lift the html boot guard — body classes are owned by @theia/qaap-work-hub and
             // must stay active while Work Hub is the surface (stripping them leaks Explorer).
             window.setTimeout(function () {
+                if (isMobileMode) {
+                    // Mobile never reveals the IDE shell: keep the guard and show a lightweight
+                    // placeholder until Work Hub mounts (clearMobileWorkHubBootGuard removes it).
+                    showConnectingPlaceholder();
+                    return;
+                }
                 document.documentElement.classList.remove('theia-mobile-workhub-boot');
             }, 8000);
         } catch (e) { /* ignore */ }

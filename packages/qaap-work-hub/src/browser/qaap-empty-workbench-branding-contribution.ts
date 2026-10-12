@@ -6,7 +6,8 @@
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import {
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
-    MOBILE_ONE_COLUMN_LAYOUT_CLASS
+    MOBILE_ONE_COLUMN_LAYOUT_CLASS,
+    matchesMobileOneColumnLayout
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MessageLoop } from '@lumino/messaging';
 import { Widget } from '@lumino/widgets';
@@ -23,7 +24,8 @@ import {
     QAAP_WATERMARK_ENTRY_DEFS,
     QAAP_WATERMARK_PREFERRED_KEYBINDINGS,
     localizeWatermarkLabel,
-    resolveWatermarkCommandId
+    resolveWatermarkCommandId,
+    shouldRenderQaapWatermark
 } from './qaap-watermark-entries';
 
 const EMPTY_BRAND_CLASS = 'qaap-empty-workbench-brand';
@@ -153,15 +155,11 @@ export class QaapEmptyWorkbenchBrandingContribution implements FrontendApplicati
     }
 
     protected shouldShowEmptyBrand(): boolean {
-        if (!this.isMainAreaEmpty()) {
-            return false;
-        }
-        const projects = document.querySelector('.theia-mobile-projects.theia-mod-visible');
-        if (projects) {
-            return false;
-        }
-        // Sidebar sheets may stay expanded; still show the empty-editor watermark in main.
-        return true;
+        return shouldRenderQaapWatermark({
+            mobileLayout: this.isMobileLayout(),
+            mainAreaEmpty: this.isMainAreaEmpty(),
+            projectsPanelVisible: !!document.querySelector('.theia-mobile-projects.theia-mod-visible')
+        });
     }
 
     protected isMainAreaEmpty(): boolean {
@@ -169,7 +167,7 @@ export class QaapEmptyWorkbenchBrandingContribution implements FrontendApplicati
     }
 
     protected isMobileLayout(): boolean {
-        return this.shell.node.classList.contains(MOBILE_ONE_COLUMN_LAYOUT_CLASS);
+        return this.shell.node.classList.contains(MOBILE_ONE_COLUMN_LAYOUT_CLASS) || matchesMobileOneColumnLayout();
     }
 
     protected getBrandHost(): HTMLElement {
