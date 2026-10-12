@@ -17,6 +17,9 @@
  *     source bytes exceed `scripts/qaap-mobile-bundle-budget.json` -> `monacoBytes`. Source bytes
  *     (not emitted bytes) so the number is the same in development and production builds. Lower
  *     the budget whenever an import cut shrinks it; never raise it.
+ *   - HARD FAIL when a reachable stylesheet inlines a woff2 font together with legacy formats
+ *     (eot/ttf/otf/woff/svg font): fonts are data: URLs, so each extra format is dead weight that
+ *     `woff2OnlyFontsPlugin` in `examples/browser/esbuild.mjs` is expected to strip.
  *
  * `--report` prints the findings and exits 0 (use while the Work Hub still imports IDE code). For
  * every forbidden package the SHORTEST import chain from the entry is printed: that list is the
@@ -64,6 +67,22 @@ function forbiddenGroup(input) {
 function isMonaco(input) {
     const normalized = normalize(input);
     return MONACO.some(pattern => pattern.test(normalized));
+}
+
+const WOFF2_FONT = /\.woff2(?:[?#]|$)/;
+const LEGACY_FONT = /\.(?:eot|otf|ttf|woff)(?:[?#]|$)|fonts?\/[^/]*\.svg(?:[?#]|$)/;
+
+/**
+ * Stylesheets that inline a woff2 font next to legacy formats of the same face.
+ * @param {{ inputs: Record<string, { imports?: { path: string, kind?: string }[] }> }} meta
+ * @param {Iterable<string>} inputs
+ * @returns {string[]}
+ */
+function redundantFontStylesheets(meta, inputs) {
+    return [...inputs].filter(input => {
+        const fonts = (meta.inputs[input]?.imports || []).filter(entry => entry.kind === 'url-token').map(entry => normalize(entry.path));
+        return input.endsWith('.css') && fonts.some(font => WOFF2_FONT.test(font)) && fonts.some(font => LEGACY_FONT.test(font));
+    });
 }
 
 /** @param {string} input */
@@ -124,16 +143,22 @@ function main() {
         }
     }
 
+    const redundantFonts = redundantFontStylesheets(meta, reachable);
+    console.log('');
+    console.log(`Stylesheets inlining legacy font formats next to woff2: ${redundantFonts.length ? '' : 'none'}`);
+    redundantFonts.forEach(input => console.log(`  REDUNDANT FONTS ${display(input)}`));
+
     const jsonFile = arg('--json', undefined);
     if (jsonFile) {
         fs.writeFileSync(jsonFile, JSON.stringify({
             entry: display(entryInput),
             forbidden: Object.fromEntries(groups.map(group => [group, (chains.get(group) || []).map(display)])),
-            monacoBytes, monacoBudget
+            monacoBytes, monacoBudget,
+            redundantFonts: redundantFonts.map(display)
         }, undefined, 2) + '\n');
     }
 
-    const failures = groups.length + (overBudget ? 1 : 0);
+    const failures = groups.length + (overBudget ? 1 : 0) + redundantFonts.length;
     if (failures) {
         console.log('');
         console.log(`${failures} finding(s)${report ? ' (report mode: not failing)' : ''}.`);
