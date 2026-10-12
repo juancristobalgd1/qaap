@@ -10,7 +10,6 @@ import {
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
 import { MobileWorkHubUnifiedSearchDialog } from './mobile-work-hub-unified-search-dialog';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -137,28 +136,6 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     });
     row.append(chevronBtn, head, actions, menuBtn, menu);
     return row;
-}
-
-export function createSessionsSidebarIdeOpenControlExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): HTMLButtonElement {
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.className = 'theia-mobile-projects-row-meta-open theia-mobile-work-hub-sessions-sidebar-project-open';
-    const openLabel = nls.localize('qaap/mobileProjects/openInIde', 'Open in IDE');
-    openBtn.setAttribute('aria-label', openLabel);
-    openBtn.title = openLabel;
-    const label = document.createElement('span');
-    label.className = 'theia-mobile-work-hub-sessions-sidebar-project-open-label';
-    label.textContent = nls.localize('qaap/mobileProjects/ideLabel', 'IDE');
-    const openIcon = createLucideArrowUpRightIcon();
-    openIcon.classList.add('theia-mobile-work-hub-sessions-sidebar-project-open-icon');
-    openBtn.append(label, openIcon);
-    openBtn.addEventListener('click', ev => {
-        ev.stopPropagation();
-        ctx.host.sessionsSidebar?.hide();
-        void ctx.host.delegate.onProjectOpenInIde?.(project);
-    });
-    openBtn.addEventListener('keydown', ev => ev.stopPropagation());
-    return openBtn;
 }
 
 export function createSessionsSidebarNewAgentControlExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): HTMLButtonElement {

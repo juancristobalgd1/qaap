@@ -231,24 +231,6 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(host.projects[0]?.id).to.equal(ephemeral.id);
     });
 
-    it('sessions sidebar IDE open control is flat labeled IDE with arrow-up-right icon', () => {
-        const project = { id: 'proj-1', name: 'Mockup', status: 'working' } as MobileProjectEntry;
-        const host = {
-            sessionsSidebar: { hide: () => undefined },
-            delegate: { onProjectOpenInIde: () => undefined },
-        } as unknown as MobileProjectsSessionsSidebarHost;
-        const ui = new MobileProjectsSessionsSidebarUi(host);
-        const button = ui.createSessionsSidebarIdeOpenControl(project);
-        const label = button.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-open-label');
-        const icon = button.querySelector('svg.theia-mobile-work-hub-sessions-sidebar-project-open-icon');
-
-        expect(button.classList.contains('theia-mobile-work-hub-sessions-sidebar-project-open')).to.equal(true);
-        expect(label?.textContent).to.equal('IDE');
-        expect(icon).to.not.equal(null);
-        expect(icon?.getAttribute('stroke')).to.equal('currentColor');
-        expect(icon?.querySelectorAll('path')).to.have.lengthOf(2);
-    });
-
     it('compareSessionsSidebarProjectOrder prefers current then most recent activity', () => {
         const older = {
             id: 'older',

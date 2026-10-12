@@ -1,6 +1,7 @@
 import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 // Extracted from mobile-projects-panel.ts
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import {
@@ -410,6 +411,10 @@ export function getFilteredTeamHubStateExtracted(ctx: MobileProjectsPanelContext
 }
 
 export async function openDesktopIdeFromAgentsHubExtracted(ctx: MobileProjectsPanelContext): Promise<void> {
+    // Mobile mode never opens the classic IDE.
+    if (matchesMobileOneColumnLayout()) {
+        return;
+    }
     if (ctx.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
         && ctx.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
         await ctx.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { MOBILE_NARROW_VIEWPORT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
@@ -90,10 +91,13 @@ export class QaapMobileAppTesterContribution implements FrontendApplicationContr
             );
             return;
         }
-        try {
-            await this.commands.executeCommand(AI_CHAT_TOGGLE_COMMAND_ID);
-        } catch {
-            /* already open */
+        // The IDE chat widget is an IDE surface: never toggled in mobile mode (the request below still runs).
+        if (!matchesMobileOneColumnLayout()) {
+            try {
+                await this.commands.executeCommand(AI_CHAT_TOGGLE_COMMAND_ID);
+            } catch {
+                /* already open */
+            }
         }
         let session = this.chatService.getActiveSession();
         if (!session) {

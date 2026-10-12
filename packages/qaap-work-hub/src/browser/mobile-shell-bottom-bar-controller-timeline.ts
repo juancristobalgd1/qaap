@@ -154,6 +154,10 @@ export async function onMobileBottomButtonClickExtracted(ctx: MobileShellBottomB
         await ctx.host.togglePullRequestPanel();
         return;
     }
+    // Mobile mode never opens IDE surfaces (terminal panel, Explorer sheet).
+    if ((def.id === 'terminal' || def.id === 'explore') && matchesMobileOneColumnLayout()) {
+        return;
+    }
     if (def.id === 'terminal') {
         ctx.host.hideProjectsPanel();
         ctx.host.hidePullRequestPanel();
