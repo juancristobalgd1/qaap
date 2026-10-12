@@ -95,6 +95,22 @@ test('a whole date-fns or highlight.js barrel fails; narrowed subpaths pass', ()
     assert.equal(run(inputs, 0).status, 0);
 });
 
+test('a stylesheet inlining legacy font formats next to woff2 fails; a ttf-only face does not', () => {
+    const fonts = (...paths) => ({ bytes: 1, imports: paths.map(p => ({ path: p, kind: 'url-token', original: p })) });
+    const inputs = {
+        ...CLEAN,
+        '../../packages/core/lib/b.js': input(7, '../../node_modules/fa/css/fa.css', '../../node_modules/codicons/codicon.css'),
+        '../../node_modules/fa/css/fa.css': fonts('../../node_modules/fa/fonts/fa.woff2?v=4', '../../node_modules/fa/fonts/fa.eot?v=4'),
+        '../../node_modules/codicons/codicon.css': fonts('../../node_modules/codicons/codicon.ttf?abc')
+    };
+    const result = run(inputs, 0);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /REDUNDANT FONTS node_modules\/fa\/css\/fa\.css/);
+    assert.doesNotMatch(result.stdout, /REDUNDANT FONTS node_modules\/codicons/);
+    inputs['../../node_modules/fa/css/fa.css'] = fonts('../../node_modules/fa/fonts/fa.woff2?v=4');
+    assert.equal(run(inputs, 0).status, 0);
+});
+
 test('a metafile without the mobile entry is an error, also in report mode', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-mobile-guard-'));
     try {

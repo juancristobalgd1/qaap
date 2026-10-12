@@ -20,6 +20,9 @@
  *   - HARD FAIL when a whole vendor barrel listed in WHOLE_BARRELS is reachable (all date-fns
  *     functions and locales, all highlight.js languages): `vendorShimPlugin` in
  *     `examples/browser/esbuild.mjs` narrows those imports, a new importer must be narrowed too.
+ *   - HARD FAIL when a reachable stylesheet inlines a woff2 font together with legacy formats
+ *     (eot/ttf/otf/woff/svg font): fonts are data: URLs, so each extra format is dead weight that
+ *     `woff2OnlyFontsPlugin` in `examples/browser/esbuild.mjs` is expected to strip.
  *
  * `--report` prints the findings and exits 0 (use while the Work Hub still imports IDE code). For
  * every forbidden package the SHORTEST import chain from the entry is printed: that list is the
@@ -68,6 +71,22 @@ function forbiddenGroup(input) {
 function isMonaco(input) {
     const normalized = normalize(input);
     return MONACO.some(pattern => pattern.test(normalized));
+}
+
+const WOFF2_FONT = /\.woff2(?:[?#]|$)/;
+const LEGACY_FONT = /\.(?:eot|otf|ttf|woff)(?:[?#]|$)|fonts?\/[^/]*\.svg(?:[?#]|$)/;
+
+/**
+ * Stylesheets that inline a woff2 font next to legacy formats of the same face.
+ * @param {{ inputs: Record<string, { imports?: { path: string, kind?: string }[] }> }} meta
+ * @param {Iterable<string>} inputs
+ * @returns {string[]}
+ */
+function redundantFontStylesheets(meta, inputs) {
+    return [...inputs].filter(input => {
+        const fonts = (meta.inputs[input]?.imports || []).filter(entry => entry.kind === 'url-token').map(entry => normalize(entry.path));
+        return input.endsWith('.css') && fonts.some(font => WOFF2_FONT.test(font)) && fonts.some(font => LEGACY_FONT.test(font));
+    });
 }
 
 /** @param {string} input */
@@ -137,6 +156,10 @@ function main() {
             console.log(`  WHOLE BARREL ${barrel} <- ${display(chain[chain.length - 2] || entryInput)}`);
         }
     }
+    const redundantFonts = redundantFontStylesheets(meta, reachable);
+    console.log('');
+    console.log(`Stylesheets inlining legacy font formats next to woff2: ${redundantFonts.length ? '' : 'none'}`);
+    redundantFonts.forEach(input => console.log(`  REDUNDANT FONTS ${display(input)}`));
 
     const jsonFile = arg('--json', undefined);
     if (jsonFile) {
@@ -144,11 +167,12 @@ function main() {
             entry: display(entryInput),
             forbidden: Object.fromEntries(groups.map(group => [group, (chains.get(group) || []).map(display)])),
             monacoBytes, monacoBudget,
-            wholeBarrels: barrels.map(display)
+            wholeBarrels: barrels.map(display),
+            redundantFonts: redundantFonts.map(display)
         }, undefined, 2) + '\n');
     }
 
-    const failures = groups.length + (overBudget ? 1 : 0) + barrels.length;
+    const failures = groups.length + (overBudget ? 1 : 0) + barrels.length + redundantFonts.length;
     if (failures) {
         console.log('');
         console.log(`${failures} finding(s)${report ? ' (report mode: not failing)' : ''}.`);
