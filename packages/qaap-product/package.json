@@ -42,6 +42,33 @@
       "backend": "lib/node/qaap-product-backend-module"
     }
   ],
+  "qaapMobile": {
+    "frontendModules": [
+      "@theia/core",
+      "@theia/ai-core",
+      "@theia/ai-chat",
+      "@theia/qaap-adapters",
+      "@theia/qaap-agents-ui",
+      "@theia/qaap-ai-config",
+      "@theia/qaap-ai-nvidia",
+      "@theia/qaap-ai-openrouter",
+      "@theia/qaap-archive",
+      "@theia/qaap-cloud-workspace",
+      "@theia/qaap-composer",
+      "@theia/qaap-diff-review",
+      "@theia/qaap-element-inspector",
+      "@theia/qaap-mobile-shell",
+      "@theia/qaap-persistence",
+      "@theia/qaap-product",
+      "@theia/qaap-product-theme",
+      "@theia/qaap-shared-core",
+      "@theia/qaap-shell",
+      "@theia/qaap-transcript",
+      "@theia/qaap-transcript-overlay",
+      "@theia/qaap-work-hub"
+    ],
+    "exclude": []
+  },
   "keywords": [
     "theia-extension"
   ],

@@ -74,6 +74,18 @@ interface PwaManifestConfig {
     readonly serviceWorker?: boolean;
 }
 
+/**
+ * `qaapMobile` field of an extension package's `package.json` (read from the already-collected
+ * extension packages, exactly like `theiaExtensions`). Describes the mobile-only frontend entry
+ * (`index-mobile.js` -> `bundle-mobile.js`) that must never load IDE code.
+ */
+export interface QaapMobileConfig {
+    /** Package names whose frontend modules are part of the mobile entry (desktop order is kept). */
+    readonly frontendModules: readonly string[];
+    /** Package names removed from the mobile entry even when allowlisted. */
+    readonly exclude: readonly string[];
+}
+
 export class FrontendGenerator extends AbstractGenerator {
 
     /** Browser/OS chrome color when `prefers-color-scheme: dark` (VS Code editor background). */
@@ -84,6 +96,7 @@ export class FrontendGenerator extends AbstractGenerator {
     async generate(options?: GeneratorOptions): Promise<void> {
         await this.write(this.pck.frontend('index.html'), await this.compileIndexHtml(this.pck.targetFrontendModules));
         await this.write(this.pck.frontend('index.js'), this.compileIndexJs(this.pck.targetFrontendModules, this.pck.targetFrontendPreloadModules));
+        await this.generateMobileIndex();
         await this.write(this.pck.frontend('secondary-window.html'), this.compileSecondaryWindowHtml());
         await this.write(this.pck.frontend('secondary-index.js'), this.compileSecondaryIndexJs(this.pck.secondaryWindowModules));
         if (this.pck.isBrowser() || this.pck.isBrowserOnly()) {
@@ -97,6 +110,54 @@ export class FrontendGenerator extends AbstractGenerator {
         if (this.pck.isElectron()) {
             await this.write(this.pck.frontend('preload.js'), this.compilePreloadJs());
         }
+    }
+
+    /**
+     * The `qaapMobile` configuration, taken from the first collected extension package that declares
+     * one (`@theia/qaap-product`). `undefined` when no package does, e.g. apps without the Qaap product.
+     */
+    protected getQaapMobileConfig(): QaapMobileConfig | undefined {
+        for (const extensionPackage of this.pck.extensionPackages) {
+            const raw = (extensionPackage.raw as { qaapMobile?: Partial<QaapMobileConfig> }).qaapMobile;
+            if (raw && Array.isArray(raw.frontendModules)) {
+                return { frontendModules: raw.frontendModules, exclude: Array.isArray(raw.exclude) ? raw.exclude : [] };
+            }
+        }
+        return undefined;
+    }
+
+    /** Writes `index-mobile.js` next to `index.js` (browser target only); removes a stale one otherwise. */
+    protected async generateMobileIndex(): Promise<void> {
+        const target = this.pck.frontend('index-mobile.js');
+        const config = this.pck.isBrowser() ? this.getQaapMobileConfig() : undefined;
+        if (!config) {
+            if (await fs.pathExists(target)) {
+                await fs.remove(target);
+            }
+            return;
+        }
+        await this.write(target, this.compileMobileIndexJs(
+            this.filterMobileModules(this.pck.targetFrontendModules, config),
+            this.filterMobileModules(this.pck.targetFrontendPreloadModules, config)
+        ));
+    }
+
+    /**
+     * Keeps the entries of `modules` (desktop order) whose package is allowlisted and not excluded.
+     * A module path is `<package name>/<path inside the package>`.
+     */
+    protected filterMobileModules(modules: Map<string, string>, config: QaapMobileConfig): Map<string, string> {
+        const allowed = new Set(config.frontendModules);
+        const excluded = new Set(config.exclude);
+        const result = new Map<string, string>();
+        for (const [key, modulePath] of modules) {
+            const segments = modulePath.split('/');
+            const packageName = modulePath.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0];
+            if (allowed.has(packageName) && !excluded.has(packageName)) {
+                result.set(key, modulePath);
+            }
+        }
+        return result;
     }
 
     protected compileIndexPreload(frontendModules: Map<string, string>): string {
@@ -404,7 +465,8 @@ export class FrontendGenerator extends AbstractGenerator {
  *   - activate: evict caches that don't match the current version.
  *   - navigations: network-first with an offline fallback to the cached shell.
  *   - application code (js/css): network-first so a redeploy is always served consistently.
- *   - content-hashed chunks (chunk-HASH.js/css): cache-first (immutable); bundle.js stays network-first.
+ *   - content-hashed chunks (chunk-HASH.js/css): cache-first (immutable); the entries bundle.js and
+ *     bundle-mobile.js stay network-first.
  *   - other static assets (wasm/fonts/media/icons): stale-while-revalidate, same-origin only.
  *   - non-GET, Range requests, WebSocket-adjacent and plugin/file/api endpoints: pass-through.
  */
@@ -438,8 +500,9 @@ const BYPASS_PATHS = [
 // deploy is always picked up as a consistent whole.
 const SCRIPT_EXT = /\\.(?:js|css)(?:$|\\?)/i;
 // esbuild content-hashed chunks (chunk-<HASH>.js|css): the name changes whenever the bytes do, so they
-// are immutable and served cache-first. bundle.js (the entry) stays network-first and always names
-// the current chunks. The runtime cache is versioned, so a new epoch/build evicts them on activate.
+// are immutable and served cache-first. The entries bundle.js and bundle-mobile.js stay network-first
+// (they are not chunk- names) and always name the current chunks. The runtime cache is versioned, so a
+// new epoch/build evicts them on activate.
 const HASHED_CHUNK = /\\/chunk-[A-Za-z0-9_-]{6,}\\.(?:js|css)$/;
 // Immutable-ish assets: safe to serve stale while revalidating.
 const ASSET_EXT = /\\.(?:woff2?|ttf|otf|eot|svg|png|jpg|jpeg|gif|webp|ico|wasm)(?:$|\\?)/i;
@@ -743,15 +806,9 @@ self.addEventListener('notificationclick', event => {
     }
     /* eslint-enable max-len */
 
-    protected compileIndexJs(frontendModules: Map<string, string>, frontendPreloadModules: Map<string, string>): string {
+    /** Frontend config bootstrap shared by the desktop and the mobile entry (identical output). */
+    protected compileFrontendConfigPrelude(): string {
         return `\
-// @ts-check
-require('reflect-metadata');
-${this.emitStartupLogger('Frontend', 'frontend page start')}
-${this.emitStartupLog('loading modules...')}
-const { Container } = require('@theia/core/shared/inversify');
-const { FrontendApplicationConfigProvider } = require('@theia/core/lib/browser/frontend-application-config-provider');
-
 function applyApplicationNameFromMeta(cfg) {
     try {
         const meta = typeof document !== 'undefined' && document.querySelector('meta[name="application-name"]');
@@ -777,7 +834,19 @@ function applyApplicationIconFromMeta(cfg) {
 const __theiaFrontendConfig = ${this.prettyStringify(this.pck.props.frontend.config)};
 applyApplicationNameFromMeta(__theiaFrontendConfig);
 applyApplicationIconFromMeta(__theiaFrontendConfig);
-FrontendApplicationConfigProvider.set(__theiaFrontendConfig);
+FrontendApplicationConfigProvider.set(__theiaFrontendConfig);`;
+    }
+
+    protected compileIndexJs(frontendModules: Map<string, string>, frontendPreloadModules: Map<string, string>): string {
+        return `\
+// @ts-check
+require('reflect-metadata');
+${this.emitStartupLogger('Frontend', 'frontend page start')}
+${this.emitStartupLog('loading modules...')}
+const { Container } = require('@theia/core/shared/inversify');
+const { FrontendApplicationConfigProvider } = require('@theia/core/lib/browser/frontend-application-config-provider');
+
+${this.compileFrontendConfigPrelude()}
 
 ${this.ifMonaco(() => `
 self.MonacoEnvironment = {
@@ -844,6 +913,85 @@ ${Array.from(frontendModules.values(), jsModulePath => `\
         ${this.ifMonaco(() => `
         MonacoInit.init(container);
         `)};
+        ${this.emitStartupLog('modules loaded')}
+        await start();
+    } catch (reason) {
+        console.error('Failed to start the frontend application.');
+        if (reason) {
+            console.error(reason);
+        }
+    }
+
+    function start() {
+        (window['theia'] = window['theia'] || {}).container = container;
+        ${this.emitStartupLog('resolving application')}
+        const application = container.get(FrontendApplication);
+        ${this.emitStartupLog('application resolved')}
+        return application.start();
+    }
+})();
+`;
+    }
+
+    /**
+     * The mobile-only entry. It deliberately has no Monaco (`MonacoEnvironment`, `MonacoInit`), no
+     * plugin host preload and loads only the allowlisted frontend modules, in desktop order.
+     * `window.__qaapEntry` is the first statement so every module can tell which entry booted.
+     */
+    protected compileMobileIndexJs(frontendModules: Map<string, string>, frontendPreloadModules: Map<string, string>): string {
+        return `\
+// @ts-check
+window.__qaapEntry = 'mobile';
+require('reflect-metadata');
+${this.emitStartupLogger('Frontend (mobile)', 'frontend page start')}
+${this.emitStartupLog('loading modules...')}
+const { Container } = require('@theia/core/shared/inversify');
+const { FrontendApplicationConfigProvider } = require('@theia/core/lib/browser/frontend-application-config-provider');
+
+${this.compileFrontendConfigPrelude()}
+
+function load(container, jsModule) {
+    return Promise.resolve(jsModule)
+        .then(containerModule => container.load(containerModule.default));
+}
+
+async function preload(container) {
+    try {
+${Array.from(frontendPreloadModules.values(), jsModulePath => `\
+        await load(container, ${this.importOrRequire()}('${jsModulePath}'));`).join(EOL)}
+        const { Preloader } = require('@theia/core/lib/browser/preload/preloader');
+        const preloader = container.get(Preloader);
+        await preloader.initialize();
+    } catch (reason) {
+        console.error('Failed to run preload scripts.');
+        if (reason) {
+            console.error(reason);
+        }
+    }
+}
+
+module.exports = (async () => {
+    const { messagingFrontendModule } = require('@theia/core/lib/browser/messaging/messaging-frontend-module');
+    const container = new Container();
+    container.load(messagingFrontendModule);
+
+    ${this.emitStartupLog('container created')}
+
+    await preload(container);
+    ${this.emitStartupLog('preloaded')}
+
+    const { FrontendApplication } = require('@theia/core/lib/browser');
+    const { frontendApplicationModule } = require('@theia/core/lib/browser/frontend-application-module');
+    const { loggerFrontendModule } = require('@theia/core/lib/browser/logger-frontend-module');
+
+    container.load(frontendApplicationModule);
+    container.load(loggerFrontendModule);
+
+    ${this.emitStartupLog('core modules loaded')}
+
+    try {
+${Array.from(frontendModules.values(), jsModulePath => `\
+        await load(container, ${this.importOrRequire()}('${jsModulePath}'));`).join(EOL)}
         ${this.emitStartupLog('modules loaded')}
         await start();
     } catch (reason) {

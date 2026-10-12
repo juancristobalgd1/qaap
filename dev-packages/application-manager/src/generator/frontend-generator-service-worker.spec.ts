@@ -147,6 +147,13 @@ describe('FrontendGenerator service worker caching strategy', () => {
         expect(sw.fetches).to.have.length(2);
     });
 
+    it('keeps the bundle-mobile.js entry network-first exactly like bundle.js', async () => {
+        const sw = loadServiceWorker();
+        expect(await sw.request('/bundle-mobile.js')).to.equal('net:https://app.test/bundle-mobile.js');
+        await sw.request('/bundle-mobile.js');
+        expect(sw.fetches).to.have.length(2);
+    });
+
     it('evicts caches of other versions on activate', () => {
         const generator = Object.create(TestFrontendGenerator.prototype) as TestFrontendGenerator;
         (generator as unknown as { pck: unknown }).pck = { pck: { version: '1.0.0' }, props: { frontend: { config: { applicationName: 'Qaap' } } } };

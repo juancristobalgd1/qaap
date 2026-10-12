@@ -90,6 +90,9 @@ jobs:
         run: bash scripts/qaap-vps-tenant-image.test.sh
       - name: Required mobile E2E workflow regression
         run: node --test scripts/qaap-mobile-required-ci.test.js
+      # Pure-node regression for the mobile bundle guard used in report mode below.
+      - name: Mobile bundle guard regression
+        run: node --test scripts/qaap-mobile-bundle-guard.test.js
       # A preview of qaap itself must start Theia on the allocated port and kill nothing of the IDE.
       - name: Browser start script preview port regression
         run: node --test scripts/qaap-start-browser.test.mjs
@@ -116,6 +119,16 @@ jobs:
         run: |
           npm run build:browser
           npm run download:plugins
+
+      # REPORT MODE ONLY: prints which IDE packages the bundle-mobile entry still drags in (shortest
+      # import chain per package) and the Monaco ratchet. It must not fail the required check until
+      # the import cuts land; `continue-on-error` keeps a missing metafile from turning it red. Drop
+      # both `--report` and `continue-on-error` once the guard passes.
+      - name: Mobile bundle guard (report mode)
+        continue-on-error: true
+        run: |
+          node scripts/qaap-frontend-graph-report.js
+          node scripts/qaap-mobile-bundle-guard.js --report
 
       - name: Install Chromium for required mobile E2E
         run: cd examples/playwright && npx playwright install chromium
