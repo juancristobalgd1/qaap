@@ -17,6 +17,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from '@theia/qaap-shared-core/lib/browser/qaap-execution-surface-header-chrome';
 import { writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { markQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
@@ -782,7 +783,10 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
-    if (tab === 'review' && peekPreferDesktopIde()) {
+    if (tab === 'terminal' && matchesMobileOneColumnLayout()) {
+        tab = 'preview';
+    }
+    if (tab === 'review' && !matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
         void ctx.host.openTranscriptChanges?.();
         return;
     }
