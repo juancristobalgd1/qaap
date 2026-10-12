@@ -14,6 +14,7 @@ import { inject, injectable, optional, postConstruct } from '@theia/core/shared/
 import * as React from '@theia/core/shared/react';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { ScmService } from '@theia/scm/lib/browser/scm-service';
+import type { ScmRepository } from '@theia/scm/lib/browser/scm-repository';
 import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
@@ -30,6 +31,7 @@ import { QaapAgentFileSection, QaapDiffLine } from './qaap-diff-review-agent-fil
 import { diffLineKey } from './qaap-diff-review-segments';
 import { isCurrentAgentDiffRequest } from './qaap-diff-review-request-state';
 import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-diff-review-select';
+import { watchReviewRootFileChanges } from './qaap-diff-review-file-watch';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapAsyncConcurrencyLimiter } from '@theia/qaap-shared-core/lib/browser/qaap-async-concurrency-limiter';
 import {
@@ -281,19 +283,25 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.bulkActionsEnabled = this.repositoryContext.isActiveWorkspace;
             const repository = this.scmService.repositories.find(candidate =>
                 candidate.provider.rootUri === this.repositoryContext?.rootUri);
-            if (repository) {
-                this.toDisposeOnRepository.push(repository.provider.onDidChange(() => this.scheduleRefresh()));
-            }
+            this.trackRepositoryChanges(repository);
             void this.refresh();
             return;
         }
         const repository = this.scmService.selectedRepository;
         this.rootUri = repository?.provider.rootUri;
         this.bulkActionsEnabled = true;
-        if (repository) {
-            this.toDisposeOnRepository.push(repository.provider.onDidChange(() => this.scheduleRefresh()));
-        }
+        this.trackRepositoryChanges(repository);
         void this.refresh();
+    }
+
+    /**
+     * Refresh trigger: the SCM provider when one tracks the repository, otherwise file changes under
+     * the reviewed root (the mobile entry has no git plugin, so there is no SCM provider there).
+     */
+    protected trackRepositoryChanges(repository: ScmRepository | undefined): void {
+        this.toDisposeOnRepository.push(repository
+            ? repository.provider.onDidChange(() => this.scheduleRefresh())
+            : watchReviewRootFileChanges(this.fileService, this.rootUri, () => this.scheduleRefresh()));
     }
 
     protected refreshScheduleTimer?: number;
