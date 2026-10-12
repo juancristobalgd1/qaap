@@ -530,7 +530,12 @@ export function mountTranscriptFilesView(
     newFileBtn.setAttribute('aria-label', newFileBtn.title);
     newFileBtn.setAttribute('aria-haspopup', 'menu');
     newFileBtn.setAttribute('aria-expanded', 'false');
-    treeToolbar.append(filterHost, newFileBtn);
+    // Without create handlers (mobile mode hides them) the "New…" control would be a dead button.
+    if (services.createNewFile || services.createNewFolder) {
+        treeToolbar.append(filterHost, newFileBtn);
+    } else {
+        treeToolbar.append(filterHost);
+    }
     const treeScroll = document.createElement('div');
     treeScroll.className = 'theia-mobile-transcript-files-tree-scroll';
     treePane.append(treeToolbar, treeScroll);
