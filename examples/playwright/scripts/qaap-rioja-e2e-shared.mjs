@@ -126,9 +126,13 @@ export async function sampleShellHealth(page) {
         } catch (e) {
             contribError = String(e).slice(0, 160);
         }
-        // Floor 800 sits well below a healthy ~1770 and well above a poisoned ~665.
-        const ok = contribError === undefined && contribCount > 0 && commandCount >= 800;
-        return { ok, commandCount, contribCount, contribError };
+        // Floor 800 sits well below a healthy desktop ~1770 and well above a poisoned ~665.
+        // The IDE-free mobile entry (bundle-mobile.js) registers no IDE commands (~730 healthy),
+        // so there the poisoned signature is the contribution provider, not the command count.
+        const mobileEntry = window.__qaapEntry === 'mobile';
+        const floor = mobileEntry ? 400 : 800;
+        const ok = contribError === undefined && contribCount > 0 && commandCount >= floor;
+        return { ok, commandCount, contribCount, contribError, mobileEntry };
     });
 }
 
