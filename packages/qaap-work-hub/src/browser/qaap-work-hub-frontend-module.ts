@@ -65,7 +65,7 @@ import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import { MenuContribution } from '@theia/core/lib/common/menu';
-import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
+import { ShellLayoutRestorer, ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { QaapKeybindingRegistry } from '@theia/qaap-shared-core/lib/browser/qaap-keybinding-registry';
 import { bindQaapWorkspaceService } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-service';
 import { bindQaapWorkspacePreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-preference-provider';
@@ -74,6 +74,7 @@ import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/brow
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
+import { QaapShellLayoutRestorer } from './qaap-shell-layout-restorer';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
 import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
@@ -116,11 +117,6 @@ import { QaapQaiqGenericToolRenderer } from '@theia/qaap-transcript/lib/browser/
 import { QaapMarkdownPartRenderer } from '@theia/qaap-transcript/lib/browser/qaap-markdown-part-renderer';
 import { QaapLobehubToolRenderer } from '@theia/qaap-transcript/lib/browser/qaap-lobehub-tool-renderer';
 import { QaapLobehubThinkingRenderer } from '@theia/qaap-transcript/lib/browser/qaap-lobehub-thinking-renderer';
-import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
-import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
-import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
-import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
-import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
 import { QaapComposerEditorContextContribution } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-contribution';
@@ -141,10 +137,9 @@ import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from '@theia/qaap-shared-core/lib/browser/qaap-copilot-owner-binding';
 import { QaapUserAiSettingsSyncContribution } from '@theia/qaap-shared-core/lib/browser/qaap-user-ai-settings-sync';
-import { CopilotAuthService } from '@theia/ai-copilot/src/common/copilot-auth-service';
+import { CopilotAuthService } from '@theia/ai-copilot/lib/common/copilot-auth-service';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
-import { DebugFrontendContribution } from '@theia/memory-inspector/lib/browser/memory-inspector-frontend-contribution';
 import { FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { NavigatorTabBarDecorator } from '@theia/navigator/lib/browser/navigator-tab-bar-decorator';
@@ -152,17 +147,20 @@ import { QaapAiChatMobileContribution } from '@theia/qaap-shared-core/lib/browse
 import { QaapWorkHubChatViewWidget } from './qaap-work-hub-chat-view-widget';
 import { WorkHubShellAIChatInputWidget } from '@theia/qaap-composer/lib/browser/work-hub-shell-ai-chat-input-widget';
 import { QaapOutlineMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-outline-mobile-contribution';
-import { QaapMemoryInspectorMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-memory-inspector-mobile-contribution';
 import { QaapScmContribution } from '@theia/qaap-shared-core/lib/browser/qaap-scm-contribution';
 import { QaapScmKeybindingContribution } from '@theia/qaap-shared-core/lib/browser/qaap-scm-keybinding-contribution';
 import { QaapCoreKeybindingContribution } from '@theia/qaap-shared-core/lib/browser/qaap-core-keybinding-contribution';
 import { QaapFileNavigatorContribution } from '@theia/qaap-shared-core/lib/browser/qaap-file-navigator-contribution';
 import { QaapNavigatorTabBarDecorator } from '@theia/qaap-shared-core/lib/browser/qaap-navigator-tab-bar-decorator';
 import { createQaapFileNavigatorWidget } from '@theia/qaap-shared-core/lib/browser/qaap-navigator-widget-factory';
-import { QaapVsxExtensionsMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-vsx-extensions-mobile-contribution';
 import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/preference-layout';
 import { QaapPreferenceLayoutProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-layout-provider';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
+/**
+ * Work Hub composition root, mobile-safe half (part of the `bundle-mobile` entry). IDE-only
+ * contributions (terminal, memory inspector/debug, VSX) and the IDE bridge aliases live in
+ * `qaap-work-hub-ide-frontend-module`, which desktop loads right after this module.
+ */
 export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync, onActivation) => {
     // The preference sync contribution is part of this Work Hub container. Install the tenant
     // User-scope provider decorator here as well as in the product bindings module so standalone
@@ -235,15 +233,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapAgentCliUpdateContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateContribution);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);
+    rebind(ShellLayoutRestorer).to(QaapShellLayoutRestorer).inSingletonScope();
     bind(QaapShellLayoutRestoreContribution).toSelf().inSingletonScope();
     bind(ShellLayoutTransformer).toService(QaapShellLayoutRestoreContribution);
-    bind(QaapDesktopTerminalLayoutContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(QaapDesktopTerminalLayoutContribution);
-    bind(QaapTerminalFrontendContribution).toSelf().inSingletonScope();
-    rebind(TerminalFrontendContribution).toService(QaapTerminalFrontendContribution);
-    // Terminal link taps must open reliably on touch devices (Qaap is mobile-first);
-    // subclass XtermLinkAdapter via a replacement factory. Seam for packages/terminal.
-    rebind(XtermLinkFactory).toFactory(createQaapXtermLinkFactory);
     bind(MobileOnboardingTutorialContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileOnboardingTutorialContribution);
     bind(CommandContribution).toService(MobileOnboardingTutorialContribution);
@@ -361,19 +353,12 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     rebind(OutlineViewContribution).toService(QaapOutlineMobileContribution);
     bind(ShellLayoutTransformer).toService(QaapOutlineMobileContribution);
 
-    bind(QaapMemoryInspectorMobileContribution).toSelf().inSingletonScope();
-    rebind(DebugFrontendContribution).toService(QaapMemoryInspectorMobileContribution);
-    bind(ShellLayoutTransformer).toService(QaapMemoryInspectorMobileContribution);
-
     rebind(FileNavigatorWidget).toDynamicValue(ctx => createQaapFileNavigatorWidget(ctx.container));
     bind(QaapFileNavigatorContribution).toSelf().inSingletonScope();
     rebind(FileNavigatorContribution).toService(QaapFileNavigatorContribution);
 
     bind(QaapNavigatorTabBarDecorator).toSelf().inSingletonScope();
     rebind(NavigatorTabBarDecorator).toService(QaapNavigatorTabBarDecorator);
-
-    bind(QaapVsxExtensionsMobileContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(QaapVsxExtensionsMobileContribution);
 
     bind(QaapPushNotificationContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapPushNotificationContribution);

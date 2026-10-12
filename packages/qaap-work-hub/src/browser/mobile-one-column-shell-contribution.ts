@@ -38,7 +38,6 @@ import {
     matchesMobileOneColumnLayout,
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
 import { QaapComposerEditorContextService } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service';
@@ -58,7 +57,7 @@ import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/q
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MobileProjectChatViewWidgetFactory } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import { QaapIdeDesktopTerminalLayout, QaapIdeTerminalService } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
 import { LabelProvider } from '@theia/core/lib/browser';
 import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
@@ -174,9 +173,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly pluginStartGate: QaapPluginStartGate;
 
-    @inject(QaapDesktopTerminalLayoutContribution)
+    /** IDE-only (desktop): undefined in the `bundle-mobile` entry. */
+    @inject(QaapIdeDesktopTerminalLayout) @optional()
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
-    public readonly desktopTerminalLayout: QaapDesktopTerminalLayoutContribution;
+    public readonly desktopTerminalLayout: QaapIdeDesktopTerminalLayout | undefined;
 
     @inject(MobileProjectsActiveTasks)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
@@ -342,9 +342,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly elementInspectorService: ElementInspectorService;
 
-    @inject(TerminalService)
+    /** IDE-only (desktop): undefined in the `bundle-mobile` entry. */
+    @inject(QaapIdeTerminalService) @optional()
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
-    public readonly terminalService: TerminalService;
+    public readonly terminalService: QaapIdeTerminalService | undefined;
 
     @inject(StorageService)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */

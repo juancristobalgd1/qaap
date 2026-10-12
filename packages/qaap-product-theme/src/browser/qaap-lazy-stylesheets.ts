@@ -68,7 +68,9 @@ export namespace QaapLazyStylesheets {
                 resolve();
             };
         });
-        const anchor = lastInserted ?? document.querySelector('link[rel="stylesheet"][href*="bundle.css"]');
+        const anchor = lastInserted ?? document.querySelector(
+            // The entry stylesheet: bundle.css (desktop) or bundle-mobile.css (mobile entry).
+            'link[rel="stylesheet"][href*="bundle.css"], link[rel="stylesheet"][href*="bundle-mobile.css"]');
         if (anchor?.parentNode) {
             anchor.parentNode.insertBefore(link, anchor.nextSibling);
         } else {

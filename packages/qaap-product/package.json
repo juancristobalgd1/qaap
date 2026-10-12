@@ -33,6 +33,9 @@
       "frontend": "lib/browser/qaap-product-bindings-frontend-module"
     },
     {
+      "frontend": "lib/browser/qaap-product-ide-frontend-module"
+    },
+    {
       "frontendPreload": "lib/browser/preload/qaap-product-preload-module"
     },
     {
@@ -42,6 +45,76 @@
       "backend": "lib/node/qaap-product-backend-module"
     }
   ],
+  "qaapMobile": {
+    "frontendModules": [
+      "@theia/core",
+      "@theia/variable-resolver",
+      "@theia/editor",
+      "@theia/filesystem",
+      "@theia/workspace",
+      "@theia/markers",
+      "@theia/outline-view",
+      "@theia/monaco",
+      "@theia/output",
+      "@theia/ai-core",
+      "@theia/ai-anthropic",
+      "@theia/process",
+      "@theia/file-search",
+      "@theia/ai-chat",
+      "@theia/navigator",
+      "@theia/userstorage",
+      "@theia/preferences",
+      "@theia/ai-chat-ui",
+      "@theia/ai-claude-code",
+      "@theia/ai-openai",
+      "@theia/ai-codex",
+      "@theia/ai-copilot",
+      "@theia/ai-core-ui",
+      "@theia/ai-google",
+      "@theia/ai-huggingface",
+      "@theia/ai-mcp",
+      "@theia/mini-browser",
+      "@theia/scm",
+      "@theia/ai-llamafile",
+      "@theia/ai-ollama",
+      "@theia/messages",
+      "@theia/ai-vercel-ai",
+      "@theia/toolbar",
+      "@theia/collaboration",
+      "@theia/preview",
+      "@theia/qaap-adapters",
+      "@theia/qaap-agents-ui",
+      "@theia/qaap-ai-config",
+      "@theia/qaap-ai-nvidia",
+      "@theia/qaap-ai-openrouter",
+      "@theia/qaap-archive",
+      "@theia/qaap-cloud-workspace",
+      "@theia/qaap-composer",
+      "@theia/qaap-diff-review",
+      "@theia/qaap-element-inspector",
+      "@theia/qaap-mobile-shell",
+      "@theia/qaap-persistence",
+      "@theia/qaap-product",
+      "@theia/qaap-product-theme",
+      "@theia/qaap-shared-core",
+      "@theia/qaap-shell",
+      "@theia/qaap-transcript",
+      "@theia/qaap-transcript-overlay",
+      "@theia/qaap-work-hub"
+    ],
+    "exclude": [
+      "@theia/qaap-product-theme/lib/browser/qaap-product-theme-ide-frontend-module",
+      "@theia/qaap-product/lib/browser/qaap-product-ide-frontend-module",
+      "@theia/qaap-work-hub/lib/browser/qaap-work-hub-ide-frontend-module",
+      "@theia/qaap-ai-config/lib/browser/qaap-ai-config-ide-frontend-module"
+    ],
+    "mobileOnly": [
+      {
+        "module": "@theia/qaap-work-hub/lib/browser/qaap-work-hub-mobile-frontend-module",
+        "after": "@theia/qaap-work-hub/lib/browser/qaap-work-hub-frontend-module"
+      }
+    ]
+  },
   "keywords": [
     "theia-extension"
   ],

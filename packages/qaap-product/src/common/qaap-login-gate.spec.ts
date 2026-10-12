@@ -222,6 +222,84 @@ describe('Qaap login gate', () => {
         });
     });
 
+    describe('mobile entry (bundle-mobile.js, QAAP_MOBILE_ENTRY)', () => {
+        const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
+        const FAILED_KEY = 'qaap.boot.mobileEntryFailed';
+
+        function mobileViewport(window: Window & typeof globalThis, mobile = true): void {
+            window.matchMedia = (query: string): MediaQueryList => ({
+                matches: mobile && query === MOBILE_QUERY,
+                media: query,
+                onchange: null,
+                addListener: () => undefined,
+                removeListener: () => undefined,
+                addEventListener: () => undefined,
+                removeEventListener: () => undefined,
+                dispatchEvent: () => false,
+            } as MediaQueryList);
+        }
+
+        function startSignedIn(mobileEntry: boolean | undefined, options: { mobile?: boolean; failedBefore?: boolean } = {}): LoginGateRun {
+            const flag = mobileEntry === undefined ? {} : { mobileEntry };
+            return start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true, ...flag } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER, ...flag } } : undefined;
+            }, undefined, {
+                headHtml: '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=b1">',
+                beforeRun: window => {
+                    mobileViewport(window, options.mobile ?? true);
+                    if (options.failedBefore) {
+                        window.sessionStorage.setItem(FAILED_KEY, 'script-error');
+                    }
+                },
+            });
+        }
+
+        function loadedCss(run: LoginGateRun): string | null | undefined {
+            return run.document.querySelector('link#qaap-bundle-css')?.getAttribute('href');
+        }
+
+        it('loads bundle-mobile.js and bundle-mobile.css for a signed-in mobile user when the server flag is on', async () => {
+            const run = startSignedIn(true);
+            const { script } = await run.bundleAppended;
+            expect(script.getAttribute('src')).to.match(/^\.\/bundle-mobile\.js\?qaap-build=b1$/);
+            expect(loadedCss(run)).to.equal('./bundle-mobile.css?qaap-build=b1');
+        });
+
+        it('keeps bundle.js while the server flag is off (default)', async () => {
+            const run = startSignedIn(undefined);
+            const { script } = await run.bundleAppended;
+            expect(script.getAttribute('src')).to.equal('./bundle.js?qaap-build=b1');
+            expect(loadedCss(run)).to.equal('./bundle.css?qaap-build=b1');
+        });
+
+        it('keeps bundle.js on desktop even with the flag on', async () => {
+            const run = startSignedIn(true, { mobile: false });
+            const { script } = await run.bundleAppended;
+            expect(script.getAttribute('src')).to.equal('./bundle.js?qaap-build=b1');
+        });
+
+        it('keeps bundle.js after the mobile entry failed once in this tab', async () => {
+            const run = startSignedIn(true, { failedBefore: true });
+            const { script } = await run.bundleAppended;
+            expect(script.getAttribute('src')).to.equal('./bundle.js?qaap-build=b1');
+        });
+
+        it('records the failure and reloads into bundle.js when bundle-mobile.js fails to load', async () => {
+            const run = startSignedIn(true);
+            // The reload is a jsdom "not implemented" navigation: checked here instead of in afterEach.
+            runs.splice(runs.indexOf(run), 1);
+            const { script } = await run.bundleAppended;
+            script.dispatchEvent(new run.window.Event('error'));
+            expect(run.window.sessionStorage.getItem(FAILED_KEY)).to.equal('script-error');
+            expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+            expect(run.pageErrors.every(error => /navigation/i.test(error))).to.equal(true);
+            run.dom.window.close();
+        });
+    });
+
     describe('bundle load failure', () => {
         it('replaces the blank page with a retry screen when bundle.js fails to load', async () => {
             const run = start(pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined);

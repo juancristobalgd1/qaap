@@ -1439,10 +1439,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.stickyComposerWorkspaceUi.selectComposerWorkspaceProject(project, context);
     }
 
-    protected createSessionsSidebarIdeOpenControl(project: MobileProjectEntry): HTMLButtonElement {
-        return this.sessionsSidebarUi.createSessionsSidebarIdeOpenControl(project);
-    }
-
     protected async onWorkHubSessionsSidebarNewChat(): Promise<void> {
         this.closePullRequestDetail();
         await this.sessionsSidebarUi.onWorkHubSessionsSidebarNewChat();

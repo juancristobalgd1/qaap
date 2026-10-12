@@ -15,7 +15,7 @@ import { collapseLeftPanelIfMobileOneColumn, matchesMobileOneColumnLayout, MOBIL
 import { Menu as LuminoMenu } from '@lumino/widgets';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import type { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import { buildQaapAccountMenuEntries, createQaapViewModeSwitch, dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu, type QaapAccountMenuEntry } from './qaap-workbench-account-menu';
@@ -407,7 +407,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     constructor(
         protected readonly commands: CommandRegistry,
         protected readonly shell: ApplicationShell,
-        protected readonly terminalService: TerminalService,
+        protected readonly terminalService: TerminalService | undefined,
         protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler,
         protected readonly projectBootstrap: QaapProjectBootstrapService,
         protected readonly workspaceService: WorkspaceService,
@@ -549,11 +549,15 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             this.shell.collapsePanel('bottom');
             return;
         }
-        const terminal = this.terminalService.currentTerminal
-            ?? this.terminalService.lastUsedTerminal
-            ?? this.terminalService.all.find(candidate => !candidate.hiddenFromUser)
-            ?? await this.terminalService.newTerminal({});
-        await this.terminalService.open(terminal, { mode: 'activate' });
+        const terminalService = this.terminalService;
+        if (!terminalService) {
+            return;
+        }
+        const terminal = terminalService.currentTerminal
+            ?? terminalService.lastUsedTerminal
+            ?? terminalService.all.find(candidate => !candidate.hiddenFromUser)
+            ?? await terminalService.newTerminal({});
+        await terminalService.open(terminal, { mode: 'activate' });
         if (!this.shell.isExpanded('bottom')) {
             this.shell.expandPanel('bottom');
         }

@@ -8,6 +8,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { CommandRegistry } from '@theia/core/lib/common/command';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { LabelProvider, URIIconReference } from '@theia/core/lib/browser';
 import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
 import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
@@ -32,11 +33,18 @@ import { createTranscriptPreviewMonacoEditor } from '@theia/qaap-transcript-over
 // eagerly pulls Monaco's ESM editor bundle into lightweight transcript and Node test paths.
 const QAAP_SCM_VIEW_CONTAINER_ID = 'scm-view-container';
 
+/**
+ * Classic IDE openers below are hard no-ops in mobile mode: the IDE never opens there. The Work Hub
+ * wiring (`wireTranscriptFileOpeners`) routes mobile callers to the hub Files / Changes viewers instead.
+ */
 export async function openTranscriptWorkspaceFile(
     filePath: string,
     workspaceService: WorkspaceService,
     editorManager: EditorManager,
 ): Promise<void> {
+    if (matchesMobileOneColumnLayout()) {
+        return;
+    }
     const trimmed = filePath.trim();
     if (!trimmed) {
         return;
@@ -52,6 +60,9 @@ export async function openTranscriptWorkspaceChange(
     editorManager: EditorManager,
     scmService: ScmService,
 ): Promise<void> {
+    if (matchesMobileOneColumnLayout()) {
+        return;
+    }
     const trimmed = filePath.trim();
     if (!trimmed) {
         return;
@@ -75,6 +86,9 @@ export async function openTranscriptWorkspaceChanges(
     shell: ApplicationShell,
     widgetManager: WidgetManager,
 ): Promise<void> {
+    if (matchesMobileOneColumnLayout()) {
+        return;
+    }
     const widget = await widgetManager.getOrCreateWidget(QAAP_SCM_VIEW_CONTAINER_ID);
     if (!widget.isAttached) {
         await shell.addWidget(widget, { area: 'left' });
@@ -163,6 +177,7 @@ export function createTranscriptFilesViewServices(
     decorationsService?: DecorationsService,
     colorRegistry?: ColorRegistry,
 ): TranscriptFilesViewServices {
+    const mobileMode = matchesMobileOneColumnLayout();
     return {
         resolveRootUri: cwd => resolveTranscriptWorkspaceRootUri(cwd, workspaceService)?.toString(),
         listDirectory: async resourcePath => {
@@ -210,13 +225,14 @@ export function createTranscriptFilesViewServices(
                 originUri: new URI(resourcePath),
             })
             : undefined,
-        createNewFile: parentResourcePath => {
+        // Theia `file.newFile` / `file.newFolder` and the editor opener are IDE-only: hidden in mobile mode.
+        createNewFile: mobileMode ? undefined : parentResourcePath => {
             void executeTranscriptNewFileCommand(commands, workspaceService, parentResourcePath);
         },
-        createNewFolder: parentResourcePath => {
+        createNewFolder: mobileMode ? undefined : parentResourcePath => {
             void executeTranscriptNewFolderCommand(commands, workspaceService, parentResourcePath);
         },
-        openInEditor: relativePath => {
+        openInEditor: mobileMode ? undefined : relativePath => {
             void openTranscriptWorkspaceFile(relativePath, workspaceService, editorManager);
         },
         writeFile: async (resourcePath, content) => {

@@ -148,19 +148,24 @@ export class QaapThreadStore {
      * Keeps non-active conversation documents fresh with new messages so the
      * transcript hydrates instantly when the user switches back — no flicker,
      * no empty screen, no stale data while the backend refetch completes.
+     *
+     * `seq` (live protocol v2) stamps the document with the sequence number it is now current
+     * through, so a patched copy still reports an accurate cursor.
      */
     appendLiveMessage(
         conversationId: string,
         message: QaapAgentMessageDTO,
+        seq?: number,
     ): void {
         const document = this.documents.get(conversationId);
         if (!document) {
             return;
         }
-        const next = applyConversationMessageDelta(document, message);
-        if (next === document) {
+        const applied = applyConversationMessageDelta(document, message);
+        if (applied === document) {
             return;
         }
+        const next = seq === undefined ? applied : { ...applied, seq };
         this.documents.set(conversationId, next);
         this.notifyThread(conversationId);
     }
@@ -264,16 +269,18 @@ export class QaapThreadStore {
         conversationId: string,
         _messageId: string,
         delta: QaapAgentMessageWireDelta,
+        seq?: number,
     ): QaapAgentConversationDTO | undefined {
         const document = this.documents.get(conversationId);
         if (!document) {
             return undefined;
         }
         if (delta.kind === 'message_start') {
-            const next = applyConversationMessageDelta(document, delta.message);
-            if (next === document) {
+            const applied = applyConversationMessageDelta(document, delta.message);
+            if (applied === document) {
                 return document;
             }
+            const next = seq === undefined ? applied : { ...applied, seq };
             this.documents.set(conversationId, next);
             this.notifyThread(conversationId);
             return next;
@@ -290,6 +297,7 @@ export class QaapThreadStore {
             ...document,
             messages,
             updatedAt: Date.now(),
+            ...(seq === undefined ? {} : { seq }),
         };
         this.documents.set(conversationId, next);
         this.notifyThread(conversationId);

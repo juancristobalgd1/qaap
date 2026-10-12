@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import type { LabelProvider } from '@theia/core/lib/browser';
 import type { ColorRegistry } from '@theia/core/lib/browser/color-registry';
@@ -104,7 +105,7 @@ export interface MobileProjectsPanelFactoryDeps {
     markdownPreviewHandler: MarkdownPreviewHandler;
     decorationsService: DecorationsService;
     colorRegistry: ColorRegistry;
-    terminalService: TerminalService;
+    terminalService: TerminalService | undefined;
     storageService: StorageService;
     previewSurfaceRegistry: QaapPreviewSurfaceRegistry;
     elementInspectorService: ElementInspectorService;
@@ -292,11 +293,14 @@ export class MobileProjectsPanelFactory {
                     deps.decorationsService,
                     deps.colorRegistry,
                 ),
-                createTranscriptTerminalViewServices: () => createTranscriptTerminalViewServices(
-                    deps.terminalService,
-                    deps.workspaceService,
-                    deps.storageService,
-                ),
+                // Mobile mode never creates a terminal: no services means no TerminalWidget anywhere in the hub.
+                createTranscriptTerminalViewServices: () => matchesMobileOneColumnLayout() || !deps.terminalService
+                    ? undefined
+                    : createTranscriptTerminalViewServices(
+                        deps.terminalService,
+                        deps.workspaceService,
+                        deps.storageService,
+                    ),
                 previewSurfaceRegistry: deps.previewSurfaceRegistry,
                 previewInspectorDeps: {
                     service: deps.elementInspectorService,

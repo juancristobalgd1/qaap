@@ -1,6 +1,7 @@
 import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
@@ -71,6 +72,9 @@ export function mountTranscriptSurfaceTabExtracted(ctx: MobileProjectsExecutionS
         // was the last persisted mode for this workspace.
         ctx.host.transcriptSurfacesUi.ensureTranscriptFilesTab(project, summary, 'files');
     } else if (tab === 'terminal') {
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
         void ctx.host.transcriptSurfacesUi.ensureTranscriptTerminalTab(project, summary);
     }
     if (ctx.host.transcriptOpenProject) {

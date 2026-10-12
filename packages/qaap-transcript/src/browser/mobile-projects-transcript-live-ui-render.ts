@@ -398,6 +398,9 @@ export function bindOpenTranscriptThreadStoreExtracted(ctx: MobileProjectsTransc
             snapshot => snapshot.document,
             conversationId,
         );
-        ctx.threadStoreSummaryDispose = new DisposableCollection(summaryDispose, documentDispose);
+        // Live protocol v2 only streams message events for focused threads: the open transcript is focused
+        // for as long as this binding lives (re-binding or closing the transcript disposes it).
+        const focusDispose = conversations.focusThread?.(conversationId) ?? Disposable.NULL;
+        ctx.threadStoreSummaryDispose = new DisposableCollection(summaryDispose, documentDispose, focusDispose);
 }
 

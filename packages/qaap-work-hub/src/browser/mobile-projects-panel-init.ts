@@ -2,6 +2,7 @@ import type { MobileProjectsPanelContext } from './mobile-projects-panel-context
 // Constructor initialization and arrow-function fields extracted from mobile-projects-panel.ts
 
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 
 /**
@@ -65,7 +66,9 @@ export function applyPanelOptions(self: MobileProjectsPanelContext, options: Mob
 export function wireTranscriptFileOpeners(self: MobileProjectsPanelContext, options: MobileProjectsPanelOptions): void {
     const editorOpenFallback = options.openTranscriptFile;
     self.openTranscriptFile = (filePath: string) => {
-        if (peekPreferDesktopIde()) {
+        // Mobile mode: the classic IDE never opens; only the hub Files viewer is used.
+        const mobileMode = matchesMobileOneColumnLayout();
+        if (!mobileMode && peekPreferDesktopIde()) {
             return editorOpenFallback?.(filePath);
         }
         const state = self.transcriptController.state;
@@ -74,12 +77,12 @@ export function wireTranscriptFileOpeners(self: MobileProjectsPanelContext, opti
         if (project && summary) {
             return self.transcriptSurfacesUi.revealTranscriptFile(project, summary, filePath);
         }
-        if (editorOpenFallback) {
+        if (!mobileMode && editorOpenFallback) {
             return editorOpenFallback(filePath);
         }
     };
     self.openTranscriptReviewFile = (filePath: string) => {
-        if (peekPreferDesktopIde()) {
+        if (!matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
             return options.openTranscriptReviewFile?.(filePath);
         }
         const state = self.transcriptController.state;

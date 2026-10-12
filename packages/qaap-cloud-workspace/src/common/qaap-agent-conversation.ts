@@ -418,6 +418,9 @@ export interface QaapAgentConversationListResponse {
 
 export interface QaapAgentConversationAllResponse {
     readonly groups: QaapAgentConversationCwdGroup[];
+    /** Live-feed cursor of the snapshot (see the event log): replay resumes after `seq` if `epoch` still matches. */
+    readonly epoch?: string;
+    readonly seq?: number;
 }
 
 export interface QaapCreateAgentConversationRequest {

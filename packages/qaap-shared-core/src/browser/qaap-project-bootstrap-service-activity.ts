@@ -416,9 +416,10 @@ export async function spawnCommandExtracted(ctx: QaapProjectBootstrapServiceCont
             ctx.spawningPreviewTerminals.delete(terminal);
             throw e;
         }
-        if (options.reveal !== false) {
-            // On mobile, revealing the bottom terminal panel can dispose/recreate widgets mid-start.
-            ctx.terminalService.open(terminal, { mode: matchesMobileOneColumnLayout() ? 'open' : 'reveal' });
+        // Mobile mode never attaches a terminal to the shell: the process keeps running detached and its
+        // output is mirrored to the hub through the preview log tail.
+        if (options.reveal !== false && !matchesMobileOneColumnLayout()) {
+            ctx.terminalService.open(terminal, { mode: 'reveal' });
         }
         return terminal;
 }

@@ -167,22 +167,23 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
         isVisible: () => !matchesMobileOneColumnLayout()
             && ctx.shouldActivateWorkHubLayout(),
     });
-    // The in-IDE header-view commands remain desktop/one-column IDE commands.
+    // The in-IDE header-view commands drive the one-column IDE sheets, which no longer exist: the
+    // IDE never opens in mobile mode, so these stay registered (ids are referenced) but permanently off.
     if (!matchesMobileNarrowViewport()) {
         registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.options' }, {
             execute: () => ctx.bottomBarController.getMobileIdeHeaderViewButtons(),
-            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
-            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
+            isEnabled: () => false,
+            isVisible: () => false,
         });
         registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.active' }, {
             execute: () => ctx.resolveMobileIdeHeaderViewId(),
-            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
-            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
+            isEnabled: () => false,
+            isVisible: () => false,
         });
         registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.activate' }, {
             execute: (id: MobileBottomButtonId) => ctx.activateMobileIdeHeaderView(id),
-            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
-            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
+            isEnabled: () => false,
+            isVisible: () => false,
         });
     }
 }
@@ -451,6 +452,10 @@ export async function onProjectsPanelOpenInIdeExtracted(ctx: MobileOneColumnShel
 }
 
 export async function onCurrentProjectActivatedExtracted(ctx: MobileOneColumnShellContributionContext): Promise<void> {
+    // Mobile mode never lands in the IDE main area: the hub Files tab shows the README.
+    if (matchesMobileOneColumnLayout()) {
+        return;
+    }
     const opened = await ctx.projectsReadme.openReadmeForCurrentWorkspace();
     if (opened) {
         return;

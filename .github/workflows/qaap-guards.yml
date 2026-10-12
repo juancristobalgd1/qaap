@@ -90,6 +90,9 @@ jobs:
         run: bash scripts/qaap-vps-tenant-image.test.sh
       - name: Required mobile E2E workflow regression
         run: node --test scripts/qaap-mobile-required-ci.test.js
+      # Pure-node regression for the mobile bundle guard used below.
+      - name: Mobile bundle guard regression
+        run: node --test scripts/qaap-mobile-bundle-guard.test.js
       # A preview of qaap itself must start Theia on the allocated port and kill nothing of the IDE.
       - name: Browser start script preview port regression
         run: node --test scripts/qaap-start-browser.test.mjs
@@ -116,6 +119,15 @@ jobs:
         run: |
           npm run build:browser
           npm run download:plugins
+
+      # Product rule: on mobile the Theia IDE never loads. Fails when the bundle-mobile entry reaches
+      # an IDE package (plugin host, debug, notebook, VSX, terminal, task, xterm) and prints the
+      # shortest import chain; Monaco is a ratchet (scripts/qaap-mobile-bundle-budget.json, lower
+      # only). Cut a new chain with a mobile-safe/IDE-only module split or the QaapIde* bridge.
+      - name: Mobile bundle guard
+        run: |
+          node scripts/qaap-frontend-graph-report.js
+          node scripts/qaap-mobile-bundle-guard.js
 
       - name: Install Chromium for required mobile E2E
         run: cd examples/playwright && npx playwright install chromium

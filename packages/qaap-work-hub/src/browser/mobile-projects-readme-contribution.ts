@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
@@ -80,6 +81,11 @@ export class MobileProjectsReadmeContribution implements FrontendApplicationCont
         if (!peekMobileProjectReadmeOpenRequest()) {
             return;
         }
+        if (matchesMobileOneColumnLayout()) {
+            // The README never opens in the IDE main area on mobile; drop the request.
+            consumeMobileProjectReadmeOpenRequest();
+            return;
+        }
         // Wait until the mobile projects landing is dismissed — the shell opens the README once
         // the user enters the workspace, not while the dashboard is still full-screen.
         if (shouldSkipMobileProjectsLanding() || document.body.classList.contains('theia-mobile-mod-landing')) {
@@ -105,6 +111,9 @@ export class MobileProjectsReadmeContribution implements FrontendApplicationCont
     }
 
     protected async tryOpenReadme(): Promise<boolean> {
+        if (matchesMobileOneColumnLayout()) {
+            return false;
+        }
         await this.workspaceService.roots;
         if (!this.workspaceService.opened) {
             return false;

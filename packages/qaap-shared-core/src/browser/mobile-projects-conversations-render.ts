@@ -23,7 +23,8 @@ import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-
 import { cwdMatchesProject, lookupByCwd, normalizeCwd } from './mobile-projects-active-tasks';
 import { sortConversations } from './mobile-projects-conversations';
 import { PRIME_FROM_ALL_TTL_MS, STREAM_URL } from './mobile-projects-conversations';
-import type { ConversationServerEvent } from './mobile-projects-conversations';
+import type { QaapLiveFeedFrame } from '../common/qaap-live-feed-cursor';
+import { ensureLiveFeedExtracted, routeLiveFrameExtracted } from './mobile-projects-conversations-live';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
 import type { QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
 
@@ -206,6 +207,8 @@ export function cacheDocumentExtracted(ctx: MobileProjectsConversationsContext, 
         const normalized = backfillConversationTraceEvents(document).conversation;
         const isFirstLoad = !ctx.threadStore.getDocument(normalized.id);
         ctx.threadStore.setDocument(normalized);
+        // Protocol v2: the GET's `{epoch, seq}` is this thread's applied cursor (focus replays from it).
+        ctx.liveFeed?.noteDocument(normalized.id, document.epoch, document.seq);
         if (isFirstLoad) {
             ctx.emitConversationChange({
                 kind: 'document_loaded',
@@ -344,7 +347,9 @@ export function openWebSocketExtracted(ctx: MobileProjectsConversationsContext):
         }
         try {
             const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const socket = new WebSocket(`${proto}//${window.location.host}${QAAP_AGENT_CONVERSATION_WS_PATH}`);
+            // Protocol v2 (resume cursor + focus) unless the `qaap.liveV2=0` kill switch selects v1.
+            const feed = ensureLiveFeedExtracted(ctx);
+            const socket = new WebSocket(`${proto}//${window.location.host}${QAAP_AGENT_CONVERSATION_WS_PATH}${feed ? '?v=2' : ''}`);
             ctx.socket = socket;
 
             socket.addEventListener('open', () => {
@@ -356,6 +361,7 @@ export function openWebSocketExtracted(ctx: MobileProjectsConversationsContext):
                     ctx.onDidReconnectTransportEmitter.fire();
                 }
                 ctx.markStreamingTransports('ws');
+                feed?.onSocketOpen();
                 // The server primes an equivalent `snapshot` on connect — only fall back to the
                 // HTTP /all prime if that snapshot never arrives (saves ~340KB per (re)connect).
                 ctx.wsSnapshotFallbackHandle = window.setTimeout(() => {
@@ -366,7 +372,7 @@ export function openWebSocketExtracted(ctx: MobileProjectsConversationsContext):
 
             socket.addEventListener('message', ev => {
                 try {
-                    ctx.dispatchServerPayload(JSON.parse(String(ev.data)) as ConversationServerEvent);
+                    routeLiveFrameExtracted(ctx, JSON.parse(String(ev.data)) as QaapLiveFeedFrame);
                 } catch {
                     /* drop malformed payload */
                 }
@@ -403,7 +409,7 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
             return;
         }
         try {
-            const source = new EventSource(STREAM_URL);
+            const source = new EventSource(`${STREAM_URL}${ensureLiveFeedExtracted(ctx)?.sseResumeQuery() ?? ''}`);
             ctx.source = source;
             ctx.transport = 'sse';
             ctx.markStreamingTransports('sse');
@@ -416,6 +422,7 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
             source.addEventListener('pending-queued', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('pending-drained', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('goal_loop', ev => ctx.dispatchSseEvent(ev as MessageEvent));
+            source.addEventListener('resync', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('heartbeat', () => ctx.onDidReceiveTransportActivityEmitter.fire());
             source.addEventListener('open', () => {
                 ctx.sseReconnectAttempt = 0;
@@ -439,7 +446,7 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
 
 export function dispatchSseEventExtracted(ctx: MobileProjectsConversationsContext, ev: MessageEvent): void {
         try {
-            ctx.dispatchServerPayload(JSON.parse(ev.data) as ConversationServerEvent);
+            routeLiveFrameExtracted(ctx, JSON.parse(ev.data) as QaapLiveFeedFrame, ev.lastEventId, true);
         } catch {
             /* drop malformed payload */
         }

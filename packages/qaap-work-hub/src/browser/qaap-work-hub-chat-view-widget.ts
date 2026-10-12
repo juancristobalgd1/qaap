@@ -35,7 +35,7 @@ import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/mark
 import { createWorkHubMoreActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import { QaapIdeTerminalService } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
@@ -110,8 +110,9 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly colorRegistry: ColorRegistry;
     @inject(MarkdownPreviewHandler)
     protected readonly markdownPreviewHandler: MarkdownPreviewHandler;
-    @inject(TerminalService)
-    protected readonly terminalService: TerminalService;
+    /** IDE-only (desktop): undefined in the `bundle-mobile` entry. */
+    @inject(QaapIdeTerminalService) @optional()
+    protected readonly terminalService: QaapIdeTerminalService | undefined;
     @inject(StorageService)
     protected readonly storageService: StorageService;
     @inject(QaapPreviewSurfaceRegistry)

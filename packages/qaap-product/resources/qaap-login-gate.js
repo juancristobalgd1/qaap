@@ -192,10 +192,55 @@
         }
     }
 
+    // Mobile-only entry (bundle-mobile.js / bundle-mobile.css: the Work Hub without any IDE code).
+    // Loaded only when ALL hold: mobile Work Hub mode, a signed-in user, the server flag
+    // QAAP_MOBILE_ENTRY (reported as `mobileEntry: true` by the auth session/config probe this gate
+    // already awaits) and no earlier failure of the mobile entry in this tab. Any failure (script
+    // error, bundle or startup watchdog) records MOBILE_ENTRY_FAILED_KEY and reloads into bundle.js.
+    var MOBILE_ENTRY_FAILED_KEY = 'qaap.boot.mobileEntryFailed';
+    var serverMobileEntry = false;
+    var mobileEntryActive = false;
+
+    function noteServerMobileEntry(data) {
+        if (data && data.mobileEntry === true) {
+            serverMobileEntry = true;
+        }
+    }
+
+    function mobileEntryFailedBefore() {
+        try {
+            return !!window.sessionStorage.getItem(MOBILE_ENTRY_FAILED_KEY);
+        } catch (e) {
+            // Without sessionStorage a failure could not be remembered: never risk a reload loop.
+            return true;
+        }
+    }
+
+    function shouldLoadMobileEntry() {
+        return serverMobileEntry && !bootsIntoIde && isMobileWorkHubMode() && isSignedIn() && !mobileEntryFailedBefore();
+    }
+
+    /** True when the mobile entry was in use and the page is reloading into bundle.js. */
+    function fallBackFromMobileEntry(reason) {
+        if (!mobileEntryActive) {
+            return false;
+        }
+        mobileEntryActive = false;
+        try {
+            window.sessionStorage.setItem(MOBILE_ENTRY_FAILED_KEY, reason);
+        } catch (e) { /* mobileEntryFailedBefore() treats missing storage as failed */ }
+        console.warn('[Qaap] bundle-mobile.js failed (' + reason + '); reloading into bundle.js');
+        window.location.reload();
+        return true;
+    }
+
     // Watchdog: if bundle.js never loads (network error, stale SW chunk mismatch)
     // show an error + retry UI so the user is never stuck on a blank spinner.
     var bundleLoadWatchdog = window.setTimeout(function () {
         if (!window.__qaapBundleLoaded) {
+            if (fallBackFromMobileEntry('bundle-timeout')) {
+                return;
+            }
             console.warn('[Qaap] bundle.js slow or failed — check network / console');
             showStartupError('bundle');
         }
@@ -284,6 +329,9 @@
     }
 
     function showStartupTimeout() {
+        if (fallBackFromMobileEntry('startup-timeout')) {
+            return;
+        }
         var startupWait = document.getElementById('qaap-startup-wait');
         if (startupWait) {
             startupWait.remove();
@@ -410,14 +458,17 @@
             && window.matchMedia('(max-width: 767px), (pointer: coarse)').matches;
     }
 
-    function activateBundleStylesheet() {
-        if (document.querySelector('link[href*="bundle.css"]')) {
+    function activateBundleStylesheet(mobileEntry) {
+        if (document.querySelector('link[href*="bundle.css"]') || document.querySelector('link[href*="bundle-mobile.css"]')) {
             return;
         }
         var stylesheetMeta = document.querySelector('meta[name="qaap-bundle-css"]');
         var href = stylesheetMeta && stylesheetMeta.getAttribute('content');
         if (!href) {
             return;
+        }
+        if (mobileEntry) {
+            href = href.replace('bundle.css', 'bundle-mobile.css');
         }
         var stylesheet = document.createElement('link');
         stylesheet.id = 'qaap-bundle-css';
@@ -460,14 +511,15 @@
             return;
         }
         prefetchWorkHubData();
-        activateBundleStylesheet();
+        mobileEntryActive = shouldLoadMobileEntry();
+        activateBundleStylesheet(mobileEntryActive);
         window.__qaapBundleLoading = true;
         var script = document.createElement('script');
         // The frontend builds as ES modules (esbuild code-splitting); the
         // browser resolves and parallel-loads the shared chunks itself.
         script.type = 'module';
         script.charset = 'utf-8';
-        script.src = resolveBundleUrl();
+        script.src = mobileEntryActive ? resolveBundleUrl().replace('bundle.js', 'bundle-mobile.js') : resolveBundleUrl();
         script.onload = function () {
             window.__qaapBundleLoaded = true;
             window.clearTimeout(bundleLoadWatchdog);
@@ -475,6 +527,9 @@
         };
         script.onerror = function () {
             window.__qaapBundleLoading = false;
+            if (fallBackFromMobileEntry('script-error')) {
+                return;
+            }
             console.error('[Qaap] Failed to load application bundle.');
             showStartupError('bundle');
         };
@@ -838,6 +893,7 @@
                 })
                 .then(function (data) {
                     stripOAuthQueryParams();
+                    noteServerMobileEntry(data);
                     if (!(data && data.signedIn && data.user && data.user.provider)) {
                         // Never reveal the IDE without a session: it would boot unauthenticated
                         // and flash 401s before the user can sign in again.
@@ -866,6 +922,7 @@
         }
         (sessionProbe || fetchSessionProbe())
             .then(function (data) {
+                noteServerMobileEntry(data);
                 if (data && data.signedIn && data.user && data.user.provider) {
                     writeSignedIn(data.user.provider, data.user);
                     dismissLoginGate();
@@ -907,6 +964,7 @@
                 if (!config) {
                     return undefined;
                 }
+                noteServerMobileEntry(config);
                 if (config && config.skipAuth) {
                     writeSignedIn('gitlab', {
                         provider: 'gitlab',
@@ -936,6 +994,7 @@
                 return response.json();
             })
             .then(function (data) {
+                noteServerMobileEntry(data);
                 if (data && data.signedIn && data.user && data.user.provider) {
                     writeSignedIn(data.user.provider, data.user);
                     loadBundle();

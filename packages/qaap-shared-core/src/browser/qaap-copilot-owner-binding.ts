@@ -6,7 +6,7 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
-import { CopilotAuthService } from '@theia/ai-copilot/src/common/copilot-auth-service';
+import { CopilotAuthService } from '@theia/ai-copilot/lib/common/copilot-auth-service';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 
 /**

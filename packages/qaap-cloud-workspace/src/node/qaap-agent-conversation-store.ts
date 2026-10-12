@@ -49,6 +49,7 @@ import { QaapBillingStore } from './qaap-billing-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapObservability } from './qaap-observability';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
+import { QaapConversationEventLog, type QaapConversationLogEntry } from './qaap-conversation-event-log';
 import { QaapConversationStreamMetricsCollector } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import { type QaapAgentMessageWireSnapshot, } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import {
@@ -220,6 +221,12 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public readonly onDidChangeEmitter = new Emitter<QaapAgentConversationEvent>();
     readonly onDidChange: Event<QaapAgentConversationEvent> = this.onDidChangeEmitter.event;
+    /** Boot-scoped, bounded, sequenced log of every event the batcher emits (live protocol v2 replay). */
+    public readonly eventLog = new QaapConversationEventLog();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly onDidChangeStampedEmitter = new Emitter<QaapConversationLogEntry>();
+    /** Same events as {@link onDidChange}, stamped with their sequence number (fires right after it). */
+    readonly onDidChangeStamped: Event<QaapConversationLogEntry> = this.onDidChangeStampedEmitter.event;
     /** Resolves once {@link restoreFromDisk} finishes — consumers that reconcile against conversations should await this. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public restoreReady!: Promise<void>;

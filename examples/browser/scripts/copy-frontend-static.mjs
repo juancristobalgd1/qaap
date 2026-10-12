@@ -82,7 +82,7 @@ function patchIndexForFreshAssets(indexPath) {
  * (a referenced chunk is missing, or an import carries a query), e.g. after a partial esbuild write.
  */
 function verifyFrontendChunkGraph() {
-    const entryPoints = ['bundle.js', 'secondary-window.js'];
+    const entryPoints = ['bundle.js', 'bundle-mobile.js', 'secondary-window.js'];
     const chunkImport = /(["'])\.\/(chunk-[A-Z0-9]+\.js)(\?[^"']*)?\1/g;
     const problems = [];
     const visited = new Set();

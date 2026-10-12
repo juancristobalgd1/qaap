@@ -388,6 +388,115 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
     });
 });
 
+/**
+ * SSE `Last-Event-ID` resume and the snapshot cut. Drives the real handleStream / snapshotCursor with a
+ * stub store backed by a real event log.
+ */
+describe('QaapAgentConversationEndpoint live feed resume', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { QaapConversationEventLog } = require('./qaap-conversation-event-log') as typeof import('./qaap-conversation-event-log');
+    type Entry = import('./qaap-conversation-event-log').QaapConversationLogEntry;
+
+    function build(): {
+        endpoint: QaapAgentConversationEndpoint;
+        log: import('./qaap-conversation-event-log').QaapConversationEventLog;
+        listeners: Set<(entry: Entry) => void>;
+        flushes: { count: number };
+        emit(event: import('../common/qaap-agent-conversation').QaapAgentConversationEvent): void;
+    } {
+        const log = new QaapConversationEventLog({ epoch: 'boot-1' });
+        const listeners = new Set<(entry: Entry) => void>();
+        const flushes = { count: 0 };
+        const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+        Object.assign(endpoint, {
+            store: {
+                eventLog: log,
+                sseBatcher: { flush: () => { flushes.count++; } },
+                onDidChangeStamped: (listener: (entry: Entry) => void) => {
+                    listeners.add(listener);
+                    return { dispose: () => listeners.delete(listener) };
+                },
+                listAllGroupedByCwd: () => [{ cwd: '/w/alice', conversations: [] }],
+            },
+            auth: {
+                ...fakeAuth(),
+                ownsWorkspacePath: (_ctx: unknown, cwd: string) => cwd.startsWith('/w/alice'),
+            },
+            requireAuth: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+        });
+        return { endpoint, log, listeners, flushes, emit: event => { const entry = log.append(event); listeners.forEach(l => l(entry)); } };
+    }
+
+    function connect(endpoint: QaapAgentConversationEndpoint, req: { headers?: Record<string, string>; query?: Record<string, string> }): { writes: string[]; close(): void } {
+        const writes: string[] = [];
+        const closers: Array<() => void> = [];
+        const res = {
+            status() { return this; },
+            set() { return this; },
+            flushHeaders() { /* noop */ },
+            write(chunk: string) { writes.push(chunk); return true; },
+            on(event: string, handler: () => void) { if (event === 'close') { closers.push(handler); } },
+        };
+        const request = { headers: req.headers ?? {}, query: req.query ?? {}, on: (event: string, handler: () => void) => { if (event === 'close') { closers.push(handler); } } };
+        (endpoint as unknown as { handleStream(req: unknown, res: unknown): void }).handleStream(request, res);
+        return { writes, close: () => closers.forEach(c => c()) };
+    }
+
+    const upd = (id: string, cwd = '/w/alice'): import('../common/qaap-agent-conversation').QaapAgentConversationEvent =>
+        ({ type: 'updated', conversation: { id, cwd } } as never);
+
+    it('without a cursor writes only live events (plus id lines) and no snapshot/resync', () => {
+        const h = build();
+        h.emit(upd('old'));
+        const sse = connect(h.endpoint, {});
+        expect(sse.writes).to.deep.equal([': qaap-agent-conversations stream\n\n']);
+        expect(h.flushes.count).to.equal(0);
+        h.emit(upd('a'));
+        h.emit(upd('hidden', '/w/bob'));
+        expect(sse.writes.slice(1)).to.deep.equal([
+            `id: boot-1:2\nevent: updated\ndata: ${JSON.stringify(upd('a'))}\n\n`,
+        ]);
+        sse.close();
+        expect(h.listeners.size).to.equal(0);
+    });
+
+    it('replays owned events after Last-Event-ID (header) when the epoch matches', () => {
+        const h = build();
+        h.emit(upd('a'));
+        h.emit(upd('b'));
+        h.emit(upd('x', '/w/bob'));
+        h.emit(upd('c'));
+        const sse = connect(h.endpoint, { headers: { 'last-event-id': 'boot-1:1' } });
+        expect(h.flushes.count).to.equal(1);
+        const frames = sse.writes.slice(1);
+        expect(frames.map(f => f.split('\n')[0])).to.deep.equal(['id: boot-1:2', 'id: boot-1:4']);
+        h.emit(upd('d'));
+        expect(sse.writes.at(-1)!.startsWith('id: boot-1:5\n')).to.equal(true);
+    });
+
+    it('accepts ?lastEventId= and resyncs on an epoch mismatch, a gap or garbage', () => {
+        const h = build();
+        h.emit(upd('a'));
+        const same = connect(h.endpoint, { query: { lastEventId: 'boot-1:1' } });
+        expect(same.writes).to.have.length(1);
+        for (const cursor of ['boot-0:1', 'boot-1:99', 'garbage']) {
+            const sse = connect(h.endpoint, { query: { lastEventId: cursor } });
+            const frame = sse.writes[1];
+            expect(frame, cursor).to.match(/^id: boot-1:1\nevent: resync\ndata: /);
+            const payload = JSON.parse(frame.split('data: ')[1]);
+            expect(payload).to.deep.equal({ type: 'resync', epoch: 'boot-1', seq: 1, groups: [] });
+        }
+    });
+
+    it('snapshot cut flushes the batcher and reports the cursor', () => {
+        const h = build();
+        h.emit(upd('a'));
+        const cursor = (h.endpoint as unknown as { snapshotCursor(): unknown }).snapshotCursor();
+        expect(cursor).to.deep.equal({ epoch: 'boot-1', seq: 1 });
+        expect(h.flushes.count).to.equal(1);
+    });
+});
+
 describe('QaapAgentConversationEndpoint project clone missing from disk', () => {
     const cwd = '/workspace/repos/users/alice/octo/app';
     const error = 'I cannot find the repository octo/app on the server and could not clone it again: no access.';

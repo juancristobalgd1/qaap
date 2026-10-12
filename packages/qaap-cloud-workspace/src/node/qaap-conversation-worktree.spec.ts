@@ -8,6 +8,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { resolveQaapWorktreesRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 
 describe('QaapConversationWorktreeService.apply', function (): void {
@@ -102,5 +103,72 @@ describe('QaapConversationWorktreeService.apply', function (): void {
         expect(fs.existsSync(worktreePath)).to.equal(false);
         expect(git(baseRepo, 'branch', '--list', branch).trim()).to.equal('');
         expect(fs.existsSync(path.join(baseRepo, 'fork.txt'))).to.equal(false);
+    });
+});
+
+describe('QaapConversationWorktreeService.removeForDeletedConversation', function (): void {
+    this.timeout(20_000);
+
+    let scratch: string;
+    let baseRepo: string;
+    let root: string;
+    const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+
+    const buildService = (): QaapConversationWorktreeService => {
+        const service = Object.create(QaapConversationWorktreeService.prototype) as QaapConversationWorktreeService;
+        Object.assign(service, {
+            tenantSpawn: {
+                wrapGitForTenant: (cwd: string, args: readonly string[]) => ({ file: 'git', args: ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args] }),
+                prepareTenantIsolation: () => undefined,
+            },
+        });
+        return service;
+    };
+
+    beforeEach(() => {
+        scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-wt-remove-'));
+        root = path.join(resolveQaapWorktreesRoot(), `spec-${path.basename(scratch)}`);
+        baseRepo = path.join(scratch, 'base');
+        fs.mkdirSync(baseRepo, { recursive: true });
+        git(baseRepo, 'init', '-q', '-b', 'main');
+        git(baseRepo, 'config', 'user.email', 'a@b');
+        git(baseRepo, 'config', 'user.name', 'a');
+        fs.writeFileSync(path.join(baseRepo, 'README.md'), 'hi\n');
+        git(baseRepo, 'add', '.');
+        git(baseRepo, 'commit', '-qm', 'init');
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(scratch, { recursive: true, force: true });
+    });
+
+    it('removes the worktree and its branch', async () => {
+        const worktreePath = path.join(root, 'abcd1234');
+        fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+        git(baseRepo, 'worktree', 'add', '-b', 'qaap/worktree/abcd1234', worktreePath, 'HEAD');
+        const removed = await buildService().removeForDeletedConversation({ worktreePath, branch: 'qaap/worktree/abcd1234', baseCwd: baseRepo });
+        expect(removed).to.equal(true);
+        expect(fs.existsSync(worktreePath)).to.equal(false);
+        expect(git(baseRepo, 'branch', '--list', 'qaap/worktree/abcd1234').trim()).to.equal('');
+    });
+
+    it('refuses paths outside the worktrees root, the base checkout, and non-qaap branches', async () => {
+        const service = buildService();
+        const outside = path.join(scratch, 'outside');
+        fs.mkdirSync(outside);
+        const attempt = (worktreePath: string, branch = 'qaap/worktree/x'): Promise<boolean> =>
+            service.removeForDeletedConversation({ worktreePath, branch, baseCwd: baseRepo });
+        expect(await attempt(outside)).to.equal(false);
+        expect(await attempt(baseRepo)).to.equal(false);
+        expect(await attempt(root)).to.equal(false);
+        expect(await attempt(path.dirname(root))).to.equal(false);
+        expect(await attempt(path.join(root, '..', '..', 'outside'))).to.equal(false);
+        const inside = path.join(root, 'abcd1234');
+        fs.mkdirSync(inside, { recursive: true });
+        expect(await attempt(inside, 'main')).to.equal(false);
+        expect(fs.existsSync(outside)).to.equal(true);
+        expect(fs.existsSync(baseRepo)).to.equal(true);
+        expect(fs.existsSync(inside)).to.equal(true);
     });
 });

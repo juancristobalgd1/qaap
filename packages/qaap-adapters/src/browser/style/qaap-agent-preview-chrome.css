@@ -541,6 +541,26 @@ body.qaap-mod-history-resizing * {
   background: #fff;
 }
 
+.qaap-preview-blocked-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+  color: var(--theia-foreground);
+  background: var(--theia-editor-background);
+}
+
+.qaap-preview-blocked-frame-text {
+  margin: 0;
+  font-size: var(--theia-ui-font-size1);
+}
+
 .qaap-preview-inspector-slot {
   position: relative;
   z-index: 2;

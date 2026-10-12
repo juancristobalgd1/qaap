@@ -14,7 +14,13 @@ import {
     resolveLobeTraceStatus as resolveLobeTraceStatusHelper,
 } from './mobile-projects-transcript-messages-tool-helpers';
 import { syncTranscriptToolExecutionTime, TRANSCRIPT_TOOL_RESULT_STREAM_CLASS } from './mobile-projects-transcript-messages-tool-ui';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+
+/** IDE-flavoured labels apply on desktop only; mobile mode always uses the hub Files / Review labels. */
+function useIdeLabels(): boolean {
+    return !matchesMobileOneColumnLayout() && peekPreferDesktopIde();
+}
 
 export function patchTranscriptToolResultStreamBodyExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, pillBody: HTMLElement,
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,): boolean {
@@ -64,7 +70,7 @@ export function handleTranscriptReviewFileOpenExtracted(ctx: MobileProjectsTrans
         void Promise.resolve(ctx.host.openTranscriptReviewFile(filePath)).catch(error => {
             console.warn('[qaap-mobile-shell] Failed to open transcript review file:', error);
             ctx.host.messageService?.error(
-                peekPreferDesktopIde()
+                useIdeLabels()
                     ? nls.localize('qaap/mobileProjects/transcriptOpenIdeChangeFailed', 'Could not open the change for {0} in the IDE', filePath)
                     : nls.localize('qaap/mobileProjects/transcriptOpenReviewFileFailed', 'Could not open {0} in Review', filePath),
             );
@@ -78,7 +84,7 @@ export function attachTranscriptReviewFileOpenActionExtracted(ctx: MobileProject
         row.classList.add('theia-mod-clickable');
         row.setAttribute('role', 'button');
         row.tabIndex = 0;
-        row.title = peekPreferDesktopIde()
+        row.title = useIdeLabels()
             ? nls.localize('qaap/mobileProjects/transcriptOpenFileInIdeDiff', 'Open change in IDE')
             : nls.localize('qaap/mobileProjects/transcriptOpenFileInReview', 'Open in Review');
         const open = (event: Event): void => {
@@ -99,7 +105,7 @@ export function attachTranscriptFileOpenActionExtracted(ctx: MobileProjectsTrans
             return;
         }
         head.classList.add('theia-mod-clickable');
-        head.title = peekPreferDesktopIde()
+        head.title = useIdeLabels()
             ? nls.localize('qaap/mobileProjects/transcriptOpenFileInEditor', 'Open in editor')
             : nls.localize('qaap/mobileProjects/transcriptOpenFileInFiles', 'Open in Files preview');
         head.addEventListener('click', event => {
