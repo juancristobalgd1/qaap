@@ -150,6 +150,12 @@ function killOrphanedPluginHosts() {
 }
 
 function main() {
+    if (process.env.QAAP_PREVIEW_PORT) {
+        // Launched by a Qaap preview: the allocator already verified this port is free, and the
+        // processes around us (the IDE serving the preview, its plugin hosts) are not ours to kill.
+        console.warn(`[qaap] Preview de Qaap en el puerto ${process.env.QAAP_PREVIEW_PORT}: no se liberan procesos`);
+        return;
+    }
     const orphans = killOrphanedPluginHosts();
     if (orphans > 0) {
         console.warn(`[qaap] Limpiando ${orphans} proceso(s) plugin-host/LSP huérfanos de backends anteriores`);

@@ -479,6 +479,11 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             // Crucial fail-closed rule: never infer project ownership from a responding port.
             continue;
         }
+        if (!await ctx.isPortBindable(port, owner)) {
+            // Something holds the port without answering HTTP (a Theia/Node backend still booting,
+            // the host IDE on a non-default port). Handing it out makes the dev server die on bind.
+            continue;
+        }
         const record = ctx.portRegistry.register({
             ...identity,
             ownerLogin: owner,

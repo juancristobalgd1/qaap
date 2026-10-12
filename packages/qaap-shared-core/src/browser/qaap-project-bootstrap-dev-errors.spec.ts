@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    describeDevProcessExit,
     diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
     extractTerminalFailureLine,
@@ -24,6 +25,26 @@ describe('qaap-project-bootstrap-dev-errors', () => {
         expect(terminalOutputOutOfMemory('Dev server exited with code 137.')).to.equal(true);
         expect(terminalOutputOutOfMemory('Dev server exited with code 1.')).to.equal(false);
         expect(terminalOutputOutOfMemory('Listening on port 1370 · compiled 137 modules')).to.equal(false);
+    });
+
+    it('describes a clean exit before listening with the port and the last output lines', () => {
+        const output = Array.from({ length: 20 }, (_, index) => `\u001b[2mline ${index + 1}\u001b[0m`).join('\r\n') + '\r\n\r\n';
+        const report = describeDevProcessExit(0, output, 3001);
+        expect(report.exitedWithoutListening).to.equal(true);
+        expect(report.message).to.match(/^The dev command exited with code 0 without listening on port 3001\.\nLast output:\nline 9\n/);
+        expect(report.message).to.match(/\nline 20$/);
+        expect(report.message).not.to.contain('line 8\n');
+    });
+
+    it('says so when a clean exit printed nothing', () => {
+        const report = describeDevProcessExit(0, '\n\n', 3001);
+        expect(report.message).to.equal('The dev command exited with code 0 without listening on port 3001. '
+            + 'It printed no output. Check that the script starts a server and honors PORT or --port.');
+    });
+
+    it('keeps the output or exit code for a failing exit (still retryable)', () => {
+        expect(describeDevProcessExit(1, 'Error: boom', 3001)).to.deep.equal({ message: 'Error: boom', exitedWithoutListening: false });
+        expect(describeDevProcessExit(undefined, '', 3001)).to.deep.equal({ message: 'Dev server exited with code ?.', exitedWithoutListening: false });
     });
 
     it('diagnoses out-of-memory before any other failure kind', () => {
