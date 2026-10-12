@@ -138,6 +138,52 @@ export class QaapConversationWorktreeService {
         return { ok: true, branch };
     }
 
+    /**
+     * Best-effort removal of the worktree + branch of a deleted conversation. Refuses (returns false)
+     * unless `worktreePath` is exactly `{worktreesRoot}/{tenant}/{slug}` under the qaap worktrees root
+     * (never a symlink, never the base checkout) and `branch` is a `qaap/worktree/*` branch.
+     * Never throws: failures are logged.
+     */
+    async removeForDeletedConversation(input: { worktreePath: string; branch: string; baseCwd: string }): Promise<boolean> {
+        try {
+            const worktreePath = path.resolve(input.worktreePath ?? '');
+            const baseCwd = path.resolve(input.baseCwd ?? '');
+            const branch = (input.branch ?? '').trim();
+            if (!this.isManagedWorktreePath(worktreePath) || !branch.startsWith('qaap/worktree/')
+                || worktreePath === baseCwd || !this.isDirectory(baseCwd)) {
+                return false;
+            }
+            await this.ensureTenantContainerReady(baseCwd);
+            await this.removeWorktree(baseCwd, worktreePath).catch(error =>
+                console.warn(`[qaap-worktree] could not remove ${worktreePath}: ${this.errorMessage(error)}`));
+            await this.mutatingGit(baseCwd, ['worktree', 'prune']).catch(() => undefined);
+            await this.deleteBranch(baseCwd, branch).catch(() => undefined);
+            return true;
+        } catch (error) {
+            console.warn(`[qaap-worktree] cleanup failed: ${this.errorMessage(error)}`);
+            return false;
+        }
+    }
+
+    /** True only for `{root}/{tenant}/{slug}` below a qaap worktrees root, not a symlink. */
+    protected isManagedWorktreePath(worktreePath: string): boolean {
+        if (!path.isAbsolute(worktreePath)) {
+            return false;
+        }
+        const relative = path.relative(path.resolve(resolveQaapWorktreesRoot()), worktreePath);
+        const segments = relative.split(path.sep);
+        const inside = relative !== '' && !path.isAbsolute(relative)
+            && segments.length === 2 && segments.every(segment => segment !== '' && segment !== '..');
+        if (!inside) {
+            return false;
+        }
+        try {
+            return !fs.lstatSync(worktreePath).isSymbolicLink();
+        } catch {
+            return true; // already gone: prune + branch delete are still harmless
+        }
+    }
+
     protected async commitWorktree(worktreePath: string, message: string): Promise<void> {
         const status = await this.git(worktreePath, ['status', '--porcelain']);
         if (!status.trim()) {

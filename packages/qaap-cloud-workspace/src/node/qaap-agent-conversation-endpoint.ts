@@ -6,6 +6,7 @@
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
 import { WebSocketServer, WebSocket as WsClient } from 'ws';
@@ -364,10 +365,14 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             })();
         });
         app.delete(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
-            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+            const conv = this.getConversationIfOwned(req, res, req.params.id);
+            if (!conv) {
                 return;
             }
             const ok = this.store.delete(req.params.id);
+            if (ok) {
+                this.cleanupDeletedConversationWorktree(conv);
+            }
             res.status(ok ? 204 : 404).end();
         });
     }
@@ -1059,6 +1064,21 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
         }
+    }
+
+    /** Fire-and-forget: drop the deleted conversation's own worktree + branch unless another conversation still uses it. */
+    protected cleanupDeletedConversationWorktree(conv: QaapAgentConversation): void {
+        if (!conv.worktreeBranch || !conv.parallelBaseCwd || conv.parallelRunId) {
+            return;
+        }
+        if (this.store.listAllGroupedByCwd().some(group => path.resolve(group.cwd) === path.resolve(conv.cwd))) {
+            return;
+        }
+        void this.worktrees.removeForDeletedConversation({
+            worktreePath: conv.cwd,
+            branch: conv.worktreeBranch,
+            baseCwd: conv.parallelBaseCwd,
+        });
     }
 
     protected isWorktreeApplyAction(value: unknown): value is QaapWorktreeApplyAction {
