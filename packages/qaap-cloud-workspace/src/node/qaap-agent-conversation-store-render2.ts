@@ -69,8 +69,11 @@ export function mutatingGitExtracted(ctx: QaapAgentConversationStoreContext, cwd
 
 export function initExtracted(ctx: QaapAgentConversationStoreContext): void {
     ctx.sseBatcher = new QaapAgentConversationSseBatcher(event => {
+        // Stamp after coalescing: only events that actually go out get a sequence number.
+        const entry = ctx.eventLog.append(event);
         ctx.recordStreamMetrics(event);
         ctx.onDidChangeEmitter.fire(event);
+        ctx.onDidChangeStampedEmitter.fire(entry);
     });
     ctx.restoreReady = ctx.restoreFromDisk();
     ctx.taskRunner.onDidChangeTask(event => ctx.onTaskChanged(event));

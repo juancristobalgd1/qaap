@@ -15,6 +15,7 @@
 
 import type { Emitter } from '@theia/core/lib/common/event';
 import type { QaapGitRunResult } from './qaap-agent-conversation-store-git';
+import type { QaapConversationEventLog, QaapConversationLogEntry } from './qaap-conversation-event-log';
 import type { QaapSqliteStore } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type {
     QaapAgentConversation,
@@ -76,6 +77,8 @@ export interface QaapAgentConversationStoreContext {
     readonly wireMetricsBaselines: Map<string, QaapAgentConversationEvent>;
     readonly streamMetrics: QaapConversationStreamMetricsCollector;
     readonly onDidChangeEmitter: Emitter<QaapAgentConversationEvent>;
+    readonly eventLog: QaapConversationEventLog;
+    readonly onDidChangeStampedEmitter: Emitter<QaapConversationLogEntry>;
 
     drainTimers: Map<string, ReturnType<typeof setTimeout>>;
     restoreReady: Promise<void>;
