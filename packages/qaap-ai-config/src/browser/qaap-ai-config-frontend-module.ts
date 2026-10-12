@@ -14,33 +14,25 @@ import { PreferenceContribution } from '@theia/core/lib/common/preferences/prefe
 import { QaapCoderPromptContribution } from './qaap-coder-prompt-contribution';
 import { QaapTasksBackgroundPromptContribution } from './qaap-tasks-background-prompt-contribution';
 import { QaapAiModelDefaultsContribution } from '../common/qaap-ai-model-defaults-contribution';
-import { LanguageModelOptionContribution } from '@theia/ai-ide/lib/browser/ai-configuration/language-model-option-contribution';
-import { QaapLanguageModelOptionContribution } from './qaap-language-model-option-contribution';
 import { QaapIncrementalStreamParsingContribution } from './qaap-incremental-stream-parsing-contribution';
-import { ShellCommandPermissionService } from '@theia/ai-terminal/lib/browser/shell-command-permission-service';
-import { QaapShellCommandPermissionService } from './qaap-shell-command-permission-service';
 import { QaapTerminalPreferenceContribution } from './qaap-terminal-preferences';
 import { QaapSkillsPreferenceContribution } from './qaap-skills-preferences';
 import { QaapHarnessPreferenceContribution } from './qaap-harness-preferences';
 import { QaapAgentApprovalPreferenceContribution } from './qaap-agent-approval-preferences';
 import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-widget';
-import { QaapAiConfigurationNavigationWidget } from './qaap-ai-configuration-navigation-widget';
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
-import { AIAgentConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/agent-configuration-widget';
-import { AIAgentConfigurationViewContribution } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-view-contribution';
-import { AIConfigurationContainerWidget } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-widget';
-import { AISkillsConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/skills-configuration-widget';
-import { QaapAiAgentConfigurationWidget } from './qaap-ai-agent-configuration-widget';
-import { QaapAiConfigurationContainerWidget } from './qaap-ai-configuration-container-widget';
-import { QaapAiConfigurationViewContribution } from './qaap-ai-configuration-view-contribution';
-import { QaapAiSkillsConfigurationWidget } from './qaap-ai-skills-configuration-widget';
 import { DefaultSkillService, SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { QaapSkillService } from './qaap-skill-service';
 import { SkillPromptCoordinator } from '@theia/ai-core/lib/browser/skill-prompt-coordinator';
 import { QaapSkillPromptCoordinator } from './qaap-skill-prompt-coordinator';
 
+/**
+ * Mobile-safe AI configuration bindings (part of the `bundle-mobile` entry). The IDE's AI
+ * configuration views (`@theia/ai-ide`) and the terminal command permissions (`@theia/ai-terminal`)
+ * live in `qaap-ai-config-ide-frontend-module`; the Work Hub lands AI settings in its preferences sheet.
+ */
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapCoderPromptContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapCoderPromptContribution);
@@ -51,26 +43,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapAiModelDefaultsContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapAiModelDefaultsContribution);
 
-    bind(QaapLanguageModelOptionContribution).toSelf().inSingletonScope();
-    bind(LanguageModelOptionContribution).toService(QaapLanguageModelOptionContribution);
-
     bind(QaapIncrementalStreamParsingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapIncrementalStreamParsingContribution);
 
     bind(QaapCodexChatAgent).toSelf().inSingletonScope();
     rebind(CodexChatAgent).toService(QaapCodexChatAgent);
-
-    bind(QaapAiAgentConfigurationWidget).toSelf().inSingletonScope();
-    rebind(AIAgentConfigurationWidget).toService(QaapAiAgentConfigurationWidget);
-
-    bind(QaapAiConfigurationContainerWidget).toSelf().inSingletonScope();
-    rebind(AIConfigurationContainerWidget).toService(QaapAiConfigurationContainerWidget);
-
-    bind(QaapAiConfigurationViewContribution).toSelf().inSingletonScope();
-    rebind(AIAgentConfigurationViewContribution).toService(QaapAiConfigurationViewContribution);
-
-    bind(QaapAiSkillsConfigurationWidget).toSelf();
-    rebind(AISkillsConfigurationWidget).toService(QaapAiSkillsConfigurationWidget);
 
     bind(QaapSkillService).toSelf().inSingletonScope();
     rebind(DefaultSkillService).toService(QaapSkillService);
@@ -98,15 +75,4 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
             createWidget: () => ctx.container.get(QaapHarnessConfigurationWidget)
         }))
         .inSingletonScope();
-
-    bind(QaapAiConfigurationNavigationWidget).toSelf();
-    bind(WidgetFactory)
-        .toDynamicValue(ctx => ({
-            id: QaapAiConfigurationNavigationWidget.ID,
-            createWidget: () => ctx.container.get(QaapAiConfigurationNavigationWidget)
-        }))
-        .inSingletonScope();
-
-    bind(QaapShellCommandPermissionService).toSelf().inSingletonScope();
-    rebind(ShellCommandPermissionService).toService(QaapShellCommandPermissionService);
 });

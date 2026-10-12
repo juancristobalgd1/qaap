@@ -133,6 +133,14 @@ describe('FrontendGenerator mobile entry', () => {
             .to.deep.equal(['@theia/a/lib/x', '@theia/a/lib/x-mobile', '@theia/b/lib/y', '@theia/c/lib/z-mobile']);
     });
 
+    it('bootstraps Monaco only while a @theia/monaco module is allowlisted', () => {
+        const generator = createGenerator([{ name: '@theia/monaco', raw: {} }]);
+        const withMonaco = generator.mobileIndex({ ...MOBILE_CONFIG, frontendModules: [...MOBILE_CONFIG.frontendModules, '@theia/monaco'] });
+        expect(withMonaco).to.contain('MonacoInit.init(container)');
+        expect(withMonaco).to.contain('self.MonacoEnvironment');
+        expect(generator.mobileIndex(MOBILE_CONFIG)).to.not.contain('MonacoInit');
+    });
+
     describe('index-mobile.js', () => {
         const source = createGenerator([{ name: '@theia/monaco', raw: {} }]).mobileIndex(MOBILE_CONFIG);
 

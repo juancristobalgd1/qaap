@@ -972,6 +972,9 @@ ${Array.from(frontendModules.values(), jsModulePath => `\
      * `window.__qaapEntry` is the first statement so every module can tell which entry booted.
      */
     protected compileMobileIndexJs(frontendModules: Map<string, string>, frontendPreloadModules: Map<string, string>): string {
+        // Monaco is bootstrapped only while a `@theia/monaco` module is still allowlisted (ratchet in
+        // scripts/qaap-mobile-bundle-budget.json); the editor worker is then created lazily by Monaco.
+        const withMonaco = [...frontendModules.values()].some(modulePath => modulePath.startsWith('@theia/monaco/'));
         return `\
 // @ts-check
 window.__qaapEntry = 'mobile';
@@ -982,7 +985,13 @@ const { Container } = require('@theia/core/shared/inversify');
 const { FrontendApplicationConfigProvider } = require('@theia/core/lib/browser/frontend-application-config-provider');
 
 ${this.compileFrontendConfigPrelude()}
-
+${withMonaco ? `
+self.MonacoEnvironment = {
+    getWorkerUrl: function (moduleId, label) {
+        return './editor.worker.js';
+    }
+}
+` : ''}
 function load(container, jsModule) {
     return Promise.resolve(jsModule)
         .then(containerModule => container.load(containerModule.default));
@@ -1012,7 +1021,9 @@ module.exports = (async () => {
 
     await preload(container);
     ${this.emitStartupLog('preloaded')}
-
+${withMonaco ? `
+    const { MonacoInit } = require('@theia/monaco/lib/browser/monaco-init');
+` : ''}
     const { FrontendApplication } = require('@theia/core/lib/browser');
     const { frontendApplicationModule } = require('@theia/core/lib/browser/frontend-application-module');
     const { loggerFrontendModule } = require('@theia/core/lib/browser/logger-frontend-module');
@@ -1025,7 +1036,8 @@ module.exports = (async () => {
     try {
 ${Array.from(frontendModules.values(), jsModulePath => `\
         await load(container, ${this.importOrRequire()}('${jsModulePath}'));`).join(EOL)}
-        ${this.emitStartupLog('modules loaded')}
+${withMonaco ? `        MonacoInit.init(container);
+` : ''}        ${this.emitStartupLog('modules loaded')}
         await start();
     } catch (reason) {
         console.error('Failed to start the frontend application.');
