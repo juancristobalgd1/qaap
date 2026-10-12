@@ -56,6 +56,18 @@ describe('mobile-projects-open work hub bootstrap', () => {
         window.location.hash = '#/Users/jc/.qaap/workspaces/demo/Mockup';
     });
 
+    it('markPreferDesktopIde is a no-op in mobile mode', () => {
+        const original = window.matchMedia;
+        window.matchMedia = (() => ({ matches: true })) as unknown as typeof window.matchMedia;
+        try {
+            markPreferDesktopIde();
+            expect(window.sessionStorage.getItem('qaap.mobileProjects.preferDesktopIde')).to.equal(null);
+            expect(window.sessionStorage.getItem('qaap.mobileProjects.explicitDesktopIde')).to.equal(null);
+        } finally {
+            window.matchMedia = original;
+        }
+    });
+
     it('bootstraps agents chat for workspace routes even without persisted agents preference', () => {
         expect(shouldBootstrapMobileAgentsChat()).to.equal(true);
         expect(shouldPreferWorkHubAgentsLayout()).to.equal(false);

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import {
     clearPreferAgentsSurface,
     clearPreferDesktopIde,
@@ -106,6 +107,10 @@ export function recomputeMobileWorkHubHideIdeSidePanels(): void {
  * Returning to Work Hub re-adds them through the hub surface transitions.
  */
 export function markPreferDesktopIde(): void {
+    // Product rule: the classic IDE never opens in mobile mode (see the common preference guard).
+    if (matchesMobileOneColumnLayout()) {
+        return;
+    }
     markPreferDesktopIdePreference();
     clearMobileWorkHubSurfaceChromeForDesktopIde();
 }
