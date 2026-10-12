@@ -351,6 +351,31 @@ describe('Qaap login gate', () => {
             expect(script.getAttribute('src')).to.equal('./bundle.js?qaap-build=b1');
         });
 
+        it('stays on bundle-mobile.js when the download is merely slow (bundle watchdog)', async () => {
+            let clock: InstalledClock | undefined;
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true, mobileEntry: true } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER, mobileEntry: true } } : undefined;
+            }, undefined, {
+                headHtml: '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=b1">',
+                beforeRun: window => {
+                    mobileViewport(window);
+                    clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
+                },
+            });
+            try {
+                const { script } = await run.bundleAppended;
+                clock!.tick(30_000);
+                expect(script.getAttribute('src')).to.match(/^\.\/bundle-mobile\.js/);
+                expect(run.window.sessionStorage.getItem(FAILED_KEY)).to.equal(null);
+                expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(false);
+            } finally {
+                clock?.uninstall();
+            }
+        });
+
         it('records the failure and reloads into bundle.js when bundle-mobile.js fails to load', async () => {
             const run = startSignedIn(true);
             // The reload is a jsdom "not implemented" navigation: checked here instead of in afterEach.

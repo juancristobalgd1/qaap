@@ -236,8 +236,9 @@
     // Mobile-only entry (bundle-mobile.js / bundle-mobile.css: the Work Hub without any IDE code).
     // Loaded only when ALL hold: mobile Work Hub mode, a signed-in user, the server flag
     // QAAP_MOBILE_ENTRY (reported as `mobileEntry: true` by the auth session/config probe this gate
-    // already awaits) and no earlier failure of the mobile entry in this tab. Any failure (script
-    // error, bundle or startup watchdog) records MOBILE_ENTRY_FAILED_KEY and reloads into bundle.js.
+    // already awaits) and no earlier failure of the mobile entry in this tab. A script error or the
+    // startup watchdog records MOBILE_ENTRY_FAILED_KEY and reloads into bundle.js; a slow download
+    // (bundle watchdog) does not, since bundle.js is larger and would only be slower.
     var MOBILE_ENTRY_FAILED_KEY = 'qaap.boot.mobileEntryFailed';
     var serverMobileEntry = false;
     var mobileEntryActive = false;
@@ -277,11 +278,9 @@
 
     // Watchdog: if bundle.js never loads (network error, stale SW chunk mismatch)
     // show an error + retry UI so the user is never stuck on a blank spinner.
+    // A slow download is not a broken mobile entry: never fall back to the larger bundle.js here.
     var bundleLoadWatchdog = window.setTimeout(function () {
         if (!window.__qaapBundleLoaded) {
-            if (fallBackFromMobileEntry('bundle-timeout')) {
-                return;
-            }
             console.warn('[Qaap] bundle.js slow or failed — check network / console');
             showStartupError('bundle');
         }
