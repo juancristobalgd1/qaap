@@ -137,7 +137,7 @@ import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from '@theia/qaap-shared-core/lib/browser/qaap-copilot-owner-binding';
 import { QaapUserAiSettingsSyncContribution } from '@theia/qaap-shared-core/lib/browser/qaap-user-ai-settings-sync';
-import { CopilotAuthService } from '@theia/ai-copilot/src/common/copilot-auth-service';
+import { CopilotAuthService } from '@theia/ai-copilot/lib/common/copilot-auth-service';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
