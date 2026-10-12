@@ -17,6 +17,9 @@
  *     source bytes exceed `scripts/qaap-mobile-bundle-budget.json` -> `monacoBytes`. Source bytes
  *     (not emitted bytes) so the number is the same in development and production builds. Lower
  *     the budget whenever an import cut shrinks it; never raise it.
+ *   - HARD FAIL when a whole vendor barrel listed in WHOLE_BARRELS is reachable (all date-fns
+ *     functions and locales, all highlight.js languages): `vendorShimPlugin` in
+ *     `examples/browser/esbuild.mjs` narrows those imports, a new importer must be narrowed too.
  *
  * `--report` prints the findings and exits 0 (use while the Work Hub still imports IDE code). For
  * every forbidden package the SHORTEST import chain from the entry is printed: that list is the
@@ -33,6 +36,7 @@ const FORBIDDEN = [
     /packages\/(plugin-ext|plugin-ext-vscode|debug|notebook|vsx-registry|terminal|task)\//,
     /node_modules\/(@xterm|xterm)/
 ];
+const WHOLE_BARRELS = [/node_modules\/date-fns\/(?:index|locale)\.c?js$/, /node_modules\/highlight\.js\/lib\/index\.js$/];
 const MONACO = [/monaco-editor-core/, /packages\/monaco\//];
 const DEFAULT_BUDGET = path.join(__dirname, 'qaap-mobile-bundle-budget.json');
 
@@ -124,16 +128,27 @@ function main() {
         }
     }
 
+    const barrels = [...reachable].filter(input => WHOLE_BARRELS.some(pattern => pattern.test(normalize(input))));
+    console.log('');
+    console.log(`Whole vendor barrels reachable: ${barrels.length ? '' : 'none'}`);
+    if (barrels.length) {
+        const { chains: barrelChains } = lib.shortestChains(meta, entryInput, input => barrels.includes(input) ? display(input) : undefined);
+        for (const [barrel, chain] of barrelChains) {
+            console.log(`  WHOLE BARREL ${barrel} <- ${display(chain[chain.length - 2] || entryInput)}`);
+        }
+    }
+
     const jsonFile = arg('--json', undefined);
     if (jsonFile) {
         fs.writeFileSync(jsonFile, JSON.stringify({
             entry: display(entryInput),
             forbidden: Object.fromEntries(groups.map(group => [group, (chains.get(group) || []).map(display)])),
-            monacoBytes, monacoBudget
+            monacoBytes, monacoBudget,
+            wholeBarrels: barrels.map(display)
         }, undefined, 2) + '\n');
     }
 
-    const failures = groups.length + (overBudget ? 1 : 0);
+    const failures = groups.length + (overBudget ? 1 : 0) + barrels.length;
     if (failures) {
         console.log('');
         console.log(`${failures} finding(s)${report ? ' (report mode: not failing)' : ''}.`);

@@ -139,6 +139,44 @@ function pruneStaleFrontendChunks(metafile) {
 }
 
 /**
+ * Vendor barrels imported whole through `require()` (TS output), so esbuild cannot tree-shake them:
+ * - `@theia/ai-chat-ui` chat-date-utils uses only `formatDistance`, yet pulled all of date-fns
+ *   plus all ~100 locales (~1 MB). Its `locales[nls.locale]` lookup can only ever match a
+ *   VS Code language pack id, so exposing exactly those locales keeps the behaviour identical.
+ * - `@theia/preview` (Work Hub README, markdown preview) pulled highlight.js with all 190
+ *   languages (~1 MB). Common languages only; any other fence renders as plain escaped code,
+ *   the handler's existing fallback for unknown languages.
+ */
+const DATE_FNS_LOCALES = { enUS: 'en-US', cs: 'cs', de: 'de', es: 'es', fr: 'fr', it: 'it', ja: 'ja', ko: 'ko', pl: 'pl', ru: 'ru', tr: 'tr' };
+const HIGHLIGHT_LANGUAGES = ['bash', 'c', 'cpp', 'csharp', 'css', 'diff', 'dockerfile', 'go', 'ini', 'java', 'javascript', 'json', 'kotlin',
+    'less', 'makefile', 'markdown', 'php', 'plaintext', 'powershell', 'python', 'ruby', 'rust', 'scss', 'shell', 'sql', 'swift', 'typescript',
+    'xml', 'yaml'];
+const VENDOR_SHIM_NAMESPACE = 'qaap-vendor-shim';
+const VENDOR_SHIMS = {
+    'chat-date-utils|date-fns': "module.exports = { formatDistance: require('date-fns/formatDistance').formatDistance };",
+    'chat-date-utils|date-fns/locale': 'module.exports = {\n' + Object.entries(DATE_FNS_LOCALES)
+        .map(([name, file]) => `    ${name}: require('date-fns/locale/${file}').${name},`).join('\n') + '\n};',
+    'markdown-preview-handler|highlight.js': "const hljs = require('highlight.js/lib/core');\n" + HIGHLIGHT_LANGUAGES
+        .map(language => `hljs.registerLanguage('${language}', require('highlight.js/lib/languages/${language}'));`).join('\n')
+        + '\nmodule.exports = hljs;',
+};
+const VENDOR_SHIM_RESOLVE_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+const vendorShimPlugin = {
+    name: 'qaap-vendor-shims',
+    setup(build) {
+        build.onResolve({ filter: /^(date-fns(\/locale)?|highlight\.js)$/ }, args => {
+            const importer = path.basename(args.importer, '.js');
+            const key = `${importer}|${args.path}`;
+            return VENDOR_SHIMS[key] ? { path: key, namespace: VENDOR_SHIM_NAMESPACE } : undefined;
+        });
+        build.onLoad({ filter: /.*/, namespace: VENDOR_SHIM_NAMESPACE }, args => ({
+            contents: VENDOR_SHIMS[args.path], loader: 'js', resolveDir: VENDOR_SHIM_RESOLVE_DIR,
+        }));
+    },
+};
+
+/**
  * Truly-lazy stylesheets. A CSS import — static or `import()` — is merged into
  * the entry's bundle.css by esbuild whatever its import kind (TS compiles
  * `import()` to `require()` anyway), so a "lazy" CSS import never saved a
@@ -328,7 +366,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
+    plugins: [esmDiInteropPlugin, vendorShimPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
 };
 const workerOptions = {
     ...browserOptions,
