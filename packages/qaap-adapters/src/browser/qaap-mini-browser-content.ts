@@ -43,6 +43,7 @@ import {
 import { getSameOriginPreviewProxyPort, normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import { getQaapPreviewFrameSlot } from './qaap-mini-browser-frame-lifecycle';
+import { QAAP_FRAME_CHECK_API_PATH, QaapFrameCheckResult } from '../common/qaap-frame-check';
 import {
     isQaapExternalPreviewUrl,
     QAAP_BLOCKED_FRAME_TIMEOUT_MS,
@@ -254,11 +255,33 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         }
         const onLoad = (): void => this.clearBlockedFrameFallback();
         this.frame.addEventListener('load', onLoad, { once: true });
+        void this.preflightExternalFrame(url, onLoad);
         this.blockedFrameTimer = window.setTimeout(() => {
             this.blockedFrameTimer = undefined;
             this.frame.removeEventListener('load', onLoad);
             this.showBlockedFrameCard(url);
         }, QAAP_BLOCKED_FRAME_TIMEOUT_MS);
+    }
+
+    /** Backend HEAD check of `X-Frame-Options` / `frame-ancestors`; a blocked answer shows the card immediately. Failures are ignored. */
+    protected async preflightExternalFrame(url: string, onLoad: () => void): Promise<void> {
+        try {
+            const response = await fetch(`${window.location.origin}${QAAP_FRAME_CHECK_API_PATH}?url=${encodeURIComponent(url)}`, { cache: 'no-store' });
+            if (!response.ok) {
+                return;
+            }
+            const result = await response.json() as QaapFrameCheckResult;
+            if (result.embeddable === false && this.frameSrc() === url && !this.blockedFrameCard && !this.isDisposed) {
+                this.frame.removeEventListener('load', onLoad);
+                if (this.blockedFrameTimer !== undefined) {
+                    window.clearTimeout(this.blockedFrameTimer);
+                    this.blockedFrameTimer = undefined;
+                }
+                this.showBlockedFrameCard(url);
+            }
+        } catch {
+            /* preflight is best-effort; the load timer remains */
+        }
     }
 
     protected showBlockedFrameCard(url: string): void {
