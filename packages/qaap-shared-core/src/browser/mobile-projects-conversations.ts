@@ -24,6 +24,8 @@ import {
     type QaapConversationChangeEvent,
 } from '../common/qaap-conversation-change';
 import { QaapThreadStore } from '../common/qaap-thread-store';
+import type { QaapLiveFeedCursor } from '../common/qaap-live-feed-cursor';
+import { focusThreadExtracted } from './mobile-projects-conversations-live';
 import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
 import { applyConversationGroupsExtracted, cacheDocumentExtracted, cancelConversationLiveExtracted, dispatchSseEventExtracted, emitConversationChangeExtracted, findConversationsForProjectExtracted, findSummaryByIdExtracted, findTheiaSerializedConversationBySessionIdExtracted, getConversationsForCwdExtracted, getSubmitLatencyMarksExtracted, getTheiaConversationExtracted, installVisibilityReconnectExtracted, mergeCwdConversationListsExtracted, openSseStreamExtracted, openWebSocketExtracted, perfProbeSeedSummariesExtracted, perfProbeTickStreamingSummariesExtracted, prefetchDocumentExtracted, prefetchDocumentsExtracted, primeFromAllExtracted, recordSnapshotExtracted, recordSubmitLatencyMarkExtracted, refreshTheiaChatSessionsForProjectsExtracted, removeSnapshotExtracted, schedulePrimeFromAllExtracted, startExtracted } from './mobile-projects-conversations-render';
 import { clearReconnectTimersExtracted, closeSseExtracted, closeWebSocketExtracted, dispatchLiveMessageDeltaExtracted, dispatchLiveMessageExtracted, dispatchServerPayloadExtracted, findTheiaSummaryExtracted, markStreamingTransportsExtracted, readJsonExtracted, recordClientStreamMetricsExtracted, refreshSummaryFromLiveDeltaExtracted, refreshSummaryFromLiveMessageExtracted, resolvePreviewDeltaExtracted, scheduleSseReconnectExtracted, scheduleWebSocketReconnectExtracted } from './mobile-projects-conversations-streaming';
@@ -45,6 +47,8 @@ export interface ConversationMessageEvent {
     readonly conversationId: string;
     readonly cwd: string;
     readonly message: QaapAgentMessageDTO;
+    /** Live protocol v2 sequence number. */
+    readonly seq?: number;
 }
 export interface ConversationMessageDeltaEvent {
     readonly type: 'message_delta';
@@ -52,6 +56,8 @@ export interface ConversationMessageDeltaEvent {
     readonly cwd: string;
     readonly messageId: string;
     readonly delta: QaapAgentMessageWireDelta;
+    /** Live protocol v2 sequence number. */
+    readonly seq?: number;
 }
 export type ConversationLiveMessageEvent = ConversationMessageEvent | ConversationMessageDeltaEvent;
 interface ConversationDeletedEvent {
@@ -90,8 +96,23 @@ interface ConversationSnapshotEvent {
         readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO>;
     }>;
 }
+/** Protocol v2: the `snapshot` payload plus the live cursor it was cut at. */
+interface ConversationResyncEvent {
+    readonly type: 'resync';
+    readonly epoch: string;
+    readonly seq: number;
+    readonly groups: ConversationSnapshotEvent['groups'];
+}
+/** Protocol v2: the hello was answered by replay; nothing is missing. */
+interface ConversationResumedEvent {
+    readonly type: 'resumed';
+    readonly epoch: string;
+    readonly seq: number;
+}
 export type ConversationServerEvent =
     | ConversationSnapshotEvent
+    | ConversationResyncEvent
+    | ConversationResumedEvent
     | ConversationCreatedEvent
     | ConversationMessageEvent
     | ConversationMessageDeltaEvent
@@ -309,6 +330,21 @@ export class MobileProjectsConversations {
     restoreSnapshot(conv: QaapAgentConversationSummaryDTO): void {
         this.deletedConversationIds.delete(conv.id);
         this.recordSnapshot(conv);
+    }
+
+    /** Protocol v2 resume cursor, focus bookkeeping and dedupe; `undefined` when `qaap.liveV2=0` selects v1. */
+    public liveFeed: QaapLiveFeedCursor | undefined;
+    /** @internal Used by the extracted mobile-projects-conversations-* modules. */
+    public liveFeedResolved = false;
+    /** @internal Used by the extracted mobile-projects-conversations-* modules. */
+    public readonly focusRefs = new Map<string, number>();
+
+    /**
+     * Declare that this thread's live `message` events are needed (its transcript is open). With
+     * protocol v2 the server only streams message events for focused threads. Dispose to unfocus.
+     */
+    focusThread(conversationId: string): Disposable {
+        return focusThreadExtracted(this, conversationId);
     }
 
     cacheDocument(document: QaapAgentConversationDTO): boolean {

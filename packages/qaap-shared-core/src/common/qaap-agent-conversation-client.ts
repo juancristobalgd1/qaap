@@ -249,6 +249,9 @@ export interface QaapConversationCheckpointDTO {
  */
 export interface QaapAgentConversationDTO {
     readonly id: string;
+    /** Live-feed cursor of the GET that produced this document (`GET /:id`); absent on older backends. */
+    readonly epoch?: string;
+    readonly seq?: number;
     readonly cwd: string;
     readonly agentId: string;
     readonly title: string;

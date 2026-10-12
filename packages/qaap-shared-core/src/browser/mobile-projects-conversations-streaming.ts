@@ -32,6 +32,25 @@ export function dispatchServerPayloadExtracted(ctx: MobileProjectsConversationsC
                 }
                 ctx.applyConversationGroups(payload.groups);
                 return;
+            case 'resync':
+                // Protocol v2: same payload as a snapshot (the cursor was already taken by the live feed).
+                if (ctx.wsSnapshotFallbackHandle !== undefined) {
+                    window.clearTimeout(ctx.wsSnapshotFallbackHandle);
+                    ctx.wsSnapshotFallbackHandle = undefined;
+                }
+                ctx.applyConversationGroups(payload.groups);
+                return;
+            case 'resumed':
+                // Protocol v2: the hello was answered by replay, so the reconnect needs no snapshot.
+                if (ctx.wsSnapshotFallbackHandle !== undefined) {
+                    window.clearTimeout(ctx.wsSnapshotFallbackHandle);
+                    ctx.wsSnapshotFallbackHandle = undefined;
+                }
+                if (ctx.snapshotState !== 'ready') {
+                    ctx.snapshotState = 'ready';
+                    ctx.emitConversationChange({ kind: 'snapshot' });
+                }
+                return;
             case 'created':
             case 'updated': {
                 if (ctx.deletedConversationIds.has(payload.conversation.id)) {
@@ -227,7 +246,7 @@ export function recordClientStreamMetricsExtracted(ctx: MobileProjectsConversati
 export function refreshSummaryFromLiveMessageExtracted(ctx: MobileProjectsConversationsContext, payload: ConversationMessageEvent): void {
         // Keep cached documents fresh for non-active conversations so the
         // transcript hydrates instantly when the user switches back.
-        ctx.threadStore.appendLiveMessage(payload.conversationId, payload.message);
+        ctx.threadStore.appendLiveMessage(payload.conversationId, payload.message, payload.seq);
         const existing = ctx.threadStore.findSummaryById(payload.conversationId);
         if (!existing) {
             ctx.emitConversationChange({
@@ -272,7 +291,7 @@ export function refreshSummaryFromLiveDeltaExtracted(ctx: MobileProjectsConversa
             });
             return;
         }
-        ctx.threadStore.applyWireDelta(payload.conversationId, payload.messageId, payload.delta);
+        ctx.threadStore.applyWireDelta(payload.conversationId, payload.messageId, payload.delta, payload.seq);
         const previewDelta = ctx.resolvePreviewDelta(payload.delta);
         const updated: QaapAgentConversationSummaryDTO = {
             ...existing,
