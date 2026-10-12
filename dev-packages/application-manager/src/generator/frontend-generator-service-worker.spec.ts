@@ -152,6 +152,6 @@ describe('FrontendGenerator service worker caching strategy', () => {
         (generator as unknown as { pck: unknown }).pck = { pck: { version: '1.0.0' }, props: { frontend: { config: { applicationName: 'Qaap' } } } };
         (generator as unknown as { options: unknown }).options = { mode: 'production' };
         const js = generator.serviceWorkerScript();
-        expect(js).to.contain("name !== SHELL_CACHE && name !== RUNTIME_CACHE");
+        expect(js).to.contain('name !== SHELL_CACHE && name !== RUNTIME_CACHE');
     });
 });
