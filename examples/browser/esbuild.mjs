@@ -139,6 +139,42 @@ function pruneStaleFrontendChunks(metafile) {
 }
 
 /**
+ * Fonts are inlined as data: URLs (dataurl loader), so every format a vendor
+ * `@font-face` lists is shipped even though browsers only ever fetch woff2
+ * (Font Awesome 4 alone listed eot twice, woff, ttf and svg: ~1.2 MB of dead
+ * base64 in each bundle CSS). Keep only the woff2 source when there is one.
+ */
+const FONT_FACE = /@font-face\s*\{[^}]*\}/g;
+const WOFF2_SOURCE = /url\([^)]*\)\s*format\(\s*['"]?woff2['"]?\s*\)/;
+const SRC_DECLARATION = /src\s*:[^;}]*;?/g;
+
+const woff2OnlyFontsPlugin = {
+    name: 'qaap-woff2-only-fonts',
+    setup(build) {
+        build.onLoad({ filter: /[\\/]node_modules[\\/].*\.css$/ }, async args => {
+            const css = await fs.promises.readFile(args.path, 'utf8');
+            if (!css.includes('@font-face')) {
+                return undefined;
+            }
+            const contents = css.replace(FONT_FACE, block => {
+                const woff2 = block.match(WOFF2_SOURCE);
+                // Inline data: sources may contain ';' — leave such blocks untouched.
+                if (!woff2 || block.includes('data:')) {
+                    return block;
+                }
+                let first = true;
+                return block.replace(SRC_DECLARATION, () => {
+                    const keep = first ? `src:${woff2[0]};` : '';
+                    first = false;
+                    return keep;
+                });
+            });
+            return { contents, loader: 'css', resolveDir: path.dirname(args.path) };
+        });
+    },
+};
+
+/**
  * Truly-lazy stylesheets. A CSS import — static or `import()` — is merged into
  * the entry's bundle.css by esbuild whatever its import kind (TS compiles
  * `import()` to `require()` anyway), so a "lazy" CSS import never saved a
@@ -328,7 +364,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
+    plugins: [esmDiInteropPlugin, woff2OnlyFontsPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
 };
 const workerOptions = {
     ...browserOptions,
