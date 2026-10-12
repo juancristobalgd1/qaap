@@ -104,6 +104,14 @@ describe('Qaap login gate', () => {
             expect(run.document.querySelectorAll('#' + PLACEHOLDER_ID).length).to.equal(1);
         });
 
+        it('mobile: shows no placeholder once the Work Hub has already lifted the guard', async () => {
+            const run = startGuard(true);
+            await run.bundleAppended;
+            run.document.documentElement.classList.remove('theia-mobile-workhub-boot');
+            guardClock!.tick(8000);
+            expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+        });
+
         it('desktop: still lifts the boot guard after the timeout and shows no placeholder', async () => {
             const run = startGuard(false);
             await run.bundleAppended;

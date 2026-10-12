@@ -131,6 +131,10 @@
             // Only lift the html boot guard — body classes are owned by @theia/qaap-work-hub and
             // must stay active while Work Hub is the surface (stripping them leaks Explorer).
             window.setTimeout(function () {
+                if (!document.documentElement.classList.contains('theia-mobile-workhub-boot')) {
+                    // Work Hub already mounted and lifted the guard: nothing to cover.
+                    return;
+                }
                 if (isMobileMode) {
                     // Mobile never reveals the IDE shell: keep the guard and show a lightweight
                     // placeholder until Work Hub mounts (clearMobileWorkHubBootGuard removes it).
