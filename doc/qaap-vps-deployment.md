@@ -67,6 +67,7 @@ Edit `.env`:
 | `QAAP_GITHUB_CLIENT_ID` / `SECRET` | from GitHub OAuth app | Login (or `QAAP_SKIP_AUTH=true` for private labs) |
 | `OPENROUTER_API_KEY` | `sk-or-…` | Powers `@qaiq` when no model is set in Settings |
 | `QAAP_DEFAULT_AGENT` | `qaiq` | Default agent (already the image default) |
+| `QAAP_MOBILE_ENTRY` | unset (off) | `1` lets the login gate boot `bundle-mobile.js` (Work Hub without IDE code) for signed-in phones; a failure falls back to `bundle.js` for the tab |
 | `CODEX_CLI_VERSION` | `0.144.5` | Codex CLI version for a source build |
 | `CLAUDE_CODE_VERSION` | `latest` | Claude Code CLI version for a source build |
 | `ANTIGRAVITY_CLI_VERSION` | `latest` | Antigravity CLI version for a source build |

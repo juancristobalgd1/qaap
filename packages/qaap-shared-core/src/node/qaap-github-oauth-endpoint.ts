@@ -79,6 +79,7 @@ import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-ident
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
 import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
+import { qaapMobileEntryProbeFields } from './qaap-mobile-entry-flag';
 import {
     QaapGitProgressParser,
     describeRepositoryImportFailure,
@@ -589,6 +590,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             // "which build am I actually on?" during deploys — the post-deploy gate asserts
             // it matches the pushed commit.
             ...(build ? { build } : {}),
+            // QAAP_MOBILE_ENTRY: the login gate may boot bundle-mobile.js (absent while off).
+            ...qaapMobileEntryProbeFields(),
         });
     }
 
@@ -603,11 +606,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.json({
                 signedIn: true,
                 user: auth.session.user,
+                ...qaapMobileEntryProbeFields(),
             });
             return;
         }
         if (auth.kind === 'skip') {
-            res.json({ signedIn: true, user: SKIP_AUTH_DEV_USER });
+            res.json({ signedIn: true, user: SKIP_AUTH_DEV_USER, ...qaapMobileEntryProbeFields() });
             return;
         }
         res.json({ signedIn: false });
