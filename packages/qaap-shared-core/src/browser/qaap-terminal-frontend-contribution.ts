@@ -86,8 +86,9 @@ export class QaapTerminalFrontendContribution extends TerminalFrontendContributi
     }
 
     /*
-     * Mobile mode never opens a terminal in the IDE shell. Terminal creation for the Work Hub and the
-     * project bootstrap goes through `newTerminal` (no shell attachment), which stays untouched.
+     * Mobile mode never opens a terminal in the IDE shell (the bottom panel is IDE UI). Work Hub
+     * terminals are created with `newTerminal` and attached into the hub DOM by the transcript terminal
+     * surface (`createTranscriptTerminalSurface`), which these overrides do not touch.
      */
     override async open(widget: TerminalWidget, options?: WidgetOpenerOptions): Promise<void> {
         if (matchesMobileOneColumnLayout()) {

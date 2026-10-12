@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     type QaapAgentConversationDTO,
@@ -145,9 +144,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     }
 
     executionSurfaceTabForProject(project: MobileProjectEntry): TranscriptTab {
-        const tab = this.host.executionSurfaceTabByProjectId.get(project.id) ?? 'messages';
-        // Mobile mode has no Terminal surface: a stale or programmatic 'terminal' selection lands on Preview.
-        return tab === 'terminal' && matchesMobileOneColumnLayout() ? 'preview' : tab;
+        return this.host.executionSurfaceTabByProjectId.get(project.id) ?? 'messages';
     }
 
     setExecutionSurfaceTab(project: MobileProjectEntry, tab: TranscriptTab): void {

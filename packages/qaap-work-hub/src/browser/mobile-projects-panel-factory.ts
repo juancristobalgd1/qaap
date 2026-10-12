@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import type { LabelProvider } from '@theia/core/lib/browser';
 import type { ColorRegistry } from '@theia/core/lib/browser/color-registry';
@@ -293,8 +292,7 @@ export class MobileProjectsPanelFactory {
                     deps.decorationsService,
                     deps.colorRegistry,
                 ),
-                // Mobile mode never creates a terminal: no services means no TerminalWidget anywhere in the hub.
-                createTranscriptTerminalViewServices: () => matchesMobileOneColumnLayout() || !deps.terminalService
+                createTranscriptTerminalViewServices: () => !deps.terminalService
                     ? undefined
                     : createTranscriptTerminalViewServices(
                         deps.terminalService,

@@ -120,8 +120,9 @@ jobs:
           npm run build:browser
           npm run download:plugins
 
-      # Product rule: on mobile the Theia IDE never loads. Fails when the bundle-mobile entry reaches
-      # an IDE package (plugin host, debug, notebook, VSX, terminal, task, xterm) and prints the
+      # Product rule: on mobile the Theia IDE UI never loads (Work Hub features, terminal included, do).
+      # Fails when the bundle-mobile entry reaches an IDE package (plugin host, debug, notebook, VSX,
+      # task) and prints the
       # shortest import chain; Monaco is a ratchet (scripts/qaap-mobile-bundle-budget.json, lower
       # only). Cut a new chain with a mobile-safe/IDE-only module split or the QaapIde* bridge.
       - name: Mobile bundle guard

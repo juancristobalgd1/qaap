@@ -1,5 +1,4 @@
 import type { TranscriptTerminalSliderState } from './mobile-projects-transcript-surfaces-ui';
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
@@ -32,9 +31,6 @@ import {
 
 export async function ensureTranscriptTerminalTabExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
-    if (matchesMobileOneColumnLayout()) {
-        return;
-    }
     const host = ctx.executionTerminalHost();
     if (!host) {
         return;
@@ -222,9 +218,6 @@ export async function launchAgentTuiInTranscriptTerminalExtracted(ctx: MobilePro
     summary: QaapAgentConversationSummaryDTO,
     agentId: string,
     options?: { readonly login?: boolean },): Promise<void> {
-    if (matchesMobileOneColumnLayout()) {
-        return;
-    }
     const command = options?.login
         ? resolveInteractiveAgentLoginCommand(agentId)
         : resolveInteractiveAgentCliBin(agentId);

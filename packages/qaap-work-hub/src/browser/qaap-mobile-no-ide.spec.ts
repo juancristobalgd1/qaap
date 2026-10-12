@@ -32,7 +32,8 @@ disableImportJSDOM();
 
 /**
  * Product rule: in mobile mode (`matchesMobileOneColumnLayout()`) the Theia IDE never opens and the
- * Work Hub offers no path into it. Mobile is stubbed on through `window.matchMedia`.
+ * Work Hub offers no path into it, while every Work Hub feature (Files, Terminal, Changes) stays.
+ * Mobile is stubbed on through `window.matchMedia`.
  */
 describe('mobile mode never opens the IDE', () => {
 
@@ -106,13 +107,13 @@ describe('mobile mode never opens the IDE', () => {
         expect(calls).to.deep.equal([]);
     });
 
-    it('Work Hub execution surface offers no Terminal tab', () => {
+    it('Work Hub execution surface offers Preview, Files and Terminal', () => {
         const ids = executionSurfaceTabSpecsExtracted({} as never).map(spec => spec.id);
-        expect(ids).to.not.include('terminal');
+        expect(ids).to.deep.equal(['preview', 'files', 'terminal']);
         const ui = new MobileProjectsExecutionSurfaceTabsUi({
             executionSurfaceTabByProjectId: new Map([['p', 'terminal']]),
         } as never);
-        expect(ui.executionSurfaceTabForProject({ id: 'p' } as never)).to.equal('preview');
+        expect(ui.executionSurfaceTabForProject({ id: 'p' } as never)).to.equal('terminal');
     });
 
     it('Open IDE from the Agents hub runs no command', async () => {

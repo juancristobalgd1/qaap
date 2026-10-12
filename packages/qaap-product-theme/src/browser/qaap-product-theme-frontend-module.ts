@@ -30,22 +30,27 @@ import '../../src/browser/style/qaap-notifications.css';
 
 // Widget-specific sheets (VSX extensions, terminal, getting started) are not listed above:
 // they are `?qaap-lazy` stylesheets attached before their widget is first created
-// (QaapLazyWidgetStylesheets), so they no longer weigh on bundle.css / first paint. Those three
-// widgets are IDE-only: their contributions live in `qaap-product-theme-ide-frontend-module`.
+// (QaapLazyWidgetStylesheets), so they no longer weigh on bundle.css / first paint. The terminal
+// one is registered here because the Work Hub terminal surface uses it on mobile too; the VSX and
+// getting-started ones are IDE-only and live in `qaap-product-theme-ide-frontend-module`.
 //
-// This module is mobile-safe (part of the `bundle-mobile` entry): it must not import the terminal
-// or any other IDE package.
+// This module is mobile-safe (part of the `bundle-mobile` entry): apart from the terminal the Work
+// Hub uses, it must not import IDE packages.
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { bindRootContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { ColorContribution } from '@theia/core/lib/browser/color-application-contribution';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { TerminalThemeService } from '@theia/terminal/lib/browser/terminal-theme-service';
+import { TERMINAL_WIDGET_FACTORY_ID } from '@theia/terminal/lib/browser/terminal-widget-impl';
 import { QaapWorkbenchColorContribution } from './qaap-workbench-color-contribution';
 import { QaapThemeContribution } from './qaap-theme-contribution';
 import { QaapChatScrollFadeContribution } from './qaap-chat-scroll-fade-contribution';
+import { QaapTerminalThemeService } from './qaap-terminal-theme-service';
+import { QaapLazyStylesheets } from './qaap-lazy-stylesheets';
 import { QaapLazyWidgetStylesheets, QaapWidgetStylesheetContribution } from './qaap-lazy-widget-stylesheets';
 
-export default new ContainerModule(bind => {
+export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapWorkbenchColorContribution).toSelf().inSingletonScope();
     bind(ColorContribution).toService(QaapWorkbenchColorContribution);
 
@@ -58,4 +63,14 @@ export default new ContainerModule(bind => {
     bindRootContributionProvider(bind, QaapWidgetStylesheetContribution);
     bind(QaapLazyWidgetStylesheets).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapLazyWidgetStylesheets);
+
+    bind(QaapTerminalThemeService).toSelf().inSingletonScope();
+    rebind(TerminalThemeService).toService(QaapTerminalThemeService);
+    bind<QaapWidgetStylesheetContribution>(QaapWidgetStylesheetContribution).toConstantValue({
+        // IDE terminals and the Work Hub transcript terminal host both come from this factory.
+        factoryIds: [TERMINAL_WIDGET_FACTORY_ID],
+        loadStylesheets: () => QaapLazyStylesheets.loadModules(
+            import('../../src/browser/style/qaap-terminal-mobile.css?qaap-lazy'),
+        ),
+    });
 });

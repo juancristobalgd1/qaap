@@ -783,9 +783,6 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
-    if (tab === 'terminal' && matchesMobileOneColumnLayout()) {
-        tab = 'preview';
-    }
     if (tab === 'review' && !matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
         void ctx.host.openTranscriptChanges?.();
         return;

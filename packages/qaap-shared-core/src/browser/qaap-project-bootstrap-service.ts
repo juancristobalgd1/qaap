@@ -171,32 +171,37 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public readonly detector: QaapProjectBootstrapDetector;
 
-    /** Desktop: the IDE terminal (unchanged behaviour). Undefined in the `bundle-mobile` entry. */
+    /** The terminal service (both entries). Desktop runs install/dev commands in it. */
     @inject(QaapIdeTerminalService) @optional()
     protected readonly ideTerminalService: QaapIdeTerminalService | undefined;
 
     @inject(QaapIdeTerminalWatcher) @optional()
     protected readonly ideTerminalWatcher: QaapIdeTerminalWatcher | undefined;
 
-    /** Mobile: runs install/dev commands on the terminal backend without `@theia/terminal` or xterm. */
+    /**
+     * Mobile (`bundle-mobile` entry only): runs install/dev commands on the terminal backend without a
+     * widget. Mobile never attaches bootstrap terminals to the IDE shell, and a `TerminalWidget` that is
+     * not attached and visible buffers its output instead of emitting `onOutput`, which the dev-server
+     * port detection and log tail rely on. So when bound it takes precedence over the terminal service.
+     */
     @inject(QaapHeadlessTerminalService) @optional()
     protected readonly headlessTerminalService: QaapHeadlessTerminalService | undefined;
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public get terminalService(): TerminalService {
-        return this.ideTerminalService ?? this.requireHeadlessTerminalService().asTerminalService();
+        return this.headlessTerminalService?.asTerminalService() ?? this.requireIdeTerminal(this.ideTerminalService);
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public get terminalWatcher(): TerminalWatcher {
-        return this.ideTerminalWatcher ?? this.requireHeadlessTerminalService().asTerminalWatcher();
+        return this.headlessTerminalService?.asTerminalWatcher() ?? this.requireIdeTerminal(this.ideTerminalWatcher);
     }
 
-    protected requireHeadlessTerminalService(): QaapHeadlessTerminalService {
-        if (!this.headlessTerminalService) {
-            throw new Error('QaapProjectBootstrapService: neither the IDE terminal nor the headless runner is bound.');
+    protected requireIdeTerminal<T>(service: T | undefined): T {
+        if (!service) {
+            throw new Error('QaapProjectBootstrapService: neither the headless runner nor the terminal service is bound.');
         }
-        return this.headlessTerminalService;
+        return service;
     }
 
     @inject(MiniBrowserOpenHandler)
