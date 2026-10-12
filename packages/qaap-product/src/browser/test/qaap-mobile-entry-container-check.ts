@@ -173,6 +173,33 @@ describe('bundle-mobile entry container', function (): void {
         expect(contributions.length).to.be.greaterThan(20);
         expect(contributions).to.include(await container.getAsync(MobileOneColumnShellContribution));
         expect(await container.getAsync(ChatViewWidget)).to.not.equal(undefined);
+        // Contribution points the Work Hub collects lazily (after start): every binding must resolve.
+        /* eslint-disable @typescript-eslint/no-require-imports */
+        const contributionPoints: Array<[string, unknown]> = [
+            ['CommandContribution', require('@theia/core/lib/common/command').CommandContribution],
+            ['MenuContribution', require('@theia/core/lib/common/menu').MenuContribution],
+            ['KeybindingContribution', require('@theia/core/lib/browser/keybinding').KeybindingContribution],
+            ['ColorContribution', require('@theia/core/lib/browser/color-application-contribution').ColorContribution],
+            ['OpenHandler', require('@theia/core/lib/browser/opener-service').OpenHandler],
+            ['WidgetFactory', require('@theia/core/lib/browser/widget-manager').WidgetFactory],
+            ['AIVariableContribution', require('@theia/ai-core/lib/common/variable-service').AIVariableContribution],
+            ['ToolProvider', require('@theia/ai-core/lib/common/tool-invocation-registry').ToolProvider],
+            ['ChatAgent', require('@theia/ai-chat/lib/common/chat-agents').ChatAgent],
+        ];
+        /* eslint-enable @typescript-eslint/no-require-imports */
+        const unresolved: string[] = [];
+        for (const [name, identifier] of contributionPoints) {
+            if (!container.isBound(identifier)) {
+                continue;
+            }
+            try {
+                await container.getAllAsync(identifier);
+            } catch (error) {
+                unresolved.push(`${name}: ${(error instanceof Error ? error.message : String(error)).split('\n')[0]}`);
+            }
+        }
+        expect(unresolved).to.deep.equal([]);
+
         const bootstrap = await container.getAsync(QaapProjectBootstrapService);
         // The project bootstrap runs on the headless runner: no IDE terminal in this entry.
         expect(bootstrap.terminalService.constructor.name).to.equal('QaapHeadlessTerminalService');

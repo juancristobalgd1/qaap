@@ -59,6 +59,7 @@
       "@theia/ai-core",
       "@theia/ai-anthropic",
       "@theia/process",
+      "@theia/file-search",
       "@theia/ai-chat",
       "@theia/navigator",
       "@theia/userstorage",

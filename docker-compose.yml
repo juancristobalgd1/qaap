@@ -53,6 +53,7 @@ services:
       # Example: https://161.97.69.219.sslip.io
       QAAP_OAUTH_PUBLIC_URL: ${QAAP_OAUTH_PUBLIC_URL:-}
       QAAP_SKIP_AUTH: ${QAAP_SKIP_AUTH:-false}
+      QAAP_MOBILE_ENTRY: ${QAAP_MOBILE_ENTRY:-}
       # Production denies admission until actual invited GitHub logins are configured.
       QAAP_BETA_ALLOWED_LOGINS: ${QAAP_BETA_ALLOWED_LOGINS:-}
       # Isolated preview origins (*.<domain> must reach this server). Required with invited
