@@ -94,6 +94,9 @@ export class QaapConversationLiveSession {
     focus(id: string, sinceSeq: number | undefined, epoch: string | undefined): void {
         const { log } = this.deps;
         this.focused.add(id);
+        // Marker first: message frames for this thread that were already in flight (from an earlier focus
+        // session) precede it on the wire, everything after it belongs to this focus request.
+        this.deps.send(JSON.stringify({ type: 'focused', id, seq: log.seq }));
         if (sinceSeq === undefined) {
             return;
         }

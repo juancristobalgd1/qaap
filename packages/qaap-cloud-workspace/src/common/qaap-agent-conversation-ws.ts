@@ -25,6 +25,7 @@ export const QAAP_AGENT_CONVERSATION_LIVE_PROTOCOL_V2 = '2';
 export type QaapAgentConversationWsV2ControlFrame =
     | { readonly type: 'resync'; readonly epoch: string; readonly seq: number; readonly groups: readonly unknown[] }
     | { readonly type: 'resumed'; readonly epoch: string; readonly seq: number }
+    | { readonly type: 'focused'; readonly id: string; readonly seq: number }
     | { readonly type: 'thread_resync'; readonly id: string; readonly seq: number }
     | { readonly type: 'heartbeat'; readonly seq: number }
     | { readonly type: 'pong'; readonly seq: number };

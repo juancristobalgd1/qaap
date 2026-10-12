@@ -88,10 +88,10 @@ describe('QaapConversationLiveSession (protocol v2)', () => {
         h.session.handle({ op: 'focus', id: 't1' });
         h.emit(message('t1', 'm2'));
         h.emit(message('t2', 'm3'));
-        expect(h.frames.map(f => f.type)).to.deep.equal(['updated', 'message']);
+        expect(h.frames.map(f => f.type)).to.deep.equal(['updated', 'focused', 'message']);
         h.session.handle({ op: 'unfocus', id: 't1' });
         h.emit(message('t1', 'm4'));
-        expect(h.frames).to.have.length(2);
+        expect(h.frames).to.have.length(3);
     });
 
     it('focus with sinceSeq replays only that thread messages, or thread_resync when the ring lost them', () => {
@@ -102,14 +102,14 @@ describe('QaapConversationLiveSession (protocol v2)', () => {
         h.emit(message('t1', 'm3')); // 3
         h.frames.length = 0;
         h.session.handle({ op: 'focus', id: 't1', sinceSeq: 1, epoch: h.log.epoch });
-        expect(h.frames.map(f => [f.type, f.seq])).to.deep.equal([['message', 3]]);
+        expect(h.frames.map(f => [f.type, f.seq])).to.deep.equal([['focused', 3], ['message', 3]]);
         h.frames.length = 0;
         h.emit(message('t1', 'm5')); // 4 evicts seq 1
         h.session.handle({ op: 'focus', id: 't3', sinceSeq: 0, epoch: h.log.epoch });
-        expect(h.frames.map(f => f.type)).to.deep.equal(['message', 'thread_resync']);
+        expect(h.frames.map(f => f.type)).to.deep.equal(['message', 'focused', 'thread_resync']);
         h.frames.length = 0;
         h.session.handle({ op: 'focus', id: 't4', sinceSeq: 2, epoch: 'stale-boot' });
-        expect(h.frames.map(f => f.type)).to.deep.equal(['thread_resync']);
+        expect(h.frames.map(f => f.type)).to.deep.equal(['focused', 'thread_resync']);
     });
 
     it('every v2 frame carries seq (events, pong, heartbeat)', () => {
