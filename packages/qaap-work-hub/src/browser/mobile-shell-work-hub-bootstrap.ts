@@ -10,6 +10,7 @@ import {
     clearMobileProjectsHomeVisible,
     clearPreferAgentsSurface,
     clearMobileWorkHubBootGuard,
+    releaseMobileWorkHubBootGuardOnTimeout,
     markMobileProjectsHomeVisible,
     markPreferAgentsSurface,
     peekPreferDesktopIde,
@@ -287,7 +288,8 @@ export class MobileShellWorkHubBootstrapController {
             // Safety: if bootstrap was aborted or failed, clear the boot guard so the user doesn't
             // see a permanent blank screen. The 15s safety timeout in onStart is the ultimate fallback.
             if (document.documentElement.classList.contains('theia-mobile-workhub-boot')) {
-                clearMobileWorkHubBootGuard();
+                // Mobile keeps the guard and shows the connecting placeholder; a later (re)connect retries.
+                releaseMobileWorkHubBootGuardOnTimeout();
             }
         }
     }

@@ -82,3 +82,18 @@ export function resolveWatermarkCommandId(
 ): string | undefined {
     return commandIds.find(isRegistered);
 }
+
+export interface QaapWatermarkVisibilityState {
+    /** One-column mobile layout (class on the shell or the mobile media query). */
+    readonly mobileLayout: boolean;
+    readonly mainAreaEmpty: boolean;
+    readonly projectsPanelVisible: boolean;
+}
+
+/**
+ * The empty-main-area watermark with keyboard-shortcut hints is IDE chrome: it is never rendered in
+ * mobile mode, where the Work Hub (or its connecting placeholder) is the only visible surface.
+ */
+export function shouldRenderQaapWatermark(state: QaapWatermarkVisibilityState): boolean {
+    return !state.mobileLayout && state.mainAreaEmpty && !state.projectsPanelVisible;
+}

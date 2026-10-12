@@ -9,6 +9,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { ConnectionStatus, ConnectionStatusService } from '@theia/core/lib/browser/connection-status-service';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { nls } from '@theia/core/lib/common';
+import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 
 /**
@@ -25,6 +26,9 @@ export class MobileConnectionStatusContribution implements FrontendApplicationCo
 
     @inject(ConnectionStatusService)
     protected readonly connectionStatusService: ConnectionStatusService;
+
+    @inject(MobileOneColumnShellContribution)
+    protected readonly mobileShell: MobileOneColumnShellContribution;
 
     protected wasOffline = false;
 
@@ -44,6 +48,8 @@ export class MobileConnectionStatusContribution implements FrontendApplicationCo
             );
         } else if (this.wasOffline) {
             this.wasOffline = false;
+            // The Work Hub may have failed to mount while the backend was unreachable: retry now.
+            this.mobileShell.tryBootstrapMobileAgentsChat();
             MobileSnackbar.show(
                 nls.localize('theia/qaap-mobile-shell/backOnline', 'Back online'),
                 { kind: 'success', duration: 1800 }

@@ -58,6 +58,70 @@ describe('Qaap login gate', () => {
         expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
     });
 
+    describe('mobile boot guard watchdog (8 s)', () => {
+        let guardClock: InstalledClock | undefined;
+        const PLACEHOLDER_ID = 'qaap-mobile-workhub-connecting';
+
+        afterEach(() => {
+            guardClock?.uninstall();
+            guardClock = undefined;
+        });
+
+        function startGuard(mobile: boolean): LoginGateRun {
+            return start(
+                pathname => pathname === CONFIG ? { ok: true, body: { skipAuth: true } } : undefined,
+                'http://localhost:3000/#/workspace/demo',
+                {
+                    beforeRun: window => {
+                        guardClock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
+                        window.matchMedia = (query: string): MediaQueryList => ({
+                            matches: mobile && query === '(max-width: 767px), (pointer: coarse)',
+                            media: query,
+                            onchange: null,
+                            addListener: () => undefined,
+                            removeListener: () => undefined,
+                            addEventListener: () => undefined,
+                            removeEventListener: () => undefined,
+                            dispatchEvent: () => false,
+                        } as MediaQueryList);
+                    },
+                },
+            );
+        }
+
+        it('mobile: keeps the IDE shell hidden and shows the Connecting placeholder', async () => {
+            const run = startGuard(true);
+            await run.bundleAppended;
+            expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+            guardClock!.tick(8000);
+            expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+            expect(run.document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
+            const placeholder = run.document.getElementById(PLACEHOLDER_ID);
+            expect(placeholder, 'placeholder').not.to.equal(null);
+            expect(placeholder!.textContent).to.contain('Connecting');
+            // Showing it again must stay idempotent.
+            guardClock!.tick(60_000);
+            expect(run.document.querySelectorAll('#' + PLACEHOLDER_ID).length).to.equal(1);
+        });
+
+        it('mobile: shows no placeholder once the Work Hub has already lifted the guard', async () => {
+            const run = startGuard(true);
+            await run.bundleAppended;
+            run.document.documentElement.classList.remove('theia-mobile-workhub-boot');
+            guardClock!.tick(8000);
+            expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+        });
+
+        it('desktop: still lifts the boot guard after the timeout and shows no placeholder', async () => {
+            const run = startGuard(false);
+            await run.bundleAppended;
+            expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+            guardClock!.tick(8000);
+            expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(false);
+            expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+        });
+    });
+
     describe('GitHub OAuth callback', () => {
         it('stores the session, strips the OAuth marker from the URL and loads the bundle', async () => {
             const run = start(
@@ -285,6 +349,31 @@ describe('Qaap login gate', () => {
             const run = startSignedIn(true, { failedBefore: true });
             const { script } = await run.bundleAppended;
             expect(script.getAttribute('src')).to.equal('./bundle.js?qaap-build=b1');
+        });
+
+        it('stays on bundle-mobile.js when the download is merely slow (bundle watchdog)', async () => {
+            let clock: InstalledClock | undefined;
+            const run = start(pathname => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true, mobileEntry: true } };
+                }
+                return pathname === SESSION ? { ok: true, body: { signedIn: true, user: SIGNED_IN_USER, mobileEntry: true } } : undefined;
+            }, undefined, {
+                headHtml: '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=b1">',
+                beforeRun: window => {
+                    mobileViewport(window);
+                    clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
+                },
+            });
+            try {
+                const { script } = await run.bundleAppended;
+                clock!.tick(30_000);
+                expect(script.getAttribute('src')).to.match(/^\.\/bundle-mobile\.js/);
+                expect(run.window.sessionStorage.getItem(FAILED_KEY)).to.equal(null);
+                expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(false);
+            } finally {
+                clock?.uninstall();
+            }
         });
 
         it('records the failure and reloads into bundle.js when bundle-mobile.js fails to load', async () => {

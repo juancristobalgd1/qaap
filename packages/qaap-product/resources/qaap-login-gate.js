@@ -19,6 +19,37 @@
     /** Set when this tab reloads into the classic IDE; the IDE never reads Work Hub data at boot. */
     var bootsIntoIde = false;
 
+    /** Mirrors showMobileWorkHubConnectingPlaceholder() in @theia/qaap-shared-core (same ids). */
+    function showConnectingPlaceholder() {
+        if (document.getElementById('qaap-mobile-workhub-connecting')) {
+            return;
+        }
+        if (!document.getElementById('qaap-mobile-workhub-connecting-styles')) {
+            var style = document.createElement('style');
+            style.id = 'qaap-mobile-workhub-connecting-styles';
+            style.textContent = [
+                '#qaap-mobile-workhub-connecting{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;',
+                'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;',
+                'background:#f5f5f5;background:var(--q-bg,var(--qaap-bg,#f5f5f5));',
+                'color:#6b6b6b;font:500 14px/1.4 system-ui,-apple-system,sans-serif}',
+                '#qaap-mobile-workhub-connecting .qaap-mobile-workhub-connecting-logo{width:64px;height:64px;',
+                'background:var(--theia-workbench-brand-logo-url,none) center/contain no-repeat}'
+            ].join('');
+            (document.head || document.documentElement).appendChild(style);
+        }
+        var root = document.createElement('div');
+        root.id = 'qaap-mobile-workhub-connecting';
+        root.setAttribute('role', 'status');
+        var logo = document.createElement('div');
+        logo.className = 'qaap-mobile-workhub-connecting-logo';
+        logo.setAttribute('aria-hidden', 'true');
+        var label = document.createElement('div');
+        label.textContent = 'Connecting\u2026';
+        root.appendChild(logo);
+        root.appendChild(label);
+        (document.body || document.documentElement).appendChild(root);
+    }
+
     /**
      * Mobile Work Hub boot guard — runs before bundle.js so the IDE shell never flashes
      * behind the Agents chat while layout + workspace restore finish loading.
@@ -100,6 +131,16 @@
             // Only lift the html boot guard — body classes are owned by @theia/qaap-work-hub and
             // must stay active while Work Hub is the surface (stripping them leaks Explorer).
             window.setTimeout(function () {
+                if (!document.documentElement.classList.contains('theia-mobile-workhub-boot')) {
+                    // Work Hub already mounted and lifted the guard: nothing to cover.
+                    return;
+                }
+                if (isMobileMode) {
+                    // Mobile never reveals the IDE shell: keep the guard and show a lightweight
+                    // placeholder until Work Hub mounts (clearMobileWorkHubBootGuard removes it).
+                    showConnectingPlaceholder();
+                    return;
+                }
                 document.documentElement.classList.remove('theia-mobile-workhub-boot');
             }, 8000);
         } catch (e) { /* ignore */ }
@@ -195,8 +236,9 @@
     // Mobile-only entry (bundle-mobile.js / bundle-mobile.css: the Work Hub without any IDE code).
     // Loaded only when ALL hold: mobile Work Hub mode, a signed-in user, the server flag
     // QAAP_MOBILE_ENTRY (reported as `mobileEntry: true` by the auth session/config probe this gate
-    // already awaits) and no earlier failure of the mobile entry in this tab. Any failure (script
-    // error, bundle or startup watchdog) records MOBILE_ENTRY_FAILED_KEY and reloads into bundle.js.
+    // already awaits) and no earlier failure of the mobile entry in this tab. A script error or the
+    // startup watchdog records MOBILE_ENTRY_FAILED_KEY and reloads into bundle.js; a slow download
+    // (bundle watchdog) does not, since bundle.js is larger and would only be slower.
     var MOBILE_ENTRY_FAILED_KEY = 'qaap.boot.mobileEntryFailed';
     var serverMobileEntry = false;
     var mobileEntryActive = false;
@@ -236,11 +278,9 @@
 
     // Watchdog: if bundle.js never loads (network error, stale SW chunk mismatch)
     // show an error + retry UI so the user is never stuck on a blank spinner.
+    // A slow download is not a broken mobile entry: never fall back to the larger bundle.js here.
     var bundleLoadWatchdog = window.setTimeout(function () {
         if (!window.__qaapBundleLoaded) {
-            if (fallBackFromMobileEntry('bundle-timeout')) {
-                return;
-            }
             console.warn('[Qaap] bundle.js slow or failed — check network / console');
             showStartupError('bundle');
         }

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     clearPreferAgentsSurface,
     clearPreferDesktopIde,
@@ -271,7 +272,68 @@ export function installMobileWorkHubBootGuard(): void {
 export function clearMobileWorkHubBootGuard(): void {
     if (typeof document !== 'undefined') {
         document.documentElement.classList.remove(QAAP_MOBILE_WORK_HUB_BOOT_CLASS);
+        removeMobileWorkHubConnectingPlaceholder();
     }
+}
+
+/** Lightweight Qaap placeholder shown on mobile while the Work Hub waits for the backend connection. */
+export const QAAP_MOBILE_WORK_HUB_CONNECTING_PLACEHOLDER_ID = 'qaap-mobile-workhub-connecting';
+const QAAP_MOBILE_WORK_HUB_CONNECTING_STYLE_ID = 'qaap-mobile-workhub-connecting-styles';
+
+const QAAP_MOBILE_WORK_HUB_CONNECTING_CSS = [
+    '#qaap-mobile-workhub-connecting{position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;',
+    'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;',
+    'background:#f5f5f5;background:var(--q-bg,var(--qaap-bg,#f5f5f5));',
+    'color:#6b6b6b;font:500 14px/1.4 system-ui,-apple-system,sans-serif}',
+    '#qaap-mobile-workhub-connecting .qaap-mobile-workhub-connecting-logo{width:64px;height:64px;',
+    'background:var(--theia-workbench-brand-logo-url,none) center/contain no-repeat}'
+].join('');
+
+/** Show the connecting placeholder (idempotent). Removed together with the boot guard. */
+export function showMobileWorkHubConnectingPlaceholder(): void {
+    if (typeof document === 'undefined' || document.getElementById(QAAP_MOBILE_WORK_HUB_CONNECTING_PLACEHOLDER_ID)) {
+        return;
+    }
+    if (!document.getElementById(QAAP_MOBILE_WORK_HUB_CONNECTING_STYLE_ID)) {
+        const style = document.createElement('style');
+        style.id = QAAP_MOBILE_WORK_HUB_CONNECTING_STYLE_ID;
+        style.textContent = QAAP_MOBILE_WORK_HUB_CONNECTING_CSS;
+        (document.head || document.documentElement).appendChild(style);
+    }
+    const root = document.createElement('div');
+    root.id = QAAP_MOBILE_WORK_HUB_CONNECTING_PLACEHOLDER_ID;
+    root.setAttribute('role', 'status');
+    const logo = document.createElement('div');
+    logo.className = 'qaap-mobile-workhub-connecting-logo';
+    logo.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('div');
+    label.textContent = nls.localize('theia/qaap-shared-core/connecting', 'Connecting…');
+    root.append(logo, label);
+    (document.body || document.documentElement).appendChild(root);
+}
+
+export function removeMobileWorkHubConnectingPlaceholder(): void {
+    if (typeof document !== 'undefined') {
+        document.getElementById(QAAP_MOBILE_WORK_HUB_CONNECTING_PLACEHOLDER_ID)?.remove();
+    }
+}
+
+/**
+ * Safety-net release used when the Work Hub has not mounted in time. On the mobile one-column
+ * layout the IDE shell must never be revealed: the boot guard stays and the connecting placeholder
+ * is shown until the Work Hub mounts (which clears both). Elsewhere it simply lifts the guard.
+ * Returns `true` when the guard was kept.
+ */
+export function releaseMobileWorkHubBootGuardOnTimeout(): boolean {
+    if (typeof document === 'undefined') {
+        return false;
+    }
+    if (matchesMobileOneColumnLayout() && !peekPreferDesktopIde()) {
+        showMobileWorkHubConnectingPlaceholder();
+        return true;
+    }
+    clearMobileWorkHubBootGuard();
+    return false;
 }
 
 /** Work Hub landing list (all projects collapsed): show bottom navigation like the hub mock. */

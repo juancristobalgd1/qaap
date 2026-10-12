@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QAAP_WATERMARK_ENTRY_DEFS } from './qaap-watermark-entries';
+import { QAAP_WATERMARK_ENTRY_DEFS, shouldRenderQaapWatermark } from './qaap-watermark-entries';
 
 describe('qaap-watermark-entries', () => {
 
@@ -17,5 +17,20 @@ describe('qaap-watermark-entries', () => {
             'Open browser',
             'Maximize chat',
         ]);
+    });
+
+    describe('shouldRenderQaapWatermark', () => {
+        it('renders on desktop when the main area is empty', () => {
+            expect(shouldRenderQaapWatermark({ mobileLayout: false, mainAreaEmpty: true, projectsPanelVisible: false })).to.equal(true);
+        });
+
+        it('never renders in mobile mode, even with an empty main area', () => {
+            expect(shouldRenderQaapWatermark({ mobileLayout: true, mainAreaEmpty: true, projectsPanelVisible: false })).to.equal(false);
+        });
+
+        it('does not render with editors open or the projects panel visible', () => {
+            expect(shouldRenderQaapWatermark({ mobileLayout: false, mainAreaEmpty: false, projectsPanelVisible: false })).to.equal(false);
+            expect(shouldRenderQaapWatermark({ mobileLayout: false, mainAreaEmpty: true, projectsPanelVisible: true })).to.equal(false);
+        });
     });
 });
