@@ -40,7 +40,8 @@ const DESKTOP_PRELOAD = [
 ];
 const MOBILE_CONFIG: QaapMobileConfig = {
     frontendModules: ['@theia/core', '@theia/ai-core', '@theia/ai-chat', '@theia/qaap-shared-core', '@theia/qaap-work-hub', '@theia/qaap-product'],
-    exclude: []
+    exclude: [],
+    mobileOnly: []
 };
 
 function toMap(prefix: string, paths: string[]): Map<string, string> {
@@ -53,6 +54,9 @@ class TestFrontendGenerator extends FrontendGenerator {
     }
     filter(modules: Map<string, string>, config: QaapMobileConfig): Map<string, string> {
         return this.filterMobileModules(modules, config);
+    }
+    addMobileOnly(modules: Map<string, string>, config: QaapMobileConfig): Map<string, string> {
+        return this.addMobileOnlyModules(modules, config);
     }
     mobileIndex(config: QaapMobileConfig): string {
         return this.compileMobileIndexJs(
@@ -117,6 +121,18 @@ describe('FrontendGenerator mobile entry', () => {
         expect([...createGenerator().filter(modules, config).values()]).to.deep.equal(['@theia/qaap-work-hub/lib/browser/qaap-work-hub-frontend-module']);
     });
 
+    it('inserts mobile-only modules after their anchor, or at the end', () => {
+        const modules = new Map([['frontend_1', '@theia/a/lib/x'], ['frontend_2', '@theia/b/lib/y']]);
+        const config = {
+            ...MOBILE_CONFIG, mobileOnly: [
+                { module: '@theia/a/lib/x-mobile', after: '@theia/a/lib/x' },
+                { module: '@theia/c/lib/z-mobile', after: '@theia/missing/lib/w' },
+            ]
+        };
+        expect([...createGenerator().addMobileOnly(modules, config).values()])
+            .to.deep.equal(['@theia/a/lib/x', '@theia/a/lib/x-mobile', '@theia/b/lib/y', '@theia/c/lib/z-mobile']);
+    });
+
     describe('index-mobile.js', () => {
         const source = createGenerator([{ name: '@theia/monaco', raw: {} }]).mobileIndex(MOBILE_CONFIG);
 
@@ -160,7 +176,7 @@ describe('FrontendGenerator mobile entry', () => {
                 { name: '@theia/core', raw: { theiaExtensions: [] } },
                 { name: '@theia/qaap-product', raw: { qaapMobile: { frontendModules: ['@theia/core'] } } }
             ]);
-            expect(generator.mobileConfig()).to.deep.equal({ frontendModules: ['@theia/core'], exclude: [] });
+            expect(generator.mobileConfig()).to.deep.equal({ frontendModules: ['@theia/core'], exclude: [], mobileOnly: [] });
         });
 
         it('is undefined when no extension package declares it', () => {

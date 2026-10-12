@@ -87,6 +87,18 @@ export interface QaapMobileConfig {
      * module path (`<package name>/<path inside the package>`, e.g. an IDE-only half of a split module).
      */
     readonly exclude: readonly string[];
+    /**
+     * Frontend modules that only the mobile entry loads (never `theiaExtensions`, so desktop never
+     * sees them), e.g. mobile replacements of IDE services. Each one is inserted right after the
+     * module path `after` when that module is part of the mobile entry, else appended at the end.
+     */
+    readonly mobileOnly: readonly QaapMobileOnlyModule[];
+}
+
+export interface QaapMobileOnlyModule {
+    /** `<package name>/<path inside the package>`, resolvable from the application. */
+    readonly module: string;
+    readonly after?: string;
 }
 
 export class FrontendGenerator extends AbstractGenerator {
@@ -123,7 +135,11 @@ export class FrontendGenerator extends AbstractGenerator {
         for (const extensionPackage of this.pck.extensionPackages) {
             const raw = (extensionPackage.raw as { qaapMobile?: Partial<QaapMobileConfig> }).qaapMobile;
             if (raw && Array.isArray(raw.frontendModules)) {
-                return { frontendModules: raw.frontendModules, exclude: Array.isArray(raw.exclude) ? raw.exclude : [] };
+                return {
+                    frontendModules: raw.frontendModules,
+                    exclude: Array.isArray(raw.exclude) ? raw.exclude : [],
+                    mobileOnly: Array.isArray(raw.mobileOnly) ? raw.mobileOnly.filter(entry => entry && typeof entry.module === 'string') : []
+                };
             }
         }
         return undefined;
@@ -140,7 +156,7 @@ export class FrontendGenerator extends AbstractGenerator {
             return;
         }
         await this.write(target, this.compileMobileIndexJs(
-            this.filterMobileModules(this.pck.targetFrontendModules, config),
+            this.addMobileOnlyModules(this.filterMobileModules(this.pck.targetFrontendModules, config), config),
             this.filterMobileModules(this.pck.targetFrontendPreloadModules, config)
         ));
     }
@@ -149,6 +165,20 @@ export class FrontendGenerator extends AbstractGenerator {
      * Keeps the entries of `modules` (desktop order) whose package is allowlisted and neither the package
      * nor the module path itself is excluded. A module path is `<package name>/<path inside the package>`.
      */
+    protected addMobileOnlyModules(modules: Map<string, string>, config: QaapMobileConfig): Map<string, string> {
+        const entries = [...modules.entries()];
+        config.mobileOnly.forEach((mobileOnly, index) => {
+            const entry: [string, string] = [`frontendMobileOnly_${index + 1}`, mobileOnly.module];
+            const afterIndex = mobileOnly.after ? entries.findIndex(([, modulePath]) => modulePath === mobileOnly.after) : -1;
+            if (afterIndex === -1) {
+                entries.push(entry);
+            } else {
+                entries.splice(afterIndex + 1, 0, entry);
+            }
+        });
+        return new Map(entries);
+    }
+
     protected filterMobileModules(modules: Map<string, string>, config: QaapMobileConfig): Map<string, string> {
         const allowed = new Set(config.frontendModules);
         const excluded = new Set(config.exclude);

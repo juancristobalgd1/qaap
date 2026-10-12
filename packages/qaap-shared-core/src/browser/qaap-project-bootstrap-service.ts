@@ -3,16 +3,18 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import URI from '@theia/core/lib/common/uri';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import type { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
+import type { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
+import { QaapIdeTerminalService, QaapIdeTerminalWatcher } from './qaap-ide-bridge';
+import { QaapHeadlessTerminalService } from './qaap-headless-terminal-service';
 import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
 import { QaapPreviewWidgetKey } from './qaap-project-preview-opener';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
@@ -169,13 +171,33 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public readonly detector: QaapProjectBootstrapDetector;
 
-    @inject(TerminalService)
-    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public readonly terminalService: TerminalService;
+    /** Desktop: the IDE terminal (unchanged behaviour). Undefined in the `bundle-mobile` entry. */
+    @inject(QaapIdeTerminalService) @optional()
+    protected readonly ideTerminalService: QaapIdeTerminalService | undefined;
 
-    @inject(TerminalWatcher)
+    @inject(QaapIdeTerminalWatcher) @optional()
+    protected readonly ideTerminalWatcher: QaapIdeTerminalWatcher | undefined;
+
+    /** Mobile: runs install/dev commands on the terminal backend without `@theia/terminal` or xterm. */
+    @inject(QaapHeadlessTerminalService) @optional()
+    protected readonly headlessTerminalService: QaapHeadlessTerminalService | undefined;
+
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public readonly terminalWatcher: TerminalWatcher;
+    public get terminalService(): TerminalService {
+        return this.ideTerminalService ?? this.requireHeadlessTerminalService().asTerminalService();
+    }
+
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public get terminalWatcher(): TerminalWatcher {
+        return this.ideTerminalWatcher ?? this.requireHeadlessTerminalService().asTerminalWatcher();
+    }
+
+    protected requireHeadlessTerminalService(): QaapHeadlessTerminalService {
+        if (!this.headlessTerminalService) {
+            throw new Error('QaapProjectBootstrapService: neither the IDE terminal nor the headless runner is bound.');
+        }
+        return this.headlessTerminalService;
+    }
 
     @inject(MiniBrowserOpenHandler)
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

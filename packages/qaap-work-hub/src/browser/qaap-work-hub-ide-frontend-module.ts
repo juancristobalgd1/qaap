@@ -7,10 +7,11 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
 import { DebugFrontendContribution } from '@theia/memory-inspector/lib/browser/memory-inspector-frontend-contribution';
-import { QaapIdeDesktopTerminalLayout, QaapIdeTerminalService } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
+import { QaapIdeDesktopTerminalLayout, QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
 import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
 import { QaapMemoryInspectorMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-memory-inspector-mobile-contribution';
@@ -27,6 +28,7 @@ import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-l
  */
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapIdeTerminalService).toService(TerminalService);
+    bind(QaapIdeTerminalWatcher).toService(TerminalWatcher);
 
     bind(QaapDesktopTerminalLayoutContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapDesktopTerminalLayoutContribution);

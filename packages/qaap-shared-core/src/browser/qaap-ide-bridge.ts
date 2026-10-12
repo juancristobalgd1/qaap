@@ -17,10 +17,15 @@
  */
 
 import type { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import type { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
 
 /** `@theia/terminal` `TerminalService`; bound by `qaap-work-hub-ide-frontend-module` only. */
 export const QaapIdeTerminalService = Symbol('QaapIdeTerminalService');
 export type QaapIdeTerminalService = TerminalService;
+
+/** `@theia/terminal` `TerminalWatcher` (backend exit/error events); bound by `qaap-work-hub-ide-frontend-module` only. */
+export const QaapIdeTerminalWatcher = Symbol('QaapIdeTerminalWatcher');
+export type QaapIdeTerminalWatcher = TerminalWatcher;
 
 /** Desktop bottom-panel terminal layout (`QaapDesktopTerminalLayoutContribution`), IDE only. */
 export const QaapIdeDesktopTerminalLayout = Symbol('QaapIdeDesktopTerminalLayout');

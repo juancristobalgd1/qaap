@@ -75,6 +75,12 @@
       "@theia/qaap-product/lib/browser/qaap-product-ide-frontend-module",
       "@theia/qaap-work-hub/lib/browser/qaap-work-hub-ide-frontend-module",
       "@theia/qaap-ai-config/lib/browser/qaap-ai-config-ide-frontend-module"
+    ],
+    "mobileOnly": [
+      {
+        "module": "@theia/qaap-work-hub/lib/browser/qaap-work-hub-mobile-frontend-module",
+        "after": "@theia/qaap-work-hub/lib/browser/qaap-work-hub-frontend-module"
+      }
     ]
   },
   "keywords": [
