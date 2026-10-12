@@ -1,4 +1,4 @@
 {
     "_comment": "Ratchet for scripts/qaap-mobile-bundle-guard.js: source bytes of monaco-editor-core + packages/monaco reachable from the bundle-mobile entry. Lower it after every import cut; never raise it.",
-    "monacoBytes": 11801141
+    "monacoBytes": 11792211
 }
