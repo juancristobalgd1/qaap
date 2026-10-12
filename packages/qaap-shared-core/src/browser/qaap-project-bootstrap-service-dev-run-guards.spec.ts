@@ -58,6 +58,41 @@ describe('QaapProjectBootstrapService dev run guards', () => {
 
     after(() => disableJSDOM?.());
 
+    describe('spawnCommand in mobile mode', () => {
+        const runSpawn = async (mobile: boolean): Promise<{ started: boolean; opened: number }> => {
+            const original = window.matchMedia;
+            window.matchMedia = (() => ({ matches: mobile })) as unknown as typeof window.matchMedia;
+            let started = false;
+            let opened = 0;
+            const terminal = { start: async () => { started = true; }, onOutput: () => ({ dispose: () => undefined }) };
+            const ctx = {
+                terminalService: {
+                    newTerminal: async () => terminal,
+                    open: () => { opened++; },
+                },
+                buildShellInvocation: () => ({ shellPath: '/bin/sh', shellArgs: ['-c', 'true'] }),
+            };
+            try {
+                await activity.spawnCommandExtracted(ctx as unknown as QaapProjectBootstrapServiceContext, {
+                    title: 'dev',
+                    command: 'npm run dev',
+                    cwd: URI.fromFilePath(PROJECT_CWD),
+                });
+            } finally {
+                window.matchMedia = original;
+            }
+            return { started, opened };
+        };
+
+        it('runs the process but never calls terminalService.open', async () => {
+            expect(await runSpawn(true)).to.deep.equal({ started: true, opened: 0 });
+        });
+
+        it('still reveals the terminal on desktop', async () => {
+            expect(await runSpawn(false)).to.deep.equal({ started: true, opened: 1 });
+        });
+    });
+
     describe('preview claim conflict recovery', () => {
         it('restarts on the next available port when the backend rejects the initial claim', async () => {
             let restartedPlan: typeof PLAN | undefined;
