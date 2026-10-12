@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { codicon, ConfirmDialog, LabelProvider, Message, open, OpenerService, ReactWidget } from '@theia/core/lib/browser';
 import { QuickInputService } from '@theia/core/lib/common/quick-pick-service';
 import { CommandRegistry, CommandService } from '@theia/core/lib/common/command';
@@ -1140,14 +1141,16 @@ export class QaapDiffReviewWidget extends ReactWidget {
                             <span className='qaap-diff-add'>+{selected.adds}</span>
                             <span className='qaap-diff-del'>−{selected.dels}</span>
                         </span>
-                        <button
-                            type='button'
-                            className='qaap-diff-review-icon-btn'
-                            title={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
-                            onClick={() => this.onOpenInEditor(selected.path)}
-                        >
-                            <i className={codicon('go-to-file')} />
-                        </button>
+                        {!matchesMobileOneColumnLayout() && (
+                            <button
+                                type='button'
+                                className='qaap-diff-review-icon-btn'
+                                title={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
+                                onClick={() => this.onOpenInEditor(selected.path)}
+                            >
+                                <i className={codicon('go-to-file')} />
+                            </button>
+                        )}
                     </div>
                 )}
             </header>
@@ -1201,14 +1204,16 @@ export class QaapDiffReviewWidget extends ReactWidget {
                             <span className='qaap-diff-add'>+{file.adds}</span>
                             <span className='qaap-diff-del'>−{file.dels}</span>
                         </span>
-                        <button
-                            type='button'
-                            className='qaap-diff-review-icon-btn'
-                            title={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
-                            onClick={() => this.onOpenInEditor(file.path)}
-                        >
-                            <i className={codicon('go-to-file')} />
-                        </button>
+                        {!matchesMobileOneColumnLayout() && (
+                            <button
+                                type='button'
+                                className='qaap-diff-review-icon-btn'
+                                title={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
+                                onClick={() => this.onOpenInEditor(file.path)}
+                            >
+                                <i className={codicon('go-to-file')} />
+                            </button>
+                        )}
                     </div>
                 )}
                 <div className='qaap-diff-review-hunks'>
@@ -1309,6 +1314,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
     };
 
     protected readonly onOpenInEditor = (path: string): void => {
+        // Mobile mode never opens the IDE editor (the buttons are hidden; this is the hard guard).
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
         const uri = this.fileUri(path);
         if (uri) {
             void open(this.openerService, uri);
@@ -1537,14 +1546,16 @@ function FileRow(props: {
                     <i className={codicon('check')} />
                 </span>
             )}
-            <button
-                type='button'
-                className='qaap-diff-review-open'
-                title={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
-                onClick={onOpen}
-            >
-                <i className={codicon('go-to-file')} />
-            </button>
+            {!matchesMobileOneColumnLayout() && (
+                <button
+                    type='button'
+                    className='qaap-diff-review-open'
+                    title={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
+                    onClick={onOpen}
+                >
+                    <i className={codicon('go-to-file')} />
+                </button>
+            )}
         </div>
     );
 }
