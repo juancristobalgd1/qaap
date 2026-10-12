@@ -214,6 +214,32 @@ const pruneStaleChunksPlugin = {
 };
 
 /**
+ * Build metafile. After every successful main build (production and dev, watch rebuilds
+ * included) esbuild's metafile is written next to the chunk manifest so
+ * `scripts/qaap-frontend-graph-report.js` and `scripts/qaap-mobile-bundle-guard.js` can
+ * attribute bytes and import chains to packages without rebuilding. Measurement only: it
+ * does not touch any emitted file.
+ */
+const FRONTEND_METAFILE = path.join(FRONTEND_OUT_DIR, '..', '.qaap-frontend-metafile.json');
+
+const writeMetafilePlugin = {
+    name: 'qaap-write-metafile',
+    setup(build) {
+        build.onEnd(result => {
+            if (result.errors.length || !result.metafile) {
+                return;
+            }
+            try {
+                fs.mkdirSync(path.dirname(FRONTEND_METAFILE), { recursive: true });
+                fs.writeFileSync(FRONTEND_METAFILE, JSON.stringify(result.metafile) + '\n', 'utf8');
+            } catch (error) {
+                console.warn('[qaap] frontend metafile skipped:', error);
+            }
+        });
+    },
+};
+
+/**
  * Fetch parallelism for the sequential frontend module loads (see esbuild-DI interop above).
  * After each build, append to the `bundle` entry a snippet that adds a
  * `<link rel="modulepreload">` for every chunk the entry imports dynamically (its frontend
@@ -284,7 +310,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin],
+    plugins: [esmDiInteropPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
 };
 const workerOptions = {
     ...browserOptions,
