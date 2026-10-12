@@ -69,7 +69,7 @@ import {
     parseGithubPullRequestViewFilter,
 } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
-import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapGithubAuthGuard, type QaapGithubAuthContext } from './qaap-github-auth-guard';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
@@ -889,6 +889,40 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             const message = err instanceof Error ? err.message : 'Failed to prepare repository workspace';
             res.status(502).json({ error: message });
         }
+    }
+
+    /**
+     * Clone `owner/repo` again into the caller's canonical path when the project is still in their list but
+     * its clone is gone from disk (deleted, or data restored without clones), so an agent task can start.
+     * Same path as opening the project: the caller's own token, the repository looked up among those they
+     * can reach, {@link ensureRepositoryWorkspace}. A project the user removed stays removed. Throws an
+     * error whose message is a readable reason.
+     */
+    async restoreMissingRepositoryClone(
+        auth: Extract<QaapGithubAuthContext, { kind: 'authenticated' }>,
+        owner: string,
+        repo: string,
+    ): Promise<string> {
+        if (this.projectSessions.isRepositoryRemoved(auth.userLogin, `github:${owner}/${repo}`)) {
+            throw new Error('This project was removed. Import the repository again to restore it.');
+        }
+        let repository: QaapGithubRepositorySummary | undefined;
+        let workspacePath: string;
+        try {
+            repository = await this.resolveAccessibleRepository(auth.session.accessToken, owner, repo);
+            if (!repository) {
+                this.auth.logSecurityEvent('ownership_denied', { action: 'clone_repository', userLogin: auth.userLogin, owner, repo });
+                throw new Error('The repository no longer exists on GitHub, or you do not have access to it.');
+            }
+            workspacePath = await this.ensureRepositoryWorkspace(repository, auth.session.accessToken, auth.userLogin);
+        } catch (err) {
+            if (err instanceof QaapPlanRepoLimitError) {
+                throw err;
+            }
+            throw new Error(describeRepositoryImportFailure(err instanceof Error ? err.message : String(err)));
+        }
+        this.rememberGithubCloneSession(auth.userLogin, repository);
+        return workspacePath;
     }
 
     /**

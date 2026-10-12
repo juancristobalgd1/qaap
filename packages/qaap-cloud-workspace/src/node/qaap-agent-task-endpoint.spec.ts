@@ -376,3 +376,53 @@ describe('QaapAgentTaskEndpoint CLI install', () => {
         expect(anonymous.userKeys).to.deep.equal([]);
     });
 });
+
+describe('QaapAgentTaskEndpoint project clone missing from disk', () => {
+    const cwd = '/workspace/repos/users/alice/octo/app';
+
+    async function create(recovered: unknown): Promise<{ status: number; payload: unknown; created: unknown[] }> {
+        const created: unknown[] = [];
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+                // The plain resolver denies a cwd whose clone is gone; the recovery re-clones it.
+                resolveOwnedRepositoryCwd: () => ({ kind: 'denied' }),
+                denyForbidden: (res: Response) => { res.status(403).json({ error: 'Forbidden' }); return false; },
+            },
+            cloneRecovery: { resolveOwnedRepositoryCwd: async () => recovered },
+            runner: { create: (request: unknown) => { created.push(request); return { id: 't1' }; } },
+        });
+        let status = 0;
+        let payload: unknown;
+        const response = {
+            status: (code: number) => { status = code; return response; },
+            json: (body: unknown) => { payload = body; return response; },
+        };
+        await endpoint.createForTest({
+            body: { cwd: 'github:octo/app', prompt: 'fix it' }, header: () => undefined,
+        } as unknown as Request, response as unknown as Response);
+        return { status, payload, created };
+    }
+
+    it('starts the task in the re-cloned project', async () => {
+        const { status, created } = await create({ kind: 'ok', cwd });
+        expect(status).to.equal(201);
+        expect(created).to.have.length(1);
+        expect((created[0] as { cwd: string }).cwd).to.equal(cwd);
+    });
+
+    it('answers a readable error when the clone cannot be restored', async () => {
+        const error = 'I cannot find the repository octo/app on the server and could not clone it again: no access.';
+        const { status, payload, created } = await create({ kind: 'clone-failed', error });
+        expect(status).to.equal(422);
+        expect(payload).to.deep.equal({ error, code: 'repository_clone_unavailable' });
+        expect(created).to.deep.equal([]);
+    });
+
+    it('keeps denying what the recovery denies', async () => {
+        const { status, created } = await create({ kind: 'denied' });
+        expect(status).to.equal(403);
+        expect(created).to.deep.equal([]);
+    });
+});

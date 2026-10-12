@@ -27,6 +27,7 @@ import {
     pickNextDevPort,
 } from './qaap-project-bootstrap-port';
 import {
+    describeDevProcessExit,
     diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
     DEV_OUT_OF_MEMORY_NOTICE,
@@ -53,6 +54,11 @@ import { DEV_PREVIEW_AUTO_RETRY_DELAY_MS, DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS, D
 
 const previewStartupOutputListeners = new WeakMap<TerminalWidget, Disposable>();
 
+export interface QaapDevRunFailureOptions {
+    /** The process exited with code 0 before its preview answered (see `describeDevProcessExit`). */
+    readonly exitedWithoutListening?: boolean;
+}
+
 /** Takes the listener installed before a preview process starts, avoiding a fast-exit output gap. */
 export function takePreviewStartupOutputListener(terminal: TerminalWidget): Disposable | undefined {
         const listener = previewStartupOutputListeners.get(terminal);
@@ -62,7 +68,8 @@ export function takePreviewStartupOutputListener(terminal: TerminalWidget): Disp
 
 export async function failDevRunExtracted(ctx: QaapProjectBootstrapServiceContext, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
-        runId: number,): Promise<void> {
+        runId: number,
+        options?: QaapDevRunFailureOptions,): Promise<void> {
         if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
             return;
         }
@@ -77,7 +84,7 @@ export async function failDevRunExtracted(ctx: QaapProjectBootstrapServiceContex
         }
         ctx.failingDevRunId = runId;
         try {
-            await handleDevRunFailure(ctx, message, plan, runId);
+            await handleDevRunFailure(ctx, message, plan, runId, options);
         } finally {
             if (ctx.failingDevRunId === runId) {
                 ctx.failingDevRunId = undefined;
@@ -106,7 +113,8 @@ async function devRunRanOutOfMemory(ctx: QaapProjectBootstrapServiceContext, mes
 
 async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
-        runId: number,): Promise<void> {
+        runId: number,
+        options?: QaapDevRunFailureOptions,): Promise<void> {
         // A previously opened iframe is not proof that its process is still alive. Continue through
         // the ownership-scoped probe and failure path so closed/crashed servers release their
         // durable registration instead of leaving a stale "running" preview behind.
@@ -139,7 +147,11 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         }
         const descriptor = ctx._descriptor;
         const diagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
+        // A clean exit with nothing listening is the same exit next time: report it, don't retry.
+        const exitedWithoutListening = options?.exitedWithoutListening === true
+            && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
         const canAutoRetry = !portConflict
+            && !exitedWithoutListening
             && !terminalOutputNeedsInstall(ctx.devOutputTail)
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown')
             && ctx.previewAutoRetryAttempts < DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS
@@ -191,7 +203,9 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             ? extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message))
             : portConflict && conflictPort
                 ? `Port :${conflictPort} is already in use. Qaap exhausted ${DEV_PORT_RECOVERY_MAX_ATTEMPTS} alternate ports; stop stale dev servers, then retry.`
-                : extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message));
+                : exitedWithoutListening
+                    ? message
+                    : extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message));
         ctx._error = ctx.enrichDevRunError(diagnosedError);
         ctx.releaseActivePreview();
         ctx.setPhase('run-failed');
@@ -540,21 +554,12 @@ export function watchAttachedDevTerminalExtracted(ctx: QaapProjectBootstrapServi
         const onOutput = terminal.onOutput(data => ctx.appendDevOutput(data));
         const onProcessExit = ctx.terminalWatcher.onTerminalExit(event => {
             if (event.terminalId === terminal.terminalId && runId === ctx.devRunGeneration) {
-                const terminalTail = ctx.readTerminalTail(terminal);
-                void ctx.failDevRun(
-                    terminalTail || (event.code === 0
-                        ? nls.localize(
-                            'qaap/projectBootstrap/devServerExitedBeforeReady',
-                            'The dev command finished before Qaap could confirm the preview was ready.',
-                        )
-                        : nls.localize(
-                            'qaap/projectBootstrap/devServerExited',
-                            'Dev server exited with code {0}.',
-                            String(event.code ?? '?'),
-                        )),
-                    plan,
-                    runId,
+                const exit = describeDevProcessExit(
+                    event.code,
+                    ctx.readTerminalTail(terminal) || ctx.devOutputTail,
+                    ctx.activePreviewClaim?.port ?? plan.expectedPort,
                 );
+                void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
             }
         });
         const onWidgetClose = terminal.onTerminalDidClose(() => {

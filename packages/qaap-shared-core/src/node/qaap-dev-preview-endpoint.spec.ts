@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import type { Request } from '@theia/core/shared/express';
 import type { OutgoingHttpHeaders } from 'http';
 import { FileUri } from '@theia/core/lib/common/file-uri';
+import * as net from 'net';
 import * as path from 'path';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
@@ -15,6 +16,7 @@ import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { resolveQaapPreviewIdentity } from '../common/qaap-preview-identity';
 import { rewriteNextPreviewDocument } from './qaap-dev-preview-endpoint-timeline';
 import { buildQaapPreviewHostLabel } from './qaap-preview-host';
+import { isQaapDevPreviewPortBindable } from './qaap-dev-preview-port-bind-probe';
 
 class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
     exposeRewriteDevPreviewBody(body: string, targetPort: number, publicPrefix?: string): string {
@@ -548,6 +550,14 @@ describe('QaapDevPreviewEndpoint', () => {
                 return Promise.resolve(this.listeningPorts.size > 0 ? this.listeningPorts.has(port) : this.listening);
             }
 
+            /** Ports held by a non-HTTP listener; `realBindProbe` exercises the production bind test. */
+            readonly boundPorts = new Set<number>();
+            realBindProbe = false;
+
+            override isPortBindable(port: number, ownerLogin?: string): Promise<boolean> {
+                return this.realBindProbe ? super.isPortBindable(port, ownerLogin) : Promise.resolve(!this.boundPorts.has(port));
+            }
+
             setClaimFakes(login: string, registry: unknown, authKind: 'authenticated' | 'skip' = 'authenticated'): void {
                 const mutable = this as unknown as { auth: unknown; portRegistry: unknown };
                 mutable.auth = {
@@ -692,6 +702,62 @@ describe('QaapDevPreviewEndpoint', () => {
 
             expect(res.record.code).to.equal(204);
             expect(registry.ownerOf(4173)).to.equal('alice');
+        });
+
+        it('skips a preferred port held by a listener that does not answer HTTP (theia start on :3000)', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            ep.boundPorts.add(3000);
+            const res = makeRes();
+            // Docker/VPS: the IDE listens on 4873, so :3000 is not the IDE port and only a real
+            // bind test notices the other Theia backend holding it.
+            const previousPort = process.env.PORT;
+            process.env.PORT = '4873';
+            try {
+                await ep.exposeHandleClaim(claimReq(3000, {
+                    workspaceId: 'file:///workspace/alice/qaap',
+                    projectId: 'qaap',
+                    processId: 'process-theia',
+                }, 'file:///workspace/alice/qaap'), res);
+            } finally {
+                if (previousPort === undefined) {
+                    delete process.env.PORT;
+                } else {
+                    process.env.PORT = previousPort;
+                }
+            }
+
+            expect(res.record.code).to.equal(200);
+            expect((res.record.body as { port: number }).port).to.equal(3001);
+        });
+
+        it('allocates past a really bound port using the production bind test', async () => {
+            const blocker = net.createServer();
+            await new Promise<void>(resolve => blocker.listen({ port: 0, host: '127.0.0.1' }, resolve));
+            const busyPort = (blocker.address() as net.AddressInfo).port;
+            try {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new ClaimTestEndpoint();
+                ep.realBindProbe = true;
+                ep.setClaimFakes('alice', registry);
+                const res = makeRes();
+
+                await ep.exposeHandleClaim(claimReq(busyPort, {
+                    workspaceId: 'file:///workspace/alice/qaap',
+                    projectId: 'qaap',
+                    processId: 'process-real-bind',
+                }, 'file:///workspace/alice/qaap'), res);
+
+                expect(res.record.code).to.equal(200);
+                const allocated = (res.record.body as { port: number }).port;
+                expect(allocated).to.not.equal(busyPort);
+                expect(await isQaapDevPreviewPortBindable(allocated)).to.equal(true);
+            } finally {
+                await new Promise<void>(resolve => blocker.close(() => resolve()));
+            }
         });
 
         it('allocates distinct ports atomically for two projects of the same user', async () => {

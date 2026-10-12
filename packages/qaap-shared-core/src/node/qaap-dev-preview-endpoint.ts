@@ -17,6 +17,7 @@ import { QAAP_DEV_PREVIEW_PREFIX, type QaapDevPreviewMemoryStatus } from '../com
 import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-headers';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel';
+import { isQaapDevPreviewPortBindable } from './qaap-dev-preview-port-bind-probe';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { configureExtracted, earlyMiddlewareExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
@@ -322,6 +323,18 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public async probeLocalDevServer(port: number, ownerLogin?: string): Promise<boolean> {
         return probeLocalDevServerExtracted(this, port, ownerLogin);
+    }
+
+    /**
+     * True when a new dev server could bind `port` here. Tunnelled runtimes live in another network
+     * namespace where a local bind proves nothing; their HTTP probe stays authoritative.
+     * @internal Used by the extracted qaap-dev-preview-endpoint-* modules.
+     */
+    public async isPortBindable(port: number, ownerLogin?: string): Promise<boolean> {
+        if (this.tunnelOwnerFor(port, ownerLogin) !== undefined) {
+            return true;
+        }
+        return isQaapDevPreviewPortBindable(port);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

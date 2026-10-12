@@ -180,7 +180,17 @@ export function wrapDevCommandForPort(
 // bridge.js"` — the bridge inherited the preview port while Vite's config still selected :8080.
 // The targeted preload reaches a nested Vite/Next/Astro/Remix executable without touching sibling
 // services. Generic/CRA scripts keep the legacy PORT restore for inline `PORT=… node …` commands.
-const FORCE_NODE_PREVIEW_PORT_SOURCE = 'process.env.PORT=process.env.QAAP_PREVIEW_PORT';
+// `theia start` ignores PORT and defaults to :3000 (often hardcoded deeper in the script, e.g. qaap's
+// own start:browser), so its `--port` value is replaced by the allocated preview port.
+const FORCE_NODE_PREVIEW_PORT_SOURCE = [
+    'const p=process.env.QAAP_PREVIEW_PORT,a=process.argv,'
+        + "e=(a[1]||'').replaceAll('\\\\','/').split('/').pop()||''",
+    'if(p){process.env.PORT=p;'
+        + "if(/^(theia|theia\\.js)$/.test(e)&&a[2]==='start'){let s=false;"
+        + "for(let i=3;i<a.length;i++){if(a[i]==='--port'&&i+1<a.length){a[i+1]=p;s=true}"
+        + "else if(String(a[i]).startsWith('--port=')){a[i]='--port='+p;s=true}}"
+        + "if(!s){a.push('--port',p)}}}",
+].join(';');
 const FORCE_FRAMEWORK_PREVIEW_PORT_SOURCE = [
     'const p=process.env.QAAP_PREVIEW_PORT,a=process.argv,'
         + "e=(a[1]||'').replaceAll('\\\\','/').split('/').pop()||'',"

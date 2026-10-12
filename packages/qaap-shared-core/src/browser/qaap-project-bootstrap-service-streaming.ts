@@ -18,6 +18,7 @@ import {
     wrapCommandForDevNodeEnv,
 } from './qaap-project-bootstrap-port';
 import {
+    describeDevProcessExit,
     extractTerminalFailureLine,
     terminalOutputNeedsInstall,
 } from './qaap-project-bootstrap-dev-errors';
@@ -257,21 +258,12 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
                     // The process can exit before the output listener receives its final chunk.
                     // Read the terminal buffer here so a fast startup failure is diagnosable
                     // instead of collapsing to the generic exit-code message.
-                    const terminalTail = ctx.readTerminalTail(terminal);
-                    void ctx.failDevRun(
-                        terminalTail || (event.code === 0
-                            ? nls.localize(
-                                'qaap/projectBootstrap/devServerExitedBeforeReady',
-                                'The dev command finished before Qaap could confirm the preview was ready.',
-                            )
-                            : nls.localize(
-                                'qaap/projectBootstrap/devServerExited',
-                                'Dev server exited with code {0}.',
-                                String(event.code ?? '?'),
-                            )),
-                        plan,
-                        runId,
+                    const exit = describeDevProcessExit(
+                        event.code,
+                        ctx.readTerminalTail(terminal) || ctx.devOutputTail,
+                        ctx.activePreviewClaim?.port ?? spawnPlan.targetPort,
                     );
+                    void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
                 }
             });
             const onWidgetClose = terminal.onTerminalDidClose(() => {

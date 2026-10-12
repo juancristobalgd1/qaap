@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
+
 /** Dev/install output that usually means dependencies were not installed (or only production deps). */
 export const DEV_INSTALL_NEEDED_REGEX = /ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|(?:sh|bash):\s*1:\s*(?:vite|esbuild|next|nuxt|astro): not found|Missing script:|npm error code ENOENT/i;
 
@@ -167,4 +169,61 @@ export function diagnoseBootstrapFailure(output: string, fallback: string): Qaap
 /** Picks the most useful single-line error from the tail of terminal output. */
 export function extractTerminalFailureLine(output: string, fallback: string): string {
     return diagnoseBootstrapFailure(output, fallback).message;
+}
+
+/** How many output lines a "dev command exited" error quotes. */
+export const DEV_EXIT_OUTPUT_LINES = 12;
+
+/** The last non-empty lines of dev output, without ANSI escapes. */
+export function lastDevOutputLines(output: string, maxLines: number = DEV_EXIT_OUTPUT_LINES): string {
+    return output.replace(ANSI_REGEX, '')
+        .split(/\r?\n|\r/)
+        .map(line => line.trimEnd())
+        .filter(line => line.trim().length > 0)
+        .slice(-maxLines)
+        .join('\n');
+}
+
+export interface QaapDevProcessExitReport {
+    readonly message: string;
+    /** Exit code 0 before the preview answered: retrying the same command cannot help. */
+    readonly exitedWithoutListening: boolean;
+}
+
+/**
+ * The failure to report when the dev process exits while the preview is still starting. A clean
+ * exit is the silent case (a `theia start` that lost its port, a build-only script): name the port
+ * it never listened on and quote its last lines instead of a generic "finished" message.
+ */
+export function describeDevProcessExit(code: number | undefined, output: string, port?: number): QaapDevProcessExitReport {
+    if (code !== 0) {
+        return {
+            message: output || nls.localize(
+                'qaap/projectBootstrap/devServerExited',
+                'Dev server exited with code {0}.',
+                String(code ?? '?'),
+            ),
+            exitedWithoutListening: false,
+        };
+    }
+    const summary = port !== undefined
+        ? nls.localize(
+            'qaap/projectBootstrap/devExitedWithoutListeningOnPort',
+            'The dev command exited with code 0 without listening on port {0}.',
+            String(port),
+        )
+        : nls.localize(
+            'qaap/projectBootstrap/devExitedWithoutListening',
+            'The dev command exited with code 0 before the preview server started listening.',
+        );
+    const lines = lastDevOutputLines(output);
+    return {
+        message: lines
+            ? `${summary}\n${nls.localize('qaap/projectBootstrap/devExitLastOutput', 'Last output:')}\n${lines}`
+            : `${summary} ${nls.localize(
+                'qaap/projectBootstrap/devExitNoOutput',
+                'It printed no output. Check that the script starts a server and honors PORT or --port.',
+            )}`,
+        exitedWithoutListening: true,
+    };
 }
