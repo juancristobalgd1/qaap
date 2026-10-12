@@ -19,7 +19,7 @@
  */
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-let disableJSDOM = enableJSDOM();
+const disableImportJSDOM = enableJSDOM();
 
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 FrontendApplicationConfigProvider.set({});
@@ -205,12 +205,15 @@ function replayDesktopModules(): BindingRecorder {
     return recorder;
 }
 
+disableImportJSDOM();
+
+let disableJSDOM: () => void = () => undefined;
+
 describe('Qaap desktop binding snapshot', function (): void {
     this.timeout(120_000);
 
     // Other spec files of this package may tear their jsdom down before this suite runs.
     before(() => {
-        disableJSDOM();
         disableJSDOM = enableJSDOM();
     });
 
