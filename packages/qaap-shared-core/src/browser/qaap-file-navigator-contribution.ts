@@ -55,6 +55,10 @@ export class QaapFileNavigatorContribution extends FileNavigatorContribution {
     }
 
     override async openView(args: Partial<OpenViewArguments> = {}): Promise<FileNavigatorWidget> {
+        if (matchesMobileOneColumnLayout()) {
+            // Mobile mode never opens the IDE Explorer; return the widget without revealing it.
+            return this.widgetManager.getOrCreateWidget<FileNavigatorWidget>(FILE_NAVIGATOR_ID);
+        }
         const activate = args.activate !== false;
         const reveal = args.reveal !== false;
         const navigator = await this.widgetManager.getOrCreateWidget<FileNavigatorWidget>(FILE_NAVIGATOR_ID);

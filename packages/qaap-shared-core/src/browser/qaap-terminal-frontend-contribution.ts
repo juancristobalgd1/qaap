@@ -3,9 +3,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { inject, injectable } from '@theia/core/shared/inversify';
+import URI from '@theia/core/lib/common/uri';
+import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import { WidgetOpenerOptions } from '@theia/core/lib/browser/widget-open-handler';
+import { TerminalProfile } from '@theia/terminal/lib/browser/terminal-profile-service';
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { TerminalCommands } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
@@ -78,6 +83,38 @@ export class QaapTerminalFrontendContribution extends TerminalFrontendContributi
                 }
             },
         });
+    }
+
+    /*
+     * Mobile mode never opens a terminal in the IDE shell. Terminal creation for the Work Hub and the
+     * project bootstrap goes through `newTerminal` (no shell attachment), which stays untouched.
+     */
+    override async open(widget: TerminalWidget, options?: WidgetOpenerOptions): Promise<void> {
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
+        return super.open(widget, options);
+    }
+
+    protected override async openTerminal(options?: ApplicationShell.WidgetOptions, terminalProfile?: TerminalProfile): Promise<void> {
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
+        return super.openTerminal(options, terminalProfile);
+    }
+
+    protected override async openActiveWorkspaceTerminal(options?: ApplicationShell.WidgetOptions): Promise<void> {
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
+        return super.openActiveWorkspaceTerminal(options);
+    }
+
+    override async openInTerminal(uri: URI): Promise<void> {
+        if (matchesMobileOneColumnLayout()) {
+            return;
+        }
+        return super.openInTerminal(uri);
     }
 
     override async initializeLayout(): Promise<void> {
