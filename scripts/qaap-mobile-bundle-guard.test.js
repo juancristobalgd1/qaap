@@ -79,6 +79,22 @@ test('the monaco ratchet fails only above the budget', () => {
     assert.equal(run(inputs, 149, '--report').status, 0);
 });
 
+test('a whole date-fns or highlight.js barrel fails; narrowed subpaths pass', () => {
+    const inputs = {
+        ...CLEAN,
+        '../../packages/core/lib/b.js': input(7, '../../node_modules/date-fns/index.cjs', '../../node_modules/highlight.js/lib/core.js'),
+        '../../node_modules/date-fns/index.cjs': input(1),
+        '../../node_modules/highlight.js/lib/core.js': input(1)
+    };
+    const result = run(inputs, 0);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /WHOLE BARREL node_modules\/date-fns\/index\.cjs <- packages\/core\/lib\/b\.js/);
+    assert.doesNotMatch(result.stdout, /WHOLE BARREL node_modules\/highlight/);
+    inputs['../../packages/core/lib/b.js'] = input(7, '../../node_modules/date-fns/formatDistance.cjs');
+    inputs['../../node_modules/date-fns/formatDistance.cjs'] = input(1);
+    assert.equal(run(inputs, 0).status, 0);
+});
+
 test('a stylesheet inlining legacy font formats next to woff2 fails; a ttf-only face does not', () => {
     const fonts = (...paths) => ({ bytes: 1, imports: paths.map(p => ({ path: p, kind: 'url-token', original: p })) });
     const inputs = {
