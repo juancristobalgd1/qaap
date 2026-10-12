@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import { QaapIdeTerminalService } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { fetchQaapTerminalSessions, upsertQaapTerminalSessions } from './qaap-cloud-workspace-client';
 import { QaapDeferredStartup, QaapVisibleInterval } from './qaap-deferred-startup';
 
@@ -18,8 +18,9 @@ const PERSIST_INTERVAL_MS = 15_000;
 @injectable()
 export class QaapTerminalPersistenceContribution implements FrontendApplicationContribution {
 
-    @inject(TerminalService)
-    protected readonly terminals: TerminalService;
+    /** IDE terminals (desktop). Undefined in the `bundle-mobile` entry, where this contribution is inert. */
+    @inject(QaapIdeTerminalService) @optional()
+    protected readonly terminals: QaapIdeTerminalService | undefined;
 
     @inject(WorkspaceService)
     protected readonly workspace: WorkspaceService;
@@ -34,6 +35,9 @@ export class QaapTerminalPersistenceContribution implements FrontendApplicationC
     protected deferredStart: Disposable | undefined;
 
     onStart(): void {
+        if (!this.terminals) {
+            return;
+        }
         // The restore hint is informational: fetch it after ready + idle, not during boot.
         // The persist tick is a no-op without terminals and is skipped while the tab is hidden.
         this.deferredStart = this.deferredStartup.whenReadyAndIdle(() => {
@@ -54,7 +58,7 @@ export class QaapTerminalPersistenceContribution implements FrontendApplicationC
     }
 
     protected async persist(): Promise<void> {
-        const widgets = this.terminals.all;
+        const widgets = this.terminals?.all ?? [];
         if (widgets.length === 0) {
             return;
         }

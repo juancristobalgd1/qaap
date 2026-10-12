@@ -54,6 +54,9 @@
     },
     {
       "frontend": "lib/browser/qaap-work-hub-frontend-module"
+    },
+    {
+      "frontend": "lib/browser/qaap-work-hub-ide-frontend-module"
     }
   ],
   "keywords": [

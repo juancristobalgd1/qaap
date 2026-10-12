@@ -108,6 +108,15 @@ describe('FrontendGenerator mobile entry', () => {
         expect(filtered).to.include('@theia/qaap-work-hub/lib/browser/qaap-work-hub-frontend-module');
     });
 
+    it('excludes a single module path (the IDE-only half of a split module) but keeps its siblings', () => {
+        const modules = new Map([
+            ['frontend_1', '@theia/qaap-work-hub/lib/browser/qaap-work-hub-frontend-module'],
+            ['frontend_2', '@theia/qaap-work-hub/lib/browser/qaap-work-hub-ide-frontend-module'],
+        ]);
+        const config = { ...MOBILE_CONFIG, exclude: ['@theia/qaap-work-hub/lib/browser/qaap-work-hub-ide-frontend-module'] };
+        expect([...createGenerator().filter(modules, config).values()]).to.deep.equal(['@theia/qaap-work-hub/lib/browser/qaap-work-hub-frontend-module']);
+    });
+
     describe('index-mobile.js', () => {
         const source = createGenerator([{ name: '@theia/monaco', raw: {} }]).mobileIndex(MOBILE_CONFIG);
 

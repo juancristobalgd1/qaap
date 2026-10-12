@@ -19,7 +19,7 @@
  */
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-const disableJSDOM = enableJSDOM();
+let disableJSDOM = enableJSDOM();
 
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 FrontendApplicationConfigProvider.set({});
@@ -64,14 +64,18 @@ const DESKTOP_QAAP_MODULES: readonly string[] = [
     'qaap-ai-openrouter/lib/browser/openrouter-frontend-module',
     'qaap-mobile-shell/lib/browser/qaap-mobile-shell-frontend-module',
     'qaap-product-theme/lib/browser/qaap-product-theme-frontend-module',
+    'qaap-product-theme/lib/browser/qaap-product-theme-ide-frontend-module',
     'qaap-shell/lib/browser/qaap-shell-frontend-module',
     'qaap-work-hub/lib/browser/qaap-workbench-frontend-module',
     'qaap-work-hub/lib/browser/qaap-work-hub-frontend-module',
+    'qaap-work-hub/lib/browser/qaap-work-hub-ide-frontend-module',
     'qaap-cloud-workspace/lib/browser/qaap-login-frontend-module',
     'qaap-cloud-workspace/lib/browser/qaap-cloud-workspace-frontend-module',
     'qaap-ai-config/lib/browser/qaap-ai-config-frontend-module',
+    'qaap-ai-config/lib/browser/qaap-ai-config-ide-frontend-module',
     'qaap-product/lib/browser/qaap-product-frontend-module',
     'qaap-product/lib/browser/qaap-product-bindings-frontend-module',
+    'qaap-product/lib/browser/qaap-product-ide-frontend-module',
 ];
 
 function declaredQaapFrontendModules(): string[] {
@@ -171,19 +175,44 @@ class BindingRecorder {
         this.record('onDeactivation', id);
     };
 
-    snapshot(): string {
+    lines(): string[] {
         const lines: string[] = [];
         for (const [key, entries] of this.bindings) {
             for (const entry of entries) {
                 lines.push(`${key} -> ${entry.op}${entry.steps.length ? '.' : ''}${entry.steps.join('.')}`);
             }
         }
-        return lines.sort().join('\n') + '\n';
+        return lines.sort();
     }
+}
+
+/**
+ * `QaapIde*` symbols (`@theia/qaap-shared-core/lib/browser/qaap-ide-bridge`) are new by construction:
+ * IDE-only modules bind them as `toService` aliases of an upstream service so mobile-safe classes can
+ * inject them with `@optional()`. They are checked to be pure aliases and kept out of the snapshot.
+ */
+const IDE_BRIDGE_LINE = /^Symbol\(QaapIde[A-Za-z]*\) -> /;
+
+function replayDesktopModules(): BindingRecorder {
+    const recorder = new BindingRecorder();
+    for (const modulePath of DESKTOP_QAAP_MODULES) {
+        // Computed path on purpose: the snapshot replays modules of packages qaap-product does not depend on.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-dynamic-require
+        const containerModule = require(path.join(repoRoot, 'packages', modulePath)).default;
+        containerModule.registry(recorder.bind, recorder.unbind, recorder.isBound, recorder.rebind,
+            recorder.unbindAsync, recorder.onActivation, recorder.onDeactivation);
+    }
+    return recorder;
 }
 
 describe('Qaap desktop binding snapshot', function (): void {
     this.timeout(120_000);
+
+    // Other spec files of this package may tear their jsdom down before this suite runs.
+    before(() => {
+        disableJSDOM();
+        disableJSDOM = enableJSDOM();
+    });
 
     after(() => {
         NodeModule._resolveFilename = originalResolveFilename;
@@ -195,15 +224,12 @@ describe('Qaap desktop binding snapshot', function (): void {
     });
 
     it('keeps the desktop bindings of the qaap modules identical', () => {
-        const recorder = new BindingRecorder();
-        for (const modulePath of DESKTOP_QAAP_MODULES) {
-            // Computed path on purpose: the snapshot replays modules of packages qaap-product does not depend on.
-            // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-dynamic-require
-            const containerModule = require(path.join(repoRoot, 'packages', modulePath)).default;
-            containerModule.registry(recorder.bind, recorder.unbind, recorder.isBound, recorder.rebind,
-                recorder.unbindAsync, recorder.onActivation, recorder.onDeactivation);
+        const lines = replayDesktopModules().lines();
+        const bridgeLines = lines.filter(line => IDE_BRIDGE_LINE.test(line));
+        for (const line of bridgeLines) {
+            expect(line).to.match(/ -> bind\.toService\((?:[A-Za-z]+|Symbol\([A-Za-z]+\))\)$/, 'IDE bridge symbols are plain toService aliases');
         }
-        const actual = recorder.snapshot();
+        const actual = lines.filter(line => !IDE_BRIDGE_LINE.test(line)).join('\n') + '\n';
         if (process.env.QAAP_UPDATE_BINDING_SNAPSHOT === '1') {
             fs.mkdirSync(path.dirname(snapshotFile), { recursive: true });
             fs.writeFileSync(snapshotFile, actual);

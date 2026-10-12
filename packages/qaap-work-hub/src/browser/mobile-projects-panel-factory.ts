@@ -105,7 +105,7 @@ export interface MobileProjectsPanelFactoryDeps {
     markdownPreviewHandler: MarkdownPreviewHandler;
     decorationsService: DecorationsService;
     colorRegistry: ColorRegistry;
-    terminalService: TerminalService;
+    terminalService: TerminalService | undefined;
     storageService: StorageService;
     previewSurfaceRegistry: QaapPreviewSurfaceRegistry;
     elementInspectorService: ElementInspectorService;
@@ -294,7 +294,7 @@ export class MobileProjectsPanelFactory {
                     deps.colorRegistry,
                 ),
                 // Mobile mode never creates a terminal: no services means no TerminalWidget anywhere in the hub.
-                createTranscriptTerminalViewServices: () => matchesMobileOneColumnLayout()
+                createTranscriptTerminalViewServices: () => matchesMobileOneColumnLayout() || !deps.terminalService
                     ? undefined
                     : createTranscriptTerminalViewServices(
                         deps.terminalService,

@@ -82,7 +82,10 @@ interface PwaManifestConfig {
 export interface QaapMobileConfig {
     /** Package names whose frontend modules are part of the mobile entry (desktop order is kept). */
     readonly frontendModules: readonly string[];
-    /** Package names removed from the mobile entry even when allowlisted. */
+    /**
+     * Removed from the mobile entry even when allowlisted: a package name (all its modules) or one
+     * module path (`<package name>/<path inside the package>`, e.g. an IDE-only half of a split module).
+     */
     readonly exclude: readonly string[];
 }
 
@@ -143,8 +146,8 @@ export class FrontendGenerator extends AbstractGenerator {
     }
 
     /**
-     * Keeps the entries of `modules` (desktop order) whose package is allowlisted and not excluded.
-     * A module path is `<package name>/<path inside the package>`.
+     * Keeps the entries of `modules` (desktop order) whose package is allowlisted and neither the package
+     * nor the module path itself is excluded. A module path is `<package name>/<path inside the package>`.
      */
     protected filterMobileModules(modules: Map<string, string>, config: QaapMobileConfig): Map<string, string> {
         const allowed = new Set(config.frontendModules);
@@ -153,7 +156,7 @@ export class FrontendGenerator extends AbstractGenerator {
         for (const [key, modulePath] of modules) {
             const segments = modulePath.split('/');
             const packageName = modulePath.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0];
-            if (allowed.has(packageName) && !excluded.has(packageName)) {
+            if (allowed.has(packageName) && !excluded.has(packageName) && !excluded.has(modulePath)) {
                 result.set(key, modulePath);
             }
         }

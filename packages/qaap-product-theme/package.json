@@ -13,6 +13,9 @@
   "theiaExtensions": [
     {
       "frontend": "lib/browser/qaap-product-theme-frontend-module"
+    },
+    {
+      "frontend": "lib/browser/qaap-product-theme-ide-frontend-module"
     }
   ],
   "keywords": [

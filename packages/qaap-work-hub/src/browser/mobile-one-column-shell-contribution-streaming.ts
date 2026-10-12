@@ -276,7 +276,7 @@ export async function ensureDesktopSidePanelSizesExtracted(ctx: MobileOneColumnS
         await ctx.setSidePanelSize('right', target);
     }
     ctx.requestFullShellRelayout();
-    await ctx.desktopTerminalLayout.ensureDesktopTerminalNormal();
+    await ctx.desktopTerminalLayout?.ensureDesktopTerminalNormal();
 }
 
 export async function setSidePanelSizeExtracted(ctx: MobileOneColumnShellContributionContext, side: 'left' | 'right', size: number): Promise<void> {

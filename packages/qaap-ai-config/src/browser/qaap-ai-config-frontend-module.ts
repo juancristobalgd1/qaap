@@ -17,8 +17,6 @@ import { QaapAiModelDefaultsContribution } from '../common/qaap-ai-model-default
 import { LanguageModelOptionContribution } from '@theia/ai-ide/lib/browser/ai-configuration/language-model-option-contribution';
 import { QaapLanguageModelOptionContribution } from './qaap-language-model-option-contribution';
 import { QaapIncrementalStreamParsingContribution } from './qaap-incremental-stream-parsing-contribution';
-import { LaunchListProvider } from '@theia/ai-ide/lib/browser/workspace-launch-provider';
-import { QaapLaunchListProvider } from './qaap-launch-list-provider';
 import { ShellCommandPermissionService } from '@theia/ai-terminal/lib/browser/shell-command-permission-service';
 import { QaapShellCommandPermissionService } from './qaap-shell-command-permission-service';
 import { QaapTerminalPreferenceContribution } from './qaap-terminal-preferences';
@@ -80,9 +78,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapSkillPromptCoordinator).toSelf().inSingletonScope();
     rebind(SkillPromptCoordinator).toService(QaapSkillPromptCoordinator);
-
-    bind(QaapLaunchListProvider).toSelf().inSingletonScope();
-    rebind(LaunchListProvider).toService(QaapLaunchListProvider);
 
     bind(QaapTerminalPreferenceContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapTerminalPreferenceContribution);

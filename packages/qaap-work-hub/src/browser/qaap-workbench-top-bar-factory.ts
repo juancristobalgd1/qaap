@@ -4,14 +4,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { CommandRegistry, MenuModelRegistry } from '@theia/core/lib/common';
 import { ApplicationShell, Widget } from '@theia/core/lib/browser';
 import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import { BrowserMainMenuFactory } from '@theia/core/lib/browser/menu/browser-menu-plugin';
 import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-top-bar-factory';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import { QaapIdeTerminalService } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -36,8 +36,9 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     @inject(QaapProjectSwitcherService)
     protected readonly projectSwitcher: QaapProjectSwitcherService;
 
-    @inject(TerminalService)
-    protected readonly terminalService: TerminalService;
+    /** IDE-only (desktop): undefined in the `bundle-mobile` entry. */
+    @inject(QaapIdeTerminalService) @optional()
+    protected readonly terminalService: QaapIdeTerminalService | undefined;
 
     @inject(QaapMiniBrowserOpenHandler)
     protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler;
