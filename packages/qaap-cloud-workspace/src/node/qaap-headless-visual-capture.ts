@@ -19,6 +19,7 @@ import {
 import { buildQaapIdentityPreviewUrl } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import {
     isQaapProcessPreviewIdentity,
+    normalizeQaapPreviewConversationId,
     resolveQaapPreviewIdentity,
     type QaapProcessPreviewIdentity,
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
@@ -26,6 +27,7 @@ import {
     QaapDevPreviewPortRegistry,
     type QaapDevPreviewRecord,
 } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
+import { QaapDevPreviewEndpoint, canonicalizeQaapPreviewRoot } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-endpoint';
 import { deriveVisualFlowSteps } from '@theia/qaap-shared-core/lib/common/qaap-visual-flow-plan';
 import {
     QAAP_PREVIEW_CONFIG_PATH,
@@ -193,12 +195,6 @@ function expectedPortForProject(dir: string, pkg: NonNullable<ReturnType<typeof 
     }
     // next / react-scripts / nuxt / generic node servers default to 3000 and honor $PORT.
     return 3000;
-}
-
-/** The IDE's own listen port must never be probed or captured as "the app". */
-export function qaapIdeListenPort(): number {
-    const fromEnv = Number(process.env.PORT);
-    return Number.isInteger(fromEnv) && fromEnv > 0 ? fromEnv : 3000;
 }
 
 function scriptProjectAt(dir: string): QaapHeadlessCaptureAppTarget | undefined {
@@ -523,6 +519,10 @@ export class QaapHeadlessVisualCaptureService {
     @inject(QaapDevPreviewPortRegistry)
     protected readonly previewRegistry: QaapDevPreviewPortRegistry;
 
+    /** Shared port allocator and liveness probes of the claim endpoint. */
+    @inject(QaapDevPreviewEndpoint)
+    protected readonly previewEndpoint: QaapDevPreviewEndpoint;
+
     protected readonly inFlight = new Set<string>();
     /** One headless attempt per settled turn (`conversationId:messageCount`). */
     protected readonly attemptedTurns = new Set<string>();
@@ -648,9 +648,8 @@ export class QaapHeadlessVisualCaptureService {
                 port = started.port;
                 publicPreview = this.registerPublicPreview(conv, app.root, port);
             } else {
-                const preferredPort = this.previewPortForApp(app);
-                publicPreview = this.registerPublicPreview(conv, app.root, preferredPort);
-                const ready = await this.ensureScriptServer(app, publicPreview?.identity);
+                publicPreview = await this.reserveScriptPreview(conv, app);
+                const ready = await this.ensureScriptServer(app, publicPreview);
                 if (ready.ok) {
                     supervisedPreviewId = ready.startedPreviewId;
                     port = ready.port;
@@ -757,39 +756,70 @@ export class QaapHeadlessVisualCaptureService {
         this.previewRegistry.releasePreview(retained.preview.record.previewId, retained.ownerLogin);
     }
 
-    protected previewPortForApp(app: QaapHeadlessCaptureAppTarget): number {
-        return app.expectedPort === qaapIdeListenPort() ? app.expectedPort + 7 : app.expectedPort;
-    }
-
-    /** Registers a capture server as a normal identity-scoped preview so transcript links can open it. */
-    protected registerPublicPreview(
+    /**
+     * The preview a script app is captured on. Worktree threads share the framework port with
+     * their sibling threads, so a port that merely answers HTTP proves nothing: reuse only this
+     * conversation's live preview of the same root (the thread's own dev server), otherwise reserve
+     * a fresh port through the claim endpoint's allocator. Undefined when no safe port is free.
+     */
+    protected async reserveScriptPreview(
         conv: QaapAgentConversation,
-        root: string,
-        port: number,
-    ): QaapHeadlessPublicPreview | undefined {
+        app: QaapHeadlessCaptureAppTarget,
+    ): Promise<QaapHeadlessPublicPreview | undefined> {
         const ownerLogin = conv.ownerLogin ?? QAAP_SKIP_AUTH_USER_LOGIN;
-        const existing = this.previewRegistry.getByPort(port);
-        if (existing) {
-            if (existing.ownerLogin !== ownerLogin || existing.root !== root) {
-                return undefined;
-            }
-            if (!isQaapProcessPreviewIdentity(existing)) {
-                return undefined;
-            }
+        const root = canonicalizeQaapPreviewRoot(app.root);
+        const live = await this.findLiveConversationPreview(conv.id, ownerLogin, root);
+        if (live) {
             return {
                 identity: {
-                    userId: existing.userId,
-                    workspaceId: existing.workspaceId,
-                    projectId: existing.projectId,
-                    conversationId: existing.conversationId,
-                    processId: existing.processId,
-                    previewId: existing.previewId,
+                    userId: live.userId,
+                    workspaceId: live.workspaceId,
+                    projectId: live.projectId,
+                    conversationId: live.conversationId,
+                    processId: live.processId,
+                    previewId: live.previewId,
                 },
                 ownerLogin,
-                record: existing,
+                record: live,
                 registeredByCapture: false,
             };
         }
+        const identity = this.freshCaptureIdentity(conv, ownerLogin);
+        const record = await this.previewEndpoint.allocatePreviewPort({ ...identity, ownerLogin, root }, app.expectedPort);
+        return record && { identity, ownerLogin, record, registeredByCapture: true };
+    }
+
+    /** Most recently touched live process preview of this owner + conversation + canonical root. */
+    protected async findLiveConversationPreview(
+        conversationId: string,
+        ownerLogin: string,
+        root: string,
+    ): Promise<(QaapDevPreviewRecord & QaapProcessPreviewIdentity) | undefined> {
+        const conversation = normalizeQaapPreviewConversationId(conversationId);
+        const candidates = this.previewRegistry.records()
+            .filter((record): record is QaapDevPreviewRecord & QaapProcessPreviewIdentity => record.ownerLogin === ownerLogin
+                && record.root === root
+                && isQaapProcessPreviewIdentity(record)
+                && normalizeQaapPreviewConversationId(record.conversationId) === conversation)
+            .sort((left, right) => right.touchedAt - left.touchedAt);
+        for (const record of candidates) {
+            if (!this.previewEndpoint.isPreviewProcessDead(record)
+                && await this.previewEndpoint.probeLocalDevServer(record.port, ownerLogin)) {
+                return record;
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * The capture's own preview identity, with any leftover of a previous capture (crashed job,
+     * changed app root) stopped and released: a stale registration would block re-registering it,
+     * and a stale supervised child would be returned by `start` instead of a server on the new port.
+     */
+    protected freshCaptureIdentity(
+        conv: QaapAgentConversation,
+        ownerLogin: string,
+    ): QaapProcessPreviewIdentity & { readonly previewId: string } {
         const identity = resolveQaapPreviewIdentity({
             userId: ownerLogin,
             workspaceId: conv.cwd,
@@ -797,10 +827,23 @@ export class QaapHeadlessVisualCaptureService {
             conversationId: conv.id,
             processId: `visual-${conv.id}`,
         });
+        this.supervisor.stop(identity.previewId);
+        this.previewRegistry.releasePreview(identity.previewId, ownerLogin);
+        return identity;
+    }
+
+    /** Registers an in-process static capture server as an identity-scoped preview so transcript links can open it. */
+    protected registerPublicPreview(
+        conv: QaapAgentConversation,
+        root: string,
+        port: number,
+    ): QaapHeadlessPublicPreview | undefined {
+        const ownerLogin = conv.ownerLogin ?? QAAP_SKIP_AUTH_USER_LOGIN;
+        const identity = this.freshCaptureIdentity(conv, ownerLogin);
         const record = this.previewRegistry.register({
             ...identity,
             ownerLogin,
-            root,
+            root: canonicalizeQaapPreviewRoot(root),
             port,
         });
         return record
@@ -808,38 +851,41 @@ export class QaapHeadlessVisualCaptureService {
             : undefined;
     }
 
-    /** Reuses an already-listening expected port, otherwise starts the app via the supervisor. */
+    /**
+     * Reuses the conversation's live preview as-is; otherwise starts the app via the supervisor on
+     * the port reserved for this capture and waits until that port answers.
+     */
     protected async ensureScriptServer(
         app: QaapHeadlessCaptureAppTarget,
-        publicIdentity?: QaapProcessPreviewIdentity & { readonly previewId: string },
+        preview: QaapHeadlessPublicPreview | undefined,
     ): Promise<{ ok: true; port: number; startedPreviewId?: string } | { ok: false; reason: string }> {
-        // Probing the IDE's own listen port would "find" Qaap itself and screenshot the wrong
-        // thing — shift to an alternate port instead ($PORT-honoring dev servers follow along).
-        const port = this.previewPortForApp(app);
-        if (await this.probePort(port)) {
+        if (!preview) {
+            return { ok: false, reason: 'no safe dev-preview port is available' };
+        }
+        const port = preview.record.port;
+        if (!preview.registeredByCapture) {
             return { ok: true, port };
         }
-        // Identity-keyed (per app root), never the global `legacy-port-<port>` supervisor key:
-        // capture servers must not collide with — or be mistaken for — user preview processes.
-        const startedPreviewId = publicIdentity?.previewId ?? `qaap-headless-capture:${app.root}`;
+        // Identity-keyed, never the global `legacy-port-<port>` supervisor key: capture servers
+        // must not collide with (or be mistaken for) user preview processes.
+        const { identity } = preview;
+        const startedPreviewId = identity.previewId;
         const launch = app.launch ? materializeQaapPreviewLaunchPlan(app.launch, port) : undefined;
         await this.supervisor.start(app.root, port, {
             previewId: startedPreviewId,
-            projectId: publicIdentity?.projectId ?? app.root,
-            ...(publicIdentity ? {
-                userId: publicIdentity.userId,
-                workspaceId: publicIdentity.workspaceId,
-                conversationId: publicIdentity.conversationId,
-                processId: publicIdentity.processId,
-                ownerLogin: publicIdentity.userId,
-            } : {}),
+            projectId: identity.projectId,
+            userId: identity.userId,
+            workspaceId: identity.workspaceId,
+            conversationId: identity.conversationId,
+            processId: identity.processId,
+            ownerLogin: preview.ownerLogin,
         }, launch);
         const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
         while (Date.now() < deadline) {
             if (await this.probePort(port)) {
                 return { ok: true, port, startedPreviewId };
             }
-            const snapshot = this.supervisor.describe(port);
+            const snapshot = this.supervisor.describe(startedPreviewId);
             if (snapshot?.status === 'exited') {
                 const tail = snapshot.stderrTail?.slice(-3).join(' ').trim();
                 this.supervisor.stop(startedPreviewId);
