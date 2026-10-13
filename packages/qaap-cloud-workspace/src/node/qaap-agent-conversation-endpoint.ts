@@ -32,6 +32,7 @@ import {
 } from '../common/qaap-agent-conversation-ws';
 import { QaapConversationLiveSession } from './qaap-conversation-live-session';
 import { parseQaapConversationEventId, type QaapConversationLogEntry } from './qaap-conversation-event-log';
+import type { QaapAgentConversationIsolation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapAgUiEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
@@ -110,6 +111,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     /** Dedup keys whose create is in progress (reserved before the first await) to block a concurrent fan-out. */
     protected readonly clientRequestInFlight = new Set<string>();
     protected static readonly CLIENT_REQUEST_DEDUP_MAX = 512;
+    /** Repository key → creates in flight that will share its working tree (closes the 'auto' isolation race). */
+    protected readonly repoClaims = new Map<string, number>();
 
     configure(app: Application): void {
         // List for one cwd (or all).
@@ -592,18 +595,34 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             this.clientRequestInFlight.add(dedupKey);
         }
+        let claimedRepo: string | undefined;
         try {
-            // "New Worktree" destination: run the conversation in an isolated git worktree,
-            // grouped under the originating repository via parallelBaseCwd.
+            // Isolated threads run in their own git worktree, grouped under the originating
+            // repository via parallelBaseCwd (see QaapAgentConversationIsolation).
             let cwd = resolvedCwd.cwd;
             let baseCwd: string | undefined;
             let worktreeBranch: string | undefined;
-            if (body.worktree === true) {
-                const worktreeOwnerLogin = this.auth.resolveUserLogin(ctx);
-                const worktree = await this.worktrees.create(cwd, worktreeOwnerLogin);
-                baseCwd = cwd;
-                cwd = worktree.worktreePath;
-                worktreeBranch = worktree.branch;
+            const isolation = this.resolveIsolation(body);
+            const repoKey = this.repoKey(cwd);
+            if (isolation === 'worktree' || (isolation === 'auto' && this.repoHasActiveThread(repoKey, ownerLogin))) {
+                try {
+                    const worktree = await this.worktrees.create(cwd, ownerLogin);
+                    baseCwd = cwd;
+                    cwd = worktree.worktreePath;
+                    worktreeBranch = worktree.branch;
+                } catch (error) {
+                    // 'auto' never fails the create: a non-git project simply shares its working tree.
+                    if (isolation === 'worktree') {
+                        throw error;
+                    }
+                    console.warn(`[qaap] auto worktree isolation unavailable for ${cwd}, sharing the working tree:`, error);
+                }
+            }
+            if (!worktreeBranch) {
+                // Claim the shared tree until store.create has registered this thread's first turn, so a
+                // concurrent 'auto' create on the same repository sees it as active and isolates.
+                claimedRepo = repoKey;
+                this.repoClaims.set(repoKey, (this.repoClaims.get(repoKey) ?? 0) + 1);
             }
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
             const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
@@ -634,7 +653,49 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (dedupKey) {
                 this.clientRequestInFlight.delete(dedupKey);
             }
+            if (claimedRepo) {
+                const claims = (this.repoClaims.get(claimedRepo) ?? 1) - 1;
+                if (claims > 0) {
+                    this.repoClaims.set(claimedRepo, claims);
+                } else {
+                    this.repoClaims.delete(claimedRepo);
+                }
+            }
         }
+    }
+
+    /** Effective isolation of a create request; the legacy `worktree` boolean maps to 'worktree' / 'none'. */
+    protected resolveIsolation(body: Partial<QaapCreateAgentConversationRequest>): QaapAgentConversationIsolation {
+        if (body.isolation === 'worktree' || body.isolation === 'none' || body.isolation === 'auto') {
+            return body.isolation;
+        }
+        return body.worktree === true ? 'worktree' : body.worktree === false ? 'none' : 'auto';
+    }
+
+    /** Comparable repository path (Windows paths are case-insensitive). */
+    protected repoKey(cwd: string): string {
+        const resolved = path.resolve(cwd);
+        return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    }
+
+    /**
+     * True when a create sharing this repository's working tree is in flight, or another thread of this
+     * owner in that same working tree has a queued or running turn. Threads in their own worktree do not
+     * occupy it.
+     */
+    protected repoHasActiveThread(repoKey: string, ownerLogin: string | undefined): boolean {
+        if (this.repoClaims.has(repoKey)) {
+            return true;
+        }
+        for (const conv of this.store.conversations.values()) {
+            if (conv.ownerLogin && conv.ownerLogin !== ownerLogin) {
+                continue;
+            }
+            if (this.repoKey(conv.cwd) === repoKey && this.store.getActiveTaskIdsForConversation(conv.id).length > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Record a client request → conversation mapping, evicting the oldest entry past the cap. */

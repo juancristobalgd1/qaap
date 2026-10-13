@@ -13,6 +13,7 @@ import {
     isAgentsHubIdleConversationSummary,
 } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
+    QaapAgentConversationIsolation,
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { formatConversationForClipboard } from '@theia/qaap-shared-core/lib/common/qaap-conversation-clipboard-text';
@@ -262,7 +263,7 @@ export async function submitBackgroundAgentTaskExtracted(ctx: MobileProjectsPane
         capabilityOverrides?: Record<string, boolean>;
         genericCapabilitySelections?: GenericCapabilitySelections;
         variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-        worktree?: boolean;
+        isolation?: QaapAgentConversationIsolation;
         agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
     } = {},): Promise<QaapAgentConversationSummaryDTO | undefined> {
     return ctx.backgroundTaskUi.submitBackgroundAgentTask(project, draft, options);

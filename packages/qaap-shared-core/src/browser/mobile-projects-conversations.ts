@@ -287,11 +287,6 @@ export class MobileProjectsConversations {
         return mergeCwdConversationListsExtracted(this, ...lists);
     }
 
-    /** True when any conversation in any project is currently streaming a turn. */
-    getStreamingCountForCwd(cwd: string): number {
-        return this.threadStore.getSummariesForCwd(cwd).reduce((n, c) => n + (c.status === 'streaming' ? 1 : 0), 0);
-    }
-
     /**
      * Parallel-run variant conversations live in a tmpdir worktree (so their own cwd won't match
      * the repo), but carry `parallelBaseCwd` pointing at the originating repo. This returns the

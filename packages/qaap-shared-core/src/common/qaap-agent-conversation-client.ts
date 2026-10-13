@@ -608,6 +608,14 @@ export interface QaapAgentConversationGroupDTO {
     readonly conversations: QaapAgentConversationSummaryDTO[];
 }
 
+/**
+ * Where a new conversation runs: `'worktree'` always gets a new isolated git worktree (branch off HEAD);
+ * `'none'` always shares the repository's working tree; `'auto'` gets a worktree only when another
+ * thread is active (queued or running turn) on the same repository, decided by the server at creation.
+ * A non-git project shares its tree under `'auto'`.
+ */
+export type QaapAgentConversationIsolation = 'auto' | 'worktree' | 'none';
+
 export interface QaapCreateConversationBody {
     readonly cwd: string;
     /**
@@ -630,11 +638,8 @@ export interface QaapCreateConversationBody {
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
-    /**
-     * When `true`, the server provisions an isolated git worktree (new branch off HEAD of
-     * {@link cwd}) and the conversation runs there instead of the main working tree.
-     */
-    readonly worktree?: boolean;
+    /** Defaults to `'auto'` on the server. */
+    readonly isolation?: QaapAgentConversationIsolation;
 }
 
 export async function listAllConversationGroups(options?: { readonly onRetry?: () => void }): Promise<QaapAgentConversationGroupDTO[]> {

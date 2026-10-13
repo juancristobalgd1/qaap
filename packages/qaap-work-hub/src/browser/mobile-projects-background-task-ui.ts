@@ -15,6 +15,7 @@ import {
     getConversation,
     startGoalLoop,
     type QaapAgentConversationDTO,
+    type QaapAgentConversationIsolation,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
@@ -212,8 +213,8 @@ export class MobileProjectsBackgroundTaskUi {
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-            /** Run the task in a fresh isolated git worktree instead of the project's working tree. */
-            worktree?: boolean;
+            /** Omitted → the server's `'auto'`: a worktree only when another thread is active on the repository. */
+            isolation?: QaapAgentConversationIsolation;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
@@ -245,8 +246,8 @@ export class MobileProjectsBackgroundTaskUi {
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-            /** Run the task in a fresh isolated git worktree instead of the project's working tree. */
-            worktree?: boolean;
+            /** Omitted → the server's `'auto'`: a worktree only when another thread is active on the repository. */
+            isolation?: QaapAgentConversationIsolation;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
@@ -308,22 +309,12 @@ export class MobileProjectsBackgroundTaskUi {
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-            worktree?: boolean;
+            isolation?: QaapAgentConversationIsolation;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
             untilDone?: boolean;
         },
     ): Promise<QaapProjectChatSessionCreated> {
-        const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
-        if (useWorktree && options.worktree !== true) {
-            MobileSnackbar.show(
-                nls.localize(
-                    'qaap/mobileProjects/autoWorktree',
-                    'Running in an isolated worktree so agents do not conflict.',
-                ),
-                { duration: 2200 },
-            );
-        }
         const agent = await this.boundedSubmitStage(
             this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId),
             20_000,
@@ -364,7 +355,7 @@ export class MobileProjectsBackgroundTaskUi {
             approvalPolicyId,
             toolApprovalRules,
             latencyMarks: options.latencyMarks,
-            ...(useWorktree ? { worktree: true } : {}),
+            ...(options.isolation ? { isolation: options.isolation } : {}),
             ...(contextPreamble ? { contextPreamble } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
             ...(options.autoApprove === false
@@ -373,6 +364,16 @@ export class MobileProjectsBackgroundTaskUi {
                     ? { autoApprove: true }
                     : {}),
         }, createController.signal), 60_000, 'creating the conversation', () => createController.abort());
+        if (conversation.worktreeBranch && options.isolation !== 'worktree') {
+            // The server isolated the thread because another one is active on this repository.
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/autoWorktree',
+                    'Running in an isolated worktree so agents do not conflict.',
+                ),
+                { duration: 2200 },
+            );
+        }
         if (options.untilDone) {
             const started = await this.startGoalLoopOnCreatedConversation(conversation.id, draft, outbound);
             const startedSummary = conversationToSummary(started);
@@ -420,24 +421,6 @@ export class MobileProjectsBackgroundTaskUi {
             options.variables,
         ) ?? expandedDraft;
         return applyBackendInteractionModeToPrompt(withAttachments, options.modeId);
-    }
-    /**
-     * When another agent is already streaming in the same repo, default to an isolated worktree
-     * so parallel agents do not stomp the same working tree.
-     */
-    resolveWorktreeForSession(cwd: string, explicitWorktree?: boolean): boolean {
-        if (explicitWorktree === true || explicitWorktree === false) {
-            return explicitWorktree;
-        }
-        if ((this.host.conversations?.getStreamingCountForCwd(cwd) ?? 0) > 0) {
-            return true;
-        }
-        // A QUEUED task (per-user concurrency cap) is not streaming yet but WILL write to this
-        // tree the moment a slot frees up — treat it as a collision too, or two submits in quick
-        // succession share the same working tree. (Paused-on-approval turns keep their process
-        // alive and stay 'streaming', so they are already covered above.)
-        return (this.host.activeTasks?.getTasksForCwd(cwd) ?? [])
-            .some(task => task.state === 'running' || task.state === 'queued');
     }
     shouldUseTheiaCoder(content: string, selectedAgentId?: string, options: { forceVps?: boolean; isLegacyTheiaChat?: boolean } = {}): boolean {
         return shouldRouteSubmitToTheiaCoder({
