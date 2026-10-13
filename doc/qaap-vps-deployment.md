@@ -37,6 +37,40 @@ Choose a range that does not overlap the VPS host, VPN, or private network range
 restart Docker before starting Qaap tenant workloads. Without an expanded pool, Docker can exhaust
 its defaults and reject tenant network creation with a non-overlapping IPv4 address-pool error.
 
+## Tenant idle stop and cold-start (wake) timing
+
+In backend-per-tenant mode the reaper stops a tenant's backend and worker after a period without
+activity; the next request (normally the `GET /` that loads the page) starts them again.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `QAAP_TENANT_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Idle time before the reaper stops a tenant runtime. Clamped to 60000 (1 min) … 604800000 (7 days); a non-integer value falls back to the default. Either case logs one `[qaap-runtime]` warning. |
+| `QAAP_TENANT_DESTROY_AFTER_MS` | `86400000` (24 h) | Retention of stopped containers before they are removed. Tenant data is never removed. |
+| `QAAP_TENANT_REAPER_INTERVAL_MS` | `300000` (5 min) | Sweep interval, so a runtime stops up to one interval after its idle timeout. |
+| `QAAP_TENANT_BACKEND_READY_TIMEOUT_MS` | `30000` | How long a wake waits for the tenant backend's `/qaap/api/health`. |
+
+The production `docker-compose.yml` passes an explicit environment list to the `theia` service.
+Before relying on one of these variables, add it there, for example
+`QAAP_TENANT_IDLE_TIMEOUT_MS: ${QAAP_TENANT_IDLE_TIMEOUT_MS:-1800000}`. Setting it only in `.env`
+has no effect.
+
+Each wake logs one line from the control plane, with its phases (Docker preparation, container
+start/create, ingress relay, health wait):
+
+```text
+[qaap-tenant] backend wake alice 5210ms action=started prepare=40ms container=900ms relay=300ms ready=3970ms
+```
+
+`action` is `started` (stopped container), `created` (missing or replaced container), `running` (a
+container that was already running, e.g. after a control-plane restart) or `deferred` (a stale
+backend kept while agent turns finish). Failures log `backend wake failed … error="…"`. The latest
+wake and p50/p95/max over the last 100 successful wakes are in `backendWake` of
+`GET /qaap/api/cloud/runtime/metrics` (process-local, reset on restart):
+
+```bash
+docker compose logs theia | grep 'backend wake'
+```
+
 ## Quick start
 
 On the VPS:

@@ -6,6 +6,8 @@
 import { toArray } from '@lumino/algorithm';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { Saveable } from '@theia/core/lib/browser/saveable';
+import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { markQaapBootMilestone } from '@theia/qaap-shared-core/lib/browser/qaap-boot-marks';
 import {
     clearMobileProjectsHomeVisible,
     clearPreferAgentsSurface,
@@ -79,9 +81,16 @@ export class MobileShellWorkHubBootstrapController {
         this.sessionState = options.sessionState;
     }
 
-    /** Paint Work Hub immediately; hydrate workspace-dependent state once MRU restore is ready. */
+    /**
+     * Paint Work Hub immediately; hydrate workspace-dependent state once MRU restore is ready.
+     *
+     * The Work Hub landing and the Agents surface never wait for `workspaceService.ready` (2–4
+     * sequential backend round trips on a phone): only the workspace-scoped follow-ups do — the
+     * classic IDE Welcome check below, the project bootstrap in {@link finishAgentsSurfaceBootstrap}
+     * and the main-area fill after a workspace reload.
+     */
     async bootstrapWorkHubSurfaceAfterLayout(): Promise<void> {
-        await this.workspaceService.ready;
+        markQaapBootMilestone('workhub-bootstrap-start');
         this.host.onMediaChange();
         if (this.host.shouldActivateMobileLayout() && !peekPreferDesktopIde()) {
             if (!this.host.isMobileActive()) {
@@ -113,6 +122,8 @@ export class MobileShellWorkHubBootstrapController {
             return;
         }
         if (!this.host.shouldActivateMobileLayout()) {
+            // Classic IDE surface: `opened` below must reflect the restored workspace.
+            await this.workspaceService.ready;
             clearMobileWorkHubBootGuard();
             setMobileWorkHubComposerHeaderChrome(false);
             // A workspace-backed classic IDE already has a project context. Starting the
@@ -245,9 +256,11 @@ export class MobileShellWorkHubBootstrapController {
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 return;
             }
-            await this.workspaceService.ready;
-            if (!this.shouldContinueAgentsBootstrap(epoch)) {
-                return;
+            if (!this.canPaintAgentsSurfaceBeforeWorkspaceReady()) {
+                await this.workspaceService.ready;
+                if (!this.shouldContinueAgentsBootstrap(epoch)) {
+                    return;
+                }
             }
             await this.collapseIdeMainAreaForWorkHub();
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
@@ -301,9 +314,22 @@ export class MobileShellWorkHubBootstrapController {
         this.host.settleMobileSidePanelsCollapsed();
     }
 
+    /**
+     * The mobile one-column Work Hub paints the Agents surface without waiting for the workspace:
+     * `QaapShellLayoutRestorer` strips the persisted IDE regions there, so no restored editor
+     * can land under the hub once the layout (which itself waits for the workspace) is inflated.
+     * Elsewhere the restored IDE main area must be collapsed after the workspace-scoped layout restore,
+     * so the wait stays.
+     */
+    protected canPaintAgentsSurfaceBeforeWorkspaceReady(): boolean {
+        return matchesMobileOneColumnLayout() && !peekPreferDesktopIde();
+    }
+
     /** Non-blocking chrome refresh after the composer is visible (TTI path). */
     protected finishAgentsSurfaceBootstrap(epoch: number, panel: MobileProjectsPanel): void {
         void (async () => {
+            // Project bootstrap (dev preview, README) reads the restored workspace roots.
+            await this.workspaceService.ready;
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 panel.hide();
                 this.host.disposeProjectsPanelForDesktopIde();

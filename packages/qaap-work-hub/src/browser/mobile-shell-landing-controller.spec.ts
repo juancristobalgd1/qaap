@@ -120,6 +120,44 @@ describe('mobile-shell-landing-controller', () => {
         expect(controller.isProjectsLandingSession()).to.equal(false);
     });
 
+    it('releaseMobileWorkHubBootGuard waits until the landing panel is attached before signalling startup-ready', async () => {
+        const { controller, host } = createController();
+        const node = document.createElement('div');
+        host.panel = {
+            isHomeMode: () => true,
+            isVisible: () => true,
+            isAgentsHubShellActive: () => false,
+            getHubView: () => 'home',
+            node,
+        } as unknown as MobileProjectsPanel;
+        const frames: FrameRequestCallback[] = [];
+        const originalRaf = window.requestAnimationFrame;
+        window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+            frames.push(callback);
+            return frames.length;
+        };
+        let startupReady = 0;
+        const onStartupReady = (): void => { startupReady++; };
+        window.addEventListener('qaap-startup-ready', onStartupReady);
+        document.documentElement.classList.add('theia-mobile-workhub-boot');
+        try {
+            controller.releaseMobileWorkHubBootGuard();
+            expect(startupReady).to.equal(0);
+            expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+            frames.shift()!(0);
+            expect(startupReady).to.equal(0);
+            document.body.appendChild(node);
+            frames.shift()!(0);
+            expect(startupReady).to.equal(1);
+            expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(false);
+        } finally {
+            window.removeEventListener('qaap-startup-ready', onStartupReady);
+            window.requestAnimationFrame = originalRaf;
+            node.remove();
+            document.documentElement.classList.remove('theia-mobile-workhub-boot');
+        }
+    });
+
     it('onLandingDismissed persists agents surface and clears landing chrome', () => {
         const { controller, host } = createController();
         host.panel = {

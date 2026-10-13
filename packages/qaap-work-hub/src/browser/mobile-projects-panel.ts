@@ -74,7 +74,8 @@ import {
 import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
 import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
-import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { readQaapAuthUser, readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { QaapWorkHubShellSnapshotWriter } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-shell-snapshot';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import { } from '@theia/qaap-composer/lib/browser/qaap-preview-annotation-composer-session';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -925,6 +926,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     dispose(): void {
+        this.shellSnapshotWriter.dispose();
         disposeExtracted(this);
     }
 
@@ -1026,6 +1028,23 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public render(): void {
         this.hubRenderUi.render();
+        this.scheduleShellSnapshotWrite();
+    }
+
+    protected readonly shellSnapshotWriter = new QaapWorkHubShellSnapshotWriter();
+
+    /**
+     * Keeps the login gate's next-load skeleton (`qaap.workhub.shellSnapshot.v1`) in sync with the
+     * projects the Work Hub landing lists. Only the landing panel writes it; burst renders coalesce.
+     */
+    protected scheduleShellSnapshotWrite(): void {
+        if (!this.homeMode || !this.visible || this.projects.length === 0) {
+            return;
+        }
+        this.shellSnapshotWriter.schedule(this.projects.map(project => ({
+            name: project.name,
+            subtitle: project.github?.fullName,
+        })), readQaapAuthUser()?.login);
     }
 
     protected syncHubViewAvailability(): void {

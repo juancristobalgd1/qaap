@@ -371,7 +371,9 @@ export async function loadProjectsExtracted(ctx: MobileProjectsServiceContext): 
         // Open the SSE stream the first time projects are queried — the panel will subscribe to
         // tracker changes to live-update cards as VPS tasks start/finish.
         ctx.activeTasks.start();
-        const sessionMap = await ctx.loadSessionMap();
+        // The Work Hub paints from the cache before the workspace restore finishes; the current
+        // workspace row below needs the restored workspace, so wait for it alongside the fetch.
+        const [sessionMap] = await Promise.all([ctx.loadSessionMap(), ctx.workspaceService.ready]);
         const entries: MobileProjectEntry[] = [];
         const seen = new Set<string>();
         const hiddenIds = ctx.readHiddenProjectIds();

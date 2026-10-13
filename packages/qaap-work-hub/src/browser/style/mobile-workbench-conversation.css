@@ -584,7 +584,12 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   box-shadow: none;
 }
 
+/* Same visual weight as the neighbouring header codicons; full intensity only while the menu is open. */
 .theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-tab-icon-select .theia-mobile-transcript-tab-icon-select-chevron {
+  opacity: 0.72;
+}
+
+.theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-tab-icon-select[aria-expanded='true'] .theia-mobile-transcript-tab-icon-select-chevron {
   opacity: 1;
 }
 
@@ -678,7 +683,8 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   overflow: visible;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  /* Two stacked chevrons at 2px read much heavier than a single 16px codicon. */
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }

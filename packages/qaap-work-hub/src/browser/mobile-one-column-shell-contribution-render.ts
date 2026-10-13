@@ -17,6 +17,7 @@ import {
     recomputeMobileWorkHubHideIdeSidePanels,
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { resolveInitialLandingBodyClass } from '@theia/qaap-shared-core/lib/browser/mobile-shell-landing-state';
+import { markQaapBootMilestone } from '@theia/qaap-shared-core/lib/browser/qaap-boot-marks';
 import { MobileShellLandingController } from './mobile-shell-landing-controller';
 import {
     MobileShellBottomBarController,
@@ -404,6 +405,7 @@ export function initBottomBarControllerExtracted(ctx: MobileOneColumnShellContri
 }
 
 export function onStartExtracted(ctx: MobileOneColumnShellContributionContext, _app: FrontendApplication): void {
+    markQaapBootMilestone('workhub-onstart');
     ctx.workHubDiff.setDelegate(ctx);
     ctx.landing.syncFromStorage();
     installMobileWorkHubBootGuard();

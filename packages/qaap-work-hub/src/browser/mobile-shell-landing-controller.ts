@@ -20,6 +20,7 @@ import {
     shouldMarkLandingLeftFromStorage,
 } from '@theia/qaap-shared-core/lib/browser/mobile-shell-landing-state';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
+import { markQaapBootMilestone } from '@theia/qaap-shared-core/lib/browser/qaap-boot-marks';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 
@@ -164,11 +165,46 @@ export class MobileShellLandingController {
             && (panel.isAgentsHubShellActive() || panel.node.classList.contains('theia-mod-agents-hub-landing'));
         const landingReady = panel?.isHomeMode() === true && panel.isVisible();
         if (agentsReady || landingReady) {
+            // The Work Hub paints before the workspace (and so the layout) is restored, possibly
+            // while the shell is not attached yet: lifting the guard / telling the login gate then
+            // would reveal a blank page. Retry once the panel is in the document.
+            if (panel.node.isConnected === false) {
+                this.releaseMobileWorkHubBootGuardOnceAttached();
+                return;
+            }
+            markQaapBootMilestone('landing-painted');
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new window.Event('qaap-startup-ready'));
+                markQaapBootMilestone('startup-ready');
             }
             clearMobileWorkHubBootGuard();
         }
+    }
+
+    protected pendingBootGuardReleaseFrame: number | undefined;
+
+    /** Re-runs {@link releaseMobileWorkHubBootGuard} on the first frame the panel is attached. */
+    protected releaseMobileWorkHubBootGuardOnceAttached(): void {
+        if (this.pendingBootGuardReleaseFrame !== undefined || typeof window === 'undefined') {
+            return;
+        }
+        // ~15 s at 60 fps; the boot-guard safety timeout owns anything slower.
+        let framesLeft = 900;
+        const check = (): void => {
+            this.pendingBootGuardReleaseFrame = undefined;
+            const panel = this.host.getProjectsPanel();
+            if (!panel) {
+                return;
+            }
+            if (panel.node.isConnected === false) {
+                if (--framesLeft > 0) {
+                    this.pendingBootGuardReleaseFrame = window.requestAnimationFrame(check);
+                }
+                return;
+            }
+            this.releaseMobileWorkHubBootGuard();
+        };
+        this.pendingBootGuardReleaseFrame = window.requestAnimationFrame(check);
     }
 
     /** Wait for composer-header CSS + panel paint before revealing the shell (avoids IDE stacking). */

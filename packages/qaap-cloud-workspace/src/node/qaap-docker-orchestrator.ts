@@ -30,6 +30,7 @@ import {
 import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
+import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
 import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
@@ -57,6 +58,12 @@ const TENANT_BACKEND_INGRESS_RELAY_CPU_CAP = 500_000_000;
 const TENANT_BACKEND_INGRESS_RELAY_PIDS_CAP = 64;
 const TENANT_BUILD_PREDICTION_TIMEOUT_MS = 1_500;
 const TENANT_IMAGE_BUILD_CACHE_MS = 60_000;
+/**
+ * Interval between `/qaap/api/health` probes while a tenant backend boots. A refused probe costs a
+ * loopback connect through the ingress relay, so a short interval only trims the latency between
+ * "Theia listens" and "the first proxied request goes through" (half the interval on average).
+ */
+const TENANT_BACKEND_READY_POLL_MS = 100;
 const TENANT_BACKEND_REPOS_ROOT = '/workspace/repos';
 const TENANT_BACKEND_REPOS_MOUNT = `${TENANT_BACKEND_REPOS_ROOT}/users`;
 const TENANT_BACKEND_WORKTREES_MOUNT = '/tmp/qaap-worktrees';
@@ -187,6 +194,8 @@ export class QaapDockerOrchestrator {
     protected readonly tenantBackendBuilds = new Map<string, string>();
     /** Short-lived cache of the build baked into the tenant serving image, keyed by image reference. */
     protected tenantImageBuildCache: { readonly image: string; readonly build: string | undefined; readonly at: number } | undefined;
+    /** Phase timings of the backend wake each running {@link createOrValidateTenantBackend} records. */
+    protected readonly tenantBackendWakeTimelines = new Map<string, QaapTenantBackendWakeTimeline>();
 
     isEnabled(): boolean {
         const cloudMode = (process.env.QAAP_CLOUD_MODE?.trim() || 'local').toLowerCase();
@@ -234,10 +243,17 @@ export class QaapDockerOrchestrator {
         );
         this.tenantBackendEnsurePromises.set(key, promise);
         try {
-            const target = await promise;
+            let target: QaapTenantBackendTarget;
+            try {
+                target = await promise;
+            } catch (error) {
+                this.reportTenantBackendWake(tenant, Date.now() - coldStartAt, false, error);
+                throw error;
+            }
             if (!wasReady) {
                 this.runtimeMetrics?.recordColdStart(Date.now() - coldStartAt);
             }
+            this.reportTenantBackendWake(tenant, Date.now() - coldStartAt, true);
             this.runtimeStore?.setState(ownerLogin, 'active', {
                 backendContainerId: target.containerId,
                 lastActivityAt: new Date().toISOString(),
@@ -252,6 +268,29 @@ export class QaapDockerOrchestrator {
             if (this.tenantBackendEnsurePromises.get(key) === promise) {
                 this.tenantBackendEnsurePromises.delete(key);
             }
+        }
+    }
+
+    /**
+     * Logs one line per tenant backend wake (`[qaap-tenant] backend wake <login> <total>ms ...`) and
+     * feeds the wake latency percentiles of `/qaap/api/cloud/runtime/metrics`. Only uncached ensures
+     * reach this, so requests to an already-awake tenant never log here.
+     */
+    protected reportTenantBackendWake(tenant: string, totalMs: number, ok: boolean, error?: unknown): void {
+        const key = tenant.toLowerCase();
+        const timeline = this.tenantBackendWakeTimelines.get(key);
+        // A caller that timed out leaves the still-running Docker operation (and its timeline) to the
+        // retry that joins it; only a settled operation drops it.
+        if (ok || !this.tenantEnsureOperations.has(`backend:${key}`)) {
+            this.tenantBackendWakeTimelines.delete(key);
+        }
+        const sample = (timeline ?? new QaapTenantBackendWakeTimeline()).sample(totalMs, ok);
+        this.runtimeMetrics?.recordBackendWake(sample);
+        const line = QaapTenantBackendWakeTimeline.formatLogLine(tenant, sample, error);
+        if (ok) {
+            console.info(line);
+        } else {
+            console.warn(line);
         }
     }
 
@@ -1045,6 +1084,8 @@ export class QaapDockerOrchestrator {
         ownerLogin: string,
         tenantRootHostPath: string,
     ): Promise<QaapTenantBackendTarget> {
+        const wake = new QaapTenantBackendWakeTimeline();
+        this.tenantBackendWakeTimelines.set(ownerLogin.trim().toLowerCase(), wake);
         const node = this.dockerNodeForTenant(ownerLogin);
         const docker = await this.getDocker(ownerLogin);
         const name = this.backendContainerNameForTenant(ownerLogin);
@@ -1076,6 +1117,7 @@ export class QaapDockerOrchestrator {
             fs.mkdirSync(root, { recursive: true });
         }
         const secret = this.tenantBackendSecret(ownerLogin);
+        wake.mark('prepare');
         let container: Dockerode.Container;
         let inspect: Dockerode.ContainerInspectInfo;
         try {
@@ -1119,7 +1161,10 @@ export class QaapDockerOrchestrator {
                     console.warn(`[qaap-docker] Deferring recreation of stale tenant backend ${name} for ${ownerLogin}: `
                         + `${busy.runningTasks} agent turn(s) running.`);
                     this.deferredTenantBackendRecreations.add(ownerLogin.trim().toLowerCase());
+                    wake.action = 'deferred';
+                    wake.mark('container');
                     await this.waitForTenantBackendReady(runningTarget);
+                    wake.mark('ready');
                     return runningTarget;
                 }
                 console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin}.`);
@@ -1129,12 +1174,16 @@ export class QaapDockerOrchestrator {
                 throw recreated;
             }
             if (!inspect.State.Running) {
+                wake.action = 'started';
                 await container.start();
+            } else {
+                wake.action = 'running';
             }
         } catch (error) {
             if (!this.isDockerNotFound(error)) {
                 throw error;
             }
+            wake.action = 'created';
             const env = [
                 'NODE_ENV=development',
                 'QAAP_CLOUD_MODE=local',
@@ -1232,14 +1281,17 @@ export class QaapDockerOrchestrator {
         if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)) {
             throw new Error(`Tenant backend ${name} did not start with the required isolated configuration.`);
         }
+        wake.mark('container');
         const relayInspect = await this.ensureTenantBackendIngressRelay(
             docker, ownerLogin, name, networkMode, ingressNetwork, publishHostIp,
         );
+        wake.mark('relay');
         const target = this.tenantBackendTargetFromIngressRelayInspect(relayInspect, inspect.Id, name, node.config, ownerLogin);
         if (!target) {
             throw new Error(`Tenant ingress relay for ${name} has no published port on ${publishHostIp}.`);
         }
         await this.waitForTenantBackendReady(target);
+        wake.mark('ready');
         return target;
     }
 
@@ -1630,7 +1682,7 @@ export class QaapDockerOrchestrator {
             } catch (error) {
                 lastFailure = error instanceof Error ? error.message : String(error);
             }
-            await new Promise(resolve => setTimeout(resolve, 250));
+            await new Promise(resolve => setTimeout(resolve, TENANT_BACKEND_READY_POLL_MS));
         }
         throw new Error(`Tenant backend ${target.containerName} did not become ready within ${timeoutMs}ms (${lastFailure}).`);
     }
