@@ -55,7 +55,12 @@ export namespace MobileSnackbar {
     export const COMPOSER_LIFT_PROPERTY = '--theia-mobile-snackbar-composer-lift';
 
     let host: HTMLElement | undefined;
-    let timer: number | undefined;
+    /**
+     * Pending auto-dismiss timer and the window that owns it. Timer handles are only meaningful
+     * on their own window and once fired may be reused there, so a fired handle is forgotten and a
+     * pending one is always cleared on its owner (never on whatever `window` is current later).
+     */
+    let timer: { handle: number; owner: Window } | undefined;
     let composerObserver: ResizeObserver | undefined;
     let observedComposer: HTMLElement | undefined;
     let resizeListening = false;
@@ -169,25 +174,36 @@ export namespace MobileSnackbar {
         void node.offsetWidth;
         node.classList.add('theia-mod-visible');
 
-        if (timer !== undefined) {
-            window.clearTimeout(timer);
-            timer = undefined;
-        }
+        clearDismissTimer();
         if (duration > 0) {
-            timer = window.setTimeout(dismiss, duration);
+            const owner = window;
+            const handle = owner.setTimeout(() => {
+                timer = undefined;
+                dismiss();
+            }, duration);
+            timer = { handle, owner };
+        }
+    }
+
+    function clearDismissTimer(): void {
+        if (timer) {
+            timer.owner.clearTimeout(timer.handle);
+            timer = undefined;
         }
     }
 
     export function dismiss(): void {
-        if (timer !== undefined) {
-            window.clearTimeout(timer);
-            timer = undefined;
-        }
+        clearDismissTimer();
         if (!host) {
             return;
         }
         host.classList.remove('theia-mod-visible');
-        window.setTimeout(() => {
+        // Schedule on the toast's own window: a late auto-dismiss may run after `window` changed.
+        const owner = host.ownerDocument.defaultView;
+        if (!owner) {
+            return;
+        }
+        owner.setTimeout(() => {
             if (host && !host.classList.contains('theia-mod-visible')) {
                 host.hidden = true;
                 untrackComposer();
