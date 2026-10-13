@@ -533,12 +533,26 @@ export interface QaapApplyConversationWorktreeRequest {
     readonly action: QaapWorktreeApplyAction;
 }
 
+/**
+ * Why a merge-back was refused. Nothing changed in any case: base tree, target branch, the thread's
+ * worktree and branch are left as they were, so the user can fix the cause and retry.
+ * - `busy`: another thread is running in the base repository's working tree (HTTP 409).
+ * - `conflict`: the branch does not merge cleanly into the target; see `conflicts`.
+ * - `target-moved`: the target branch changed while the merge was being prepared.
+ * - `local-changes`: uncommitted changes in the base tree would be overwritten.
+ * - `detached`: the base repository is not on a branch.
+ */
+export type QaapWorktreeMergeRefusal = 'busy' | 'conflict' | 'target-moved' | 'local-changes' | 'detached';
+
 export interface QaapApplyConversationWorktreeResponse {
     readonly ok: boolean;
     /** Branch kept or merged when {@link ok} is true. */
     readonly branch?: string;
-    /** Populated when a `merge` action could not complete cleanly (aborted, tree untouched). */
+    /** Populated when a `merge` action could not complete (nothing was changed). */
     readonly error?: string;
+    readonly reason?: QaapWorktreeMergeRefusal;
+    /** Conflicted paths when {@link reason} is `conflict`. */
+    readonly conflicts?: readonly string[];
 }
 
 /** POST body for `/agent-conversations/:id/preview-bootstrap-failure`. */
