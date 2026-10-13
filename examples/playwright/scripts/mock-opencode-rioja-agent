@@ -50,7 +50,7 @@ cat > package.json <<'PKG'
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },
   "devDependencies": {
-    "vite": "^6.2.0"
+    "vite": "6.4.3"
   }
 }
 PKG
@@ -156,7 +156,9 @@ emit_tool "t4" "Write" "completed" '{"file_path":"src/main.js"}'
 
 INSTALL_OUT=""
 if command -v npm >/dev/null 2>&1; then
-    INSTALL_OUT=$(npm install --no-fund --no-audit 2>&1 || true)
+    # Exact vite plus a publish-date cutoff pin the whole graph (rollup, esbuild...): a release still
+    # propagating through the npm CDN 404s on install (rollup 4.64.6, Oct 2026). Bump both together.
+    INSTALL_OUT=$(npm install --no-fund --no-audit --before=2026-09-01 2>&1 || true)
     emit_tool "t5" "Bash" "completed" '{"command":"npm install"}' "$INSTALL_OUT"
 else
     emit_tool "t5" "Bash" "error" '{"command":"npm install"}' "npm not found"
