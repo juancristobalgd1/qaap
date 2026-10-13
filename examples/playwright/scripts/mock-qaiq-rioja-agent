@@ -246,7 +246,7 @@ cat > package.json <<'PKG'
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },
   "devDependencies": {
-    "vite": "^6.2.0"
+    "vite": "6.4.3"
   }
 }
 PKG
@@ -365,7 +365,9 @@ elif command -v npm >/dev/null 2>&1; then
         mkdir -p "$NPM_CACHE_DIR"
     fi
     rm -f "$NPM_CACHE_DIR/.qaap-write-test"
-    INSTALL_OUT=$(npm install --no-fund --no-audit --cache "$NPM_CACHE_DIR" 2>&1 || true)
+    # Exact vite plus a publish-date cutoff pin the whole graph (rollup, esbuild...): a release still
+    # propagating through the npm CDN 404s on install (rollup 4.64.6, Oct 2026). Bump both together.
+    INSTALL_OUT=$(npm install --no-fund --no-audit --before=2026-09-01 --cache "$NPM_CACHE_DIR" 2>&1 || true)
     emit_tool_use "tu-bash-install" "Bash" '{"command":"npm install"}'
     emit_tool_result "tu-bash-install" "$INSTALL_OUT"
 else
