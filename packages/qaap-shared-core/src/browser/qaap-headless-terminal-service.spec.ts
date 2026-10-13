@@ -6,10 +6,12 @@
 import { expect } from 'chai';
 import { Container } from '@theia/core/shared/inversify';
 import { RemoteConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
+import { Emitter } from '@theia/core/lib/common/event';
 import {
-    QAAP_SHELL_TERMINAL_PATH, QAAP_TERMINALS_PATH, QaapHeadlessTerminal, QaapHeadlessTerminalBuffer, QaapHeadlessTerminalService,
+    QAAP_TERMINALS_PATH, QaapHeadlessTerminal, QaapHeadlessTerminalBuffer, QaapHeadlessTerminalService,
     stripTerminalControlSequences,
 } from './qaap-headless-terminal-service';
+import { QaapIdeShellTerminalServer, QaapIdeTerminalWatcher } from './qaap-ide-bridge';
 import { readTerminalTail } from './qaap-project-bootstrap-helpers';
 
 interface FakeChannel {
@@ -26,18 +28,25 @@ function createHarness(): {
     const channels = new Map<string, FakeChannel>();
     let client: Record<string, (event: unknown) => void> = {};
     const server = new Proxy({}, {
-        get: (_target, name) => async (...args: unknown[]) => {
+        // No `then`: a thenable constant would make inversify treat the binding as async.
+        get: (_target, name) => name === 'then' ? undefined : async (...args: unknown[]) => {
             calls.push([String(name), args]);
             return name === 'create' ? 7 : name === 'getProcessId' ? 4242 : undefined;
         }
     });
+    // The watcher is the shell terminal server's RPC client: `client()` plays the backend calling it.
+    const exitEmitter = new Emitter<unknown>();
+    const errorEmitter = new Emitter<unknown>();
+    const watcher = { onTerminalExit: exitEmitter.event, onTerminalError: errorEmitter.event };
+    client = {
+        onTerminalExitChanged: event => exitEmitter.fire(event),
+        onTerminalError: event => errorEmitter.fire(event),
+    };
     const connectionProvider = {
-        createProxy: (path: string, target: Record<string, (event: unknown) => void>) => {
-            expect(path).to.equal(QAAP_SHELL_TERMINAL_PATH);
-            client = target;
-            return server;
+        createProxy: () => {
+            throw new Error('the runner must reuse the terminal package proxy (one channel per path)');
         },
-        listen: (path: string, handler: (path: string, channel: unknown) => void) => {
+        listen:(path: string, handler: (path: string, channel: unknown) => void) => {
             let onMessage: ((event: () => { readString(): string }) => void) | undefined;
             handler(path, { onMessage: (listener: typeof onMessage) => { onMessage = listener; } });
             channels.set(path, { emit: data => onMessage?.(() => ({ readString: () => data })) });
@@ -45,6 +54,8 @@ function createHarness(): {
     };
     const container = new Container();
     container.bind(RemoteConnectionProvider).toConstantValue(connectionProvider);
+    container.bind(QaapIdeShellTerminalServer).toConstantValue(server);
+    container.bind(QaapIdeTerminalWatcher).toConstantValue(watcher);
     container.bind(QaapHeadlessTerminalService).toSelf().inSingletonScope();
     return { service: container.get(QaapHeadlessTerminalService), calls, channels, client: () => client };
 }
