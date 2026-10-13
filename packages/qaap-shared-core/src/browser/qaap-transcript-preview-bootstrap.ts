@@ -14,6 +14,7 @@ import {
     resolveReadyTranscriptPreviewUrlFromProbe,
     type TranscriptPreviewPortProbeResult,
 } from '../common/qaap-transcript-preview-offer';
+import { resolveThreadPreviewRoot } from '../common/qaap-thread-preview-root';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
@@ -211,9 +212,7 @@ async function ensureTranscriptDevPreviewExtracted(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
-    const projectRoot = options.workspaceRoot
-        ?? options.conversation?.parallelBaseCwd
-        ?? options.conversation?.cwd;
+    const projectRoot = options.workspaceRoot ?? resolveThreadPreviewRoot(options.conversation);
     if (projectRoot) {
         await bootstrap.refreshFromProjectRoot(projectRoot, options.projectId ?? projectRoot);
     }
@@ -221,7 +220,12 @@ async function ensureTranscriptDevPreviewExtracted(
     const conversationId = options.conversationId ?? options.conversation?.id;
     if (conversationId && (projectRoot || options.projectId)) {
         bootstrap.bindPreviewConversation(conversationId);
-        const current = await fetchQaapCurrentDevPreview([options.projectId, projectRoot], conversationId);
+        // A worktree thread's claim is registered under its worktree root, not the Work Hub project
+        // id: also look it up by the root the managed launch claims with (the detected descriptor).
+        const current = await fetchQaapCurrentDevPreview(
+            [options.projectId, projectRoot, bootstrap.descriptor?.rootUri.toString()],
+            conversationId,
+        );
         if (current?.ready && current.previewUrl) {
             // Transcript text and a previously persisted preview URL can point at a superseded
             // port after an agent restart. Reuse this section's authoritative live claim before

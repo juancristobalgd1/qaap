@@ -94,6 +94,20 @@ describe('qaap-preview-identity', () => {
             projectId: 'other-project',
             projectName: 'Landing',
         })).to.equal(false);
+        const worktree = 'file:///tmp/qaap-worktrees/alice/e895ac21';
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: worktree,
+            projectId: `ws:${canonical}`,
+            cwdUri: canonical,
+            projectName: 'site',
+        })).to.equal(false);
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: worktree,
+            projectId: `ws:${canonical}`,
+            cwdUri: canonical,
+            threadRootUri: worktree,
+            projectName: 'site',
+        })).to.equal(true);
         expect(claimedPreviewCoordinatesMatchProject({
             probeProjectId: undefined,
             projectId: canonical,

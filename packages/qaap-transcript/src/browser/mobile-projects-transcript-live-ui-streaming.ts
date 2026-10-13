@@ -8,6 +8,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
+import { resolveThreadPreviewRoot } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
 import { excerptTranscriptThought } from '../common/qaap-agent-transcript-segments';
 import {
     conversationAwaitingDevPreview,
@@ -238,7 +239,7 @@ export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProject
     void ensureTranscriptDevPreview(bootstrap, {
         conversation: conv,
         projectId: project?.id,
-        workspaceRoot: project ? ctx.host.projectsService.getProjectCwd(project) ?? conv.cwd : conv.cwd,
+        workspaceRoot: resolveThreadPreviewRoot(conv, project ? ctx.host.projectsService.getProjectCwd(project) ?? conv.cwd : conv.cwd),
     }).then(readyUrl => {
         if (readyUrl && ctx.host.transcriptOpenSummaryId === conv.id) {
             void ctx.openReadyTranscriptPreviewUrl(readyUrl, conv);

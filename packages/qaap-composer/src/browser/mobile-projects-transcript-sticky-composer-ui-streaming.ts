@@ -11,6 +11,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
+import { resolveThreadPreviewRoot } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
 import { formatCommitFeedback } from '@theia/qaap-diff-review/lib/common/qaap-commit-feedback';
 import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -357,9 +358,9 @@ export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTrans
     if (!bootstrap) {
         return;
     }
-    const projectRoot = ctx.host.projectsService.getProjectCwd(project)
+    const projectRoot = resolveThreadPreviewRoot(summary, ctx.host.projectsService.getProjectCwd(project)
         ?? ctx.host.preparedCwdByProjectId?.get?.(project.id)
-        ?? summary.cwd;
+        ?? summary.cwd);
     if (!projectRoot) {
         MobileSnackbar.show(nls.localize(
             'qaap/mobileProjects/previewRootUnresolved',

@@ -11,6 +11,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { resolveThreadPreviewRoot } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
 import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } from '@theia/qaap-transcript/lib/common/qaap-transcript-workspace-cwd';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { probeQaapDevPreviewPort, waitForQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
@@ -111,7 +112,7 @@ export function ensureTranscriptPreviewServingExtracted(ctx: MobileProjectsTrans
                 : undefined,
             conversationId: summary.id,
             projectId: project.id,
-            workspaceRoot: ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd,
+            workspaceRoot: resolveThreadPreviewRoot(summary, ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd),
         });
         if (!readyUrl || !ctx.matchesActivePreviewSummary(summary)) {
             return;
@@ -373,7 +374,7 @@ export function resolveRunnableTranscriptProjectRootExtracted(ctx: MobileProject
     summary: QaapAgentConversationSummaryDTO,): string | undefined {
     const projectCwd = ctx.host.projectsService.getProjectCwd(project);
     if (projectCwd && !isQaapWorkspaceContainerPath(projectCwd)) {
-        return projectCwd;
+        return resolveThreadPreviewRoot(summary, projectCwd);
     }
     const sessionCwd = summary.cwd;
     if (sessionCwd

@@ -22,6 +22,7 @@ import {
 import {
     claimedPreviewCoordinatesMatchProject,
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
+import { resolveThreadPreviewWorktree } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     markTranscriptTerminalRestorable,
@@ -127,6 +128,20 @@ export async function refreshTranscriptPreviewProjectExtracted(ctx: MobileProjec
         }
 }
 
+/**
+ * File URI of the open thread's own git worktree when that thread belongs to `project`. Its preview
+ * claims are registered under the worktree root, which is not one of the project's coordinates.
+ */
+export function openThreadWorktreeUriExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): string | undefined {
+        const summary = ctx.host.transcriptOpenProject?.id === project.id ? ctx.host.transcriptOpenSummary : undefined;
+        const worktree = resolveThreadPreviewWorktree(summary);
+        try {
+            return worktree ? FileUri.create(worktree).toString() : undefined;
+        } catch {
+            return undefined;
+        }
+}
+
 export async function previewUrlMatchesProjectExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, previewUrl: string, project: MobileProjectEntry): Promise<boolean> {
         try {
             const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
@@ -144,6 +159,7 @@ export async function previewUrlMatchesProjectExtracted(ctx: MobileProjectsTrans
                 projectId: project.id,
                 projectUri: project.uri?.toString(),
                 cwdUri,
+                threadRootUri: openThreadWorktreeUriExtracted(ctx, project),
                 projectName: project.name,
             });
             // Same-origin identity path or isolated-origin host label (a backend-accepted alias).
