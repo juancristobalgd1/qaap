@@ -19,6 +19,9 @@
  *     source bytes exceed `scripts/qaap-mobile-bundle-budget.json` -> `monacoBytes`. Source bytes
  *     (not emitted bytes) so the number is the same in development and production builds. Lower
  *     the budget whenever an import cut shrinks it; never raise it.
+ *   - HARD FAIL when a whole vendor barrel listed in WHOLE_BARRELS is reachable (all date-fns
+ *     functions and locales, all highlight.js languages): `vendorShimPlugin` in
+ *     `examples/browser/esbuild.mjs` narrows those imports, a new importer must be narrowed too.
  *   - HARD FAIL when a reachable stylesheet inlines a woff2 font together with legacy formats
  *     (eot/ttf/otf/woff/svg font): fonts are data: URLs, so each extra format is dead weight that
  *     `woff2OnlyFontsPlugin` in `examples/browser/esbuild.mjs` is expected to strip.
@@ -35,6 +38,7 @@ const path = require('path');
 const lib = require('./qaap-frontend-metafile-lib');
 
 const FORBIDDEN = /packages\/(plugin-ext|plugin-ext-vscode|debug|notebook|vsx-registry|task)\//;
+const WHOLE_BARRELS = [/node_modules\/date-fns\/(?:index|locale)\.c?js$/, /node_modules\/highlight\.js\/lib\/index\.js$/];
 const MONACO = [/monaco-editor-core/, /packages\/monaco\//];
 const DEFAULT_BUDGET = path.join(__dirname, 'qaap-mobile-bundle-budget.json');
 
@@ -136,6 +140,15 @@ function main() {
         }
     }
 
+    const barrels = [...reachable].filter(input => WHOLE_BARRELS.some(pattern => pattern.test(normalize(input))));
+    console.log('');
+    console.log(`Whole vendor barrels reachable: ${barrels.length ? '' : 'none'}`);
+    if (barrels.length) {
+        const { chains: barrelChains } = lib.shortestChains(meta, entryInput, input => barrels.includes(input) ? display(input) : undefined);
+        for (const [barrel, chain] of barrelChains) {
+            console.log(`  WHOLE BARREL ${barrel} <- ${display(chain[chain.length - 2] || entryInput)}`);
+        }
+    }
     const redundantFonts = redundantFontStylesheets(meta, reachable);
     console.log('');
     console.log(`Stylesheets inlining legacy font formats next to woff2: ${redundantFonts.length ? '' : 'none'}`);
@@ -147,11 +160,12 @@ function main() {
             entry: display(entryInput),
             forbidden: Object.fromEntries(groups.map(group => [group, (chains.get(group) || []).map(display)])),
             monacoBytes, monacoBudget,
+            wholeBarrels: barrels.map(display),
             redundantFonts: redundantFonts.map(display)
         }, undefined, 2) + '\n');
     }
 
-    const failures = groups.length + (overBudget ? 1 : 0) + redundantFonts.length;
+    const failures = groups.length + (overBudget ? 1 : 0) + barrels.length + redundantFonts.length;
     if (failures) {
         console.log('');
         console.log(`${failures} finding(s)${report ? ' (report mode: not failing)' : ''}.`);
