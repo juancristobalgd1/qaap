@@ -20,6 +20,7 @@
 
 import type { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import type { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
+import type { IShellTerminalServer } from '@theia/terminal/lib/common/shell-terminal-protocol';
 
 /** `@theia/terminal` `TerminalService`; bound by `qaap-work-hub-frontend-module` (desktop and mobile). */
 export const QaapIdeTerminalService = Symbol('QaapIdeTerminalService');
@@ -28,6 +29,14 @@ export type QaapIdeTerminalService = TerminalService;
 /** `@theia/terminal` `TerminalWatcher` (backend exit/error events); bound by `qaap-work-hub-frontend-module` (desktop and mobile). */
 export const QaapIdeTerminalWatcher = Symbol('QaapIdeTerminalWatcher');
 export type QaapIdeTerminalWatcher = TerminalWatcher;
+
+/**
+ * `@theia/terminal` `IShellTerminalServer` RPC proxy, whose client is the {@link QaapIdeTerminalWatcher};
+ * bound by `qaap-work-hub-frontend-module` (desktop and mobile). Reuse it instead of opening another
+ * proxy on `/services/shell-terminal`: a connection allows only one channel per path.
+ */
+export const QaapIdeShellTerminalServer = Symbol('QaapIdeShellTerminalServer');
+export type QaapIdeShellTerminalServer = IShellTerminalServer;
 
 /** Desktop bottom-panel terminal layout (`QaapDesktopTerminalLayoutContribution`), IDE only. */
 export const QaapIdeDesktopTerminalLayout = Symbol('QaapIdeDesktopTerminalLayout');
