@@ -77,9 +77,10 @@ import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-
 import { QaapShellLayoutRestorer } from './qaap-shell-layout-restorer';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
+import { IShellTerminalServer } from '@theia/terminal/lib/common/shell-terminal-protocol';
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
-import { QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
+import { QaapIdeShellTerminalServer, QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
 import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
@@ -245,6 +246,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     // Work Hub terminal surface (desktop and mobile): bridge aliases of the upstream terminal services.
     bind(QaapIdeTerminalService).toService(TerminalService);
     bind(QaapIdeTerminalWatcher).toService(TerminalWatcher);
+    bind(QaapIdeShellTerminalServer).toService(IShellTerminalServer);
     bind(QaapTerminalFrontendContribution).toSelf().inSingletonScope();
     rebind(TerminalFrontendContribution).toService(QaapTerminalFrontendContribution);
     // Terminal link taps must open reliably on touch devices (Qaap is mobile-first);
