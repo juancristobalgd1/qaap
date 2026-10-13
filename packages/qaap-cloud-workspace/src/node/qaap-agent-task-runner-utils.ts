@@ -149,11 +149,10 @@ export function shellQuote(value: string): string {
 }
 
 export function applyTemplate(template: string, prompt: string, vars: Record<string, string> = {}): string {
-    const quoted = shellQuote(prompt);
-    const resolved = template.includes('{prompt}')
-        ? template.split('{prompt}').join(quoted)
-        : `${template} ${quoted}`;
-    return applyTemplateVars(resolved, vars);
+    const withPromptSlot = template.includes('{prompt}') ? template : `${template} {prompt}`;
+    // Normalise the template's whitespace before the prompt goes in: `applyTemplateVars` collapses every
+    // whitespace run, and the quoted prompt must keep its spaces and newlines byte-for-byte.
+    return applyTemplateVars(withPromptSlot, vars).split('{prompt}').join(shellQuote(prompt));
 }
 
 /** Template expansion for stdio-approval runs: the prompt is delivered over stdin, not argv. */
