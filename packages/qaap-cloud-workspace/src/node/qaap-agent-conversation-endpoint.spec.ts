@@ -50,6 +50,7 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
         Object.assign(endpoint, {
             clientRequestDedup: new Map<string, string>(),
             clientRequestInFlight: new Set<string>(),
+            repoClaims: new Map<string, number>(),
             store: {
                 create: (_req: unknown, owner?: string) => {
                     createCalls += 1;
@@ -59,6 +60,8 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
                     return conv;
                 },
                 get: (id: string) => store.get(id),
+                conversations: store,
+                getActiveTaskIdsForConversation: () => [],
             },
             worktrees: {
                 // Async so a second concurrent request can observe the first still in flight.
@@ -143,6 +146,146 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
         h.store.delete('conv-1'); // conversation gone
         await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, fakeRes());
         expect(h.createCalls).to.equal(2); // stale mapping ignored, fresh create
+    });
+});
+
+/** Where a new thread runs: isolation 'auto' | 'worktree' | 'none', decided by the server at creation. */
+describe('QaapAgentConversationEndpoint create isolation', () => {
+
+    const repo = '/workspace/repos/users/alice/o/r';
+
+    interface CreatedConversation {
+        id: string;
+        cwd: string;
+        parallelBaseCwd?: string;
+        worktreeBranch?: string;
+    }
+
+    function build(options: {
+        /** Threads that already have a queued or running turn. */
+        active?: Array<{ cwd: string; parallelBaseCwd?: string; ownerLogin?: string }>;
+        notGit?: boolean;
+    } = {}): { endpoint: QaapAgentConversationEndpoint; worktreeCreates: string[] } {
+        const conversations = new Map<string, Record<string, unknown>>();
+        const activeIds = new Set<string>();
+        (options.active ?? []).forEach((conv, index) => {
+            const id = `active-${index}`;
+            conversations.set(id, { id, ownerLogin: 'alice', status: 'streaming', ...conv });
+            activeIds.add(id);
+        });
+        conversations.set('idle', { id: 'idle', cwd: repo, ownerLogin: 'alice', status: 'settled' });
+        const worktreeCreates: string[] = [];
+        let created = 0;
+        const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+        Object.assign(endpoint, {
+            clientRequestDedup: new Map<string, string>(),
+            clientRequestInFlight: new Set<string>(),
+            repoClaims: new Map<string, number>(),
+            store: {
+                conversations,
+                get: (id: string) => conversations.get(id),
+                getActiveTaskIdsForConversation: (id: string) => activeIds.has(id) ? ['task'] : [],
+                create: (req: { cwd: string; message?: string }, ownerLogin?: string) => {
+                    created += 1;
+                    const conv = { ...req, id: `conv-${created}`, ownerLogin };
+                    conversations.set(conv.id, conv);
+                    // Like the real store, the first turn's task is registered synchronously by create.
+                    if (req.message) {
+                        activeIds.add(conv.id);
+                    }
+                    return conv;
+                },
+            },
+            worktrees: {
+                create: async (cwd: string) => {
+                    await Promise.resolve();
+                    if (options.notGit) {
+                        throw new Error('Worktree tasks need the project to be a git repository.');
+                    }
+                    worktreeCreates.push(cwd);
+                    return { worktreePath: `${cwd}-wt-${worktreeCreates.length}`, branch: `qaap/worktree/${worktreeCreates.length}` };
+                },
+            },
+            auth: fakeAuth(),
+            requireAuth: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+        });
+        return { endpoint, worktreeCreates };
+    }
+
+    async function create(
+        endpoint: QaapAgentConversationEndpoint,
+        body: Record<string, unknown>,
+    ): Promise<{ status: number; conv: CreatedConversation }> {
+        const res = fakeRes();
+        await (endpoint as unknown as { handleCreate(req: unknown, res: unknown): Promise<void> })
+            .handleCreate({ body: { cwd: repo, message: 'hi', ...body } }, res);
+        return { status: res.statusCode, conv: res.body as CreatedConversation };
+    }
+
+    const isolated = (conv: CreatedConversation): boolean => !!conv.worktreeBranch && conv.parallelBaseCwd === repo && conv.cwd !== repo;
+    const shared = (conv: CreatedConversation): boolean => !conv.worktreeBranch && conv.parallelBaseCwd === undefined && conv.cwd === repo;
+
+    it('auto isolates when another thread on the same repository has a queued or running turn', async () => {
+        const h = build({ active: [{ cwd: repo }] });
+        const { status, conv } = await create(h.endpoint, { isolation: 'auto' });
+        expect(status).to.equal(201);
+        expect(isolated(conv)).to.equal(true);
+        expect(h.worktreeCreates).to.deep.equal([repo]);
+    });
+
+    it('auto counts an active thread running in a worktree of the same repository', async () => {
+        const h = build({ active: [{ cwd: '/tmp/qaap-worktrees/alice/abc', parallelBaseCwd: repo }] });
+        expect(isolated((await create(h.endpoint, {})).conv)).to.equal(true); // no isolation field → 'auto'
+    });
+
+    it('auto shares when the only threads are idle, on another repository, or owned by someone else', async () => {
+        const h = build({
+            active: [
+                { cwd: '/workspace/repos/users/alice/o/other' },
+                { cwd: repo, ownerLogin: 'bob' },
+            ],
+        });
+        expect(shared((await create(h.endpoint, { isolation: 'auto' })).conv)).to.equal(true);
+        expect(h.worktreeCreates).to.deep.equal([]);
+    });
+
+    it('"none" shares the working tree even when another thread is active', async () => {
+        const h = build({ active: [{ cwd: repo }] });
+        expect(shared((await create(h.endpoint, { isolation: 'none' })).conv)).to.equal(true);
+        expect(h.worktreeCreates).to.deep.equal([]);
+    });
+
+    it('"worktree" always isolates', async () => {
+        const h = build();
+        expect(isolated((await create(h.endpoint, { isolation: 'worktree' })).conv)).to.equal(true);
+    });
+
+    it('maps the legacy worktree boolean when isolation is absent', async () => {
+        const h = build({ active: [{ cwd: repo }] });
+        expect(shared((await create(h.endpoint, { worktree: false })).conv)).to.equal(true);
+        expect(isolated((await create(build().endpoint, { worktree: true })).conv)).to.equal(true);
+        expect(isolated((await create(h.endpoint, { worktree: false, isolation: 'auto' })).conv)).to.equal(true);
+    });
+
+    it('auto shares a non-git project instead of failing; an explicit worktree still fails', async () => {
+        const h = build({ active: [{ cwd: repo }], notGit: true });
+        const auto = await create(h.endpoint, { isolation: 'auto' });
+        expect(auto.status).to.equal(201);
+        expect(shared(auto.conv)).to.equal(true);
+        expect((await create(h.endpoint, { isolation: 'worktree' })).status).to.equal(400);
+    });
+
+    it('two concurrent auto creates on an idle repository: one shares, the other gets a worktree', async () => {
+        const h = build();
+        // No message: neither thread has a turn, so only the in-flight claim can tell them apart.
+        const [first, second] = await Promise.all([
+            create(h.endpoint, { isolation: 'auto', message: undefined }),
+            create(h.endpoint, { isolation: 'auto', message: undefined }),
+        ]);
+        expect([first, second].filter(result => shared(result.conv))).to.have.length(1);
+        expect([first, second].filter(result => isolated(result.conv))).to.have.length(1);
+        // The claim is released once the creates finish: the repository is idle again.
+        expect(shared((await create(h.endpoint, { isolation: 'auto', message: undefined })).conv)).to.equal(true);
     });
 });
 
@@ -509,7 +652,9 @@ describe('QaapAgentConversationEndpoint project clone missing from disk', () => 
         Object.assign(endpoint, {
             clientRequestDedup: new Map<string, string>(),
             clientRequestInFlight: new Set<string>(),
+            repoClaims: new Map<string, number>(),
             store: {
+                conversations: new Map(),
                 create: (request: unknown) => { created.push(request); return { id: 'conv-1', cwd }; },
                 get: () => ({ id: 'conv-1', cwd, ownerLogin: 'alice' }),
                 getActiveTaskIdsForConversation: () => [],

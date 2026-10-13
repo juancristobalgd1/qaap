@@ -5,6 +5,7 @@
 
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentConversationIsolation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import {
     agentMessageHasVisualVerificationMarker,
@@ -435,9 +436,11 @@ export interface QaapCreateAgentConversationRequest {
     /** Marks this conversation as a parallel-run variant (grouped under {@link parallelBaseCwd}). */
     readonly parallelRunId?: string;
     readonly parallelBaseCwd?: string;
+    /** Defaults to `'auto'`. The server auto-isolated the thread when it was not `'worktree'` yet the result has a {@link worktreeBranch}. */
+    readonly isolation?: QaapAgentConversationIsolation;
     /**
-     * When `true`, the server creates an isolated git worktree (new branch off HEAD of {@link cwd})
-     * and the conversation runs there instead of the repository's main working tree.
+     * @deprecated Legacy alias of {@link isolation}, used only when it is absent:
+     * `true` → `'worktree'`, `false` → `'none'`.
      */
     readonly worktree?: boolean;
     /** Set when this conversation was forked from another thread. Points at the parent id. */
