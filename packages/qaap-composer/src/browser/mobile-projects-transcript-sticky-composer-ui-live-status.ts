@@ -199,7 +199,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                 modeId,
                 variables,
                 autoApprove,
-                worktree: ctx.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree',
+                isolation: ctx.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree' ? 'worktree' : 'auto',
                 approvalPolicyId: reconcileAgentApprovalPolicyId(
                     ctx.host.transcriptComposerApprovalPolicyId,
                     summary.cwd,

@@ -216,58 +216,40 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         }
     });
 
-    it('auto-enables worktree when another conversation is streaming in the same cwd', () => {
-        const ui = new MobileProjectsBackgroundTaskUi({
-            projects: [],
-            preparedCwdByProjectId: new Map(),
-            justAddedTaskId: undefined,
-            agentsHubShellActive: false,
-            projectsService: {} as never,
-            conversations: {
-                getStreamingCountForCwd: (cwd: string) => cwd === '/repo' ? 1 : 0,
-            } as never,
-            delegate: {},
-            transcriptSheetUi: {} as never,
-            transcriptLiveUi: {} as never,
-            shouldUseAgentsHubLanding: () => false,
-            renderSubtitle: () => undefined,
-            renderList: () => undefined,
-            seedTranscriptOptimisticSubmit: () => undefined,
-            syncWorkHubProjectSkillRoots: () => undefined,
-        });
+    /** Runs createProjectChatSession against a stubbed create POST; returns the sent body and any snackbar text. */
+    async function createSession(
+        isolation: 'auto' | 'worktree' | undefined,
+        worktreeBranch: string | undefined,
+    ): Promise<{ body: Record<string, unknown>; snackbar: string | undefined }> {
+        const ui = withAgentSnapshot({ agents: [], agentConfigured: false, qaiqInstalled: false, qaiqModels: [] });
+        let body: Record<string, unknown> = {};
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async (_input: unknown, init?: { body?: unknown }) => {
+            body = JSON.parse(String(init?.body));
+            const conversation = { id: 'conv-1', cwd: '/repo', status: 'streaming', messages: [], createdAt: 1, updatedAt: 1, worktreeBranch };
+            return { ok: true, status: 201, json: async () => conversation };
+        }) as unknown as typeof globalThis.fetch;
+        document.querySelectorAll('.theia-mobile-snackbar-message').forEach(node => node.remove());
+        try {
+            const project = { id: 'p', name: 'repo' } as MobileProjectEntry;
+            await ui.createProjectChatSession(project, '/repo', 'fix it', { selectedAgentId: '@shell', ...(isolation ? { isolation } : {}) });
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+        return { body, snackbar: document.querySelector('.theia-mobile-snackbar-message')?.textContent ?? undefined };
+    }
 
-        expect(ui.resolveWorktreeForSession('/repo')).to.equal(true);
-        expect(ui.resolveWorktreeForSession('/other')).to.equal(false);
-        expect(ui.resolveWorktreeForSession('/repo', false)).to.equal(false);
-        expect(ui.resolveWorktreeForSession('/other', true)).to.equal(true);
+    it('passes the requested isolation through and leaves the default to the server', async () => {
+        expect((await createSession('worktree', 'qaap/worktree/a')).body.isolation).to.equal('worktree');
+        expect((await createSession('auto', undefined)).body.isolation).to.equal('auto');
+        const omitted = await createSession(undefined, undefined);
+        expect(omitted.body).to.not.have.property('isolation');
+        expect(omitted.body).to.not.have.property('worktree');
     });
 
-    it('auto-enables worktree when a QUEUED task (concurrency cap) targets the same cwd', () => {
-        const ui = new MobileProjectsBackgroundTaskUi({
-            projects: [],
-            preparedCwdByProjectId: new Map(),
-            justAddedTaskId: undefined,
-            agentsHubShellActive: false,
-            projectsService: {} as never,
-            conversations: {
-                getStreamingCountForCwd: () => 0,
-            } as never,
-            activeTasks: {
-                getTasksForCwd: (cwd: string) => cwd === '/repo'
-                    ? [{ state: 'queued' }]
-                    : [{ state: 'completed' }],
-            } as never,
-            delegate: {},
-            transcriptSheetUi: {} as never,
-            transcriptLiveUi: {} as never,
-            shouldUseAgentsHubLanding: () => false,
-            renderSubtitle: () => undefined,
-            renderList: () => undefined,
-            seedTranscriptOptimisticSubmit: () => undefined,
-            syncWorkHubProjectSkillRoots: () => undefined,
-        });
-
-        expect(ui.resolveWorktreeForSession('/repo')).to.equal(true);
-        expect(ui.resolveWorktreeForSession('/other')).to.equal(false);
+    it('announces the isolated worktree only when the server auto-isolated the thread', async () => {
+        expect((await createSession('auto', 'qaap/worktree/a')).snackbar).to.contain('isolated worktree');
+        expect((await createSession('auto', undefined)).snackbar).to.equal(undefined);
+        expect((await createSession('worktree', 'qaap/worktree/a')).snackbar).to.equal(undefined);
     });
 });

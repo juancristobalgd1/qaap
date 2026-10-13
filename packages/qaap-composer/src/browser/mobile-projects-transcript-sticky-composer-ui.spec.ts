@@ -390,6 +390,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
 
     it('restores an idle prompt when background task startup is rejected', async () => {
         const submitted: string[] = [];
+        const isolations: unknown[] = [];
         const host = {
             transcriptComposerContext: [],
             transcriptComposerDraft: 'start the task',
@@ -404,8 +405,10 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             submitBackgroundAgentTask: async (
                 _project: MobileProjectEntry,
                 draft: string,
+                opts: Record<string, unknown>,
             ) => {
                 submitted.push(draft);
+                isolations.push(opts.isolation);
                 return undefined;
             },
         };
@@ -435,6 +438,8 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         );
 
         expect(submitted).to.deep.equal(['start the task']);
+        // The default (local) destination leaves the worktree decision to the server.
+        expect(isolations).to.deep.equal(['auto']);
         expect(host.transcriptComposerDraft).to.equal('start the task');
     });
 
