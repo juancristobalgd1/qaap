@@ -640,8 +640,6 @@ export interface QaapCreateConversationBody {
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /** Defaults to `'auto'` on the server. */
     readonly isolation?: QaapAgentConversationIsolation;
-    /** @deprecated Legacy alias of {@link isolation}: `true` → `'worktree'`, `false` → `'none'`. */
-    readonly worktree?: boolean;
 }
 
 export async function listAllConversationGroups(options?: { readonly onRetry?: () => void }): Promise<QaapAgentConversationGroupDTO[]> {

@@ -561,7 +561,7 @@ export class MobileProjectsStickyComposerRenderUi {
                 const done = this.host.submitBackgroundAgentTask(project, draft, {
                     ...submitOptions,
                     forceVps: true,
-                    worktree: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree',
+                    isolation: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree' ? 'worktree' : 'auto',
                     approvalPolicyId: showApprovalPolicy
                         ? reconcileAgentApprovalPolicyId(this.host.stickyComposerApprovalPolicyId, cwd)
                         : undefined,
