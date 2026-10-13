@@ -10,6 +10,8 @@ import {
     conversationShouldWatchDevPreview,
     findTranscriptPreviewUrlFromConversation,
     previewPageTitleMatchesProjectName,
+    transcriptPreviewProbeBelongsToScope,
+    type TranscriptPreviewProbeScope,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import {
@@ -22,6 +24,7 @@ import {
 import {
     claimedPreviewCoordinatesMatchProject,
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
+import { resolveThreadPreviewRoot, resolveThreadPreviewWorktree } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     markTranscriptTerminalRestorable,
@@ -127,6 +130,23 @@ export async function refreshTranscriptPreviewProjectExtracted(ctx: MobileProjec
         }
 }
 
+function openProjectThreadSummary(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined {
+        return ctx.host.transcriptOpenProject?.id === project.id ? ctx.host.transcriptOpenSummary : undefined;
+}
+
+/**
+ * File URI of the open thread's own git worktree when that thread belongs to `project`. Its preview
+ * claims are registered under the worktree root, which is not one of the project's coordinates.
+ */
+export function openThreadWorktreeUriExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): string | undefined {
+        const worktree = resolveThreadPreviewWorktree(openProjectThreadSummary(ctx, project));
+        try {
+            return worktree ? FileUri.create(worktree).toString() : undefined;
+        } catch {
+            return undefined;
+        }
+}
+
 export async function previewUrlMatchesProjectExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, previewUrl: string, project: MobileProjectEntry): Promise<boolean> {
         try {
             const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
@@ -144,6 +164,7 @@ export async function previewUrlMatchesProjectExtracted(ctx: MobileProjectsTrans
                 projectId: project.id,
                 projectUri: project.uri?.toString(),
                 cwdUri,
+                threadRootUri: openThreadWorktreeUriExtracted(ctx, project),
                 projectName: project.name,
             });
             // Same-origin identity path or isolated-origin host label (a backend-accepted alias).
@@ -252,6 +273,11 @@ export async function discoverProjectDevPreviewUrlExtracted(ctx: MobileProjectsT
             return undefined;
         }
         const ports = [8080, 3333, 3001, 4173, ...Array.from({ length: 18 }, (_, index) => 5173 + index)];
+        // A sibling thread's server of this same project is not this thread's preview.
+        const thread = openProjectThreadSummary(ctx, project);
+        const threadScope: TranscriptPreviewProbeScope = thread
+            ? { conversationId: thread.id, root: resolveThreadPreviewRoot(thread, ctx.host.projectsService.getProjectCwd(project)) }
+            : {};
         // Once the answer is known (or the caller aborts), cancel the probes still in flight.
         const scan = new AbortController();
         const onAbort = (): void => scan.abort();
@@ -260,7 +286,8 @@ export async function discoverProjectDevPreviewUrlExtracted(ctx: MobileProjectsT
         try {
             previewUrl = await firstInPriorityOrder(ports, DEV_PREVIEW_PORT_SCAN_CONCURRENCY, async port => {
                 const probe = await probeQaapDevPreviewPort(port, scan.signal);
-                if (!probe.ready || !await ctx.previewUrlMatchesProject(probe.previewUrl, project)) {
+                if (!probe.ready || !transcriptPreviewProbeBelongsToScope(probe, threadScope)
+                    || !await ctx.previewUrlMatchesProject(probe.previewUrl, project)) {
                     return undefined;
                 }
                 return normalizePreviewUrlForSameOrigin(probe.previewUrl);

@@ -191,6 +191,8 @@ export function claimedPreviewCoordinatesMatchProject(options: {
     readonly projectId: string;
     readonly projectUri?: string;
     readonly cwdUri?: string;
+    /** File URI of the open thread's own git worktree: its claims are registered under that root. */
+    readonly threadRootUri?: string;
     readonly projectName?: string;
 }): boolean {
     const probeProjectId = options.probeProjectId?.trim();
@@ -202,6 +204,7 @@ export function claimedPreviewCoordinatesMatchProject(options: {
         options.projectId,
         options.projectUri,
         options.cwdUri,
+        options.threadRootUri,
     ) || qaapPreviewFileUriMatchesProjectName(probeProjectId, options.projectName);
 }
 

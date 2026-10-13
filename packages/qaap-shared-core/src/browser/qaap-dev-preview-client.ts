@@ -148,6 +148,8 @@ export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal
             workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
             projectId: typeof body.projectId === 'string' ? body.projectId : undefined,
             processId: typeof body.processId === 'string' ? body.processId : undefined,
+            conversationId: typeof body.conversationId === 'string' ? body.conversationId : undefined,
+            root: typeof body.root === 'string' ? body.root : undefined,
         };
     } catch {
         return fallback;

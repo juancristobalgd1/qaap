@@ -1,5 +1,6 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 import { resetTranscriptPreviewToEmptyExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
+import { openThreadWorktreeUriExtracted } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -305,6 +306,7 @@ export async function fetchCurrentProjectClaimStateExtracted(ctx: MobileProjects
             cwdUri,
             project.uri?.toString(),
             project.id,
+            openThreadWorktreeUriExtracted(ctx, project),
         ], ctx.previewScopeId());
         const claim = pickScopedPreviewClaim(current, ctx.previewScopeId());
         if (!claim?.ready || !claim.previewUrl) {

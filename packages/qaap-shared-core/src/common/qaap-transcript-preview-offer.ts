@@ -6,7 +6,9 @@
 import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import { buildQaapDevPreviewUrl, parseQaapDevPreviewPort, resolveDevPreviewPublicOrigin } from './qaap-dev-preview';
 import { isQaapStaticBootstrapCommand } from './qaap-project-bootstrap-static';
+import { resolveThreadPreviewRoot } from './qaap-thread-preview-root';
 import { resolveQaapTranscriptTrace, resolveAgentMessageSegments } from './qaap-transcript-trace-model';
+import { normalizeWorktreeCwd } from './qaap-worktree-label';
 
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
 const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)\]]*)?/i;
@@ -226,9 +228,47 @@ export function conversationShouldWatchDevPreview(
 export interface TranscriptPreviewPortProbeResult {
     readonly ready: boolean;
     readonly previewUrl: string;
+    /** Set when Qaap holds a claim on the port (see `/qaap-dev/api/probe/:port`). */
+    readonly previewId?: string;
+    /** Section that owns the claim, when the claim was made for one. */
+    readonly conversationId?: string;
+    /** Canonical workspace root of the claim. */
+    readonly root?: string;
 }
 
-/** Probes candidate ports until one responds as a live dev preview. */
+/** The thread on whose behalf a bare dev port is probed. */
+export interface TranscriptPreviewProbeScope {
+    readonly conversationId?: string;
+    /** Root the thread previews from (see {@link resolveThreadPreviewRoot}). */
+    readonly root?: string;
+}
+
+function previewRootKey(root: string): string {
+    const normalized = normalizeWorktreeCwd(root);
+    // Windows paths are case-insensitive; the claim root is the realpath, the thread root is not.
+    return /^[a-z]:/i.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+/**
+ * Whether a probed port may be adopted as this thread's preview. A port Qaap never claimed (an
+ * external server started outside Qaap) stays adoptable; a claimed port only by the section that
+ * claimed it or, for a claim without a section, by a thread previewing the same root. Sibling
+ * threads of one repository run their own servers and must never mount each other's.
+ */
+export function transcriptPreviewProbeBelongsToScope(
+    probe: Pick<TranscriptPreviewPortProbeResult, 'previewId' | 'conversationId' | 'root'>,
+    scope: TranscriptPreviewProbeScope,
+): boolean {
+    if (!probe.previewId) {
+        return true;
+    }
+    if (probe.conversationId && scope.conversationId) {
+        return probe.conversationId === scope.conversationId;
+    }
+    return !probe.root || !scope.root || previewRootKey(probe.root) === previewRootKey(scope.root);
+}
+
+/** Probes candidate ports until one responds as a live dev preview owned by this conversation. */
 export async function resolveReadyTranscriptPreviewUrlFromProbe(
     conv: QaapAgentConversationDTO,
     probePort: (port: number) => Promise<TranscriptPreviewPortProbeResult>,
@@ -237,9 +277,10 @@ export async function resolveReadyTranscriptPreviewUrlFromProbe(
     if (!conversationShouldWatchDevPreview(conv, origin)) {
         return undefined;
     }
+    const scope: TranscriptPreviewProbeScope = { conversationId: conv.id, root: resolveThreadPreviewRoot(conv) };
     for (const port of transcriptPreviewProbePorts(conv)) {
         const probe = await probePort(port);
-        if (probe.ready) {
+        if (probe.ready && transcriptPreviewProbeBelongsToScope(probe, scope)) {
             return probe.previewUrl;
         }
     }

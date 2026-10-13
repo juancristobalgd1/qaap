@@ -10,6 +10,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { conversationEverRequestedDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
+import { resolveThreadPreviewRoot } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
 import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
@@ -117,8 +118,7 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             return;
         }
         // Parallel-run variants execute in a temp worktree (`cwd`), but the user watches them from
-        // the base workspace — match on either. The capture then reflects the app as served from
-        // the open workspace root.
+        // the base workspace — match on either.
         const workspacePathCandidates = [conversation.cwd, summary.parallelBaseCwd]
             .filter((value): value is string => !!value);
         if (!await this.isAnyPathInCurrentWorkspace(workspacePathCandidates)) {
@@ -146,11 +146,14 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             this.captureAttemptsByTurn.set(turnKey, attempt);
         }
         const outOfBudget = attempt >= VISUAL_CAPTURE_TURN_BUDGET;
+        // A thread isolated in its own worktree is verified from that worktree; Run variants and
+        // shared-tree threads from the base workspace.
+        const previewRoot = resolveThreadPreviewRoot(conversation);
         const readyUrl = await ensureTranscriptDevPreview(this.bootstrap, {
             conversation,
             skipConversationPortProbe: true,
-            projectId: conversation.parallelBaseCwd ?? conversation.cwd,
-            workspaceRoot: conversation.parallelBaseCwd ?? conversation.cwd,
+            projectId: previewRoot,
+            workspaceRoot: previewRoot,
         });
         if (readyUrl) {
             // Mount the preview widget for headless capture without yanking the Work Hub surface

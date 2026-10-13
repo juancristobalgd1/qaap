@@ -10,6 +10,7 @@ import {
     extractDevPreviewPortFromUrl,
 } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 describe('qaap-transcript-preview-bootstrap', () => {
     it('extractDevPreviewPortFromUrl reads qaap-dev proxy paths', () => {
@@ -125,6 +126,66 @@ describe('qaap-transcript-preview-bootstrap', () => {
             const request = new URL(calls[0]);
             expect(request.searchParams.getAll('projectId')).to.deep.equal(['project-id', '/workspace/project']);
             expect(request.searchParams.get('conversationId')).to.equal('conversation-a');
+        } finally {
+            globalThis.fetch = originalFetch;
+            if (originalWindow) {
+                Object.defineProperty(globalThis, 'window', originalWindow);
+            } else {
+                Reflect.deleteProperty(globalThis, 'window');
+            }
+        }
+    });
+
+    it('runs the preview of an isolated thread from its own worktree and finds the claim under that root', async () => {
+        const worktree = '/tmp/qaap-worktrees/alice/e895ac21';
+        const worktreeUri = 'file:///tmp/qaap-worktrees/alice/e895ac21';
+        const originalFetch = globalThis.fetch;
+        const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+        const calls: string[] = [];
+        Object.defineProperty(globalThis, 'window', {
+            configurable: true,
+            value: { location: { origin: 'http://localhost:3000' } },
+        });
+        globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+            calls.push(String(input));
+            return {
+                ok: true,
+                json: async () => ({
+                    ready: true,
+                    previewUrl: 'http://localhost:3000/qaap-preview/preview-thread-b/',
+                    previewId: 'preview-thread-b',
+                    projectId: worktreeUri,
+                    conversationId: 'thread-b',
+                }),
+            } as Response;
+        }) as typeof fetch;
+        const roots: string[] = [];
+        const bootstrap = {
+            descriptor: { rootUri: { toString: () => worktreeUri } },
+            refreshFromProjectRoot: async (root: string): Promise<void> => {
+                roots.push(root);
+            },
+            bindPreviewConversation: (conversationId: string): string => conversationId,
+            adoptSupersedingPreviewClaim: (): boolean => true,
+        } as unknown as QaapProjectBootstrapService;
+
+        try {
+            const result = await ensureTranscriptDevPreview(bootstrap, {
+                conversation: {
+                    id: 'thread-b',
+                    cwd: worktree,
+                    parallelBaseCwd: '/workspace/project',
+                    worktreeBranch: 'qaap/e895ac21',
+                    messages: [],
+                } as unknown as QaapAgentConversationDTO,
+                skipConversationPortProbe: true,
+            });
+
+            expect(result).to.equal('http://localhost:3000/qaap-preview/preview-thread-b/');
+            expect(roots).to.deep.equal([worktree]);
+            const request = new URL(calls[0]);
+            expect(request.searchParams.getAll('projectId')).to.deep.equal([worktree, worktreeUri]);
+            expect(request.searchParams.get('conversationId')).to.equal('thread-b');
         } finally {
             globalThis.fetch = originalFetch;
             if (originalWindow) {

@@ -12,8 +12,11 @@ import {
 } from '../common/qaap-dev-preview';
 import {
     resolveReadyTranscriptPreviewUrlFromProbe,
+    transcriptPreviewProbeBelongsToScope,
     type TranscriptPreviewPortProbeResult,
+    type TranscriptPreviewProbeScope,
 } from '../common/qaap-transcript-preview-offer';
+import { resolveThreadPreviewRoot } from '../common/qaap-thread-preview-root';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
@@ -67,9 +70,9 @@ export function extractDevPreviewPortFromUrl(url: string | undefined): number | 
     return undefined;
 }
 
-async function probeReadyPreviewUrl(port: number): Promise<string | undefined> {
+async function probeReadyPreviewUrl(port: number, scope: TranscriptPreviewProbeScope): Promise<string | undefined> {
     const probe = await probeQaapDevPreviewPort(port);
-    if (!probe.ready) {
+    if (!probe.ready || !transcriptPreviewProbeBelongsToScope(probe, scope)) {
         return undefined;
     }
     return normalizePreviewUrlForSameOrigin(probe.previewUrl);
@@ -86,7 +89,7 @@ async function probeTranscriptConversationPorts(
         async (port: number): Promise<TranscriptPreviewPortProbeResult> => {
             const probe = await probeQaapDevPreviewPort(port);
             return {
-                ready: probe.ready,
+                ...probe,
                 previewUrl: normalizePreviewUrlForSameOrigin(probe.previewUrl),
             };
         },
@@ -121,9 +124,11 @@ function collectBootstrapProbePorts(
 
 async function probeBootstrapListeningPorts(
     bootstrap: QaapProjectBootstrapService,
+    scope: TranscriptPreviewProbeScope,
 ): Promise<string | undefined> {
+    // The bootstrap service is shared by every thread: its port history may be a sibling's server.
     const ports = collectBootstrapProbePorts(bootstrap);
-    const readyUrls = await Promise.all(ports.map(port => probeReadyPreviewUrl(port)));
+    const readyUrls = await Promise.all(ports.map(port => probeReadyPreviewUrl(port, scope)));
     return readyUrls.find((url): url is string => !!url);
 }
 
@@ -211,9 +216,7 @@ async function ensureTranscriptDevPreviewExtracted(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
-    const projectRoot = options.workspaceRoot
-        ?? options.conversation?.parallelBaseCwd
-        ?? options.conversation?.cwd;
+    const projectRoot = options.workspaceRoot ?? resolveThreadPreviewRoot(options.conversation);
     if (projectRoot) {
         await bootstrap.refreshFromProjectRoot(projectRoot, options.projectId ?? projectRoot);
     }
@@ -221,7 +224,12 @@ async function ensureTranscriptDevPreviewExtracted(
     const conversationId = options.conversationId ?? options.conversation?.id;
     if (conversationId && (projectRoot || options.projectId)) {
         bootstrap.bindPreviewConversation(conversationId);
-        const current = await fetchQaapCurrentDevPreview([options.projectId, projectRoot], conversationId);
+        // A worktree thread's claim is registered under its worktree root, not the Work Hub project
+        // id: also look it up by the root the managed launch claims with (the detected descriptor).
+        const current = await fetchQaapCurrentDevPreview(
+            [options.projectId, projectRoot, bootstrap.descriptor?.rootUri.toString()],
+            conversationId,
+        );
         if (current?.ready && current.previewUrl) {
             // Transcript text and a previously persisted preview URL can point at a superseded
             // port after an agent restart. Reuse this section's authoritative live claim before
@@ -245,9 +253,10 @@ async function ensureTranscriptDevPreviewExtracted(
     const portHint = localPreviewRuntime
         ? options.portHint ?? extractDevPreviewPortFromUrl(options.previewUrlHint)
         : undefined;
+    const probeScope: TranscriptPreviewProbeScope = { conversationId, root: projectRoot };
 
     if (portHint !== undefined) {
-        const readyUrl = await probeReadyPreviewUrl(portHint);
+        const readyUrl = await probeReadyPreviewUrl(portHint, probeScope);
         if (readyUrl) {
             return readyUrl;
         }
@@ -255,7 +264,7 @@ async function ensureTranscriptDevPreviewExtracted(
             maxAttempts: PROBE_POLL_ATTEMPTS,
             intervalMs: PROBE_POLL_INTERVAL_MS,
         });
-        if (waited?.ready) {
+        if (waited?.ready && transcriptPreviewProbeBelongsToScope(waited, probeScope)) {
             return normalizePreviewUrlForSameOrigin(waited.previewUrl);
         }
         if (options.waitForHintOnly || options.previewUrlHint || options.portHint) {
@@ -279,7 +288,7 @@ async function ensureTranscriptDevPreviewExtracted(
         return undefined;
     }
 
-    const alreadyListening = await probeBootstrapListeningPorts(bootstrap);
+    const alreadyListening = await probeBootstrapListeningPorts(bootstrap, probeScope);
     if (alreadyListening) {
         return alreadyListening;
     }
@@ -301,7 +310,7 @@ async function ensureTranscriptDevPreviewExtracted(
     if (finalPort === undefined) {
         return normalizePreviewUrlForSameOrigin(fromBootstrap);
     }
-    const verified = await probeReadyPreviewUrl(finalPort);
+    const verified = await probeReadyPreviewUrl(finalPort, probeScope);
     return verified ?? normalizePreviewUrlForSameOrigin(fromBootstrap);
 }
 
