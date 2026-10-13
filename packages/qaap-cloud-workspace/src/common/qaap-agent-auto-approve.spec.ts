@@ -102,4 +102,37 @@ describe('qaap-agent-auto-approve', () => {
         expect(applyAutoApproveToCommand("hermes --yolo --ignore-user-config chat -Q -q 'hi'", 'hermes'))
             .to.equal("hermes --yolo --ignore-user-config chat -Q -q 'hi'");
     });
+
+    describe('quoted prompt text is not a CLI flag', () => {
+
+        it('commandHasAutoApproveFlags ignores flags inside the shell-quoted prompt', () => {
+            expect(commandHasAutoApproveFlags("claude -p 'fix --yolo now'")).to.equal(false);
+            expect(commandHasAutoApproveFlags("cursor-agent -p 'git push --force  later\n'")).to.equal(false);
+            expect(commandHasAutoApproveFlags("codex exec 'it'\\'' --full-auto '\\''ok'")).to.equal(false);
+            expect(commandHasAutoApproveFlags('qaiq -p "say --dangerously-skip-permissions"')).to.equal(false);
+            expect(commandHasAutoApproveFlags("claude --dangerously-skip-permissions -p 'hi'")).to.equal(true);
+        });
+
+        it('a prompt mentioning --force / --yolo still gets the agent auto-approve flag injected', () => {
+            const prompt = "'fix --yolo  now\n  then --force -y'";
+            expect(applyAutoApproveToCommand(`claude -p ${prompt}`, 'claude'))
+                .to.equal(`claude --dangerously-skip-permissions -p ${prompt}`);
+            expect(applyAutoApproveToCommand(`codex exec ${prompt}`, 'codex'))
+                .to.equal(`codex --full-auto exec ${prompt}`);
+            expect(applyAutoApproveToCommand(`hermes chat -q ${prompt}`, 'hermes'))
+                .to.equal(`hermes --yolo chat -q ${prompt}`);
+            expect(applyAutoApproveToCommand(`qwen -p ${prompt}`, 'qwen'))
+                .to.equal(`qwen -p --approval-mode yolo ${prompt}`);
+        });
+
+        it('Cursor gets --force/--trust/--approve-mcps even when the prompt mentions them', () => {
+            const prompt = "'use --force --trust --approve-mcps'";
+            const result = applyAutoApproveToCommand(`cursor-agent ${prompt}`, 'cursor');
+            const flags = result.slice(0, result.length - prompt.length);
+            expect(result.endsWith(prompt)).to.equal(true);
+            expect(flags).to.include('--force');
+            expect(flags).to.include('--trust');
+            expect(flags).to.include('--approve-mcps');
+        });
+    });
 });

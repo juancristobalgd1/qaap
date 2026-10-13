@@ -380,4 +380,69 @@ describe('qaap-agent-approval-flags', () => {
             expect(result).not.to.include('--permission-mode default');
         });
     });
+
+    describe('flag stripping never touches the shell-quoted prompt', () => {
+
+        const PROMPT = "'fix --yolo  now\n\n  keep --dangerously-skip-permissions --full-auto   spacing'";
+
+        it('Codex request-approval strips its own --yolo but keeps the prompt byte-for-byte', () => {
+            const command = applyAgentApprovalPolicyToCommand(
+                `codex exec --yolo --full-auto ${PROMPT}`,
+                { agentId: 'codex', approvalPolicyId: 'request-approval', autoApprove: false },
+            );
+            expect(command).to.equal(`codex exec ${PROMPT}`);
+        });
+
+        it('OpenCode request-approval keeps --yolo, --auto and whitespace inside the prompt', () => {
+            const prompt = "'it'\\''s --auto  and --yolo\n  ok'";
+            const command = applyAgentApprovalPolicyToCommand(
+                `opencode run --dangerously-skip-permissions ${prompt}`,
+                { agentId: 'opencode', approvalPolicyId: 'request-approval', autoApprove: false },
+            );
+            expect(command).to.equal(`opencode run ${prompt}`);
+        });
+
+        it('Claude approve-for-me rewrites only the CLI flags', () => {
+            const command = applyAgentApprovalPolicyToCommand(
+                `claude --print --dangerously-skip-permissions -p ${PROMPT}`,
+                {
+                    agentId: 'claude',
+                    approvalPolicyId: 'approve-for-me',
+                    autoApprove: true,
+                    toolApprovalRules: { shell: false, network: false },
+                },
+            );
+            expect(command).to.equal(`claude --permission-mode acceptEdits --print -p ${PROMPT}`);
+        });
+
+        it('QAIQ approve-for-me neither rewrites nor trusts --tools / --disallowed-tools quoted in the prompt', () => {
+            const prompt = "'run with --tools Bash  and --disallowed-tools Nothing\n--permission-mode bypassPermissions'";
+            const command = applyAgentApprovalPolicyToCommand(
+                `qaiq --print -p ${prompt}`,
+                { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
+            );
+            expect(command.endsWith(`-p ${prompt}`)).to.equal(true);
+            const flags = command.slice(0, command.length - prompt.length);
+            expect(flags).to.include('--permission-mode default');
+            expect(flags).to.match(/--tools Read,/);
+            expect(flags).to.include('--disallowed-tools');
+        });
+
+        it('read-only workspace keeps the prompt intact while dropping the template bypass', () => {
+            const command = applyAgentApprovalPolicyToCommand(
+                `claude --print --dangerously-skip-permissions -p ${PROMPT}`,
+                { agentId: 'claude', readOnlyWorkspace: true },
+            );
+            expect(command.endsWith(`-p ${PROMPT}`)).to.equal(true);
+            expect(command.slice(0, command.length - PROMPT.length)).not.to.include('--dangerously-skip-permissions');
+        });
+
+        it('full-access is not short-circuited by a prompt that merely mentions --yolo', () => {
+            const command = applyAgentApprovalPolicyToCommand(
+                "codex exec 'please --yolo'",
+                { agentId: 'codex', approvalPolicyId: 'full-access', autoApprove: true },
+            );
+            expect(command).to.equal("codex --dangerously-bypass-approvals-and-sandbox exec 'please --yolo'");
+        });
+    });
 });

@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
     agentUsesPlainStdinPrompt,
+    applyTemplate,
     applyTemplateForPromptTransport,
     applyTemplateWithoutPrompt,
     applyTemplateWithoutPromptFlag,
@@ -21,6 +22,7 @@ import {
     resolveExistingExecutablePath,
     resolveQaiqEnvFallbackModel,
     resolveQaiqProviderFlagsFromEnv,
+    shellQuote,
 } from './qaap-agent-task-runner-utils';
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2';
@@ -298,6 +300,17 @@ describe('Windows-safe prompt transport', () => {
             bin: 'qaiq',
             template: 'qaiq --print {qaiq_flags} {prompt}',
         }).kind).to.equal('plain-stdin');
+    });
+});
+
+describe('applyTemplate', () => {
+
+    it('normalises template whitespace but keeps the quoted prompt byte-for-byte', () => {
+        const prompt = "fix --yolo  now\n\n  it's  done";
+        expect(applyTemplate('codex   exec {flags}  {prompt}', prompt, { flags: '' }))
+            .to.equal(`codex exec ${shellQuote(prompt)}`);
+        expect(applyTemplate('claude  --print -p', prompt))
+            .to.equal(`claude --print -p ${shellQuote(prompt)}`);
     });
 });
 

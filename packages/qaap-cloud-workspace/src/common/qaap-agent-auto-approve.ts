@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { maskShellQuotedText } from './qaap-shell-quoted-text';
+
 /** Agent id for the built-in QAIQ runner (matches {@link QAIQ_AGENT_ID} in the task runner). */
 export const QAAP_QAIQ_AGENT_ID = 'qaiq';
 
@@ -43,22 +45,25 @@ export function resolveConversationAutoApprove(explicit?: boolean): boolean {
 }
 
 export function commandHasAutoApproveFlags(command: string): boolean {
-    return /--dangerously-skip-permissions\b/.test(command)
-        || /--permission-mode\s+(?:bypassPermissions|dontAsk|acceptEdits)\b/.test(command)
-        || /--full-auto\b/.test(command)
-        || /--approval-mode\s+full-auto\b/.test(command)
-        || /--auto-edit\b/.test(command)
-        || /--dangerously-auto-approve-everything\b/.test(command)
-        || /--yes-always\b/.test(command)
-        || /--always-approve\b/.test(command)
+    // Only the CLI's own arguments count: a shell-quoted prompt mentioning `--force` / `--yolo` must not
+    // make the caller believe the flag is already there and skip injecting it.
+    const unquoted = maskShellQuotedText(command);
+    return /--dangerously-skip-permissions\b/.test(unquoted)
+        || /--permission-mode\s+(?:bypassPermissions|dontAsk|acceptEdits)\b/.test(unquoted)
+        || /--full-auto\b/.test(unquoted)
+        || /--approval-mode\s+full-auto\b/.test(unquoted)
+        || /--auto-edit\b/.test(unquoted)
+        || /--dangerously-auto-approve-everything\b/.test(unquoted)
+        || /--yes-always\b/.test(unquoted)
+        || /--always-approve\b/.test(unquoted)
         // `--force` / `--yolo` cannot use a leading `\b`: `-` is a non-word char,
         // so `\b--force` never matches `cursor-agent -p --force …`.
-        || /(?:^|\s)--force(?:\s|$)/.test(command)
-        || /(?:^|\s)--yolo(?:\s|$)/.test(command)
-        || /(?:^|\s)-yolo(?:\s|$)/.test(command)
-        || /--approval-mode(?:=|\s+)yolo\b/.test(command)
-        || /--allow-all\b/.test(command)
-        || /--autopilot\b/.test(command);
+        || /(?:^|\s)--force(?:\s|$)/.test(unquoted)
+        || /(?:^|\s)--yolo(?:\s|$)/.test(unquoted)
+        || /(?:^|\s)-yolo(?:\s|$)/.test(unquoted)
+        || /--approval-mode(?:=|\s+)yolo\b/.test(unquoted)
+        || /--allow-all\b/.test(unquoted)
+        || /--autopilot\b/.test(unquoted);
 }
 
 /**
@@ -111,7 +116,7 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
         return injectAfterExecutable(command, 'copilot', '--autopilot --yolo --max-autopilot-continues 20');
     }
     if (id === 'qwen') {
-        if (/--approval-mode(?:=|\s+)yolo\b/.test(command) || /\b-y\b/.test(command)) {
+        if (hasYoloApprovalMode(command)) {
             return command;
         }
         if (hasHeadlessPromptFlag(command)) {
@@ -156,10 +161,11 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
 }
 
 function resolveAntigravityCliKind(command: string): 'agy' | 'gemini' | undefined {
-    if (AGY_STYLE_ANTIGRAVITY_CLI_PATTERN.test(command)) {
+    const unquoted = maskShellQuotedText(command);
+    if (AGY_STYLE_ANTIGRAVITY_CLI_PATTERN.test(unquoted)) {
         return 'agy';
     }
-    if (GEMINI_CLI_PATTERN.test(command)) {
+    if (GEMINI_CLI_PATTERN.test(unquoted)) {
         return 'gemini';
     }
     return undefined;
@@ -174,7 +180,7 @@ function applyAntigravityAutoApprove(command: string): string {
         return command;
     }
     if (kind === 'agy') {
-        if (/--dangerously-skip-permissions\b/.test(command)) {
+        if (/--dangerously-skip-permissions\b/.test(maskShellQuotedText(command))) {
             return command;
         }
         const flag = '--dangerously-skip-permissions';
@@ -183,7 +189,7 @@ function applyAntigravityAutoApprove(command: string): string {
         }
         return injectAfterPattern(command, AGY_STYLE_ANTIGRAVITY_CLI_PATTERN, `${flag} -p`);
     }
-    if (/--approval-mode(?:=|\s+)yolo\b/.test(command) || /\b-y\b/.test(command)) {
+    if (hasYoloApprovalMode(command)) {
         return command;
     }
     const flag = '--approval-mode=yolo';
@@ -193,17 +199,26 @@ function applyAntigravityAutoApprove(command: string): string {
     return injectAfterPattern(command, GEMINI_CLI_PATTERN, `${flag} -p`);
 }
 
+/** Qwen / Gemini YOLO approval mode, read from the CLI's own arguments only. */
+function hasYoloApprovalMode(command: string): boolean {
+    const unquoted = maskShellQuotedText(command);
+    return /--approval-mode(?:=|\s+)yolo\b/.test(unquoted) || /\b-y\b/.test(unquoted);
+}
+
 function hasHeadlessPromptFlag(command: string): boolean {
-    return /(?:^|\s)-p(?:\s|=|$)/.test(command) || /(?:^|\s)--prompt(?:\s|=|$)/.test(command);
+    const unquoted = maskShellQuotedText(command);
+    return /(?:^|\s)-p(?:\s|=|$)/.test(unquoted) || /(?:^|\s)--prompt(?:\s|=|$)/.test(unquoted);
 }
 
 function injectAfterHeadlessPromptFlag(command: string, flag: string): string {
-    const shortPrompt = /(?:^|\s)-p(?=\s)/.exec(command);
+    // The mask keeps offsets, so indexes found there are valid in the original command.
+    const unquoted = maskShellQuotedText(command);
+    const shortPrompt = /(?:^|\s)-p(?=\s)/.exec(unquoted);
     if (shortPrompt && shortPrompt.index !== undefined) {
         const insertAt = shortPrompt.index + shortPrompt[0].length;
         return `${command.slice(0, insertAt)} ${flag}${command.slice(insertAt)}`;
     }
-    const longPrompt = /(?:^|\s)--prompt(?=\s|=)/.exec(command);
+    const longPrompt = /(?:^|\s)--prompt(?=\s|=)/.exec(unquoted);
     if (longPrompt && longPrompt.index !== undefined) {
         const insertAt = longPrompt.index + longPrompt[0].length;
         return `${command.slice(0, insertAt)} ${flag}${command.slice(insertAt)}`;
@@ -216,10 +231,10 @@ function applyCursorUnattendedFlags(command: string, executable: string): string
     let next = commandHasAutoApproveFlags(command)
         ? command
         : injectAfterExecutable(command, executable, '-p --force');
-    if (!/(?:^|\s)--trust(?:\s|$)/.test(next)) {
+    if (!/(?:^|\s)--trust(?:\s|$)/.test(maskShellQuotedText(next))) {
         next = injectAfterExecutable(next, executable, '--trust');
     }
-    if (!/(?:^|\s)--approve-mcps(?:\s|$)/.test(next)) {
+    if (!/(?:^|\s)--approve-mcps(?:\s|$)/.test(maskShellQuotedText(next))) {
         next = injectAfterExecutable(next, executable, '--approve-mcps');
     }
     return next;

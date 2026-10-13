@@ -15,6 +15,7 @@ import {
 } from './qaap-agent-auto-approve';
 import { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS } from './qaap-agent-subagent-policy';
 import { formatReadOnlyFlagsForAgent } from './qaap-agent-readonly-workspace';
+import { maskShellQuotedText, rewriteUnquotedShellText } from './qaap-shell-quoted-text';
 import {
     formatQaiqCoreToolsFlag,
 } from './qaap-qaiq-tool-policy';
@@ -229,11 +230,14 @@ function ensureQaiqCoreTools(
     // Read-only web tools (WebSearch/WebFetch) are always in the allowlist now — no `network` gate.
     const shell = policyId !== 'request-approval' && rules?.shell !== false;
     const flag = formatQaiqCoreToolsFlag({ shell });
-    const existing = /--tools\s+[^\s-][^\s]*/.exec(command);
-    if (existing) {
-        return command.replace(existing[0], flag);
-    }
-    return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, flag);
+    // Only the CLI's own `--tools` counts: a prompt quoting `--tools Bash` is neither the flag nor rewritten.
+    return rewriteUnquotedShellText(command, unquoted => {
+        const existing = /--tools\s+[^\s-][^\s]*/.exec(unquoted);
+        if (existing) {
+            return unquoted.replace(existing[0], flag);
+        }
+        return injectAfterPattern(unquoted, /\b(qaiq|openclaude)\b/, flag);
+    });
 }
 
 function formatQaiqApproveForMeFlags(_rules: QaapAgentToolApprovalRules): string {
@@ -246,6 +250,10 @@ function formatQaiqApproveForMeFlags(_rules: QaapAgentToolApprovalRules): string
 }
 
 function ensureQaiqBlockedHeadlessTools(command: string): string {
+    return rewriteUnquotedShellText(command, mergeQaiqBlockedHeadlessTools);
+}
+
+function mergeQaiqBlockedHeadlessTools(command: string): string {
     const required = QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS.split(',');
     const match = /--disallowed-tools\s+([^\s-][^\s]*)/.exec(command);
     if (!match) {
@@ -354,7 +362,7 @@ export function resolveOpencodePermissionEnv(options: {
     }
     // Only the CLI's own arguments count: the shell-quoted prompt may legitimately contain
     // ` --yolo ` (pasted text, issue bodies) and must never ungate an explicitly chosen policy.
-    if (/(?:^|\s)--(?:dangerously-skip-permissions|auto|yolo)(?=\s|$)/.test(unquotedShellText(options.command))) {
+    if (/(?:^|\s)--(?:dangerously-skip-permissions|auto|yolo)(?=\s|$)/.test(maskShellQuotedText(options.command))) {
         return undefined;
     }
     // Approve for me lets the agent approve its own workspace edits and shell commands (parity with
@@ -364,42 +372,10 @@ export function resolveOpencodePermissionEnv(options: {
     return JSON.stringify(options.autoApprove === false ? { edit: 'ask', bash: 'ask', ...network } : network);
 }
 
-/**
- * The command text outside POSIX quotes, with every quoted segment (and backslash-escaped
- * character) replaced by a single space. A scanner rather than a regex because `shellQuote`
- * escapes `'` as `'\''`, which a naive `'[^']*'` pass would split so prompt text leaks outside.
- */
-function unquotedShellText(command: string): string {
-    let result = '';
-    let index = 0;
-    while (index < command.length) {
-        const char = command[index];
-        if (char === '\\') {
-            result += ' ';
-            index += 2;
-        } else if (char === '\'') {
-            const end = command.indexOf('\'', index + 1);
-            result += ' ';
-            index = end < 0 ? command.length : end + 1;
-        } else if (char === '"') {
-            index++;
-            while (index < command.length && command[index] !== '"') {
-                index += command[index] === '\\' ? 2 : 1;
-            }
-            result += ' ';
-            index++;
-        } else {
-            result += char;
-            index++;
-        }
-    }
-    return result;
-}
-
 function stripNonInteractiveApprovalFlags(command: string, agentId: string | undefined): string {
     const effectiveId = resolveApprovalAgentId(command, agentId);
     if (effectiveId === 'qaiq') {
-        if (qaiqCommandUsesInteractionFlags(command)) {
+        if (qaiqCommandUsesInteractionFlags(maskShellQuotedText(command))) {
             return injectAfterPattern(
                 stripFlagToken(command, '--dangerously-skip-permissions'),
                 /\b(qaiq|openclaude)\b/,
@@ -452,18 +428,25 @@ function stripCodexApprovalFlags(command: string): string {
 }
 
 function stripFlagToken(command: string, flag: string): string {
-    const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(flag)}(?=\\s|$)`, 'g');
-    return command.replace(pattern, ' ').replace(/\s{2,}/g, ' ').trim();
+    return stripFlagTokens(command, [flag]);
 }
 
+/**
+ * Remove CLI flags (exact tokens or flag-with-value patterns) from the command's unquoted text only.
+ * The shell-quoted prompt may legitimately contain the same tokens, runs of spaces or newlines, and
+ * must reach the CLI byte-for-byte.
+ */
 function stripFlagTokens(command: string, patterns: Array<string | RegExp>): string {
-    let next = command;
-    for (const pattern of patterns) {
-        next = typeof pattern === 'string'
-            ? stripFlagToken(next, pattern)
-            : next.replace(pattern, ' ').replace(/\s{2,}/g, ' ').trim();
-    }
-    return next;
+    return rewriteUnquotedShellText(command, unquoted => {
+        let next = unquoted;
+        for (const pattern of patterns) {
+            const regex = typeof pattern === 'string'
+                ? new RegExp(`(?:^|\\s)${escapeRegExp(pattern)}(?=\\s|$)`, 'g')
+                : pattern;
+            next = next.replace(regex, ' ').replace(/\s{2,}/g, ' ').trim();
+        }
+        return next;
+    });
 }
 
 function injectAfterExecutable(command: string, executable: string, flag: string): string {
