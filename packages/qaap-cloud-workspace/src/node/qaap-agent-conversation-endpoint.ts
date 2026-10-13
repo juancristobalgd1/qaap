@@ -1198,8 +1198,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     /**
-     * Keep / merge / discard an isolated Parallel worktree fork (`forkedFromId` + `worktreeBranch`).
-     * Multi-agent {@link QaapAgentConversation.parallelRunId} variants keep using `/parallel-runs/:id/choose`.
+     * Keep / merge / discard a thread's own worktree: a Parallel fork (`forkedFromId`) or a thread isolated
+     * at creation (`parallelBaseCwd`), both with a `worktreeBranch`. Multi-agent
+     * {@link QaapAgentConversation.parallelRunId} variants keep using `/parallel-runs/:id/choose`.
      */
     protected async handleApplyWorktree(req: Request, res: Response): Promise<void> {
         const conv = this.getConversationIfOwned(req, res, req.params.id);
@@ -1217,15 +1218,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             res.status(400).json({ error: 'Use the parallel-runs API to choose a multi-agent variant.' });
             return;
         }
-        if (!conv.forkedFromId || !conv.worktreeBranch) {
-            res.status(400).json({ error: 'This conversation is not an isolated Parallel worktree.' });
+        if (!conv.worktreeBranch || (!conv.forkedFromId && !conv.parallelBaseCwd)) {
+            res.status(400).json({ error: 'This conversation does not run in its own worktree.' });
             return;
         }
         if (this.conversationHasLiveRun(conv.id, conv)) {
             res.status(409).json({ error: 'Wait until the agent finishes before applying this worktree.' });
             return;
         }
-        const parent = this.store.get(conv.forkedFromId);
+        const parent = conv.forkedFromId ? this.store.get(conv.forkedFromId) : undefined;
         const baseCwd = conv.parallelBaseCwd ?? parent?.parallelBaseCwd ?? parent?.cwd;
         if (!baseCwd) {
             res.status(400).json({ error: 'The parent repository for this worktree is unknown.' });

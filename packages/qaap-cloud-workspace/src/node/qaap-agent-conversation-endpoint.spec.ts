@@ -548,6 +548,25 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
         expect(h.deleted).to.deep.equal([]);
     });
 
+    it('merges a thread auto-isolated at creation (no fork parent) back into its base repository', async () => {
+        const h = buildApplyEndpoint({ conv: { forkedFromId: undefined } });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
+        expect(response.statusCode).to.equal(200);
+        expect(h.applied[0].baseCwd).to.equal('/tmp/project');
+        expect(h.deleted).to.deep.equal(['fork-1']);
+    });
+
+    it('rejects a thread that shares the working tree (no worktree of its own)', async () => {
+        const h = buildApplyEndpoint({ conv: { forkedFromId: undefined, parallelBaseCwd: undefined, worktreeBranch: undefined } });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
+        expect(response.statusCode).to.equal(400);
+        expect(h.applied).to.have.length(0);
+    });
+
     it('rejects multi-agent parallel-run variants', async () => {
         const h = buildApplyEndpoint({ conv: { parallelRunId: 'run-1' } });
         const response = fakeRes();
