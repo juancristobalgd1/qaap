@@ -449,6 +449,8 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
         live?: boolean;
         applyResult?: { ok: boolean; branch?: string; error?: string };
         applyError?: string;
+        /** Another thread with a running turn directly in this cwd. */
+        activeThreadCwd?: string;
     } = {}): {
         endpoint: QaapAgentConversationEndpoint;
         deleted: string[];
@@ -465,11 +467,14 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
         };
         const deleted: string[] = [];
         const applied: Array<Record<string, unknown>> = [];
+        const other = { id: 'other', cwd: overrides.activeThreadCwd ?? '/tmp/elsewhere' };
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
+            repoClaims: new Map(),
             store: {
+                conversations: new Map([[conv.id, conv], [other.id, other]]),
                 get: (id: string) => id === conv.id ? conv : id === 'c1' ? { id: 'c1', cwd: '/tmp/project' } : undefined,
-                getActiveTaskIdsForConversation: () => overrides.live ? ['task-1'] : [],
+                getActiveTaskIdsForConversation: (id: string) => id === other.id ? ['task-2'] : overrides.live ? ['task-1'] : [],
                 delete: (id: string) => {
                     deleted.push(id);
                     return true;
@@ -510,6 +515,27 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
             .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
         expect(h.deleted).to.deep.equal([]);
         expect(response.body).to.deep.equal({ ok: false, error: 'conflict' });
+    });
+
+    it('refuses a merge with 409 while another thread runs in the base working tree, without merging', async () => {
+        const h = buildApplyEndpoint({ activeThreadCwd: '/tmp/project' });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
+        expect(response.statusCode).to.equal(409);
+        expect((response.body as { reason?: string }).reason).to.equal('busy');
+        expect(h.applied).to.have.length(0);
+        expect(h.deleted).to.deep.equal([]);
+    });
+
+    it('merges when the only other active thread runs in its own worktree', async () => {
+        const h = buildApplyEndpoint({ activeThreadCwd: '/tmp/qaap-worktrees/alice/other' });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
+        expect(response.statusCode).to.equal(200);
+        expect(h.applied).to.have.length(1);
+        expect(h.deleted).to.deep.equal(['fork-1']);
     });
 
     it('rejects a live streaming fork with 409', async () => {

@@ -1072,10 +1072,33 @@ export async function deleteConversation(id: string): Promise<void> {
 /** Keep / merge / discard an isolated Parallel worktree fork. */
 export type QaapWorktreeApplyAction = 'keep-branch' | 'merge' | 'none';
 
+/** Why a merge-back was refused; nothing was changed. Mirrors `QaapWorktreeMergeRefusal`. */
+export type QaapWorktreeMergeRefusalDTO = 'busy' | 'conflict' | 'target-moved' | 'local-changes' | 'detached';
+
 export interface QaapApplyConversationWorktreeResultDTO {
     readonly ok: boolean;
     readonly branch?: string;
     readonly error?: string;
+    readonly reason?: QaapWorktreeMergeRefusalDTO;
+    /** Conflicted paths when {@link reason} is `conflict`. */
+    readonly conflicts?: readonly string[];
+}
+
+/**
+ * Settle a failed apply / choose response: a merge-back refused with HTTP 409 (`reason: 'busy'`) is a result
+ * the UI explains; anything else throws with the server's message.
+ */
+export async function worktreeMergeFailure(response: Response): Promise<QaapApplyConversationWorktreeResultDTO> {
+    const text = await response.text();
+    if (response.status === 409) {
+        try {
+            const body = JSON.parse(text) as QaapApplyConversationWorktreeResultDTO;
+            if (body.reason) {
+                return body;
+            }
+        } catch { /* not a refusal body */ }
+    }
+    throw new Error(text || response.statusText);
 }
 
 export async function applyConversationWorktree(
@@ -1092,7 +1115,7 @@ export async function applyConversationWorktree(
         },
     );
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        return worktreeMergeFailure(response);
     }
     return response.json() as Promise<QaapApplyConversationWorktreeResultDTO>;
 }

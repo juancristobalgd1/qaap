@@ -111,6 +111,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     /** Dedup keys whose create is in progress (reserved before the first await) to block a concurrent fan-out. */
     protected readonly clientRequestInFlight = new Set<string>();
     protected static readonly CLIENT_REQUEST_DEDUP_MAX = 512;
+    /** HTTP 409 body of a merge-back refused because another thread runs in the target working tree. */
+    static readonly MERGE_BUSY: QaapApplyConversationWorktreeResponse = {
+        ok: false,
+        reason: 'busy',
+        error: 'Another thread is running in this repository; merge when it finishes.',
+    };
     /** Repository key → creates in flight that will share its working tree (closes the 'auto' isolation race). */
     protected readonly repoClaims = new Map<string, number>();
 
@@ -679,6 +685,14 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     /**
+     * True when another thread runs in `baseCwd`'s own working tree, so merging into it now would change files
+     * under that agent. A thread in its own worktree (including the one being merged) does not count.
+     */
+    isWorkingTreeBusy(baseCwd: string, ownerLogin: string | undefined): boolean {
+        return this.repoHasActiveThread(this.repoKey(baseCwd), ownerLogin);
+    }
+
+    /**
      * True when a create sharing this repository's working tree is in flight, or another thread of this
      * owner in that same working tree has a queued or running turn. Threads in their own worktree do not
      * occupy it.
@@ -1221,12 +1235,18 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             this.auth.denyForbidden(res, req, 'agent_conversation', { conversationId: conv.id, cwd: baseCwd });
             return;
         }
+        const ownerLogin = conv.ownerLogin ?? this.auth.resolveUserLogin(ctx);
+        if (action === 'merge' && this.isWorkingTreeBusy(baseCwd, ownerLogin)) {
+            res.status(409).json(QaapAgentConversationEndpoint.MERGE_BUSY);
+            return;
+        }
         try {
             const result = await this.worktrees.apply({
                 worktreePath: conv.cwd,
                 branch: conv.worktreeBranch,
                 baseCwd,
                 action,
+                ownerLogin,
             }) satisfies QaapApplyConversationWorktreeResponse;
             if (result.ok) {
                 this.store.delete(conv.id);

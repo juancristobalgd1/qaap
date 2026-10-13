@@ -19,6 +19,7 @@ import {
 } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapParallelRunStore } from './qaap-parallel-run-store';
+import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 
 /** HTTP surface for parallel agent runs (variants in isolated git worktrees). */
 @injectable()
@@ -29,6 +30,10 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    /** Owns the per-repository thread activity that guards a merge into the shared working tree. */
+    @inject(QaapAgentConversationEndpoint)
+    protected readonly conversations: QaapAgentConversationEndpoint;
 
     configure(app: Application): void {
         app.post(QAAP_PARALLEL_RUN_API_PATH, (req, res) => {
@@ -154,6 +159,11 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
         const body = (req.body ?? {}) as Partial<QaapChooseParallelVariantRequest>;
         if (typeof body.conversationId !== 'string' || typeof body.action !== 'string') {
             res.status(400).json({ error: '"conversationId" and "action" are required.' });
+            return;
+        }
+        if (body.action === 'merge'
+            && this.conversations.isWorkingTreeBusy(existing.cwd, existing.ownerLogin ?? this.auth.resolveUserLogin(ctx))) {
+            res.status(409).json(QaapAgentConversationEndpoint.MERGE_BUSY);
             return;
         }
         try {

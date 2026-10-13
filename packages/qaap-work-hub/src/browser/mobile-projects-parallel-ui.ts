@@ -11,6 +11,7 @@ import {
     applyConversationWorktree,
     getConversation,
     type QaapAgentConversationSummaryDTO,
+    type QaapApplyConversationWorktreeResultDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     chooseParallelVariant,
@@ -1001,7 +1002,7 @@ export class MobileProjectsParallelUi {
                 ? await chooseParallelVariant(runId, conversationId, action)
                 : await applyConversationWorktree(conversationId, action);
             if (!result.ok) {
-                MobileSnackbar.show(result.error ?? nls.localize('qaap/mobileProjects/parallelChooseFailed', 'Could not apply that action'), { kind: 'warning' });
+                MobileSnackbar.show(this.mergeRefusalMessage(result), { kind: 'warning', duration: result.reason ? 6000 : undefined });
                 return;
             }
             const msg = action === 'merge'
@@ -1019,6 +1020,25 @@ export class MobileProjectsParallelUi {
             MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
         } finally {
             this.busy = false;
+        }
+    }
+
+    /** Explain a refused merge-back; the server guarantees nothing was changed. */
+    protected mergeRefusalMessage(result: QaapApplyConversationWorktreeResultDTO): string {
+        switch (result.reason) {
+            case 'busy':
+                return nls.localize('qaap/mobileProjects/mergeBusy', 'Another thread is running in this repository; merge when it finishes.');
+            case 'conflict':
+                return nls.localize('qaap/mobileProjects/mergeConflicts', 'Merge conflicts in {0}. Nothing was changed; resolve them in the thread and merge again.',
+                    (result.conflicts ?? []).join(', '));
+            case 'target-moved':
+                return nls.localize('qaap/mobileProjects/mergeTargetMoved', 'The branch changed while merging. Nothing was changed; merge again.');
+            case 'local-changes':
+                return nls.localize('qaap/mobileProjects/mergeLocalChanges', 'Your uncommitted changes would be overwritten. Commit or stash them, then merge again.');
+            case 'detached':
+                return nls.localize('qaap/mobileProjects/mergeDetached', 'The repository is not on a branch. Check out a branch, then merge again.');
+            default:
+                return result.error ?? nls.localize('qaap/mobileProjects/parallelChooseFailed', 'Could not apply that action');
         }
     }
 
