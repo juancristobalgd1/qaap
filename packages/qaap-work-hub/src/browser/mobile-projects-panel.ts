@@ -2040,10 +2040,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.createAgentsHubRecentsBlock(project);
     }
 
-    createAgentsHubLandingHeroBlock(): HTMLElement {
-        return this.tasksHubUi.createAgentsHubLandingHeroBlock();
-    }
-
     createAgentsHubQuickActionsBlock(): HTMLElement {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
     }

@@ -31,7 +31,7 @@ import {
     type MobileProjectTaskHistoryFilters,
     type MobileProjectTaskHistoryState,
 } from './mobile-projects-task-history-filters';
-import { applyComposerQuickActionPromptExtracted, bindWorkingDetailConversationSubscriptionExtracted, collectAgentsHubRecentItemsExtracted, createAgentsHubLandingHeroBlockExtracted, createAgentsHubQuickActionsBlockExtracted, createAgentsHubRecentsBlockExtracted, openWorkingAgentsPopoverFromPillExtracted, resolveActiveConversationTodoStepProgressExtracted, shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted, updateStepPillChromeExtracted, updateTasksAttentionChromeExtracted, updateWorkingPillChromeExtracted } from './mobile-projects-tasks-hub-ui-render';
+import { applyComposerQuickActionPromptExtracted, bindWorkingDetailConversationSubscriptionExtracted, collectAgentsHubRecentItemsExtracted, createAgentsHubQuickActionsBlockExtracted, createAgentsHubRecentsBlockExtracted, openWorkingAgentsPopoverFromPillExtracted, resolveActiveConversationTodoStepProgressExtracted, shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted, updateStepPillChromeExtracted, updateTasksAttentionChromeExtracted, updateWorkingPillChromeExtracted } from './mobile-projects-tasks-hub-ui-render';
 import { bindWorkingDetailTaskLogSubscriptionExtracted, cancelWorkingConversationLikeComposerStopExtracted, collectTeamMembersForTranscriptSectionExtracted, createTaskSkeletonRowExtracted, createTasksEmptyStateExtracted, createTasksLoadingStateExtracted, isEmptyComposerQuickActionsSurfacePaintedExtracted, markTasksFirstLoadCompleteExtracted, paintWorkingDetailTaskLogExtracted, prefetchWorkingDetailDocumentsExtracted, resolveOpenComposerConversationIdExtracted, resolveWorkingDetailActivityFeedExtracted, resolveWorkingDetailTranscriptExcerptExtracted, seedWorkingDetailTaskLogFromServerExtracted, shouldSuppressWorkingPillForEmptyComposerExtracted, stopAllWorkingAgentsExtracted, stopWorkingAgentExtracted } from './mobile-projects-tasks-hub-ui-streaming';
 import { appendTasksHubTeamSectionExtracted, renderTasksHubViewExtracted } from './mobile-projects-tasks-hub-ui-timeline';
 
@@ -185,10 +185,6 @@ export class MobileProjectsTasksHubUi {
 
     shouldEmbedAgentsHubRecentsInWorkspaceTranscript(): boolean {
         return shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted(this);
-    }
-
-    createAgentsHubLandingHeroBlock(): HTMLElement {
-        return createAgentsHubLandingHeroBlockExtracted(this);
     }
 
     readQaapSignedIn(): boolean {

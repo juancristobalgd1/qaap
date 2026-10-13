@@ -3,8 +3,6 @@ import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hu
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_AGENTS_HUB_LANDING_ENABLED,
@@ -72,78 +70,6 @@ export function shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted(ctx: M
         return QAAP_AGENTS_HUB_LANDING_ENABLED
             && ctx.host.transcriptSheet?.parentElement === document.body
             && !document.body.classList.contains('theia-mobile-mod-landing');
-}
-
-export function createAgentsHubLandingHeroBlockExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {
-        const hero = document.createElement('section');
-        hero.className = 'theia-mobile-agents-hub-landing-hero';
-        hero.setAttribute(
-            'aria-label',
-            nls.localize('qaap/agentsHub/landingHeroAria', 'New project'),
-        );
-
-        const title = document.createElement('h2');
-        title.className = 'theia-mobile-agents-hub-landing-hero-title';
-        title.textContent = nls.localize('qaap/agentsHub/landingHeroTitle', 'Start something new');
-
-        const body = document.createElement('p');
-        body.className = 'theia-mobile-agents-hub-landing-hero-body';
-        body.textContent = nls.localize(
-            'qaap/agentsHub/landingHeroBody',
-            'Create a fresh workspace and delegate the first task to an agent.',
-        );
-
-        const actions = document.createElement('div');
-        actions.className = 'theia-mobile-agents-hub-landing-hero-actions';
-
-        const startNew = document.createElement('button');
-        startNew.type = 'button';
-        startNew.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary theia-mobile-agents-hub-landing-hero-cta';
-        const startNewIcon = document.createElement('span');
-        startNewIcon.className = 'codicon codicon-repo theia-mobile-agents-hub-onboarding-btn-icon';
-        startNewIcon.setAttribute('aria-hidden', 'true');
-        const startNewLabel = document.createElement('span');
-        startNewLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-        startNewLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
-        startNew.append(startNewIcon, startNewLabel);
-        startNew.addEventListener('click', () => { void ctx.host.onStartNewProject(); });
-
-        const addRepo = document.createElement('button');
-        addRepo.type = 'button';
-        addRepo.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-ghost theia-mobile-agents-hub-landing-hero-secondary';
-        const addRepoIcon = document.createElement('span');
-        addRepoIcon.className = 'codicon codicon-repo-clone theia-mobile-agents-hub-onboarding-btn-icon';
-        addRepoIcon.setAttribute('aria-hidden', 'true');
-        const addRepoLabel = document.createElement('span');
-        addRepoLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-        addRepoLabel.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
-        addRepo.append(addRepoIcon, addRepoLabel);
-        addRepo.addEventListener('click', () => { void ctx.host.onNewClick(); });
-
-        const signedIn = typeof ctx.readQaapSignedIn === 'function' ? ctx.readQaapSignedIn() : readQaapSignedIn();
-        if (!signedIn) {
-            body.textContent = nls.localize(
-                'qaap/agentsHub/landingHeroSignInBody',
-                'Sign in with GitHub to open your repositories and start an agent.',
-            );
-            startNew.classList.remove('theia-mod-primary');
-            startNew.classList.add('theia-mod-ghost');
-            const signIn = document.createElement('button');
-            signIn.type = 'button';
-            signIn.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary theia-mobile-agents-hub-landing-hero-cta theia-mobile-agents-hub-signin-btn';
-            const signInIcon = document.createElement('span');
-            signInIcon.className = 'codicon codicon-github theia-mobile-agents-hub-onboarding-btn-icon';
-            signInIcon.setAttribute('aria-hidden', 'true');
-            const signInLabel = document.createElement('span');
-            signInLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-            signInLabel.textContent = nls.localize('qaap/agentsHub/signIn', 'Sign in with GitHub');
-            signIn.append(signInIcon, signInLabel);
-            signIn.addEventListener('click', () => startGithubOAuth());
-            actions.append(signIn);
-        }
-        actions.append(startNew, addRepo);
-        hero.append(title, body, actions);
-        return hero;
 }
 
 export function createAgentsHubQuickActionsBlockExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {

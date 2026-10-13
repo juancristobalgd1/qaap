@@ -90,12 +90,6 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         const workHub = {
             isAgentsHubLanding: () => true,
             shouldEmbedAgentsHubRecentsInWorkspaceTranscript: () => false,
-            createAgentsHubLandingHeroBlock: () => {
-                const hero = document.createElement('section');
-                hero.className = 'theia-mobile-agents-hub-landing-hero';
-                hero.textContent = 'Start new project';
-                return hero;
-            },
             createAgentsHubQuickActionsBlock: () => {
                 const block = document.createElement('div');
                 block.className = 'theia-mobile-agent-transcript-empty-actions';
@@ -182,7 +176,6 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         renderUi.renderTranscriptMessages(chatHost, conv);
         const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
 
-        expect(messageHost.querySelector('.theia-mobile-agents-hub-landing-hero')).to.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty')).to.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-welcome')).to.not.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-title')?.textContent).to.equal('Ready when you are.');
