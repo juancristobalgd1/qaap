@@ -615,6 +615,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     if (isolation === 'worktree') {
                         throw error;
                     }
+                    console.warn(`[qaap] auto worktree isolation unavailable for ${cwd}, sharing the working tree:`, error);
                 }
             }
             if (!worktreeBranch) {
@@ -678,8 +679,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     /**
-     * True when a create sharing this repository is in flight, or another thread of this owner on it
-     * (in its working tree or in one of its worktrees) has a queued or running turn.
+     * True when a create sharing this repository's working tree is in flight, or another thread of this
+     * owner in that same working tree has a queued or running turn. Threads in their own worktree do not
+     * occupy it.
      */
     protected repoHasActiveThread(repoKey: string, ownerLogin: string | undefined): boolean {
         if (this.repoClaims.has(repoKey)) {
@@ -689,9 +691,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (conv.ownerLogin && conv.ownerLogin !== ownerLogin) {
                 continue;
             }
-            const onRepo = this.repoKey(conv.cwd) === repoKey
-                || (conv.parallelBaseCwd !== undefined && this.repoKey(conv.parallelBaseCwd) === repoKey);
-            if (onRepo && this.store.getActiveTaskIdsForConversation(conv.id).length > 0) {
+            if (this.repoKey(conv.cwd) === repoKey && this.store.getActiveTaskIdsForConversation(conv.id).length > 0) {
                 return true;
             }
         }

@@ -233,9 +233,10 @@ describe('QaapAgentConversationEndpoint create isolation', () => {
         expect(h.worktreeCreates).to.deep.equal([repo]);
     });
 
-    it('auto counts an active thread running in a worktree of the same repository', async () => {
+    it('auto shares the working tree when the only active thread runs in its own worktree', async () => {
         const h = build({ active: [{ cwd: '/tmp/qaap-worktrees/alice/abc', parallelBaseCwd: repo }] });
-        expect(isolated((await create(h.endpoint, {})).conv)).to.equal(true); // no isolation field → 'auto'
+        expect(shared((await create(h.endpoint, {})).conv)).to.equal(true); // no isolation field → 'auto'
+        expect(h.worktreeCreates).to.deep.equal([]);
     });
 
     it('auto shares when the only threads are idle, on another repository, or owned by someone else', async () => {
