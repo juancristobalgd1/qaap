@@ -12,6 +12,7 @@ import * as path from 'path';
 import { resolveQaapWorktreesRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
+import type { QaapApplyConversationWorktreeResponse } from '../common/qaap-agent-conversation';
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -33,13 +34,11 @@ export interface QaapConversationWorktreeApplyInput {
     /** Base repository to merge into / unregister the worktree from. */
     readonly baseCwd: string;
     readonly action: QaapConversationWorktreeApplyAction;
+    /** Tenant whose worktrees root hosts the temporary integration worktree of a merge. */
+    readonly ownerLogin?: string;
 }
 
-export interface QaapConversationWorktreeApplyResult {
-    readonly ok: boolean;
-    readonly branch?: string;
-    readonly error?: string;
-}
+export type QaapConversationWorktreeApplyResult = QaapApplyConversationWorktreeResponse;
 
 /**
  * Provisions isolated git worktrees for single conversations started from the composer's
@@ -65,10 +64,7 @@ export class QaapConversationWorktreeService {
         await this.assertGitRepo(cwd);
         const slug = randomUUID().slice(0, 8);
         const branch = `qaap/worktree/${slug}`;
-        // Use the same tenant segment as the repos root (safeUserIdSegment) so the uid registry keys
-        // and the tenant-root isolation line up between repos and worktrees (SEC-1).
-        const tenant = ownerLogin?.trim() ? safeUserIdSegment(ownerLogin.trim()) : '__anonymous__';
-        const worktreePath = path.join(resolveQaapWorktreesRoot(), tenant, slug);
+        const worktreePath = this.tenantWorktreePath(ownerLogin, slug);
         // SEC-1/C-3: run `git worktree add` (which checks out HEAD, applying tenant-controlled
         // clean/smudge filters) UNDER THE TENANT UID, so any filter/hook runs as the tenant, not root,
         // and the new worktree is tenant-owned. Provision the worktree parent tenant-owned first so the
@@ -80,6 +76,15 @@ export class QaapConversationWorktreeService {
             this.worktreeRegistry?.register(ownerLogin.trim(), cwd, worktreePath);
         }
         return { worktreePath, branch };
+    }
+
+    /**
+     * `{worktreesRoot}/{tenant}/{name}`. Uses the same tenant segment as the repos root (safeUserIdSegment)
+     * so the uid registry keys and the tenant-root isolation line up between repos and worktrees (SEC-1).
+     */
+    protected tenantWorktreePath(ownerLogin: string | undefined, name: string): string {
+        const tenant = ownerLogin?.trim() ? safeUserIdSegment(ownerLogin.trim()) : '__anonymous__';
+        return path.join(resolveQaapWorktreesRoot(), tenant, name);
     }
 
     /**
@@ -115,19 +120,9 @@ export class QaapConversationWorktreeService {
         }
 
         if (input.action === 'merge') {
-            try {
-                // --no-ff always creates a merge commit; identity must be set explicitly
-                // (Windows CI runners often have no user.name / user.email configured).
-                await this.mutatingGit(baseCwd, [
-                    '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
-                    'merge', '--no-ff', '--no-edit', branch,
-                ]);
-            } catch (error) {
-                await this.mutatingGit(baseCwd, ['merge', '--abort']).catch(() => undefined);
-                return {
-                    ok: false,
-                    error: `Merge failed (your tree was left untouched): ${this.errorMessage(error)}`,
-                };
+            const merged = await this.mergeBranchSafely(baseCwd, branch, input.ownerLogin);
+            if (!merged.ok) {
+                return merged;
             }
             await this.removeWorktree(baseCwd, worktreePath).catch(() => undefined);
             await this.deleteBranch(baseCwd, branch).catch(() => undefined);
@@ -136,6 +131,70 @@ export class QaapConversationWorktreeService {
 
         await this.removeWorktree(baseCwd, worktreePath).catch(() => undefined);
         return { ok: true, branch };
+    }
+
+    /**
+     * Merge `branch` into the branch checked out in `baseCwd` without ever leaving the base tree half-merged.
+     * The `--no-ff` merge runs in a temporary integration worktree detached at the target tip T; only a clean
+     * merge commit M is then landed from the base tree with `merge --ff-only M`, which refuses atomically
+     * (no file touched) when the target moved past T or local changes would be overwritten. Any refusal
+     * leaves the base tree, the target branch and `branch` untouched; the integration worktree is always removed.
+     */
+    async mergeBranchSafely(baseCwd: string, branch: string, ownerLogin?: string): Promise<QaapApplyConversationWorktreeResponse> {
+        await this.ensureTenantContainerReady(baseCwd);
+        const target = await this.currentBranch(baseCwd);
+        if (!target) {
+            return { ok: false, reason: 'detached', error: 'The repository is not on a branch (detached HEAD). Check out a branch, then merge again.' };
+        }
+        const tip = await this.headCommit(baseCwd);
+        const integrationPath = this.tenantWorktreePath(ownerLogin, `integration-${randomUUID().slice(0, 8)}`);
+        this.tenantSpawn.provisionTenantDir(baseCwd, path.dirname(integrationPath));
+        try {
+            await this.mutatingGit(baseCwd, ['worktree', 'add', '--detach', integrationPath, tip]);
+            try {
+                // --no-ff always creates a merge commit; identity must be set explicitly
+                // (Windows CI runners often have no user.name / user.email configured).
+                await this.mutatingGit(integrationPath, [
+                    '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
+                    'merge', '--no-ff', '--no-edit', branch,
+                ]);
+            } catch (error) {
+                const conflicts = (await this.git(integrationPath, ['diff', '--name-only', '--diff-filter=U']).catch(() => ''))
+                    .split('\n').map(line => line.trim()).filter(Boolean);
+                await this.mutatingGit(integrationPath, ['merge', '--abort']).catch(() => undefined);
+                return conflicts.length
+                    ? { ok: false, reason: 'conflict', conflicts, error: `Merge conflicts in ${conflicts.join(', ')}. Nothing was changed.` }
+                    : { ok: false, error: `Merge failed (nothing was changed): ${this.errorMessage(error)}` };
+            }
+            const merge = await this.headCommit(integrationPath);
+            const moved = { ok: false, reason: 'target-moved', error: `"${target}" changed while merging. Nothing was changed; merge again.` } as const;
+            if (await this.currentBranch(baseCwd) !== target || await this.headCommit(baseCwd) !== tip) {
+                return moved;
+            }
+            try {
+                await this.mutatingGit(baseCwd, ['merge', '--ff-only', merge]);
+            } catch {
+                // HEAD still at T: --ff-only refused because local changes would be overwritten (locale-independent check).
+                return await this.headCommit(baseCwd) !== tip ? moved : {
+                    ok: false,
+                    reason: 'local-changes',
+                    error: 'Your uncommitted changes would be overwritten by the merge. Commit or stash them, then merge again.',
+                };
+            }
+            return { ok: true, branch };
+        } finally {
+            await this.removeWorktree(baseCwd, integrationPath).catch(() => undefined);
+            await this.mutatingGit(baseCwd, ['worktree', 'prune']).catch(() => undefined);
+        }
+    }
+
+    /** Branch checked out in `cwd`, or undefined when HEAD is detached. */
+    protected async currentBranch(cwd: string): Promise<string | undefined> {
+        return (await this.git(cwd, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim() || undefined;
+    }
+
+    protected async headCommit(cwd: string): Promise<string> {
+        return (await this.git(cwd, ['rev-parse', 'HEAD'])).trim();
     }
 
     /**

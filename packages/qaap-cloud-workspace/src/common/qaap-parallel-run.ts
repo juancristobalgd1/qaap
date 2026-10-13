@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+import type { QaapApplyConversationWorktreeResponse } from './qaap-agent-conversation';
 
 /** HTTP base path for the parallel-runs API (variants in isolated git worktrees). */
 export const QAAP_PARALLEL_RUN_API_PATH = '/qaap/api/parallel-runs';
@@ -63,10 +64,5 @@ export interface QaapChooseParallelVariantRequest {
     readonly action: QaapParallelChooseAction;
 }
 
-export interface QaapChooseParallelVariantResponse {
-    readonly ok: boolean;
-    /** Branch kept/merged for the winner, when applicable. */
-    readonly branch?: string;
-    /** Populated when a `merge` action could not complete cleanly (aborted, tree untouched). */
-    readonly error?: string;
-}
+/** Same shape as a single worktree apply: `merge` goes through the same safe merge-back. */
+export type QaapChooseParallelVariantResponse = QaapApplyConversationWorktreeResponse;

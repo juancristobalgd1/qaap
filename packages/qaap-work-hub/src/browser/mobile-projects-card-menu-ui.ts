@@ -65,6 +65,7 @@ export interface MobileProjectsCardMenuHost {
     ensureOverlayUi(): {
         parallel: {
             openParallelRunsSheet(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
+            openVariantChooseSheet(runId: string | undefined, summary: QaapAgentConversationSummaryDTO): void;
         };
     };
     conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
@@ -209,6 +210,20 @@ export class MobileProjectsCardMenuUi {
                 : nls.localize('qaap/mobileProjects/forkTaskUnavailable', 'Only saved workspace tasks can be forked here.'),
             onSelect: () => { void this.host.onForkConversation(project, summary); },
         });
+
+        // A thread running in its own worktree (fork or auto-isolated): merge, keep its branch or close it.
+        if (summary.worktreeBranch && summary.parallelBaseCwd && !summary.parallelRunId) {
+            this.appendCardMenuItem(menu, {
+                label: nls.localize('qaap/mobileProjects/landWorktree', 'Merge or close worktree'),
+                iconClass: 'codicon-git-merge',
+                disabled: summary.status === 'streaming',
+                title: nls.localize('qaap/mobileProjects/landWorktreeTitle', 'Bring this thread\'s branch {0} back into the repository.', summary.worktreeBranch),
+                onSelect: () => {
+                    this.closeCardMenu();
+                    this.host.ensureOverlayUi().parallel.openVariantChooseSheet(undefined, summary);
+                },
+            });
+        }
 
         const canRunVariants = !isTheiaChat && !summary.parallelRunId;
         this.appendCardMenuItem(menu, {

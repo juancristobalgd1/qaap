@@ -14,6 +14,7 @@ import * as path from 'path';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { resolveQaapParallelRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
@@ -48,6 +49,10 @@ export class QaapParallelRunStore {
 
     @inject(QaapTenantSpawnService)
     protected readonly tenantSpawn: QaapTenantSpawnService;
+
+    /** Lands a chosen variant through the shared safe merge-back (integration worktree + fast-forward). */
+    @inject(QaapConversationWorktreeService)
+    protected readonly worktrees: QaapConversationWorktreeService;
 
     /** Records which project each variant worktree was cut from, so a hosted push from it cannot be redirected (R3-1). */
     @inject(QaapHostedWorktreeRegistry) @optional()
@@ -265,16 +270,9 @@ export class QaapParallelRunStore {
         await this.commitWorktree(winner.worktreePath, `qaap: parallel variant ${winner.agentId}`);
 
         if (action === 'merge') {
-            try {
-                // --no-ff always creates a merge commit; identity must be set explicitly
-                // (Windows CI runners often have no user.name / user.email configured).
-                await this.mutatingGit(run.cwd, [
-                    '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
-                    'merge', '--no-ff', '--no-edit', winner.branch,
-                ]);
-            } catch (error) {
-                await this.mutatingGit(run.cwd, ['merge', '--abort']).catch(() => undefined);
-                return { ok: false, error: `Merge failed (your tree was left untouched): ${this.errorMessage(error)}` };
+            const merged = await this.worktrees.mergeBranchSafely(run.cwd, winner.branch, run.ownerLogin);
+            if (!merged.ok) {
+                return merged;
             }
             await this.finalizeRun(run);
             return { ok: true, branch: winner.branch };
@@ -511,9 +509,5 @@ export class QaapParallelRunStore {
         } catch {
             return false;
         }
-    }
-
-    protected errorMessage(error: unknown): string {
-        return error instanceof Error ? error.message : String(error);
     }
 }

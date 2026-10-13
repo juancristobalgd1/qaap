@@ -8,6 +8,7 @@
 // qaap clients in this package, to avoid a cross-package dependency).
 
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
+import { worktreeMergeFailure, type QaapApplyConversationWorktreeResultDTO } from './qaap-agent-conversation-client';
 
 export const QAAP_PARALLEL_RUN_API_PATH = '/qaap/api/parallel-runs';
 
@@ -44,11 +45,8 @@ export interface QaapParallelRunDTO {
 
 export type QaapParallelChooseAction = 'keep-branch' | 'merge' | 'none';
 
-export interface QaapChooseParallelVariantResultDTO {
-    readonly ok: boolean;
-    readonly branch?: string;
-    readonly error?: string;
-}
+/** `merge` goes through the same safe merge-back as a single worktree apply. */
+export type QaapChooseParallelVariantResultDTO = QaapApplyConversationWorktreeResultDTO;
 
 export async function createParallelRun(
     cwd: string,
@@ -92,7 +90,7 @@ export async function chooseParallelVariant(
         body: JSON.stringify({ conversationId, action }),
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        return worktreeMergeFailure(response);
     }
     return response.json() as Promise<QaapChooseParallelVariantResultDTO>;
 }

@@ -111,6 +111,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     /** Dedup keys whose create is in progress (reserved before the first await) to block a concurrent fan-out. */
     protected readonly clientRequestInFlight = new Set<string>();
     protected static readonly CLIENT_REQUEST_DEDUP_MAX = 512;
+    /** HTTP 409 body of a merge-back refused because another thread runs in the target working tree. */
+    static readonly MERGE_BUSY: QaapApplyConversationWorktreeResponse = {
+        ok: false,
+        reason: 'busy',
+        error: 'Another thread is running in this repository; merge when it finishes.',
+    };
     /** Repository key → creates in flight that will share its working tree (closes the 'auto' isolation race). */
     protected readonly repoClaims = new Map<string, number>();
 
@@ -679,6 +685,14 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     /**
+     * True when another thread runs in `baseCwd`'s own working tree, so merging into it now would change files
+     * under that agent. A thread in its own worktree (including the one being merged) does not count.
+     */
+    isWorkingTreeBusy(baseCwd: string, ownerLogin: string | undefined): boolean {
+        return this.repoHasActiveThread(this.repoKey(baseCwd), ownerLogin);
+    }
+
+    /**
      * True when a create sharing this repository's working tree is in flight, or another thread of this
      * owner in that same working tree has a queued or running turn. Threads in their own worktree do not
      * occupy it.
@@ -1184,8 +1198,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     /**
-     * Keep / merge / discard an isolated Parallel worktree fork (`forkedFromId` + `worktreeBranch`).
-     * Multi-agent {@link QaapAgentConversation.parallelRunId} variants keep using `/parallel-runs/:id/choose`.
+     * Keep / merge / discard a thread's own worktree: a Parallel fork (`forkedFromId`) or a thread isolated
+     * at creation (`parallelBaseCwd`), both with a `worktreeBranch`. Multi-agent
+     * {@link QaapAgentConversation.parallelRunId} variants keep using `/parallel-runs/:id/choose`.
      */
     protected async handleApplyWorktree(req: Request, res: Response): Promise<void> {
         const conv = this.getConversationIfOwned(req, res, req.params.id);
@@ -1203,15 +1218,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             res.status(400).json({ error: 'Use the parallel-runs API to choose a multi-agent variant.' });
             return;
         }
-        if (!conv.forkedFromId || !conv.worktreeBranch) {
-            res.status(400).json({ error: 'This conversation is not an isolated Parallel worktree.' });
+        if (!conv.worktreeBranch || (!conv.forkedFromId && !conv.parallelBaseCwd)) {
+            res.status(400).json({ error: 'This conversation does not run in its own worktree.' });
             return;
         }
         if (this.conversationHasLiveRun(conv.id, conv)) {
             res.status(409).json({ error: 'Wait until the agent finishes before applying this worktree.' });
             return;
         }
-        const parent = this.store.get(conv.forkedFromId);
+        const parent = conv.forkedFromId ? this.store.get(conv.forkedFromId) : undefined;
         const baseCwd = conv.parallelBaseCwd ?? parent?.parallelBaseCwd ?? parent?.cwd;
         if (!baseCwd) {
             res.status(400).json({ error: 'The parent repository for this worktree is unknown.' });
@@ -1221,12 +1236,18 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             this.auth.denyForbidden(res, req, 'agent_conversation', { conversationId: conv.id, cwd: baseCwd });
             return;
         }
+        const ownerLogin = conv.ownerLogin ?? this.auth.resolveUserLogin(ctx);
+        if (action === 'merge' && this.isWorkingTreeBusy(baseCwd, ownerLogin)) {
+            res.status(409).json(QaapAgentConversationEndpoint.MERGE_BUSY);
+            return;
+        }
         try {
             const result = await this.worktrees.apply({
                 worktreePath: conv.cwd,
                 branch: conv.worktreeBranch,
                 baseCwd,
                 action,
+                ownerLogin,
             }) satisfies QaapApplyConversationWorktreeResponse;
             if (result.ok) {
                 this.store.delete(conv.id);
