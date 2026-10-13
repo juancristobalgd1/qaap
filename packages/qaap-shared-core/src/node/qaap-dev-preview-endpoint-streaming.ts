@@ -15,6 +15,7 @@ import {
     isQaapPreviewId,
     isQaapProcessPreviewIdentity,
     normalizeQaapPreviewConversationId,
+    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
     qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
@@ -179,12 +180,19 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
         const record = ctx.portRegistry.getByPort(port);
         const login = ctx.auth.resolveUserLogin(ctx.auth.authenticate(req));
         if (record && login === record.ownerLogin) {
+            // A bare port is shared by every section of the user: report which section and root
+            // own the claim so a sibling thread does not adopt it as its own preview.
+            const conversationId = isQaapProcessPreviewIdentity(record)
+                ? normalizeQaapPreviewConversationId(record.conversationId)
+                : undefined;
             const body: QaapDevPreviewProbeResponse = {
                 ready,
                 ...(ready ? { readiness: 'transport_ready' as const } : {}),
                 previewUrl: ctx.buildIdentityPreviewUrl(req, record),
                 previewId: record.previewId,
                 projectId: record.projectId,
+                root: record.root,
+                ...(conversationId && conversationId !== QAAP_DEFAULT_PREVIEW_CONVERSATION_ID ? { conversationId } : {}),
                 ...(isQaapProcessPreviewIdentity(record) ? {
                     workspaceId: record.workspaceId,
                     processId: record.processId,

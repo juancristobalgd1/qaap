@@ -937,6 +937,82 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.records()).to.have.length(2);
         });
 
+        it('gives a worktree thread its own port and identity and names the owner on the bare-port probe', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const mainRoot = 'file:///workspace/alice/project-a';
+            const worktreeRoot = 'file:///tmp/qaap-worktrees/alice/e895ac21';
+            const mainRes = makeRes();
+            const worktreeRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: mainRoot,
+                projectId: mainRoot,
+                processId: 'process-main',
+                conversationId: 'thread-a',
+            }, mainRoot), mainRes);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: worktreeRoot,
+                projectId: worktreeRoot,
+                processId: 'process-worktree',
+                conversationId: 'thread-b',
+            }, worktreeRoot), worktreeRes);
+
+            const main = mainRes.record.body as { previewId: string; port: number };
+            const worktree = worktreeRes.record.body as { previewId: string; port: number };
+            expect(main.port).to.equal(5173);
+            expect(worktree.port).to.equal(5174);
+            expect(worktree.previewId).not.to.equal(main.previewId);
+
+            ep.listening = true;
+            const probeReq = (port: number): unknown => ({
+                params: { port: String(port) },
+                headers: {},
+                protocol: 'http',
+                get: () => 'localhost:3000',
+            });
+            const mainProbe = makeRes();
+            const worktreeProbe = makeRes();
+            await ep.exposeHandleProbe(probeReq(main.port) as Request, mainProbe);
+            await ep.exposeHandleProbe(probeReq(worktree.port) as Request, worktreeProbe);
+            expect(mainProbe.record.body).to.include({
+                ready: true,
+                previewId: main.previewId,
+                conversationId: 'thread-a',
+                root: path.resolve(FileUri.fsPath(mainRoot)),
+            });
+            expect(worktreeProbe.record.body).to.include({
+                ready: true,
+                previewId: worktree.previewId,
+                conversationId: 'thread-b',
+                root: path.resolve(FileUri.fsPath(worktreeRoot)),
+            });
+        });
+
+        it('omits the section on the bare-port probe of a claim made without one', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/project-a';
+            const claimRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, { workspaceId: root, projectId: root, processId: 'process-a' }, root), claimRes);
+
+            ep.listening = true;
+            const probeRes = makeRes();
+            await ep.exposeHandleProbe({
+                params: { port: '5173' },
+                headers: {},
+                protocol: 'http',
+                get: () => 'localhost:3000',
+            } as unknown as Request, probeRes);
+            const body = probeRes.record.body as { previewId?: string; conversationId?: string; root?: string };
+            expect(body.previewId).to.equal((claimRes.record.body as { previewId: string }).previewId);
+            expect(body.conversationId).to.equal(undefined);
+            expect(body.root).to.equal(path.resolve(FileUri.fsPath(root)));
+        });
+
         it('skips a previously occupied unregistered port instead of adopting another app', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

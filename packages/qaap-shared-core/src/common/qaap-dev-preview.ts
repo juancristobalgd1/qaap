@@ -61,8 +61,13 @@ export interface QaapDevPreviewProbeResponse {
     readonly processId?: string;
     /** Reserved port of the claim. Only owner-scoped responses (claim/current) include it. */
     readonly port?: number;
-    /** Work Hub section that owns this claim. Present on `/api/current` when the registry has it. */
+    /**
+     * Work Hub section that owns this claim. Present on `/api/current` when the registry has it, and
+     * on an owner's `/api/probe/:port` when the claim was made for a section.
+     */
     readonly conversationId?: string;
+    /** Canonical workspace root of the claim. Only an owner's `/api/probe/:port` includes it. */
+    readonly root?: string;
     /**
      * Why an identity probe is (not) ready. Additive: older backends omit it and clients derive it
      * from `ready` and the HTTP status. See {@link QaapDevPreviewClaimState}.
