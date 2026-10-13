@@ -9,9 +9,13 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import { chromium } from 'playwright-core';
+import { normalizeQaapPreviewConversationId, resolveQaapPreviewIdentity } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
+import { QaapDevPreviewEndpoint } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-endpoint';
+import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
 import {
     QaapHeadlessVisualCaptureService,
     applyQaapHeadlessRuntimeDiagnostics,
+    type QaapHeadlessCaptureAppTarget,
     inspectQaapHeadlessPage,
     qaapHeadlessPublicPreviewLeaseMs,
     resolveHeadlessCaptureAppTarget,
@@ -99,6 +103,123 @@ describe('QaapHeadlessVisualCaptureService failure presentation', () => {
         expect(failureMessage).to.equal(resolveQaapHeadlessCaptureFailureMessage(launchError));
         expect(failureMessage).to.equal('Vista previa no disponible');
         expect(failureMessage).not.to.contain('--no-sandbox');
+    });
+});
+
+describe('QaapHeadlessVisualCaptureService preview port reservation', () => {
+    const owner = 'alice';
+    let mainRoot: string;
+    let worktreeRoot: string;
+    let registry: QaapDevPreviewPortRegistry;
+    /** Ports that answer HTTP (sibling dev servers plus whatever the fake supervisor started). */
+    let listening: Set<number>;
+    let started: number[];
+
+    interface CaptureHarness {
+        reserveScriptPreview(conv: QaapAgentConversation, app: QaapHeadlessCaptureAppTarget): Promise<{ record: QaapDevPreviewRecord; registeredByCapture: boolean } | undefined>;
+        ensureScriptServer(app: QaapHeadlessCaptureAppTarget, preview: unknown): Promise<{ ok: boolean; port?: number }>;
+    }
+
+    beforeEach(() => {
+        mainRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-capture-main-')));
+        worktreeRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-capture-worktree-')));
+        registry = new QaapDevPreviewPortRegistry();
+        listening = new Set();
+        started = [];
+    });
+
+    afterEach(() => {
+        fs.rmSync(mainRoot, { recursive: true, force: true });
+        fs.rmSync(worktreeRoot, { recursive: true, force: true });
+    });
+
+    const makeService = (): CaptureHarness => {
+        const endpoint = new QaapDevPreviewEndpoint();
+        Object.assign(endpoint, {
+            portRegistry: registry,
+            probeLocalDevServer: async (port: number) => listening.has(port),
+            isPortBindable: async (port: number) => !listening.has(port),
+        });
+        const service = Object.create(QaapHeadlessVisualCaptureService.prototype) as QaapHeadlessVisualCaptureService;
+        Object.assign(service, {
+            previewRegistry: registry,
+            previewEndpoint: endpoint,
+            supervisor: {
+                start: async (_cwd: string, port: number) => {
+                    started.push(port);
+                    listening.add(port);
+                    return 'running';
+                },
+                stop: () => false,
+                describe: () => undefined,
+            },
+            probePort: async (port: number) => listening.has(port),
+        });
+        return service as unknown as CaptureHarness;
+    };
+
+    const conversation = (id: string, cwd: string): QaapAgentConversation =>
+        ({ id, cwd, ownerLogin: owner } as unknown as QaapAgentConversation);
+    const viteApp = (root: string): QaapHeadlessCaptureAppTarget => ({ root, kind: 'script', expectedPort: 5173 });
+
+    const registerSibling = (conversationId: string, root: string, port: number): QaapDevPreviewRecord => {
+        const record = registry.register({
+            ...resolveQaapPreviewIdentity({
+                userId: owner,
+                workspaceId: root,
+                projectId: root,
+                conversationId,
+                processId: `process-${conversationId}`,
+            }),
+            ownerLogin: owner,
+            root,
+            port,
+        })!;
+        listening.add(port);
+        return record;
+    };
+
+    it('allocates its own port instead of capturing a sibling thread on the framework port', async () => {
+        registerSibling('thread-a', mainRoot, 5173);
+        const service = makeService();
+
+        const preview = await service.reserveScriptPreview(conversation('thread-b', worktreeRoot), viteApp(worktreeRoot));
+        const ready = await service.ensureScriptServer(viteApp(worktreeRoot), preview);
+
+        expect(preview?.registeredByCapture).to.equal(true);
+        expect(preview?.record.port).to.equal(5174);
+        expect(preview?.record.root).to.equal(worktreeRoot);
+        expect(normalizeQaapPreviewConversationId(preview?.record.conversationId)).to.equal('thread-b');
+        expect(started).to.deep.equal([5174]);
+        expect(ready).to.deep.include({ ok: true, port: 5174 });
+    });
+
+    it('reuses the live preview of the same conversation and root without starting a server', async () => {
+        const own = registerSibling('thread-b', worktreeRoot, 5180);
+        const service = makeService();
+
+        const preview = await service.reserveScriptPreview(conversation('thread-b', worktreeRoot), viteApp(worktreeRoot));
+        const ready = await service.ensureScriptServer(viteApp(worktreeRoot), preview);
+
+        expect(preview?.registeredByCapture).to.equal(false);
+        expect(preview?.record.previewId).to.equal(own.previewId);
+        expect(ready).to.deep.include({ ok: true, port: 5180 });
+        expect(started).to.deep.equal([]);
+    });
+
+    it('never accepts an answering port owned by another conversation or another root', async () => {
+        registerSibling('thread-a', worktreeRoot, 5173);
+        registerSibling('thread-b', mainRoot, 5174);
+        listening.add(5175); // unregistered listener: ownership is never inferred from liveness
+        const service = makeService();
+
+        const preview = await service.reserveScriptPreview(conversation('thread-b', worktreeRoot), viteApp(worktreeRoot));
+        const ready = await service.ensureScriptServer(viteApp(worktreeRoot), preview);
+
+        expect(preview?.registeredByCapture).to.equal(true);
+        expect(preview?.record.port).to.equal(5176);
+        expect(started).to.deep.equal([5176]);
+        expect(ready).to.deep.include({ ok: true, port: 5176 });
     });
 });
 

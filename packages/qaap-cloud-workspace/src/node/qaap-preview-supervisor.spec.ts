@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { buildQaapPreviewScriptCommand } from './qaap-preview-supervisor';
+import { buildQaapPreviewProcessEnv, buildQaapPreviewScriptCommand } from './qaap-preview-supervisor';
 
 describe('buildQaapPreviewScriptCommand', () => {
     it('runs Windows package-manager shims through cmd.exe', () => {
@@ -19,5 +19,21 @@ describe('buildQaapPreviewScriptCommand', () => {
             command: 'pnpm',
             args: ['run', 'dev'],
         });
+    });
+});
+
+describe('buildQaapPreviewProcessEnv', () => {
+    it('pins the supervised dev server to its reserved port like the frontend bootstrap', () => {
+        const env = buildQaapPreviewProcessEnv({ PATH: '/bin', NODE_OPTIONS: '--max-old-space-size=512' }, 5174);
+
+        expect(env.PATH).to.equal('/bin');
+        expect(env.PORT).to.equal('5174');
+        expect(env.QAAP_PREVIEW_PORT).to.equal('5174');
+        expect(env.BROWSER).to.equal('none');
+        const [kept, preload] = env.NODE_OPTIONS!.split(' ');
+        expect(kept).to.equal('--max-old-space-size=512');
+        const source = Buffer.from(preload.replace('--import=data:text/javascript;base64,', ''), 'base64').toString('utf8');
+        expect(source).to.contain('QAAP_PREVIEW_PORT');
+        expect(source).to.contain('--strictPort');
     });
 });

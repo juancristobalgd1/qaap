@@ -7,6 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { qaapPreviewPortNodeImportFlag } from '@theia/qaap-shared-core/lib/common/qaap-preview-port-preload';
 import {
     pruneRestartHistory,
     QaapStderrRing,
@@ -61,6 +62,21 @@ export function buildQaapPreviewScriptCommand(
         };
     }
     return { command: packageManager, args: ['run', script] };
+}
+
+/**
+ * Dev-server env pinned to `port` the way the frontend bootstrap pins it: `PORT` for generic
+ * servers plus `QAAP_PREVIEW_PORT` and the framework preload, so Vite/Astro/Next/Remix (which
+ * ignore `PORT`) bind exactly this port with `--strictPort` instead of their default one.
+ */
+export function buildQaapPreviewProcessEnv(base: NodeJS.ProcessEnv, port: number): NodeJS.ProcessEnv {
+    return {
+        ...base,
+        PORT: String(port),
+        QAAP_PREVIEW_PORT: String(port),
+        NODE_OPTIONS: [base.NODE_OPTIONS, qaapPreviewPortNodeImportFlag(true)].filter(Boolean).join(' '),
+        BROWSER: 'none',
+    };
 }
 
 /**
@@ -184,7 +200,7 @@ export class QaapPreviewSupervisor {
         // points HOME/USER at the tenant's writable home. No-op when uid-per-user is off / not root.
         let child: ChildProcess;
         try {
-            const env = this.tenantSpawn.resolveProcessEnv(cwd, { ...childProcessEnv(), PORT: String(port), BROWSER: 'none' });
+            const env = this.tenantSpawn.resolveProcessEnv(cwd, buildQaapPreviewProcessEnv(childProcessEnv(), port));
             child = await this.tenantSpawn.spawnArgvPreparedAsync(plan.command, plan.args, { cwd, env });
         } catch (error) {
             const refused: QaapPreviewProcessRecord = {

@@ -1205,6 +1205,42 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.records()).to.have.length(2);
         });
 
+        it('allocatePreviewPort reserves a free port for a backend-started preview without touching sibling claims', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/vamello';
+            const siblingRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: root,
+                projectId: 'vamello',
+                processId: 'process-section-a',
+                conversationId: 'section-a',
+            }, root), siblingRes);
+            const sibling = siblingRes.record.body as { previewId: string; port: number };
+            ep.listeningPorts.add(sibling.port);
+            const identity = resolveQaapPreviewIdentity({
+                userId: 'alice',
+                workspaceId: '/workspace/alice/vamello-worktree',
+                projectId: '/workspace/alice/vamello-worktree',
+                conversationId: 'section-b',
+                processId: 'visual-section-b',
+            });
+
+            const record = await ep.allocatePreviewPort({
+                ...identity,
+                ownerLogin: 'alice',
+                root: '/workspace/alice/vamello-worktree',
+            }, 5173);
+
+            expect(sibling.port).to.equal(5173);
+            expect(record?.port).to.equal(5174);
+            expect(record?.previewId).to.equal(identity.previewId);
+            expect(registry.getByPort(5174)?.root).to.equal('/workspace/alice/vamello-worktree');
+            expect(registry.get(sibling.previewId)?.port).to.equal(5173);
+        });
+
         it('reattaches a restored section to the live project process instead of allocating an unused port', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

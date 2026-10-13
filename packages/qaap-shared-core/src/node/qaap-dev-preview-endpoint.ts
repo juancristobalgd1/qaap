@@ -10,16 +10,17 @@ import { EarlyExpressMiddleware } from '@theia/core/lib/node/backend-application
 import * as fs from 'fs';
 import * as http from 'http';
 import * as net from 'net';
+import { resolve as resolvePath } from 'path';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
-import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
+import type { QaapDevPreviewAllocation, QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import { QAAP_DEV_PREVIEW_PREFIX, type QaapDevPreviewMemoryStatus } from '../common/qaap-dev-preview';
 import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-headers';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel';
 import { isQaapDevPreviewPortBindable } from './qaap-dev-preview-port-bind-probe';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
-import { configureExtracted, earlyMiddlewareExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
+import { allocatePreviewPortExtracted, configureExtracted, earlyMiddlewareExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
 import { buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, previewBaseDomainExtracted, previewHostLabelExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
 
@@ -39,6 +40,19 @@ function getQaapBackendListenPort(): number {
 /** Validates a client-supplied PID before trusting it for `process.kill` (never trust raw input for a syscall). */
 export function parseClaimOsProcessId(raw: unknown): number | undefined {
     return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 && raw <= 2 ** 31 - 1 ? raw : undefined;
+}
+
+/**
+ * Canonical identity root of a preview: the resolved realpath, so a symlinked checkout and its
+ * target share one registration. A missing root keeps the resolved path (spawning fails later).
+ */
+export function canonicalizeQaapPreviewRoot(rootPath: string): string {
+    const resolved = resolvePath(rootPath);
+    try {
+        return fs.realpathSync.native(resolved);
+    } catch {
+        return resolved;
+    }
 }
 
 @injectable()
@@ -130,6 +144,14 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public nextAllocationCandidate(preferredPort: number, offset: number): number {
         return nextAllocationCandidateExtracted(this, preferredPort, offset);
+    }
+
+    /**
+     * Shared dev-preview port allocator: the claim endpoint and backend-started previews (headless
+     * visual capture) reserve ports through this one path, so they never hand out the same port.
+     */
+    public allocatePreviewPort(registration: QaapDevPreviewAllocation, preferredPort: number): Promise<QaapDevPreviewRecord | undefined> {
+        return allocatePreviewPortExtracted(this, registration, preferredPort);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

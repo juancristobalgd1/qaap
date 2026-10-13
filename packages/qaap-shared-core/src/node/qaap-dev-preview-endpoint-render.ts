@@ -2,8 +2,6 @@
 
 import type { Application, Handler, NextFunction, Request, Response } from '@theia/core/shared/express';
 import { FileUri } from '@theia/core/lib/node';
-import * as fs from 'fs';
-import * as path from 'path';
 import {
     QAAP_DEV_PREVIEW_CLAIM_PATH,
     QAAP_DEV_PREVIEW_CURRENT_PATH,
@@ -28,9 +26,10 @@ import {
 import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes, type QaapPreviewRoute } from '../common/qaap-preview-route';
 import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
-import { PREVIEW_RESERVATION_START_GRACE_MS, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
+import { PREVIEW_RESERVATION_START_GRACE_MS, canonicalizeQaapPreviewRoot, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
-import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
+import type { QaapDevPreviewAllocation, QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
+import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 
 /** True inside a per-tenant backend (`QAAP_TENANT_BACKEND_MODE=1`). */
 export function isQaapTenantBackendRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -344,13 +343,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
     // Client-supplied OS PID of the terminal shell (node-pty); lets release() SIGTERM the
     // process group when the sandboxed container cannot discover listeners by port.
     const osProcessId = parseClaimOsProcessId((req.body as { osProcessId?: unknown } | undefined)?.osProcessId);
-    const rootPath = path.resolve(FileUri.fsPath(root));
-    let canonicalRoot = rootPath;
-    try {
-        canonicalRoot = fs.realpathSync.native(rootPath);
-    } catch {
-        // Ownership was already checked. A missing root will fail when the process is spawned.
-    }
+    const canonicalRoot = canonicalizeQaapPreviewRoot(FileUri.fsPath(root));
     const canonicalProjectId = FileUri.create(canonicalRoot).toString();
     const conversationId = normalizeQaapPreviewConversationId(claim.conversationId);
     const identity = resolveQaapPreviewIdentity({
@@ -458,6 +451,35 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         conversationId,
     }, owner);
 
+    const allocated = await ctx.allocatePreviewPort({
+        ...identity,
+        ownerLogin: owner,
+        root: canonicalRoot,
+        osProcessId,
+    }, preferredPort);
+    if (!allocated) {
+        res.status(503).type('text/plain').send('No safe dev-preview port is currently available.');
+        return;
+    }
+    res.status(200).json({
+        previewId: allocated.previewId,
+        previewUrl: ctx.buildIdentityPreviewUrl(req, allocated),
+        port: allocated.port,
+    });
+}
+
+/**
+ * Reserves the first safe port at or after `preferredPort` for `registration` and registers it.
+ * Skips the IDE port, ports held by a registration (start grace, or still answering), any
+ * unregistered port answering HTTP (ownership is never inferred from liveness) and ports that fail
+ * a real bind test. Undefined when no candidate is safe.
+ */
+export async function allocatePreviewPortExtracted(
+    ctx: QaapDevPreviewEndpointContext,
+    registration: QaapDevPreviewAllocation,
+    preferredPort: number,
+): Promise<QaapDevPreviewRecord | undefined> {
+    const owner = registration.ownerLogin;
     for (let offset = 0; offset < PREVIEW_PORT_ALLOCATION_ATTEMPTS; offset++) {
         const port = ctx.nextAllocationCandidate(preferredPort, offset);
         if (ctx.isIdeListenPort(port)) {
@@ -484,33 +506,22 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             // the host IDE on a non-default port). Handing it out makes the dev server die on bind.
             continue;
         }
-        const record = ctx.portRegistry.register({
-            ...identity,
-            ownerLogin: owner,
-            root: canonicalRoot,
-            port,
-            osProcessId,
-        });
+        const record = ctx.portRegistry.register({ ...registration, port });
         if (!record) {
             continue; // concurrent allocator won this candidate; try the next one
         }
         console.info('[qaap-preview] reserved', {
             previewId: record.previewId,
             ownerLogin: owner,
-            workspaceId: identity.workspaceId,
-            projectId: identity.projectId,
-            conversationId: identity.conversationId,
-            processId: identity.processId,
+            workspaceId: registration.workspaceId,
+            projectId: registration.projectId,
+            conversationId: registration.conversationId,
+            processId: registration.processId,
             port,
         });
-        res.status(200).json({
-            previewId: record.previewId,
-            previewUrl: ctx.buildIdentityPreviewUrl(req, record),
-            port,
-        });
-        return;
+        return record;
     }
-    res.status(503).type('text/plain').send('No safe dev-preview port is currently available.');
+    return undefined;
 }
 
 export function supersedeConversationPreviewsExtracted(ctx: QaapDevPreviewEndpointContext, scope: {

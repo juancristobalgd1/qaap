@@ -13,6 +13,16 @@ import type * as http from 'http';
 import type * as net from 'net';
 import type { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry, QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
+import type { QaapProcessPreviewIdentity } from '../common/qaap-preview-identity';
+
+/** A process-preview registration still waiting for its port (see `allocatePreviewPort`). */
+export type QaapDevPreviewAllocation = QaapProcessPreviewIdentity & {
+    readonly previewId: string;
+    readonly ownerLogin: string;
+    /** Canonical (realpath) app root, as produced by `canonicalizeQaapPreviewRoot`. */
+    readonly root: string;
+    readonly osProcessId?: number;
+};
 
 /**
  * The subset of `QaapDevPreviewEndpoint` used (via `ctx.`) by the extracted
@@ -56,6 +66,9 @@ export interface QaapDevPreviewEndpointContext {
     isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): boolean;
 
     nextAllocationCandidate(preferredPort: number, offset: number): number;
+
+    /** Reserves and registers the first safe port at or after `preferredPort`; undefined when none is safe. */
+    allocatePreviewPort(registration: QaapDevPreviewAllocation, preferredPort: number): Promise<QaapDevPreviewRecord | undefined>;
 
     handleRelease(req: Request, res: Response): void;
 
