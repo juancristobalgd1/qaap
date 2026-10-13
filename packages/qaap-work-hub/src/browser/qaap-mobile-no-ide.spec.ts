@@ -26,13 +26,15 @@ import { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-executio
 import { executionSurfaceTabSpecsExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
 import { openDesktopIdeFromAgentsHubExtracted } from './mobile-projects-panel-render';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
+import { QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 /**
  * Product rule: in mobile mode (`matchesMobileOneColumnLayout()`) the Theia IDE never opens and the
- * Work Hub offers no path into it. Mobile is stubbed on through `window.matchMedia`.
+ * Work Hub offers no path into it, while every Work Hub feature (Files, Terminal, Changes) stays.
+ * Mobile is stubbed on through `window.matchMedia`.
  */
 describe('mobile mode never opens the IDE', () => {
 
@@ -91,8 +93,8 @@ describe('mobile mode never opens the IDE', () => {
         expect(calls).to.deep.equal([]);
     });
 
-    it('transcript Files view services expose no IDE actions', () => {
-        const commands = { executeCommand: record('commands.executeCommand') };
+    it('transcript Files view services keep New file / New folder but no editor opener', () => {
+        const commands = { executeCommand: (id: string) => { calls.push(`commands.executeCommand:${id}`); return Promise.resolve(undefined); } };
         const editorManager = { open: record('EditorManager.open') };
         const services = createTranscriptFilesViewServices(
             { tryGetRoots: () => [] } as never,
@@ -100,19 +102,36 @@ describe('mobile mode never opens the IDE', () => {
             editorManager as never,
             commands as never,
         );
-        expect(services.createNewFile).to.equal(undefined);
-        expect(services.createNewFolder).to.equal(undefined);
+        expect(services.createNewFile).to.be.a('function');
+        expect(services.createNewFolder).to.be.a('function');
         expect(services.openInEditor).to.equal(undefined);
-        expect(calls).to.deep.equal([]);
+        // New file is created in place (Theia `file.newFile` would open it in the IDE editor); without a
+        // parent folder or workspace root there is nothing to create.
+        services.createNewFile!();
+        services.createNewFolder!('file:///work/src');
+        expect(calls).to.deep.equal(['commands.executeCommand:file.newFolder']);
     });
 
-    it('Work Hub execution surface offers no Terminal tab', () => {
+    it('Work Hub execution surface offers Preview, Files and Terminal', () => {
         const ids = executionSurfaceTabSpecsExtracted({} as never).map(spec => spec.id);
-        expect(ids).to.not.include('terminal');
+        expect(ids).to.deep.equal(['preview', 'files', 'terminal']);
         const ui = new MobileProjectsExecutionSurfaceTabsUi({
             executionSurfaceTabByProjectId: new Map([['p', 'terminal']]),
         } as never);
-        expect(ui.executionSurfaceTabForProject({ id: 'p' } as never)).to.equal('preview');
+        expect(ui.executionSurfaceTabForProject({ id: 'p' } as never)).to.equal('terminal');
+    });
+
+    it('a stale desktop-IDE preference does not strip the Work Hub surfaces', () => {
+        storage.set(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
+        const ids = executionSurfaceTabSpecsExtracted({} as never).map(spec => spec.id);
+        expect(ids).to.deep.equal(['preview', 'files', 'terminal']);
+    });
+
+    it('the desktop-IDE preference still reduces the surfaces outside mobile mode', () => {
+        window.matchMedia = (() => ({ matches: false })) as unknown as typeof window.matchMedia;
+        storage.set(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
+        const ids = executionSurfaceTabSpecsExtracted({} as never).map(spec => spec.id);
+        expect(ids).to.deep.equal(['preview']);
     });
 
     it('Open IDE from the Agents hub runs no command', async () => {

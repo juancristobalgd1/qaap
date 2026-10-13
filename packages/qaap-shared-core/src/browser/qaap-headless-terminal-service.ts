@@ -13,8 +13,8 @@ import type { TerminalWidgetOptions } from '@theia/terminal/lib/browser/base/ter
 import type { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
 
 /**
- * Mobile process runner for the project bootstrap (install / dev server) without `@theia/terminal`
- * and without xterm.
+ * Mobile process runner for the project bootstrap (install / dev server) without a `TerminalWidget`:
+ * no xterm instance and no attachment to the IDE shell, yet live output events.
  *
  * It talks to the very same backend the IDE terminal uses underneath: the shell terminal RPC server
  * (`/services/shell-terminal`, which spawns through the tenant spawn wrapper exactly like an IDE
@@ -22,8 +22,8 @@ import type { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watche
  * {@link QaapHeadlessTerminal}: the subset of `TerminalWidget` the bootstrap service relies on
  * (output events, exit status, a plain-text line buffer for the log tail, process id/info, dispose).
  *
- * The paths and the exit-reason numbers mirror `@theia/terminal/lib/common/*` on purpose: importing
- * them would pull the terminal package into the `bundle-mobile` entry.
+ * The paths and the exit-reason numbers mirror `@theia/terminal/lib/common/*` on purpose, so the
+ * runner stays independent of the terminal package.
  */
 
 /** `shellTerminalPath` from `@theia/terminal/lib/common/shell-terminal-protocol`. */
@@ -233,8 +233,9 @@ export class QaapHeadlessTerminal implements Disposable {
 
 /**
  * Mobile replacement for the `TerminalService` + `TerminalWatcher` pair the project bootstrap uses.
- * Bound only in the `bundle-mobile` entry (`qaap-work-hub-mobile-frontend-module`); desktop keeps
- * the real terminal through the IDE bridge.
+ * Bound only in the `bundle-mobile` entry (`qaap-work-hub-mobile-frontend-module`), where it takes
+ * precedence over the terminal service for the bootstrap (the Work Hub terminal surface uses the real
+ * terminal); desktop keeps the real terminal through the IDE bridge.
  */
 @injectable()
 export class QaapHeadlessTerminalService {

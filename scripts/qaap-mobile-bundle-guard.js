@@ -6,13 +6,15 @@
 // @ts-check
 'use strict';
 /**
- * Mobile bundle guard. Product rule: on mobile the Theia IDE never loads, so `bundle-mobile.js`
- * (entry input `src-gen/frontend/index-mobile.js`) must not reach IDE code. Reads the esbuild
- * metafile written by `examples/browser/esbuild.mjs` and walks the INPUT import graph from the
- * mobile entry (static imports, require calls and dynamic imports alike):
+ * Mobile bundle guard. Product rule: on mobile the Theia IDE UI never loads, but everything the
+ * Work Hub uses does. So `bundle-mobile.js` (entry input `src-gen/frontend/index-mobile.js`) must
+ * not reach IDE-only code; `@theia/terminal` and xterm are allowed because the Work Hub terminal
+ * surface renders with them. Reads the esbuild metafile written by `examples/browser/esbuild.mjs`
+ * and walks the INPUT import graph from the mobile entry (static imports, require calls and
+ * dynamic imports alike):
  *
  *   - HARD FAIL when any reachable input matches FORBIDDEN (plugin host, debug, notebook, vsx,
- *     terminal, task, xterm).
+ *     task).
  *   - RATCHET for Monaco (`monaco-editor-core`, `packages/monaco/`): fails only when the reachable
  *     source bytes exceed `scripts/qaap-mobile-bundle-budget.json` -> `monacoBytes`. Source bytes
  *     (not emitted bytes) so the number is the same in development and production builds. Lower
@@ -35,10 +37,7 @@ const fs = require('fs');
 const path = require('path');
 const lib = require('./qaap-frontend-metafile-lib');
 
-const FORBIDDEN = [
-    /packages\/(plugin-ext|plugin-ext-vscode|debug|notebook|vsx-registry|terminal|task)\//,
-    /node_modules\/(@xterm|xterm)/
-];
+const FORBIDDEN = /packages\/(plugin-ext|plugin-ext-vscode|debug|notebook|vsx-registry|task)\//;
 const WHOLE_BARRELS = [/node_modules\/date-fns\/(?:index|locale)\.c?js$/, /node_modules\/highlight\.js\/lib\/index\.js$/];
 const MONACO = [/monaco-editor-core/, /packages\/monaco\//];
 const DEFAULT_BUDGET = path.join(__dirname, 'qaap-mobile-bundle-budget.json');
@@ -52,19 +51,13 @@ function arg(name, fallback) {
 const normalize = input => input.replace(/\\/g, '/');
 
 /**
- * Group an input path belongs to when forbidden: `packages/<dir>` or `node_modules/<xterm package>`.
+ * Group an input path belongs to when forbidden: `packages/<dir>`.
  * @param {string} input
  * @returns {string | undefined}
  */
 function forbiddenGroup(input) {
-    const normalized = normalize(input);
-    for (const pattern of FORBIDDEN) {
-        const match = pattern.exec(normalized);
-        if (match) {
-            return pattern === FORBIDDEN[0] ? `packages/${match[1]}` : `node_modules/${match[1]}`;
-        }
-    }
-    return undefined;
+    const match = FORBIDDEN.exec(normalize(input));
+    return match ? `packages/${match[1]}` : undefined;
 }
 
 /** @param {string} input */

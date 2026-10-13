@@ -75,6 +75,13 @@ import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browse
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
 import { QaapShellLayoutRestorer } from './qaap-shell-layout-restorer';
+import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
+import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
+import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
+import { QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
+import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
+import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
 import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
@@ -157,9 +164,10 @@ import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/pr
 import { QaapPreferenceLayoutProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-layout-provider';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
 /**
- * Work Hub composition root, mobile-safe half (part of the `bundle-mobile` entry). IDE-only
- * contributions (terminal, memory inspector/debug, VSX) and the IDE bridge aliases live in
- * `qaap-work-hub-ide-frontend-module`, which desktop loads right after this module.
+ * Work Hub composition root, mobile-safe half (part of the `bundle-mobile` entry). It includes the
+ * terminal bindings the Work Hub terminal surface needs. IDE-only contributions (desktop bottom-panel
+ * terminal layout, memory inspector/debug, VSX) live in `qaap-work-hub-ide-frontend-module`, which
+ * desktop loads right after this module.
  */
 export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync, onActivation) => {
     // The preference sync contribution is part of this Work Hub container. Install the tenant
@@ -234,6 +242,14 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateContribution);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);
     rebind(ShellLayoutRestorer).to(QaapShellLayoutRestorer).inSingletonScope();
+    // Work Hub terminal surface (desktop and mobile): bridge aliases of the upstream terminal services.
+    bind(QaapIdeTerminalService).toService(TerminalService);
+    bind(QaapIdeTerminalWatcher).toService(TerminalWatcher);
+    bind(QaapTerminalFrontendContribution).toSelf().inSingletonScope();
+    rebind(TerminalFrontendContribution).toService(QaapTerminalFrontendContribution);
+    // Terminal link taps must open reliably on touch devices (Qaap is mobile-first);
+    // subclass XtermLinkAdapter via a replacement factory. Seam for packages/terminal.
+    rebind(XtermLinkFactory).toFactory(createQaapXtermLinkFactory);
     bind(QaapShellLayoutRestoreContribution).toSelf().inSingletonScope();
     bind(ShellLayoutTransformer).toService(QaapShellLayoutRestoreContribution);
     bind(MobileOnboardingTutorialContribution).toSelf().inSingletonScope();
