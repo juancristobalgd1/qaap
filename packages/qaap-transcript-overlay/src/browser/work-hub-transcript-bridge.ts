@@ -27,7 +27,6 @@ export interface WorkHubTranscriptBridge {
     renderTeamSectionInTranscript(host: HTMLElement, conv: QaapAgentConversationDTO): void;
     renderInlineApproval(host: HTMLElement, conv: QaapAgentConversationDTO): void;
     createAgentsHubRecentsBlock(project: MobileProjectEntry): HTMLElement;
-    createAgentsHubLandingHeroBlock(): HTMLElement;
     createAgentsHubQuickActionsBlock(): HTMLElement;
     /** Freshest hub shell project (agents-hub landing), if any — used for submit-time re-resolution. */
     resolveShellProject(): MobileProjectEntry | undefined;

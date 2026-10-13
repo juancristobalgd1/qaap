@@ -110,7 +110,6 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         const workHub = {
             isAgentsHubLanding: () => true,
             shouldEmbedAgentsHubRecentsInWorkspaceTranscript: () => false,
-            createAgentsHubLandingHeroBlock: () => document.createElement('section'),
             createAgentsHubQuickActionsBlock: () => document.createElement('div'),
             renderTeamSectionInTranscript: () => undefined,
             renderInlineApproval: () => undefined,

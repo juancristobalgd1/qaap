@@ -654,63 +654,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   padding: 12px 20px 24px;
 }
 
-.theia-mobile-agents-hub-onboarding {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  max-width: 320px;
-  margin: 0 auto;
-  text-align: center;
-}
-
-/* Desktop / wide viewports: give the onboarding block more breathing room. */
-@media (min-width: 768px) {
-  .theia-mobile-agents-hub-onboarding {
-    max-width: 480px;
-  }
-}
-
-.theia-mobile-agents-hub-onboarding-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 14px;
-  border: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 8%, transparent));
-  border-radius: 14px;
-  background: var(--q-surface-raised, color-mix(in srgb, var(--theia-foreground) 3%, transparent));
-  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
-  font-size: 20px;
-  opacity: 0.88;
-}
-
-.theia-mobile-agents-hub-onboarding-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
-}
-
-.theia-mobile-agents-hub-onboarding-hint {
-  margin: 8px 0 0;
-  max-width: 28ch;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
-}
-
-.theia-mobile-agents-hub-onboarding-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  margin-top: 22px;
-}
-
 .theia-mobile-agents-hub-onboarding-btn {
   display: inline-flex;
   align-items: center;
@@ -982,50 +925,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) {
   justify-content: flex-start;
-}
-
-.theia-mobile-agents-hub-landing-hero {
-  padding: 8px 0 4px;
-}
-
-.theia-mobile-agents-hub-landing-hero-title {
-  margin: 0;
-  font-family: var(--theia-ui-font-family, sans-serif);
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--theia-foreground);
-}
-
-.theia-mobile-agents-hub-landing-hero-body {
-  margin: 6px 0 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--theia-descriptionForeground);
-}
-
-.theia-mobile-agents-hub-landing-hero-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  max-width: 320px;
-  margin-top: 16px;
-}
-
-.theia-mobile-agent-transcript-empty .theia-mobile-agents-hub-landing-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  max-width: 420px;
-  margin: 0 auto;
-  padding: 12px 16px 8px;
-  text-align: left;
-}
-
-.theia-mobile-agent-transcript-empty .theia-mobile-agents-hub-landing-hero-actions {
-  max-width: none;
 }
 
 .theia-mobile-agents-hub-landing-sessions {
