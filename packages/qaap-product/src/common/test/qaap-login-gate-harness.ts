@@ -44,6 +44,8 @@ export interface LoginGateRun {
     readonly document: Document;
     readonly requests: string[];
     readonly consoleErrors: string[];
+    /** `console.info` lines of the page (e.g. the `[qaap-boot]` timings line). */
+    readonly consoleInfos: string[];
     /** Uncaught exceptions of the page's scripts and timers (jsdom reports them apart from `console.error`). */
     readonly pageErrors: string[];
     readonly bundleAppended: Promise<LoginGateBundleAppend>;
@@ -60,6 +62,8 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
     const consoleErrors: string[] = [];
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('error', (...args: unknown[]) => consoleErrors.push(args.map(String).join(' ')));
+    const consoleInfos: string[] = [];
+    virtualConsole.on('info', (...args: unknown[]) => consoleInfos.push(args.map(String).join(' ')));
     const pageErrors: string[] = [];
     virtualConsole.on('jsdomError', (error: Error) => pageErrors.push(error.stack ?? error.message));
     const dom = new JSDOM(
@@ -110,5 +114,22 @@ export function runLoginGate(responder: LoginGateResponder, url = 'http://localh
         }
         throw new Error(`Timed out waiting for: ${description}`);
     };
-    return { dom, window, document: window.document, requests, consoleErrors, pageErrors, bundleAppended, waitFor };
+    return { dom, window, document: window.document, requests, consoleErrors, consoleInfos, pageErrors, bundleAppended, waitFor };
+}
+
+/** The gate's mobile Work Hub media query. */
+export const MOBILE_WORK_HUB_QUERY = '(max-width: 767px), (pointer: coarse)';
+
+/** Stub `matchMedia` so the gate sees a phone (or, with `mobile = false`, a desktop) viewport. */
+export function stubMobileViewport(window: Window & typeof globalThis, mobile = true): void {
+    window.matchMedia = (query: string): MediaQueryList => ({
+        matches: mobile && query === MOBILE_WORK_HUB_QUERY,
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+    } as MediaQueryList);
 }

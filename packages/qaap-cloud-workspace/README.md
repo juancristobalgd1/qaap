@@ -77,7 +77,7 @@ to the worker or backend recreates/starts the runtime through the existing singl
 
 ```bash
 export QAAP_TENANT_REAPER_ENABLED=true
-export QAAP_TENANT_IDLE_TIMEOUT_MS=1800000       # 30 minutes
+export QAAP_TENANT_IDLE_TIMEOUT_MS=1800000       # 30 minutes (clamped to 1 min .. 7 days)
 export QAAP_TENANT_DESTROY_AFTER_MS=86400000     # 24 hours after stop
 export QAAP_TENANT_REAPER_INTERVAL_MS=300000     # 5 minutes
 ```
@@ -87,7 +87,9 @@ The control-plane endpoints are:
 - `POST /qaap/api/cloud/runtime/activity` — authenticated activity heartbeat.
 - `GET /qaap/api/cloud/runtime/status` — current tenant lifecycle state.
 - `POST /qaap/api/cloud/runtime/wake` — explicitly wake the tenant runtime.
-- `GET /qaap/api/cloud/runtime/metrics` — process-local reaper and cold-start counters.
+- `GET /qaap/api/cloud/runtime/metrics` — process-local reaper and cold-start counters, plus
+  `backendWake` (latest tenant backend wake with its phases, p50/p95/max over the last 100 wakes).
+  Each wake also logs one `[qaap-tenant] backend wake …` line; see `doc/qaap-vps-deployment.md`.
 
 Only containers carrying Qaap management labels are eligible. Unknown containers and tenant bind
 mounts are never removed. `stop` is used instead of Docker `pause` because the FinOps goal is to

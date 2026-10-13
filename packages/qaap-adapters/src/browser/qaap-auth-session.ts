@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { clearQaapWorkHubShellSnapshot } from './qaap-work-hub-shell-snapshot';
+
 export const QAAP_AUTH_SIGNED_IN_KEY = 'qaap.auth.signedIn';
 export const QAAP_AUTH_PROVIDER_KEY = 'qaap.auth.provider';
 export const QAAP_AUTH_USER_KEY = 'qaap.auth.user';
@@ -177,6 +179,8 @@ export function clearQaapAuthSession(): void {
     if (typeof window === 'undefined' || !window.localStorage) {
         return;
     }
+    // The login gate paints this user's project names from it on the next load.
+    clearQaapWorkHubShellSnapshot();
     const keysToRemove: string[] = [];
     for (let i = 0; i < window.localStorage.length; i++) {
         const key = window.localStorage.key(i);

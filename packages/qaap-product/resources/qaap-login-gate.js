@@ -18,12 +18,117 @@
 
     /** Set when this tab reloads into the classic IDE; the IDE never reads Work Hub data at boot. */
     var bootsIntoIde = false;
+    /** Set when the boot guard below hid the IDE shell for the Work Hub. */
+    var workHubBootGuardInstalled = false;
+    /** Mobile one-column viewport at boot: the IDE shell is never revealed, only Work Hub. */
+    var mobileBootMode = false;
 
-    /** Mirrors showMobileWorkHubConnectingPlaceholder() in @theia/qaap-shared-core (same ids). */
-    function showConnectingPlaceholder() {
-        if (document.getElementById('qaap-mobile-workhub-connecting')) {
+    // ---------------------------------------------------------------------------------------
+    // Boot timings. `performance.now()` is relative to navigation start, so every mark is the
+    // time since the user opened the app. Marks are also emitted as `performance.mark()` with
+    // the `qaap-boot:` prefix for DevTools. Nothing here may ever throw.
+    // ---------------------------------------------------------------------------------------
+    var BOOT_MARK_PREFIX = 'qaap-boot:';
+    var BOOT_TIMINGS_STORAGE_KEY = 'qaap.boot.lastTimings';
+    var bootMarks = {};
+    var bootTimingsReported = false;
+    var bootEntry;
+    var bootShellSnapshotPainted = false;
+    var bootRuntimeCold = false;
+
+    function bootNow() {
+        try {
+            if (window.performance && typeof window.performance.now === 'function') {
+                return window.performance.now();
+            }
+        } catch (e) { /* fall through */ }
+        return Date.now();
+    }
+
+    /** Record the first occurrence of a boot milestone. */
+    function bootMark(name) {
+        try {
+            if (bootMarks[name] !== undefined) {
+                return;
+            }
+            bootMarks[name] = Math.round(bootNow());
+            if (window.performance && typeof window.performance.mark === 'function') {
+                window.performance.mark(BOOT_MARK_PREFIX + name);
+            }
+        } catch (e) { /* instrumentation must never break boot */ }
+    }
+
+    function bootDelta(from, to) {
+        return bootMarks[from] !== undefined && bootMarks[to] !== undefined ? bootMarks[to] - bootMarks[from] : undefined;
+    }
+
+    /** On the first `qaap-startup-ready`: one console line, `window.__qaapBootTimings`, sessionStorage. */
+    function reportBootTimings() {
+        if (bootTimingsReported) {
             return;
         }
+        bootTimingsReported = true;
+        try {
+            bootMark('startup-ready');
+            var marks = {};
+            var name;
+            for (name in bootMarks) {
+                if (Object.prototype.hasOwnProperty.call(bootMarks, name)) {
+                    marks[name] = bootMarks[name];
+                }
+            }
+            var summary = {
+                v: 1,
+                recordedAt: Date.now(),
+                marks: marks,
+                deltas: {
+                    sessionCheck: bootDelta('gate-start', 'session-verified'),
+                    bundleLoad: bootDelta('bundle-requested', 'bundle-loaded'),
+                    bundleToReady: bootDelta('bundle-loaded', 'startup-ready'),
+                    total: bootDelta('gate-start', 'startup-ready')
+                },
+                entry: bootEntry,
+                mobile: mobileBootMode,
+                shellSnapshot: bootShellSnapshotPainted,
+                runtimeCold: bootRuntimeCold
+            };
+            window.__qaapBootTimings = summary;
+            var parts = [];
+            for (name in marks) {
+                if (Object.prototype.hasOwnProperty.call(marks, name)) {
+                    parts.push(name + '=' + marks[name]);
+                }
+            }
+            console.info('[qaap-boot] ms since navigation: ' + parts.join(' ')
+                + ' | entry=' + (bootEntry || '-') + ' shell=' + (bootShellSnapshotPainted ? 'snapshot' : 'none')
+                + ' cold=' + (bootRuntimeCold ? 'yes' : 'no'));
+            try {
+                window.sessionStorage.setItem(BOOT_TIMINGS_STORAGE_KEY, JSON.stringify(summary));
+            } catch (e) { /* storage may be unavailable */ }
+        } catch (e) { /* instrumentation must never break boot */ }
+    }
+
+    bootMark('gate-start');
+
+    var BOOT_PLACEHOLDER_ID = 'qaap-mobile-workhub-connecting';
+    var BOOT_PLACEHOLDER_LABEL_CLASS = 'qaap-mobile-workhub-connecting-label';
+    var APPEARANCE_MODE_KEY = 'qaap.appearance.mode';
+
+    /** 'light' | 'dark' when the user (or the Work Hub snapshot) pinned one; otherwise follow the OS. */
+    function resolveBootTheme(preferred) {
+        if (preferred === 'light' || preferred === 'dark') {
+            return preferred;
+        }
+        try {
+            var mode = window.localStorage.getItem(APPEARANCE_MODE_KEY);
+            if (mode === 'light' || mode === 'dark') {
+                return mode;
+            }
+        } catch (e) { /* ignore */ }
+        return undefined;
+    }
+
+    function injectBootPlaceholderStyles() {
         if (!document.getElementById('qaap-mobile-workhub-connecting-styles')) {
             var style = document.createElement('style');
             style.id = 'qaap-mobile-workhub-connecting-styles';
@@ -37,17 +142,92 @@
             ].join('');
             (document.head || document.documentElement).appendChild(style);
         }
+        if (!document.getElementById('qaap-boot-shell-styles')) {
+            var shellStyle = document.createElement('style');
+            shellStyle.id = 'qaap-boot-shell-styles';
+            shellStyle.textContent = [
+                '#qaap-mobile-workhub-connecting{--qaap-boot-bg:#f5f5f5;--qaap-boot-ink:#1a1a1a;--qaap-boot-muted:#6b6b6b;',
+                '--qaap-boot-card:#fff;--qaap-boot-border:#e2e2e2;--qaap-boot-bar:#e6e6e6}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-theme-dark{--qaap-boot-bg:#1e1e1e;--qaap-boot-ink:#f5f5f5;',
+                '--qaap-boot-muted:#a0a0a0;--qaap-boot-card:#252526;--qaap-boot-border:#3c3c3c;--qaap-boot-bar:#333;',
+                'background:#1e1e1e;color:#a0a0a0}',
+                '@media (prefers-color-scheme:dark){#qaap-mobile-workhub-connecting:not(.qaap-boot-theme-light){',
+                '--qaap-boot-bg:#1e1e1e;--qaap-boot-ink:#f5f5f5;--qaap-boot-muted:#a0a0a0;--qaap-boot-card:#252526;',
+                '--qaap-boot-border:#3c3c3c;--qaap-boot-bar:#333;background:#1e1e1e;color:#a0a0a0}}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-shell{justify-content:flex-start;align-items:stretch;gap:0;',
+                'background:var(--qaap-boot-bg);color:var(--qaap-boot-ink);overflow:hidden;box-sizing:border-box;',
+                'padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px);cursor:progress;',
+                '-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}',
+                '.qaap-boot-shell-header{display:flex;align-items:center;gap:10px;height:52px;padding:0 16px;',
+                'border-bottom:1px solid var(--qaap-boot-border);flex:none}',
+                '.qaap-boot-shell-logo{width:24px;height:24px;flex:none;',
+                'background:var(--theia-workbench-brand-logo-url,none) center/contain no-repeat}',
+                '.qaap-boot-shell-title{font-size:17px;font-weight:700;letter-spacing:-.2px}',
+                '.qaap-boot-shell-section{margin:18px 16px 8px;font-size:12px;font-weight:600;text-transform:uppercase;',
+                'letter-spacing:.4px;color:var(--qaap-boot-muted)}',
+                '.qaap-boot-shell-list{list-style:none;margin:0;padding:0 12px;display:flex;flex-direction:column;gap:8px;',
+                'min-height:0;overflow:hidden}',
+                '.qaap-boot-shell-row{padding:12px 14px;border-radius:12px;background:var(--qaap-boot-card);',
+                'border:1px solid var(--qaap-boot-border);min-width:0}',
+                '.qaap-boot-shell-name,.qaap-boot-shell-subtitle,.qaap-boot-shell-thread{overflow:hidden;',
+                'text-overflow:ellipsis;white-space:nowrap}',
+                '.qaap-boot-shell-name{font-size:15px;font-weight:600;color:var(--qaap-boot-ink)}',
+                '.qaap-boot-shell-subtitle{margin-top:2px;font-size:13px;color:var(--qaap-boot-muted)}',
+                '.qaap-boot-shell-thread{margin-top:6px;padding-left:10px;border-left:2px solid var(--qaap-boot-bar);',
+                'font-size:13px;color:var(--qaap-boot-muted)}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-shell .qaap-mobile-workhub-connecting-label{margin:auto 0 0;',
+                'padding:14px 16px 18px;text-align:center;font-size:13px;color:var(--qaap-boot-muted);min-height:1.4em}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-shell .qaap-mobile-workhub-connecting-label:not(:empty)::before{',
+                'content:"";display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;',
+                'background:currentColor;vertical-align:middle;animation:qaap-boot-pulse 1.2s ease-in-out infinite}',
+                '@keyframes qaap-boot-pulse{0%,100%{opacity:.25}50%{opacity:1}}',
+                '@media (prefers-reduced-motion:reduce){#qaap-mobile-workhub-connecting .qaap-mobile-workhub-connecting-label::before{animation:none}}'
+            ].join('');
+            (document.head || document.documentElement).appendChild(shellStyle);
+        }
+    }
+
+    function applyBootTheme(root, preferred) {
+        var theme = resolveBootTheme(preferred);
+        if (theme) {
+            root.classList.add('qaap-boot-theme-' + theme);
+        }
+    }
+
+    function createBootPlaceholderLabel() {
+        var label = document.createElement('div');
+        label.className = BOOT_PLACEHOLDER_LABEL_CLASS;
+        label.setAttribute('role', 'status');
+        label.setAttribute('aria-live', 'polite');
+        return label;
+    }
+
+    /**
+     * Mirrors showMobileWorkHubConnectingPlaceholder() in @theia/qaap-shared-core (same ids), so
+     * clearMobileWorkHubBootGuard() removes it. Idempotent: an existing placeholder (or the cached
+     * Work Hub shell, which uses the same id) is kept.
+     */
+    function showConnectingPlaceholder() {
+        if (document.getElementById(BOOT_PLACEHOLDER_ID)) {
+            return;
+        }
+        injectBootPlaceholderStyles();
         var root = document.createElement('div');
-        root.id = 'qaap-mobile-workhub-connecting';
-        root.setAttribute('role', 'status');
+        root.id = BOOT_PLACEHOLDER_ID;
+        applyBootTheme(root);
         var logo = document.createElement('div');
         logo.className = 'qaap-mobile-workhub-connecting-logo';
         logo.setAttribute('aria-hidden', 'true');
-        var label = document.createElement('div');
-        label.textContent = 'Connecting\u2026';
         root.appendChild(logo);
-        root.appendChild(label);
+        root.appendChild(createBootPlaceholderLabel());
         (document.body || document.documentElement).appendChild(root);
+    }
+
+    function removeBootPlaceholder() {
+        var placeholder = document.getElementById(BOOT_PLACEHOLDER_ID);
+        if (placeholder) {
+            placeholder.remove();
+        }
     }
 
     /**
@@ -127,6 +307,8 @@
                 (document.head || document.documentElement).appendChild(style);
             }
             document.documentElement.classList.add('theia-mobile-workhub-boot');
+            workHubBootGuardInstalled = true;
+            mobileBootMode = !!isMobileMode;
             // Safety net: never leave the shell hidden if the hub fails to mount for any reason.
             // Only lift the html boot guard — body classes are owned by @theia/qaap-work-hub and
             // must stay active while Work Hub is the surface (stripping them leaks Explorer).
@@ -136,9 +318,11 @@
                     return;
                 }
                 if (isMobileMode) {
-                    // Mobile never reveals the IDE shell: keep the guard and show a lightweight
-                    // placeholder until Work Hub mounts (clearMobileWorkHubBootGuard removes it).
-                    showConnectingPlaceholder();
+                    // Mobile never reveals the IDE shell: keep the guard and make sure the
+                    // phase-aware placeholder is up (normally it already is since ~1.5 s, see
+                    // armBootPlaceholder); clearMobileWorkHubBootGuard removes it.
+                    bootPlaceholderDue = true;
+                    showBootPlaceholder();
                     return;
                 }
                 document.documentElement.classList.remove('theia-mobile-workhub-boot');
@@ -205,6 +389,8 @@
                 localStorage.removeItem(keysToRemove[k]);
             }
         } catch (e) { /* ignore */ }
+        // The cached Work Hub shell belongs to the session that just ended.
+        forgetWorkHubShellSnapshot();
     }
 
     function purgeLegacySessionIdKeys() {
@@ -240,12 +426,35 @@
     // startup watchdog records MOBILE_ENTRY_FAILED_KEY and reloads into bundle.js; a slow download
     // (bundle watchdog) does not, since bundle.js is larger and would only be slower.
     var MOBILE_ENTRY_FAILED_KEY = 'qaap.boot.mobileEntryFailed';
+    // Last server answer for QAAP_MOBILE_ENTRY, remembered so the next boot can preload the right
+    // entry while /auth/session is still in flight. Only a hint: the real load still waits for the
+    // fresh probe, and a wrong guess only wastes the entry file download.
+    var MOBILE_ENTRY_HINT_KEY = 'qaap.boot.mobileEntryHint';
     var serverMobileEntry = false;
     var mobileEntryActive = false;
 
     function noteServerMobileEntry(data) {
-        if (data && data.mobileEntry === true) {
+        if (!data) {
+            return;
+        }
+        if (data.mobileEntry === true) {
             serverMobileEntry = true;
+            try {
+                window.localStorage.setItem(MOBILE_ENTRY_HINT_KEY, '1');
+            } catch (e) { /* ignore */ }
+        } else if (data.signedIn === true) {
+            // A signed-in session probe always carries the flag while it is on.
+            try {
+                window.localStorage.removeItem(MOBILE_ENTRY_HINT_KEY);
+            } catch (e) { /* ignore */ }
+        }
+    }
+
+    function rememberedServerMobileEntry() {
+        try {
+            return window.localStorage.getItem(MOBILE_ENTRY_HINT_KEY) === '1';
+        } catch (e) {
+            return false;
         }
     }
 
@@ -303,6 +512,11 @@
     // so a slow paint cannot cover a ready Work Hub with a retry dialog.
     function markStartupReady() {
         startupReady = true;
+        reportBootTimings();
+        if (bootRuntimePollTimer) {
+            window.clearTimeout(bootRuntimePollTimer);
+            bootRuntimePollTimer = null;
+        }
         if (startupWatchdog) {
             window.clearTimeout(startupWatchdog);
             startupWatchdog = null;
@@ -366,6 +580,272 @@
             .catch(function () {
                 return undefined;
             });
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Phase-aware mobile placeholder. Nothing extra for the first BOOT_PLACEHOLDER_DELAY_MS
+    // (the cached Work Hub shell, when there is one, is already on screen); then "Starting your
+    // workspace…" while the control plane reports a cold tenant runtime, else "Loading…".
+    // ---------------------------------------------------------------------------------------
+    var BOOT_PLACEHOLDER_DELAY_MS = 1500;
+    var BOOT_TEXT_LOADING = 'Loading…';
+    var BOOT_TEXT_STARTING = 'Starting your workspace…';
+    // The status read is an in-memory control-plane lookup (not user activity, never proxied to
+    // the tenant). Poll it a bounded number of times while the runtime is cold; the startup
+    // watchdog takes over afterwards.
+    var BOOT_RUNTIME_POLL_MS = 4000;
+    var BOOT_RUNTIME_POLL_MAX = 8;
+    var bootPlaceholderTimer = null;
+    var bootPlaceholderDue = false;
+    var bootRuntimePollStarted = false;
+    var bootRuntimePolls = 0;
+    var bootRuntimePollTimer = null;
+
+    function isBootGuardActive() {
+        return document.documentElement.classList.contains('theia-mobile-workhub-boot');
+    }
+
+    function bootPlaceholderApplies() {
+        return workHubBootGuardInstalled && mobileBootMode && !bootsIntoIde;
+    }
+
+    /** Arm the delayed placeholder; the delay counts from gate start, not from this call. */
+    function armBootPlaceholder() {
+        if (bootPlaceholderDue || bootPlaceholderTimer || !bootPlaceholderApplies()) {
+            return;
+        }
+        var elapsed = bootNow() - (bootMarks['gate-start'] || 0);
+        bootPlaceholderTimer = window.setTimeout(function () {
+            bootPlaceholderTimer = null;
+            bootPlaceholderDue = true;
+            showBootPlaceholder();
+        }, Math.max(0, BOOT_PLACEHOLDER_DELAY_MS - elapsed));
+    }
+
+    function showBootPlaceholder() {
+        if (!bootPlaceholderApplies() || !isBootGuardActive() || document.getElementById('qaap-login-host')) {
+            return;
+        }
+        showConnectingPlaceholder();
+        updateBootPlaceholderLabel();
+        bootMark('placeholder-shown');
+    }
+
+    function updateBootPlaceholderLabel() {
+        if (!bootPlaceholderDue) {
+            return;
+        }
+        var label = document.querySelector('#' + BOOT_PLACEHOLDER_ID + ' .' + BOOT_PLACEHOLDER_LABEL_CLASS);
+        if (label) {
+            label.textContent = bootRuntimeCold ? BOOT_TEXT_STARTING : BOOT_TEXT_LOADING;
+        }
+    }
+
+    function isColdRuntimeState(state) {
+        // 'stopped' / 'idle' / 'destroyed' are being woken by the requests this page already made.
+        return state === 'starting' || state === 'stopped' || state === 'idle' || state === 'destroyed';
+    }
+
+    /** Start polling the tenant runtime state once the session is known (mobile Work Hub only). */
+    function startBootRuntimePolling() {
+        if (bootRuntimePollStarted || !bootPlaceholderApplies() || typeof fetch !== 'function') {
+            return;
+        }
+        bootRuntimePollStarted = true;
+        pollBootRuntimeState();
+    }
+
+    function pollBootRuntimeState() {
+        bootRuntimePollTimer = null;
+        if (startupReady || !isBootGuardActive()) {
+            return;
+        }
+        bootRuntimePolls += 1;
+        fetchTenantRuntimeState().then(function (state) {
+            if (startupReady) {
+                return;
+            }
+            if (state === undefined) {
+                // Unknown (old server, network error): keep the current text and stop asking.
+                return;
+            }
+            var cold = isColdRuntimeState(state);
+            if (cold) {
+                bootMark('runtime-cold');
+            }
+            bootRuntimeCold = cold;
+            updateBootPlaceholderLabel();
+            if (cold && bootRuntimePolls < BOOT_RUNTIME_POLL_MAX && isBootGuardActive()) {
+                bootRuntimePollTimer = window.setTimeout(pollBootRuntimeState, BOOT_RUNTIME_POLL_MS);
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Instant Work Hub shell. The Work Hub writes a small read-only snapshot of what its landing
+    // list last showed; on the next boot of a signed-in phone the gate paints it in the first
+    // frame (inside the placeholder element, so clearMobileWorkHubBootGuard removes it).
+    // Contract (written by @theia/qaap-work-hub, read only here):
+    //   localStorage['qaap.workhub.shellSnapshot.v1'] = JSON {
+    //     v: 1, savedAt: <epoch ms>, login: <signed-in login>, theme?: 'light' | 'dark',
+    //     projects: [{ name: string, subtitle?: string, threads?: string[] }]
+    //   }
+    // ---------------------------------------------------------------------------------------
+    var SHELL_SNAPSHOT_KEY = 'qaap.workhub.shellSnapshot.v1';
+    var SHELL_SNAPSHOT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+    var SHELL_SNAPSHOT_MAX_PROJECTS = 12;
+    var SHELL_SNAPSHOT_MAX_THREADS = 3;
+
+    function clipText(value, max) {
+        var text = String(value).replace(/\s+/g, ' ').trim();
+        return text.length > max ? text.slice(0, max - 1) + '…' : text;
+    }
+
+    /** Login of the stored signed-in user (`qaap.auth.user`), or undefined. */
+    function storedUserLogin() {
+        try {
+            var raw = localStorage.getItem(storagePrefix() + USER_SUFFIX);
+            if (raw === null) {
+                var i, key;
+                for (i = 0; i < localStorage.length; i++) {
+                    key = localStorage.key(i);
+                    if (key && key.indexOf(USER_SUFFIX) !== -1) {
+                        raw = localStorage.getItem(key);
+                        break;
+                    }
+                }
+            }
+            var user = raw ? JSON.parse(raw) : undefined;
+            return user && typeof user.login === 'string' && user.login.trim() ? user.login.trim() : undefined;
+        } catch (e) {
+            return undefined;
+        }
+    }
+
+    /** The validated snapshot for the stored user, or undefined (missing, malformed, stale, other user). */
+    function readWorkHubShellSnapshot() {
+        try {
+            var raw = window.localStorage.getItem(SHELL_SNAPSHOT_KEY);
+            if (!raw) {
+                return undefined;
+            }
+            var snapshot = JSON.parse(raw);
+            if (!snapshot || typeof snapshot !== 'object' || snapshot.v !== 1 || !Array.isArray(snapshot.projects)) {
+                return undefined;
+            }
+            var now = Date.now();
+            if (typeof snapshot.savedAt !== 'number' || !isFinite(snapshot.savedAt)
+                || now - snapshot.savedAt > SHELL_SNAPSHOT_MAX_AGE_MS || snapshot.savedAt - now > 5 * 60 * 1000) {
+                return undefined;
+            }
+            var login = storedUserLogin();
+            if (!login || typeof snapshot.login !== 'string' || snapshot.login.toLowerCase() !== login.toLowerCase()) {
+                return undefined;
+            }
+            var projects = [];
+            for (var i = 0; i < snapshot.projects.length && projects.length < SHELL_SNAPSHOT_MAX_PROJECTS; i++) {
+                var project = snapshot.projects[i];
+                if (!project || typeof project.name !== 'string' || !project.name.trim()) {
+                    continue;
+                }
+                var threads = [];
+                if (Array.isArray(project.threads)) {
+                    for (var t = 0; t < project.threads.length && threads.length < SHELL_SNAPSHOT_MAX_THREADS; t++) {
+                        if (typeof project.threads[t] === 'string' && project.threads[t].trim()) {
+                            threads.push(clipText(project.threads[t], 80));
+                        }
+                    }
+                }
+                projects.push({
+                    name: clipText(project.name, 80),
+                    subtitle: typeof project.subtitle === 'string' ? clipText(project.subtitle, 120) : '',
+                    threads: threads
+                });
+            }
+            return { theme: snapshot.theme, projects: projects };
+        } catch (e) {
+            return undefined;
+        }
+    }
+
+    function forgetWorkHubShellSnapshot() {
+        try {
+            window.localStorage.removeItem(SHELL_SNAPSHOT_KEY);
+        } catch (e) { /* ignore */ }
+    }
+
+    /**
+     * Paint the read-only Work Hub shell from the snapshot, synchronously (first frame). Every
+     * text goes through textContent. Non-interactive: the overlay swallows taps until the real
+     * Work Hub replaces it.
+     */
+    function paintWorkHubShellSnapshot() {
+        try {
+            if (!bootPlaceholderApplies() || !isBootGuardActive() || !document.body
+                || document.getElementById(BOOT_PLACEHOLDER_ID)) {
+                return false;
+            }
+            var snapshot = readWorkHubShellSnapshot();
+            if (!snapshot) {
+                return false;
+            }
+            injectBootPlaceholderStyles();
+            var root = document.createElement('div');
+            root.id = BOOT_PLACEHOLDER_ID;
+            root.className = 'qaap-boot-shell';
+            root.setAttribute('aria-busy', 'true');
+            applyBootTheme(root, snapshot.theme);
+
+            var header = document.createElement('header');
+            header.className = 'qaap-boot-shell-header';
+            var logo = document.createElement('div');
+            logo.className = 'qaap-boot-shell-logo';
+            logo.setAttribute('aria-hidden', 'true');
+            var title = document.createElement('div');
+            title.className = 'qaap-boot-shell-title';
+            title.textContent = appName();
+            header.appendChild(logo);
+            header.appendChild(title);
+            root.appendChild(header);
+
+            if (snapshot.projects.length) {
+                var section = document.createElement('div');
+                section.className = 'qaap-boot-shell-section';
+                section.textContent = 'Recent';
+                root.appendChild(section);
+                var list = document.createElement('ul');
+                list.className = 'qaap-boot-shell-list';
+                snapshot.projects.forEach(function (project) {
+                    var row = document.createElement('li');
+                    row.className = 'qaap-boot-shell-row';
+                    var name = document.createElement('div');
+                    name.className = 'qaap-boot-shell-name';
+                    name.textContent = project.name;
+                    row.appendChild(name);
+                    if (project.subtitle) {
+                        var subtitle = document.createElement('div');
+                        subtitle.className = 'qaap-boot-shell-subtitle';
+                        subtitle.textContent = project.subtitle;
+                        row.appendChild(subtitle);
+                    }
+                    project.threads.forEach(function (thread) {
+                        var line = document.createElement('div');
+                        line.className = 'qaap-boot-shell-thread';
+                        line.textContent = thread;
+                        row.appendChild(line);
+                    });
+                    list.appendChild(row);
+                });
+                root.appendChild(list);
+            }
+            root.appendChild(createBootPlaceholderLabel());
+            document.body.appendChild(root);
+            bootShellSnapshotPainted = true;
+            bootMark('shell-painted');
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 
     function showStartupTimeout() {
@@ -493,6 +973,10 @@
         return './bundle.js';
     }
 
+    function mobileBundleUrl() {
+        return resolveBundleUrl().replace('bundle.js', 'bundle-mobile.js');
+    }
+
     function isMobileWorkHubMode() {
         return typeof window.matchMedia === 'function'
             && window.matchMedia('(max-width: 767px), (pointer: coarse)').matches;
@@ -552,6 +1036,7 @@
         }
         prefetchWorkHubData();
         mobileEntryActive = shouldLoadMobileEntry();
+        bootEntry = mobileEntryActive ? 'mobile' : 'full';
         activateBundleStylesheet(mobileEntryActive);
         window.__qaapBundleLoading = true;
         var script = document.createElement('script');
@@ -559,8 +1044,12 @@
         // browser resolves and parallel-loads the shared chunks itself.
         script.type = 'module';
         script.charset = 'utf-8';
-        script.src = mobileEntryActive ? resolveBundleUrl().replace('bundle.js', 'bundle-mobile.js') : resolveBundleUrl();
+        // Same URL (query included) as speculativePreloadBundle() so the browser reuses the preload.
+        script.src = mobileEntryActive ? mobileBundleUrl() : resolveBundleUrl();
+        bootMark('bundle-requested');
+        armBootPlaceholder();
         script.onload = function () {
+            bootMark('bundle-loaded');
             window.__qaapBundleLoaded = true;
             window.clearTimeout(bundleLoadWatchdog);
             armStartupWatchdog();
@@ -574,6 +1063,14 @@
             showStartupError('bundle');
         };
         document.body.appendChild(script);
+    }
+
+    /** The user is known to be signed in: load the app and, on phones, learn whether the workspace is cold. */
+    function loadBundleForVerifiedSession() {
+        bootMark('session-verified');
+        loadBundle();
+        // After loadBundle(): its Work Hub prefetch is what wakes a stopped tenant runtime.
+        startBootRuntimePolling();
     }
 
     function appName() {
@@ -627,6 +1124,12 @@
     }
 
     function showGate() {
+        // A cached Work Hub shell (or loading placeholder) must not linger behind the sign-in screen.
+        removeBootPlaceholder();
+        if (bootPlaceholderTimer) {
+            window.clearTimeout(bootPlaceholderTimer);
+            bootPlaceholderTimer = null;
+        }
         injectStyles();
         document.body.classList.add('qaap-login-active');
 
@@ -705,7 +1208,7 @@
                 });
                 document.body.classList.remove('qaap-login-active');
                 host.remove();
-                loadBundle();
+                loadBundleForVerifiedSession();
             });
         }
 
@@ -863,6 +1366,7 @@
                 localStorage.removeItem(keysToRemove[r]);
             }
         } catch (e) { /* ignore */ }
+        forgetWorkHubShellSnapshot();
     }
 
     function fetchWithTimeout(url, options, timeoutMs) {
@@ -947,7 +1451,7 @@
                     if (host) {
                         host.remove();
                     }
-                    loadBundle();
+                    loadBundleForVerifiedSession();
                 })
                 .catch(function () {
                     stripOAuthQueryParams();
@@ -966,7 +1470,7 @@
                 if (data && data.signedIn && data.user && data.user.provider) {
                     writeSignedIn(data.user.provider, data.user);
                     dismissLoginGate();
-                    loadBundle();
+                    loadBundleForVerifiedSession();
                     return;
                 }
                 throw new Error('unsigned');
@@ -1012,7 +1516,7 @@
                         name: 'Dev User',
                     });
                     dismissLoginGate();
-                    loadBundle();
+                    loadBundleForVerifiedSession();
                     return true;
                 }
                 return false;
@@ -1037,7 +1541,7 @@
                 noteServerMobileEntry(data);
                 if (data && data.signedIn && data.user && data.user.provider) {
                     writeSignedIn(data.user.provider, data.user);
-                    loadBundle();
+                    loadBundleForVerifiedSession();
                     return;
                 }
                 throw new Error('unsigned');
@@ -1064,21 +1568,34 @@
             });
     }
 
-    // Speculatively preload bundle.js while the auth check is in flight on desktop.
+    // Speculatively preload the entry module while the auth check is in flight.
     // On a warm session the user is signed in — the bundle starts downloading
     // immediately instead of waiting for the /auth/session round-trip.
-    // A phone's unauthenticated Work Hub gate does not need IDE code.
+    // Phones only do this with a stored session: the unauthenticated Work Hub gate downloads no
+    // app code. They preload the entry the last session probe chose (bundle-mobile.js while
+    // QAAP_MOBILE_ENTRY is on); loadBundle() requests the identical URL, so the module is reused.
     function speculativePreloadBundle() {
+        var href = resolveBundleUrl();
         if (isMobileWorkHubMode()) {
-            return;
+            if (bootsIntoIde || !isSignedIn()) {
+                return;
+            }
+            if (rememberedServerMobileEntry() && !mobileEntryFailedBefore()) {
+                href = mobileBundleUrl();
+            }
         }
         try {
+            if (document.querySelector('link[data-qaap-boot-preload]')) {
+                return;
+            }
             var link = document.createElement('link');
             link.rel = 'modulepreload';
-            link.href = resolveBundleUrl();
+            link.href = href;
             link.as = 'script';
             link.crossOrigin = 'anonymous';
+            link.setAttribute('data-qaap-boot-preload', '');
             (document.head || document.documentElement).appendChild(link);
+            bootMark('bundle-preloaded');
         } catch (_) { /* ignore */ }
     }
 
@@ -1087,6 +1604,10 @@
         speculativePreloadBundle();
         resumeAfterOAuthOrSession();
     } else if (isSignedIn()) {
+        // Signed-in phone: paint the cached Work Hub shell in the first frame, start the app
+        // download in parallel with the session check, and arm the phase-aware placeholder.
+        paintWorkHubShellSnapshot();
+        armBootPlaceholder();
         speculativePreloadBundle();
         verifyStoredSessionThenLoad();
     } else {

@@ -401,6 +401,8 @@ export function ensureOverlayElementsExtracted(ctx: MobileOneColumnShellContribu
 }
 
 export async function ensureMainContentAfterWorkspaceReloadExtracted(ctx: MobileOneColumnShellContributionContext): Promise<void> {
+    // The Work Hub can paint before the workspace restore finishes; `opened` is only final after it.
+    await ctx.workspaceService.ready;
     if (!ctx.landingLeftThisSession || !ctx.workspaceService.opened) {
         return;
     }

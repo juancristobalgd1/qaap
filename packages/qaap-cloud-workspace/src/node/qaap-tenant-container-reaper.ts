@@ -11,6 +11,10 @@ import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore, type QaapTenantRuntimeRecord } from './qaap-tenant-runtime-store';
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+/** Below one minute a phone that briefly backgrounds the tab would pay a cold start on return. */
+export const MIN_TENANT_IDLE_TIMEOUT_MS = 60 * 1000;
+/** Above a week an idle runtime effectively never releases its memory. */
+export const MAX_TENANT_IDLE_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_DESTROY_AFTER_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_FIRST_SWEEP_DELAY_MS = 30 * 1000;
@@ -41,6 +45,8 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
     protected ticking = false;
     /** Consecutive sweeps where a running tenant backend could not answer the busy probe. */
     protected readonly unansweredBusyProbes = new Map<string, number>();
+    /** Last rejected/clamped `QAAP_TENANT_IDLE_TIMEOUT_MS` value already warned about. */
+    protected warnedIdleTimeoutValue: string | undefined;
 
     onStart(): void {
         if (!this.isEnabled()) {
@@ -76,8 +82,27 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
         return this.docker.isEnabled();
     }
 
+    /**
+     * `QAAP_TENANT_IDLE_TIMEOUT_MS`: how long a tenant runtime may stay without activity before the
+     * reaper stops it (default 30 minutes). Non-integer values fall back to the default and values
+     * outside [{@link MIN_TENANT_IDLE_TIMEOUT_MS}, {@link MAX_TENANT_IDLE_TIMEOUT_MS}] are clamped;
+     * both are logged once per distinct value.
+     */
     protected idleTimeoutMs(): number {
-        return resolveTenantRuntimeDuration(process.env.QAAP_TENANT_IDLE_TIMEOUT_MS, DEFAULT_IDLE_TIMEOUT_MS);
+        const raw = process.env.QAAP_TENANT_IDLE_TIMEOUT_MS?.trim() ?? '';
+        if (!raw) {
+            return DEFAULT_IDLE_TIMEOUT_MS;
+        }
+        const parsed = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
+        const resolved = Number.isSafeInteger(parsed)
+            ? Math.min(MAX_TENANT_IDLE_TIMEOUT_MS, Math.max(MIN_TENANT_IDLE_TIMEOUT_MS, parsed))
+            : DEFAULT_IDLE_TIMEOUT_MS;
+        if (resolved !== parsed && this.warnedIdleTimeoutValue !== raw) {
+            this.warnedIdleTimeoutValue = raw;
+            console.warn(`[qaap-runtime] QAAP_TENANT_IDLE_TIMEOUT_MS=${JSON.stringify(raw)} is outside `
+                + `${MIN_TENANT_IDLE_TIMEOUT_MS}..${MAX_TENANT_IDLE_TIMEOUT_MS} or not an integer; using ${resolved}ms.`);
+        }
+        return resolved;
     }
 
     protected destroyAfterMs(): number {

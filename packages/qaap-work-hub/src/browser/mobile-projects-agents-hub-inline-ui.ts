@@ -287,7 +287,11 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.agentsHubShellActive = false;
             const note = document.createElement('div');
             note.className = 'theia-mobile-agent-transcript-empty theia-mod-no-project';
-            note.append(this.createAgentsHubNoProjectOnboarding());
+            // No "Add your first project" onboarding: projects are added from the sessions sidebar.
+            // Signed-out users still need a way in, so only the GitHub sign-in action remains.
+            if (!this.isAgentsHubSignedIn()) {
+                note.append(this.createAgentsHubGithubSignInButton());
+            }
             this.host.scroll.append(note);
             this.host.updateTasksAttentionChrome();
             this.host.renderSubtitle();
@@ -384,67 +388,6 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.scroll.style.maxWidth = '100%';
         executionRoot.style.width = '100%';
         executionRoot.style.maxWidth = '100%';
-    }
-
-    protected createAgentsHubNoProjectOnboarding(): HTMLElement {
-        const root = document.createElement('div');
-        root.className = 'theia-mobile-agents-hub-onboarding';
-
-        const mark = document.createElement('span');
-        mark.className = 'theia-mobile-agents-hub-onboarding-mark codicon codicon-repo';
-        mark.setAttribute('aria-hidden', 'true');
-
-        const title = document.createElement('p');
-        title.className = 'theia-mobile-agents-hub-onboarding-title';
-        title.textContent = nls.localize('qaap/agentsHub/noProjectsTitle', 'Add your first project');
-
-        const hint = document.createElement('p');
-        hint.className = 'theia-mobile-agents-hub-onboarding-hint';
-        hint.textContent = nls.localize(
-            'qaap/agentsHub/noProjects',
-            'Connect a GitHub repository to start working with an agent.',
-        );
-
-        const actions = document.createElement('div');
-        actions.className = 'theia-mobile-agents-hub-onboarding-actions';
-
-        const newProject = document.createElement('button');
-        newProject.type = 'button';
-        newProject.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary';
-        const newProjectIcon = document.createElement('span');
-        newProjectIcon.className = 'codicon codicon-repo theia-mobile-agents-hub-onboarding-btn-icon';
-        newProjectIcon.setAttribute('aria-hidden', 'true');
-        const newProjectLabel = document.createElement('span');
-        newProjectLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-        newProjectLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
-        newProject.append(newProjectIcon, newProjectLabel);
-        newProject.addEventListener('click', () => { void this.host.onStartNewProject(); });
-
-        const addRepo = document.createElement('button');
-        addRepo.type = 'button';
-        addRepo.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-ghost';
-        const addRepoIcon = document.createElement('span');
-        addRepoIcon.className = 'codicon codicon-repo-clone theia-mobile-agents-hub-onboarding-btn-icon';
-        addRepoIcon.setAttribute('aria-hidden', 'true');
-        const addRepoLabel = document.createElement('span');
-        addRepoLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-        addRepoLabel.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
-        addRepo.append(addRepoIcon, addRepoLabel);
-        addRepo.addEventListener('click', () => { void this.host.onNewClick(); });
-
-        if (!this.isAgentsHubSignedIn()) {
-            hint.textContent = nls.localize(
-                'qaap/agentsHub/noProjectsSignIn',
-                'Sign in with GitHub to see your repositories and agent sessions.',
-            );
-            newProject.classList.remove('theia-mod-primary');
-            newProject.classList.add('theia-mod-ghost');
-            actions.append(this.createAgentsHubGithubSignInButton());
-        }
-        actions.append(newProject, addRepo);
-
-        root.append(mark, title, hint, actions);
-        return root;
     }
 
     protected isAgentsHubSignedIn(): boolean {

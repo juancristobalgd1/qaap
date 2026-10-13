@@ -8,7 +8,12 @@ import type {
     QaapTenantActivityReason,
     QaapTenantRuntimeState,
 } from '../common/qaap-cloud-api-types';
-import { QaapTenantContainerReaper, resolveTenantRuntimeDuration } from './qaap-tenant-container-reaper';
+import {
+    MAX_TENANT_IDLE_TIMEOUT_MS,
+    MIN_TENANT_IDLE_TIMEOUT_MS,
+    QaapTenantContainerReaper,
+    resolveTenantRuntimeDuration,
+} from './qaap-tenant-container-reaper';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import type { QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
@@ -87,6 +92,42 @@ describe('Qaap tenant container reaper', () => {
         expect(resolveTenantRuntimeDuration('30000', 1)).to.equal(30000);
         expect(resolveTenantRuntimeDuration('-1', 1)).to.equal(1);
         expect(resolveTenantRuntimeDuration('invalid', 1)).to.equal(1);
+    });
+
+    it('reads QAAP_TENANT_IDLE_TIMEOUT_MS with a 30 min default and clamps it to [1 min, 7 days]', () => {
+        const saved = process.env.QAAP_TENANT_IDLE_TIMEOUT_MS;
+        const originalWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (line: string) => { warnings.push(line); };
+        try {
+            const reaper = new QaapTenantContainerReaper() as unknown as { idleTimeoutMs(): number };
+            const resolve = (raw: string | undefined): number => {
+                if (raw === undefined) {
+                    delete process.env.QAAP_TENANT_IDLE_TIMEOUT_MS;
+                } else {
+                    process.env.QAAP_TENANT_IDLE_TIMEOUT_MS = raw;
+                }
+                return reaper.idleTimeoutMs();
+            };
+            expect(resolve(undefined)).to.equal(30 * 60 * 1000);
+            expect(resolve(' ')).to.equal(30 * 60 * 1000);
+            expect(resolve('600000')).to.equal(600_000);
+            expect(warnings).to.have.length(0);
+            expect(resolve('0')).to.equal(MIN_TENANT_IDLE_TIMEOUT_MS);
+            expect(resolve('0')).to.equal(MIN_TENANT_IDLE_TIMEOUT_MS);
+            expect(resolve('999999999999')).to.equal(MAX_TENANT_IDLE_TIMEOUT_MS);
+            expect(resolve('15m')).to.equal(30 * 60 * 1000);
+            expect(resolve('-5')).to.equal(30 * 60 * 1000);
+            // One warning per distinct rejected value, not one per sweep.
+            expect(warnings).to.have.length(4);
+        } finally {
+            console.warn = originalWarn;
+            if (saved === undefined) {
+                delete process.env.QAAP_TENANT_IDLE_TIMEOUT_MS;
+            } else {
+                process.env.QAAP_TENANT_IDLE_TIMEOUT_MS = saved;
+            }
+        }
     });
 
     it('stops a running tenant after the idle timeout', async () => {

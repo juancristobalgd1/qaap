@@ -10,6 +10,7 @@ import { CollaborationWorkspaceService } from '@theia/collaboration/lib/browser/
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
+import { markQaapBootMilestone } from './qaap-boot-marks';
 
 /**
  * Lets the Work Hub open the IDE on a project without reloading the page.
@@ -26,6 +27,11 @@ export class QaapWorkspaceService extends CollaborationWorkspaceService {
 
     protected skippedMostRecentWorkspace = false;
 
+    protected override async doInit(): Promise<void> {
+        await super.doInit();
+        markQaapBootMilestone('workspace-ready');
+    }
+
     /**
      * A desktop Work Hub at `/` (no hash, no IDE choice in this tab) starts without a workspace.
      *
@@ -34,6 +40,12 @@ export class QaapWorkspaceService extends CollaborationWorkspaceService {
      * so the IDE tab on the project the hub shows took the reload path unless both happened to be
      * the same repository. Without it the IDE opens the hub's project in place
      * ({@link openWithoutReload}). The IDE surface (F5 keeps the hash) and mobile keep upstream.
+     *
+     * Mobile keeps the lookup on purpose: it has no IDE to open in place, and the restored workspace
+     * is the hub's "Active workspace" row (`isCurrent`), which a tap re-enters without a reload
+     * and which the Agents surface persistence (`persistWorkHubSurfacePreference`) keys on. Its
+     * cost is kept off the first paint instead: the mobile Work Hub paints before `ready`
+     * (`MobileShellWorkHubBootstrapController`).
      */
     protected override async getDefaultWorkspaceUri(): Promise<string | undefined> {
         if (this.startsHubWithoutWorkspace()) {

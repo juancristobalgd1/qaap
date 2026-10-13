@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { withGlobal, type InstalledClock } from '@sinonjs/fake-timers';
-import { runLoginGate, type LoginGateOptions, type LoginGateResponder, type LoginGateRun } from './test/qaap-login-gate-harness';
+import { runLoginGate, stubMobileViewport, type LoginGateOptions, type LoginGateResponder, type LoginGateRun } from './test/qaap-login-gate-harness';
 
 const CONFIG = '/qaap/api/auth/config';
 const SESSION = '/qaap/api/auth/session';
@@ -89,7 +89,7 @@ describe('Qaap login gate', () => {
             );
         }
 
-        it('mobile: keeps the IDE shell hidden and shows the Connecting placeholder', async () => {
+        it('mobile: keeps the IDE shell hidden and shows the loading placeholder', async () => {
             const run = startGuard(true);
             await run.bundleAppended;
             expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
@@ -98,7 +98,7 @@ describe('Qaap login gate', () => {
             expect(run.document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
             const placeholder = run.document.getElementById(PLACEHOLDER_ID);
             expect(placeholder, 'placeholder').not.to.equal(null);
-            expect(placeholder!.textContent).to.contain('Connecting');
+            expect(placeholder!.textContent).to.contain('Loading');
             // Showing it again must stay idempotent.
             guardClock!.tick(60_000);
             expect(run.document.querySelectorAll('#' + PLACEHOLDER_ID).length).to.equal(1);
@@ -715,6 +715,338 @@ describe('Qaap login gate', () => {
             run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
             clock!.tick(60_000);
             expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
+        });
+    });
+
+    describe('mobile fast boot (stored session)', () => {
+        const RUNTIME_STATUS = '/qaap/api/cloud/runtime/status';
+        const PLACEHOLDER_ID = 'qaap-mobile-workhub-connecting';
+        const SNAPSHOT_KEY = 'qaap.workhub.shellSnapshot.v1';
+        const HINT_KEY = 'qaap.boot.mobileEntryHint';
+        const BUNDLE_CSS_META = '<meta name="qaap-bundle-css" content="./bundle.css?qaap-build=b1">';
+        const STORED_SESSION: Record<string, string> = {
+            'theia:/:qaap.auth.signedIn': 'true',
+            'theia:/:qaap.auth.user': JSON.stringify(SIGNED_IN_USER),
+        };
+        let clock: InstalledClock | undefined;
+
+        afterEach(() => {
+            clock?.uninstall();
+            clock = undefined;
+        });
+
+        type StubResponse = { ok: boolean; body?: unknown } | undefined;
+
+        interface FastBootOptions {
+            readonly mobile?: boolean;
+            readonly signedIn?: boolean;
+            readonly storage?: Record<string, string>;
+            readonly session?: () => StubResponse | Promise<StubResponse>;
+            readonly runtimeStates?: Array<string | undefined>;
+            readonly fakeTimers?: boolean;
+            readonly beforeRun?: (window: Window & typeof globalThis) => void;
+        }
+
+        function snapshot(overrides: Record<string, unknown> = {}): string {
+            return JSON.stringify({
+                v: 1,
+                savedAt: Date.now() - 60_000,
+                login: 'octocat',
+                projects: [
+                    { name: 'octocat/hello-world', subtitle: 'main', threads: ['Fix the login flow', 'Add tests'] },
+                    { name: 'octocat/spoon-knife' },
+                ],
+                ...overrides,
+            });
+        }
+
+        function startFastBoot(options: FastBootOptions = {}): LoginGateRun {
+            const signedIn = options.signedIn ?? true;
+            return start((pathname, call) => {
+                if (pathname === CONFIG) {
+                    return { ok: true, body: { skipAuth: false, githubOAuth: true } };
+                }
+                if (pathname === SESSION) {
+                    return options.session ? options.session() : { ok: true, body: { signedIn: true, user: SIGNED_IN_USER, mobileEntry: true } };
+                }
+                if (pathname === RUNTIME_STATUS) {
+                    const state = (options.runtimeStates ?? [])[call];
+                    return state ? { ok: true, body: { runtime: { tenantLogin: 'octocat', state, reaperEnabled: true } } } : undefined;
+                }
+                return { ok: true, body: {} };
+            }, undefined, {
+                headHtml: BUNDLE_CSS_META,
+                localStorage: { ...(signedIn ? STORED_SESSION : {}), ...(options.storage ?? {}) },
+                beforeRun: window => {
+                    stubMobileViewport(window, options.mobile ?? true);
+                    if (options.fakeTimers) {
+                        clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
+                    }
+                    options.beforeRun?.(window);
+                },
+            });
+        }
+
+        function preloadHref(run: LoginGateRun): string | null | undefined {
+            return run.document.querySelector('link[rel="modulepreload"]')?.getAttribute('href');
+        }
+
+        function placeholderLabel(run: LoginGateRun): string | undefined {
+            return run.document.querySelector(`#${PLACEHOLDER_ID} .qaap-mobile-workhub-connecting-label`)?.textContent ?? undefined;
+        }
+
+        async function runtimeProbed(run: LoginGateRun): Promise<void> {
+            await run.bundleAppended;
+            await run.waitFor(() => run.requests.includes(RUNTIME_STATUS), 'runtime status probe');
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        describe('bundle preload in parallel with the session check', () => {
+            it('preloads bundle-mobile.js before the session answers and loads the identical URL', async () => {
+                let answerSession: (value: StubResponse) => void = () => undefined;
+                const pendingSession = new Promise<StubResponse>(resolve => { answerSession = resolve; });
+                const run = startFastBoot({ storage: { [HINT_KEY]: '1' }, session: () => pendingSession });
+                // Synchronously, while /auth/session is still in flight.
+                expect(preloadHref(run)).to.equal('./bundle-mobile.js?qaap-build=b1');
+                expect(run.document.querySelectorAll('link[rel="modulepreload"]')).to.have.length(1);
+                expect(run.document.querySelectorAll('script[src*="bundle"]')).to.have.length(0);
+                answerSession({ ok: true, body: { signedIn: true, user: SIGNED_IN_USER, mobileEntry: true } });
+                const { script } = await run.bundleAppended;
+                expect(script.getAttribute('src')).to.equal(preloadHref(run));
+            });
+
+            it('preloads bundle.js when the last session did not enable the mobile entry', async () => {
+                const run = startFastBoot({ session: () => ({ ok: true, body: { signedIn: true, user: SIGNED_IN_USER } }) });
+                expect(preloadHref(run)).to.equal('./bundle.js?qaap-build=b1');
+                const { script } = await run.bundleAppended;
+                expect(script.getAttribute('src')).to.equal('./bundle.js?qaap-build=b1');
+            });
+
+            it('remembers the server flag from the session probe for the next boot', async () => {
+                const on = startFastBoot();
+                await on.bundleAppended;
+                expect(on.window.localStorage.getItem(HINT_KEY)).to.equal('1');
+                const off = startFastBoot({
+                    storage: { [HINT_KEY]: '1' },
+                    session: () => ({ ok: true, body: { signedIn: true, user: SIGNED_IN_USER } }),
+                });
+                await off.bundleAppended;
+                expect(off.window.localStorage.getItem(HINT_KEY)).to.equal(null);
+            });
+
+            it('downloads nothing for an unauthenticated phone on the sign-in screen', async () => {
+                const run = startFastBoot({ signedIn: false, storage: { [HINT_KEY]: '1' }, session: () => ({ ok: true, body: { signedIn: false } }) });
+                await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'sign-in gate');
+                await new Promise(resolve => setTimeout(resolve, 20));
+                expect(run.document.querySelectorAll('link[rel="modulepreload"]')).to.have.length(0);
+                expect(run.document.querySelectorAll('script[src*="bundle"]')).to.have.length(0);
+            });
+
+            it('still preloads bundle.js on desktop with a stored session', () => {
+                const run = startFastBoot({ mobile: false, storage: { [HINT_KEY]: '1' } });
+                expect(preloadHref(run)).to.equal('./bundle.js?qaap-build=b1');
+            });
+        });
+
+        describe('phase-aware placeholder', () => {
+            it('shows nothing extra for 1.5 s, then "Starting your workspace" while the runtime is cold', async () => {
+                const run = startFastBoot({ fakeTimers: true, runtimeStates: ['stopped', 'starting'] });
+                await runtimeProbed(run);
+                // The session is verified and the runtime known to be cold, but the 1.5 s timer
+                // (counted from gate start, faked here) has not fired: nothing extra on screen.
+                expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+                clock!.tick(1500);
+                expect(placeholderLabel(run)).to.equal('Starting your workspace…');
+                expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+            });
+
+            it('says "Loading" when the runtime is already active and does not poll again', async () => {
+                const run = startFastBoot({ fakeTimers: true, runtimeStates: ['active'] });
+                await runtimeProbed(run);
+                clock!.tick(1500);
+                expect(placeholderLabel(run)).to.equal('Loading…');
+                clock!.tick(20_000);
+                expect(run.requests.filter(request => request === RUNTIME_STATUS)).to.have.length(1);
+            });
+
+            it('switches to "Loading" once a cold runtime becomes active', async () => {
+                const run = startFastBoot({ fakeTimers: true, runtimeStates: ['starting', 'active'] });
+                await runtimeProbed(run);
+                clock!.tick(1500);
+                expect(placeholderLabel(run)).to.equal('Starting your workspace…');
+                clock!.tick(4000);
+                await run.waitFor(() => placeholderLabel(run) === 'Loading…', 'loading text after the runtime is active');
+            });
+
+            it('polls the runtime status a bounded number of times', async () => {
+                const run = startFastBoot({ fakeTimers: true, runtimeStates: new Array(20).fill('starting') });
+                const { script } = await run.bundleAppended;
+                script.dispatchEvent(new run.window.Event('load'));
+                for (let round = 0; round < 15; round++) {
+                    await new Promise(resolve => setTimeout(resolve, 5));
+                    clock!.tick(4000);
+                }
+                await new Promise(resolve => setTimeout(resolve, 10));
+                expect(run.requests.filter(request => request === RUNTIME_STATUS)).to.have.length(8);
+            });
+
+            it('stops polling once the Work Hub is ready', async () => {
+                const run = startFastBoot({ fakeTimers: true, runtimeStates: new Array(20).fill('starting') });
+                await runtimeProbed(run);
+                run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+                // What clearMobileWorkHubBootGuard() does.
+                run.document.documentElement.classList.remove('theia-mobile-workhub-boot');
+                run.document.getElementById(PLACEHOLDER_ID)?.remove();
+                clock!.tick(40_000);
+                await new Promise(resolve => setTimeout(resolve, 10));
+                expect(run.requests.filter(request => request === RUNTIME_STATUS)).to.have.length(1);
+                expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+            });
+
+            it('shows no placeholder over the sign-in screen', async () => {
+                const run = startFastBoot({ signedIn: false, fakeTimers: true, session: () => ({ ok: true, body: { signedIn: false } }) });
+                await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'sign-in gate');
+                clock!.tick(10_000);
+                expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+                expect(run.requests).not.to.include(RUNTIME_STATUS);
+            });
+        });
+
+        describe('instant Work Hub shell from the cached snapshot', () => {
+            it('paints the cached projects in the first frame, escaped and non-interactive', () => {
+                const hostile = '<img src=x onerror="window.__pwned=1">';
+                const run = startFastBoot({
+                    session: () => new Promise<StubResponse>(() => undefined),
+                    storage: { [SNAPSHOT_KEY]: snapshot({ theme: 'dark', projects: [{ name: hostile, subtitle: 'main', threads: ['Fix the login flow'] }] }) },
+                });
+                // No await: painted synchronously while the gate script ran.
+                const shell = run.document.getElementById(PLACEHOLDER_ID);
+                expect(shell, 'shell').not.to.equal(null);
+                expect(shell!.classList.contains('qaap-boot-shell')).to.equal(true);
+                expect(shell!.classList.contains('qaap-boot-theme-dark')).to.equal(true);
+                expect(shell!.querySelector('.qaap-boot-shell-name')?.textContent).to.equal(hostile);
+                expect(shell!.querySelector('.qaap-boot-shell-thread')?.textContent).to.equal('Fix the login flow');
+                expect(shell!.querySelectorAll('img, button, a, input')).to.have.length(0);
+                expect(placeholderLabel(run)).to.equal('');
+                expect((run.window as unknown as { __pwned?: number }).__pwned).to.equal(undefined);
+            });
+
+            it('renders the header and the list of recent projects', () => {
+                const run = startFastBoot({ session: () => new Promise<StubResponse>(() => undefined), storage: { [SNAPSHOT_KEY]: snapshot() } });
+                const names = Array.from(run.document.querySelectorAll('.qaap-boot-shell-name')).map(node => node.textContent);
+                expect(names).to.deep.equal(['octocat/hello-world', 'octocat/spoon-knife']);
+                expect(run.document.querySelector('.qaap-boot-shell-title')?.textContent).to.equal('Qaap');
+            });
+
+            it('fills in the phase text later without rebuilding the shell', async () => {
+                const run = startFastBoot({ fakeTimers: true, runtimeStates: ['starting'], storage: { [SNAPSHOT_KEY]: snapshot() } });
+                const shell = run.document.getElementById(PLACEHOLDER_ID);
+                expect(shell).not.to.equal(null);
+                await runtimeProbed(run);
+                clock!.tick(1500);
+                expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(shell);
+                expect(placeholderLabel(run)).to.equal('Starting your workspace…');
+            });
+
+            const skipped: Array<[string, FastBootOptions]> = [
+                ['there is no snapshot', {}],
+                ['the snapshot is malformed JSON', { storage: { [SNAPSHOT_KEY]: '{not json' } }],
+                ['the snapshot has another version', { storage: { [SNAPSHOT_KEY]: snapshot({ v: 2 }) } }],
+                ['the snapshot projects are not a list', { storage: { [SNAPSHOT_KEY]: snapshot({ projects: 'octocat/hello-world' }) } }],
+                ['the snapshot belongs to another user', { storage: { [SNAPSHOT_KEY]: snapshot({ login: 'someone-else' }) } }],
+                ['the snapshot is stale', { storage: { [SNAPSHOT_KEY]: snapshot({ savedAt: Date.now() - 30 * 24 * 3600 * 1000 }) } }],
+                ['the viewport is a desktop', { mobile: false, storage: { [SNAPSHOT_KEY]: snapshot() } }],
+                ['the tab reloads into the classic IDE', {
+                    mobile: false,
+                    storage: { [SNAPSHOT_KEY]: snapshot() },
+                    beforeRun: window => window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1'),
+                }],
+                ['a Work Hub action is pending (no boot guard)', {
+                    storage: { [SNAPSHOT_KEY]: snapshot() },
+                    beforeRun: window => window.sessionStorage.setItem('qaap.hub.pendingAction', '{}'),
+                }],
+                ['there is no stored session', { signedIn: false, storage: { [SNAPSHOT_KEY]: snapshot() } }],
+            ];
+            for (const [label, options] of skipped) {
+                it(`is skipped when ${label}`, () => {
+                    const run = startFastBoot({ session: () => new Promise<StubResponse>(() => undefined), ...options });
+                    expect(run.document.querySelector('.qaap-boot-shell')).to.equal(null);
+                });
+            }
+
+            it('removes the shell and forgets the snapshot when the stored session is no longer valid', async () => {
+                const run = startFastBoot({ storage: { [SNAPSHOT_KEY]: snapshot() }, session: () => ({ ok: true, body: { signedIn: false } }) });
+                expect(run.document.querySelector('.qaap-boot-shell')).not.to.equal(null);
+                await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'sign-in gate');
+                expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+                expect(run.window.localStorage.getItem(SNAPSHOT_KEY)).to.equal(null);
+            });
+
+            it('?qaapLogout=1 forgets the snapshot', () => {
+                const run = start(() => undefined, 'http://localhost:3000/?qaapLogout=1', {
+                    localStorage: { ...STORED_SESSION, [SNAPSHOT_KEY]: snapshot() },
+                });
+                expect(run.window.localStorage.getItem(SNAPSHOT_KEY)).to.equal(null);
+                expect(run.document.querySelector('.qaap-boot-shell')).to.equal(null);
+            });
+        });
+
+        describe('boot timings', () => {
+            interface BootTimings {
+                marks: Record<string, number>;
+                deltas: Record<string, number | undefined>;
+                entry?: string;
+                shellSnapshot: boolean;
+                runtimeCold: boolean;
+            }
+
+            function timingsOf(run: LoginGateRun): BootTimings | undefined {
+                return (run.window as unknown as { __qaapBootTimings?: BootTimings }).__qaapBootTimings;
+            }
+
+            it('records the milestones and reports them once on qaap-startup-ready', async () => {
+                const run = startFastBoot({ storage: { [SNAPSHOT_KEY]: snapshot() } });
+                const { script } = await run.bundleAppended;
+                script.dispatchEvent(new run.window.Event('load'));
+                run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+                run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+                const timings = timingsOf(run);
+                expect(timings, 'window.__qaapBootTimings').not.to.equal(undefined);
+                expect(Object.keys(timings!.marks)).to.include.members([
+                    'gate-start', 'shell-painted', 'bundle-preloaded', 'session-verified', 'bundle-requested', 'bundle-loaded', 'startup-ready',
+                ]);
+                const marks = timings!.marks;
+                expect(marks['gate-start']).to.be.at.most(marks['session-verified']);
+                expect(marks['bundle-requested']).to.be.at.most(marks['bundle-loaded']);
+                expect(marks['bundle-loaded']).to.be.at.most(marks['startup-ready']);
+                expect(timings!.deltas.total).to.be.a('number');
+                expect(timings!.entry).to.equal('mobile');
+                expect(timings!.shellSnapshot).to.equal(true);
+                const stored = JSON.parse(run.window.sessionStorage.getItem('qaap.boot.lastTimings') ?? 'null');
+                expect(stored.marks['startup-ready']).to.equal(marks['startup-ready']);
+                const lines = run.consoleInfos.filter(line => line.startsWith('[qaap-boot]'));
+                expect(lines).to.have.length(1);
+                expect(lines[0]).to.contain('startup-ready=');
+            });
+
+            it('marks a cold runtime', async () => {
+                const run = startFastBoot({ runtimeStates: ['stopped'] });
+                await runtimeProbed(run);
+                run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+                expect(timingsOf(run)!.marks['runtime-cold']).to.be.a('number');
+                expect(timingsOf(run)!.runtimeCold).to.equal(true);
+            });
+
+            it('never throws when sessionStorage is unavailable', async () => {
+                const run = startFastBoot({
+                    beforeRun: window => {
+                        Object.defineProperty(window, 'sessionStorage', { get: () => { throw new Error('denied'); } });
+                    },
+                });
+                await run.bundleAppended;
+                run.window.dispatchEvent(new run.window.Event('qaap-startup-ready'));
+                expect(run.consoleInfos.some(line => line.startsWith('[qaap-boot]'))).to.equal(true);
+            });
         });
     });
 });

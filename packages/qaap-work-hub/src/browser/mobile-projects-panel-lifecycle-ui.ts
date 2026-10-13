@@ -7,6 +7,7 @@ import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposa
 import { ChatService } from '@theia/ai-chat';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { isPreviewOnlyConversationChange } from '@theia/qaap-shared-core/lib/common/qaap-conversation-change';
+import { markQaapBootMilestone } from '@theia/qaap-shared-core/lib/browser/qaap-boot-marks';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import {
     hasMobileProjectsLeftLanding,
@@ -189,6 +190,9 @@ export class MobileProjectsPanelLifecycleUi {
         }
         this.host.render();
         this.ensureVisibleAgentsHubShell();
+        if (firstShow && this.host.homeMode) {
+            markQaapBootMilestone('landing-rendered');
+        }
         document.addEventListener('pointerdown', this.host.onDocumentPointerDown, true);
         this.updateAccountAvatar();
         this.startVisibleHubServices();

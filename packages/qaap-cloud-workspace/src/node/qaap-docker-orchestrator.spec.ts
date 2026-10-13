@@ -8,6 +8,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type * as Dockerode from 'dockerode';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
+import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 
 /**
  * Mirrors the internal `QaapTenantMountSet` shape (not exported from the production module).
@@ -1183,6 +1185,18 @@ describe('QaapDockerOrchestrator', () => {
             expect(relayHostConfig?.PortBindings).to.deep.equal({ '4873/tcp': [{ HostIp: '127.0.0.1', HostPort: '' }] });
         });
 
+        it('times every phase of a backend wake that had to create the container', async () => {
+            const root = configureBackendIngressEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            await access(orchestrator).createOrValidateTenantBackend('Alice', root.replace(/alice$/, 'Alice'));
+            const timelines = (orchestrator as unknown as { tenantBackendWakeTimelines: Map<string, QaapTenantBackendWakeTimeline> })
+                .tenantBackendWakeTimelines;
+            const sample = timelines.get('alice')?.sample(1234, true);
+            expect(sample?.action).to.equal('created');
+            expect(Object.keys(sample?.phases ?? {})).to.have.members(['prepare', 'container', 'relay', 'ready']);
+        });
+
         for (const layout of [
             { description: 'the broken internal v2 layout', networkName: 'qaap-net-v2-legacy', ports: null },
             { description: 'the legacy v1 network layout', networkName: 'qaap-net-v1-legacy', ports: [{ HostIp: '127.0.0.1', HostPort: '41321' }] },
@@ -1789,5 +1803,110 @@ describe('QaapDockerOrchestrator tenant backend build prediction', () => {
             expect(staging).to.equal(`stg-${production}`);
             expect(staging).to.not.equal(production);
         });
+    });
+});
+
+describe('QaapDockerOrchestrator tenant backend wake measurement', () => {
+    interface WakeInternals {
+        runtimeMetrics: QaapTenantRuntimeMetrics;
+        readonly tenantBackendWakeTimelines: Map<string, QaapTenantBackendWakeTimeline>;
+        createOrValidateTenantBackend(ownerLogin: string, root: string): Promise<unknown>;
+        requestTenantBackendHealth(target: unknown): Promise<{ statusCode?: number; body: string; setCookie?: string[] }>;
+        waitForTenantBackendReady(target: unknown): Promise<void>;
+        ensureTenantBackend(ownerLogin: string, root: string): Promise<unknown>;
+    }
+    const TARGET = { containerId: 'c1', containerName: 'qaap-backend-x', host: '127.0.0.1', port: 4873, tenantLogin: 'alice' };
+    let savedBackendPerTenant: string | undefined;
+    let originalInfo: typeof console.info;
+    let originalWarn: typeof console.warn;
+    let logged: string[];
+
+    beforeEach(() => {
+        savedBackendPerTenant = process.env.QAAP_BACKEND_PER_TENANT;
+        process.env.QAAP_BACKEND_PER_TENANT = '1';
+        logged = [];
+        originalInfo = console.info;
+        originalWarn = console.warn;
+        console.info = (line: string) => { logged.push(line); };
+        console.warn = (line: string) => { logged.push(line); };
+    });
+
+    afterEach(() => {
+        console.info = originalInfo;
+        console.warn = originalWarn;
+        if (savedBackendPerTenant === undefined) {
+            delete process.env.QAAP_BACKEND_PER_TENANT;
+        } else {
+            process.env.QAAP_BACKEND_PER_TENANT = savedBackendPerTenant;
+        }
+    });
+
+    function create(): WakeInternals {
+        const orchestrator = new QaapDockerOrchestrator() as unknown as WakeInternals;
+        orchestrator.runtimeMetrics = new QaapTenantRuntimeMetrics();
+        return orchestrator;
+    }
+
+    it('logs one line and records the phases of each wake, and nothing for an already-awake tenant', async () => {
+        const orchestrator = create();
+        let ensures = 0;
+        orchestrator.createOrValidateTenantBackend = async (login: string) => {
+            ensures += 1;
+            const wake = new QaapTenantBackendWakeTimeline();
+            orchestrator.tenantBackendWakeTimelines.set(login.toLowerCase(), wake);
+            wake.action = 'started';
+            wake.mark('prepare');
+            wake.mark('container');
+            wake.mark('relay');
+            wake.mark('ready');
+            return TARGET;
+        };
+        await orchestrator.ensureTenantBackend('Alice', '/repos/users/alice');
+        await orchestrator.ensureTenantBackend('Alice', '/repos/users/alice');
+
+        expect(ensures).to.equal(1);
+        expect(logged).to.have.length(1);
+        expect(logged[0]).to.match(/^\[qaap-tenant\] backend wake Alice \d+ms action=started prepare=\d+ms container=\d+ms relay=\d+ms ready=\d+ms$/);
+        const metrics = orchestrator.runtimeMetrics.snapshot();
+        expect(metrics.coldStarts).to.equal(1);
+        expect(metrics.backendWake).to.deep.include({ count: 1, failures: 0, window: 1 });
+        expect(metrics.backendWake.last?.action).to.equal('started');
+        expect(orchestrator.tenantBackendWakeTimelines.size).to.equal(0);
+    });
+
+    it('logs and counts a failed wake with the phases reached so far', async () => {
+        const orchestrator = create();
+        orchestrator.createOrValidateTenantBackend = async (login: string) => {
+            const wake = new QaapTenantBackendWakeTimeline();
+            orchestrator.tenantBackendWakeTimelines.set(login.toLowerCase(), wake);
+            wake.action = 'started';
+            wake.mark('prepare');
+            throw new Error('docker start failed');
+        };
+        const error = await orchestrator.ensureTenantBackend('alice', '/repos/users/alice').then(() => undefined, (err: Error) => err);
+
+        expect(error?.message).to.equal('docker start failed');
+        expect(logged).to.have.length(1);
+        expect(logged[0]).to.match(/^\[qaap-tenant\] backend wake failed alice \d+ms action=started prepare=\d+ms error="docker start failed"$/);
+        const metrics = orchestrator.runtimeMetrics.snapshot();
+        expect(metrics.backendWake).to.deep.include({ count: 1, failures: 1, window: 0 });
+        expect(orchestrator.tenantBackendWakeTimelines.size).to.equal(0);
+    });
+
+    it('polls the booting backend health more often than every 250 ms', async () => {
+        const orchestrator = create();
+        let probes = 0;
+        orchestrator.requestTenantBackendHealth = async () => {
+            probes += 1;
+            if (probes < 4) {
+                throw new Error('ECONNREFUSED');
+            }
+            return { statusCode: 200, body: JSON.stringify({ ready: true }) };
+        };
+        const startedAt = Date.now();
+        await orchestrator.waitForTenantBackendReady(TARGET);
+        expect(probes).to.equal(4);
+        // Three waits: 750 ms at the previous 250 ms interval.
+        expect(Date.now() - startedAt).to.be.lessThan(700);
     });
 });

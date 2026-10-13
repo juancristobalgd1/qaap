@@ -68,6 +68,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
     function createController(options: {
         host?: Partial<MobileShellWorkHubBootstrapHost>;
         workspaceOpened?: boolean;
+        workspaceReady?: Promise<void>;
         sessionState?: MobileShellSessionState;
     } = {}): {
         controller: MobileShellWorkHubBootstrapControllerType;
@@ -94,7 +95,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
             createProjectsPanel: homeMode => ({
                 isHomeMode: () => homeMode,
                 isVisible: () => false,
-                show: async () => undefined,
+                show: async () => { calls.push('panel.show'); },
                 hide: () => undefined,
                 dispose: () => undefined,
                 node: document.createElement('div'),
@@ -126,7 +127,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         } as unknown as ApplicationShell;
         const workspaceService = {
             opened: options.workspaceOpened ?? true,
-            ready: Promise.resolve(),
+            ready: options.workspaceReady ?? Promise.resolve(),
         } as WorkspaceService;
         const controller = new MobileShellWorkHubBootstrapController({
             host,
@@ -286,6 +287,94 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         controller.ensureProjectsPanel(true);
         expect(host.calls).to.include('appendProjectsPanelToShell');
         expect(host.getProjectsPanel()).to.not.equal(undefined);
+    });
+
+    describe('before the workspace restore resolves', () => {
+
+        let resolveWorkspaceReady: () => void;
+        let workspaceReady: Promise<void>;
+        let originalMatchMedia: typeof window.matchMedia;
+
+        function stubOneColumnLayout(matches: boolean): void {
+            window.matchMedia = ((query: string) => ({
+                matches,
+                media: query,
+                addEventListener: () => undefined,
+                removeEventListener: () => undefined,
+            })) as unknown as typeof window.matchMedia;
+        }
+
+        const flush = (): Promise<void> => new Promise<void>(resolve => { setTimeout(resolve, 0); });
+
+        beforeEach(() => {
+            workspaceReady = new Promise<void>(resolve => { resolveWorkspaceReady = resolve; });
+            originalMatchMedia = window.matchMedia;
+        });
+
+        afterEach(() => {
+            window.matchMedia = originalMatchMedia;
+            resolveWorkspaceReady();
+        });
+
+        it('paints the restored Agents surface on the mobile layout and defers only the workspace follow-up', async () => {
+            stubOneColumnLayout(true);
+            const { controller, host } = createController({ workspaceReady });
+            expect(controller.tryBootstrapMobileAgentsChat()).to.equal(true);
+            await flush();
+            expect(host.calls).to.include('panel.show');
+            expect(host.calls).to.include('releaseMobileWorkHubBootGuardWhenReady');
+            expect(host.calls).to.not.include('refreshProjectBootstrapFromWorkspace');
+            resolveWorkspaceReady();
+            await flush();
+            expect(host.calls).to.include('refreshProjectBootstrapFromWorkspace');
+            expect(host.calls.filter(call => call === 'panel.show')).to.have.length(1);
+        });
+
+        it('keeps waiting for the workspace before collapsing the restored IDE outside the mobile layout', async () => {
+            stubOneColumnLayout(false);
+            const { controller, host } = createController({ workspaceReady });
+            expect(controller.tryBootstrapMobileAgentsChat()).to.equal(true);
+            await flush();
+            expect(host.calls).to.not.include('panel.show');
+            expect(host.calls).to.not.include('releaseMobileWorkHubBootGuardWhenReady');
+            resolveWorkspaceReady();
+            await flush();
+            expect(host.calls).to.include('panel.show');
+            expect(host.calls).to.include('releaseMobileWorkHubBootGuardWhenReady');
+        });
+
+        it('shows the Work Hub landing from bootstrapWorkHubSurfaceAfterLayout without awaiting the workspace', async () => {
+            stubOneColumnLayout(true);
+            window.location.hash = '';
+            const { controller, host } = createController({ workspaceReady });
+            const bootstrap = controller.bootstrapWorkHubSurfaceAfterLayout();
+            await flush();
+            expect(host.calls).to.include('panel.show');
+            expect(host.calls).to.include('applyLandingChrome');
+            await bootstrap;
+        });
+
+        it('still awaits the workspace for the classic IDE Welcome check', async () => {
+            stubOneColumnLayout(false);
+            window.location.hash = '';
+            const { controller, host } = createController({
+                workspaceReady,
+                workspaceOpened: false,
+                host: { shouldActivateMobileLayout: () => false, isMobileActive: () => false },
+            });
+            const originalRaf = window.requestAnimationFrame;
+            window.requestAnimationFrame = () => 0;
+            try {
+                const bootstrap = controller.bootstrapWorkHubSurfaceAfterLayout();
+                await flush();
+                expect(host.calls).to.not.include('ensureWelcomeInMainArea');
+                resolveWorkspaceReady();
+                await bootstrap;
+                expect(host.calls).to.include('ensureWelcomeInMainArea');
+            } finally {
+                window.requestAnimationFrame = originalRaf;
+            }
+        });
     });
 
     it('showMobileProjectsHome applies landing chrome after show', async () => {
