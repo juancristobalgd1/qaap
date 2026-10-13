@@ -60,6 +60,7 @@
       "@theia/ai-anthropic",
       "@theia/process",
       "@theia/file-search",
+      "@theia/terminal",
       "@theia/ai-chat",
       "@theia/navigator",
       "@theia/userstorage",

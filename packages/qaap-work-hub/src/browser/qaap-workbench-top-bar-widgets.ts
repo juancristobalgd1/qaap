@@ -550,7 +550,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             return;
         }
         const terminalService = this.terminalService;
-        if (!terminalService) {
+        // The bottom-panel terminal is IDE UI: never opened in mobile mode (the Work Hub has its own).
+        if (!terminalService || matchesMobileOneColumnLayout()) {
             return;
         }
         const terminal = terminalService.currentTerminal

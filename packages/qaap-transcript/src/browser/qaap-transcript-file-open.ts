@@ -10,6 +10,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { LabelProvider, URIIconReference } from '@theia/core/lib/browser';
+import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
 import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import { EditorManager } from '@theia/editor/lib/browser';
@@ -225,11 +226,16 @@ export function createTranscriptFilesViewServices(
                 originUri: new URI(resourcePath),
             })
             : undefined,
-        // Theia `file.newFile` / `file.newFolder` and the editor opener are IDE-only: hidden in mobile mode.
-        createNewFile: mobileMode ? undefined : parentResourcePath => {
+        // Theia `file.newFile` opens the new file in the IDE editor afterwards, so mobile mode creates it
+        // in place instead (the hub Files tree picks it up). The editor opener is IDE-only: hidden there.
+        createNewFile: parentResourcePath => {
+            if (mobileMode) {
+                void createTranscriptFileInPlace(fileService, workspaceService, parentResourcePath);
+                return;
+            }
             void executeTranscriptNewFileCommand(commands, workspaceService, parentResourcePath);
         },
-        createNewFolder: mobileMode ? undefined : parentResourcePath => {
+        createNewFolder: parentResourcePath => {
             void executeTranscriptNewFolderCommand(commands, workspaceService, parentResourcePath);
         },
         openInEditor: mobileMode ? undefined : relativePath => {
@@ -303,6 +309,38 @@ export function resolveTranscriptFileDecoration(
         letter: primary.letter,
         tooltip: primary.tooltip,
     };
+}
+
+/** Mobile "New file": asks for a name and creates the file without opening any IDE editor. */
+async function createTranscriptFileInPlace(
+    fileService: FileService,
+    workspaceService: WorkspaceService,
+    parentResourcePath?: string,
+): Promise<void> {
+    const parent = parentResourcePath ? new URI(parentResourcePath) : workspaceService.tryGetRoots()[0]?.resource;
+    if (!parent) {
+        return;
+    }
+    const dialog = new SingleTextInputDialog({
+        title: nls.localizeByDefault('New File...'),
+        placeholder: nls.localize('theia/workspace/newFilePlaceholder', 'File Name'),
+        validate: async (value, mode) => {
+            const fileName = value.trim();
+            if (!fileName) {
+                return mode === 'preview' ? false : nls.localize('qaap/transcriptFiles/newFileNameRequired', 'Enter a file name');
+            }
+            if (fileName.startsWith('/') || fileName.split('/').includes('..')) {
+                return nls.localize('qaap/transcriptFiles/newFileNameInvalid', 'Enter a name relative to the selected folder');
+            }
+            return await fileService.exists(parent.resolve(fileName))
+                ? nls.localize('qaap/transcriptFiles/newFileExists', 'A file or folder with this name already exists')
+                : true;
+        },
+    });
+    const name = (await dialog.open())?.trim();
+    if (name) {
+        await fileService.create(parent.resolve(name));
+    }
 }
 
 function executeTranscriptNewFileCommand(

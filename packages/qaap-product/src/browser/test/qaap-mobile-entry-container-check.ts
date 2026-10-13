@@ -106,7 +106,8 @@ function mobileModuleLists(): MobileModuleLists {
     return { preload: [...preload.values()], frontend: [...frontend.values()] };
 }
 
-const IDE_PACKAGES = /^@theia\/(plugin-ext|plugin-ext-vscode|debug|notebook|vsx-registry|terminal|task|terminal-manager|ai-terminal|ai-ide|getting-started|keymaps|memory-inspector|plugin-dev)\//;
+// `@theia/terminal` is not listed: the Work Hub terminal surface uses it on mobile too.
+const IDE_PACKAGES = /^@theia\/(plugin-ext|plugin-ext-vscode|debug|notebook|vsx-registry|task|terminal-manager|ai-terminal|ai-ide|getting-started|keymaps|memory-inspector|plugin-dev)\//;
 
 describe('bundle-mobile entry container', function (): void {
     this.timeout(180_000);
@@ -125,13 +126,15 @@ describe('bundle-mobile entry container', function (): void {
 
     after(() => {
         NodeModule._resolveFilename = originalResolveFilename;
-        disableJSDOM();
+        // jsdom stays up: this file runs in its own process (mocha `exit: true`), and timers the resolved
+        // Work Hub services started (stream update schedulers, ...) may still fire into `document`.
     });
 
     it('loads no IDE package module and none of the IDE-only halves', () => {
         expect(lists.frontend.filter(modulePath => IDE_PACKAGES.test(modulePath))).to.deep.equal([]);
         expect(lists.frontend.filter(modulePath => /-ide-frontend-module$/.test(modulePath))).to.deep.equal([]);
         expect(lists.frontend).to.include('@theia/qaap-work-hub/lib/browser/qaap-work-hub-mobile-frontend-module');
+        expect(lists.frontend).to.include('@theia/terminal/lib/browser/terminal-frontend-module');
     });
 
     it('loads every module and resolves the application, all contributions and the Work Hub roots', async () => {
@@ -200,8 +203,25 @@ describe('bundle-mobile entry container', function (): void {
         }
         expect(unresolved).to.deep.equal([]);
 
+        // The Work Hub terminal surface: the bridge aliases resolve the upstream terminal services, and
+        // the Qaap terminal contribution and theme replace the upstream ones.
+        /* eslint-disable @typescript-eslint/no-require-imports */
+        const { TerminalService } = require('@theia/terminal/lib/browser/base/terminal-service');
+        const { TerminalWatcher } = require('@theia/terminal/lib/common/terminal-watcher');
+        const { TerminalFrontendContribution } = require('@theia/terminal/lib/browser/terminal-frontend-contribution');
+        const { TerminalThemeService } = require('@theia/terminal/lib/browser/terminal-theme-service');
+        const { QaapIdeTerminalService, QaapIdeTerminalWatcher, QaapIdeDesktopTerminalLayout } = require('@theia/qaap-shared-core/lib/browser/qaap-ide-bridge');
+        /* eslint-enable @typescript-eslint/no-require-imports */
+        expect(await container.getAsync(QaapIdeTerminalService)).to.equal(await container.getAsync(TerminalService));
+        expect(await container.getAsync(QaapIdeTerminalWatcher)).to.equal(await container.getAsync(TerminalWatcher));
+        expect((await container.getAsync(TerminalFrontendContribution)).constructor.name).to.equal('QaapTerminalFrontendContribution');
+        expect((await container.getAsync(TerminalThemeService)).constructor.name).to.equal('QaapTerminalThemeService');
+        // The desktop bottom-panel terminal layout is IDE UI: not bound in this entry.
+        expect(container.isBound(QaapIdeDesktopTerminalLayout)).to.equal(false);
+
         const bootstrap = await container.getAsync(QaapProjectBootstrapService);
-        // The project bootstrap runs on the headless runner: no IDE terminal in this entry.
+        // The project bootstrap runs on the headless runner (live output without attaching a widget to
+        // the IDE shell), even though the terminal service is bound.
         expect(bootstrap.terminalService.constructor.name).to.equal('QaapHeadlessTerminalService');
     });
 });

@@ -276,16 +276,11 @@ export function syncTerminalAgentTuiTriggerExtracted(ctx: MobileProjectsExecutio
 }
 
 export function executionSurfaceTabSpecsExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): Array<{ id: TranscriptTab; label: string; icon: string }> {
-    if (peekPreferDesktopIde()) {
+    // The classic IDE never opens in mobile mode, so a stale desktop-IDE preference (sessionStorage)
+    // must not strip the Work Hub surfaces there.
+    if (!matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
         return [
             { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
-        ];
-    }
-    if (matchesMobileOneColumnLayout()) {
-        // Mobile mode never creates a TerminalWidget, so the Terminal tab is not offered.
-        return [
-            { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
-            { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-files' },
         ];
     }
     return [

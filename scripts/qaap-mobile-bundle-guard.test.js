@@ -48,17 +48,17 @@ test('a clean mobile graph passes', () => {
 test('a forbidden package fails and the shortest chain is printed; --report does not fail', () => {
     const inputs = {
         ...CLEAN,
-        '../../packages/core/lib/b.js': input(7, '../../packages/terminal/lib/t.js', '../../packages/qaap-work-hub/lib/long1.js'),
+        '../../packages/core/lib/b.js': input(7, '../../packages/debug/lib/d.js', '../../packages/qaap-work-hub/lib/long1.js'),
         '../../packages/qaap-work-hub/lib/long1.js': input(1, '../../packages/qaap-work-hub/lib/long2.js'),
-        '../../packages/qaap-work-hub/lib/long2.js': input(1, '../../packages/terminal/lib/t.js'),
-        '../../packages/terminal/lib/t.js': input(3, '../../node_modules/@xterm/xterm/lib/x.js'),
-        '../../node_modules/@xterm/xterm/lib/x.js': input(9)
+        '../../packages/qaap-work-hub/lib/long2.js': input(1, '../../packages/debug/lib/d.js'),
+        '../../packages/debug/lib/d.js': input(3, '../../packages/task/lib/t.js'),
+        '../../packages/task/lib/t.js': input(9)
     };
     const result = run(inputs, 0);
     assert.equal(result.status, 1);
-    assert.match(result.stdout, /FORBIDDEN packages\/terminal/);
-    assert.match(result.stdout, /FORBIDDEN node_modules\/@xterm/);
-    assert.match(result.stdout, /packages: \(generated src-gen\) > @theia\/qaap-work-hub > @theia\/core > @theia\/terminal\n/);
+    assert.match(result.stdout, /FORBIDDEN packages\/debug/);
+    assert.match(result.stdout, /FORBIDDEN packages\/task/);
+    assert.match(result.stdout, /packages: \(generated src-gen\) > @theia\/qaap-work-hub > @theia\/core > @theia\/debug\n/);
     assert.doesNotMatch(result.stdout, /long2/);
     assert.equal(run(inputs, 0, '--report').status, 0);
 });
@@ -68,6 +68,18 @@ test('plugin-ext-vscode is forbidden but plugin-ext-like names outside the list 
     const result = run(inputs, 0);
     assert.match(result.stdout, /FORBIDDEN packages\/plugin-ext-vscode/);
     assert.doesNotMatch(result.stdout, /FORBIDDEN packages\/terminal/);
+});
+
+test('the terminal and xterm are allowed: the Work Hub terminal surface uses them', () => {
+    const inputs = {
+        ...CLEAN,
+        '../../packages/core/lib/b.js': input(7, '../../packages/terminal/lib/t.js'),
+        '../../packages/terminal/lib/t.js': input(3, '../../node_modules/xterm/lib/xterm.js'),
+        '../../node_modules/xterm/lib/xterm.js': input(9)
+    };
+    const result = run(inputs, 0);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Forbidden IDE packages reachable: none/);
 });
 
 test('the monaco ratchet fails only above the budget', () => {
