@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import URI from '@theia/core/lib/common/uri';
@@ -11,23 +11,22 @@ import { RemoteConnectionProvider, ServiceConnectionProvider } from '@theia/core
 import type { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import type { TerminalWidgetOptions } from '@theia/terminal/lib/browser/base/terminal-widget';
 import type { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
+import { QaapIdeShellTerminalServer, QaapIdeTerminalWatcher } from './qaap-ide-bridge';
 
 /**
  * Mobile process runner for the project bootstrap (install / dev server) without a `TerminalWidget`:
  * no xterm instance and no attachment to the IDE shell, yet live output events.
  *
- * It talks to the very same backend the IDE terminal uses underneath: the shell terminal RPC server
- * (`/services/shell-terminal`, which spawns through the tenant spawn wrapper exactly like an IDE
- * terminal) and the per-terminal output channel (`/services/terminals/<id>`). Each run is a
- * {@link QaapHeadlessTerminal}: the subset of `TerminalWidget` the bootstrap service relies on
- * (output events, exit status, a plain-text line buffer for the log tail, process id/info, dispose).
+ * It talks to the very same backend the IDE terminal uses underneath: the terminal package's shell
+ * terminal RPC proxy (`/services/shell-terminal`, which spawns through the tenant spawn wrapper exactly
+ * like an IDE terminal; reached through the IDE bridge) and the per-terminal output channel
+ * (`/services/terminals/<id>`). Each run is a {@link QaapHeadlessTerminal}: the subset of
+ * `TerminalWidget` the bootstrap service relies on (output events, exit status, a plain-text line
+ * buffer for the log tail, process id/info, dispose).
  *
- * The paths and the exit-reason numbers mirror `@theia/terminal/lib/common/*` on purpose, so the
- * runner stays independent of the terminal package.
+ * The output path and the exit-reason numbers mirror `@theia/terminal/lib/common/*` on purpose.
  */
 
-/** `shellTerminalPath` from `@theia/terminal/lib/common/shell-terminal-protocol`. */
-export const QAAP_SHELL_TERMINAL_PATH = '/services/shell-terminal';
 /** `terminalsPath` from `@theia/terminal/lib/common/terminal-protocol`. */
 export const QAAP_TERMINALS_PATH = '/services/terminals';
 
@@ -243,35 +242,38 @@ export class QaapHeadlessTerminalService {
     @inject(RemoteConnectionProvider)
     protected readonly connectionProvider: ServiceConnectionProvider;
 
+    /**
+     * The terminal package's own `/services/shell-terminal` proxy: a connection allows one channel per
+     * path, so a second proxy on it would never connect. Exit/error events reach its client, the watcher.
+     */
+    @inject(QaapIdeShellTerminalServer)
+    protected readonly server: QaapShellTerminalServer;
+
+    @inject(QaapIdeTerminalWatcher)
+    protected readonly terminalWatcher: QaapIdeTerminalWatcher;
+
     protected readonly terminals: QaapHeadlessTerminal[] = [];
     protected readonly onTerminalExitEmitter = new Emitter<QaapHeadlessTerminalExitEvent>();
     protected readonly onTerminalErrorEmitter = new Emitter<{ terminalId: number; error: Error; attached?: boolean }>();
-    protected serverProxy: QaapShellTerminalServer | undefined;
     protected nextId = 0;
 
     readonly onTerminalExit: Event<QaapHeadlessTerminalExitEvent> = this.onTerminalExitEmitter.event;
     readonly onTerminalError = this.onTerminalErrorEmitter.event;
 
-    get all(): QaapHeadlessTerminal[] {
-        return [...this.terminals];
+    @postConstruct()
+    protected init(): void {
+        this.terminalWatcher.onTerminalExit(event => {
+            this.terminals.find(terminal => terminal.terminalId === event.terminalId)?.handleExit(event);
+            this.onTerminalExitEmitter.fire(event);
+        });
+        this.terminalWatcher.onTerminalError(event => {
+            this.terminals.find(terminal => terminal.terminalId === event.terminalId)?.handleError();
+            this.onTerminalErrorEmitter.fire(event);
+        });
     }
 
-    protected get server(): QaapShellTerminalServer {
-        if (!this.serverProxy) {
-            this.serverProxy = this.connectionProvider.createProxy<QaapShellTerminalServer & object>(QAAP_SHELL_TERMINAL_PATH, {
-                onTerminalExitChanged: (event: QaapHeadlessTerminalExitEvent) => {
-                    this.terminals.find(terminal => terminal.terminalId === event.terminalId)?.handleExit(event);
-                    this.onTerminalExitEmitter.fire(event);
-                },
-                onTerminalError: (event: { terminalId: number; error: Error; attached?: boolean }) => {
-                    this.terminals.find(terminal => terminal.terminalId === event.terminalId)?.handleError();
-                    this.onTerminalErrorEmitter.fire(event);
-                },
-                storeTerminalEnvVariables: () => undefined,
-                updateTerminalEnvVariables: () => undefined,
-            });
-        }
-        return this.serverProxy;
+    get all(): QaapHeadlessTerminal[] {
+        return [...this.terminals];
     }
 
     async newTerminal(options: TerminalWidgetOptions): Promise<QaapHeadlessTerminal> {
