@@ -152,6 +152,8 @@ export interface QaapManagedTenantContainer {
     readonly containerId: string;
     readonly containerName: string;
     readonly running: boolean;
+    /** Frozen by the reaper (`docker pause`): processes keep their memory but get no CPU. */
+    readonly paused?: boolean;
     readonly nodeId?: string;
 }
 
@@ -459,6 +461,52 @@ export class QaapDockerOrchestrator {
         return target;
     }
 
+    /**
+     * Freeze an idle tenant backend with `docker pause` instead of stopping it: its warm Theia process
+     * keeps its memory but gets no CPU, and the next {@link ensureTenantBackend} resumes it in well
+     * under a second instead of paying a full backend boot. Returns false (and leaves the backend
+     * running) when a wake is in flight, because that wake could otherwise wait on a frozen backend.
+     */
+    async pauseTenantBackend(ownerLogin: string): Promise<boolean> {
+        const tenant = ownerLogin.trim().toLowerCase();
+        if (!tenant || this.tenantBackendEnsurePromises.has(tenant)) {
+            return false;
+        }
+        const docker = await this.getDocker(ownerLogin);
+        const name = this.backendContainerNameForTenant(ownerLogin);
+        const container = docker.getContainer(name);
+        const inspect = await container.inspect();
+        if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+            throw new Error(`Refusing to pause ${name}: it is not the managed backend of ${ownerLogin}.`);
+        }
+        if (!inspect.State.Running || inspect.State.Paused) {
+            return inspect.State.Paused === true;
+        }
+        await container.pause();
+        if (this.tenantBackendEnsurePromises.has(tenant)) {
+            // A request raced the pause and started a wake against the running backend: thaw it.
+            await container.unpause();
+            return false;
+        }
+        this.tenantBackendTargets.delete(tenant);
+        this.tenantBackendConnectionTokens.delete(tenant);
+        this.tenantBackendBuilds.delete(tenant);
+        return true;
+    }
+
+    /** Thaw a paused container so it can be stopped normally; missing or running ones are left alone. */
+    protected async unpauseIfPaused(container: Dockerode.Container): Promise<void> {
+        try {
+            if ((await container.inspect()).State.Paused) {
+                await container.unpause();
+            }
+        } catch (error) {
+            if (!this.isDockerNotFound(error)) {
+                throw error;
+            }
+        }
+    }
+
     async stopTenantBackend(ownerLogin: string | undefined): Promise<void> {
         const tenant = ownerLogin?.trim().toLowerCase();
         if (!tenant) {
@@ -470,6 +518,7 @@ export class QaapDockerOrchestrator {
             for (const name of names) {
                 for (const node of nodes) {
                     try {
+                        await this.unpauseIfPaused(node.docker.getContainer(name));
                         await node.docker.getContainer(name).stop({ t: 10 });
                         break;
                     } catch (error) {
@@ -531,6 +580,7 @@ export class QaapDockerOrchestrator {
                     containerId: container.Id,
                     containerName: (container.Names?.[0] ?? '').replace(/^\//, ''),
                     running: container.State === 'running',
+                    paused: container.State === 'paused',
                     nodeId: node.config.id,
                 } satisfies QaapManagedTenantContainer];
             });
@@ -1123,6 +1173,12 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
+            if (inspect.State.Paused && this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+                // The reaper froze this idle backend: thawing keeps its warm process (no backend boot).
+                wake.action = 'resumed';
+                await container.unpause();
+                inspect = await container.inspect();
+            }
             if (tenantEgressNetwork) {
                 if (directEgressNetwork
                     && !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
@@ -1176,7 +1232,7 @@ export class QaapDockerOrchestrator {
             if (!inspect.State.Running) {
                 wake.action = 'started';
                 await container.start();
-            } else {
+            } else if (wake.action !== 'resumed') {
                 wake.action = 'running';
             }
         } catch (error) {
@@ -1575,7 +1631,8 @@ export class QaapDockerOrchestrator {
             const docker = await this.getDocker(ownerLogin);
             const name = this.backendContainerNameForTenant(ownerLogin);
             const inspect = await docker.getContainer(name).inspect();
-            if (!inspect.State.Running || !this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+            // A paused backend cannot answer (and runs no turns): probing it would only wait for the timeout.
+            if (!inspect.State.Running || inspect.State.Paused || !this.isManagedTenantBackendFor(inspect, ownerLogin)) {
                 return undefined;
             }
             const networkMode = this.getTenantNetworkMode(ownerLogin);

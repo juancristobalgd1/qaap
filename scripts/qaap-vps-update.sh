@@ -381,6 +381,16 @@ drain_agent_turns() {
     done
 }
 
+# A switch that keeps the same image (re-run of a deploy, unchanged commit) leaves `compose up` a
+# no-op: the drained container keeps serving and would queue every new agent turn forever. End the
+# drain explicitly; a freshly created container starts undrained and may not answer yet, which is fine.
+end_drain_after_switch() {
+    if [[ "$DRAIN_ACTIVE" -eq 1 ]]; then
+        drain_request POST drain '{"draining":false}' >/dev/null             && echo "[qaap-vps-update] agent drain ended on the serving container"             || echo "[qaap-vps-update] serving container did not answer the drain end (new container starts undrained)"
+    fi
+    DRAIN_ACTIVE=0
+}
+
 # Image serving before this deploy: retained by the post-deploy cleanup for rollback.
 PRE_DEPLOY_IMAGE_ID=''
 PRE_DEPLOY_CONTAINER_ID="$(docker compose ps -aq theia 2>/dev/null | tr -d '\r' | sed -n '1p' || true)"
@@ -437,7 +447,7 @@ if [[ -n "$IMAGE_REF" ]]; then
     preload_tenant_image_before_switch
     drain_agent_turns
     docker compose up -d --no-build
-    DRAIN_ACTIVE=0
+    end_drain_after_switch
 else
     # Pin source builds to the exact upstream QAIQ commit. CI-built GHCR images already receive
     # this build arg in the publish job, so the pull path skips all build work on the VPS.
@@ -460,7 +470,7 @@ else
     preload_tenant_image_before_switch
     drain_agent_turns
     docker compose up -d
-    DRAIN_ACTIVE=0
+    end_drain_after_switch
 fi
 # Safety net (a no-op when the pre-switch seed succeeded): seed through the new container.
 preload_tenant_image

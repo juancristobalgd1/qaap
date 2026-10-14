@@ -30,6 +30,8 @@ interface QaapTenantMountSet {
 interface QaapDockerOrchestratorTestAccess {
     docker: Dockerode | undefined;
     readonly tenantMounts: Map<string, QaapTenantMountSet>;
+    readonly tenantBackendTargets: Map<string, unknown>;
+    readonly tenantBackendEnsurePromises: Map<string, Promise<unknown>>;
     tenantMountsForRoot(hostPath: string): QaapTenantMountSet;
     toContainerPath(hostPath: string, tenantRootHostPath?: string): string;
     dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config'): string;
@@ -121,7 +123,7 @@ interface FakePortBinding {
 interface FakeBackendContainerInfo {
     Id: string;
     Image: string;
-    State: { Running: boolean };
+    State: { Running: boolean; Paused?: boolean };
     Config: Record<string, unknown>;
     HostConfig: Record<string, unknown>;
     NetworkSettings: {
@@ -168,6 +170,8 @@ function createFakeTenantBackendDocker(): {
         return {
             inspect: async (): Promise<FakeBackendContainerInfo> => info,
             start: async (): Promise<void> => { info.State.Running = true; },
+            pause: async (): Promise<void> => { info.State.Paused = true; },
+            unpause: async (): Promise<void> => { info.State.Paused = false; },
             remove: async (): Promise<void> => { containers.delete(name); },
         };
     };
@@ -1195,6 +1199,30 @@ describe('QaapDockerOrchestrator', () => {
             const sample = timelines.get('alice')?.sample(1234, true);
             expect(sample?.action).to.equal('created');
             expect(Object.keys(sample?.phases ?? {})).to.have.members(['prepare', 'container', 'relay', 'ready']);
+        });
+
+        it('resumes a paused backend instead of booting a new one, and pauses only an idle managed backend', async () => {
+            const root = configureBackendIngressEnvironment();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            const backend = fakeDocker.created.find(container => container.name === access(orchestrator).backendContainerNameForTenant('alice'));
+            access(orchestrator).tenantBackendTargets.set('alice', { containerId: 'backend-id' });
+
+            expect(await orchestrator.pauseTenantBackend('alice')).to.equal(true);
+            expect(backend?.info.State.Paused).to.equal(true);
+            expect(orchestrator.getTenantBackendTarget('alice')).to.equal(undefined);
+
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            const sample = (orchestrator as unknown as { tenantBackendWakeTimelines: Map<string, QaapTenantBackendWakeTimeline> })
+                .tenantBackendWakeTimelines.get('alice')?.sample(1, true);
+            expect(backend?.info.State.Paused).to.equal(false);
+            expect(sample?.action).to.equal('resumed');
+            expect(fakeDocker.created.filter(container => container.name === backend?.name)).to.have.length(1);
+
+            access(orchestrator).tenantBackendEnsurePromises.set('alice', new Promise(() => undefined));
+            expect(await orchestrator.pauseTenantBackend('alice')).to.equal(false);
+            expect(backend?.info.State.Paused).to.equal(false);
         });
 
         for (const layout of [

@@ -112,7 +112,9 @@ describe('GitHub API wrappers with a stubbed fetch', () => {
         let inFlight = 0;
         let maxInFlight = 0;
         handler = async url => {
-            if (url.includes('/files')) {
+            // Count only this scan's own pull listings: a straggling fetch from another spec in the
+            // same mocha process must not inflate the concurrency measurement.
+            if (url.includes('/files') || !/\/repos\/octocat\/repo-\d+\/pulls\?/.test(url)) {
                 return json([]);
             }
             inFlight++;

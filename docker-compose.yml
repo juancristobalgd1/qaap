@@ -151,8 +151,13 @@ services:
       QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-docker}
       # Container-per-tenant isolation: each user runs agents and terminals in an isolated worker container.
       QAAP_TENANT_CONTAINER_ISOLATION: ${QAAP_TENANT_CONTAINER_ISOLATION:-1}
-      # Idle tenants are stopped after this long (ms, clamped to 1 min..7 days); the next open is a cold wake.
-      QAAP_TENANT_IDLE_TIMEOUT_MS: ${QAAP_TENANT_IDLE_TIMEOUT_MS:-1800000}
+      # Idle tenants are stopped after this long (ms, clamped to 1 min..7 days); the next open is a cold wake
+      # (~6-22 s of Theia backend boot on the VPS). An idle tenant backend holds ~350 MiB, so 6 h keeps
+      # returning users warm without pressuring RAM; lower it if many tenants sit idle at once.
+      QAAP_TENANT_IDLE_TIMEOUT_MS: ${QAAP_TENANT_IDLE_TIMEOUT_MS:-21600000}
+      # Before that stop, idle tenant backends are frozen (docker pause) after this long: no CPU, memory kept,
+      # and the next request resumes them in well under a second instead of a cold wake. 0 disables it.
+      QAAP_TENANT_PAUSE_AFTER_MS: ${QAAP_TENANT_PAUSE_AFTER_MS:-1800000}
       QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-2147483648}
       QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}

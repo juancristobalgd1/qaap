@@ -14,10 +14,10 @@ export type QaapTenantBackendWakePhase = 'prepare' | 'container' | 'relay' | 're
 
 /**
  * What the wake had to do with the backend container: it was already `running` (e.g. after a
- * control-plane restart), a stopped one was `started`, a missing one was `created`, or a stale one
- * kept serving because agent turns were running (`deferred`).
+ * control-plane restart), a paused one was `resumed`, a stopped one was `started`, a missing one
+ * was `created`, or a stale one kept serving because agent turns were running (`deferred`).
  */
-export type QaapTenantBackendWakeAction = 'running' | 'started' | 'created' | 'deferred';
+export type QaapTenantBackendWakeAction = 'running' | 'resumed' | 'started' | 'created' | 'deferred';
 
 export interface QaapTenantBackendWakeSample {
     readonly at: string;

@@ -11,6 +11,7 @@ import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore, type QaapTenantRuntimeRecord } from './qaap-tenant-runtime-store';
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const DEFAULT_PAUSE_AFTER_MS = 30 * 60 * 1000;
 /** Below one minute a phone that briefly backgrounds the tab would pay a cold start on return. */
 export const MIN_TENANT_IDLE_TIMEOUT_MS = 60 * 1000;
 /** Above a week an idle runtime effectively never releases its memory. */
@@ -24,7 +25,10 @@ export function resolveTenantRuntimeDuration(raw: string | undefined, fallback: 
     return Number.isInteger(value) && value >= 0 ? value : fallback;
 }
 
-/** Stops idle tenant runtimes and destroys their ephemeral containers after a retention TTL. */
+/**
+ * Freezes idle tenant backends (`docker pause`, resumed in well under a second on the next request),
+ * stops idle tenant runtimes and destroys their ephemeral containers after a retention TTL.
+ */
 @injectable()
 export class QaapTenantContainerReaper implements BackendApplicationContribution {
 
@@ -103,6 +107,16 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
                 + `${MIN_TENANT_IDLE_TIMEOUT_MS}..${MAX_TENANT_IDLE_TIMEOUT_MS} or not an integer; using ${resolved}ms.`);
         }
         return resolved;
+    }
+
+    /**
+     * `QAAP_TENANT_PAUSE_AFTER_MS`: how long a tenant backend may stay without activity before the
+     * reaper freezes it (default 30 minutes). A frozen backend keeps its memory but no CPU, so the
+     * next request resumes it instead of paying a cold backend boot. `0`, or a value not below the
+     * idle timeout, disables freezing and leaves only the stop.
+     */
+    protected pauseAfterMs(): number {
+        return resolveTenantRuntimeDuration(process.env.QAAP_TENANT_PAUSE_AFTER_MS, DEFAULT_PAUSE_AFTER_MS);
     }
 
     protected destroyAfterMs(): number {
@@ -202,7 +216,8 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
         const latest = this.store.get(candidate.tenantLogin) ?? candidate;
         const lastActivity = Date.parse(latest.lastActivityAt ?? '');
         const activityAt = Number.isFinite(lastActivity) ? lastActivity : now;
-        const hasRunning = containers.some(container => container.running);
+        // A frozen backend still holds its memory, so it is stopped on the same idle timeout.
+        const hasRunning = containers.some(container => container.running || container.paused);
 
         if (hasRunning && (latest.state === 'active' || latest.state === 'error') && now - activityAt >= this.idleTimeoutMs()) {
             const idleSince = latest.idleSince ?? new Date(now).toISOString();
@@ -219,6 +234,14 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
 
         if (hasRunning && latest.state === 'idle' && now - activityAt >= this.idleTimeoutMs()) {
             await this.stopIfStillIdle(candidate.tenantLogin, activityAt, now, containers);
+            return;
+        }
+
+        const pauseAfter = this.pauseAfterMs();
+        if ((latest.state === 'active' || latest.state === 'error')
+            && pauseAfter > 0 && pauseAfter < this.idleTimeoutMs() && now - activityAt >= pauseAfter
+            && containers.some(container => container.kind === 'backend' && container.running)) {
+            await this.pauseIfStillIdle(candidate.tenantLogin, activityAt, now, containers);
             return;
         }
 
@@ -295,6 +318,41 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
                 lastError: error instanceof Error ? error.message : String(error),
             }, now);
             console.warn(`[qaap-runtime] could not stop tenant ${tenantLogin}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    protected async pauseIfStillIdle(
+        tenantLogin: string,
+        activityAt: number,
+        now: number,
+        containers: readonly QaapManagedTenantContainer[],
+    ): Promise<void> {
+        const latest = this.store.get(tenantLogin);
+        if (!latest || this.activity.isProtected(tenantLogin, now) || Date.parse(latest.lastActivityAt ?? '') > activityAt) {
+            return;
+        }
+        const turns = await this.tenantTurnState(tenantLogin, containers);
+        if (turns === 'busy') {
+            this.store.setState(tenantLogin, 'active', { idleSince: undefined, reaperEnabled: true }, now);
+            this.activity.touch(tenantLogin, 'agent', now);
+            return;
+        }
+        if (turns === 'unanswered') {
+            return;
+        }
+        try {
+            if (!await this.docker.pauseTenantBackend(tenantLogin)) {
+                return;
+            }
+            // `idle` with a paused backend: the next request resumes it, the idle timeout stops it.
+            this.store.setState(tenantLogin, 'idle', {
+                idleSince: latest.idleSince ?? new Date(now).toISOString(),
+                reaperEnabled: true,
+                lastError: undefined,
+            }, now);
+            console.info(`[qaap-runtime] paused idle tenant backend ${tenantLogin}`);
+        } catch (error) {
+            console.warn(`[qaap-runtime] could not pause tenant ${tenantLogin}: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
