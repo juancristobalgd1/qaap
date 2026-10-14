@@ -21,6 +21,7 @@ import {
 } from '@theia/qaap-shared-core/lib/browser/mobile-shell-landing-state';
 import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import { markQaapBootMilestone } from '@theia/qaap-shared-core/lib/browser/qaap-boot-marks';
+import { ensureTranscriptSurfaceCss, isTranscriptSurfaceCssLoaded } from './ensure-transcript-surface-css';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 
@@ -172,6 +173,25 @@ export class MobileShellLandingController {
                 this.releaseMobileWorkHubBootGuardOnceAttached();
                 return;
             }
+            if (!isTranscriptSurfaceCssLoaded() && !this.surfaceCssWaitOver) {
+                // The landing's empty state and composer are styled by the lazy transcript
+                // sheets; on a phone the Work Hub mounts before 'ready' (which warms them), so
+                // keep the guard (and the login gate's skeleton) until they apply: never reveal
+                // an unstyled Work Hub.
+                if (!this.waitingForSurfaceCss) {
+                    this.waitingForSurfaceCss = true;
+                    // Bounded: a sheet that never arrives degrades styling, it must not wedge boot.
+                    const cssOrTimeout = Promise.race([
+                        ensureTranscriptSurfaceCss(),
+                        new Promise<void>(resolve => setTimeout(resolve, MobileShellLandingController.SURFACE_CSS_WAIT_MS)),
+                    ]);
+                    void cssOrTimeout.then(() => {
+                        this.surfaceCssWaitOver = true;
+                        this.releaseMobileWorkHubBootGuard();
+                    });
+                }
+                return;
+            }
             markQaapBootMilestone('landing-painted');
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new window.Event('qaap-startup-ready'));
@@ -182,6 +202,10 @@ export class MobileShellLandingController {
     }
 
     protected pendingBootGuardReleaseFrame: number | undefined;
+
+    protected static readonly SURFACE_CSS_WAIT_MS = 4000;
+    protected waitingForSurfaceCss = false;
+    protected surfaceCssWaitOver = false;
 
     /** Re-runs {@link releaseMobileWorkHubBootGuard} on the first frame the panel is attached. */
     protected releaseMobileWorkHubBootGuardOnceAttached(): void {

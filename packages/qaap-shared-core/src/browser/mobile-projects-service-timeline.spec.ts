@@ -27,6 +27,7 @@ describe('projectMatchesCurrentWorkspaceExtracted', () => {
         const ctx: any = {
             workspaceService: { workspace: workspacePath ? { resource: new URI(`file://${workspacePath}`) } : undefined },
         };
+        ctx.currentWorkspaceUri = () => ctx.workspaceService.workspace?.resource;
         ctx.currentGithubRepositoryFullName = () => timeline.currentGithubRepositoryFullNameExtracted(ctx);
         ctx.getProjectWorkspaceMatchKey = (entry: MobileProjectEntry) => timeline.getProjectWorkspaceMatchKeyExtracted(ctx, entry);
         ctx.getCurrentWorkspaceMatchKey = () => timeline.getCurrentWorkspaceMatchKeyExtracted(ctx);

@@ -387,13 +387,25 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
     // re-arms this; the ready-await plus the focus check at focus time
     // ensure exactly one deliberate focus that nothing later steals back.
     if (isIdleComposer && focusEligibleBeforeMount && Date.now() < ctx.idleComposerAutofocusDeadline) {
+        // Paint the composer in its focused shape from the start (context tray tucked away) rather
+        // than sliding the tray out when the deferred focus lands: on a phone the Work Hub mounts
+        // seconds before 'ready' while the backend wakes, and the boot replica shows it focused.
+        const card = host.querySelector<HTMLElement>('.theia-mobile-projects-sticky-composer-card');
+        card?.classList.add('theia-mod-input-expanded');
+        const releaseExpandedShape = (textarea: HTMLTextAreaElement | null): void => {
+            if (card && document.activeElement !== textarea) {
+                card.classList.remove('theia-mod-input-expanded');
+            }
+        };
         void (ctx.host.whenFrontendReady?.() ?? Promise.resolve()).then(() => {
             window.requestAnimationFrame(() => {
                 const textarea = host.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
                 if (!textarea || !textarea.isConnected || textarea.disabled) {
+                    releaseExpandedShape(textarea);
                     return;
                 }
                 if (!isIdleComposerFocusStealable(document.activeElement, textarea)) {
+                    releaseExpandedShape(textarea);
                     return;
                 }
                 textarea.focus();

@@ -71,6 +71,7 @@ import { bindQaapWorkspaceService } from '@theia/qaap-shared-core/lib/browser/qa
 import { bindQaapWorkspacePreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-workspace-preference-provider';
 import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/browser/qaap-build-freshness-contribution';
+import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
@@ -239,6 +240,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(MobileOneColumnShellContribution);
     bind(QaapBuildFreshnessContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapBuildFreshnessContribution);
+    // The login gate repaints the phone Work Hub exactly from this record on the next load.
+    bind(QaapWorkHubBootReplicaContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWorkHubBootReplicaContribution);
     bind(QaapAgentCliUpdateContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateContribution);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);

@@ -71,6 +71,7 @@ export type MobileProjectsServiceContextMember =
     | 'windowService'
     | 'workspacePathFromUri'
     | 'workspaceService'
+    | 'currentWorkspaceUri'
     | 'writeCustomProjects'
     | 'writeDisplayNames'
     | 'writeHiddenProjectIds'

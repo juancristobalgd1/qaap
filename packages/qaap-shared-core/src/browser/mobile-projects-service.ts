@@ -5,6 +5,7 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
+import { DEFAULT_WINDOW_HASH } from '@theia/core/lib/common/window';
 import { LabelProvider } from '@theia/core/lib/browser';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
@@ -45,6 +46,10 @@ export const CUSTOM_PROJECTS_STORAGE_KEY = MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE;
 
 @injectable()
 export class MobileProjectsService {
+
+    /** Workspace URI this device last had open (predicts the backend default before it answers). */
+    protected static readonly LAST_WORKSPACE_KEY = 'qaap.mobileProjects.lastWorkspaceUri';
+
     @inject(WorkspaceService)
     /** @internal Used by the extracted mobile-projects-service-* modules. */
     public readonly workspaceService: WorkspaceService;
@@ -355,12 +360,100 @@ export class MobileProjectsService {
         return getProjectCwdExtracted(this, project);
     }
 
+    protected workspaceResolved = false;
+    protected workspaceResolutionTracked = false;
+    protected rememberedWorkspaceUri: string | undefined;
+
+    /**
+     * The open workspace. Before WorkspaceService has resolved it (a backend round trip, while
+     * the phone Work Hub already paints from caches), it is predicted the way WorkspaceService
+     * will resolve it: the URL fragment, else the workspace this device last had open (a fragment-
+     * less load, e.g. the PWA start URL, gets the backend's most recently used workspace). So the
+     * Work Hub's first paint names the same workspace as its settled state, not a cached fallback.
+     */
+    currentWorkspaceUri(): URI | undefined {
+        const resolved = this.workspaceService.workspace?.resource;
+        if (resolved) {
+            this.rememberWorkspaceUri(resolved);
+            return resolved;
+        }
+        if (!this.workspaceResolutionTracked) {
+            this.workspaceResolutionTracked = true;
+            const ready = this.workspaceService.ready as Promise<void> | undefined;
+            if (ready) {
+                ready.then(() => {
+                    this.workspaceResolved = true;
+                    // Remember it now, not only when a later render asks: the next load predicts from it.
+                    const settled = this.workspaceService.workspace?.resource;
+                    if (settled) {
+                        this.rememberWorkspaceUri(settled);
+                    }
+                }, () => { this.workspaceResolved = true; });
+            } else {
+                this.workspaceResolved = true;
+            }
+        }
+        if (this.workspaceResolved) {
+            return undefined;
+        }
+        return this.workspaceUriFromLocationHash() ?? this.lastWorkspaceUri();
+    }
+
+    protected rememberWorkspaceUri(uri: URI): void {
+        const value = uri.toString();
+        if (value === this.rememberedWorkspaceUri) {
+            return;
+        }
+        this.rememberedWorkspaceUri = value;
+        try {
+            window.localStorage.setItem(MobileProjectsService.LAST_WORKSPACE_KEY, value);
+        } catch {
+            // Storage unavailable: the first paint falls back to the cached project list.
+        }
+    }
+
+    protected lastWorkspaceUri(): URI | undefined {
+        if (typeof window === 'undefined' || (window.location.hash.length > 1)) {
+            return undefined;
+        }
+        try {
+            const value = window.localStorage.getItem(MobileProjectsService.LAST_WORKSPACE_KEY);
+            return value && value.startsWith('file:') ? new URI(value) : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** Mirrors WorkspaceService.doGetDefaultWorkspaceUri (URL fragment, UNC paths included). */
+    protected workspaceUriFromLocationHash(): URI | undefined {
+        if (typeof window === 'undefined') {
+            return undefined;
+        }
+        const hash = window.location.hash;
+        if (hash.length <= 1 || hash === `#${DEFAULT_WINDOW_HASH}`) {
+            return undefined;
+        }
+        try {
+            const workspacePath = decodeURI(hash.substring(1));
+            if (workspacePath.startsWith('//')) {
+                const unc = workspacePath.slice(2);
+                const firstSlash = unc.indexOf('/');
+                const authority = firstSlash >= 0 ? unc.slice(0, firstSlash) : unc;
+                const path = firstSlash >= 0 ? unc.slice(firstSlash) : '/';
+                return new URI().withPath(path).withAuthority(authority).withScheme('file');
+            }
+            return new URI().withPath(workspacePath).withScheme('file');
+        } catch {
+            return undefined;
+        }
+    }
+
     getCurrentWorkspaceCwd(): string | undefined {
-        return this.cwdFromFileUri(this.workspaceService.workspace?.resource);
+        return this.cwdFromFileUri(this.currentWorkspaceUri());
     }
 
     getCurrentWorkspaceName(): string | undefined {
-        const uri = this.workspaceService.workspace?.resource;
+        const uri = this.currentWorkspaceUri();
         return uri ? this.labelProvider.getName(uri) : undefined;
     }
 

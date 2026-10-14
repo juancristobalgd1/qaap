@@ -207,11 +207,10 @@ export function githubCloneOfProjectWorkspace(ctx: Pick<MobileProjectsServiceCon
 }
 
 export function getCurrentWorkspaceDisplayNameExtracted(ctx: MobileProjectsServiceContext): string | undefined {
-        const current = ctx.workspaceService.workspace;
-        if (!current) {
+        const uri = ctx.currentWorkspaceUri();
+        if (!uri) {
             return undefined;
         }
-        const uri = current.resource;
         const id = `ws:${uri.toString()}`;
         const name = ctx.labelProvider.getName(uri);
         return ctx.resolveDisplayName(id, name);
@@ -231,7 +230,7 @@ export function peekCachedProjectsExtracted(ctx: MobileProjectsServiceContext): 
         const seen = new Set<string>();
         const hiddenIds = ctx.readHiddenProjectIds();
         const pinnedIds = ctx.readPinnedProjectIds();
-        const current = ctx.workspaceService.workspace?.resource;
+        const current = ctx.currentWorkspaceUri();
 
         for (const session of sessionMap.values()) {
             const entry = ctx.cachedSessionToEntry(session, pinnedIds, current);

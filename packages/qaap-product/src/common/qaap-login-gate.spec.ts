@@ -1004,6 +1004,125 @@ describe('Qaap login gate', () => {
             });
         });
 
+        describe('exact Work Hub replica', () => {
+            const REPLICA_KEY = 'qaap.workhub.bootReplica.v1';
+            const BUILD = './bundle.css?qaap-build=b1';
+
+            function replica(overrides: Record<string, unknown> = {}): string {
+                return JSON.stringify({
+                    v: 1,
+                    savedAt: Date.now() - 60_000,
+                    login: 'octocat',
+                    build: BUILD,
+                    stylesheets: ['./bundle-mobile.css?qaap-build=b1', './chunk-AB12CD34.css'],
+                    rootStyle: '--theia-foreground: #111;--theia-editor-background: #f6f5f1',
+                    background: 'rgb(246, 245, 241)',
+                    bodyClasses: ['qaap-theme-light', 'linux', 'theia-mobile-mod-workhub-composer-header', 'monaco-workbench'],
+                    shellClasses: ['lm-Widget', 'theia-ApplicationShell', 'theia-mod-mobile-one-column'],
+                    tree: ['div', { class: 'theia-mobile-projects theia-mod-home theia-mod-visible' },
+                        ['header', { class: 'theia-mobile-projects-header' },
+                            ['span', { class: 'theia-mobile-projects-header-project-label', onclick: 'window.__pwned=1' }, 'wsvite'],
+                            ['svg', { viewBox: '0 0 24 24', class: 'icon' }, ['path', { d: 'M4 5h16' }]]],
+                        ['script', 0, 'window.__pwned=1'],
+                        ['div', { class: 'theia-mobile-agent-transcript-empty-title', style: 'background:url(https://evil.example/x)' },
+                            '<img src=x onerror="window.__pwned=1">'],
+                        ['textarea', { class: 'theia-mobile-projects-sticky-composer-input', placeholder: 'Delegate a task' }]],
+                    ...overrides,
+                });
+            }
+
+            function startReplicaBoot(options: FastBootOptions = {}): LoginGateRun {
+                return startFastBoot({ session: () => new Promise<StubResponse>(() => undefined), ...options });
+            }
+
+            function replicaLinks(run: LoginGateRun): HTMLLinkElement[] {
+                return Array.from(run.document.querySelectorAll<HTMLLinkElement>('link[data-qaap-boot-replica]'));
+            }
+
+            it('rebuilds the recorded Work Hub in the first frame, hidden until its stylesheets load', async () => {
+                const run = startReplicaBoot({ storage: { [REPLICA_KEY]: replica() } });
+                const root = run.document.getElementById(PLACEHOLDER_ID)!;
+                expect(root.classList.contains('qaap-boot-replica')).to.equal(true);
+                expect(root.classList.contains('qaap-boot-replica-pending')).to.equal(true);
+                expect(root.style.backgroundColor).to.equal('rgb(246, 245, 241)');
+                expect(root.querySelector('#theia-app-shell.theia-ApplicationShell .theia-mobile-projects-header-project-label')?.textContent).to.equal('wsvite');
+                expect(replicaLinks(run).map(link => link.getAttribute('href'))).to.deep.equal(['./bundle-mobile.css?qaap-build=b1', './chunk-AB12CD34.css']);
+                replicaLinks(run).forEach(link => link.dispatchEvent(new run.window.Event('load')));
+                await run.waitFor(() => !root.classList.contains('qaap-boot-replica-pending'), 'replica revealed');
+            });
+
+            it('keeps only names, safe attributes and text: no scripts, handlers or URLs', () => {
+                const run = startReplicaBoot({ storage: { [REPLICA_KEY]: replica() } });
+                const root = run.document.getElementById(PLACEHOLDER_ID)!;
+                expect(root.querySelectorAll('script, img')).to.have.length(0);
+                expect(root.querySelector('.theia-mobile-projects-header-project-label')!.hasAttribute('onclick')).to.equal(false);
+                const title = root.querySelector('.theia-mobile-agent-transcript-empty-title')!;
+                expect(title.hasAttribute('style')).to.equal(false);
+                expect(title.textContent).to.equal('<img src=x onerror="window.__pwned=1">');
+                expect(root.querySelector('svg')!.namespaceURI).to.equal('http://www.w3.org/2000/svg');
+                expect(root.querySelector('path')!.namespaceURI).to.equal('http://www.w3.org/2000/svg');
+                expect(root.hasAttribute('inert')).to.equal(true);
+                expect((run.window as unknown as { __pwned?: number }).__pwned).to.equal(undefined);
+            });
+
+            it('applies the theme variables and only the allowed body classes', () => {
+                const run = startReplicaBoot({ storage: { [REPLICA_KEY]: replica() } });
+                const html = run.document.documentElement;
+                expect(html.style.getPropertyValue('--theia-foreground').trim()).to.equal('#111');
+                const body = run.document.body.classList;
+                expect(body.contains('qaap-theme-light')).to.equal(true);
+                expect(body.contains('linux')).to.equal(true);
+                expect(body.contains('monaco-workbench')).to.equal(false);
+            });
+
+            it('falls back to the drawn skeleton when a stylesheet fails', async () => {
+                const run = startReplicaBoot({ storage: { [REPLICA_KEY]: replica(), [SNAPSHOT_KEY]: snapshot() } });
+                replicaLinks(run)[0].dispatchEvent(new run.window.Event('error'));
+                await run.waitFor(() => run.document.querySelector('.qaap-boot-shell') !== null, 'drawn skeleton');
+                expect(run.document.querySelector('.qaap-boot-replica')).to.equal(null);
+                expect(run.document.documentElement.classList.contains('qaap-boot-handover')).to.equal(false);
+            });
+
+            const rejected: Array<[string, Record<string, unknown>]> = [
+                ['it was recorded by another build', { build: './bundle.css?qaap-build=old' }],
+                ['it belongs to another user', { login: 'someone-else' }],
+                ['a stylesheet is not a same-origin bundle chunk', { stylesheets: ['https://evil.example/x.css'] }],
+                ['it is stale', { savedAt: Date.now() - 30 * 24 * 3600 * 1000 }],
+                ['the tree is not a node', { tree: 'wsvite' }],
+            ];
+            for (const [label, overrides] of rejected) {
+                it(`paints the drawn skeleton instead when ${label}`, () => {
+                    const run = startReplicaBoot({ storage: { [REPLICA_KEY]: replica(overrides), [SNAPSHOT_KEY]: snapshot() } });
+                    expect(run.document.querySelector('.qaap-boot-replica')).to.equal(null);
+                    expect(run.document.querySelector('.qaap-boot-shell')).not.to.equal(null);
+                });
+            }
+
+            it('moves behind the real shell so getElementById finds the real one', async () => {
+                const run = startReplicaBoot({ storage: { [REPLICA_KEY]: replica() } });
+                const real = run.document.createElement('div');
+                real.id = 'theia-app-shell';
+                run.document.body.appendChild(real);
+                await run.waitFor(() => run.document.getElementById('theia-app-shell') === real, 'real shell first in document order');
+                expect(run.document.getElementById(PLACEHOLDER_ID)!.isConnected).to.equal(true);
+            });
+
+            it('lifts the hand-over animation freeze after the Work Hub replaced it', async () => {
+                const run = startReplicaBoot({ storage: { [REPLICA_KEY]: replica() } });
+                expect(run.document.documentElement.classList.contains('qaap-boot-handover')).to.equal(true);
+                // What clearMobileWorkHubBootGuard() does.
+                run.document.getElementById(PLACEHOLDER_ID)!.remove();
+                await run.waitFor(() => !run.document.documentElement.classList.contains('qaap-boot-handover'), 'hand-over class removed');
+            });
+
+            it('is forgotten with the session on ?qaapLogout=1', () => {
+                const run = start(() => undefined, 'http://localhost:3000/?qaapLogout=1', {
+                    localStorage: { ...STORED_SESSION, [REPLICA_KEY]: replica() },
+                });
+                expect(run.window.localStorage.getItem(REPLICA_KEY)).to.equal(null);
+            });
+        });
+
         describe('boot timings', () => {
             interface BootTimings {
                 marks: Record<string, number>;

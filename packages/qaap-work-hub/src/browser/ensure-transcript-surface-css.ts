@@ -19,9 +19,18 @@ let transcriptSurfaceCss: Promise<void> | undefined;
  */
 export function ensureTranscriptSurfaceCss(): Promise<void> {
     if (!transcriptSurfaceCss) {
-        transcriptSurfaceCss = loadTranscriptSurfaceCss();
+        transcriptSurfaceCss = loadTranscriptSurfaceCss().then(() => {
+            transcriptSurfaceCssLoaded = true;
+        });
     }
     return transcriptSurfaceCss;
+}
+
+let transcriptSurfaceCssLoaded = false;
+
+/** Whether the transcript surface sheets have applied (synchronous check for first-paint gates). */
+export function isTranscriptSurfaceCssLoaded(): boolean {
+    return transcriptSurfaceCssLoaded;
 }
 
 async function loadTranscriptSurfaceCss(): Promise<void> {
