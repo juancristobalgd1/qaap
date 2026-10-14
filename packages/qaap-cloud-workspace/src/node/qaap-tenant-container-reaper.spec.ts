@@ -58,16 +58,17 @@ class MemoryRuntimeStore {
 function createHarness(containers: any[], record: QaapTenantRuntimeRecord, busy?: () => QaapTenantBusyStatus | undefined): {
     reaper: QaapTenantContainerReaper;
     store: MemoryRuntimeStore;
-    calls: { stop: number; destroy: number; probe: number };
+    calls: { stop: number; destroy: number; probe: number; pause: number };
 } {
     const store = new MemoryRuntimeStore();
     store.records.set(record.tenantLogin, record);
-    const calls = { stop: 0, destroy: 0, probe: 0 };
+    const calls = { stop: 0, destroy: 0, probe: 0, pause: 0 };
     const docker = {
         isEnabled: () => true,
         listManagedTenantContainers: async () => containers,
         stopTenantRuntime: async () => { calls.stop += 1; },
         destroyTenantRuntime: async () => { calls.destroy += 1; },
+        pauseTenantBackend: async () => { calls.pause += 1; return true; },
         probeTenantBackendBusy: async () => {
             calls.probe += 1;
             return busy ? busy() : { busy: false, runningTasks: 0 };
@@ -84,6 +85,8 @@ function createHarness(containers: any[], record: QaapTenantRuntimeRecord, busy?
     (reaper as any).isEnabled = () => true;
     (reaper as any).idleTimeoutMs = () => 100;
     (reaper as any).destroyAfterMs = () => 1_000;
+    // Freezing is opt-in per test so the stop/destroy expectations above stay independent of it.
+    (reaper as any).pauseAfterMs = () => 0;
     return { reaper, store, calls };
 }
 
@@ -240,5 +243,65 @@ describe('Qaap tenant container reaper', () => {
 
         expect(harness.calls.probe).to.equal(0);
         expect(harness.calls.stop).to.equal(1);
+    });
+
+    describe('freezing idle backends', () => {
+        const withPause = (harness: ReturnType<typeof createHarness>): ReturnType<typeof createHarness> => {
+            (harness.reaper as any).pauseAfterMs = () => 50;
+            return harness;
+        };
+        const recentlyIdle = (now: number): QaapTenantRuntimeRecord => ({
+            ...idleBackendTenant(now),
+            lastActivityAt: new Date(now - 60).toISOString(),
+        });
+
+        it('pauses an idle backend before its idle timeout instead of stopping it', async () => {
+            const now = 10_000;
+            const harness = withPause(createHarness(backendContainers, recentlyIdle(now)));
+
+            await harness.reaper.sweep(now);
+
+            expect(harness.calls.probe).to.equal(1);
+            expect(harness.calls.pause).to.equal(1);
+            expect(harness.calls.stop).to.equal(0);
+            expect(harness.store.get('alice')?.state).to.equal('idle');
+        });
+
+        it('does not pause a backend that still runs an agent turn', async () => {
+            const now = 10_000;
+            const harness = withPause(createHarness(backendContainers, recentlyIdle(now), () => ({ busy: true, runningTasks: 1 })));
+
+            await harness.reaper.sweep(now);
+
+            expect(harness.calls.pause).to.equal(0);
+            expect(harness.store.get('alice')?.state).to.equal('active');
+        });
+
+        it('stops a paused backend on the idle timeout without probing it', async () => {
+            const now = 10_000;
+            const paused = [
+                backendContainers[0],
+                { tenantLogin: 'alice', kind: 'backend', containerId: 'backend-1', containerName: 'backend', running: false, paused: true },
+            ];
+            const harness = withPause(createHarness(paused, { ...idleBackendTenant(now), state: 'idle' }));
+
+            await harness.reaper.sweep(now);
+
+            expect(harness.calls.probe).to.equal(0);
+            expect(harness.calls.pause).to.equal(0);
+            expect(harness.calls.stop).to.equal(1);
+            expect(harness.store.get('alice')?.state).to.equal('stopped');
+        });
+
+        it('stops (not pauses) when freezing is disabled or not shorter than the idle timeout', async () => {
+            const now = 10_000;
+            const harness = createHarness(backendContainers, idleBackendTenant(now));
+            (harness.reaper as any).pauseAfterMs = () => 100;
+
+            await harness.reaper.sweep(now);
+
+            expect(harness.calls.pause).to.equal(0);
+            expect(harness.calls.stop).to.equal(1);
+        });
     });
 });

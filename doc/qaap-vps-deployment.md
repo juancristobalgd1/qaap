@@ -44,14 +44,15 @@ activity; the next request (normally the `GET /` that loads the page) starts the
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QAAP_TENANT_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Idle time before the reaper stops a tenant runtime. Clamped to 60000 (1 min) … 604800000 (7 days); a non-integer value falls back to the default. Either case logs one `[qaap-runtime]` warning. |
+| `QAAP_TENANT_IDLE_TIMEOUT_MS` | `1800000` (30 min) in code; `21600000` (6 h) in `docker-compose.yml` | Idle time before the reaper stops a tenant runtime. An idle tenant backend holds about 350 MiB, while a cold wake costs 6-22 s of backend boot on the VPS. Clamped to 60000 (1 min) … 604800000 (7 days); a non-integer value falls back to the default. Either case logs one `[qaap-runtime]` warning. |
+| `QAAP_TENANT_PAUSE_AFTER_MS` | `1800000` (30 min) | Idle time before the reaper freezes a tenant backend with `docker pause`. A frozen backend keeps its memory but gets no CPU; the next request resumes it in well under a second (wake `action=resumed`) instead of a cold boot. It is stopped on the idle timeout as before. `0`, or a value not below the idle timeout, disables freezing. |
 | `QAAP_TENANT_DESTROY_AFTER_MS` | `86400000` (24 h) | Retention of stopped containers before they are removed. Tenant data is never removed. |
 | `QAAP_TENANT_REAPER_INTERVAL_MS` | `300000` (5 min) | Sweep interval, so a runtime stops up to one interval after its idle timeout. |
 | `QAAP_TENANT_BACKEND_READY_TIMEOUT_MS` | `30000` | How long a wake waits for the tenant backend's `/qaap/api/health`. |
 
 The production `docker-compose.yml` passes an explicit environment list to the `theia` service.
 Before relying on one of these variables, add it there, for example
-`QAAP_TENANT_IDLE_TIMEOUT_MS: ${QAAP_TENANT_IDLE_TIMEOUT_MS:-1800000}`. Setting it only in `.env`
+`QAAP_TENANT_IDLE_TIMEOUT_MS: ${QAAP_TENANT_IDLE_TIMEOUT_MS:-21600000}`. Setting it only in `.env`
 has no effect.
 
 Each wake logs one line from the control plane, with its phases (Docker preparation, container
@@ -61,7 +62,7 @@ start/create, ingress relay, health wait):
 [qaap-tenant] backend wake alice 5210ms action=started prepare=40ms container=900ms relay=300ms ready=3970ms
 ```
 
-`action` is `started` (stopped container), `created` (missing or replaced container), `running` (a
+`action` is `resumed` (paused container), `started` (stopped container), `created` (missing or replaced container), `running` (a
 container that was already running, e.g. after a control-plane restart) or `deferred` (a stale
 backend kept while agent turns finish). Failures log `backend wake failed … error="…"`. The latest
 wake and p50/p95/max over the last 100 successful wakes are in `backendWake` of
