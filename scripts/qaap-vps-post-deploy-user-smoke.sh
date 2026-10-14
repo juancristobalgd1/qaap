@@ -84,8 +84,10 @@ if [[ -z "$SMOKE_COOKIE" ]]; then
     exit 1
 fi
 
+# The first signed-in request wakes the smoke user's tenant backend (a cold boot takes 6-22 s on the
+# VPS, or a recreate after the image changed), so it gets the same budget as the signed-in home below.
 if ! APPROVALS_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-    --max-time 15 --cookie "$SMOKE_COOKIE" "$BASE_URL/qaap/api/agent-approvals")"; then
+    --max-time 180 --cookie "$SMOKE_COOKIE" "$BASE_URL/qaap/api/agent-approvals")"; then
     echo '::error::Signed-in post-deploy smoke could not request /qaap/api/agent-approvals.' >&2
     exit 1
 fi
