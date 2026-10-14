@@ -89,7 +89,7 @@ describe('Qaap login gate', () => {
             );
         }
 
-        it('mobile: keeps the IDE shell hidden and shows the loading placeholder', async () => {
+        it('mobile: keeps the IDE shell hidden and shows the skeleton Work Hub', async () => {
             const run = startGuard(true);
             await run.bundleAppended;
             expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
@@ -98,7 +98,7 @@ describe('Qaap login gate', () => {
             expect(run.document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
             const placeholder = run.document.getElementById(PLACEHOLDER_ID);
             expect(placeholder, 'placeholder').not.to.equal(null);
-            expect(placeholder!.textContent).to.contain('Loading');
+            expect(placeholder!.classList.contains('qaap-boot-shell')).to.equal(true);
             // Showing it again must stay idempotent.
             guardClock!.tick(60_000);
             expect(run.document.querySelectorAll('#' + PLACEHOLDER_ID).length).to.equal(1);
@@ -860,22 +860,23 @@ describe('Qaap login gate', () => {
                 expect(run.document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
             });
 
-            it('says "Loading" when the runtime is already active and does not poll again', async () => {
+            it('shows the skeleton Work Hub without a caption when the runtime is already active and does not poll again', async () => {
                 const run = startFastBoot({ fakeTimers: true, runtimeStates: ['active'] });
                 await runtimeProbed(run);
                 clock!.tick(1500);
-                expect(placeholderLabel(run)).to.equal('Loading…');
+                expect(run.document.getElementById(PLACEHOLDER_ID)?.classList.contains('qaap-boot-shell')).to.equal(true);
+                expect(placeholderLabel(run)).to.equal('');
                 clock!.tick(20_000);
                 expect(run.requests.filter(request => request === RUNTIME_STATUS)).to.have.length(1);
             });
 
-            it('switches to "Loading" once a cold runtime becomes active', async () => {
+            it('drops the caption once a cold runtime becomes active', async () => {
                 const run = startFastBoot({ fakeTimers: true, runtimeStates: ['starting', 'active'] });
                 await runtimeProbed(run);
                 clock!.tick(1500);
                 expect(placeholderLabel(run)).to.equal('Starting your workspace…');
                 clock!.tick(4000);
-                await run.waitFor(() => placeholderLabel(run) === 'Loading…', 'loading text after the runtime is active');
+                await run.waitFor(() => placeholderLabel(run) === '', 'no caption after the runtime is active');
             });
 
             it('polls the runtime status a bounded number of times', async () => {
@@ -913,7 +914,7 @@ describe('Qaap login gate', () => {
         });
 
         describe('instant Work Hub shell from the cached snapshot', () => {
-            it('paints the cached projects in the first frame, escaped and non-interactive', () => {
+            it('paints the Work Hub skeleton in the first frame, themed and non-interactive', () => {
                 const hostile = '<img src=x onerror="window.__pwned=1">';
                 const run = startFastBoot({
                     session: () => new Promise<StubResponse>(() => undefined),
@@ -924,18 +925,30 @@ describe('Qaap login gate', () => {
                 expect(shell, 'shell').not.to.equal(null);
                 expect(shell!.classList.contains('qaap-boot-shell')).to.equal(true);
                 expect(shell!.classList.contains('qaap-boot-theme-dark')).to.equal(true);
-                expect(shell!.querySelector('.qaap-boot-shell-name')?.textContent).to.equal(hostile);
-                expect(shell!.querySelector('.qaap-boot-shell-thread')?.textContent).to.equal('Fix the login flow');
-                expect(shell!.querySelectorAll('img, button, a, input')).to.have.length(0);
+                expect(shell!.querySelectorAll('img, button, a, input, textarea')).to.have.length(0);
+                expect(shell!.textContent).not.to.contain(hostile);
                 expect(placeholderLabel(run)).to.equal('');
                 expect((run.window as unknown as { __pwned?: number }).__pwned).to.equal(undefined);
             });
 
-            it('renders the header and the list of recent projects', () => {
+            it('renders the Work Hub chrome with skeletons for the data still loading', () => {
                 const run = startFastBoot({ session: () => new Promise<StubResponse>(() => undefined), storage: { [SNAPSHOT_KEY]: snapshot() } });
-                const names = Array.from(run.document.querySelectorAll('.qaap-boot-shell-name')).map(node => node.textContent);
-                expect(names).to.deep.equal(['octocat/hello-world', 'octocat/spoon-knife']);
-                expect(run.document.querySelector('.qaap-boot-shell-title')?.textContent).to.equal('Qaap');
+                const shell = run.document.getElementById(PLACEHOLDER_ID)!;
+                expect(shell.querySelector('.qaap-boot-shell-header .qaap-boot-shell-project .qaap-boot-sk'), 'project skeleton').not.to.equal(null);
+                expect(shell.querySelector('.qaap-boot-shell-placeholder')?.textContent).to.equal('Delegate a task…');
+                expect(shell.querySelectorAll('.qaap-boot-shell-chip')).to.have.length(4);
+                expect(shell.querySelectorAll('.qaap-boot-shell-tray .qaap-boot-sk')).to.have.length(2);
+                expect(shell.textContent).not.to.contain('Recent');
+            });
+
+            it('paints the same skeleton after 1.5 s when there is no snapshot', async () => {
+                const run = startFastBoot({ fakeTimers: true, runtimeStates: ['active'] });
+                expect(run.document.getElementById(PLACEHOLDER_ID)).to.equal(null);
+                await runtimeProbed(run);
+                clock!.tick(1500);
+                const shell = run.document.getElementById(PLACEHOLDER_ID);
+                expect(shell?.classList.contains('qaap-boot-shell')).to.equal(true);
+                expect(shell!.querySelectorAll('.qaap-boot-shell-chip')).to.have.length(4);
             });
 
             it('fills in the phase text later without rebuilding the shell', async () => {
