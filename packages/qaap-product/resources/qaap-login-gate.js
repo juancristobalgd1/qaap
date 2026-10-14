@@ -207,7 +207,19 @@
                 '.qaap-boot-shell-tray .qaap-boot-sk+.qaap-boot-sk{width:84px}',
                 '#qaap-mobile-workhub-connecting.qaap-boot-shell .qaap-mobile-workhub-connecting-label{',
                 'text-align:center;font-size:13px;color:var(--qaap-boot-muted);min-height:1.4em}',
-                '@media (prefers-reduced-motion:reduce){.qaap-boot-shell .qaap-boot-sk,.qaap-boot-shell-logo{animation:none}}'
+                '@media (prefers-reduced-motion:reduce){.qaap-boot-shell .qaap-boot-sk,.qaap-boot-shell-logo{animation:none}}',
+                // Exact replica: a plain fixed layer; the recorded Work Hub styles itself.
+                '#qaap-mobile-workhub-connecting.qaap-boot-replica{display:block;gap:0;font:inherit;color:inherit;',
+                'overflow:hidden;cursor:progress;-webkit-user-select:none;user-select:none}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-replica *{pointer-events:none}',
+                // The boot guard hides #theia-app-shell (!important); the replica's copy must show,
+                // except while its stylesheets are still loading.
+                '#qaap-mobile-workhub-connecting.qaap-boot-replica #theia-app-shell{visibility:visible!important}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-replica.qaap-boot-replica-pending #theia-app-shell{visibility:hidden!important}',
+                // While the replica hands over, the real Work Hub paints its final state at once:
+                // no mount fade-ins or transitions that the replica (a still picture) does not show.
+                'html.qaap-boot-handover body *,html.qaap-boot-handover body *::before,html.qaap-boot-handover body *::after{',
+                'animation-duration:0s!important;animation-delay:0s!important;transition:none!important}'
             ].join('');
             (document.head || document.documentElement).appendChild(shellStyle);
         }
@@ -777,7 +789,308 @@
     function forgetWorkHubShellSnapshot() {
         try {
             window.localStorage.removeItem(SHELL_SNAPSHOT_KEY);
+            window.localStorage.removeItem(BOOT_REPLICA_KEY);
         } catch (e) { /* ignore */ }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Exact Work Hub replica. The Work Hub records its own DOM, theme variables and stylesheets
+    // (contract and writer: qaap-work-hub-boot-replica.ts in @theia/qaap-adapters); the gate
+    // rebuilds that DOM with createElement under the same stylesheets, so the real Work Hub
+    // mounts over a pixel-identical screen. Shown only once its stylesheets have loaded (until
+    // then: the Work Hub background); any failure falls back to the drawn skeleton above.
+    // ---------------------------------------------------------------------------------------
+    var BOOT_REPLICA_KEY = 'qaap.workhub.bootReplica.v1';
+    var BOOT_REPLICA_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+    var BOOT_REPLICA_CSS_TIMEOUT_MS = 1500;
+    var BOOT_REPLICA_FONT_TIMEOUT_MS = 800;
+    var BOOT_REPLICA_MAX_NODES = 6000;
+    var BOOT_REPLICA_MAX_DEPTH = 80;
+    var BOOT_REPLICA_SKIPPED_TAGS = /^(script|style|link|meta|iframe|object|embed|template|video|audio|canvas|noscript|base|form)$/i;
+    var BOOT_REPLICA_ATTRIBUTES = /^(class|role|title|placeholder|rows|type|hidden|disabled|tabindex|dir|lang|style|viewbox|d|fill|stroke|stroke-width|stroke-linecap|stroke-linejoin|stroke-dasharray|stroke-dashoffset|stroke-miterlimit|fill-rule|clip-rule|opacity|fill-opacity|stroke-opacity|width|height|x|y|x1|y1|x2|y2|cx|cy|r|rx|ry|points|transform|preserveaspectratio|focusable|xmlns|aria-[a-z-]+|data-[a-z0-9-]+)$/i;
+    var BOOT_REPLICA_STYLESHEET = /^\.\/(bundle(-mobile)?|chunk-[A-Z0-9]+)\.css(\?[A-Za-z0-9=&._-]*)?$/;
+    var BOOT_REPLICA_BODY_CLASS = /^(qaap-theme-(light|dark)|theia-mobile-mod-workhub-[a-z-]+|linux|windows|mac)$/;
+    var SVG_NS = 'http://www.w3.org/2000/svg';
+    var bootReplicaShellObserver = null;
+
+    function isSafeReplicaStyle(value) {
+        return !/url\s*\(|expression\s*\(|@import|javascript:/i.test(value);
+    }
+
+    /** The page's bundle stylesheet reference (mirrors QaapWorkHubBootReplicaContribution.currentBuild). */
+    function currentBundleBuild() {
+        var meta = document.querySelector('meta[name="qaap-bundle-css"]');
+        var link = document.querySelector('link[href*="bundle.css"]');
+        return (meta && meta.getAttribute('content')) || (link && link.getAttribute('href')) || '';
+    }
+
+    /** The validated replica for the stored user and this build, or undefined. */
+    function readWorkHubBootReplica() {
+        try {
+            var raw = window.localStorage.getItem(BOOT_REPLICA_KEY);
+            if (!raw) {
+                return undefined;
+            }
+            var replica = JSON.parse(raw);
+            if (!replica || replica.v !== 1 || !Array.isArray(replica.tree) || !Array.isArray(replica.stylesheets)
+                || !replica.stylesheets.length || typeof replica.build !== 'string') {
+                return undefined;
+            }
+            var now = Date.now();
+            if (typeof replica.savedAt !== 'number' || !isFinite(replica.savedAt)
+                || now - replica.savedAt > BOOT_REPLICA_MAX_AGE_MS || replica.savedAt - now > 5 * 60 * 1000) {
+                return undefined;
+            }
+            var login = storedUserLogin();
+            if (!login || typeof replica.login !== 'string' || replica.login.toLowerCase() !== login.toLowerCase()) {
+                return undefined;
+            }
+            // Content-hashed chunks of another build may be gone: only repaint what this build serves.
+            if (replica.build !== currentBundleBuild()) {
+                return undefined;
+            }
+            for (var i = 0; i < replica.stylesheets.length; i++) {
+                if (typeof replica.stylesheets[i] !== 'string' || !BOOT_REPLICA_STYLESHEET.test(replica.stylesheets[i])) {
+                    return undefined;
+                }
+            }
+            return replica;
+        } catch (e) {
+            return undefined;
+        }
+    }
+
+    /** Rebuilds a recorded node; every name and attribute is re-validated. Throws on a bad tree. */
+    function buildReplicaNode(node, inSvg, budget, depth) {
+        if (typeof node === 'string') {
+            return document.createTextNode(node);
+        }
+        if (!Array.isArray(node) || typeof node[0] !== 'string' || depth > BOOT_REPLICA_MAX_DEPTH || --budget.nodes < 0) {
+            throw new Error('invalid replica node');
+        }
+        var tag = node[0];
+        if (!/^[a-z][a-z0-9-]*$/i.test(tag) || BOOT_REPLICA_SKIPPED_TAGS.test(tag)) {
+            return document.createTextNode('');
+        }
+        var svg = inSvg || tag.toLowerCase() === 'svg';
+        var element = svg ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
+        var attributes = node[1];
+        if (attributes && typeof attributes === 'object') {
+            for (var name in attributes) {
+                if (Object.prototype.hasOwnProperty.call(attributes, name)) {
+                    var value = attributes[name];
+                    if (typeof value === 'string' && BOOT_REPLICA_ATTRIBUTES.test(name) && !/^on/i.test(name)
+                        && (name.toLowerCase() !== 'style' || isSafeReplicaStyle(value))) {
+                        element.setAttribute(name, value);
+                    }
+                }
+            }
+        }
+        for (var i = 2; i < node.length; i++) {
+            element.appendChild(buildReplicaNode(node[i], svg, budget, depth + 1));
+        }
+        return element;
+    }
+
+    /** Resolves once every stylesheet has loaded (true) or one failed / the timeout passed (false). */
+    function loadReplicaStylesheets(hrefs, done) {
+        var pending = hrefs.length;
+        var settled = false;
+        var timer = window.setTimeout(function () { finish(false); }, BOOT_REPLICA_CSS_TIMEOUT_MS);
+        function finish(ok) {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            window.clearTimeout(timer);
+            done(ok);
+        }
+        hrefs.forEach(function (href) {
+            var existing = null;
+            var links = document.querySelectorAll('link[rel="stylesheet"]');
+            for (var i = 0; i < links.length; i++) {
+                if (links[i].getAttribute('href') === href) {
+                    existing = links[i];
+                }
+            }
+            if (existing && existing.sheet) {
+                if (--pending === 0) {
+                    finish(true);
+                }
+                return;
+            }
+            var link = existing || document.createElement('link');
+            link.addEventListener('load', function () {
+                if (--pending === 0) {
+                    finish(true);
+                }
+            });
+            link.addEventListener('error', function () { finish(false); });
+            if (!existing) {
+                link.rel = 'stylesheet';
+                link.href = href;
+                link.setAttribute('data-qaap-boot-replica', '');
+                document.head.appendChild(link);
+            }
+        });
+    }
+
+    var BOOT_REPLICA_HANDOVER_CLASS = 'qaap-boot-handover';
+    var BOOT_REPLICA_HANDOVER_TAIL_MS = 600;
+
+    /** Let animations run again shortly after the real Work Hub replaced the replica. */
+    function endReplicaHandover() {
+        window.setTimeout(function () {
+            document.documentElement.classList.remove(BOOT_REPLICA_HANDOVER_CLASS);
+        }, BOOT_REPLICA_HANDOVER_TAIL_MS);
+    }
+
+    /** Keeps `getElementById('theia-app-shell')` on the real shell: the replica moves behind it. */
+    function keepReplicaBehindRealShell(root) {
+        if (typeof MutationObserver !== 'function') {
+            return;
+        }
+        bootReplicaShellObserver = new MutationObserver(function () {
+            if (!root.isConnected) {
+                bootReplicaShellObserver.disconnect();
+                bootReplicaShellObserver = null;
+                endReplicaHandover();
+                return;
+            }
+            var shells = document.querySelectorAll('[id="theia-app-shell"]');
+            for (var i = 0; i < shells.length; i++) {
+                if (!root.contains(shells[i]) && (root.compareDocumentPosition(shells[i]) & Node.DOCUMENT_POSITION_PRECEDING) === 0) {
+                    document.body.appendChild(root);
+                    return;
+                }
+            }
+        });
+        bootReplicaShellObserver.observe(document.body, { childList: true });
+    }
+
+    /**
+     * Paint the exact Work Hub replica (first frame: the Work Hub background; then the replica
+     * once its stylesheets apply). Returns false when there is nothing valid to paint.
+     */
+    function paintWorkHubBootReplica() {
+        try {
+            if (!bootPlaceholderApplies() || !isBootGuardActive() || !document.body
+                || document.getElementById(BOOT_PLACEHOLDER_ID)) {
+                return false;
+            }
+            var replica = readWorkHubBootReplica();
+            if (!replica) {
+                return false;
+            }
+            var shell = document.createElement('div');
+            shell.id = 'theia-app-shell';
+            if (Array.isArray(replica.shellClasses)) {
+                replica.shellClasses.forEach(function (cssClass) {
+                    if (typeof cssClass === 'string' && /^[A-Za-z0-9_-]+$/.test(cssClass)) {
+                        shell.classList.add(cssClass);
+                    }
+                });
+            }
+            shell.appendChild(buildReplicaNode(replica.tree, false, { nodes: BOOT_REPLICA_MAX_NODES }, 0));
+
+            injectBootPlaceholderStyles();
+            var root = document.createElement('div');
+            root.id = BOOT_PLACEHOLDER_ID;
+            root.className = 'qaap-boot-replica qaap-boot-replica-pending';
+            root.setAttribute('aria-busy', 'true');
+            root.setAttribute('aria-hidden', 'true');
+            root.setAttribute('inert', '');
+            if (typeof replica.background === 'string' && isSafeReplicaStyle(replica.background)) {
+                root.style.backgroundColor = replica.background;
+            }
+            root.appendChild(shell);
+
+            // Theme variables and the theme / Work Hub chrome / OS body classes the stylesheets key
+            // on (the app re-asserts all of them at startup).
+            if (typeof replica.rootStyle === 'string') {
+                replica.rootStyle.split(';').forEach(function (declaration) {
+                    var colon = declaration.indexOf(':');
+                    var name = declaration.slice(0, colon).trim();
+                    var value = declaration.slice(colon + 1).trim();
+                    if (colon > 2 && name.indexOf('--') === 0 && isSafeReplicaStyle(value)) {
+                        document.documentElement.style.setProperty(name, value);
+                    }
+                });
+            }
+            if (Array.isArray(replica.bodyClasses)) {
+                replica.bodyClasses.forEach(function (cssClass) {
+                    if (typeof cssClass === 'string' && BOOT_REPLICA_BODY_CLASS.test(cssClass)) {
+                        document.body.classList.add(cssClass);
+                    }
+                });
+            }
+            document.documentElement.classList.add(BOOT_REPLICA_HANDOVER_CLASS);
+            document.body.appendChild(root);
+            keepReplicaBehindRealShell(root);
+            bootShellSnapshotPainted = true;
+            bootMark('shell-painted');
+
+            loadReplicaStylesheets(replica.stylesheets, function (ok) {
+                if (!root.isConnected) {
+                    return;
+                }
+                if (!ok) {
+                    // Stylesheets missing or slow: the drawn skeleton instead of an unstyled replica.
+                    document.documentElement.classList.remove(BOOT_REPLICA_HANDOVER_CLASS);
+                    root.remove();
+                    paintWorkHubShell(readWorkHubShellSnapshot());
+                    updateBootPlaceholderLabel();
+                    return;
+                }
+                revealReplicaWhenFontReady(root);
+            });
+            return true;
+        } catch (e) {
+            document.documentElement.classList.remove(BOOT_REPLICA_HANDOVER_CLASS);
+            var broken = document.getElementById(BOOT_PLACEHOLDER_ID);
+            if (broken && broken.classList.contains('qaap-boot-replica')) {
+                broken.remove();
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Reveal once the font faces the replica uses have loaded (bounded), so text never swaps
+     * faces on screen: every @font-face of the families in the replica's font stacks is loaded
+     * explicitly (hidden text does not request its faces by itself).
+     */
+    function revealReplicaWhenFontReady(root) {
+        var revealed = false;
+        function reveal() {
+            if (!revealed) {
+                revealed = true;
+                root.classList.remove('qaap-boot-replica-pending');
+                bootMark('replica-painted');
+            }
+        }
+        window.setTimeout(reveal, BOOT_REPLICA_FONT_TIMEOUT_MS);
+        try {
+            var families = {};
+            var styled = root.querySelectorAll('*');
+            for (var i = 0; i < styled.length && i < 400; i++) {
+                window.getComputedStyle(styled[i]).fontFamily.split(',').forEach(function (family) {
+                    families[family.trim().replace(/^["']|["']$/g, '').toLowerCase()] = true;
+                });
+            }
+            var loads = [];
+            if (document.fonts && typeof document.fonts.forEach === 'function') {
+                document.fonts.forEach(function (face) {
+                    var family = String(face.family).replace(/^["']|["']$/g, '').toLowerCase();
+                    if (families[family]) {
+                        loads.push(face.load().catch(function () { /* a missing face falls back */ }));
+                    }
+                });
+            }
+            Promise.all(loads).then(reveal, reveal);
+        } catch (e) {
+            reveal();
+        }
     }
 
     /** Paint the Work Hub shell in the first frame when a valid snapshot proves a recent session. */
@@ -1656,7 +1969,9 @@
     } else if (isSignedIn()) {
         // Signed-in phone: paint the cached Work Hub shell in the first frame, start the app
         // download in parallel with the session check, and arm the phase-aware placeholder.
-        paintWorkHubShellSnapshot();
+        if (!paintWorkHubBootReplica()) {
+            paintWorkHubShellSnapshot();
+        }
         armBootPlaceholder();
         speculativePreloadBundle();
         verifyStoredSessionThenLoad();

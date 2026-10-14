@@ -145,7 +145,7 @@ export function currentRepoKeyExtracted(ctx: MobileProjectsServiceContext): stri
         if (fullName) {
             return `github:${fullName}`;
         }
-        const uri = ctx.workspaceService.workspace?.resource;
+        const uri = ctx.currentWorkspaceUri();
         return uri ? `ws:${uri.toString()}` : undefined;
 }
 
@@ -161,7 +161,7 @@ export function getCurrentWorkspaceMatchKeyExtracted(ctx: MobileProjectsServiceC
         if (fullName) {
             return `github:${fullName}`;
         }
-        const uri = ctx.workspaceService.workspace?.resource;
+        const uri = ctx.currentWorkspaceUri();
         return uri ? `ws:${uri.toString()}` : undefined;
 }
 
@@ -209,7 +209,7 @@ export function isProjectContainerWorkspaceExtracted(ctx: MobileProjectsServiceC
 }
 
 export function buildEphemeralCurrentWorkspaceEntryExtracted(ctx: MobileProjectsServiceContext): MobileProjectEntry | undefined {
-        const uri = ctx.workspaceService.workspace?.resource;
+        const uri = ctx.currentWorkspaceUri();
         if (!uri || uri.scheme !== 'file' || !ctx.cwdFromFileUri(uri)) {
             // No usable repository cwd (e.g. the open workspace is the container of every repo):
             // never surface it as a targetable project.
@@ -313,7 +313,7 @@ export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceCont
 }
 
 export function currentGithubRepositoryFullNameExtracted(ctx: MobileProjectsServiceContext): string | undefined {
-        const current = ctx.workspaceService.workspace?.resource;
+        const current = ctx.currentWorkspaceUri();
         if (!current) {
             return undefined;
         }
@@ -325,7 +325,7 @@ export function githubRepositoryToProjectExtracted(ctx: MobileProjectsServiceCon
         const name = ctx.resolveDisplayName(id, repo.name);
         const isCurrent = repo.fullName.toLowerCase() === currentFullName;
         const lastActiveAt = isCurrent ? new Date().toISOString() : repo.updatedAt;
-        const workspaceUri = isCurrent ? ctx.workspaceService.workspace?.resource : undefined;
+        const workspaceUri = isCurrent ? ctx.currentWorkspaceUri() : undefined;
         return {
             id,
             name,
