@@ -7,6 +7,8 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { MaybePromise } from '@theia/core/lib/common/types';
+import { isOSX, isWindows } from '@theia/core/lib/common/os';
+import { CLASSNAME_OS_LINUX, CLASSNAME_OS_MAC, CLASSNAME_OS_WINDOWS } from '@theia/core/lib/browser/common-frontend-contribution';
 import { QaapMobileBootBudget } from './qaap-mobile-boot-budget';
 
 /**
@@ -30,7 +32,20 @@ export class QaapFrontendApplication extends FrontendApplication {
 
     protected override async startContributions(): Promise<void> {
         this.budgetedStartup = this.bootBudget.applies();
+        if (this.budgetedStartup) {
+            this.applyOsClass();
+        }
         return super.startContributions();
+    }
+
+    /**
+     * CommonFrontendContribution.configure sets the OS body class (which selects the UI font
+     * stack) only after a backend round trip; when the budget lets boot move past that hook the
+     * Work Hub would paint in the fallback font and switch fonts once the backend answers. Same
+     * frontend-OS rule as CommonFrontendContribution.setOsClass (adding it again is a no-op).
+     */
+    protected applyOsClass(): void {
+        document.body.classList.add(isOSX ? CLASSNAME_OS_MAC : isWindows ? CLASSNAME_OS_WINDOWS : CLASSNAME_OS_LINUX);
     }
 
     protected override async measureContribution<T>(
