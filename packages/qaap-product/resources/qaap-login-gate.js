@@ -145,43 +145,69 @@
         if (!document.getElementById('qaap-boot-shell-styles')) {
             var shellStyle = document.createElement('style');
             shellStyle.id = 'qaap-boot-shell-styles';
+            // Mirrors the mobile Work Hub home (header, empty state, quick actions, composer) so
+            // the real Work Hub replaces it in place; values that depend on loaded data are
+            // shimmering skeleton bars. Colors follow the Qaap light / dark product theme.
             shellStyle.textContent = [
-                '#qaap-mobile-workhub-connecting{--qaap-boot-bg:#f5f5f5;--qaap-boot-ink:#1a1a1a;--qaap-boot-muted:#6b6b6b;',
-                '--qaap-boot-card:#fff;--qaap-boot-border:#e2e2e2;--qaap-boot-bar:#e6e6e6}',
-                '#qaap-mobile-workhub-connecting.qaap-boot-theme-dark{--qaap-boot-bg:#1e1e1e;--qaap-boot-ink:#f5f5f5;',
-                '--qaap-boot-muted:#a0a0a0;--qaap-boot-card:#252526;--qaap-boot-border:#3c3c3c;--qaap-boot-bar:#333;',
-                'background:#1e1e1e;color:#a0a0a0}',
+                '#qaap-mobile-workhub-connecting{--qaap-boot-bg:#f6f5f1;--qaap-boot-ink:#111;--qaap-boot-muted:#8a8a8a;',
+                '--qaap-boot-card:#fdfbf8;--qaap-boot-border:rgba(17,17,17,.08);--qaap-boot-tray:#dfddda;',
+                '--qaap-boot-sk:rgba(17,17,17,.07);--qaap-boot-sk-hi:rgba(17,17,17,.13)}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-theme-dark{--qaap-boot-bg:#000;--qaap-boot-ink:#fff;',
+                '--qaap-boot-muted:rgba(255,255,255,.7);--qaap-boot-card:#000;--qaap-boot-border:rgba(255,255,255,.08);',
+                '--qaap-boot-tray:#000;--qaap-boot-sk:rgba(255,255,255,.08);--qaap-boot-sk-hi:rgba(255,255,255,.16);',
+                'background:#000;color:rgba(255,255,255,.7)}',
                 '@media (prefers-color-scheme:dark){#qaap-mobile-workhub-connecting:not(.qaap-boot-theme-light){',
-                '--qaap-boot-bg:#1e1e1e;--qaap-boot-ink:#f5f5f5;--qaap-boot-muted:#a0a0a0;--qaap-boot-card:#252526;',
-                '--qaap-boot-border:#3c3c3c;--qaap-boot-bar:#333;background:#1e1e1e;color:#a0a0a0}}',
+                '--qaap-boot-bg:#000;--qaap-boot-ink:#fff;--qaap-boot-muted:rgba(255,255,255,.7);--qaap-boot-card:#000;',
+                '--qaap-boot-border:rgba(255,255,255,.08);--qaap-boot-tray:#000;--qaap-boot-sk:rgba(255,255,255,.08);',
+                '--qaap-boot-sk-hi:rgba(255,255,255,.16);background:#000;color:rgba(255,255,255,.7)}}',
                 '#qaap-mobile-workhub-connecting.qaap-boot-shell{justify-content:flex-start;align-items:stretch;gap:0;',
                 'background:var(--qaap-boot-bg);color:var(--qaap-boot-ink);overflow:hidden;box-sizing:border-box;',
                 'padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px);cursor:progress;',
+                'font-family:"Inter Tight",Inter,system-ui,-apple-system,sans-serif;font-weight:400;',
                 '-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}',
-                '.qaap-boot-shell-header{display:flex;align-items:center;gap:10px;height:52px;padding:0 16px;',
-                'border-bottom:1px solid var(--qaap-boot-border);flex:none}',
-                '.qaap-boot-shell-logo{width:24px;height:24px;flex:none;',
-                'background:var(--theia-workbench-brand-logo-url,none) center/contain no-repeat}',
-                '.qaap-boot-shell-title{font-size:17px;font-weight:700;letter-spacing:-.2px}',
-                '.qaap-boot-shell-section{margin:18px 16px 8px;font-size:12px;font-weight:600;text-transform:uppercase;',
-                'letter-spacing:.4px;color:var(--qaap-boot-muted)}',
-                '.qaap-boot-shell-list{list-style:none;margin:0;padding:0 12px;display:flex;flex-direction:column;gap:8px;',
-                'min-height:0;overflow:hidden}',
-                '.qaap-boot-shell-row{padding:12px 14px;border-radius:12px;background:var(--qaap-boot-card);',
-                'border:1px solid var(--qaap-boot-border);min-width:0}',
-                '.qaap-boot-shell-name,.qaap-boot-shell-subtitle,.qaap-boot-shell-thread{overflow:hidden;',
-                'text-overflow:ellipsis;white-space:nowrap}',
-                '.qaap-boot-shell-name{font-size:15px;font-weight:600;color:var(--qaap-boot-ink)}',
-                '.qaap-boot-shell-subtitle{margin-top:2px;font-size:13px;color:var(--qaap-boot-muted)}',
-                '.qaap-boot-shell-thread{margin-top:6px;padding-left:10px;border-left:2px solid var(--qaap-boot-bar);',
-                'font-size:13px;color:var(--qaap-boot-muted)}',
-                '#qaap-mobile-workhub-connecting.qaap-boot-shell .qaap-mobile-workhub-connecting-label{margin:auto 0 0;',
-                'padding:14px 16px 18px;text-align:center;font-size:13px;color:var(--qaap-boot-muted);min-height:1.4em}',
-                '#qaap-mobile-workhub-connecting.qaap-boot-shell .qaap-mobile-workhub-connecting-label:not(:empty)::before{',
-                'content:"";display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;',
-                'background:currentColor;vertical-align:middle;animation:qaap-boot-pulse 1.2s ease-in-out infinite}',
-                '@keyframes qaap-boot-pulse{0%,100%{opacity:.25}50%{opacity:1}}',
-                '@media (prefers-reduced-motion:reduce){#qaap-mobile-workhub-connecting .qaap-mobile-workhub-connecting-label::before{animation:none}}'
+                '.qaap-boot-shell *{box-sizing:border-box}',
+                '.qaap-boot-shell-icon{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;',
+                'stroke-linecap:round;stroke-linejoin:round}',
+                '.qaap-boot-shell-icon-sm{width:14px;height:14px}',
+                '.qaap-boot-sk{display:block;flex:none;border-radius:6px;background:var(--qaap-boot-sk);',
+                'background-image:linear-gradient(90deg,var(--qaap-boot-sk) 0%,var(--qaap-boot-sk-hi) 50%,var(--qaap-boot-sk) 100%);',
+                'background-size:200% 100%;animation:qaap-boot-shimmer 1.4s ease-in-out infinite}',
+                '@keyframes qaap-boot-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}',
+                '.qaap-boot-shell-header{display:flex;align-items:center;gap:4px;height:56px;padding:0 4px 0 12px;flex:none}',
+                '.qaap-boot-shell-header-btn{display:flex;align-items:center;justify-content:center;width:40px;height:40px;',
+                'flex:none;color:var(--qaap-boot-ink)}',
+                '.qaap-boot-shell-project{display:flex;align-items:center;gap:8px;min-width:0;flex:1;padding-left:6px;',
+                'color:var(--qaap-boot-ink)}',
+                '.qaap-boot-shell-project .qaap-boot-sk{width:96px;height:14px}',
+                '.qaap-boot-shell-header-end{display:flex;align-items:center;gap:4px;flex:none}',
+                '.qaap-boot-shell-header-end .qaap-boot-sk{width:28px;height:28px;border-radius:50%;margin:0 6px}',
+                '.qaap-boot-shell-body{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;',
+                'justify-content:center;gap:14px;padding:0 24px}',
+                '.qaap-boot-shell-logo{width:54px;height:54px;flex:none;opacity:.82;',
+                'background:var(--theia-workbench-brand-logo-url,none) center/contain no-repeat;',
+                'animation:qaap-boot-breathe 2.4s ease-in-out infinite}',
+                '@keyframes qaap-boot-breathe{0%,100%{opacity:.82}50%{opacity:.45}}',
+                '.qaap-boot-shell-composer{flex:none;padding:4px 12px 10px;display:flex;flex-direction:column;gap:6px}',
+                '.qaap-boot-shell-chips{display:flex;gap:6px;overflow:hidden;padding:4px 0 2px}',
+                '.qaap-boot-shell-chip{display:flex;align-items:center;gap:6px;flex:none;height:30px;padding:5px 10px 5px 8px;',
+                'border-radius:99px;border:1px solid var(--qaap-boot-border);background:var(--qaap-boot-card);',
+                'color:var(--qaap-boot-muted);font-size:12px;font-weight:500;white-space:nowrap}',
+                '.qaap-boot-shell-card{border-radius:16px;border:1px solid var(--qaap-boot-border);overflow:hidden;',
+                'background:var(--qaap-boot-tray)}',
+                '.qaap-boot-shell-input{background:var(--qaap-boot-card);border-radius:16px;padding:12px 12px 8px;',
+                'border-bottom:1px solid var(--qaap-boot-border)}',
+                '.qaap-boot-shell-placeholder{font-size:15px;line-height:26px;color:var(--qaap-boot-muted)}',
+                '.qaap-boot-shell-controls{display:flex;align-items:center;justify-content:space-between;margin-top:10px;',
+                'color:var(--qaap-boot-ink)}',
+                '.qaap-boot-shell-controls-left{display:flex;align-items:center;gap:14px}',
+                '.qaap-boot-shell-send{display:flex;align-items:center;justify-content:center;width:32px;height:32px;',
+                'border-radius:50%;background:var(--qaap-boot-sk);color:var(--qaap-boot-muted)}',
+                '.qaap-boot-shell-tray{display:flex;align-items:center;justify-content:space-between;height:40px;padding:0 14px}',
+                '.qaap-boot-shell-tray .qaap-boot-sk{width:58px;height:12px}',
+                '.qaap-boot-shell-tray .qaap-boot-sk+.qaap-boot-sk{width:84px}',
+                '#qaap-mobile-workhub-connecting.qaap-boot-shell .qaap-mobile-workhub-connecting-label{',
+                'text-align:center;font-size:13px;color:var(--qaap-boot-muted);min-height:1.4em}',
+                '@media (prefers-reduced-motion:reduce){.qaap-boot-shell .qaap-boot-sk,.qaap-boot-shell-logo{animation:none}}'
             ].join('');
             (document.head || document.documentElement).appendChild(shellStyle);
         }
@@ -200,27 +226,6 @@
         label.setAttribute('role', 'status');
         label.setAttribute('aria-live', 'polite');
         return label;
-    }
-
-    /**
-     * Mirrors showMobileWorkHubConnectingPlaceholder() in @theia/qaap-shared-core (same ids), so
-     * clearMobileWorkHubBootGuard() removes it. Idempotent: an existing placeholder (or the cached
-     * Work Hub shell, which uses the same id) is kept.
-     */
-    function showConnectingPlaceholder() {
-        if (document.getElementById(BOOT_PLACEHOLDER_ID)) {
-            return;
-        }
-        injectBootPlaceholderStyles();
-        var root = document.createElement('div');
-        root.id = BOOT_PLACEHOLDER_ID;
-        applyBootTheme(root);
-        var logo = document.createElement('div');
-        logo.className = 'qaap-mobile-workhub-connecting-logo';
-        logo.setAttribute('aria-hidden', 'true');
-        root.appendChild(logo);
-        root.appendChild(createBootPlaceholderLabel());
-        (document.body || document.documentElement).appendChild(root);
     }
 
     function removeBootPlaceholder() {
@@ -584,11 +589,11 @@
 
     // ---------------------------------------------------------------------------------------
     // Phase-aware mobile placeholder. Nothing extra for the first BOOT_PLACEHOLDER_DELAY_MS
-    // (the cached Work Hub shell, when there is one, is already on screen); then "Starting your
-    // workspace…" while the control plane reports a cold tenant runtime, else "Loading…".
+    // (the cached Work Hub shell, when there is one, is already on screen); then the skeleton
+    // Work Hub shell, captioned "Starting your workspace…" only while the control plane reports a
+    // cold tenant runtime (otherwise the shimmering skeletons alone say it is loading).
     // ---------------------------------------------------------------------------------------
     var BOOT_PLACEHOLDER_DELAY_MS = 1500;
-    var BOOT_TEXT_LOADING = 'Loading…';
     var BOOT_TEXT_STARTING = 'Starting your workspace…';
     // The status read is an in-memory control-plane lookup (not user activity, never proxied to
     // the tenant). Poll it a bounded number of times while the runtime is cold; the startup
@@ -626,7 +631,8 @@
         if (!bootPlaceholderApplies() || !isBootGuardActive() || document.getElementById('qaap-login-host')) {
             return;
         }
-        showConnectingPlaceholder();
+        // Same skeleton shell as the snapshot path (idempotent when that one is already up).
+        paintWorkHubShell(readWorkHubShellSnapshot());
         updateBootPlaceholderLabel();
         bootMark('placeholder-shown');
     }
@@ -637,7 +643,7 @@
         }
         var label = document.querySelector('#' + BOOT_PLACEHOLDER_ID + ' .' + BOOT_PLACEHOLDER_LABEL_CLASS);
         if (label) {
-            label.textContent = bootRuntimeCold ? BOOT_TEXT_STARTING : BOOT_TEXT_LOADING;
+            label.textContent = bootRuntimeCold ? BOOT_TEXT_STARTING : '';
         }
     }
 
@@ -774,19 +780,72 @@
         } catch (e) { /* ignore */ }
     }
 
-    /**
-     * Paint the read-only Work Hub shell from the snapshot, synchronously (first frame). Every
-     * text goes through textContent. Non-interactive: the overlay swallows taps until the real
-     * Work Hub replaces it.
-     */
+    /** Paint the Work Hub shell in the first frame when a valid snapshot proves a recent session. */
     function paintWorkHubShellSnapshot() {
+        var snapshot = readWorkHubShellSnapshot();
+        if (!snapshot || !paintWorkHubShell(snapshot)) {
+            return false;
+        }
+        bootShellSnapshotPainted = true;
+        bootMark('shell-painted');
+        return true;
+    }
+
+    // Stroke paths (24×24 viewBox) for the few icons the shell draws.
+    var BOOT_SHELL_ICONS = {
+        sidebar: ['M4 5h16v14H4z', 'M9 5v14'],
+        folder: ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'],
+        chevron: ['m6 9 6 6 6-6'],
+        more: ['M12 5h.01', 'M12 12h.01', 'M12 19h.01'],
+        plus: ['M12 5v14', 'M5 12h14'],
+        send: ['m22 2-7 20-4-9-9-4z', 'M22 2 11 13'],
+        bug: ['M8 9h8v7a4 4 0 0 1-8 0z', 'M12 9V6', 'M4 13h4', 'M16 13h4'],
+        review: ['M6 3v12', 'M18 9v12', 'M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6', 'M18 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6'],
+        beaker: ['M9 3h6', 'M10 3v6L5 19a1 1 0 0 0 1 2h12a1 1 0 0 0 1-2l-5-10V3'],
+        search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14', 'm20 20-4-4']
+    };
+    var BOOT_SHELL_QUICK_ACTIONS = [
+        ['bug', 'Fix a bug'], ['review', 'Review PR'], ['beaker', 'Add tests'], ['search', 'Explore code']
+    ];
+
+    function bootShellIcon(name, small) {
+        var ns = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.setAttribute('class', 'qaap-boot-shell-icon' + (small ? ' qaap-boot-shell-icon-sm' : ''));
+        BOOT_SHELL_ICONS[name].forEach(function (d) {
+            var path = document.createElementNS(ns, 'path');
+            path.setAttribute('d', d);
+            svg.appendChild(path);
+        });
+        return svg;
+    }
+
+    function bootShellElement(tag, className, children) {
+        var element = document.createElement(tag);
+        element.className = className;
+        (children || []).forEach(function (child) {
+            element.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+        });
+        return element;
+    }
+
+    function bootShellSkeleton() {
+        return bootShellElement('span', 'qaap-boot-sk');
+    }
+
+    /**
+     * Paint a read-only replica of the mobile Work Hub home: the static chrome (header, quick
+     * actions, composer) as the real Work Hub draws it, and skeleton bars wherever the content
+     * depends on data that is still loading (project, agent mode / model). Text goes through
+     * text nodes only. Non-interactive: the overlay swallows taps until the real Work Hub
+     * replaces it (clearMobileWorkHubBootGuard removes it by id).
+     */
+    function paintWorkHubShell(snapshot) {
         try {
             if (!bootPlaceholderApplies() || !isBootGuardActive() || !document.body
                 || document.getElementById(BOOT_PLACEHOLDER_ID)) {
-                return false;
-            }
-            var snapshot = readWorkHubShellSnapshot();
-            if (!snapshot) {
                 return false;
             }
             injectBootPlaceholderStyles();
@@ -794,54 +853,45 @@
             root.id = BOOT_PLACEHOLDER_ID;
             root.className = 'qaap-boot-shell';
             root.setAttribute('aria-busy', 'true');
-            applyBootTheme(root, snapshot.theme);
+            root.setAttribute('aria-label', appName());
+            applyBootTheme(root, snapshot && snapshot.theme);
 
-            var header = document.createElement('header');
-            header.className = 'qaap-boot-shell-header';
-            var logo = document.createElement('div');
-            logo.className = 'qaap-boot-shell-logo';
+            var header = bootShellElement('header', 'qaap-boot-shell-header', [
+                bootShellElement('span', 'qaap-boot-shell-header-btn', [bootShellIcon('sidebar')]),
+                bootShellElement('span', 'qaap-boot-shell-project', [
+                    bootShellIcon('folder', true), bootShellSkeleton(), bootShellIcon('chevron', true)
+                ]),
+                bootShellElement('span', 'qaap-boot-shell-header-end', [
+                    bootShellSkeleton(),
+                    bootShellElement('span', 'qaap-boot-shell-header-btn', [bootShellIcon('more')])
+                ])
+            ]);
+            var logo = bootShellElement('div', 'qaap-boot-shell-logo');
             logo.setAttribute('aria-hidden', 'true');
-            var title = document.createElement('div');
-            title.className = 'qaap-boot-shell-title';
-            title.textContent = appName();
-            header.appendChild(logo);
-            header.appendChild(title);
-            root.appendChild(header);
+            var body = bootShellElement('main', 'qaap-boot-shell-body', [logo, createBootPlaceholderLabel()]);
 
-            if (snapshot.projects.length) {
-                var section = document.createElement('div');
-                section.className = 'qaap-boot-shell-section';
-                section.textContent = 'Recent';
-                root.appendChild(section);
-                var list = document.createElement('ul');
-                list.className = 'qaap-boot-shell-list';
-                snapshot.projects.forEach(function (project) {
-                    var row = document.createElement('li');
-                    row.className = 'qaap-boot-shell-row';
-                    var name = document.createElement('div');
-                    name.className = 'qaap-boot-shell-name';
-                    name.textContent = project.name;
-                    row.appendChild(name);
-                    if (project.subtitle) {
-                        var subtitle = document.createElement('div');
-                        subtitle.className = 'qaap-boot-shell-subtitle';
-                        subtitle.textContent = project.subtitle;
-                        row.appendChild(subtitle);
-                    }
-                    project.threads.forEach(function (thread) {
-                        var line = document.createElement('div');
-                        line.className = 'qaap-boot-shell-thread';
-                        line.textContent = thread;
-                        row.appendChild(line);
-                    });
-                    list.appendChild(row);
-                });
-                root.appendChild(list);
-            }
-            root.appendChild(createBootPlaceholderLabel());
+            var chips = bootShellElement('div', 'qaap-boot-shell-chips', BOOT_SHELL_QUICK_ACTIONS.map(function (action) {
+                return bootShellElement('span', 'qaap-boot-shell-chip', [bootShellIcon(action[0], true), action[1]]);
+            }));
+            var composer = bootShellElement('footer', 'qaap-boot-shell-composer', [
+                chips,
+                bootShellElement('div', 'qaap-boot-shell-card', [
+                    bootShellElement('div', 'qaap-boot-shell-input', [
+                        bootShellElement('div', 'qaap-boot-shell-placeholder', ['Delegate a task…']),
+                        bootShellElement('div', 'qaap-boot-shell-controls', [
+                            bootShellElement('span', 'qaap-boot-shell-controls-left', [
+                                bootShellIcon('plus'), bootShellIcon('chevron', true)
+                            ]),
+                            bootShellElement('span', 'qaap-boot-shell-send', [bootShellIcon('send', true)])
+                        ])
+                    ]),
+                    bootShellElement('div', 'qaap-boot-shell-tray', [bootShellSkeleton(), bootShellSkeleton()])
+                ])
+            ]);
+            root.appendChild(header);
+            root.appendChild(body);
+            root.appendChild(composer);
             document.body.appendChild(root);
-            bootShellSnapshotPainted = true;
-            bootMark('shell-painted');
             return true;
         } catch (e) {
             return false;
