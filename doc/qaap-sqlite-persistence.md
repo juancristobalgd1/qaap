@@ -15,7 +15,6 @@ The migration covers the persistent Node stores under `packages/qaap-*`:
 | Agent conversations | `~/.qaap/agent-conversations/index.sqlite` | `index.json` |
 | Billing accounts | `~/.qaap/billing-accounts.sqlite` | `billing-accounts.json` |
 | Cloud workspaces | `~/.qaap/cloud-workspaces.sqlite` | `cloud-workspaces.json` |
-| Parallel runs | `~/.qaap/parallel-runs/index.sqlite` | `index.json` |
 | Preview shares | `~/.qaap/preview-shares.sqlite` | `preview-shares.json` |
 | Push subscriptions | `~/.qaap/push-subscriptions.sqlite` | `push-subscriptions.json` |
 | Research goals | `~/.qaap/research-goals.sqlite` | `research-goals.json` |
@@ -25,6 +24,8 @@ The migration covers the persistent Node stores under `packages/qaap-*`:
 | Workflow runs | `~/.qaap/workflow-runs/index.sqlite` | `index.json` |
 | GitHub sessions | `~/.qaap/auth/sessions.sqlite` | `sessions.json` and `.bak` |
 | Project sessions | `~/.qaap/project-sessions.sqlite` | `project-sessions.json` |
+
+The former Parallel runs store (`~/.qaap/parallel-runs/`) was removed with the Run variants feature; existing files there are no longer read.
 
 The exact location of stores that already support a `QAAP_*_STORE_PATH`
 override remains unchanged. `QAAP_SQLITE_STORE_PATH` can point all Qaap SQLite

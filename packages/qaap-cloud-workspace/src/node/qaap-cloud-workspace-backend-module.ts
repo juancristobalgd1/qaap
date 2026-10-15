@@ -52,8 +52,6 @@ import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapHeadlessVisualCaptureService } from './qaap-headless-visual-capture';
-import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
-import { QaapParallelRunStore } from './qaap-parallel-run-store';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
@@ -314,9 +312,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapAgentHookEndpoint);
     bind(QaapAgentPostToolUseHookBridge).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentPostToolUseHookBridge);
-    bind(QaapParallelRunStore).toSelf().inSingletonScope();
-    bind(QaapParallelRunEndpoint).toSelf().inSingletonScope();
-    bind(BackendApplicationContribution).toService(QaapParallelRunEndpoint);
     bind(QaapWorkHubRoutineStore).toSelf().inSingletonScope();
     bind(QaapWorkHubRoutineRunner).toSelf().inSingletonScope();
     bind(QaapWorkHubRoutineScheduler).toSelf().inSingletonScope();

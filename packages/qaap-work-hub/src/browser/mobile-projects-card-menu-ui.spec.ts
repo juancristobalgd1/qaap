@@ -109,10 +109,9 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
                 resolveConversationFlags: () => ({ priority: false, paused: false }),
             },
             conversationFlags: undefined,
-            ensureOverlayUi: () => ({ parallel: { openParallelRunsSheet: () => undefined } }),
+            ensureOverlayUi: () => ({ parallel: { openVariantChooseSheet: () => undefined } }),
             onRetryConversation: async () => { retried = true; },
             onForkConversation: async () => undefined,
-            onRunVariants: async () => undefined,
             onRenameConversation: async () => undefined,
             onSetConversationPriority: async () => undefined,
             onSetConversationPaused: async () => undefined,
@@ -152,10 +151,9 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
                 resolveConversationFlags: () => ({ priority: false, paused: false }),
             },
             conversationFlags: { /* present so flag actions stay enabled */ },
-            ensureOverlayUi: () => ({ parallel: { openParallelRunsSheet: () => undefined } }),
+            ensureOverlayUi: () => ({ parallel: { openVariantChooseSheet: () => undefined } }),
             onRetryConversation: async () => undefined,
             onForkConversation: async () => undefined,
-            onRunVariants: async () => undefined,
             onRenameConversation: async () => undefined,
             onSetConversationPriority: async () => undefined,
             onSetConversationPaused: async () => undefined,
@@ -184,6 +182,9 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
         expect(priority).to.not.equal(undefined);
         expect(priority?.querySelector('.codicon-pin')).to.not.equal(null);
         expect(priority?.querySelector('.codicon-star-empty')).to.equal(null);
+        const removedRunVariants = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .find(item => item.textContent?.includes('Run variants'));
+        expect(removedRunVariants).to.equal(undefined);
     });
 });
 

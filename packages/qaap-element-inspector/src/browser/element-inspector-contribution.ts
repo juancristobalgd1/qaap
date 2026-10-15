@@ -21,8 +21,8 @@ import {
 
 /** Keep in sync with `@theia/qaap-composer` {@link QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND}. */
 const QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND = 'qaap.workHub.submitComposerPrompt';
-/** Keep in sync with `@theia/qaap-composer` {@link QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND}. */
-const QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND = 'qaap.workHub.openParallelRunsSheet';
+/** Keep in sync with `@theia/qaap-composer` {@link QAAP_WORK_HUB_PICK_AGENT_AND_SUBMIT_PROMPT_COMMAND}. */
+const QAAP_WORK_HUB_PICK_AGENT_AND_SUBMIT_PROMPT_COMMAND = 'qaap.workHub.pickAgentAndSubmitComposerPrompt';
 
 export const ELEMENT_INSPECTOR_TOGGLE_COMMAND_ID = 'theia-mini-browser.element-inspector.toggle';
 export const ELEMENT_INSPECTOR_REVEAL_COMMAND_ID = 'theia-mini-browser.element-inspector.reveal';
@@ -140,7 +140,7 @@ export class ElementInspectorContribution extends AbstractViewContribution<Eleme
         if (!picked) {
             return;
         }
-        if (!this.commands.getCommand(QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND)) {
+        if (!this.commands.getCommand(QAAP_WORK_HUB_PICK_AGENT_AND_SUBMIT_PROMPT_COMMAND)) {
             this.messages.warn(nls.localize(
                 'qaap/elementInspector/workHubUnavailable',
                 'Work Hub agent submit is unavailable in this session.',
@@ -149,7 +149,7 @@ export class ElementInspectorContribution extends AbstractViewContribution<Eleme
         }
         try {
             await this.commands.executeCommand(
-                QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND,
+                QAAP_WORK_HUB_PICK_AGENT_AND_SUBMIT_PROMPT_COMMAND,
                 formatElementGenerateVariantPrompt(picked),
             );
         } catch (error) {

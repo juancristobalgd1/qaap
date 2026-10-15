@@ -20,7 +20,6 @@ import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap
 import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
-import type { QaapParallelRunVariantStats } from './qaap-parallel-run';
 import type { QaapAgentGoalLoopPhase, QaapAgentGoalLoopState } from './qaap-agent-goal-loop';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
@@ -263,9 +262,7 @@ export interface QaapAgentConversation {
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
     /** Set on conversations created via {@link fork} — points at the parent's id. */
     readonly forkedFromId?: string;
-    /** Set on variant conversations of a parallel run — groups them in the Chats inbox. */
-    readonly parallelRunId?: string;
-    /** Base repository root a parallel-run variant was derived from (its own cwd is a worktree). */
+    /** Base repository root an isolated worktree conversation was derived from (its own cwd is a worktree). */
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
@@ -354,9 +351,7 @@ export interface QaapAgentConversationSummary {
     /** Last composer approval preset id. */
     readonly approvalPolicyId?: string;
     readonly forkedFromId?: string;
-    /** Set on variant conversations of a parallel run — groups them in the Chats inbox. */
-    readonly parallelRunId?: string;
-    /** Base repository root a parallel-run variant was derived from. */
+    /** Base repository root an isolated worktree conversation was derived from. */
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
@@ -433,8 +428,7 @@ export interface QaapCreateAgentConversationRequest {
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     /** @deprecated Use {@link agentModel}. */
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
-    /** Marks this conversation as a parallel-run variant (grouped under {@link parallelBaseCwd}). */
-    readonly parallelRunId?: string;
+    /** Base repository root when this conversation runs in an isolated worktree. */
     readonly parallelBaseCwd?: string;
     /** Defaults to `'auto'`. The server auto-isolated the thread when it was not `'worktree'` yet the result has a {@link worktreeBranch}. */
     readonly isolation?: QaapAgentConversationIsolation;
@@ -522,9 +516,8 @@ export interface QaapPostAgUiTranscriptEventRequest {
 }
 
 /**
- * What to do with an isolated Parallel worktree (`forkedFromId` + `worktreeBranch`,
- * no `parallelRunId`) when the user chooses Keep / Merge / Discard.
- * Mirrors {@link import('./qaap-parallel-run').QaapParallelChooseAction}.
+ * What to do with an isolated Parallel worktree (`forkedFromId` + `worktreeBranch`)
+ * when the user chooses Keep / Merge / Discard.
  */
 export type QaapWorktreeApplyAction = 'keep-branch' | 'merge' | 'none';
 
@@ -573,7 +566,6 @@ export type QaapAgentConversationEvent =
         readonly delta: QaapAgentMessageWireDelta;
     }
     | { readonly type: 'deleted'; readonly conversationId: string; readonly cwd: string }
-    | { readonly type: 'parallel-run'; readonly runId: string; readonly cwd: string; readonly variants: readonly QaapParallelRunVariantStats[] }
     | { readonly type: 'pending-queued'; readonly conversationId: string; readonly cwd: string; readonly message: QaapPendingUserMessage }
     | { readonly type: 'pending-drained'; readonly conversationId: string; readonly cwd: string; readonly drainedCount: number }
     | { readonly type: 'goal_loop'; readonly conversationId: string; readonly cwd: string; readonly goalLoop?: QaapAgentGoalLoopState };
@@ -653,7 +645,6 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
         ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
         forkedFromId: conv.forkedFromId,
-        parallelRunId: conv.parallelRunId,
         parallelBaseCwd: conv.parallelBaseCwd,
         worktreeBranch: conv.worktreeBranch,
         ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),

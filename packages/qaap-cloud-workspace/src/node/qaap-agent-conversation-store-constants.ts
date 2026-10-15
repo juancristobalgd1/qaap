@@ -47,7 +47,7 @@ export const QAAP_MAX_CONCURRENT_RUNS_CODE = 'max-concurrent-runs';
 
 /**
  * Raised when a conversation already holds {@link QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION}
- * live parallel-run variants. Typed (not a bare Error) so the endpoint can answer 429 + code and
+ * live parallel peer runs. Typed (not a bare Error) so the endpoint can answer 429 + code and
  * the composer can queue the message instead of surfacing it as a failed send.
  */
 export class QaapMaxConcurrentRunsError extends Error {

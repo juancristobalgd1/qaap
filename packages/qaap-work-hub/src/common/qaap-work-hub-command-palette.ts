@@ -44,7 +44,6 @@ export const WORK_HUB_COMMAND_PALETTE_SHARED_IDS: ReadonlySet<string> = new Set(
 export const WORK_HUB_COMMAND_PALETTE_EXCLUDED_QAAP_IDS: ReadonlySet<string> = new Set([
     'qaap.workHub.submitComposerPrompt',
     'qaap.workHub.pickAgentAndSubmitComposerPrompt',
-    'qaap.workHub.openParallelRunsSheet',
     'qaap.workHub.attachComposerContext',
     'qaap.mobile.openAgentOnTask',
     'qaap.mobile.ideHeaderView.options',

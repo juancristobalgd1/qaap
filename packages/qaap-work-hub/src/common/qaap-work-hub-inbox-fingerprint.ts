@@ -30,7 +30,6 @@ export interface WorkHubInboxProjectGroupFingerprintInput {
     readonly projectId: string;
     readonly itemCount: number;
     readonly rows: ReadonlyArray<{ readonly rowKey: string }>;
-    readonly variantRunIds: ReadonlyArray<string>;
 }
 
 export interface WorkHubInboxStructureFingerprintInput {
@@ -110,10 +109,6 @@ export function buildWorkHubInboxStructureFingerprint(input: WorkHubInboxStructu
         parts.push(`p:${group.projectId}:${group.itemCount}`);
         for (const row of group.rows) {
             parts.push(`r:${row.rowKey}`);
-        }
-        const variantRuns = [...group.variantRunIds].sort();
-        for (const runId of variantRuns) {
-            parts.push(`v:${runId}`);
         }
     }
     return parts.join('|');

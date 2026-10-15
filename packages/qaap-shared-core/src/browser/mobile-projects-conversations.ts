@@ -65,11 +65,6 @@ interface ConversationDeletedEvent {
     readonly conversationId: string;
     readonly cwd: string;
 }
-interface ConversationParallelRunEvent {
-    readonly type: 'parallel-run';
-    readonly runId: string;
-    readonly variants: import('../common/qaap-parallel-run-client').QaapParallelRunVariantStatsDTO[];
-}
 interface ConversationPendingQueuedEvent {
     readonly type: 'pending-queued';
     readonly conversationId: string;
@@ -117,7 +112,6 @@ export type ConversationServerEvent =
     | ConversationMessageEvent
     | ConversationMessageDeltaEvent
     | ConversationDeletedEvent
-    | ConversationParallelRunEvent
     | ConversationPendingQueuedEvent
     | ConversationPendingDrainedEvent
     | ConversationGoalLoopEvent
@@ -200,11 +194,6 @@ export class MobileProjectsConversations {
     public readonly onDidReceiveMessageEmitter = new Emitter<ConversationLiveMessageEvent>();
     /** Fires on each live SSE message chunk — includes structured segments for QAIQ/OpenCode. */
     readonly onDidReceiveMessage: Event<ConversationLiveMessageEvent> = this.onDidReceiveMessageEmitter.event;
-
-    /** @internal Used by the extracted mobile-projects-conversations-* modules. */
-    public readonly onDidReceiveParallelRunEmitter = new Emitter<ConversationParallelRunEvent>();
-    /** Fires when parallel-run variant diff stats change on the VPS. */
-    readonly onDidReceiveParallelRun: Event<ConversationParallelRunEvent> = this.onDidReceiveParallelRunEmitter.event;
 
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */
     public readonly onDidReceivePendingQueueEmitter = new Emitter<ConversationPendingQueuedEvent | ConversationPendingDrainedEvent>();

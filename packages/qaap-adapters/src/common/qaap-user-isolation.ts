@@ -36,7 +36,7 @@ export function resolveQaapWorktreesRoot(): string {
 }
 
 /**
- * Root under which parallel-run variant worktrees live: `{tmpdir}/qaap-parallel/{segment}/{slug}/{variant}`.
+ * Root under which legacy (removed) Run-variants worktrees live, kept so they stay owned: `{tmpdir}/qaap-parallel/{segment}/{slug}/{variant}`.
  * The `{segment}` MUST be {@link safeUserIdSegment} of the login (like the repos + worktrees roots) so
  * the tenant-isolation model ({@link resolveTenantIsolationRoot}) and the uid registry recognize it.
  */

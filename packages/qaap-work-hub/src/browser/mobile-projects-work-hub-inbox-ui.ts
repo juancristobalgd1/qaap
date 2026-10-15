@@ -59,13 +59,12 @@ export interface MobileProjectsWorkHubInboxHost {
         parallel: {
             createVariantRunSection(
                 project: MobileProjectEntry,
-                runId: string,
+                parentId: string,
                 summaries: QaapAgentConversationSummaryDTO[],
                 activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
                 parentIds: ReadonlySet<string>,
                 options?: {
                     compact?: boolean;
-                    mode?: 'parallel-run' | 'isolated-forks';
                     onActivate?: (summary: QaapAgentConversationSummaryDTO) => void;
                 },
             ): HTMLElement;
@@ -306,15 +305,7 @@ export class MobileProjectsWorkHubInboxUi {
             }
         }
 
-        const variantRuns = new Map<string, QaapAgentConversationSummaryDTO[]>();
         for (const item of items) {
-            if (item.kind === 'conversation' && item.summary.parallelRunId) {
-                const runId = item.summary.parallelRunId;
-                const bucket = variantRuns.get(runId) ?? [];
-                bucket.push(item.summary);
-                variantRuns.set(runId, bucket);
-                continue;
-            }
             if (item.kind === 'conversation' && nestedForkIds.has(item.summary.id)) {
                 continue;
             }
@@ -329,7 +320,6 @@ export class MobileProjectsWorkHubInboxUi {
                         [...forks],
                         activeInfo,
                         parentIds,
-                        { mode: 'isolated-forks' },
                     ));
                 }
             } else {
@@ -338,9 +328,6 @@ export class MobileProjectsWorkHubInboxUi {
         }
 
         section.append(head, list);
-        for (const [runId, summaries] of variantRuns) {
-            section.append(this.host.ensureOverlayUi().parallel.createVariantRunSection(project, runId, summaries, activeInfo, parentIds));
-        }
         return section;
     }
 

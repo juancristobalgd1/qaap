@@ -357,10 +357,7 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
             partitioned.roots,
             bypassConversationLimit,
         );
-        for (const summary of [
-            ...expandConversationSlots(visible, partitioned.forksByParentId),
-            ...[...partitioned.variantRuns.values()].flat(),
-        ]) {
+        for (const summary of expandConversationSlots(visible, partitioned.forksByParentId)) {
             entries.push({ project, summary, pinned: true, parentIds, onActivate });
         }
     }
@@ -383,10 +380,7 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
             partitioned.roots,
             bypassConversationLimit,
         );
-        for (const summary of [
-            ...expandConversationSlots(visible, partitioned.forksByParentId),
-            ...[...partitioned.variantRuns.values()].flat(),
-        ]) {
+        for (const summary of expandConversationSlots(visible, partitioned.forksByParentId)) {
             entries.push({ project, summary, pinned: false, parentIds, onActivate });
         }
     }

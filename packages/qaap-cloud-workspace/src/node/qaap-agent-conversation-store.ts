@@ -42,7 +42,6 @@ import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
 import { deriveConversationTitle } from '../common/qaap-conversation-title';
-import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapBillingStore } from './qaap-billing-store';
@@ -836,11 +835,6 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public flushPersist(): void {
         flushPersistExtracted(this);
-    }
-
-    /** Push live parallel-run diff stats to the run owner's connected conversation SSE clients. */
-    emitParallelRunStats(runId: string, cwd: string, variants: readonly QaapParallelRunVariantStats[]): void {
-        this.fire({ type: 'parallel-run', runId, cwd, variants });
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

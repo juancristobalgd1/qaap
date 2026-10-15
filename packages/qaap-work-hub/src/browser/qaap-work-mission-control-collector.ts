@@ -31,9 +31,6 @@ export function collectMissionControlItems(input: CollectMissionControlItemsInpu
             if (seenConversationIds.has(summary.id)) {
                 continue;
             }
-            if (summary.parallelRunId) {
-                continue;
-            }
             if (query && input.matchesQuery && !input.matchesQuery(summary, query)) {
                 continue;
             }

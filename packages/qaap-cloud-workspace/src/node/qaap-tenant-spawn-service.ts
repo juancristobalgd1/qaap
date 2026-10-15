@@ -1075,7 +1075,7 @@ export class QaapTenantSpawnService {
         this.tenantParentsHardened = true;
         const usersRoot = path.join(resolveQaapReposRoot(), QAAP_USER_REPOS_SEGMENT);
         // Harden the parent of EVERY recognized tenant-tree root (repos, conversation worktrees, and
-        // parallel-run worktrees) to 0711 so a tenant can traverse to its own 0700 segment dir but
+        // the legacy parallel root) to 0711 so a tenant can traverse to its own 0700 segment dir but
         // cannot list sibling tenants. Must match the roots resolveTenantIsolationRoot recognizes.
         for (const dir of [usersRoot, resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]) {
             try {

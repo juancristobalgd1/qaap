@@ -27,14 +27,12 @@ export interface QaapConversationEventLogOptions {
     readonly epoch?: string;
 }
 
-/** Thread id an event is scoped to (`undefined` for cross-thread events such as `parallel-run`). */
+/** Thread id an event is scoped to. */
 export function qaapConversationEventThreadId(event: QaapAgentConversationEvent): string | undefined {
     switch (event.type) {
         case 'created':
         case 'updated':
             return event.conversation.id;
-        case 'parallel-run':
-            return undefined;
         default:
             return event.conversationId;
     }

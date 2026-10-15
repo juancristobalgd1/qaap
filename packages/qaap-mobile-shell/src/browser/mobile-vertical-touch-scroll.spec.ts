@@ -51,7 +51,6 @@ const CRITICAL_SHEETS = [
     '.theia-mobile-sticky-composer-sheet-list',
     '.theia-qaap-approval-policy-sheet-list',
     '.theia-mobile-sticky-composer-tools-host',
-    '.theia-mobile-parallel-model-menu-list',
 ] as const;
 
 /** Checklist entries added to close a TS/CSS registration gap. */

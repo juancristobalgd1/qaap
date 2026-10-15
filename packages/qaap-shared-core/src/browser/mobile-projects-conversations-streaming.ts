@@ -84,9 +84,6 @@ export function dispatchServerPayloadExtracted(ctx: MobileProjectsConversationsC
                 });
                 return;
             }
-            case 'parallel-run':
-                ctx.onDidReceiveParallelRunEmitter.fire(payload);
-                return;
             case 'pending-queued':
             case 'pending-drained':
                 // Same-session queue mutations: refresh list badges + open transcript footers.

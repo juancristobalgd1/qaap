@@ -90,24 +90,6 @@ export function pickAgentAndSubmitExternalPromptExtracted(ctx: MobileProjectsPan
     return true;
 }
 
-export function openExternalParallelRunsSheetExtracted(ctx: MobileProjectsPanelContext, prompt: string): boolean {
-    const text = prompt.trim();
-    if (!text) {
-        return false;
-    }
-    const project = ctx.resolveExternalComposerProject();
-    if (!project) {
-        return false;
-    }
-    const cwd = ctx.projectsService.getProjectCwd(project)
-        ?? ctx.preparedCwdByProjectId.get(project.id);
-    if (!cwd) {
-        return false;
-    }
-    ctx.ensureOverlayUi().parallel.openParallelRunsSheetForPrompt(project, cwd, text);
-    return true;
-}
-
 export function resolveExternalComposerProjectExtracted(ctx: MobileProjectsPanelContext): MobileProjectEntry | undefined {
     return ctx.transcriptController.state.transcriptOpenProject
         ?? ctx.transcriptController.state.transcriptComposerProject

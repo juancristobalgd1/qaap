@@ -28,13 +28,6 @@ describe('qaap-thread-preview-root', () => {
         expect(resolveThreadPreviewRoot(summary, REPO)).to.equal(WORKTREE);
     });
 
-    it('keeps Run variants on the base workspace', () => {
-        const summary = { cwd: WORKTREE, parallelBaseCwd: REPO, worktreeBranch: 'qaap/run-1', parallelRunId: 'run-1' };
-        expect(resolveThreadPreviewWorktree(summary)).to.equal(undefined);
-        expect(resolveThreadPreviewRoot(summary, REPO)).to.equal(REPO);
-        expect(resolveThreadPreviewRoot(summary)).to.equal(REPO);
-    });
-
     it('does not treat a thread without a worktree branch or a distinct base as isolated', () => {
         expect(resolveThreadPreviewRoot({ cwd: WORKTREE, parallelBaseCwd: REPO }, REPO)).to.equal(REPO);
         expect(resolveThreadPreviewRoot({ cwd: WORKTREE, worktreeBranch: 'qaap/x' }, REPO)).to.equal(REPO);

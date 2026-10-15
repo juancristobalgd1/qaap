@@ -48,7 +48,6 @@ export class QaapTenantActivityContribution implements BackendApplicationContrib
         return path.startsWith('/qaap/api/cloud/')
             || path.startsWith('/qaap/api/agent-')
             || path.startsWith('/qaap/api/jobs')
-            || path.startsWith('/qaap/api/parallel-runs')
             || path.startsWith('/qaap/api/workflows')
             || path.startsWith('/qaap/api/work-hub-routines')
             || path.startsWith('/services/qaap-research');

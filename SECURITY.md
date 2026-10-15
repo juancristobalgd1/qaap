@@ -138,13 +138,10 @@ Current state of these paths:
   Runs under the tenant uid via `QaapTenantSpawnService.wrapGitForTenant`
   (parent provisioned with `provisionTenantDir` first), so filters/hooks run as
   the tenant and the worktree is tenant-owned.
-- **`qaap-parallel-run-store.ts` (parallel-run) — CLOSED.** Its worktrees were
-  outside the isolation model (`{tmpdir}/qaap-parallel/{lower-cased login}`);
-  unified onto `resolveQaapParallelRoot()` + `safeUserIdSegment` and taught to
-  `resolveTenantIsolationRoot`, so parallel agents spawn under the flip and the
-  mutating git (`worktree add` / `merge` / `add` / `commit`) runs under the tenant
-  uid (`mutatingGit`). The base repo is provisioned before finalize so the shared
-  `.git` is tenant-owned when the commit/merge write to it.
+- **`qaap-parallel-run-store.ts` (parallel-run) — REMOVED.** The Run variants feature
+  and its store/endpoint were deleted. The legacy `{tmpdir}/qaap-parallel/{segment}` root
+  (`resolveQaapParallelRoot()`) is still recognized by `resolveTenantIsolationRoot`, the
+  auth guard and the worker mounts so existing variant conversations stay owned and isolated.
 - **`qaap-github-oauth-endpoint.ts` (clone/fetch) — CLOSED.** In hosted mode both
   operations run through the tenant-process DI seam and Docker worker; host paths are
   translated to `/workspace` before Git receives them. Hooks/config execution is
@@ -156,7 +153,7 @@ Current state of these paths:
   controls.
 - **Research and worktree Git — CLOSED.** Research bookkeeping is prepared against the
   tenant worker before its loop starts; `wrapGitForTenant` translates explicit `-C` paths
-  into the tenant mount. New Worktree and parallel-run mutations use that same seam.
+  into the tenant mount. New Worktree mutations use that same seam.
 
 > [!IMPORTANT]
 > **The uid-per-user drop is not verified on a real box by these unit tests.** It
@@ -164,7 +161,7 @@ Current state of these paths:
 > argv-shaping and fail-closed logic — NOT the actual privilege drop, ownership, or
 > `setpriv`/`getpwuid` behavior under Linux. Before opening to real multiple tenants
 > you MUST run `scripts/qaap-verify-multitenant.sh <login-A> <login-B>` on the VPS
-> (after the two test tenants exercise agent + New Worktree + a parallel run); a
+> (after the two test tenants exercise agent + New Worktree); a
 > green PASSED is the gate.
 >
 > Before the first public boot, also run `scripts/qaap-verify-launch-readiness.sh`
@@ -173,7 +170,7 @@ Current state of these paths:
 > deploy now runs `scripts/qaap-vps-launch-gate.sh` (nightly backup cron + uid-per-user
 > verification). A failed check or fewer than two provisioned test tenants now
 > **blocks the beta release**. Provision two disposable invited GitHub accounts
-> and exercise agent + New Worktree + parallel runs before declaring the release ready.
+> and exercise agent + New Worktree before declaring the release ready.
 > Tenant evidence depends on the mode: with backend-per-tenant (`QAAP_BACKEND_PER_TENANT=1`) the
 > gate counts distinct tenants with a Qaap-managed `qaap-backend-*` container in the tenant Docker
 > daemon and verifies two of them with `scripts/qaap-tenant-backend-isolation-check.js` (labels,

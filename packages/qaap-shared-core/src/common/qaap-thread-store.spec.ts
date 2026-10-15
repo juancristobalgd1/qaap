@@ -207,7 +207,7 @@ describe('qaap-thread-store', () => {
         expect(store.listStreamingSummaries()).to.have.length(0);
     });
 
-    it('getVariantsForBaseCwd groups parallel-run threads under the base repo', () => {
+    it('getVariantsForBaseCwd groups isolated worktree threads under the base repo', () => {
         const store = new QaapThreadStore();
         store.applySummarySnapshot([
             {

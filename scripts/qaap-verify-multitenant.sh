@@ -3,9 +3,10 @@
 # tenants. Run on the VPS HOST from the repo root, AFTER two DISPOSABLE tenants have EACH:
 #   - signed in and opened one of THEIR OWN repos,
 #   - run at least one @qaiq task (provisions the repos tree + uid),
-#   - started a "New Worktree" task AND a parallel run (provisions the worktree + parallel trees).
-# The last step is REQUIRED: the gate hard-FAILs if those roots are absent, so it never reports PASSED
-# while worktree/parallel isolation is merely untested.
+#   - started a "New Worktree" task (provisions the worktree tree).
+# The last step is REQUIRED: the gate hard-FAILs if the worktree root is absent, so it never reports
+# PASSED while worktree isolation is merely untested. The parallel root is legacy (the Run variants
+# feature that created it was removed): it is still checked when present, never required.
 #
 #   ./scripts/qaap-verify-multitenant.sh <github-login-A> <github-login-B>
 #
@@ -101,8 +102,8 @@ check_dir() { # $1=path $2=want_owner $3=want_mode $4=label
 # A tenant's ISOLATED tree roots: repos (always) + conversation-worktree + parallel-run (each only if
 # that tenant used the feature). resolveTenantIsolationRoot treats ALL of them as tenant trees, so each
 # must be 0700/owned exactly like the repos tree — a non-isolated worktree/parallel root is a real leak
-# the parent-0711 check alone would miss. (Have the test tenants exercise New Worktree + a parallel run
-# so these roots exist and get checked.)
+# the parent-0711 check alone would miss. (Have the test tenants exercise New Worktree so that root
+# exists and gets checked; the legacy parallel root only exists on hosts that ran Run variants.)
 tenant_roots() { # $1=segment -> prints each existing root, one per line
     printf '%s\n' "$REPOS_ROOT/users/$1"
     dexec "test -d '$WORKTREES_ROOT/$1'" && printf '%s\n' "$WORKTREES_ROOT/$1"
@@ -111,20 +112,25 @@ tenant_roots() { # $1=segment -> prints each existing root, one per line
 }
 if [[ -n "$UID_A" ]]; then while IFS= read -r r; do check_dir "$r" "$UID_A" 700 "A tree $r"; done < <(tenant_roots "$SEG_A"); fi
 if [[ -n "$UID_B" ]]; then while IFS= read -r r; do check_dir "$r" "$UID_B" 700 "B tree $r"; done < <(tenant_roots "$SEG_B"); fi
-# Enforce COVERAGE: the gate must not PASS while the worktree/parallel isolation is merely "not tested".
-# Require each tenant's worktree + parallel roots to EXIST — i.e. the test tenants actually exercised New
-# Worktree AND a parallel run — so sections 2-3 above verified them. A missing root is a hard FAIL, not a
-# silent skip, so an incomplete test run can never report PASSED.
+# Enforce COVERAGE: the gate must not PASS while the worktree isolation is merely "not tested".
+# Require each tenant's worktree root to EXIST — i.e. the test tenants actually exercised New Worktree —
+# so sections 2-3 above verified it. A missing worktree root is a hard FAIL, not a silent skip, so an
+# incomplete test run can never report PASSED. The legacy parallel root (removed Run variants feature)
+# can no longer be created, so it is only reported, never required; when present it was checked above.
 require_root() { # $1=root_base $2=seg $3=label
     dexec "test -d '$1/$2'" && ok "$3 exists (its isolation was checked above)" \
         || bad "$3 MISSING — that tenant did not exercise it; run it and re-verify (isolation UNVERIFIED)"
 }
-if [[ -n "$UID_A" ]]; then require_root "$WORKTREES_ROOT" "$SEG_A" "A worktree root"; require_root "$PARALLEL_ROOT" "$SEG_A" "A parallel root"; fi
-if [[ -n "$UID_B" ]]; then require_root "$WORKTREES_ROOT" "$SEG_B" "B worktree root"; require_root "$PARALLEL_ROOT" "$SEG_B" "B parallel root"; fi
+optional_root() { # $1=root_base $2=seg $3=label
+    if dexec "test -d '$1/$2'"; then ok "$3 exists (legacy; its isolation was checked above)"
+    else echo "  SKIP $3 absent (legacy, no longer created)"; fi
+}
+if [[ -n "$UID_A" ]]; then require_root "$WORKTREES_ROOT" "$SEG_A" "A worktree root"; optional_root "$PARALLEL_ROOT" "$SEG_A" "A parallel root"; fi
+if [[ -n "$UID_B" ]]; then require_root "$WORKTREES_ROOT" "$SEG_B" "B worktree root"; optional_root "$PARALLEL_ROOT" "$SEG_B" "B parallel root"; fi
 # Every recognized tenant-tree PARENT must be root-owned 0711 (traversable, not listable).
 check_dir "$REPOS_ROOT/users" 0 711 "repos parent"
 dexec "test -d '$WORKTREES_ROOT'" && check_dir "$WORKTREES_ROOT" 0 711 "conversation-worktrees parent"
-dexec "test -d '$PARALLEL_ROOT'"  && check_dir "$PARALLEL_ROOT"  0 711 "parallel-run parent"
+dexec "test -d '$PARALLEL_ROOT'"  && check_dir "$PARALLEL_ROOT"  0 711 "legacy parallel parent"
 # Per-tenant private HOME must be 0700 owned by the uid (else the dropped agent cannot write its config).
 # check_dir already reports a hard FAIL when the dir is missing — do NOT guard with `&& test -d`, which
 # would silently skip (a false OK) if the HOME was never provisioned.

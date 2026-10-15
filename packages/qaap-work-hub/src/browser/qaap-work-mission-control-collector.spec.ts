@@ -62,7 +62,7 @@ describe('collectMissionControlItems', () => {
         expect(items.find(item => item.conversationId === 'c-done')?.lane).to.equal('done');
     });
 
-    it('skips parallel-run variants and applies search', () => {
+    it('applies search, including to worktree threads', () => {
         const items = collectMissionControlItems({
             projects: [project],
             conversationsForProject: () => [
@@ -75,7 +75,7 @@ describe('collectMissionControlItems', () => {
                     createdAt: 1,
                     updatedAt: 50,
                     messageCount: 1,
-                    parallelRunId: 'run-1',
+                    worktreeBranch: 'qaap/worktree/abcd1234',
                 },
                 {
                     id: 'c-match',

@@ -418,7 +418,6 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
             source.addEventListener('message', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('message_delta', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('deleted', ev => ctx.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('parallel-run', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('pending-queued', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('pending-drained', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('goal_loop', ev => ctx.dispatchSseEvent(ev as MessageEvent));

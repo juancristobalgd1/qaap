@@ -42,7 +42,6 @@ export type MobileProjectsConversationsContextMember =
     | 'onDidChangeDetailEmitter'
     | 'onDidChangeEmitter'
     | 'onDidReceiveMessageEmitter'
-    | 'onDidReceiveParallelRunEmitter'
     | 'onDidReceivePendingQueueEmitter'
     | 'onDidReceiveTransportActivityEmitter'
     | 'onDidReconnectTransportEmitter'

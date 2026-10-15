@@ -81,7 +81,7 @@ Leyenda: ✅ aislado · 🟡 parcial · ❌ no aislado (fuga posible en backend 
 | Configuración de usuario (preferences) | ✅ para `userstorage://` | `getConfigDirUri()`, `getHomeDirUri()` y los archivos asociados se resuelven bajo `~/.qaap/users/{login}`; servicios singleton no basados en user storage siguen siendo responsabilidad del backend compartido. |
 | Variables de entorno | ✅ en la frontera navegador/worker | `EnvVariablesServer` filtra secretos/control-plane al navegador; el `process.env` interno del backend sigue siendo compartido y nunca debe tratarse como API de tenant. |
 | Cache / índices / embeddings | 🟡 | No se detectó store de embeddings dedicado; revisar si se añade en el futuro. |
-| Recursos temporales | ✅ para worktrees | Worktrees de parallel-run y conversaciones están segmentados por tenant; el worker monta únicamente las tres raíces temporales del tenant y traduce sus rutas; los snapshots internos deben seguir siendo inaccesibles desde filesystem/RPC. |
+| Recursos temporales | ✅ para worktrees | Worktrees de conversaciones (y la raíz heredada de parallel-run, función Run variants ya eliminada) están segmentados por tenant; el worker monta únicamente las tres raíces temporales del tenant y traduce sus rutas; los snapshots internos deben seguir siendo inaccesibles desde filesystem/RPC. |
 | Logs | 🟡 operador-only | Los logs de tareas y snapshots sensibles autenticados se escriben bajo `~/.qaap/agent-tasks/owners/{login}/`; los logs del proceso y varios índices del control-plane siguen compartidos físicamente. No existe endpoint de lectura para el navegador. Deben protegerse como datos de operador y no incluir secretos ni payloads completos. |
 
 > Nota de precisión (v2): la v1 marcaba conversaciones/tasks/archivos como 🟡/❌ por error. El control de acceso por ruta-bajo-usuario en los endpoints SÍ los aísla. El hallazgo C-4 queda **descartado** como fuga.
@@ -132,7 +132,7 @@ Los directorios globales de skills del runtime no deben ser modificables por un 
 
 ### C-7 · Directorios temporales compartidos · ✅ CORREGIDO
 
-`qaap-parallel-run-store.ts` y `qaap-conversation-worktree.ts` usaban `os.tmpdir()` sin segmento por usuario. **Corregido**: ambos ahora segmentan por `ownerLogin` (`os.tmpdir()/qaap-parallel/{tenant}/{slug}` y `os.tmpdir()/qaap-worktrees/{tenant}/{slug}`). Los worktrees de cada usuario viven bajo su propio subdirectorio temporal.
+`qaap-parallel-run-store.ts` (ya eliminado junto con Run variants) y `qaap-conversation-worktree.ts` usaban `os.tmpdir()` sin segmento por usuario. **Corregido**: ambos ahora segmentan por `ownerLogin` (`os.tmpdir()/qaap-parallel/{tenant}/{slug}` y `os.tmpdir()/qaap-worktrees/{tenant}/{slug}`). Los worktrees de cada usuario viven bajo su propio subdirectorio temporal.
 
 ---
 
@@ -140,7 +140,7 @@ Los directorios globales de skills del runtime no deben ser modificables por un 
 
 - `requireAuth` en endpoints de `qaap-cloud-workspace` (12 handlers).
 - `ownerLogin` persistido y filtrado en `QaapCloudWorkspaceStore` (workspaces).
-- `ownerLogin` persistido en tasks, conversaciones, parallel-runs y preview-share.
+- `ownerLogin` persistido en tasks, conversaciones y preview-share (el store parallel-runs fue eliminado).
 - Webhook token de GitHub restringido al owner del repo.
 - Validación de path traversal en `NodeFileUploadService`.
 - Invalidación de cache de auth en `CopilotAuthServiceImpl.setClient`.

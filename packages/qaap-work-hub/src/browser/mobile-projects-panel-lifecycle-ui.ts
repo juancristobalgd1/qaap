@@ -86,7 +86,7 @@ export interface MobileProjectsPanelLifecycleHost {
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     disposeTranscriptTerminalSlides(): void;
     detachDiffReviewWidget(): void;
-    ensureOverlayUi(): { team: { renderTeamSection(host: HTMLElement, conv: QaapAgentConversationDTO): void }; parallel: { applyParallelRunStats(runId: string, variants: unknown): void } };
+    ensureOverlayUi(): { team: { renderTeamSection(host: HTMLElement, conv: QaapAgentConversationDTO): void } };
     hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     refreshDiffHubView(): Promise<void>;
     refreshTasksHubApprovals(forceRender?: boolean): void;
@@ -413,9 +413,6 @@ export class MobileProjectsPanelLifecycleUi {
                 }),
                 this.host.conversations.onDidReconnectTransport(() => {
                     this.host.transcriptLiveUi.handleTranscriptTransportReconnected();
-                }),
-                this.host.conversations.onDidReceiveParallelRun(payload => {
-                    this.host.ensureOverlayUi().parallel.applyParallelRunStats(payload.runId, payload.variants);
                 }),
                 this.host.conversations.onDidReceivePendingQueue(payload => {
                     if (this.host.transcriptOpenSummaryId === payload.conversationId) {

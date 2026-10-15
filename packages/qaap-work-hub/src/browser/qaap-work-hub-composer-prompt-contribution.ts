@@ -7,7 +7,6 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { CommandContribution, CommandRegistry, nls } from '@theia/core';
 import {
     QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
-    QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND,
     QAAP_WORK_HUB_PICK_AGENT_AND_SUBMIT_PROMPT_COMMAND,
     QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND,
     type QaapAttachComposerContextArgs,
@@ -42,13 +41,6 @@ export class QaapWorkHubComposerPromptContribution implements CommandContributio
         }, {
             execute: (prompt: string, options?: QaapWorkHubPickAgentAndSubmitPromptOptions) =>
                 this.composerPrompts.pickAgentAndSubmitPrompt(prompt, options),
-        });
-        registry.registerCommand({
-            id: QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND,
-            label: nls.localize('qaap/workHub/openParallelRunsSheet', 'Open Parallel runs sheet'),
-            category: 'Qaap',
-        }, {
-            execute: (prompt: string) => this.composerPrompts.openParallelRunsSheet(prompt),
         });
         registry.registerCommand({
             id: QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,

@@ -8,18 +8,16 @@ import { isQaapWorktreeConversation } from './qaap-worktree-label';
 
 /** Conversation fields that decide which working tree a thread's Preview runs from. */
 export type QaapThreadPreviewRootFields = Pick<QaapAgentConversationSummaryDTO,
-    'cwd' | 'parallelBaseCwd' | 'worktreeBranch' | 'parallelRunId'>;
+    'cwd' | 'parallelBaseCwd' | 'worktreeBranch'>;
 
 /**
  * The git worktree a thread previews from, or `undefined` when it previews the project's own tree.
  *
  * Auto-isolated threads and isolated forks edit their own worktree, so their Preview must serve
- * that code, not the main tree a sibling thread is changing. Run variants keep previewing the base
- * workspace: they are compared and one is applied back, and N variants must not each install and
- * boot a dev server.
+ * that code, not the main tree a sibling thread is changing.
  */
 export function resolveThreadPreviewWorktree(summary: QaapThreadPreviewRootFields | undefined): string | undefined {
-    return summary?.worktreeBranch && !summary.parallelRunId && isQaapWorktreeConversation(summary)
+    return summary?.worktreeBranch && isQaapWorktreeConversation(summary)
         ? summary.cwd
         : undefined;
 }

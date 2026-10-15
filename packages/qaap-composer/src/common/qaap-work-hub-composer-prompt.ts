@@ -18,9 +18,6 @@ export const QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND = 'qaap.workHub.submit
  */
 export const QAAP_WORK_HUB_PICK_AGENT_AND_SUBMIT_PROMPT_COMMAND = 'qaap.workHub.pickAgentAndSubmitComposerPrompt';
 
-/** Open the Parallel runs multi-agent sheet with a prefilled task prompt. */
-export const QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND = 'qaap.workHub.openParallelRunsSheet';
-
 export interface QaapWorkHubSubmitComposerPromptOptions {
     readonly agentId?: string;
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;

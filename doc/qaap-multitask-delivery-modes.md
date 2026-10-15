@@ -1,5 +1,10 @@
 # Plan: Multitask Delivery Modes para Qaap Work Hub
 
+> **Nota (oct 2026):** la función "Run variants" / Parallel Runs (`/qaap/api/parallel-runs`,
+> `parallelRunId`, `qaap-parallel-run*.ts`) fue eliminada. El modo Parallel usa forks aislados
+> (`forkedFromId` + `worktreeBranch`, Keep / Merge / Discard vía `/worktree/apply`). Las referencias
+> a Parallel Runs abajo son históricas.
+
 ## Resumen
 
 Inspirado en los patrones de Cursor, Claude Code, Codex y Devin, este plan introduce
@@ -601,8 +606,8 @@ mid-turn via stdin. Verificar si QAIQ ya lo soporta o si necesita un cambio.
 
 ## Qué NO cambia
 
-- **Parallel Runs** (worktrees aislados + selección de variante) se mantiene y se
-  promueve como el modo Parallel explícito.
+- ~~**Parallel Runs** (worktrees aislados + selección de variante) se mantiene y se
+  promueve como el modo Parallel explícito.~~ Eliminado; ver la nota inicial.
 - **Auto-continue** se mantiene sin cambios.
 - **Context compaction** se mantiene sin cambios.
 - **Workflows** (agent-turn, human-gate, join, etc.) se mantiene sin cambios.

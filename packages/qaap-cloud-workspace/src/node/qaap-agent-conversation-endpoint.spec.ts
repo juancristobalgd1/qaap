@@ -566,15 +566,6 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
         expect(response.statusCode).to.equal(400);
         expect(h.applied).to.have.length(0);
     });
-
-    it('rejects multi-agent parallel-run variants', async () => {
-        const h = buildApplyEndpoint({ conv: { parallelRunId: 'run-1' } });
-        const response = fakeRes();
-        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
-            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
-        expect(response.statusCode).to.equal(400);
-        expect(h.applied).to.have.length(0);
-    });
 });
 
 /**
