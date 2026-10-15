@@ -1547,6 +1547,61 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   padding-bottom: 4px;
 }
 
+.theia-mobile-work-hub-sessions-sidebar-progress {
+  /* Sits on the separator under the nav (cancels the list's 6px top padding) and stays there while scrolling. */
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex: 0 0 auto;
+  height: 2px;
+  margin: -6px 0 4px;
+  overflow: hidden;
+  pointer-events: none;
+  /* Fast loads finish before it shows: no flash. */
+  opacity: 0;
+  animation: qaap-sessions-sidebar-progress-in 160ms ease 250ms forwards;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 35%;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--theia-progressBar-background, var(--theia-focusBorder)),
+    transparent
+  );
+  animation: qaap-sessions-sidebar-progress-slide 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes qaap-sessions-sidebar-progress-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes qaap-sessions-sidebar-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-work-hub-sessions-sidebar-progress::before {
+    width: 100%;
+    opacity: 0.5;
+    animation: none;
+  }
+}
+
 .theia-mobile-work-hub-sessions-sidebar-empty {
   padding: 24px 20px;
   color: var(--theia-descriptionForeground);
