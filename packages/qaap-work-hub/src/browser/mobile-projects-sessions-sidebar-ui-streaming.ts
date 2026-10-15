@@ -45,15 +45,24 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
             ctx.bindSessionsSidebarThreadStoreSubscriptions?.();
         }
         const snapshotState = ctx.host.conversations?.snapshotState;
-        if (snapshotState === 'loading' || snapshotState === 'reconnecting' || snapshotState === 'error') {
+        if (snapshotState === 'loading' || snapshotState === 'reconnecting') {
+            // A thin indeterminate bar on the separator under the nav instead of a text line:
+            // loading / reconnecting is transient and should not take over the list.
+            const progress = document.createElement('div');
+            progress.className = 'theia-mobile-work-hub-sessions-sidebar-progress';
+            progress.setAttribute('role', 'progressbar');
+            progress.setAttribute('aria-label', snapshotState === 'loading'
+                ? nls.localize('qaap/sessionsSidebar/loadingHistory', 'Loading session history…')
+                : nls.localize('qaap/sessionsSidebar/historyReconnecting', 'Reconnecting to session history…'));
+            host.append(progress);
+            if (ctx.host.projects.length === 0) {
+                return;
+            }
+        } else if (snapshotState === 'error') {
             const status = document.createElement('p');
             status.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
             status.setAttribute('role', 'status');
-            status.textContent = snapshotState === 'loading'
-                ? nls.localize('qaap/sessionsSidebar/loadingHistory', 'Loading session history…')
-                : snapshotState === 'reconnecting'
-                    ? nls.localize('qaap/sessionsSidebar/historyReconnecting', 'Reconnecting to session history…')
-                    : nls.localize('qaap/sessionsSidebar/historyUnavailable', 'Session history unavailable. Reconnecting…');
+            status.textContent = nls.localize('qaap/sessionsSidebar/historyUnavailable', 'Session history unavailable. Reconnecting…');
             host.append(status);
             if (ctx.host.projects.length === 0) {
                 return;

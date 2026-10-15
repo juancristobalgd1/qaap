@@ -38,9 +38,14 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
             const host = document.createElement('div');
             renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } } as unknown as MobileProjectsSessionsSidebarUiContext, host);
             expect(host.textContent).not.to.contain('No agent sessions');
-            expect(host.querySelector('[role="status"]')).not.to.equal(null);
-            if (snapshotState === 'reconnecting') {
-                expect(host.textContent).to.contain('Reconnecting');
+            if (snapshotState === 'error') {
+                expect(host.querySelector('[role="status"]')?.textContent).to.contain('Reconnecting');
+            } else {
+                // Transient states show only a thin progress bar on the separator, no text line.
+                const progress = host.querySelector('.theia-mobile-work-hub-sessions-sidebar-progress[role="progressbar"]');
+                expect(progress).not.to.equal(null);
+                expect(host.textContent).to.equal('');
+                expect(progress!.getAttribute('aria-label')).to.contain(snapshotState === 'loading' ? 'Loading' : 'Reconnecting');
             }
         }
     });
