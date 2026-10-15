@@ -172,9 +172,61 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 - Specs that depend on `QAAP_BETA_ALLOWED_LOGINS`, `NODE_ENV` or `QAAP_CLOUD_MODE` must set and restore them: Nx loads a developer `.env` into `lerna run`.
 - Heavy jsdom suites: create one jsdom per suite, not per test (per-test setup hit the 2 s hook timeout on loaded machines).
 
+## Required checks, PR runs and local preflight
+
+### 11. Required checks report on every PR
+
+- **Rule:** master's ruleset requires exactly these contexts (never rename the jobs; note the
+  **double space** in the Playwright name):
+  `qaap-guards`, `qaap:drift-check`, `Lint`, `Build and Test (ubuntu-22.04, node-22.x)`,
+  `Build and Test (ubuntu-22.04, node-24.x)`, `Playwright Tests (ubuntu-22.04,  Node.js 24.x)`,
+  `Smoke Test for Browser Example Production Build on ubuntu-22.04 with Node.js 24.x`.
+- **Rule:** a workflow that produces a required check has **no `paths-ignore`/`paths` on
+  `pull_request`** (`push` may keep it). A required check filtered out by paths never reports,
+  so docs-only PRs stay on "Expected" forever. Never skip a required job with a job-level `if:`
+  either: GitHub treats a skipped required check as passing, without anything having run.
+- **Rule:** the `Build and Test` matrix is computed inline (`fromJSON(...)` in
+  `strategy.matrix.os` of `ci-cd.yml`): PRs run only `ubuntu-22.04`; master pushes,
+  `workflow_dispatch` and PRs labeled **`ci:full`** also run `windows-2022` and `macos-15`
+  (advisory, 20-29 min, few shared macOS runners). `pull_request` includes the `labeled` type so
+  adding `ci:full` starts them (any other label also re-runs the workflow). Keep the job name
+  `Build and Test (${{ matrix.os }}, node-${{ matrix.node }})`.
+- **Rule:** `ci-cd`, `playwright`, `production-smoke-test`, `qaap-mobile-playwright` and
+  `qaap-drift-check` use `concurrency: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}`
+  with `cancel-in-progress` only for `pull_request`: a new push cancels the PR's previous run;
+  master pushes, schedules and manual runs get a unique group and are never cancelled or replaced.
+  `qaap-guards` keeps its own group; `qaap-vps-deploy` keeps its single non-cancelling group.
+
+### 12. Installs retry the whole `npm ci`
+
+- **Rule:** the root `npm ci` of every required-check workflow, `qaap-mobile-playwright`, the
+  deploy gate and the `Dockerfile` goes through `scripts/qaap-npm-ci-retry.sh [extra args]`: npm
+  fetch-retry flags plus up to 3 full attempts (`QAAP_NPM_CI_ATTEMPTS`), `rm -rf node_modules` in
+  between (root installs only; it refuses `--prefix`). Those jobs' setup-node use `cache: npm`. The Docker build adds `RUN --mount=type=cache,target=/root/.npm`
+  (BuildKit's built-in frontend; no `# syntax=` line, which would pull an unpinned image).
+  The deploy gate falls back to plain `npm ci` when the deployed ref predates the helper.
+- **Why:** `--fetch-retries` only retries single requests; registry `ECONNRESET` after a ~6 min
+  hang failed three required runs on Oct 15, 2026.
+- **Deploy image cache:** `cache-to: type=gha,mode=min` exports only the final image's layers. The
+  build stage never hits (sources are copied before `npm ci`), and `mode=max` spent ~159 s per
+  deploy exporting it.
+
+### 13. Local preflight (`npm run qaap:preflight`)
+
+- `scripts/qaap-preflight.sh` runs the required checks' commands in fail-fast order and prints a
+  timed summary. `--quick` (default): every static guard of `qaap-guards.yml` and
+  `qaap-drift-check.yml`, package-graph check, `npm run compile`, then lint and tests only for
+  packages changed vs `origin/master` plus dependents (`lerna --since`). `--full`: npm ci, full
+  lint, `npm run build`, plugins, mobile bundle guard + required mobile E2E, `test:theia`,
+  `test:browser`, production smoke; add `--with-upstream-playwright` for the upstream suite.
+- When a workflow step of a required check changes, update the preflight step too.
+- It cannot replace CI: one Node version (CI runs 22 and 24), Linux-only specs and bash-4/GNU guard
+  tests are skipped on macOS, no windows/macOS legs, and a developer `.env` (warned about) leaks
+  into `lerna run`.
+
 ## Process rules for agents
 
 - A test that fails only on the Linux runner is a product signal until proven otherwise. Reproduce the backend path (e.g. run the produced argv with a POSIX `sh`) before excluding the test or touching upstream page objects.
 - Never add a `grepInvert`/`testIgnore` entry without a comment stating the product reason, and never as a stopgap for an unexplained failure.
-- master requires only the `qaap-guards` check (`.github/workflows/qaap-guards.yml`: drift check, package-graph check, `npm run compile`) once branch protection is enabled. Keep that workflow free of `paths-ignore` (a filtered-out required check never reports and blocks the PR) and keep the job name stable. Every other check is advisory: GitHub auto-merge would merge as soon as `qaap-guards` is green. To merge "when green", verify every check (including `Playwright @qaap-mobile`) and merge pinned to the verified head (`gh pr merge --match-head-commit <sha>`).
+- master requires the 7 checks listed in "Required checks" above. To merge "when green", also verify the advisory checks (e.g. `Playwright @qaap-mobile`, the windows/macOS legs when they ran) and merge pinned to the verified head (`gh pr merge --match-head-commit <sha>`).
 - The owner may merge a PR at any moment. Check `gh pr view <n> --json state` right before pushing to a PR branch; if it is merged, open a new PR from master.

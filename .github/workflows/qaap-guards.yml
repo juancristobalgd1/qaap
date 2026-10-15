@@ -104,7 +104,8 @@ jobs:
         run: node scripts/qaap-endpoint-ownership-check.js
 
       - name: Install
-        run: npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
+        # Same fetch-retry flags, plus whole-install retries.
+        run: bash scripts/qaap-npm-ci-retry.sh
 
       # Needs the `typescript` package from node_modules.
       - name: Package graph check
