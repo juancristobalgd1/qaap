@@ -46,6 +46,7 @@ import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/brow
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
+import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 
 export interface ComposerAgentPickerChrome {
     readonly sheet: HTMLElement;
@@ -373,6 +374,7 @@ export class MobileProjectsTranscriptComposerUi {
         summary: QaapAgentConversationSummaryDTO,
         modes: readonly ChatMode[],
         anchor?: HTMLElement,
+        untilDone?: StickyComposerUntilDoneToggleOptions,
     ): void {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
         this.host.stickyComposerSheetsUi.openComposerModeSheet({
@@ -380,6 +382,7 @@ export class MobileProjectsTranscriptComposerUi {
             selectedModeId: this.host.transcriptComposerModeId,
             cwd,
             anchor,
+            untilDone,
             transcriptOverlay: true,
             closeTitle: nls.localize('qaap/mobileProjects/closeTranscript', 'Close'),
             onClose: () => this.closeAllComposerSheets(),

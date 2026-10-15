@@ -28,6 +28,7 @@ import {
     scheduleStickyComposerPopoverPosition,
 } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { createStickyComposerUntilDoneSheetOption, type StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 
 export function openComposerModeSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
     readonly modes: readonly ChatMode[];
@@ -40,6 +41,8 @@ export function openComposerModeSheetExtracted(ctx: MobileProjectsStickyComposer
     readonly onSelect: (modeId: string) => void;
     readonly assignSheet: (sheet: HTMLElement) => void;
     readonly isOpen?: () => boolean;
+    /** Adds the "Until done" goal-loop toggle after the modes. */
+    readonly untilDone?: StickyComposerUntilDoneToggleOptions;
 }): void {
     const usePopover = ctx.shouldUseAgentPickerPopover(options.anchor);
     if (usePopover
@@ -77,6 +80,12 @@ export function openComposerModeSheetExtracted(ctx: MobileProjectsStickyComposer
             },
         ));
     }
+    if (options.untilDone) {
+        const separator = document.createElement('div');
+        separator.className = 'theia-mobile-sticky-composer-sheet-separator';
+        separator.setAttribute('role', 'separator');
+        list.append(separator, createStickyComposerUntilDoneSheetOption(options.untilDone, options.onClose));
+    }
 
     panel.append(header, list);
     const root = ctx.mountModeSheetPresentation(panel, {
@@ -90,13 +99,15 @@ export function openComposerModeSheetExtracted(ctx: MobileProjectsStickyComposer
 
 export function openStickyComposerModeSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, project: MobileProjectEntry,
     modes: readonly ChatMode[],
-    anchor?: HTMLElement,): void {
+    anchor?: HTMLElement,
+    untilDone?: StickyComposerUntilDoneToggleOptions,): void {
     const cwd = ctx.host.projectsService.getProjectCwd(project) ?? ctx.host.preparedCwdByProjectId.get(project.id);
     ctx.openComposerModeSheet({
         modes,
         selectedModeId: ctx.host.stickyComposerModeId,
         cwd,
         anchor,
+        untilDone,
         transcriptOverlay: ctx.shouldElevateComposerSheets(),
         closeTitle: nls.localize('qaap/mobileAgentComposer/close', 'Close'),
         onClose: () => ctx.closeAllComposerSheets(),

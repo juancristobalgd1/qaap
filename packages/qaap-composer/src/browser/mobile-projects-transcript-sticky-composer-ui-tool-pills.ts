@@ -201,7 +201,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         resolveModeLabel: () => resolveComposerModeLabel(modes, ctx.host.transcriptComposerModeId),
         resolveModeId: () => ctx.host.transcriptComposerModeId,
         onOpenModeSheet: modes.length > 1
-            ? anchor => { ctx.host.transcriptComposerUi.openTranscriptComposerModeSheet(project, summary, modes, anchor); }
+            ? (anchor, untilDone) => { ctx.host.transcriptComposerUi.openTranscriptComposerModeSheet(project, summary, modes, anchor, untilDone); }
             : undefined,
         approvalPolicyId: showApprovalPolicy ? ctx.host.transcriptComposerApprovalPolicyId : undefined,
         onOpenApprovalPolicySheet: showApprovalPolicy

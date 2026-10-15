@@ -489,7 +489,7 @@ export class MobileProjectsStickyComposerRenderUi {
             resolveModeLabel: () => resolveComposerModeLabel(modes, this.host.stickyComposerModeId),
             resolveModeId: () => this.host.stickyComposerModeId,
             onOpenModeSheet: modes.length > 1
-                ? anchor => { this.host.stickyComposerSheetsUi.openStickyComposerModeSheet(project, modes, anchor); }
+                ? (anchor, untilDone) => { this.host.stickyComposerSheetsUi.openStickyComposerModeSheet(project, modes, anchor, untilDone); }
                 : undefined,
             approvalPolicyId: showApprovalPolicy ? this.host.stickyComposerApprovalPolicyId : undefined,
             onOpenApprovalPolicySheet: showApprovalPolicy

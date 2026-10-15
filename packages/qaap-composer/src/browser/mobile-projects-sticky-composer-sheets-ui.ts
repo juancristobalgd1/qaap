@@ -32,6 +32,7 @@ import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtr
 import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, openStickyComposerModelCapabilityPopoverExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownCapabilityPresentationExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render';
 import { createModeSheetOptionExtracted, mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openComposerModeSheetExtracted, openStickyComposerApprovalPolicySheetExtracted, openStickyComposerModeSheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming';
 import { createComposerAgentPickerChromeExtracted, renderComposerAgentPickerExtracted } from './mobile-projects-sticky-composer-sheets-ui-timeline';
+import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 
 export type ComposerAgentPickerView = 'agents' | 'models';
 
@@ -196,12 +197,12 @@ export class MobileProjectsStickyComposerSheetsUi {
         return mountModeSheetPresentationExtracted(this, panel, options);
     }
 
-    openComposerModeSheet(options: { readonly modes: readonly ChatMode[]; readonly selectedModeId: string | undefined; readonly cwd: string | undefined; readonly anchor?: HTMLElement; readonly transcriptOverlay: boolean; readonly closeTitle: string; readonly onClose: () => void; readonly onSelect: (modeId: string) => void; readonly assignSheet: (sheet: HTMLElement) => void; readonly isOpen?: () => boolean; }): void {
+    openComposerModeSheet(options: { readonly modes: readonly ChatMode[]; readonly selectedModeId: string | undefined; readonly cwd: string | undefined; readonly anchor?: HTMLElement; readonly transcriptOverlay: boolean; readonly closeTitle: string; readonly onClose: () => void; readonly onSelect: (modeId: string) => void; readonly assignSheet: (sheet: HTMLElement) => void; readonly isOpen?: () => boolean; readonly untilDone?: StickyComposerUntilDoneToggleOptions; }): void {
         openComposerModeSheetExtracted(this, options);
     }
 
-    openStickyComposerModeSheet(project: MobileProjectEntry, modes: readonly ChatMode[], anchor?: HTMLElement,): void {
-        openStickyComposerModeSheetExtracted(this, project, modes, anchor);
+    openStickyComposerModeSheet(project: MobileProjectEntry, modes: readonly ChatMode[], anchor?: HTMLElement, untilDone?: StickyComposerUntilDoneToggleOptions,): void {
+        openStickyComposerModeSheetExtracted(this, project, modes, anchor, untilDone);
     }
 
     openStickyComposerApprovalPolicySheet(project: MobileProjectEntry, agentLabel: string, anchor?: HTMLElement,): void {
