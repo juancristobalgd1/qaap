@@ -80,7 +80,7 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
         // Upstream cancels every document-level touchmove; let nested hosts pan natively.
         this.scrollPatches.push(installMobileNativeTouchScrollGuard());
         // Observe `document.body` so overlays appended outside `#theia-app-shell`
-        // (agent transcript sheets, parallel-run dialogs, …) receive the touch fallback.
+        // (agent transcript sheets, parallel sheets, …) receive the touch fallback.
         this.patchExisting(document.body);
         // Streaming transcripts insert thousands of nodes per second; queue element roots
         // (text nodes are skipped) and patch them once per frame instead of running the

@@ -5,7 +5,7 @@
 
 /**
  * Display naming for conversations that run in an isolated git worktree ("New Worktree",
- * isolated Parallel forks, parallel-run variants). On disk a worktree keeps its random hash
+ * isolated Parallel forks). On disk a worktree keeps its random hash
  * directory (`/tmp/qaap-worktrees/<tenant>/<hash>`), which stays the internal key; the UI shows
  * `<projectName>_<n>` instead, where `n` is a per-source-project ordinal allocated once by the
  * server and persisted on the conversation ({@link QaapWorktreeLabelFields.worktreeOrdinal}).

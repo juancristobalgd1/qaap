@@ -64,8 +64,7 @@ export interface MobileProjectsCardMenuHost {
     closeCurrentWorkspace(): Promise<void>;
     ensureOverlayUi(): {
         parallel: {
-            openParallelRunsSheet(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
-            openVariantChooseSheet(runId: string | undefined, summary: QaapAgentConversationSummaryDTO): void;
+            openVariantChooseSheet(summary: QaapAgentConversationSummaryDTO): void;
         };
     };
     conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
@@ -212,7 +211,7 @@ export class MobileProjectsCardMenuUi {
         });
 
         // A thread running in its own worktree (fork or auto-isolated): merge, keep its branch or close it.
-        if (summary.worktreeBranch && summary.parallelBaseCwd && !summary.parallelRunId) {
+        if (summary.worktreeBranch && summary.parallelBaseCwd) {
             this.appendCardMenuItem(menu, {
                 label: nls.localize('qaap/mobileProjects/landWorktree', 'Merge or close worktree'),
                 iconClass: 'codicon-git-merge',
@@ -220,35 +219,10 @@ export class MobileProjectsCardMenuUi {
                 title: nls.localize('qaap/mobileProjects/landWorktreeTitle', 'Bring this thread\'s branch {0} back into the repository.', summary.worktreeBranch),
                 onSelect: () => {
                     this.closeCardMenu();
-                    this.host.ensureOverlayUi().parallel.openVariantChooseSheet(undefined, summary);
+                    this.host.ensureOverlayUi().parallel.openVariantChooseSheet(summary);
                 },
             });
         }
-
-        const canRunVariants = !isTheiaChat && !summary.parallelRunId;
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/runVariants', 'Run variants'),
-            iconClass: 'codicon-layers',
-            disabled: !canRunVariants,
-            title: canRunVariants
-                ? nls.localize(
-                    'qaap/mobileProjects/runVariantsTitle',
-                    'Run the same prompt on multiple agents in parallel.',
-                )
-                : isTheiaChat
-                    ? nls.localize(
-                        'qaap/mobileProjects/runVariantsUnavailable',
-                        'Parallel variants are only available for VPS agent tasks.',
-                    )
-                    : nls.localize(
-                        'qaap/mobileProjects/runVariantsFromParentOnly',
-                        'Start parallel variants from the parent task, not from a variant run.',
-                    ),
-            onSelect: () => {
-                this.closeCardMenu();
-                this.host.ensureOverlayUi().parallel.openParallelRunsSheet(project, summary);
-            },
-        });
 
         const canRename = isTheiaChat ? !!summary.sessionId && !!this.host.chatService : true;
         this.appendCardMenuItem(menu, {

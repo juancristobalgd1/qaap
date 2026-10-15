@@ -4,14 +4,12 @@
 // *****************************************************************************
 
 /**
- * Fields needed to nest isolated Parallel worktree forks under their parent and to
- * bucket multi-agent {@link parallelRunId} variants. Intentionally structural so both
- * conversation DTOs and inbox items can share the helper.
+ * Fields needed to nest isolated Parallel worktree forks under their parent. Intentionally
+ * structural so both conversation DTOs and inbox items can share the helper.
  */
 export interface IsolatedForkGroupingFields {
     readonly id: string;
     readonly forkedFromId?: string;
-    readonly parallelRunId?: string;
     readonly worktreeBranch?: string;
 }
 
@@ -20,39 +18,24 @@ export interface PartitionedAgentConversations<T extends IsolatedForkGroupingFie
     readonly roots: readonly T[];
     /** Isolated Parallel forks keyed by the parent conversation still present in {@link roots}. */
     readonly forksByParentId: ReadonlyMap<string, readonly T[]>;
-    /** Multi-agent "Run variants" keyed by {@link IsolatedForkGroupingFields.parallelRunId}. */
-    readonly variantRuns: ReadonlyMap<string, readonly T[]>;
 }
 
-/**
- * A delivery-mode `'parallel'` fork: dedicated worktree branch, parent id, and not a
- * multi-agent {@link IsolatedForkGroupingFields.parallelRunId} variant.
- */
+/** A delivery-mode `'parallel'` fork: dedicated worktree branch and a parent id. */
 export const isIsolatedWorktreeFork = (item: IsolatedForkGroupingFields): boolean =>
-    !!item.forkedFromId && !item.parallelRunId && !!item.worktreeBranch;
+    !!item.forkedFromId && !!item.worktreeBranch;
 
 /**
- * Split a project conversation list into flat roots, nested isolated forks, and
- * parallel-run variant buckets. Forks whose parent is missing from {@link items}
- * stay as roots so they never disappear from the list.
+ * Split a project conversation list into flat roots and nested isolated forks. Forks whose
+ * parent is missing from {@link items} stay as roots so they never disappear from the list.
  */
 export const partitionAgentConversations = <T extends IsolatedForkGroupingFields>(
     items: readonly T[],
 ): PartitionedAgentConversations<T> => {
     const ids = new Set(items.map(item => item.id));
     const forksByParentId = new Map<string, T[]>();
-    const variantRuns = new Map<string, T[]>();
     const nestedForkIds = new Set<string>();
-    const variantIds = new Set<string>();
 
     for (const item of items) {
-        if (item.parallelRunId) {
-            const bucket = variantRuns.get(item.parallelRunId) ?? [];
-            bucket.push(item);
-            variantRuns.set(item.parallelRunId, bucket);
-            variantIds.add(item.id);
-            continue;
-        }
         if (isIsolatedWorktreeFork(item) && item.forkedFromId && ids.has(item.forkedFromId)) {
             const bucket = forksByParentId.get(item.forkedFromId) ?? [];
             bucket.push(item);
@@ -62,9 +45,8 @@ export const partitionAgentConversations = <T extends IsolatedForkGroupingFields
     }
 
     return {
-        roots: items.filter(item => !nestedForkIds.has(item.id) && !variantIds.has(item.id)),
+        roots: items.filter(item => !nestedForkIds.has(item.id)),
         forksByParentId,
-        variantRuns,
     };
 };
 

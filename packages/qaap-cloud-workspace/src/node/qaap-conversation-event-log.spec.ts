@@ -96,7 +96,7 @@ describe('QaapConversationEventLog', () => {
         const entry = log.append(deleted('t1'));
         expect(entry.conversationId).to.equal('t1');
         expect(JSON.parse(qaapConversationEntryToFrame(entry))).to.deep.equal({ type: 'deleted', conversationId: 't1', cwd: '/w/a', seq: 1 });
-        expect(qaapConversationEventThreadId({ type: 'parallel-run', runId: 'r', cwd: '/w', variants: [] })).to.equal(undefined);
+        expect(qaapConversationEventThreadId(deleted('t2'))).to.equal('t2');
     });
 
     it('parses Last-Event-ID values', () => {

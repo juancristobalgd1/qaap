@@ -205,7 +205,6 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         updatedAt: now,
         messages: [],
         ...(ownerLogin ? { ownerLogin } : {}),
-        ...(request.parallelRunId ? { parallelRunId: request.parallelRunId } : {}),
         ...(request.parallelBaseCwd ? { parallelBaseCwd: request.parallelBaseCwd } : {}),
         ...(request.worktreeBranch ? { worktreeBranch: request.worktreeBranch } : {}),
         ...(worktreeOrdinal ? { worktreeOrdinal } : {}),

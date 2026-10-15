@@ -47,13 +47,12 @@ export interface MobileProjectsSessionsSidebarHost {
         parallel: {
             createVariantRunSection(
                 project: MobileProjectEntry,
-                runId: string,
+                parentId: string,
                 summaries: QaapAgentConversationSummaryDTO[],
                 activeInfo: ReturnType<import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
                 parentIds: ReadonlySet<string>,
                 options?: {
                     compact?: boolean;
-                    mode?: 'parallel-run' | 'isolated-forks';
                     onActivate?: (summary: QaapAgentConversationSummaryDTO) => void;
                 },
             ): HTMLElement;

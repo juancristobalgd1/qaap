@@ -330,7 +330,7 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProje
             partitioned.roots,
             bypassLimit,
         );
-        if (visible.length === 0 && partitioned.variantRuns.size === 0) {
+        if (visible.length === 0) {
             if (clearMode) {
                 listHost.append(ctx.createSessionsSidebarClearFailedModeFooter(project));
             }
@@ -370,7 +370,6 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProje
                 if (parallel) {
                     listHost.append(parallel.createVariantRunSection(project, summary.id, [...forks], activeInfo, parentIds, {
                         compact: true,
-                        mode: 'isolated-forks',
                         onActivate: openConversation,
                     }));
                 } else {
@@ -383,26 +382,6 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProje
                             selection: selectionFor(fork),
                         }));
                     }
-                }
-            }
-        }
-        if (parallel) {
-            for (const [runId, summaries] of partitioned.variantRuns) {
-                listHost.append(parallel.createVariantRunSection(project, runId, [...summaries], activeInfo, parentIds, {
-                    compact: true,
-                    onActivate: openConversation,
-                }));
-            }
-        } else {
-            for (const summaries of partitioned.variantRuns.values()) {
-                for (const summary of summaries) {
-                    const task = ctx.host.conversationIndexUi.summaryToTaskView(summary);
-                    listHost.append(ctx.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
-                        onActivate: () => openConversation(summary),
-                        compact: true,
-                        failedDuplicateCount: collapsed.hiddenFailedByKeptId.get(summary.id) ?? 0,
-                        selection: selectionFor(summary),
-                    }));
                 }
             }
         }

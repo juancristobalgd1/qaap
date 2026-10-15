@@ -88,7 +88,6 @@ export interface QaapAgentConversationSummaryDTO {
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly forkedFromId?: string;
-    readonly parallelRunId?: string;
     readonly parallelBaseCwd?: string;
     readonly activityLabel?: string;
     readonly linesAdded?: number;
@@ -187,7 +186,6 @@ export interface QaapAgentConversationDTO {
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
     readonly forkedFromId?: string;
-    readonly parallelRunId?: string;
     readonly parallelBaseCwd?: string;
     readonly checkpoints?: QaapConversationCheckpointDTO[];
     readonly linkedPullRequest?: QaapLinkedPullRequest;

@@ -104,8 +104,7 @@ export interface QaapAgentConversationSummaryDTO {
     readonly approvalPolicyId?: string;
     /** Id of the parent conversation when this one was created via fork. */
     readonly forkedFromId?: string;
-    /** Set on parallel-run variant conversations — groups them under {@link parallelBaseCwd}. */
-    readonly parallelRunId?: string;
+    /** Base repository root when this conversation runs in an isolated worktree. */
     readonly parallelBaseCwd?: string;
     /** Branch of the dedicated git worktree this conversation runs in (composer "New Worktree"). */
     readonly worktreeBranch?: string;
@@ -270,7 +269,6 @@ export interface QaapAgentConversationDTO {
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
     readonly forkedFromId?: string;
-    readonly parallelRunId?: string;
     readonly parallelBaseCwd?: string;
     readonly worktreeBranch?: string;
     readonly worktreeOrdinal?: number;
@@ -576,7 +574,6 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
         ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
         forkedFromId: conv.forkedFromId,
-        parallelRunId: conv.parallelRunId,
         parallelBaseCwd: conv.parallelBaseCwd,
         worktreeBranch: conv.worktreeBranch,
         ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),

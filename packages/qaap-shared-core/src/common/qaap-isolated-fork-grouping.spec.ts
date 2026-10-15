@@ -23,9 +23,9 @@ describe('qaap-isolated-fork-grouping', () => {
         forkedFromId: 'missing',
         worktreeBranch: 'qaap/worktree/orphan',
     };
-    const variant = {
+    /** Worktree thread with no fork parent (e.g. a legacy Run-variants conversation): stays flat. */
+    const isolatedRoot = {
         id: 'v1',
-        parallelRunId: 'run-1',
         worktreeBranch: 'qaap/parallel/run-1/qaiq',
     };
     const chatFork = {
@@ -36,16 +36,15 @@ describe('qaap-isolated-fork-grouping', () => {
     it('detects isolated Parallel worktree forks only', () => {
         expect(isIsolatedWorktreeFork(fork)).to.equal(true);
         expect(isIsolatedWorktreeFork(parent)).to.equal(false);
-        expect(isIsolatedWorktreeFork(variant)).to.equal(false);
+        expect(isIsolatedWorktreeFork(isolatedRoot)).to.equal(false);
         expect(isIsolatedWorktreeFork(chatFork)).to.equal(false);
     });
 
     it('nests isolated forks under a parent that is still in the list', () => {
-        const partitioned = partitionAgentConversations([parent, fork, orphan, variant, chatFork]);
-        expect(partitioned.roots.map(item => item.id)).to.deep.equal(['p1', 'f2', 'c2']);
+        const partitioned = partitionAgentConversations([parent, fork, orphan, isolatedRoot, chatFork]);
+        expect(partitioned.roots.map(item => item.id)).to.deep.equal(['p1', 'f2', 'v1', 'c2']);
         expect([...partitioned.forksByParentId.keys()]).to.deep.equal(['p1']);
         expect(partitioned.forksByParentId.get('p1')?.map(item => item.id)).to.deep.equal(['f1']);
-        expect(partitioned.variantRuns.get('run-1')?.map(item => item.id)).to.deep.equal(['v1']);
     });
 
     it('keeps a fork as a root when its parent is absent', () => {
@@ -55,8 +54,8 @@ describe('qaap-isolated-fork-grouping', () => {
     });
 
     it('expands visible roots with nested forks for fingerprint slots', () => {
-        const partitioned = partitionAgentConversations([parent, fork, variant]);
+        const partitioned = partitionAgentConversations([parent, fork, isolatedRoot]);
         const slots = expandConversationSlots(partitioned.roots, partitioned.forksByParentId);
-        expect(slots.map(item => item.id)).to.deep.equal(['p1', 'f1']);
+        expect(slots.map(item => item.id)).to.deep.equal(['p1', 'f1', 'v1']);
     });
 });

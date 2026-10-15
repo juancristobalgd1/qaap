@@ -315,7 +315,7 @@ spec runs, not from mirror runs in production.
   (`externalReview` stays false for chat turns; unification is ADR-001 "Next #2").
 - Streaming/transcript data in the run store (every `mutate()` rewrites the index; the debounced
   conversation store is the right home for the firehose).
-- Parallel-run worktree variants, human-gate for blocked turns, dynamic fan-out IR for delegation
+- Parallel-run worktree variants (the Run variants feature has since been removed), human-gate for blocked turns, dynamic fan-out IR for delegation
   (deferred-outcome covers it), NL→IR compilation.
 - Physically deleting the `router` kind and `MAX_LOOP_SPAWNS_PER_USER_MESSAGE` before piece 6.
 

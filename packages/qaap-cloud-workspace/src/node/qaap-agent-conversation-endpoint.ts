@@ -1199,8 +1199,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     /**
      * Keep / merge / discard a thread's own worktree: a Parallel fork (`forkedFromId`) or a thread isolated
-     * at creation (`parallelBaseCwd`), both with a `worktreeBranch`. Multi-agent
-     * {@link QaapAgentConversation.parallelRunId} variants keep using `/parallel-runs/:id/choose`.
+     * at creation (`parallelBaseCwd`), both with a `worktreeBranch`.
      */
     protected async handleApplyWorktree(req: Request, res: Response): Promise<void> {
         const conv = this.getConversationIfOwned(req, res, req.params.id);
@@ -1212,10 +1211,6 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         const action = body.action;
         if (!this.isWorktreeApplyAction(action)) {
             res.status(400).json({ error: '"action" must be keep-branch, merge, or none.' });
-            return;
-        }
-        if (conv.parallelRunId) {
-            res.status(400).json({ error: 'Use the parallel-runs API to choose a multi-agent variant.' });
             return;
         }
         if (!conv.worktreeBranch || (!conv.forkedFromId && !conv.parallelBaseCwd)) {
@@ -1260,7 +1255,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     /** Fire-and-forget: drop the deleted conversation's own worktree + branch unless another conversation still uses it. */
     protected cleanupDeletedConversationWorktree(conv: QaapAgentConversation): void {
-        if (!conv.worktreeBranch || !conv.parallelBaseCwd || conv.parallelRunId) {
+        if (!conv.worktreeBranch || !conv.parallelBaseCwd) {
             return;
         }
         if (this.store.listAllGroupedByCwd().some(group => path.resolve(group.cwd) === path.resolve(conv.cwd))) {
@@ -1333,7 +1328,6 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         if (event.type === 'deleted' || event.type === 'message' || event.type === 'message_delta') {
             return this.auth.ownsWorkspacePath(ctx, event.cwd);
         }
-        // 'parallel-run' carries the run's base cwd — scope its diff stats to the owner.
         return this.auth.ownsWorkspacePath(ctx, event.cwd);
     }
 }

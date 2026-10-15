@@ -113,7 +113,6 @@ describe('qaap-work-hub-inbox-fingerprint', () => {
                 projectId: 'p1',
                 itemCount: 2,
                 rows: [{ rowKey: 'a' }, { rowKey: 'b' }],
-                variantRunIds: [],
             }],
         });
         const reordered = buildWorkHubInboxStructureFingerprint({
@@ -123,7 +122,6 @@ describe('qaap-work-hub-inbox-fingerprint', () => {
                 projectId: 'p1',
                 itemCount: 2,
                 rows: [{ rowKey: 'b' }, { rowKey: 'a' }],
-                variantRunIds: [],
             }],
         });
         expect(first).to.not.equal(reordered);

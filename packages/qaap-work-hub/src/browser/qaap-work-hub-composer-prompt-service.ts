@@ -105,23 +105,6 @@ export class QaapWorkHubComposerPromptService {
         await this.submitViaHttp(text);
     }
 
-    async openParallelRunsSheet(prompt: string): Promise<void> {
-        const text = typeof prompt === 'string' ? prompt.trim() : '';
-        if (!text) {
-            return;
-        }
-        const ordered = this.panelsByDisplayPriority();
-        for (const panel of ordered) {
-            if (panel.openExternalParallelRunsSheet(text)) {
-                return;
-            }
-        }
-        this.messages.warn(nls.localize(
-            'qaap/workHub/parallelRunsUnavailable',
-            'Open Work Hub with a workspace project before running variants.',
-        ));
-    }
-
     /**
      * Attach a removable context chip to the active Work Hub composer.
      * When {@link QaapAttachComposerContextArgs.submit} is true, also sends a message

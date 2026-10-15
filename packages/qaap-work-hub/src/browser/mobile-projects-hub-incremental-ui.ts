@@ -330,13 +330,8 @@ export class MobileProjectsHubIncrementalUi {
     ): string {
         const groupFingerprints: WorkHubInboxProjectGroupFingerprintInput[] = groups.map(group => {
             const rows: Array<{ rowKey: string }> = [];
-            const variantRunIds = new Set<string>();
             for (const item of group.items) {
                 if (item.kind === 'conversation') {
-                    if (item.summary.parallelRunId) {
-                        variantRunIds.add(item.summary.parallelRunId);
-                        continue;
-                    }
                     rows.push({ rowKey: item.summary.id });
                     continue;
                 }
@@ -346,7 +341,6 @@ export class MobileProjectsHubIncrementalUi {
                 projectId: group.project.id,
                 itemCount: group.items.length,
                 rows,
-                variantRunIds: [...variantRunIds],
             };
         });
         return buildWorkHubInboxStructureFingerprint({

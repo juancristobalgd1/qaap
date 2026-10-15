@@ -38,10 +38,10 @@ import {
 } from './qaap-agent-task-runner-utils2';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
-import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 import { QaapResearchEndpoint } from './qaap-research-endpoint';
-import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
+import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
+
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
@@ -115,12 +115,12 @@ describe('Multi-tenancy isolation', () => {
         });
     });
 
-    // ─── SEC-1: parallel-run worktrees are recognized tenant trees ───
+    // ─── SEC-1: legacy parallel-root worktrees are recognized tenant trees ───
 
-    describe('SEC-1: resolveTenantIsolationRoot recognizes the parallel-run root', () => {
+    describe('SEC-1: resolveTenantIsolationRoot recognizes the legacy parallel root', () => {
         const worktreesRoot = resolveQaapWorktreesRoot();
 
-        it('resolves a parallel-run variant worktree to its tenant segment', () => {
+        it('resolves a legacy parallel-root worktree to its tenant segment', () => {
             const cwd = path.join(resolveQaapParallelRoot(), safeUserIdSegment(userA), 'slug1234', 'agent-x');
             const target = resolveTenantIsolationRoot(reposRoot, worktreesRoot, cwd);
             expect(target?.segment).to.equal(safeUserIdSegment(userA));
@@ -322,63 +322,6 @@ describe('Multi-tenancy isolation', () => {
                 );
             expect(h.denyCalls).to.equal(0);
             expect(h.ensureCalls).to.equal(1);
-        });
-    });
-
-    // ─── SEC-7: parallel-run executes the resolved canonical cwd ──────
-
-    describe('SEC-7: parallel-run passes the resolved canonical cwd to the store', () => {
-        function buildEndpoint(resolved: { kind: string; cwd?: string }): {
-            endpoint: QaapParallelRunEndpoint;
-            storeCwd: string | undefined;
-            denyCalls: number;
-        } {
-            const state = { storeCwd: undefined as string | undefined, denyCalls: 0 };
-            const endpoint = Object.create(QaapParallelRunEndpoint.prototype) as QaapParallelRunEndpoint;
-            Object.assign(endpoint, {
-                requireAuth: () => ({ kind: 'authenticated', userLogin: userA }),
-                auth: {
-                    resolveOwnedRepositoryCwd: () => resolved,
-                    resolveUserLogin: () => userA,
-                    denyForbidden: (res: { statusCode: number }) => { state.denyCalls++; res.statusCode = 403; return false; },
-                },
-                store: { create: async (req: { cwd: string }) => { state.storeCwd = req.cwd; return { id: 'r' }; } },
-                errorMessage: (e: unknown) => String(e),
-            });
-            return { endpoint, get storeCwd(): string | undefined { return state.storeCwd; }, get denyCalls(): number { return state.denyCalls; } };
-        }
-
-        const fakeRes = (): { statusCode: number; status(c: number): unknown; json(b: unknown): unknown } => ({
-            statusCode: 200,
-            status(code: number) { this.statusCode = code; return this; },
-            json() { return this; },
-        });
-
-        const call = (endpoint: QaapParallelRunEndpoint, body: unknown, res: unknown): Promise<void> =>
-            (endpoint as unknown as { handleCreate(req: unknown, res: unknown): Promise<void> })
-                .handleCreate({ body }, res);
-
-        it('executes the canonical resolved.cwd, not the raw body.cwd (validate == execute)', async () => {
-            const canonical = `${reposRoot}/users/${userA}/octocat/hello`;
-            const h = buildEndpoint({ kind: 'ok', cwd: canonical });
-            await call(h.endpoint, { cwd: 'hello', prompt: 'p', agents: ['a'] }, fakeRes());
-            expect(h.storeCwd).to.equal(canonical);
-            expect(h.denyCalls).to.equal(0);
-        });
-
-        it('400s a container cwd (needs-project) without reaching the store', async () => {
-            const h = buildEndpoint({ kind: 'needs-project' });
-            const res = fakeRes();
-            await call(h.endpoint, { cwd: '/workspace', prompt: 'p', agents: ['a'] }, res);
-            expect(res.statusCode).to.equal(400);
-            expect(h.storeCwd).to.be.undefined;
-        });
-
-        it('denies a non-owned cwd without reaching the store', async () => {
-            const h = buildEndpoint({ kind: 'denied' });
-            await call(h.endpoint, { cwd: '../evil', prompt: 'p', agents: ['a'] }, fakeRes());
-            expect(h.denyCalls).to.equal(1);
-            expect(h.storeCwd).to.be.undefined;
         });
     });
 
@@ -619,7 +562,7 @@ describe('Multi-tenancy isolation', () => {
     // ─── C-7: Temporary directory segmentation ───────────────────────
 
     describe('C-7: Temporary directory segmentation', () => {
-        it('parallel-run temp dirs are scoped by ownerLogin', () => {
+        it('legacy parallel-root temp dirs are scoped by ownerLogin', () => {
             const slug = 'abcd1234';
             const tenantA = userA;
             const tenantB = userB;

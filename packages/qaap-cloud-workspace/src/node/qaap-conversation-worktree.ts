@@ -42,7 +42,7 @@ export type QaapConversationWorktreeApplyResult = QaapApplyConversationWorktreeR
 
 /**
  * Provisions isolated git worktrees for single conversations started from the composer's
- * "New Worktree" destination. Mirrors the parallel-run layout: worktrees live under the OS
+ * "New Worktree" destination. Worktrees live under the OS
  * temp dir so they never pollute the repository's status, each on a fresh `qaap/worktree/*`
  * branch cut from HEAD.
  */
@@ -88,8 +88,7 @@ export class QaapConversationWorktreeService {
     }
 
     /**
-     * Apply Keep / Merge / Discard to one isolated Parallel worktree. Mirrors
-     * {@link QaapParallelRunStore.choose} for a single fork (no sibling variants).
+     * Apply Keep / Merge / Discard to one isolated Parallel worktree.
      */
     async apply(input: QaapConversationWorktreeApplyInput): Promise<QaapConversationWorktreeApplyResult> {
         const worktreePath = path.resolve(input.worktreePath ?? '');

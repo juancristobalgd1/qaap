@@ -84,7 +84,6 @@ describe('MobileProjectsHubIncrementalUi', () => {
                 projectId: 'p1',
                 itemCount: 2,
                 rows: [{ rowKey: 'conv-a' }, { rowKey: 'conv-b' }],
-                variantRunIds: [],
             }],
         });
         inbox.setAttribute(QAAP_INBOX_STRUCTURE_FP_ATTR, structure);

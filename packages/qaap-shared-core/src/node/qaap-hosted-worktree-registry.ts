@@ -18,7 +18,7 @@ export interface QaapHostedWorktreeProject {
 }
 
 /**
- * Backend-held map from a conversation / parallel-run worktree path to the GitHub project it was cut
+ * Backend-held map from a conversation worktree path to the GitHub project it was cut
  * from. A hosted push from a worktree takes its destination `owner/repo` from here, never from the
  * worktree's `.git` file or the directory layout, which the agent writes (round-3 R3-1).
  *

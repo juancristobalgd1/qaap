@@ -9,47 +9,18 @@ import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-p
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import {
     applyConversationWorktree,
-    getConversation,
     type QaapAgentConversationSummaryDTO,
     type QaapApplyConversationWorktreeResultDTO,
+    type QaapWorktreeApplyAction,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import {
-    chooseParallelVariant,
-    createParallelRun,
-    deleteParallelRun,
-    fetchParallelRun,
-    type QaapParallelChooseAction,
-    type QaapParallelRunVariantDTO,
-    type QaapParallelRunVariantStatsDTO,
-} from '@theia/qaap-shared-core/lib/common/qaap-parallel-run-client';
-import { filterUiSelectableVpsAgents, fetchAgentModelsForAgent, readStoredAgent, toQaapCreateAgentTaskQaiqModel, type QaapAgentTaskAgentOption, type QaapCreateAgentTaskQaiqModel, type QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import {
-    agentSupportsModelPicker,
-    agentUsesSettingsModelCatalog,
-    isSameAgentModel,
-    readStoredAgentModel,
-    writeStoredAgentModel,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
-import {
-    filterQaiqModelsWithConfiguredCredentials,
-    formatQaiqModelSelectionLabel,
-    listQaiqModelsFromPreferences,
-    listQaiqModelsFromRegisteredLanguageModels,
-    mergeQaiqModelOptions,
-} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
-import { createAgentBrandChip, createAgentBrandSplitChip, createDiffStatsLine, createPickerSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { filterUiSelectableVpsAgents, type QaapAgentTaskAgentOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { createDiffStatsLine } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
-import { QaapParallelAgentDefaults } from './mobile-projects-parallel-agent-defaults';
 
 export interface MobileProjectsParallelUiDeps {
     getAgents(): QaapAgentTaskAgentOption[];
     onRunsChanged(): void;
     onOpenSessionsSidebar?(): void;
-    readPreference?: (key: string) => unknown;
-    getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
-    getWorkspaceQaiqModels?: () => readonly QaapQaiqModelOption[];
-    /** Opens Work Hub preferences (e.g. `ai-features`) when the model menu has no BYOK keys. */
-    openPreferencesSheet?: (query?: string) => Promise<void>;
     buildVariantTaskRow(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -59,22 +30,14 @@ export interface MobileProjectsParallelUiDeps {
     ): HTMLElement;
 }
 
-/** Parallel-run sheets, variant groups in Chats, and live diff stats via conversation SSE. */
+/** Isolated Parallel fork groups in Chats and the Keep / Merge / Discard sheet for worktree threads. */
 export class MobileProjectsParallelUi {
     protected sheetRoot: HTMLElement | undefined;
     protected busy = false;
-    protected readonly selectedAgents = new Set<string>();
-    protected readonly selectedAgentModels = new Map<string, QaapCreateAgentTaskQaiqModel>();
-    protected parallelModelMenuRoot: HTMLElement | undefined;
-    protected parallelModelMenuAnchor: HTMLElement | undefined;
-    protected parallelModelMenuDismiss: (() => void) | undefined;
-    protected parallelModelMenuAgentId: string | undefined;
-    protected readonly variantSections = new Map<string, HTMLElement>();
 
     constructor(protected readonly deps: MobileProjectsParallelUiDeps) { }
 
     closeSheet(): void {
-        this.closeParallelModelMenu();
         this.sheetRoot?.remove();
         this.sheetRoot = undefined;
         this.busy = false;
@@ -82,20 +45,6 @@ export class MobileProjectsParallelUi {
 
     dispose(): void {
         this.closeSheet();
-        this.variantSections.clear();
-    }
-
-    applyParallelRunStats(runId: string, variants: readonly QaapParallelRunVariantStatsDTO[]): void {
-        const wrap = this.variantSections.get(runId);
-        if (!wrap?.isConnected) {
-            this.variantSections.delete(runId);
-            return;
-        }
-        this.renderVariantStats(wrap, runId, variants);
-    }
-
-    supportsQaapAgentWorkflow(summary: QaapAgentConversationSummaryDTO): boolean {
-        return summary.source !== 'theia-chat';
     }
 
     appendTranscriptHeaderActions(
@@ -132,27 +81,21 @@ export class MobileProjectsParallelUi {
         return backBtn;
     }
 
+    /** Group of isolated Parallel worktree forks nested under their parent conversation. */
     createVariantRunSection(
         project: MobileProjectEntry,
-        runId: string,
+        parentId: string,
         summaries: QaapAgentConversationSummaryDTO[],
         activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
         parentIds: ReadonlySet<string>,
         options?: {
             compact?: boolean;
-            mode?: 'parallel-run' | 'isolated-forks';
             onActivate?: (summary: QaapAgentConversationSummaryDTO) => void;
         },
     ): HTMLElement {
-        const isolated = options?.mode === 'isolated-forks';
         const wrap = document.createElement('section');
-        wrap.className = 'theia-mobile-projects-variant-group';
-        if (isolated) {
-            wrap.classList.add('theia-mod-isolated-forks');
-            wrap.dataset.isolatedForkParentId = runId;
-        } else {
-            wrap.dataset.parallelRunId = runId;
-        }
+        wrap.className = 'theia-mobile-projects-variant-group theia-mod-isolated-forks';
+        wrap.dataset.isolatedForkParentId = parentId;
         if (options?.compact) {
             wrap.classList.add('theia-mod-compact');
         }
@@ -162,28 +105,19 @@ export class MobileProjectsParallelUi {
         const label = document.createElement('span');
         label.className = 'theia-mobile-projects-variant-label';
         const icon = document.createElement('span');
-        icon.className = isolated ? 'codicon codicon-repo-forked' : 'codicon codicon-git-branch';
+        icon.className = 'codicon codicon-repo-forked';
         icon.setAttribute('aria-hidden', 'true');
         const text = document.createElement('span');
-        text.textContent = isolated
-            ? nls.localize('qaap/mobileProjects/isolatedForkGroup', 'Parallel · {0}', String(summaries.length))
-            : nls.localize('qaap/mobileProjects/variantGroup', 'Variants · {0}', String(summaries.length));
-        const runStatus = document.createElement('span');
-        runStatus.className = 'theia-mobile-projects-variant-run-status';
-        label.append(icon, text, runStatus);
+        text.textContent = nls.localize('qaap/mobileProjects/isolatedForkGroup', 'Parallel · {0}', String(summaries.length));
+        label.append(icon, text);
         const discard = document.createElement('button');
         discard.type = 'button';
         discard.className = 'theia-mobile-projects-variant-discard';
         discard.textContent = nls.localize('qaap/mobileProjects/parallelDiscard', 'Discard');
-        const anyStreaming = summaries.some(summary => summary.status === 'streaming');
-        discard.disabled = anyStreaming;
+        discard.disabled = summaries.some(summary => summary.status === 'streaming');
         discard.addEventListener('click', ev => {
             ev.stopPropagation();
-            if (isolated) {
-                void this.discardIsolatedForks(summaries);
-            } else {
-                void this.discardParallelRun(runId);
-            }
+            void this.discardIsolatedForks(summaries);
         });
         head.append(label, discard);
         wrap.append(head);
@@ -213,86 +147,14 @@ export class MobileProjectsParallelUi {
             choose.disabled = summary.status === 'streaming';
             choose.addEventListener('click', ev => {
                 ev.stopPropagation();
-                this.openVariantChooseSheet(isolated ? undefined : runId, summary);
+                this.openVariantChooseSheet(summary);
             });
             side.append(meta, choose);
             row.append(side);
             list.append(row);
         }
         wrap.append(list);
-        if (!isolated) {
-            this.variantSections.set(runId, wrap);
-            void this.refreshVariantStatsOnce(runId);
-        }
         return wrap;
-    }
-
-    protected async refreshVariantStatsOnce(runId: string): Promise<void> {
-        try {
-            const run = await fetchParallelRun(runId);
-            this.applyParallelRunStats(runId, run.variants);
-        } catch {
-            /* run discarded or backend unavailable — SSE may still arrive */
-        }
-    }
-
-    protected renderVariantStats(
-        wrap: HTMLElement,
-        runId: string,
-        variants: readonly QaapParallelRunVariantStatsDTO[] | readonly QaapParallelRunVariantDTO[],
-    ): void {
-        if (!wrap.isConnected) {
-            this.variantSections.delete(runId);
-            return;
-        }
-        const runningCount = variants.filter(variant => variant.state === 'running').length;
-        const runStatus = wrap.querySelector('.theia-mobile-projects-variant-run-status');
-        if (runStatus) {
-            runStatus.textContent = runningCount > 0
-                ? nls.localize('qaap/mobileProjects/variantRunActive', '{0} running', String(runningCount))
-                : nls.localize('qaap/mobileProjects/variantRunIdle', 'All idle');
-        }
-        for (const variant of variants) {
-            const meta = wrap.querySelector<HTMLElement>(`[data-parallel-conversation-id="${variant.conversationId}"]`);
-            if (!meta) {
-                continue;
-            }
-            meta.replaceChildren(createDiffStatsLine({
-                added: variant.adds,
-                removed: variant.dels,
-                fileCount: variant.fileCount,
-            }));
-            if (variant.state === 'running') {
-                const running = document.createElement('span');
-                running.className = 'theia-mobile-projects-variant-running';
-                running.textContent = nls.localize('qaap/mobileProjects/variantRunning', 'Running');
-                meta.append(running);
-            } else if (variant.state === 'failed') {
-                const failed = document.createElement('span');
-                failed.className = 'theia-mobile-projects-variant-failed';
-                failed.textContent = nls.localize('qaap/mobileProjects/variantFailed', 'Failed');
-                meta.append(failed);
-            }
-            const row = meta.closest('.theia-mobile-projects-variant-row');
-            const avatar = row?.querySelector('.theia-qaap-agent-row-avatar');
-            if (avatar) {
-                avatar.className = `theia-qaap-agent-row-avatar theia-mod-${variant.state === 'running' ? 'running' : variant.state === 'failed' ? 'failed' : 'idle'}`;
-            }
-            const choose = row?.querySelector<HTMLButtonElement>('.theia-mobile-projects-variant-choose');
-            if (choose) {
-                choose.disabled = variant.state === 'running';
-            }
-        }
-    }
-
-    protected summaryVariantState(summary: QaapAgentConversationSummaryDTO): string {
-        if (summary.status === 'streaming') {
-            return 'running';
-        }
-        if (summary.status === 'failed') {
-            return 'failed';
-        }
-        return 'idle';
     }
 
     protected availableAgents(): QaapAgentTaskAgentOption[] {
@@ -305,645 +167,7 @@ export class MobileProjectsParallelUi {
         return this.availableAgents().find(agent => agent.id === agentId)?.label ?? `@${agentId}`;
     }
 
-    protected async resolveParallelPromptSeed(summary: QaapAgentConversationSummaryDTO): Promise<string> {
-        if (!this.supportsQaapAgentWorkflow(summary)) {
-            return summary.title ?? '';
-        }
-        try {
-            const conv = await getConversation(summary.id);
-            const lastUser = [...conv.messages].reverse().find(message => message.role === 'user');
-            if (lastUser?.content.trim()) {
-                return lastUser.content.trim();
-            }
-        } catch {
-            /* fall through */
-        }
-        return summary.lastMessagePreview?.trim() || summary.title || '';
-    }
-
-    openParallelRunsSheetForPrompt(project: MobileProjectEntry, cwd: string, promptSeed: string): void {
-        const now = Date.now();
-        const summary: QaapAgentConversationSummaryDTO = {
-            id: `inspector-parallel-${now}`,
-            source: 'qaap-agent',
-            cwd,
-            agentId: '',
-            title: promptSeed.slice(0, 80),
-            status: 'idle',
-            createdAt: now,
-            updatedAt: now,
-            messageCount: 0,
-        };
-        this.openParallelRunsSheet(project, summary, { promptSeed });
-    }
-
-    openParallelRunsSheet(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        options?: { readonly promptSeed?: string },
-    ): void {
-        if (!this.supportsQaapAgentWorkflow(summary)) {
-            return;
-        }
-        this.closeSheet();
-        this.selectedAgents.clear();
-        this.selectedAgentModels.clear();
-        // Default only to agents that can launch here: the session's / composer's current agent first.
-        const defaults = QaapParallelAgentDefaults.pickDefaultAgentIds(
-            this.availableAgents(),
-            [summary.agentId, readStoredAgent(summary.cwd)],
-        );
-        for (const agentId of defaults) {
-            this.selectedAgents.add(agentId);
-        }
-        if (summary.cwd) {
-            for (const agentId of this.selectedAgents) {
-                const stored = readStoredAgentModel(summary.cwd, agentId);
-                if (stored) {
-                    this.selectedAgentModels.set(agentId, stored);
-                }
-            }
-        }
-
-        const root = document.createElement('div');
-        root.className = 'theia-mobile-agent-log theia-mobile-parallel-root theia-mod-visible';
-        root.setAttribute('role', 'dialog');
-        root.setAttribute('aria-modal', 'true');
-        const backdrop = document.createElement('div');
-        backdrop.className = 'theia-mobile-agent-log-backdrop';
-        backdrop.addEventListener('click', () => this.closeSheet());
-        const sheet = document.createElement('section');
-        sheet.className = 'theia-mobile-agent-log-sheet theia-mod-parallel';
-        const header = document.createElement('header');
-        header.className = 'theia-mobile-agent-log-header';
-        const title = document.createElement('h2');
-        title.textContent = nls.localize('qaap/mobileProjects/parallelTitle', 'Parallel runs');
-        const close = document.createElement('button');
-        close.type = 'button';
-        close.className = 'theia-mobile-agent-log-close codicon codicon-close';
-        close.title = nls.localize('qaap/mobileProjects/closeTranscript', 'Close');
-        close.setAttribute('aria-label', close.title);
-        close.addEventListener('click', () => this.closeSheet());
-        header.append(title, close);
-        const body = document.createElement('div');
-        body.className = 'theia-mobile-parallel-body';
-        sheet.append(header, body);
-        root.append(backdrop, sheet);
-        document.body.append(root);
-        this.sheetRoot = root;
-        void this.loadParallelSetup(body, project, summary, options);
-    }
-
-    protected async loadParallelSetup(
-        body: HTMLElement,
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        options?: { readonly promptSeed?: string },
-    ): Promise<void> {
-        body.replaceChildren();
-        const loading = document.createElement('div');
-        loading.className = 'theia-mobile-parallel-note';
-        loading.textContent = nls.localize('qaap/mobileProjects/parallelLoading', 'Loading…');
-        body.append(loading);
-        const seeded = options?.promptSeed?.trim();
-        const promptSeed = seeded
-            ? seeded
-            : await this.resolveParallelPromptSeed(summary);
-        if (!this.sheetRoot || !body.isConnected) {
-            return;
-        }
-        this.renderParallelSetup(body, project, summary, promptSeed);
-    }
-
-    protected resolveParallelBody(): HTMLElement | undefined {
-        return this.sheetRoot?.querySelector<HTMLElement>('.theia-mobile-parallel-body') ?? undefined;
-    }
-
-    protected renderParallelSetup(
-        body: HTMLElement,
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        promptSeed: string,
-    ): void {
-        body.replaceChildren();
-        if (!summary.cwd) {
-            const note = document.createElement('div');
-            note.className = 'theia-mobile-parallel-note';
-            note.textContent = nls.localize('qaap/mobileProjects/parallelUnavailable', 'Parallel runs need a workspace path.');
-            body.append(note);
-            return;
-        }
-        const agents = this.availableAgents();
-        if (agents.length === 0) {
-            const note = document.createElement('div');
-            note.className = 'theia-mobile-parallel-note';
-            note.textContent = nls.localize('qaap/mobileProjects/parallelNoAgents', 'No agents are configured.');
-            body.append(note);
-            return;
-        }
-
-        const promptLabel = document.createElement('div');
-        promptLabel.className = 'theia-mobile-parallel-label';
-        promptLabel.textContent = nls.localize('qaap/mobileProjects/parallelTask', 'Task');
-        const textarea = document.createElement('textarea');
-        textarea.className = 'theia-mobile-parallel-prompt';
-        textarea.rows = 3;
-        textarea.value = promptSeed;
-        textarea.placeholder = nls.localize('qaap/mobileProjects/parallelPlaceholder', 'Describe the task to fan out across agents…');
-
-        const agentsLabel = document.createElement('div');
-        agentsLabel.className = 'theia-mobile-parallel-label';
-        agentsLabel.id = 'theia-mobile-parallel-agents-label';
-        agentsLabel.textContent = nls.localize('qaap/mobileProjects/parallelAgents', 'Agents');
-        const chips = document.createElement('div');
-        chips.className = 'theia-mobile-parallel-agents';
-        chips.setAttribute('role', 'group');
-        chips.setAttribute('aria-labelledby', agentsLabel.id);
-        const run = document.createElement('button');
-        run.type = 'button';
-        run.className = 'theia-mobile-parallel-run';
-        run.addEventListener('click', () => { void this.startParallelRun(project, summary, textarea.value); });
-
-        const syncRunButton = (): void => {
-            const launchable = QaapParallelAgentDefaults.launchableSelection(agents, this.selectedAgents);
-            run.disabled = launchable.length === 0;
-            run.textContent = nls.localize('qaap/mobileProjects/parallelRun', 'Run {0} variants', String(launchable.length));
-            run.title = launchable.length === 0
-                ? nls.localize('qaap/mobileProjects/parallelRunNeedsConnectedAgent', 'Select at least one connected agent to run variants.')
-                : '';
-        };
-
-        this.renderParallelAgentChips(chips, agents, summary.cwd, syncRunButton);
-        syncRunButton();
-
-        body.append(promptLabel, textarea, agentsLabel, chips);
-        const availabilityNote = this.createParallelAvailabilityNote(agents);
-        if (availabilityNote) {
-            body.append(availabilityNote);
-        }
-        body.append(run);
-    }
-
-    /** Explains why some agents cannot be selected, or why only one variant is offered. */
-    protected createParallelAvailabilityNote(agents: readonly QaapAgentTaskAgentOption[]): HTMLElement | undefined {
-        const launchable = agents.filter(agent => QaapParallelAgentDefaults.isLaunchable(agent));
-        const disconnected = agents.filter(agent => !QaapParallelAgentDefaults.isLaunchable(agent));
-        let message: string | undefined;
-        if (launchable.length === 0) {
-            message = nls.localize(
-                'qaap/mobileProjects/parallelNoConnectedAgents',
-                'No agent is connected on this workspace. Connect one from the agent picker to run variants.',
-            );
-        } else if (launchable.length === 1 && disconnected.length > 0) {
-            message = nls.localize(
-                'qaap/mobileProjects/parallelOneConnectedAgent',
-                'Only {0} is connected on this workspace. Connect another agent from the agent picker to compare variants.',
-                launchable[0].label,
-            );
-        } else if (disconnected.length > 0) {
-            message = nls.localize(
-                'qaap/mobileProjects/parallelSomeAgentsDisconnected',
-                'Agents marked "Not connected" are skipped until you connect them from the agent picker.',
-            );
-        }
-        if (!message) {
-            return undefined;
-        }
-        const note = document.createElement('div');
-        note.className = 'theia-mobile-parallel-note theia-mod-availability';
-        note.setAttribute('role', 'status');
-        note.textContent = message;
-        return note;
-    }
-
-    protected renderParallelAgentChips(
-        chipsHost: HTMLElement,
-        agents: QaapAgentTaskAgentOption[],
-        cwd: string,
-        onSelectionChange: () => void,
-    ): void {
-        chipsHost.replaceChildren();
-        for (const agent of agents) {
-            if (!QaapParallelAgentDefaults.isLaunchable(agent)) {
-                this.selectedAgents.delete(agent.id);
-                chipsHost.append(this.createUnavailableParallelAgentChip(agent));
-                continue;
-            }
-            const selected = this.selectedAgents.has(agent.id);
-            const storedModel = this.selectedAgentModels.get(agent.id);
-            const modelLabel = selected && storedModel ? formatQaiqModelSelectionLabel(storedModel) : undefined;
-            const toggleAgent = (): void => {
-                if (this.selectedAgents.has(agent.id)) {
-                    this.selectedAgents.delete(agent.id);
-                    if (this.parallelModelMenuAgentId === agent.id) {
-                        this.closeParallelModelMenu();
-                    }
-                } else {
-                    this.selectedAgents.add(agent.id);
-                    if (!this.selectedAgentModels.has(agent.id)) {
-                        const stored = readStoredAgentModel(cwd, agent.id);
-                        if (stored) {
-                            this.selectedAgentModels.set(agent.id, stored);
-                        }
-                    }
-                }
-                this.renderParallelAgentChips(chipsHost, agents, cwd, onSelectionChange);
-                onSelectionChange();
-            };
-            const openModelMenu = (anchor: HTMLElement): void => {
-                void this.openParallelModelMenu(anchor, agent, cwd, chipsHost, agents, onSelectionChange);
-            };
-            if (agentSupportsModelPicker(agent.id)) {
-                chipsHost.append(createAgentBrandSplitChip({
-                    agentId: agent.id,
-                    label: agent.label,
-                    modelLabel: selected ? modelLabel : undefined,
-                    selected,
-                    onToggle: toggleAgent,
-                    onOpenModelMenu: selected ? openModelMenu : undefined,
-                    menuExpanded: selected && this.parallelModelMenuAgentId === agent.id,
-                }));
-            } else {
-                chipsHost.append(createAgentBrandChip({
-                    agentId: agent.id,
-                    label: agent.label,
-                    selected,
-                    onClick: toggleAgent,
-                }));
-            }
-        }
-    }
-
-    /** Disabled chip + visible status for an agent that is not connected on this workspace. */
-    protected createUnavailableParallelAgentChip(agent: QaapAgentTaskAgentOption): HTMLElement {
-        const status = nls.localize('qaap/mobileProjects/stickyComposerAgentNotConnected', 'Not connected on this workspace');
-        const wrap = document.createElement('span');
-        wrap.className = 'theia-mobile-parallel-agent-unavailable';
-        wrap.dataset.agentId = agent.id;
-        wrap.title = status;
-        const chip = createAgentBrandChip({
-            agentId: agent.id,
-            label: agent.label,
-            selected: false,
-            disabled: true,
-            onClick: () => undefined,
-        });
-        const statusId = `theia-mobile-parallel-agent-status-${agent.id.replace(/[^\w-]/g, '_')}`;
-        chip.setAttribute('aria-describedby', statusId);
-        const statusText = document.createElement('span');
-        statusText.className = 'theia-mobile-parallel-agent-status';
-        statusText.id = statusId;
-        statusText.textContent = nls.localize('qaap/mobileProjects/parallelAgentNotConnected', 'Not connected');
-        wrap.append(chip, statusText);
-        return wrap;
-    }
-
-    protected async resolveModelsForParallelAgent(
-        agentId: string,
-    ): Promise<{ readonly models: QaapQaiqModelOption[]; readonly loadFailed: boolean }> {
-        if (agentUsesSettingsModelCatalog(agentId)) {
-            try {
-                const readPref = this.deps.readPreference;
-                const fromWorkspace = this.deps.getWorkspaceQaiqModels?.() ?? [];
-                const fromPreferences = readPref
-                    ? listQaiqModelsFromPreferences(readPref)
-                    : [];
-                const registered = this.deps.getRegisteredLanguageModels
-                    ? listQaiqModelsFromRegisteredLanguageModels(
-                        await this.deps.getRegisteredLanguageModels(),
-                        readPref,
-                    )
-                    : [];
-                const merged = mergeQaiqModelOptions(registered, fromWorkspace, fromPreferences);
-                const models = readPref
-                    ? filterQaiqModelsWithConfiguredCredentials(merged, readPref)
-                    : merged;
-                return { models, loadFailed: false };
-            } catch {
-                return { models: [], loadFailed: true };
-            }
-        }
-        try {
-            const models = await fetchAgentModelsForAgent(agentId);
-            return { models, loadFailed: false };
-        } catch {
-            return { models: [], loadFailed: true };
-        }
-    }
-
-    protected closeParallelModelMenu(): void {
-        const anchor = this.parallelModelMenuAnchor;
-        this.parallelModelMenuDismiss?.();
-        this.parallelModelMenuDismiss = undefined;
-        this.parallelModelMenuRoot?.remove();
-        this.parallelModelMenuRoot = undefined;
-        this.parallelModelMenuAgentId = undefined;
-        if (anchor?.isConnected) {
-            anchor.setAttribute('aria-expanded', 'false');
-            anchor.focus({ preventScroll: true });
-        }
-        this.parallelModelMenuAnchor = undefined;
-    }
-
-    protected positionParallelModelMenu(anchor: HTMLElement, menu: HTMLElement): void {
-        const margin = 8;
-        const gap = 6;
-        const anchorRect = anchor.getBoundingClientRect();
-        // Prefer anchoring to the whole chip group so the menu lines up with the trigger row.
-        const group = anchor.closest('.theia-qaap-agent-chip-group');
-        const groupRect = group?.getBoundingClientRect();
-        const alignRect = groupRect && groupRect.width > 0 ? groupRect : anchorRect;
-        const preferredWidth = Math.max(alignRect.width, 220);
-        menu.style.width = 'max-content';
-        menu.style.minWidth = `${Math.round(preferredWidth)}px`;
-        menu.style.maxWidth = `${Math.round(Math.min(window.innerWidth - margin * 2, 360))}px`;
-        const menuWidth = Math.max(menu.offsetWidth || preferredWidth, preferredWidth);
-        let left = alignRect.left;
-        // Keep the menu under the chip; if it would overflow right, shift left.
-        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
-        const menuHeight = menu.offsetHeight || Math.min(window.innerHeight * 0.45, 280);
-        const viewport = window.visualViewport;
-        const viewportTop = viewport?.offsetTop ?? 0;
-        const viewportHeight = viewport?.height ?? window.innerHeight;
-        const spaceBelow = viewportTop + viewportHeight - alignRect.bottom - gap;
-        const spaceAbove = alignRect.top - viewportTop - gap;
-        let top: number;
-        if (spaceBelow >= Math.min(menuHeight, 160) || spaceBelow >= spaceAbove) {
-            top = alignRect.bottom + gap;
-        } else {
-            top = alignRect.top - gap - menuHeight;
-        }
-        top = Math.max(viewportTop + margin, Math.min(top, viewportTop + viewportHeight - menuHeight - margin));
-        menu.style.top = `${Math.round(top)}px`;
-        menu.style.left = `${Math.round(left)}px`;
-    }
-
-    protected focusParallelModelMenuItem(list: HTMLElement, index: number): void {
-        const items = list.querySelectorAll<HTMLElement>('[role="menuitem"]');
-        const item = items[index];
-        if (item) {
-            item.focus({ preventScroll: true });
-        }
-    }
-
-    protected populateParallelModelMenuList(
-        list: HTMLElement,
-        agent: QaapAgentTaskAgentOption,
-        cwd: string,
-        models: readonly QaapQaiqModelOption[],
-        loadFailed: boolean,
-        chipsHost: HTMLElement,
-        agents: QaapAgentTaskAgentOption[],
-        onSelectionChange: () => void,
-        onRetry: () => void,
-    ): void {
-        list.replaceChildren();
-        if (loadFailed) {
-            const error = document.createElement('div');
-            error.className = 'theia-mobile-parallel-model-menu-note theia-mod-error';
-            error.setAttribute('role', 'alert');
-            error.textContent = nls.localize(
-                'qaap/mobileProjects/stickyComposerAgentModelsLoadFailed',
-                'Could not load models from the workspace. Check your connection and try again.',
-            );
-            const retry = document.createElement('button');
-            retry.type = 'button';
-            retry.className = 'theia-qaap-agent-sheet-retry';
-            retry.textContent = nls.localize('qaap/mobileProjects/retry', 'Retry');
-            retry.addEventListener('click', onRetry);
-            error.append(retry);
-            list.append(error);
-            return;
-        }
-        if (models.length === 0) {
-            const usesSettingsCatalog = agentUsesSettingsModelCatalog(agent.id);
-            const empty = document.createElement('div');
-            empty.className = 'theia-mobile-parallel-model-menu-note';
-            empty.textContent = usesSettingsCatalog
-                ? nls.localize(
-                    'qaap/mobileProjects/stickyComposerNoQaiqModels',
-                    'Add an API key in Settings → AI Features to choose a model.',
-                )
-                : nls.localize('qaap/mobileProjects/parallelModelEmpty', 'No models available.');
-            list.append(empty);
-            if (usesSettingsCatalog && this.deps.openPreferencesSheet) {
-                const settingsButton = document.createElement('button');
-                settingsButton.type = 'button';
-                settingsButton.className = 'theia-qaap-agent-sheet-settings-cta';
-                settingsButton.textContent = nls.localize(
-                    'qaap/mobileProjects/openAiFeaturesSettings',
-                    'Open AI Features settings',
-                );
-                settingsButton.addEventListener('click', event => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    this.closeParallelModelMenu();
-                    void this.deps.openPreferencesSheet?.('ai-features');
-                });
-                list.append(settingsButton);
-            }
-            return;
-        }
-        const selectedModel = this.selectedAgentModels.get(agent.id) ?? readStoredAgentModel(cwd, agent.id);
-        let focusIndex = 0;
-        for (const [modelIndex, model] of models.entries()) {
-            const isSelected = isSameAgentModel(selectedModel, model);
-            if (isSelected) {
-                focusIndex = modelIndex;
-            }
-            list.append(createPickerSheetOptionButton({
-                label: model.label || formatQaiqModelSelectionLabel(model),
-                selected: isSelected,
-                llmVendor: model.vendor,
-                llmModelId: model.modelId,
-                menuItem: true,
-                onSelect: () => {
-                    const nextModel = toQaapCreateAgentTaskQaiqModel(model);
-                    this.selectedAgentModels.set(agent.id, nextModel);
-                    writeStoredAgentModel(cwd, agent.id, nextModel);
-                    this.selectedAgents.add(agent.id);
-                    this.closeParallelModelMenu();
-                    this.renderParallelAgentChips(chipsHost, agents, cwd, onSelectionChange);
-                    onSelectionChange();
-                },
-            }));
-        }
-        window.requestAnimationFrame(() => this.focusParallelModelMenuItem(list, focusIndex));
-    }
-
-    protected async openParallelModelMenu(
-        anchor: HTMLElement,
-        agent: QaapAgentTaskAgentOption,
-        cwd: string,
-        chipsHost: HTMLElement,
-        agents: QaapAgentTaskAgentOption[],
-        onSelectionChange: () => void,
-    ): Promise<void> {
-        this.closeParallelModelMenu();
-        this.parallelModelMenuAnchor = anchor;
-        this.parallelModelMenuAgentId = agent.id;
-        anchor.setAttribute('aria-expanded', 'true');
-
-        const menu = document.createElement('div');
-        menu.className = 'theia-mobile-parallel-model-menu';
-        menu.setAttribute('role', 'menu');
-        menu.setAttribute(
-            'aria-label',
-            nls.localize('qaap/mobileProjects/stickyComposerPickModelForAgent', 'Choose model for {0}', agent.label),
-        );
-
-        const list = document.createElement('div');
-        list.className = 'theia-mobile-parallel-model-menu-list';
-        menu.append(list);
-
-        const loading = document.createElement('div');
-        loading.className = 'theia-mobile-parallel-model-menu-note';
-        loading.textContent = nls.localize('qaap/mobileProjects/parallelModelLoading', 'Loading models…');
-        list.append(loading);
-
-        // Body-level so position:fixed anchors to the viewport next to the chip.
-        document.body.append(menu);
-        this.parallelModelMenuRoot = menu;
-        this.positionParallelModelMenu(anchor, menu);
-
-        const onMenuKeyDown = (event: KeyboardEvent): void => {
-            const items = Array.from(list.querySelectorAll<HTMLElement>('[role="menuitem"]'));
-            if (items.length === 0) {
-                if (event.key === 'Escape') {
-                    event.preventDefault();
-                    this.closeParallelModelMenu();
-                }
-                return;
-            }
-            const currentIndex = items.indexOf(document.activeElement as HTMLElement);
-            switch (event.key) {
-                case 'ArrowDown':
-                    event.preventDefault();
-                    this.focusParallelModelMenuItem(
-                        list,
-                        currentIndex < 0 ? 0 : (currentIndex + 1) % items.length,
-                    );
-                    break;
-                case 'ArrowUp':
-                    event.preventDefault();
-                    this.focusParallelModelMenuItem(
-                        list,
-                        currentIndex <= 0 ? items.length - 1 : currentIndex - 1,
-                    );
-                    break;
-                case 'Home':
-                    event.preventDefault();
-                    this.focusParallelModelMenuItem(list, 0);
-                    break;
-                case 'End':
-                    event.preventDefault();
-                    this.focusParallelModelMenuItem(list, items.length - 1);
-                    break;
-                case 'Escape':
-                    event.preventDefault();
-                    event.stopPropagation();
-                    this.closeParallelModelMenu();
-                    break;
-            }
-        };
-        const onDismiss = (event: Event): void => {
-            const target = event.target;
-            if (target instanceof Node && (menu.contains(target) || anchor.contains(target))) {
-                return;
-            }
-            this.closeParallelModelMenu();
-        };
-        const onReposition = (): void => this.positionParallelModelMenu(anchor, menu);
-        window.setTimeout(() => window.addEventListener('pointerdown', onDismiss, true), 0);
-        menu.addEventListener('keydown', onMenuKeyDown);
-        window.addEventListener('resize', onReposition);
-        window.addEventListener('scroll', onReposition, true);
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', onReposition);
-            window.visualViewport.addEventListener('scroll', onReposition);
-        }
-        this.parallelModelMenuDismiss = (): void => {
-            window.removeEventListener('pointerdown', onDismiss, true);
-            menu.removeEventListener('keydown', onMenuKeyDown);
-            window.removeEventListener('resize', onReposition);
-            window.removeEventListener('scroll', onReposition, true);
-            if (window.visualViewport) {
-                window.visualViewport.removeEventListener('resize', onReposition);
-                window.visualViewport.removeEventListener('scroll', onReposition);
-            }
-        };
-
-        const loadModels = async (): Promise<void> => {
-            const resolved = await this.resolveModelsForParallelAgent(agent.id);
-            if (!menu.isConnected) {
-                return;
-            }
-            this.populateParallelModelMenuList(
-                list,
-                agent,
-                cwd,
-                resolved.models,
-                resolved.loadFailed,
-                chipsHost,
-                agents,
-                onSelectionChange,
-                () => { void loadModels(); },
-            );
-            this.positionParallelModelMenu(anchor, menu);
-        };
-        await loadModels();
-    }
-
-    protected async startParallelRun(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, prompt: string): Promise<void> {
-        // Never fan out to an agent the catalog reports as not connected on this workspace.
-        const agents = QaapParallelAgentDefaults.launchableSelection(this.availableAgents(), this.selectedAgents);
-        if (!summary.cwd || agents.length === 0 || !prompt.trim() || this.busy) {
-            return;
-        }
-        this.busy = true;
-        const runningMessage = nls.localize(
-            'qaap/mobileProjects/parallelAgentsRunning',
-            '{0} agents are running variants',
-            String(agents.length),
-        );
-        MobileSnackbar.show(runningMessage, { kind: 'loading', duration: 0 });
-        const body = this.resolveParallelBody();
-        if (body) {
-            body.replaceChildren();
-            const loading = document.createElement('div');
-            loading.className = 'theia-mobile-parallel-note';
-            loading.textContent = nls.localize('qaap/mobileProjects/parallelCreating', 'Creating {0} isolated worktrees…', String(agents.length));
-            body.append(loading);
-        }
-        try {
-            const agentModels: Record<string, QaapCreateAgentTaskQaiqModel> = {};
-            for (const agentId of agents) {
-                const model = this.selectedAgentModels.get(agentId);
-                if (model) {
-                    agentModels[agentId] = model;
-                }
-            }
-            await createParallelRun(
-                summary.cwd,
-                prompt.trim(),
-                agents,
-                Object.keys(agentModels).length > 0 ? agentModels : undefined,
-            );
-            this.closeSheet();
-            MobileSnackbar.show(runningMessage, { kind: 'success', duration: 3600 });
-            this.deps.onRunsChanged();
-        } catch (error) {
-            MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning', duration: 4200 });
-            const setupBody = this.resolveParallelBody();
-            if (setupBody) {
-                void this.loadParallelSetup(setupBody, project, summary);
-            }
-        } finally {
-            this.busy = false;
-        }
-    }
-
-    openVariantChooseSheet(runId: string | undefined, summary: QaapAgentConversationSummaryDTO): void {
+    openVariantChooseSheet(summary: QaapAgentConversationSummaryDTO): void {
         this.closeSheet();
         const root = document.createElement('div');
         root.className = 'theia-mobile-agent-log theia-mobile-parallel-root theia-mod-visible';
@@ -965,7 +189,7 @@ export class MobileProjectsParallelUi {
         header.append(title, close);
         const body = document.createElement('div');
         body.className = 'theia-mobile-parallel-body';
-        const actions: Array<{ id: QaapParallelChooseAction; label: string }> = [
+        const actions: Array<{ id: QaapWorktreeApplyAction; label: string }> = [
             { id: 'keep-branch', label: nls.localize('qaap/mobileProjects/parallelKeepBranch', 'Keep its branch (safe)') },
             { id: 'merge', label: nls.localize('qaap/mobileProjects/parallelMerge', 'Merge into current branch') },
             { id: 'none', label: nls.localize('qaap/mobileProjects/parallelNoGit', 'Just close (no git change)') },
@@ -975,7 +199,7 @@ export class MobileProjectsParallelUi {
             btn.type = 'button';
             btn.className = 'theia-mobile-parallel-action';
             btn.textContent = action.label;
-            btn.addEventListener('click', () => { void this.performParallelChoose(runId, summary.id, action.id); });
+            btn.addEventListener('click', () => { void this.performParallelChoose(summary.id, action.id); });
             body.append(btn);
         }
         sheet.append(header, body);
@@ -984,15 +208,13 @@ export class MobileProjectsParallelUi {
         this.sheetRoot = root;
     }
 
-    protected async performParallelChoose(runId: string | undefined, conversationId: string, action: QaapParallelChooseAction): Promise<void> {
+    protected async performParallelChoose(conversationId: string, action: QaapWorktreeApplyAction): Promise<void> {
         if (this.busy) {
             return;
         }
         this.busy = true;
         try {
-            const result = runId
-                ? await chooseParallelVariant(runId, conversationId, action)
-                : await applyConversationWorktree(conversationId, action);
+            const result = await applyConversationWorktree(conversationId, action);
             if (!result.ok) {
                 MobileSnackbar.show(this.mergeRefusalMessage(result), { kind: 'warning', duration: result.reason ? 6000 : undefined });
                 return;
@@ -1004,9 +226,6 @@ export class MobileProjectsParallelUi {
                     : nls.localize('qaap/mobileProjects/parallelClosed', 'Done');
             MobileSnackbar.show(msg, { kind: 'success', duration: 2200 });
             this.closeSheet();
-            if (runId) {
-                this.variantSections.delete(runId);
-            }
             this.deps.onRunsChanged();
         } catch (error) {
             MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
@@ -1065,28 +284,4 @@ export class MobileProjectsParallelUi {
         }
         this.deps.onRunsChanged();
     }
-
-    protected async discardParallelRun(runId: string): Promise<void> {
-        const confirmed = await new ConfirmDialog({
-            title: nls.localize('qaap/mobileProjects/parallelDiscardTitle', 'Discard variant run'),
-            msg: nls.localize(
-                'qaap/mobileProjects/parallelDiscardConfirm',
-                'Discard all variants? Worktrees, branches and chats for this run will be removed.',
-            ),
-            ok: nls.localize('qaap/mobileProjects/parallelDiscard', 'Discard'),
-            cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
-        }).open();
-        if (!confirmed) {
-            return;
-        }
-        try {
-            await deleteParallelRun(runId);
-            this.variantSections.delete(runId);
-            MobileSnackbar.show(nls.localize('qaap/mobileProjects/parallelDiscarded', 'Variant run discarded'), { kind: 'success', duration: 1800 });
-            this.deps.onRunsChanged();
-        } catch (error) {
-            MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
-        }
-    }
-
 }

@@ -390,7 +390,7 @@ export class QaapGithubAuthGuard {
      * real target is bob's tree. Requiring BOTH closes that cross-tenant escape.
      */
     /**
-     * "New Worktree" and parallel-run conversations live outside the repos tree, under the caller's own
+     * "New Worktree" conversations (and legacy parallel-root ones) live outside the repos tree, under the caller's own
      * tenant segment of the worktrees / parallel roots (`/tmp/qaap-worktrees/<login>/<id>`). Without this
      * their conversations and tasks were treated as foreign: hidden from the owner's list and answered
      * with "Conversation not found". Symlink-safe like {@link pathBelongsToUser}.

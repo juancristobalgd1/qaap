@@ -83,7 +83,7 @@ export class QaapAgentConversationSseBatcher {
     }
 
     protected shouldEmitImmediately(event: QaapAgentConversationEvent): boolean {
-        if (event.type === 'created' || event.type === 'deleted' || event.type === 'parallel-run') {
+        if (event.type === 'created' || event.type === 'deleted') {
             return true;
         }
         if (event.type === 'updated' && event.conversation.status !== 'streaming') {
