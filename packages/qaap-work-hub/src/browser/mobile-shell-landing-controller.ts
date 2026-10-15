@@ -175,7 +175,7 @@ export class MobileShellLandingController {
             }
             if (!isTranscriptSurfaceCssLoaded() && !this.surfaceCssWaitOver) {
                 // The landing's empty state and composer are styled by the lazy transcript
-                // sheets; on a phone the Work Hub mounts before 'ready' (which warms them), so
+                // sheets; they are requested at app start but may still be in flight, so
                 // keep the guard (and the login gate's skeleton) until they apply: never reveal
                 // an unstyled Work Hub.
                 if (!this.waitingForSurfaceCss) {

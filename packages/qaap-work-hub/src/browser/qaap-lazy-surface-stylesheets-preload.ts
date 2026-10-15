@@ -19,6 +19,12 @@ const IDLE_FALLBACK_DELAY_MS = 1_500;
  * list) are kept out of `bundle.css` for first paint, then attached once the app is `ready` and
  * the main thread idle, so a later synchronous render finds them applied instead of flashing.
  * Surfaces with an async entry point still await their `ensure…Css()` themselves.
+ *
+ * The transcript surface sheets are the exception: the Work Hub landing (the default surface)
+ * renders its composer, suggestion chips and variant Discard / Choose buttons with them, and on
+ * desktop nothing hides the landing while they load. Waiting for 'ready' + idle left those
+ * controls unstyled for seconds on a cold start, so they are requested as soon as the app starts,
+ * in parallel with the rest of the boot (they stay out of `bundle.css`).
  */
 @injectable()
 export class QaapLazySurfaceStylesheetsPreload implements FrontendApplicationContribution {
@@ -27,8 +33,8 @@ export class QaapLazySurfaceStylesheetsPreload implements FrontendApplicationCon
     protected readonly stateService: FrontendApplicationStateService;
 
     onStart(): void {
+        void ensureTranscriptSurfaceCss();
         void this.stateService.reachedState('ready').then(() => this.whenIdle(() => {
-            void ensureTranscriptSurfaceCss();
             void ensurePullRequestsSurfaceCss();
         }));
     }
