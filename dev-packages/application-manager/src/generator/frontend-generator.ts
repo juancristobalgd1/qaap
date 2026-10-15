@@ -435,7 +435,17 @@ export class FrontendGenerator extends AbstractGenerator {
             'var register=function(){',
             'navigator.serviceWorker.register(swUrl,{scope:"./"}).then(function(reg){',
             // Periodically poll for updates so long-lived IDE sessions pick up new builds.
-            'try{setInterval(function(){reg.update().catch(function(){});},60*60*1000);}catch(_){}}',
+            'try{setInterval(function(){reg.update().catch(function(){});},60*60*1000);}catch(_){}',
+            // The first visit loads bundle.js, CSS and chunks before the SW controls the page, so the
+            // SW never sees (or caches) them and the next offline open would get the shell without
+            // its code. Once the SW is active, hand it the same-origin code / font URLs this page
+            // already loaded (now, and again after boot has pulled its lazy chunks).
+            'var warm=function(){try{var sw=navigator.serviceWorker.controller||(reg.active);',
+            'if(!sw||typeof performance==="undefined")return;',
+            'var urls=performance.getEntriesByType("resource").map(function(e){return e.name;})',
+            '.filter(function(u){try{var p=new URL(u);return p.origin===location.origin&&/\\.(?:js|css|woff2?|ttf|wasm)$/i.test(p.pathname);}catch(_){return false;}});',
+            'if(urls.length)sw.postMessage({type:"CACHE_URLS",urls:urls});}catch(_){}};',
+            'navigator.serviceWorker.ready.then(function(){warm();setTimeout(warm,15000);}).catch(function(){});}',
             ').catch(function(err){console.warn("[pwa] service worker registration failed (likely insecure context)",err&&err.message||err);});',
             '};',
             // Register ASAP - waiting for `load` delays SW activation, which hurts Chromium's
@@ -461,6 +471,7 @@ export class FrontendGenerator extends AbstractGenerator {
      * Body of the service worker. Hand-written vanilla JS (NOT bundled), targeting modern evergreen
      * browsers. Strategy:
      *  - Precache a tiny app shell (HTML, manifest, icons, login gate) on `install`.
+     *  - Warm the runtime cache with the code the page loaded before the SW controlled it (`CACHE_URLS`).
      *  - Navigation requests: network-first, fall back to cached shell when offline (SPA behaviour).
      *  - Application code (`bundle.js`, webpack chunks, `bundle.css`): network-first, cache as offline fallback.
      *  - Other static assets (workers, fonts, media, icons, wasm): stale-while-revalidate.
@@ -495,6 +506,8 @@ export class FrontendGenerator extends AbstractGenerator {
  *
  * Caching strategy summary:
  *   - install: precache the app shell (index.html, manifest, branding icons).
+ *   - first visit: the page posts the code / fonts it already loaded (CACHE_URLS) so the runtime
+ *     cache has them before the next offline open.
  *   - activate: evict caches that don't match the current version.
  *   - navigations: network-first with an offline fallback to the cached shell.
  *   - application code (js/css): network-first so a redeploy is always served consistently.
@@ -576,7 +589,32 @@ self.addEventListener('message', event => {
     if (data === 'SKIP_WAITING' || data.type === 'SKIP_WAITING') {
         self.skipWaiting();
     }
+    if (data.type === 'CACHE_URLS' && Array.isArray(data.urls)) {
+        event.waitUntil(warmRuntimeCache(data.urls));
+    }
 });
+
+// The page loaded its code before this SW controlled it, so fetch never saw those requests. Cache
+// what it reports (same rules as fetch: same-origin, not bypassed, code / static assets only) so the
+// next offline open has the code the shell needs, not just index.html.
+async function warmRuntimeCache(urls) {
+    const cache = await caches.open(RUNTIME_CACHE);
+    await Promise.all(urls.slice(0, 500).map(async raw => {
+        let url;
+        try { url = new URL(raw, self.location.href); } catch (_) { return; }
+        if (url.origin !== self.location.origin) return;
+        if (BYPASS_PATHS.some(rx => rx.test(url.pathname))) return;
+        if (!SCRIPT_EXT.test(url.pathname) && !ASSET_EXT.test(url.pathname)) return;
+        const req = new Request(url.href, { credentials: 'same-origin' });
+        if (await cache.match(req)) return;
+        try {
+            const res = await fetch(req);
+            if (res && res.ok && (res.type === 'basic' || res.type === 'default')) {
+                await cache.put(req, res);
+            }
+        } catch (_) { /* offline or gone: nothing to warm */ }
+    }));
+}
 
 self.addEventListener('fetch', event => {
     const req = event.request;

@@ -122,6 +122,10 @@ export class ApplicationPackageManager {
         } else if (await fs.pathExists(libServiceWorker)) {
             await fs.remove(libServiceWorker);
         }
+        // A precompressed copy from an earlier SW-enabled build would outlive the removal above.
+        if (!await fs.pathExists(serviceWorker) && await fs.pathExists(libServiceWorker + '.gz')) {
+            await fs.remove(libServiceWorker + '.gz');
+        }
         const secondaryHtml = this.pck.frontend('secondary-window.html');
         if (await fs.pathExists(secondaryHtml)) {
             await fs.copy(secondaryHtml, this.pck.lib('frontend', 'secondary-window.html'));
