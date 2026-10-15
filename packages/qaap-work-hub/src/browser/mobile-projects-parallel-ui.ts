@@ -37,7 +37,7 @@ import {
     listQaiqModelsFromRegisteredLanguageModels,
     mergeQaiqModelOptions,
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
-import { createAgentBrandChip, createAgentBrandSplitChip, createAgentRowAvatar, createDiffStatsLine, createPickerSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { createAgentBrandChip, createAgentBrandSplitChip, createDiffStatsLine, createPickerSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QaapParallelAgentDefaults } from './mobile-projects-parallel-agent-defaults';
 
@@ -199,14 +199,6 @@ export class MobileProjectsParallelUi {
             }));
             const side = document.createElement('div');
             side.className = 'theia-mobile-projects-variant-side';
-            side.append(createAgentRowAvatar({
-                agentId: summary.agentId,
-                state: this.summaryVariantState(summary) === 'running'
-                    ? 'running'
-                    : this.summaryVariantState(summary) === 'failed'
-                        ? 'failed'
-                        : 'idle',
-            }));
             const meta = document.createElement('div');
             meta.className = 'theia-mobile-projects-variant-meta';
             meta.dataset.parallelConversationId = summary.id;
