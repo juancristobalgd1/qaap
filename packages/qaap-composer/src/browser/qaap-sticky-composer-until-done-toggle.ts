@@ -58,3 +58,66 @@ export function createStickyComposerUntilDoneToggle(options: StickyComposerUntil
     });
     return button;
 }
+
+/** Whether "Until done" is on and usable (disabled toggles never count as checked). */
+export function isStickyComposerUntilDoneActive(options: StickyComposerUntilDoneToggleOptions | undefined): boolean {
+    return !!options && options.checked && !options.disabledReason;
+}
+
+/**
+ * "Until done" as a checkable row at the end of the Mode sheet (Build / Plan…), so the goal loop
+ * lives with the other run-mode choices instead of taking a toolbar slot.
+ */
+export function createStickyComposerUntilDoneSheetOption(
+    options: StickyComposerUntilDoneToggleOptions,
+    onDidToggle: () => void,
+): HTMLButtonElement {
+    const disabled = !!options.disabledReason;
+    const checked = isStickyComposerUntilDoneActive(options);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `theia-mobile-sticky-composer-sheet-option ${UNTIL_DONE_TOGGLE_CLASS}-option`;
+    btn.setAttribute('role', 'menuitemcheckbox');
+    btn.setAttribute('aria-checked', String(checked));
+    btn.classList.toggle('theia-mod-selected', checked);
+    btn.classList.toggle('theia-mod-disabled', disabled);
+    if (disabled) {
+        btn.setAttribute('aria-disabled', 'true');
+    }
+    btn.title = disabled
+        ? options.disabledReason!
+        : nls.localize('theia/qaap/goalLoop/untilDoneOnTitle', 'Until done: the agent keeps iterating, verifying and reviewing until the goal is met');
+
+    const content = document.createElement('span');
+    content.className = 'theia-mobile-sticky-composer-sheet-option-content';
+    const icon = document.createElement('span');
+    icon.className = 'codicon codicon-sync';
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-sticky-composer-sheet-option-label';
+    label.textContent = nls.localize('theia/qaap/goalLoop/untilDone', 'Until done');
+    content.append(icon, label);
+    if (disabled) {
+        // Touch has no tooltips: spell out why the toggle is unavailable.
+        const hint = document.createElement('span');
+        hint.className = `${UNTIL_DONE_TOGGLE_CLASS}-option-hint`;
+        hint.textContent = options.disabledReason!;
+        content.append(hint);
+    }
+    if (checked) {
+        const check = document.createElement('span');
+        check.className = 'codicon codicon-check theia-mobile-sticky-composer-sheet-option-check';
+        check.setAttribute('aria-hidden', 'true');
+        content.append(check);
+    }
+    btn.append(content);
+    btn.addEventListener('click', event => {
+        event.stopPropagation();
+        if (disabled) {
+            return;
+        }
+        onDidToggle();
+        options.onToggle(!checked);
+    });
+    return btn;
+}

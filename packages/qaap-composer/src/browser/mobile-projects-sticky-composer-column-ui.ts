@@ -39,6 +39,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 import {
     createStickyComposerUntilDoneToggle,
+    isStickyComposerUntilDoneActive,
     type StickyComposerUntilDoneToggleOptions,
 } from './qaap-sticky-composer-until-done-toggle';
 import {
@@ -99,7 +100,8 @@ export class MobileProjectsStickyComposerColumnUi {
         modes?: readonly ChatMode[];
         resolveModeLabel?: () => string;
         resolveModeId?: () => string | undefined;
-        onOpenModeSheet?: (anchor: HTMLButtonElement) => void;
+        /** Opens the Mode sheet; `untilDone` adds the goal-loop toggle to it when available. */
+        onOpenModeSheet?: (anchor: HTMLButtonElement, untilDone?: StickyComposerUntilDoneToggleOptions) => void;
         approvalPolicyId?: QaapAgentApprovalPolicyId;
         onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
         /** "Until done" goal-loop toggle; VPS agent (task) surface only. */
@@ -237,6 +239,7 @@ export class MobileProjectsStickyComposerColumnUi {
         controlsLeftItems.push(agentBtn);
 
         const modes = options.modes ?? [];
+        const untilDone = options.surface !== 'chat' ? options.untilDone : undefined;
         let modeBtn: HTMLButtonElement | undefined;
         if (modes.length > 1 && options.onOpenModeSheet && options.resolveModeLabel && options.resolveModeId) {
             modeBtn = document.createElement('button');
@@ -247,9 +250,22 @@ export class MobileProjectsStickyComposerColumnUi {
             modeBtn.title = nls.localize('qaap/mobileProjects/stickyComposerMode', 'Mode: {0}', modeLabel);
             modeBtn.setAttribute('aria-label', modeBtn.title);
             populateModeToolbarButton(modeBtn, { modeId, label: modeLabel });
+            if (isStickyComposerUntilDoneActive(untilDone)) {
+                // "Until done" now lives in the Mode sheet: keep its state visible on the trigger.
+                const untilDoneIcon = document.createElement('span');
+                untilDoneIcon.className = 'codicon codicon-sync theia-mobile-projects-sticky-composer-mode-until-done';
+                untilDoneIcon.setAttribute('aria-hidden', 'true');
+                modeBtn.lastElementChild?.before(untilDoneIcon);
+                modeBtn.title = nls.localize(
+                    'qaap/mobileProjects/stickyComposerModeUntilDone',
+                    'Mode: {0} · Until done',
+                    modeLabel,
+                );
+                modeBtn.setAttribute('aria-label', modeBtn.title);
+            }
             const modeButton = modeBtn;
             bindStickyComposerControlClick(modeBtn, ev => {
-                this.openComposerControlSheet(ev, input, () => options.onOpenModeSheet!(modeButton));
+                this.openComposerControlSheet(ev, input, () => options.onOpenModeSheet!(modeButton, untilDone));
             });
         }
 
@@ -260,8 +276,9 @@ export class MobileProjectsStickyComposerColumnUi {
         if (approvalBtn) {
             toolbarItems.push(approvalBtn);
         }
-        if (options.untilDone && options.surface !== 'chat') {
-            toolbarItems.push(createStickyComposerUntilDoneToggle(options.untilDone));
+        if (untilDone && !modeBtn) {
+            // No Mode sheet to host it (single-mode agent): keep the standalone toggle.
+            toolbarItems.push(createStickyComposerUntilDoneToggle(untilDone));
         }
 
         toolbar.append(...toolbarItems);

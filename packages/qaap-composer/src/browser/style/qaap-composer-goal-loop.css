@@ -149,3 +149,37 @@
     animation: none;
   }
 }
+
+/* "Until done" as a checkable row at the end of the Mode sheet (Build / Plan…). */
+.theia-mobile-sticky-composer-sheet-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.theia-mobile-projects-sticky-composer-until-done-option .codicon-sync {
+  font-size: 14px;
+}
+
+.theia-mobile-projects-sticky-composer-until-done-option.theia-mod-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.theia-mobile-projects-sticky-composer-until-done-option .theia-mobile-sticky-composer-sheet-option-content {
+  flex-wrap: wrap;
+}
+
+.theia-mobile-projects-sticky-composer-until-done-option-hint {
+  flex: 1 0 100%;
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--theia-foreground) 60%, transparent);
+  white-space: normal;
+}
+
+/* Mode trigger keeps "Until done" visible once the toggle moved into its sheet. */
+.theia-mobile-projects-sticky-composer-mode-until-done.codicon {
+  font-size: 12px;
+  color: var(--theia-textLink-foreground);
+}
