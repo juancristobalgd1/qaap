@@ -9,13 +9,19 @@ on:
       - 'doc/**'
       - 'logo/**'
   workflow_dispatch:
+  # No paths-ignore on pull_request: Lint and the ubuntu Build and Test legs are required checks,
+  # and a filtered-out required check never reports (docs-only PRs would stay on "Expected").
   pull_request:
     branches:
       - master
-    paths-ignore:
-      - '**/*.md'
-      - 'doc/**'
-      - 'logo/**'
+    # Default types plus `labeled`, so adding the `ci:full` label starts the windows/macOS legs.
+    types: [opened, synchronize, reopened, labeled]
+
+# A new push to a PR cancels that PR's previous run. Every non-PR run (master push,
+# workflow_dispatch) gets its own group via run_id, so it is never cancelled or replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
 
@@ -36,6 +42,7 @@ jobs:
         with:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
+          cache: npm
 
       - name: Use Python 3.13
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -45,7 +52,8 @@ jobs:
       - name: Install and Build
         shell: bash
         run: |
-          npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
+          # Same fetch-retry flags, plus whole-install retries (scripts/qaap-npm-ci-retry.sh).
+          bash scripts/qaap-npm-ci-retry.sh
           node node_modules/electron/install.js
           ./scripts/check_git_status.sh
 
@@ -60,7 +68,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, ubuntu-22.04, macos-15]
+        # Only the ubuntu legs are required checks. windows/macOS are the slowest legs (20-29 min) and
+        # saturate the shared runners, so PRs run them only with the `ci:full` label; master pushes
+        # and manual runs always run all three OSes. The job name above must stay
+        # "Build and Test (<os>, node-<node>)": branch protection requires the ubuntu contexts by name.
+        os: ${{ fromJSON((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full')) && '["windows-2022", "ubuntu-22.04", "macos-15"]' || '["ubuntu-22.04"]') }}
         node: [22.x, 24.x]
 
     runs-on: ${{ matrix.os }}
@@ -75,6 +87,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           registry-url: 'https://registry.npmjs.org'
+          cache: npm
 
       - name: Use Python 3.13
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -84,7 +97,8 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
+          # Same fetch-retry flags, plus whole-install retries (scripts/qaap-npm-ci-retry.sh).
+          bash scripts/qaap-npm-ci-retry.sh
           if [[ "${RUNNER_OS}" == "Windows" && ! -f node_modules/@vscode/windows-ca-certs/build/Release/crypt32.node ]]; then
             fallback_dir="$(mktemp -d)"
             ca_tarball="${fallback_dir}/windows-ca-certs.tgz"

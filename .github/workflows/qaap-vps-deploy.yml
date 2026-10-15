@@ -81,6 +81,7 @@ jobs:
         with:
           node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'
+          cache: npm
 
       - name: Use Python 3.13
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -94,7 +95,12 @@ jobs:
       - name: Build browser app
         shell: bash
         run: |
-          npm ci --include=optional
+          # The checkout is the deployed ref, which may predate the retry helper (rollback deploys).
+          if [[ -f scripts/qaap-npm-ci-retry.sh ]]; then
+            bash scripts/qaap-npm-ci-retry.sh --include=optional
+          else
+            npm ci --include=optional
+          fi
           npm run build:browser
         env:
           NODE_OPTIONS: --max_old_space_size=4096
@@ -236,7 +242,9 @@ jobs:
             CACHE_BUST=${{ steps.qaiq.outputs.sha }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           cache-from: type=gha,scope=qaap-production
-          cache-to: type=gha,mode=max,scope=qaap-production,ignore-error=true
+          # mode=min: export only the final image's layers. mode=max also exported the build stage
+          # (~159 s per deploy) although it can never hit: the sources are copied before npm ci.
+          cache-to: type=gha,mode=min,scope=qaap-production,ignore-error=true
 
       - name: Export immutable image reference
         id: published

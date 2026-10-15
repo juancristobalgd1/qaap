@@ -9,13 +9,17 @@ on:
       - 'doc/**'
       - 'logo/**'
   workflow_dispatch:
+  # No paths-ignore on pull_request: this workflow is a required check, and a filtered-out
+  # required check never reports (docs-only PRs would stay on "Expected").
   pull_request:
     branches:
       - master
-    paths-ignore:
-      - '**/*.md'
-      - 'doc/**'
-      - 'logo/**'
+
+# A new push to a PR cancels that PR's previous run. Every non-PR run (master push, schedule,
+# workflow_dispatch) gets its own group via run_id, so it is never cancelled or replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-test-playwright:
@@ -33,6 +37,7 @@ jobs:
         with:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
+          cache: npm
 
       - name: Use Python 3.13
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -42,7 +47,7 @@ jobs:
       - name: Build Browser Example Application for Production
         shell: bash
         run: |
-          npm ci
+          bash scripts/qaap-npm-ci-retry.sh
           cd examples/browser && npm run build:production
         env:
           NODE_OPTIONS: --max_old_space_size=4096

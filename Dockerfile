@@ -33,7 +33,12 @@ COPY sample-plugins ./sample-plugins
 
 ENV NODE_OPTIONS=--max_old_space_size=4096
 
-RUN npm ci --include=optional
+# Whole-install retries on registry resets (scripts/qaap-npm-ci-retry.sh, also used by CI) and a
+# BuildKit cache mount for the npm cache (never part of a layer). RUN --mount needs BuildKit, the
+# default builder of `docker buildx`/Compose v2; its built-in Dockerfile frontend supports cache
+# mounts, so no `# syntax=` line (that would pull an unpinned frontend image at build time).
+RUN --mount=type=cache,target=/root/.npm \
+    bash scripts/qaap-npm-ci-retry.sh --include=optional
 
 # @theia/cli bin/theia.js requires ../lib/theia (built by compile)
 RUN npm run compile
