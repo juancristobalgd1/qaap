@@ -12,7 +12,7 @@ let transcriptSurfaceCss: Promise<void> | undefined;
  * or project detail without opening a transcript sheet, so every Files entry path
  * must call this (not only `openTranscriptSheet`). Synchronous renderers (Agents Hub
  * inline transcript) call it fire-and-forget; `QaapLazySurfaceStylesheetsPreload` also
- * warms it once the app is ready and idle so those paths find it already applied.
+ * requests it at app start (the Work Hub landing needs it) so those paths find it already applied.
  *
  * The sheets are `?qaap-lazy` imports: they are not part of `bundle.css` and are
  * attached (in this order) the first time a transcript surface opens.
