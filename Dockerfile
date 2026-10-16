@@ -223,8 +223,10 @@ ENV NODE_ENV=production \
 
 EXPOSE ${QAAP_IDE_PORT}
 
+# The probe exits on its own after 4 s: Docker's --timeout does not always kill a hung exec (rootless
+# daemon, paused upstream), and every leftover node process held threads against the PidsLimit.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-    CMD node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/qaap/api/health',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
+    CMD node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/qaap/api/health',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1)).setTimeout(4000,()=>process.exit(1))"
 
 USER theia
 
