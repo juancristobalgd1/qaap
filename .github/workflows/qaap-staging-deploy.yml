@@ -153,8 +153,9 @@ jobs:
           STAGING_CLIENT_SECRET: ${{ secrets.QAAP_STAGING_GITHUB_CLIENT_SECRET }}
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
-          # Pins the VPS host key (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the VPS,
-          # SHA256:...). Empty means no host-key check: a moved or spoofed host is accepted.
+          # Pins the VPS host key (`ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub` on the VPS: the Go
+          # client of ssh-action negotiates ECDSA before ED25519, so an ED25519 fingerprint never
+          # matches). Empty means no host-key check: a moved or spoofed host is accepted.
           fingerprint: ${{ secrets.QAAP_VPS_SSH_FINGERPRINT }}
           username: ${{ secrets.QAAP_VPS_USER }}
           key: ${{ secrets.QAAP_VPS_SSH_KEY }}
