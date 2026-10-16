@@ -235,7 +235,9 @@ it sits on an internal bridge, and the host loopback guard (see `doc/qaap-ci-inv
 every control-plane port on purpose. The channel runs the other way. `QaapTaskSandboxBroker`
 (control plane) opens a long-lived `GET {runtime}/task-sandbox/link` to every tenant backend it
 routes to, through the same ingress relay as the busy probe, and reconnects every 2 s when it drops.
-The tenant backend (`QaapTaskSandboxBrokerClient`) writes signed requests down that NDJSON stream;
+A refused or unreachable link is retried with exponential backoff per tenant (2 s doubling up to
+60 s), logged once per state change. The tenant backend (`QaapTaskSandboxBrokerClient`) writes
+signed requests down that NDJSON stream;
 the broker answers with `POST {runtime}/task-sandbox/reply`. Authentication uses the tenant-scoped
 `QAAP_TENANT_BACKEND_SECRET` (HMAC-SHA256, `qaap-task-sandbox-broker-protocol.ts`):
 
@@ -256,9 +258,16 @@ the broker answers with `POST {runtime}/task-sandbox/reply`. Authentication uses
   network or egress-proxy env, and no published port.
 - `destroy { name, mode }` and `list`: only containers labelled `com.qaap.task-sandbox.broker` and
   `com.qaap.tenant-login=<tenant>`.
-- At most `QAAP_TASK_SANDBOX_MAX_PER_TENANT` (default 8) sandboxes per tenant. When a tenant's
-  backend stops being routed for 60 s, the broker removes its sandboxes (their linger timers died
-  with that backend). A restarted tenant backend reaps the sandboxes it no longer knows (`list`).
+- At most `QAAP_TASK_SANDBOX_MAX_PER_TENANT` (default 8) sandboxes per tenant, counting every
+  state but archives. Creates and destroys of one tenant are serialized, so concurrent creates
+  cannot overshoot the cap. At most `QAAP_TASK_SANDBOX_MAX_ARCHIVES_PER_TENANT` (default 3)
+  archives are kept (the oldest go first), and archives older than
+  `QAAP_TASK_SANDBOX_ARCHIVE_TTL_MS` are removed.
+- When a tenant's backend stops being routed for 60 s, the broker removes its sandboxes (their
+  linger timers died with that backend). Docker is the source of truth for this: on start and every
+  minute the broker lists the broker sandboxes of its namespace on every node, so sandboxes of a
+  tenant whose backend vanished while the control plane was down are reaped too. A restarted tenant
+  backend reaps the sandboxes it no longer knows (`list`).
 
 **Mounts in broker mode** are the tenant's four **fixed** roots, with Docker mount sources
 translated by the orchestrator (`QAAP_DOCKER_REMOTE_*`) and destinations at the paths the tenant
@@ -280,7 +289,12 @@ with the threat model below:
 **Devcontainers in broker mode.** The tenant backend reads `devcontainer.json` (the control plane
 never reads tenant files) and sends only `image` and `containerEnv`; the broker validates the image
 reference and drops reserved variables (`HOME`, `PATH`, `QAAP_*`, proxies, `NODE_OPTIONS`, `LD_*`).
-An image that is not present yet is pulled in the background and that task runs on the base image.
+An image that is not present yet runs that task on the base image, and is pulled in the background
+only if it matches a prefix in `QAAP_TASK_SANDBOX_PULL_ALLOWLIST` (comma separated, as the reference
+is written, e.g. `mcr.microsoft.com/devcontainers/`). The default is empty: never pull, only use
+images already on the node. Pulls fill the shared node's disk, so they are also capped per tenant:
+`QAAP_TASK_SANDBOX_PULLS_PER_TENANT` concurrent (default 1) and `QAAP_TASK_SANDBOX_PULLS_PER_DAY`
+(default 5).
 Dockerfile builds are **not** run in broker mode (a tenant Dockerfile would execute on the shared
 daemon); those repos use the base image. `remoteEnv` and `postCreateCommand` are applied by the
 tenant backend through the exec server.
@@ -291,8 +305,14 @@ its entrypoint. `/opt/qaap-agent` is a read-only Docker volume
 `qaap-agent-toolchain-<sha(image id, server)>`, populated once per image and server version by a
 one-shot container of the tenant image (no network, no capabilities) that copies its `node` and the
 compiled exec server, then renames the result into place. The exec server listens on
-`:7391` on the tenant network (reached by container name), accepts only requests carrying the
-random per-sandbox token, and removes the token from its environment before starting anything.
+`:7391` on the tenant network (reached by container name) and accepts only requests carrying the
+random per-sandbox token. The token is never in the container's Env: an environment variable stays
+readable in `/proc/<pid>/environ` of the server and of the init process by every command running as
+the same uid, and in `docker inspect`. The container is created with stdin open once; the broker
+attaches, starts it, writes the token as one line and closes stdin, and the server refuses to start
+without it. The broker keeps tokens in memory only: after a control-plane restart, a `create` for a
+sandbox whose token it no longer knows recreates that sandbox (a live tenant backend keeps using
+the sandboxes it already holds, and a restarted one reaps them).
 If the sandbox image cannot run the toolchain's node (musl or no glibc), the exec server never
 becomes ready and the broker recreates the sandbox on the base image.
 
@@ -331,7 +351,7 @@ all capabilities, has a read-only rootfs and sits on an internal network; the br
 with real Docker. Two sandboxes start in parallel in 0.8–1.8 s once the images are local (4.7 s
 on the very first run, which also populated the toolchain volume); both bind the hardcoded port 4545 (each as PID 15 of its own namespace) and each preview
 port reaches its own app; a sandbox sees only its own server, runs as uid 1001 with no capabilities,
-no Docker socket, no exec token and no backend secret, and gets the agent sign-in state; a terminal
+no Docker socket, no exec token (in its env or in any `/proc/*/environ`) and no backend secret, and gets the agent sign-in state; a terminal
 gets a remote pty; killing a dev server's client frees its port; both sandboxes are removed when
 the tasks end. Not covered locally: a rootless daemon and the real ingress relay (the e2e publishes
 the tenant backend's port directly), and multiple Docker nodes.
@@ -355,5 +375,8 @@ CLI prefix in its storage).
 | `QAAP_TASK_SANDBOX_MEMORY` / `_CPUS` / `_PIDS` | `2g` / `2` / `1024` | Limits |
 | `QAAP_TASK_SANDBOX_HOME_DIRS` | agent credential dirs | Comma list under `$HOME` mounted rw |
 | `QAAP_TASK_SANDBOX_TOOLCHAIN` | unset | Host dir mounted ro at `/opt/qaap-agent` (its `bin/` first on PATH) |
-| `QAAP_TASK_SANDBOX_MAX_PER_TENANT` | 8 | Broker mode: live sandboxes per tenant |
+| `QAAP_TASK_SANDBOX_MAX_PER_TENANT` | 8 | Broker mode: sandboxes per tenant (every state but archives) |
+| `QAAP_TASK_SANDBOX_MAX_ARCHIVES_PER_TENANT` | 3 | Broker mode: archives kept per tenant |
+| `QAAP_TASK_SANDBOX_PULL_ALLOWLIST` | empty (never pull) | Broker mode: image reference prefixes that may be pulled |
+| `QAAP_TASK_SANDBOX_PULLS_PER_TENANT` / `_PULLS_PER_DAY` | 1 / 5 | Broker mode: concurrent and daily pulls per tenant |
 | `QAAP_TASK_SANDBOX_PORT_WATCH_MS` | 1000 | Preview port detection interval |

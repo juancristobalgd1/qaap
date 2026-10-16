@@ -68,6 +68,8 @@ const collect = child => new Promise(resolve => { let out = ''; child.stdout && 
     check('runs as the tenant agent uid without capabilities, socket or secrets',
         /uid=1001 cap=0000000000000000 sock=no token=\[\] secret=\[\]/.test(identity.out), identity.out.trim());
     check('agent sign-in state reaches the sandbox HOME', identity.out.includes('cred={"signed-in":true}'), identity.out.trim());
+    const environ = await inSandbox(trees[0], `n=0; for f in /proc/[0-9]*/environ; do tr '\\000' '\\n' < $f 2>/dev/null | grep -q '^QAAP_SANDBOX_EXEC_TOKEN=' && n=$((n+1)); done; echo "environ_with_token=$n"`);
+    check('no process environment in the sandbox (init and exec server included) holds the exec token', /environ_with_token=0\b/.test(environ.out), environ.out.trim());
     const view = await inSandbox(trees[0], 'test -e /e2e-harness.cjs && echo harness-visible || echo harness-hidden');
     check('the tenant backend filesystem is not visible in the sandbox', view.out.includes('harness-hidden'), view.out.trim());
 

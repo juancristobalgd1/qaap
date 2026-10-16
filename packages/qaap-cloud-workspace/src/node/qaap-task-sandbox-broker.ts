@@ -11,7 +11,7 @@ import * as http from 'http';
 import * as path from 'path';
 import type * as Dockerode from 'dockerode';
 import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
-import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
+import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import { QaapDockerOrchestrator, type QaapTaskSandboxPlacement, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
 import {
     QAAP_TASK_SANDBOX_LINK_HEADER,
@@ -38,7 +38,11 @@ const EXEC_SERVER_FILE = 'qaap-task-sandbox-exec-server.js';
 const TOOLCHAIN_VERSION = 'current';
 const READY_TIMEOUT_MS = 30_000;
 const LINK_SYNC_MS = 2_000;
+const LINK_BACKOFF_MAX_MS = 60_000;
 const ORPHAN_GRACE_MS = 60_000;
+const SWEEP_MS = 60_000;
+const PULL_WINDOW_MS = 24 * 60 * 60_000;
+const DEFAULT_ARCHIVE_TTL_MS = 24 * 60 * 60_000;
 const IMAGE_REFERENCE = /^[a-z0-9][a-z0-9._\-/:@]{0,254}$/i;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const HOME_LINK_NAME = /^\.[A-Za-z0-9._-]{1,64}$/;
@@ -49,6 +53,18 @@ interface BrokerLink {
     readonly target: QaapTenantBackendTarget;
     readonly request: http.ClientRequest;
     readonly seen: Set<string>;
+}
+
+interface LinkHealth {
+    failures: number;
+    retryAt: number;
+    /** Last failure reported, so each state change is logged once. */
+    failing?: string;
+}
+
+interface TenantPulls {
+    active: number;
+    readonly startedAt: number[];
 }
 
 /**
@@ -76,7 +92,13 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
     protected readonly backgroundPulls = new Map<string, Promise<void>>();
     /** Tenants that got sandboxes here, with the time their backend was last seen routed. */
     protected readonly tenantsWithSandboxes = new Map<string, number>();
+    protected readonly linkHealth = new Map<string, LinkHealth>();
+    /** Per-sandbox exec tokens. Never written into the container's Env (see runSandbox). */
+    protected readonly tokens = new Map<string, string>();
+    protected readonly tenantLocks = new Map<string, Promise<unknown>>();
+    protected readonly tenantPulls = new Map<string, TenantPulls>();
     protected syncTimer: ReturnType<typeof setInterval> | undefined;
+    protected sweepTimer: ReturnType<typeof setInterval> | undefined;
 
     isEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
         return /^(1|true)$/i.test(env.QAAP_TASK_SANDBOX?.trim() ?? '')
@@ -90,11 +112,20 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         }
         this.syncTimer = setInterval(() => this.syncLinks(), LINK_SYNC_MS);
         this.syncTimer.unref?.();
+        const sweep = (): void => {
+            this.sweep().catch(error => console.warn(`[qaap-task-sandbox] sandbox sweep failed: ${(error as Error).message}`));
+        };
+        sweep();
+        this.sweepTimer = setInterval(sweep, SWEEP_MS);
+        this.sweepTimer.unref?.();
     }
 
     onStop(): void {
         if (this.syncTimer) {
             clearInterval(this.syncTimer);
+        }
+        if (this.sweepTimer) {
+            clearInterval(this.sweepTimer);
         }
         for (const link of this.links.values()) {
             link.request.destroy();
@@ -117,16 +148,36 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 link.request.destroy();
                 this.links.delete(tenant);
             }
-            if (!this.links.has(tenant)) {
+            if (!this.links.has(tenant) && now >= (this.linkHealth.get(tenant)?.retryAt ?? 0)) {
                 this.openLink(target);
             }
         }
         for (const [tenant, lastSeen] of this.tenantsWithSandboxes) {
             if (!routed.has(tenant) && now - lastSeen > ORPHAN_GRACE_MS) {
+                this.linkHealth.delete(tenant);
                 // The tenant backend was stopped or destroyed: its linger timers died with it.
                 this.tenantsWithSandboxes.delete(tenant);
                 this.removeTenantSandboxes(tenant).catch(error =>
                     console.warn(`[qaap-task-sandbox] reaping sandboxes of ${tenant} failed: ${(error as Error).message}`));
+            }
+        }
+    }
+
+    /**
+     * Docker is the source of truth after a restart: every tenant that still has broker sandboxes
+     * enters orphan tracking (its grace period starts now), and expired archives are removed.
+     */
+    async sweep(now = Date.now()): Promise<void> {
+        const containers = await this.orchestrator?.listTaskSandboxContainers() ?? [];
+        const ttl = this.nonNegativeInt('QAAP_TASK_SANDBOX_ARCHIVE_TTL_MS', DEFAULT_ARCHIVE_TTL_MS);
+        for (const container of containers) {
+            if (!this.tenantsWithSandboxes.has(container.tenantLogin)) {
+                this.tenantsWithSandboxes.set(container.tenantLogin, now);
+            }
+            const archivedAt = this.archivedAt(container.name);
+            if (archivedAt !== undefined && !container.running && now - archivedAt > ttl) {
+                const placement = await this.orchestrator!.taskSandboxPlacement(container.tenantLogin);
+                await placement.docker.getContainer(container.name).remove({ force: true }).catch(() => undefined);
             }
         }
     }
@@ -139,17 +190,21 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         } catch {
             return;
         }
+        let responded = false;
         const request = http.get({
             host: target.host,
             port: target.port,
             path: `${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_LINK_PATH}`,
             headers: { [QAAP_TASK_SANDBOX_LINK_HEADER]: probe, ...this.connectionCookie(tenant) },
         }, response => {
+            responded = true;
             if (response.statusCode !== 200) {
                 response.resume();
+                this.linkFailed(tenant, `HTTP ${response.statusCode}`);
                 request.destroy();
                 return;
             }
+            this.linkUp(tenant);
             response.setEncoding('utf8');
             let buffered = '';
             response.on('data', (chunk: string) => {
@@ -175,9 +230,39 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 this.links.delete(tenant);
             }
         };
-        request.on('error', drop);
+        request.on('error', error => {
+            if (!responded) {
+                this.linkFailed(tenant, error.message);
+            }
+            drop();
+        });
         request.on('close', drop);
         this.links.set(tenant, link);
+    }
+
+    /** Exponential backoff per tenant (capped), logged once per state change. */
+    protected linkFailed(tenant: string, reason: string, now = Date.now()): void {
+        const health = this.linkHealth.get(tenant) ?? { failures: 0, retryAt: 0 };
+        health.failures++;
+        health.retryAt = now + Math.min(LINK_SYNC_MS * 2 ** (health.failures - 1), LINK_BACKOFF_MAX_MS);
+        if (health.failing !== reason) {
+            console.warn(`[qaap-task-sandbox] cannot link to ${tenant}'s backend (${reason}); retrying with backoff`);
+            health.failing = reason;
+        }
+        this.linkHealth.set(tenant, health);
+    }
+
+    protected linkUp(tenant: string): void {
+        const health = this.linkHealth.get(tenant);
+        if (health?.failing) {
+            console.info(`[qaap-task-sandbox] link to ${tenant}'s backend restored`);
+        }
+        this.linkHealth.delete(tenant);
+    }
+
+    /** Linked-to-backoff state of a tenant (for specs and diagnostics). */
+    linkRetryAt(tenant: string): number | undefined {
+        return this.linkHealth.get(tenant)?.retryAt;
     }
 
     protected onLinkMessage(link: BrokerLink, line: string): void {
@@ -251,6 +336,14 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         const homeLinks = this.validateHomeLinks(placement, args?.homeLinks);
         const containerEnv = this.validateContainerEnv(args?.devcontainer?.containerEnv);
         const requestedImage = this.validateImage(args?.devcontainer?.image);
+        // Serialized per tenant: the limit check and the create must not interleave.
+        return this.withTenantLock(tenant, () => this.createLocked(tenant, started, placement, root, homeLinks, containerEnv, requestedImage));
+    }
+
+    protected async createLocked(
+        tenant: string, started: number, placement: QaapTaskSandboxPlacement, root: string,
+        homeLinks: Array<{ name: string; target: string }>, containerEnv: Record<string, string>, requestedImage: string | undefined,
+    ): Promise<QaapTaskSandboxBrokerSandbox> {
         const docker = placement.docker;
         const name = this.containerName(tenant, root);
         const existing = await this.inspect(docker, name);
@@ -258,18 +351,21 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             if (!this.ownedBy(existing, tenant)) {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
-            const existingToken = this.envValue(existing, 'QAAP_SANDBOX_EXEC_TOKEN');
+            const existingToken = this.tokens.get(name);
             if (existing.State?.Running && !existing.State.Paused && existingToken) {
                 return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false);
             }
+            // Stopped, paused, or created before this control plane started (its token is gone): recreate.
             await docker.getContainer(name).remove({ force: true });
+            this.tokens.delete(name);
         }
         await this.enforceLimit(docker, tenant);
         const toolchain = await this.ensureToolchain(placement);
         const image = requestedImage && await this.imagePresent(docker, requestedImage) ? requestedImage : placement.image;
         if (requestedImage && image !== requestedImage) {
-            this.startBackgroundPull(docker, requestedImage);
-            console.warn(`[qaap-task-sandbox] devcontainer image ${requestedImage} not present; pulling in the background, using the base image for now`);
+            const refused = this.startBackgroundPull(docker, requestedImage, tenant);
+            console.warn(`[qaap-task-sandbox] devcontainer image ${requestedImage} not present; `
+                + `${refused ? `not pulling it (${refused})` : 'pulling it in the background'}, using the base image for now`);
         }
         const token = crypto.randomBytes(32).toString('base64url');
         try {
@@ -282,9 +378,11 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             console.warn(`[qaap-task-sandbox] ${image} cannot run the exec server (${(error as Error).message}); falling back to the base image`);
             await docker.getContainer(name).remove({ force: true }).catch(() => undefined);
             await this.runSandbox(placement, name, tenant, root, placement.image, toolchain, token, homeLinks, containerEnv);
+            this.tokens.set(name, token);
             this.tenantsWithSandboxes.set(tenant, Date.now());
             return this.describe(name, root, token, placement.image, placement, Date.now() - started, true);
         }
+        this.tokens.set(name, token);
         this.tenantsWithSandboxes.set(tenant, Date.now());
         const sandbox = this.describe(name, root, token, image, placement, Date.now() - started, true);
         console.info(`[qaap-task-sandbox] broker started ${name} for ${tenant} ${root} (image ${image}) in ${sandbox.startupMs} ms`);
@@ -294,20 +392,54 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
     async destroy(tenant: string, args: QaapTaskSandboxBrokerDestroyArgs): Promise<void> {
         const name = typeof args?.name === 'string' ? args.name : '';
         const placement = await this.orchestrator!.taskSandboxPlacement(tenant);
-        const inspect = name ? await this.inspect(placement.docker, name) : undefined;
-        if (!inspect) {
-            return;
+        await this.withTenantLock(tenant, async () => {
+            const inspect = name ? await this.inspect(placement.docker, name) : undefined;
+            if (!inspect) {
+                return;
+            }
+            if (!this.ownedBy(inspect, tenant)) {
+                throw new Error(`Sandbox ${name} is not owned by this tenant.`);
+            }
+            this.tokens.delete(name);
+            const container = placement.docker.getContainer(name);
+            if (args.mode === 'archive' && this.archivedAt(name) === undefined) {
+                await container.stop({ t: 5 }).catch(() => undefined);
+                await container.rename({ name: `${name}-archived-${Date.now()}` }).catch(() => undefined);
+                await this.trimArchives(placement.docker, tenant);
+            } else {
+                await container.remove({ force: true });
+            }
+        });
+    }
+
+    /** Keep at most QAAP_TASK_SANDBOX_MAX_ARCHIVES_PER_TENANT archives (newest first). */
+    protected async trimArchives(docker: Dockerode, tenant: string): Promise<void> {
+        const max = this.nonNegativeInt('QAAP_TASK_SANDBOX_MAX_ARCHIVES_PER_TENANT', 3);
+        const archives = (await this.list(tenant))
+            .map(sandbox => ({ name: sandbox.name, at: this.archivedAt(sandbox.name) }))
+            .filter((sandbox): sandbox is { name: string; at: number } => sandbox.at !== undefined)
+            .sort((left, right) => right.at - left.at);
+        for (const archive of archives.slice(max)) {
+            await docker.getContainer(archive.name).remove({ force: true }).catch(() => undefined);
         }
-        if (!this.ownedBy(inspect, tenant)) {
-            throw new Error(`Sandbox ${name} is not owned by this tenant.`);
-        }
-        const container = placement.docker.getContainer(name);
-        if (args.mode === 'archive') {
-            await container.stop({ t: 5 }).catch(() => undefined);
-            await container.rename({ name: `${name}-archived-${Date.now()}` }).catch(() => undefined);
-        } else {
-            await container.remove({ force: true });
-        }
+    }
+
+    protected archivedAt(name: string): number | undefined {
+        const match = /-archived-(\d+)$/.exec(name);
+        return match ? Number(match[1]) : undefined;
+    }
+
+    protected async withTenantLock<T>(tenant: string, operation: () => Promise<T>): Promise<T> {
+        const previous = this.tenantLocks.get(tenant) ?? Promise.resolve();
+        const next = previous.catch(() => undefined).then(operation);
+        const settled = next.catch(() => undefined);
+        this.tenantLocks.set(tenant, settled);
+        settled.then(() => {
+            if (this.tenantLocks.get(tenant) === settled) {
+                this.tenantLocks.delete(tenant);
+            }
+        });
+        return next;
     }
 
     async list(tenant: string): Promise<QaapTaskSandboxBrokerListed[]> {
@@ -316,7 +448,8 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             all: true,
             filters: { label: [`${QAAP_TASK_SANDBOX_BROKER_LABEL}=true`, `com.qaap.tenant-login=${tenant}`] },
         });
-        return containers.map(container => {
+        // Another control plane on the same daemon (staging next to production) owns its own sandboxes.
+        return containers.filter(container => isInQaapDockerNamespace(container.Labels ?? {})).map(container => {
             const name = (container.Names?.[0] ?? '').replace(/^\//, '');
             return {
                 name,
@@ -432,7 +565,6 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 ...Object.entries(placement.egressEnv).map(([key, value]) => `${key}=${value}`),
                 `HOME=${SANDBOX_HOME}`,
                 `PATH=${TOOLCHAIN_MOUNT}/${TOOLCHAIN_VERSION}/bin:${DEFAULT_PATH}`,
-                `QAAP_SANDBOX_EXEC_TOKEN=${token}`,
                 `QAAP_SANDBOX_EXEC_PORT=${QAAP_SANDBOX_EXEC_PORT}`,
                 `QAAP_SANDBOX_HOME_LINKS=${JSON.stringify(homeLinks)}`,
             ],
@@ -445,6 +577,11 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 'com.qaap.tenant-login': tenant,
             },
             Healthcheck: { Test: ['NONE'] },
+            // The exec token goes in on stdin (attached below), never in Env: an env var stays
+            // readable in /proc/<pid>/environ of the server and of init, and in `docker inspect`.
+            OpenStdin: true,
+            StdinOnce: true,
+            AttachStdin: true,
             HostConfig: {
                 Init: true,
                 CapDrop: ['ALL'],
@@ -469,7 +606,9 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         if (placement.directEgressNetwork) {
             await docker.getNetwork(placement.directEgressNetwork).connect({ Container: name });
         }
+        const stdin = await container.attach({ stream: true, stdin: true, hijack: true }) as NodeJS.WritableStream;
         await container.start();
+        await new Promise<void>(resolve => stdin.end(`${token}\n`, () => resolve()));
         await this.waitReady(container);
     }
 
@@ -557,10 +696,34 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         return fs.readFileSync(path.join(__dirname, EXEC_SERVER_FILE), 'utf8');
     }
 
-    protected startBackgroundPull(docker: Dockerode, image: string): void {
+    /**
+     * Pull a devcontainer image in the background, if policy allows it. Pulls fill the shared
+     * node's disk, so they need an explicit allowlist (`QAAP_TASK_SANDBOX_PULL_ALLOWLIST`, comma
+     * separated reference prefixes; empty = never pull, only use images already present) and are
+     * capped per tenant: concurrent (`QAAP_TASK_SANDBOX_PULLS_PER_TENANT`, default 1) and per 24 h
+     * (`QAAP_TASK_SANDBOX_PULLS_PER_DAY`, default 5). Returns why a pull was refused.
+     */
+    protected startBackgroundPull(docker: Dockerode, image: string, tenant: string, now = Date.now()): string | undefined {
         if (this.backgroundPulls.has(image)) {
-            return;
+            return undefined;
         }
+        const allowlist = (process.env.QAAP_TASK_SANDBOX_PULL_ALLOWLIST ?? '').split(',').map(entry => entry.trim()).filter(Boolean);
+        if (!allowlist.some(prefix => image.startsWith(prefix))) {
+            return 'not in QAAP_TASK_SANDBOX_PULL_ALLOWLIST';
+        }
+        const pulls = this.tenantPulls.get(tenant) ?? { active: 0, startedAt: [] };
+        this.tenantPulls.set(tenant, pulls);
+        while (pulls.startedAt.length && now - pulls.startedAt[0] > PULL_WINDOW_MS) {
+            pulls.startedAt.shift();
+        }
+        if (pulls.active >= this.positiveInt('QAAP_TASK_SANDBOX_PULLS_PER_TENANT', 1)) {
+            return 'this tenant already has a pull in progress';
+        }
+        if (pulls.startedAt.length >= this.positiveInt('QAAP_TASK_SANDBOX_PULLS_PER_DAY', 5)) {
+            return 'this tenant reached its daily pull limit';
+        }
+        pulls.active++;
+        pulls.startedAt.push(now);
         const job = new Promise<void>((resolve, reject) => {
             docker.pull(image, (error: Error | null, stream: NodeJS.ReadableStream) => {
                 if (error) {
@@ -570,23 +733,26 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 docker.modem.followProgress(stream, (followError: Error | null) => followError ? reject(followError) : resolve());
             });
         }).then(
-            () => console.info(`[qaap-task-sandbox] pulled devcontainer image ${image}`),
+            () => console.info(`[qaap-task-sandbox] pulled devcontainer image ${image} for ${tenant}`),
             error => console.warn(`[qaap-task-sandbox] pulling ${image} failed: ${(error as Error).message}`),
-        ).finally(() => this.backgroundPulls.delete(image));
+        ).finally(() => {
+            pulls.active--;
+            this.backgroundPulls.delete(image);
+        });
         this.backgroundPulls.set(image, job);
+        return undefined;
     }
 
     protected async imagePresent(docker: Dockerode, image: string): Promise<boolean> {
         return docker.getImage(image).inspect().then(() => true, () => false);
     }
 
-    protected async enforceLimit(docker: Dockerode, tenant: string): Promise<void> {
+    protected async enforceLimit(_docker: Dockerode, tenant: string): Promise<void> {
         const max = this.positiveInt('QAAP_TASK_SANDBOX_MAX_PER_TENANT', 8);
-        const containers = await docker.listContainers({
-            filters: { label: [`${QAAP_TASK_SANDBOX_BROKER_LABEL}=true`, `com.qaap.tenant-login=${tenant}`] },
-        });
-        if (containers.length >= max) {
-            throw new Error(`This tenant already runs ${containers.length} task sandboxes (limit ${max}).`);
+        // Every state counts (created, stopped, paused): only archives are bounded separately.
+        const count = (await this.list(tenant)).filter(sandbox => !sandbox.archived).length;
+        if (count >= max) {
+            throw new Error(`This tenant already has ${count} task sandboxes (limit ${max}).`);
         }
     }
 
@@ -606,11 +772,6 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         return labels[QAAP_TASK_SANDBOX_BROKER_LABEL] === 'true' && labels['com.qaap.tenant-login'] === tenant;
     }
 
-    protected envValue(inspect: Dockerode.ContainerInspectInfo, key: string): string | undefined {
-        const entry = (inspect.Config?.Env ?? []).find(candidate => candidate.startsWith(`${key}=`));
-        return entry?.slice(key.length + 1);
-    }
-
     protected describe(
         name: string, root: string, token: string, image: string, placement: QaapTaskSandboxPlacement, startupMs: number, created: boolean,
     ): QaapTaskSandboxBrokerSandbox {
@@ -625,6 +786,12 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
     protected positiveInt(name: string, fallback: number): number {
         const raw = Number(process.env[name]);
         return Number.isInteger(raw) && raw > 0 ? raw : fallback;
+    }
+
+    protected nonNegativeInt(name: string, fallback: number): number {
+        const raw = process.env[name]?.trim();
+        const value = Number(raw);
+        return raw && Number.isInteger(value) && value >= 0 ? value : fallback;
     }
 
     protected memoryBytes(raw: string): number {

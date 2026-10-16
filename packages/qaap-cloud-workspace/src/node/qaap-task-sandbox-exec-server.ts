@@ -13,7 +13,10 @@
  * self-contained: Node built-ins only, imported with `import x = require()` so the compiled
  * output needs no `tslib` helper. Protocol: `qaap-task-sandbox-exec-protocol.ts` (same constants).
  *
- * Every request carries the per-sandbox token. The token is removed from `process.env` before
+ * Every request carries the per-sandbox token. The token arrives as the first line on stdin
+ * (the broker writes it through `docker attach` and closes stdin), never through the environment:
+ * an env var would stay readable in /proc/<pid>/environ of this process and of the init process,
+ * and in `docker inspect`, for every command running as the same uid.
  * any process is started, so the commands this server runs never inherit it.
  */
 
@@ -35,10 +38,9 @@ const MAX_HEADER_BYTES = 1024 * 1024;
 const KILL_GRACE_MS = 2_000;
 const SIGNALS = new Set(['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGKILL', 'SIGQUIT', 'SIGUSR1', 'SIGUSR2', 'SIGWINCH']);
 
-const token = process.env.QAAP_SANDBOX_EXEC_TOKEN ?? '';
+let token = '';
 const listenPort = Number(process.env.QAAP_SANDBOX_EXEC_PORT) || 7391;
 const homeLinks = process.env.QAAP_SANDBOX_HOME_LINKS ?? '[]';
-delete process.env.QAAP_SANDBOX_EXEC_TOKEN;
 delete process.env.QAAP_SANDBOX_HOME_LINKS;
 
 function frame(type: number, payload: Buffer | string = ''): Buffer {
@@ -376,20 +378,50 @@ const server = net.createServer(socket => {
     socket.on('error', () => undefined);
 });
 
-if (token.length < 32) {
-    process.stderr.write('[qaap-sandbox-exec] refusing to start without a token\n');
-    process.exit(2);
+/** Read the token line from stdin, then close stdin for good. */
+function readToken(timeoutMs: number): Promise<string> {
+    return new Promise(resolve => {
+        let text = '';
+        const done = (): void => {
+            clearTimeout(timer);
+            process.stdin.removeAllListeners('data');
+            process.stdin.destroy();
+            resolve(text.split('\n')[0].trim());
+        };
+        const timer = setTimeout(done, timeoutMs);
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('data', (chunk: string) => {
+            text += chunk;
+            if (text.includes('\n') || text.length > 4096) {
+                done();
+            }
+        });
+        process.stdin.on('end', done);
+        process.stdin.on('error', done);
+    });
 }
-linkHome();
-server.listen(listenPort, '0.0.0.0', () => {
-    try {
-        fs.mkdirSync('/tmp/.qaap-exec', { recursive: true });
-        fs.writeFileSync('/tmp/.qaap-exec/ready', `${process.pid}\n`);
-    } catch {
-        // readiness is also announced on stdout
+
+readToken(30_000).then(received => {
+    token = received;
+    if (token.length < 32) {
+        process.stderr.write('[qaap-sandbox-exec] refusing to start without a token on stdin\n');
+        process.exit(2);
     }
-    process.stdout.write('QAAP_SANDBOX_EXEC_READY\n');
+    linkHome();
+    listen();
 });
+
+function listen(): void {
+    server.listen(listenPort, '0.0.0.0', () => {
+        try {
+            fs.mkdirSync('/tmp/.qaap-exec', { recursive: true });
+            fs.writeFileSync('/tmp/.qaap-exec/ready', `${process.pid}\n`);
+        } catch {
+            // readiness is also announced on stdout
+        }
+        process.stdout.write('QAAP_SANDBOX_EXEC_READY\n');
+    });
+}
 const stop = (): void => {
     server.close();
     process.exit(0);

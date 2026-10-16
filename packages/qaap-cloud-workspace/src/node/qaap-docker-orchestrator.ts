@@ -681,6 +681,27 @@ export class QaapDockerOrchestrator {
     }
 
     /**
+     * Broker-mode task sandboxes of this namespace on every Docker node. The broker seeds its
+     * orphan reaping from this after a restart, when its in-memory state is gone.
+     */
+    async listTaskSandboxContainers(): Promise<Array<{ readonly tenantLogin: string; readonly name: string; readonly running: boolean }>> {
+        const found = await Promise.all(this.getDockerNodeClients().map(async node => {
+            const containers = await node.docker.listContainers({
+                all: true,
+                filters: { label: ['com.qaap.managed=true', 'com.qaap.task-sandbox.broker=true'] },
+            }).catch(() => []);
+            return containers.flatMap(container => {
+                const labels = container.Labels ?? {};
+                const tenantLogin = labels['com.qaap.tenant-login']?.trim().toLowerCase();
+                return isInQaapDockerNamespace(labels) && tenantLogin
+                    ? [{ tenantLogin, name: (container.Names?.[0] ?? '').replace(/^\//, ''), running: container.State === 'running' }]
+                    : [];
+            });
+        }));
+        return found.flat();
+    }
+
+    /**
      * Where a broker-mode task sandbox of `ownerLogin` runs (doc/qaap-task-sandbox.md): the tenant
      * backend's Docker node, image, internal network and egress, and the tenant's FIXED roots with
      * their Docker mount sources translated for that node and their destinations at the paths the

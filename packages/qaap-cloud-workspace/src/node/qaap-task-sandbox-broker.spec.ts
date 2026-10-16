@@ -136,11 +136,12 @@ describe('task sandbox exec server and local client (real processes)', function 
         server = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-server.js')], {
             env: {
                 PATH: process.env.PATH, HOME: home,
-                QAAP_SANDBOX_EXEC_TOKEN: TOKEN, QAAP_SANDBOX_EXEC_PORT: String(port),
+                QAAP_SANDBOX_EXEC_PORT: String(port),
                 QAAP_SANDBOX_HOME_LINKS: JSON.stringify([{ name: '.claude', target: '/home/theia/.qaap/agent/.claude' }, { name: '../evil', target: '/' }]),
             },
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: ['pipe', 'pipe', 'pipe'],
         });
+        server.stdin!.end(`${TOKEN}\n`);
         let stdout = '';
         server.stdout!.on('data', chunk => stdout += chunk);
         await waitFor(() => stdout.includes('QAAP_SANDBOX_EXEC_READY'));
@@ -179,6 +180,19 @@ describe('task sandbox exec server and local client (real processes)', function 
         expect(result.code).to.equal(7);
         expect(run.output()).to.contain(`out:hello:v1:${fs.realpathSync(work)}`).and.to.contain('err');
         expect(fs.existsSync(run.requestFile)).to.equal(false);
+    });
+
+    it('takes its token only from stdin: a token in the environment is not enough to start', async () => {
+        const envOnly = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-server.js')], {
+            env: { PATH: process.env.PATH, HOME: home, QAAP_SANDBOX_EXEC_TOKEN: TOKEN, QAAP_SANDBOX_EXEC_PORT: String(await freePort()) },
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        envOnly.stdin!.end();
+        let stderr = '';
+        envOnly.stderr!.on('data', chunk => stderr += chunk);
+        const code = await new Promise(resolve => envOnly.on('exit', resolve));
+        expect(code).to.equal(2);
+        expect(stderr).to.contain('without a token on stdin');
     });
 
     it('never passes the token to the commands it runs', async () => {
@@ -251,7 +265,11 @@ class FakeDocker {
     readonly volumes: Array<Record<string, unknown>> = [];
     readonly connected: string[] = [];
     readonly presentImages = new Set(['qaap-theia:test']);
+    readonly stdinWrites = new Map<string, string>();
+    readonly pulls: string[] = [];
+    readonly pendingPulls: Array<(error?: Error) => void> = [];
     failImage: string | undefined;
+    modem = { followProgress: (_stream: unknown, done: (error: Error | null) => void) => done(null) };
 
     createContainer(config: { name?: string; Image: string; Labels?: Record<string, string>; Env?: string[] }): unknown {
         this.created.push(config as unknown as Record<string, unknown>);
@@ -263,8 +281,15 @@ class FakeDocker {
     getContainer(name: string): unknown {
         const containers = this.containers;
         const removed = this.removed;
+        const stdinWrites = this.stdinWrites;
         const failImage = (): string | undefined => this.failImage;
         return {
+            attach: async () => ({
+                end: (chunk: string, callback: () => void) => {
+                    stdinWrites.set(name, chunk);
+                    callback();
+                },
+            }),
             start: async () => {
                 const container = containers.get(name)!;
                 container.running = container.image !== failImage();
@@ -275,8 +300,13 @@ class FakeDocker {
                 containers.delete(name);
                 removed.push(name);
             },
-            stop: async () => undefined,
-            rename: async () => undefined,
+            stop: async () => {
+                containers.get(name)!.running = false;
+            },
+            rename: async ({ name: next }: { name: string }) => {
+                containers.set(next, containers.get(name)!);
+                containers.delete(name);
+            },
             inspect: async () => {
                 const container = containers.get(name);
                 if (!container) {
@@ -316,8 +346,10 @@ class FakeDocker {
         return { connect: async ({ Container }: { Container: string }) => this.connected.push(`${network}:${Container}`) };
     }
 
-    pull(_image: string, callback: (error: Error | undefined) => void): void {
-        callback(new Error('offline'));
+    pull(image: string, callback: (error: Error | undefined, stream?: unknown) => void): void {
+        this.pulls.push(image);
+        // Stays in progress until the spec settles it.
+        this.pendingPulls.push(error => callback(error, {}));
     }
 }
 
@@ -356,6 +388,9 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
             getTenantBackendAssertionSecret: () => SECRET,
             getTenantBackendConnectionToken: () => undefined,
             listTenantBackendTargets: () => [],
+            listTaskSandboxContainers: async () => [...docker.containers.entries()]
+                .filter(([, container]) => container.labels['com.qaap.task-sandbox.broker'] === 'true')
+                .map(([name, container]) => ({ tenantLogin: container.labels['com.qaap.tenant-login'], name, running: container.running })),
         };
         (broker as unknown as { orchestrator: unknown }).orchestrator = orchestrator;
         (broker as unknown as { execServerSource: () => string }).execServerSource = () => '/* server */';
@@ -410,13 +445,105 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         expect(config.HostConfig.SecurityOpt).to.deep.equal(['no-new-privileges:true']);
         expect(docker.connected).to.deep.equal([`qaap-tenant-egress-alice:${sandbox.name}`]);
         expect(config.Labels).to.include({ 'com.qaap.task-sandbox.broker': 'true', 'com.qaap.tenant-login': 'alice', 'com.qaap.task-sandbox.worktree': args.root });
-        expect(config.Env).to.include('APP_MODE=dev').and.to.include(`QAAP_SANDBOX_EXEC_TOKEN=${sandbox.token}`);
+        expect(config.Env).to.include('APP_MODE=dev');
+        // The token never reaches Env (it would sit in /proc/<pid>/environ and docker inspect): it goes in on stdin.
+        expect(config.Env.some(entry => entry.includes(sandbox.token) || entry.startsWith('QAAP_SANDBOX_EXEC_TOKEN'))).to.equal(false);
+        expect(config).to.include({ OpenStdin: true, StdinOnce: true });
+        expect(docker.stdinWrites.get(sandbox.name)).to.equal(`${sandbox.token}\n`);
         expect(config.Env.filter(entry => entry.startsWith('PATH='))).to.deep.equal(['PATH=/opt/qaap-agent/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin']);
         expect(config.Env.some(entry => entry.startsWith('LD_PRELOAD'))).to.equal(false);
         expect(config.Env).to.include('QAAP_SANDBOX_HOME_LINKS=[{"name":".claude","target":"/home/theia/.qaap/agent/.claude"}]');
         // A second create for the same root reuses the running sandbox and its token.
         const again = await broker.create('alice', args);
         expect(again).to.include({ name: sandbox.name, token: sandbox.token, created: false });
+        // A restarted control plane no longer knows the token: it recreates instead of guessing.
+        const restarted = new QaapTaskSandboxBroker();
+        (restarted as unknown as { orchestrator: unknown }).orchestrator = (broker as unknown as { orchestrator: unknown }).orchestrator;
+        (restarted as unknown as { execServerSource: () => string }).execServerSource = () => '/* server */';
+        const recreated = await restarted.create('alice', args);
+        expect(recreated.created).to.equal(true);
+        expect(recreated.token).to.not.equal(sandbox.token);
+    });
+
+    it('pulls a missing devcontainer image only when allowlisted, and caps pulls per tenant', async () => {
+        const saved = { ...process.env };
+        try {
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1', devcontainer: { image: 'evil.example/huge:1' } });
+            expect(docker.pulls).to.deep.equal([]); // empty allowlist: never pull
+            process.env.QAAP_TASK_SANDBOX_PULL_ALLOWLIST = 'mcr.microsoft.com/devcontainers/';
+            process.env.QAAP_TASK_SANDBOX_PULLS_PER_DAY = '2';
+            for (const name of ['repo-2', 'repo-3', 'repo-4']) {
+                fs.mkdirSync(path.join(hostRoot, 'worktrees', 'alice', name));
+            }
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-2', devcontainer: { image: 'evil.example/huge:1' } });
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-3', devcontainer: { image: 'mcr.microsoft.com/devcontainers/base:1' } });
+            // One pull per tenant at a time: a second image waits for the first to finish.
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-4', devcontainer: { image: 'mcr.microsoft.com/devcontainers/node:1' } });
+            expect(docker.pulls).to.deep.equal(['mcr.microsoft.com/devcontainers/base:1']);
+            docker.pendingPulls.shift()!();
+            await new Promise(resolve => setTimeout(resolve, 10));
+            await broker.destroy('alice', { name: broker.containerName('alice', '/tmp/qaap-worktrees/alice/repo-4') });
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-4', devcontainer: { image: 'mcr.microsoft.com/devcontainers/node:1' } });
+            docker.pendingPulls.shift()!();
+            await new Promise(resolve => setTimeout(resolve, 10));
+            // The daily cap (2) is reached.
+            await broker.destroy('alice', { name: broker.containerName('alice', '/tmp/qaap-worktrees/alice/repo-4') });
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-4', devcontainer: { image: 'mcr.microsoft.com/devcontainers/go:1' } });
+            expect(docker.pulls).to.deep.equal(['mcr.microsoft.com/devcontainers/base:1', 'mcr.microsoft.com/devcontainers/node:1']);
+        } finally {
+            process.env = saved;
+        }
+    });
+
+    it('serializes creates per tenant and counts sandboxes in every state against the cap', async () => {
+        process.env.QAAP_TASK_SANDBOX_MAX_PER_TENANT = '1';
+        try {
+            fs.mkdirSync(path.join(hostRoot, 'worktrees', 'alice', 'repo-2'));
+            fs.mkdirSync(path.join(hostRoot, 'worktrees', 'alice', 'repo-3'));
+            const results = await Promise.allSettled([
+                broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' }),
+                broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-2' }),
+            ]);
+            expect(results.map(result => result.status).sort()).to.deep.equal(['fulfilled', 'rejected']);
+            const winner = (results.find(result => result.status === 'fulfilled') as PromiseFulfilledResult<QaapTaskSandboxBrokerSandbox>).value;
+            docker.containers.get(winner.name)!.running = false; // a stopped sandbox still counts
+            await expectRejection(broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-3' }), /limit 1/);
+        } finally {
+            delete process.env.QAAP_TASK_SANDBOX_MAX_PER_TENANT;
+        }
+    });
+
+    it('keeps a bounded number of archives and the sweep removes expired ones', async () => {
+        process.env.QAAP_TASK_SANDBOX_MAX_ARCHIVES_PER_TENANT = '1';
+        try {
+            fs.mkdirSync(path.join(hostRoot, 'worktrees', 'alice', 'repo-2'));
+            const first = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+            await broker.destroy('alice', { name: first.name, mode: 'archive' });
+            await new Promise(resolve => setTimeout(resolve, 5));
+            const second = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-2' });
+            await broker.destroy('alice', { name: second.name, mode: 'archive' });
+            const archives = (await broker.list('alice')).filter(entry => entry.archived);
+            expect(archives).to.have.length(1);
+            expect(archives[0].name.startsWith(second.name)).to.equal(true);
+            await broker.sweep(Date.now() + 25 * 60 * 60_000);
+            expect(await broker.list('alice')).to.deep.equal([]);
+        } finally {
+            delete process.env.QAAP_TASK_SANDBOX_MAX_ARCHIVES_PER_TENANT;
+        }
+    });
+
+    it('after a restart, reaps sandboxes of tenants whose backend never came back (seeded from Docker)', async () => {
+        const sandbox = await broker.create('bob', { root: '/tmp/qaap-worktrees/bob/repo-1' });
+        const restarted = new QaapTaskSandboxBroker();
+        (restarted as unknown as { orchestrator: unknown }).orchestrator = (broker as unknown as { orchestrator: unknown }).orchestrator;
+        const now = Date.now();
+        restarted.syncLinks(now + 120_000);
+        expect(docker.containers.has(sandbox.name)).to.equal(true); // nothing known yet: in-memory state is gone
+        await restarted.sweep(now);
+        restarted.syncLinks(now + 30_000);
+        expect(docker.containers.has(sandbox.name)).to.equal(true); // still within the grace period
+        restarted.syncLinks(now + 61_000);
+        await waitFor(() => !docker.containers.has(sandbox.name) || undefined);
     });
 
     it('falls back to the base image when a devcontainer image cannot run the exec server', async () => {
@@ -534,6 +661,45 @@ describe('task sandbox broker link (tenant backend ↔ control plane over HTTP)'
         expect(handled[0]).to.deep.equal({ tenant: 'alice', op: 'create', args: { root: '/tmp/qaap-worktrees/alice/repo-1' } });
         await expectRejection(client.destroy({ name: 'other' }), /no such sandbox/);
     });
+
+    it('backs off exponentially on a refused link and warns once per state change', async () => {
+        const refusing = http.createServer((_req, res) => res.writeHead(404).end());
+        await new Promise<void>(resolve => refusing.listen(0, '127.0.0.1', () => resolve()));
+        const refusedTarget = { ...target, containerId: 'c2', tenantLogin: 'carol', port: (refusing.address() as net.AddressInfo).port };
+        const backoff = new QaapTaskSandboxBroker();
+        (backoff as unknown as { orchestrator: Partial<QaapDockerOrchestrator> }).orchestrator = {
+            getTenantBackendAssertionSecret: () => SECRET,
+            getTenantBackendConnectionToken: () => undefined,
+            listTenantBackendTargets: () => [refusedTarget],
+        };
+        const warnings: string[] = [];
+        const originalWarn = console.warn;
+        console.warn = (message: string) => warnings.push(message);
+        try {
+            const delays: number[] = [];
+            let previous: number | undefined;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const before = Date.now();
+                // Pretend the backoff window has elapsed.
+                backoff.syncLinks(previous ?? before);
+                const retryAt = await waitFor(() => {
+                    const current = backoff.linkRetryAt('carol');
+                    return current !== undefined && current !== previous ? current : undefined;
+                });
+                delays.push(retryAt - before);
+                previous = retryAt;
+                // Within the backoff window nothing is retried.
+                backoff.syncLinks(Date.now());
+            }
+            expect(delays[1]).to.be.greaterThan(delays[0]);
+            expect(delays[2]).to.be.greaterThan(delays[1]);
+            expect(warnings.filter(message => message.includes('cannot link to carol'))).to.have.length(1);
+        } finally {
+            console.warn = originalWarn;
+            backoff.onStop();
+            refusing.close();
+        }
+    });
 });
 
 describe('QaapTaskSandboxService in broker mode (tenant backend)', function (): void {
@@ -561,9 +727,10 @@ describe('QaapTaskSandboxService in broker mode (tenant backend)', function (): 
         fs.mkdirSync(path.join(home, 'store', '.claude'), { recursive: true });
         fs.symlinkSync(path.join(home, 'store', '.claude'), path.join(home, '.claude'));
         server = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-server.js')], {
-            env: { PATH: process.env.PATH, HOME: home, QAAP_SANDBOX_EXEC_TOKEN: TOKEN, QAAP_SANDBOX_EXEC_PORT: String(execPort) },
-            stdio: ['ignore', 'pipe', 'ignore'],
+            env: { PATH: process.env.PATH, HOME: home, QAAP_SANDBOX_EXEC_PORT: String(execPort) },
+            stdio: ['pipe', 'pipe', 'ignore'],
         });
+        server.stdin!.end(`${TOKEN}\n`);
         let stdout = '';
         server.stdout!.on('data', chunk => stdout += chunk);
         await waitFor(() => stdout.includes('QAAP_SANDBOX_EXEC_READY'));
