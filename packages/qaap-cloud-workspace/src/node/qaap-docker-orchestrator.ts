@@ -1449,6 +1449,12 @@ export class QaapDockerOrchestrator {
                 User: this.getTenantContainerUser(),
                 WorkingDir: '/app',
                 Cmd: this.tenantBackendIngressRelayCommand(backendName),
+                // The inherited image HEALTHCHECK requests /qaap/api/health on :4873, i.e. through this
+                // relay to the backend. While the reaper keeps that backend paused the request never
+                // answers, and in the rootless daemon the timed-out probes were not killed: each one
+                // kept a node process (~8 threads) until the relay hit its PidsLimit (61/64, Oct 2026)
+                // and Docker could not even exec the next check. The backend has its own health.
+                Healthcheck: { Test: ['NONE'] },
                 ExposedPorts: { [`${TENANT_BACKEND_PORT}/tcp`]: {} },
                 Labels: {
                     'com.qaap.managed': 'true',

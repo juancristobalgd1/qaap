@@ -1187,6 +1187,8 @@ describe('QaapDockerOrchestrator', () => {
             expect(relayHostConfig?.PidsLimit).to.be.greaterThan(0);
             expect(relayHostConfig?.Memory).to.be.greaterThan(0);
             expect(relayHostConfig?.PortBindings).to.deep.equal({ '4873/tcp': [{ HostIp: '127.0.0.1', HostPort: '' }] });
+            // The image health probe would go through the relay to a possibly paused backend.
+            expect((relay?.options as { Healthcheck?: unknown } | undefined)?.Healthcheck).to.deep.equal({ Test: ['NONE'] });
         });
 
         it('times every phase of a backend wake that had to create the container', async () => {
