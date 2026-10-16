@@ -13,6 +13,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapDevcontainerResolver, type QaapTaskSandboxImagePlan } from './qaap-devcontainer-config';
 import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
+import { QaapTaskSandboxBrokerClient } from './qaap-task-sandbox-broker-client';
+import type { QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-protocol';
+import type { QaapSandboxExecClientRequest } from './qaap-task-sandbox-exec-client-main';
+import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
+import { QAAP_PERSISTENT_HOME_DIRECTORIES, QAAP_PERSISTENT_HOME_FILES } from './qaap-tenant-persistent-home';
 
 /**
  * Per-task ephemeral sandbox (roadmap H2.2, design in doc/qaap-task-sandbox.md).
@@ -23,10 +28,12 @@ import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespa
  * credential directories. The container uses the repo's devcontainer image when there is one,
  * otherwise the base image, and is destroyed (or archived) once the last task using it ends.
  *
- * v1 is "direct mode": the backend drives the Docker daemon it can reach (local dev with Docker,
- * or a control plane in QAAP_CLOUD_MODE=docker). Per-tenant backends have no Docker socket; the
- * control-plane broker they need is the documented next step. Everything is behind
- * `QAAP_TASK_SANDBOX=1` (default off).
+ * Two modes, both behind `QAAP_TASK_SANDBOX=1` (default off):
+ * - "direct": the backend drives the Docker daemon it can reach (local dev with Docker, or a
+ *   control plane in QAAP_CLOUD_MODE=docker) and runs processes with `docker exec`.
+ * - "broker" (production, `QAAP_TENANT_BACKEND_MODE=1`): the tenant backend has no Docker socket,
+ *   so it asks the control plane's {@link QaapTaskSandboxBroker} to create/destroy/list sandboxes
+ *   and runs processes through the sandbox's exec server with a local node client.
  */
 
 export const QAAP_TASK_SANDBOX_ENV = 'QAAP_TASK_SANDBOX';
@@ -83,6 +90,12 @@ const SIGNAL_FORWARDER = 'cli="$1"; name="$2"; killcmd="$3"; shift 3; '
     + 'trap \'"$cli" exec "$name" /bin/sh -c "$killcmd" >/dev/null 2>&1; kill -TERM "$pid" 2>/dev/null; exit 143\' TERM INT HUP; '
     + 'wait "$pid"';
 
+/** {@link SIGNAL_FORWARDER} for terminals: `docker exec -i`, plus `-t` when stdin is a terminal. */
+const TTY_FORWARDER = 'cli="$1"; name="$2"; killcmd="$3"; shift 3; tflag=""; [ -t 0 ] && tflag=-t; '
+    + '"$cli" exec -i $tflag "$@" <&0 & pid=$!; '
+    + 'trap \'"$cli" exec "$name" /bin/sh -c "$killcmd" >/dev/null 2>&1; kill -TERM "$pid" 2>/dev/null; exit 143\' TERM INT HUP; '
+    + 'wait "$pid"';
+
 /** Pipes stdin/stdout to a loopback port inside the container (preview tunnel), IPv4 then IPv6. */
 const BRIDGE_JS = `const net=require('net');const port=Number(process.argv[process.argv.length-1]);
 const go=(hosts)=>{const s=net.connect(port,hosts[0]);let ok=false;
@@ -127,14 +140,33 @@ export interface QaapTaskSandbox {
     readonly created: boolean;
     readonly forwardPorts: readonly number[];
     readonly remoteEnv: Readonly<Record<string, string>>;
+    /** Broker mode: the sandbox's exec server on the tenant network and its per-sandbox token. */
+    readonly exec?: { readonly host: string; readonly port: number; readonly token: string };
+}
+
+interface SandboxForward {
+    readonly server: net.Server;
+    /** Port inside the sandbox; retargeted when the app ignores the preview port it was given. */
+    containerPort: number;
 }
 
 interface SandboxEntry {
     sandbox: QaapTaskSandbox;
     readonly tasks: Set<string>;
     teardownTimer?: ReturnType<typeof setTimeout>;
-    readonly forwards: Map<number, net.Server>;
+    /** Loopback forwarders on the backend, by HOST port. */
+    readonly forwards: Map<number, SandboxForward>;
+    /** Preview ports the backend expects (from PORT / QAAP_PREVIEW_PORT), with the ports already listening then. */
+    readonly expectedPorts: Map<number, Set<number>>;
+    /** A terminal is open: forward every port its commands bind, when the same host port is free. */
+    watchAll: boolean;
+    readonly unavailablePorts: Set<number>;
+    lastPorts?: number[];
+    portWatcher?: ReturnType<typeof setInterval>;
+    portScan?: Promise<void>;
 }
+
+export type QaapTaskSandboxMode = 'direct' | 'broker';
 
 export type QaapTaskSandboxEndMode = 'destroy' | 'archive';
 
@@ -143,6 +175,9 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
 
     @inject(QaapDevcontainerResolver) @optional()
     protected readonly devcontainers: QaapDevcontainerResolver = new QaapDevcontainerResolver();
+
+    @inject(QaapTaskSandboxBrokerClient) @optional()
+    protected readonly broker?: QaapTaskSandboxBrokerClient;
 
     protected readonly entries = new Map<string, SandboxEntry>();
     protected readonly pending = new Map<string, Promise<SandboxEntry>>();
@@ -181,6 +216,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
 
     isEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
         return /^(1|true)$/i.test(env[QAAP_TASK_SANDBOX_ENV]?.trim() ?? '');
+    }
+
+    /** Broker mode in a per-tenant backend (no Docker socket), direct mode everywhere else. */
+    mode(env: NodeJS.ProcessEnv = process.env): QaapTaskSandboxMode {
+        return /^(1|true)$/i.test(env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '') ? 'broker' : 'direct';
     }
 
     /**
@@ -276,11 +316,16 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         if (entry.teardownTimer) {
             clearTimeout(entry.teardownTimer);
         }
-        for (const server of entry.forwards.values()) {
-            server.close();
+        if (entry.portWatcher) {
+            clearInterval(entry.portWatcher);
+        }
+        for (const forward of entry.forwards.values()) {
+            forward.server.close();
         }
         const job = (async (): Promise<void> => {
-            if (mode === 'archive') {
+            if (entry.sandbox.exec) {
+                await this.requireBroker().destroy({ name: entry.sandbox.name, mode });
+            } else if (mode === 'archive') {
                 // Docker labels are immutable: the archive marker is the stopped state plus a rename
                 // that carries the archive time (the reaper's TTL starts there, not at creation).
                 await this.docker(['stop', '-t', '5', entry.sandbox.name]).catch(() => undefined);
@@ -339,9 +384,14 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
     }
 
     /**
-     * Spawn `file args` inside the sandbox. The docker CLI swallows SIGTERM (it exits 0 and leaves
-     * the exec'd process running), so it runs under a host `sh` whose trap kills the in-container
-     * process group when the task is cancelled or a dev server restarts (group kill of the client).
+     * Spawn `file args` inside the sandbox.
+     *
+     * Direct mode: the docker CLI swallows SIGTERM (it exits 0 and leaves the exec'd process
+     * running), so it runs under a host `sh` whose trap kills the in-container process group when
+     * the task is cancelled or a dev server restarts (group kill of the client).
+     *
+     * Broker mode: `launch` starts the local exec client (`node qaap-task-sandbox-exec-client-main.js`)
+     * that streams stdio to the sandbox's exec server; signals and a dead client end the remote tree.
      */
     spawnInSandbox(
         sandbox: QaapTaskSandbox,
@@ -351,20 +401,30 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         launch: (file: string, args: string[], options: object) => ChildProcess = (f, a, o) => spawn(f, a, o as Parameters<typeof spawn>[2]),
     ): ChildProcess {
         const execId = `x${process.pid}-${Date.now().toString(36)}-${(this.execCounter++).toString(36)}`;
-        const wrapped = this.wrapExec(sandbox, options.cwd, file, args, options.env, execId);
-        const child = launch('/bin/sh', ['-c', SIGNAL_FORWARDER, 'qaap-sandbox-exec', wrapped.file, sandbox.name, this.killScript(execId), ...wrapped.args], {
-            // The docker CLI runs on the host: its cwd only needs to exist.
-            cwd: fs.existsSync(options.cwd) ? options.cwd : undefined,
-            env: this.execClientEnv(sandbox, options.env),
-            stdio: options.stdio,
-            detached: options.detached ?? process.platform !== 'win32',
-        });
+        let child: ChildProcess;
+        if (sandbox.exec) {
+            const client = this.execClientInvocation(sandbox, options.cwd, file, args, options.env, false);
+            child = launch(client.file, client.args, {
+                cwd: fs.existsSync(options.cwd) ? options.cwd : undefined,
+                env: { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin' },
+                stdio: options.stdio,
+                detached: options.detached ?? process.platform !== 'win32',
+            });
+        } else {
+            const wrapped = this.wrapExec(sandbox, options.cwd, file, args, options.env, execId);
+            child = launch('/bin/sh', ['-c', SIGNAL_FORWARDER, 'qaap-sandbox-exec', wrapped.file, sandbox.name, this.killScript(execId), ...wrapped.args], {
+                // The docker CLI runs on the host: its cwd only needs to exist.
+                cwd: fs.existsSync(options.cwd) ? options.cwd : undefined,
+                env: this.execClientEnv(sandbox, options.env),
+                stdio: options.stdio,
+                detached: options.detached ?? process.platform !== 'win32',
+            });
+        }
         // Only the preview supervisor's allocated port: `PORT` is inherited from the backend (the IDE
         // port in the production image) by every spawn and must not be forwarded.
         const port = Number(options.env.QAAP_PREVIEW_PORT);
         if (Number.isInteger(port) && port > 0 && port < 65536) {
-            this.forwardPort(sandbox, port, port).catch(error =>
-                console.warn(`[qaap-task-sandbox] preview forward ${port} → ${sandbox.name} failed: ${(error as Error).message}`));
+            this.expectPreviewPort(sandbox, port);
         }
         return child;
     }
@@ -378,50 +438,240 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
     }
 
     /**
+     * Interactive terminal shell inside the sandbox, for the node-pty seam (`wrapShellForTenant`).
+     * The PTY env is merged after this wrapper runs, so the explicit `environment` is what the
+     * shell gets. Broker mode runs it under a pseudo-terminal in the sandbox (`script`).
+     */
+    wrapInteractive(sandbox: QaapTaskSandbox, cwd: string, file: string, args: readonly string[], environment?: NodeJS.ProcessEnv): { file: string; args: string[] } {
+        const entry = this.entries.get(sandbox.root);
+        if (entry) {
+            entry.watchAll = true;
+            this.ensurePortWatcher(entry);
+        }
+        const previewPort = /(?:^|[\s'"])QAAP_PREVIEW_PORT=['"]?(\d{2,5})/.exec(args.join(' '));
+        if (previewPort) {
+            this.expectPreviewPort(sandbox, Number(previewPort[1]));
+        }
+        if (sandbox.exec) {
+            return this.execClientInvocation(sandbox, cwd, file, args, environment ?? {}, true);
+        }
+        const execId = `t${process.pid}-${Date.now().toString(36)}-${(this.execCounter++).toString(36)}`;
+        const envArgs: string[] = [];
+        for (const [key, value] of Object.entries(environment ?? {})) {
+            if (value !== undefined && !EXEC_ENV_DENYLIST.has(key) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+                envArgs.push('-e', `${key}=${value}`);
+            }
+        }
+        for (const [key, value] of Object.entries(sandbox.remoteEnv)) {
+            envArgs.push('-e', `${key}=${value}`);
+        }
+        return {
+            file: '/bin/sh',
+            args: ['-c', TTY_FORWARDER, 'qaap-sandbox-tty', this.dockerCli(), sandbox.name, this.killScript(execId),
+                ...envArgs,
+                '-e', `HOME=${QAAP_TASK_SANDBOX_HOME}`, '-e', `PATH=${this.containerPath()}`,
+                '-w', this.realpath(cwd), sandbox.name, `${EXEC_DIR}/run`, execId, file, ...args],
+        };
+    }
+
+    /**
+     * Register a preview port the backend's proxy will target for this sandbox. It is forwarded to
+     * the same port in the sandbox at once; if the app binds another port instead (it ignores
+     * PORT), the port watcher retargets the forwarder to the port it actually bound.
+     */
+    expectPreviewPort(sandbox: QaapTaskSandbox, port: number): void {
+        const entry = this.entries.get(sandbox.root);
+        if (!entry || entry.expectedPorts.has(port)) {
+            return;
+        }
+        entry.expectedPorts.set(port, new Set(entry.lastPorts ?? []));
+        this.forwardPort(sandbox, port, port).catch(error =>
+            console.warn(`[qaap-task-sandbox] preview forward ${port} → ${sandbox.name} failed: ${(error as Error).message}`));
+        this.ensurePortWatcher(entry);
+    }
+
+    /**
      * Expose the sandbox's loopback `containerPort` on the backend's `127.0.0.1:hostPort` (0 picks a
-     * free port). Each connection runs a small bridge with `docker exec`, so nothing is published
-     * and it works whatever address the dev server bound inside its own network namespace. One exec
-     * per TCP connection costs ~100–300 ms per connection; a long-lived in-container relay is a
-     * documented follow-up (doc/qaap-task-sandbox.md).
-     * Resolves to the host port.
+     * free port). Each connection opens a bridge into the sandbox (direct: `docker exec … bridge`,
+     * broker: the exec server's `connect`), so nothing is published and it works whatever address
+     * the dev server bound inside its own network namespace. Direct mode costs one exec per TCP
+     * connection (~100–300 ms); a long-lived in-container relay is a documented follow-up
+     * (doc/qaap-task-sandbox.md). Resolves to the host port. An existing forwarder on `hostPort`
+     * is retargeted to `containerPort`.
      */
     async forwardPort(sandbox: QaapTaskSandbox, containerPort: number, hostPort = 0): Promise<number> {
         const entry = this.entries.get(sandbox.root);
         if (!entry) {
             throw new Error(`Sandbox ${sandbox.name} is not running.`);
         }
-        const existing = entry.forwards.get(containerPort);
-        if (existing) {
-            return (existing.address() as net.AddressInfo).port;
+        if (hostPort > 0) {
+            const existing = entry.forwards.get(hostPort);
+            if (existing) {
+                existing.containerPort = containerPort;
+                return hostPort;
+            }
+        } else {
+            for (const [port, forward] of entry.forwards) {
+                if (forward.containerPort === containerPort) {
+                    return port;
+                }
+            }
         }
-        const server = net.createServer(socket => {
-            const bridge = spawn(this.dockerCli(), ['exec', '-i', sandbox.name, `${EXEC_DIR}/bridge`, String(containerPort)], {
-                stdio: ['pipe', 'pipe', 'ignore'],
-            });
-            socket.pipe(bridge.stdin!);
-            bridge.stdout!.pipe(socket);
+        const forward: SandboxForward = { server: net.createServer(socket => this.bridge(sandbox, forward.containerPort, socket)), containerPort };
+        await new Promise<void>((resolve, reject) => {
+            forward.server.once('error', reject);
+            forward.server.listen(hostPort, '127.0.0.1', () => resolve());
+        });
+        const bound = (forward.server.address() as net.AddressInfo).port;
+        if (!this.entries.has(sandbox.root)) {
+            forward.server.close();
+            throw new Error(`Sandbox ${sandbox.name} ended.`);
+        }
+        entry.forwards.set(bound, forward);
+        return bound;
+    }
+
+    /** The backend host port that reaches `containerPort` in the sandbox owning `cwd`, if forwarded. */
+    hostPortFor(cwd: string, containerPort: number): number | undefined {
+        const sandbox = this.sandboxFor(cwd);
+        const entry = sandbox ? this.entries.get(sandbox.root) : undefined;
+        for (const [port, forward] of entry?.forwards ?? []) {
+            if (forward.containerPort === containerPort) {
+                return port;
+            }
+        }
+        return undefined;
+    }
+
+    protected bridge(sandbox: QaapTaskSandbox, containerPort: number, socket: net.Socket): void {
+        if (sandbox.exec) {
+            const upstream = net.connect(sandbox.exec.port, sandbox.exec.host);
+            let open = false;
+            let header = '';
+            socket.pause();
+            upstream.on('connect', () => upstream.write(`${JSON.stringify({ token: sandbox.exec!.token, op: 'connect', port: containerPort })}\n`));
+            const onHeader = (chunk: Buffer): void => {
+                header += chunk.toString('latin1');
+                const newline = header.indexOf('\n');
+                if (newline < 0) {
+                    return;
+                }
+                upstream.off('data', onHeader);
+                if (!header.slice(0, newline).includes('"ok":true')) {
+                    socket.destroy();
+                    upstream.destroy();
+                    return;
+                }
+                open = true;
+                const rest = Buffer.from(header.slice(newline + 1), 'latin1');
+                if (rest.length) {
+                    socket.write(rest);
+                }
+                upstream.pipe(socket);
+                socket.pipe(upstream);
+            };
+            upstream.on('data', onHeader);
             const close = (): void => {
                 socket.destroy();
-                if (!bridge.killed && typeof bridge.exitCode !== 'number') {
-                    bridge.kill();
-                }
+                upstream.destroy();
             };
-            bridge.on('exit', close);
-            bridge.on('error', close);
+            upstream.on('error', close);
+            upstream.on('close', close);
             socket.on('error', close);
-            socket.on('close', close);
-        });
-        entry.forwards.set(containerPort, server);
-        try {
-            await new Promise<void>((resolve, reject) => {
-                server.once('error', reject);
-                server.listen(hostPort, '127.0.0.1', () => resolve());
-            });
-        } catch (error) {
-            entry.forwards.delete(containerPort);
-            throw error;
+            socket.on('close', () => open ? upstream.end() : upstream.destroy());
+            return;
         }
-        return (server.address() as net.AddressInfo).port;
+        const bridge = spawn(this.dockerCli(), ['exec', '-i', sandbox.name, `${EXEC_DIR}/bridge`, String(containerPort)], {
+            stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        socket.pipe(bridge.stdin!);
+        bridge.stdout!.pipe(socket);
+        const close = (): void => {
+            socket.destroy();
+            if (!bridge.killed && typeof bridge.exitCode !== 'number') {
+                bridge.kill();
+            }
+        };
+        bridge.on('exit', close);
+        bridge.on('error', close);
+        socket.on('error', close);
+        socket.on('close', close);
+    }
+
+    /** TCP ports listening inside the sandbox (its own network namespace), read from /proc/net. */
+    async listPorts(sandbox: QaapTaskSandbox): Promise<number[]> {
+        if (sandbox.exec) {
+            const answer = await this.execServerQuery(sandbox, 'ports');
+            return Array.isArray(answer.ports) ? answer.ports.filter((port): port is number => typeof port === 'number') : [];
+        }
+        const text = await this.docker(['exec', sandbox.name, '/bin/sh', '-c', 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null; true'], 5_000);
+        return parseQaapListeningPorts(text);
+    }
+
+    protected ensurePortWatcher(entry: SandboxEntry): void {
+        if (entry.portWatcher) {
+            return;
+        }
+        entry.portWatcher = setInterval(() => {
+            if (!entry.portScan) {
+                entry.portScan = this.scanPorts(entry).catch(() => undefined).finally(() => entry.portScan = undefined);
+            }
+        }, this.portWatchMs());
+        entry.portWatcher.unref?.();
+    }
+
+    /**
+     * Preview port detection. An expected port that is listening is forwarded 1:1. When it is not,
+     * but a new port appeared since it was expected, the app ignored PORT (hardcoded `:5173`): the
+     * backend's expected port is retargeted to the port the app actually bound, so the preview
+     * proxy (which targets the expected port) reaches it unchanged. Other new ports are forwarded
+     * 1:1 when that host port is free (terminal-started servers, legacy port URLs).
+     */
+    async scanPorts(entry: SandboxEntry): Promise<void> {
+        const sandbox = entry.sandbox;
+        const ports = await this.listPorts(sandbox);
+        entry.lastPorts = ports;
+        const listening = new Set(ports);
+        const claimed = new Set<number>();
+        for (const [expected, baseline] of entry.expectedPorts) {
+            const forward = entry.forwards.get(expected);
+            if (listening.has(expected)) {
+                claimed.add(expected);
+                if (forward && forward.containerPort !== expected) {
+                    forward.containerPort = expected;
+                }
+                continue;
+            }
+            const current = forward?.containerPort;
+            if (current !== undefined && current !== expected && listening.has(current)) {
+                claimed.add(current);
+                continue;
+            }
+            const candidate = ports.find(port => !baseline.has(port) && !claimed.has(port) && !entry.expectedPorts.has(port));
+            if (candidate !== undefined) {
+                claimed.add(candidate);
+                await this.forwardPort(sandbox, candidate, expected);
+                console.info(`[qaap-task-sandbox] preview port ${expected} → ${sandbox.name}:${candidate} (the app ignores PORT)`);
+            }
+        }
+        if (!entry.watchAll && entry.expectedPorts.size === 0) {
+            return;
+        }
+        for (const port of ports) {
+            if (claimed.has(port) || entry.forwards.has(port) || entry.unavailablePorts.has(port) || this.hostPortForEntry(entry, port) !== undefined) {
+                continue;
+            }
+            await this.forwardPort(sandbox, port, port).catch(() => entry.unavailablePorts.add(port));
+        }
+    }
+
+    protected hostPortForEntry(entry: SandboxEntry, containerPort: number): number | undefined {
+        for (const [port, forward] of entry.forwards) {
+            if (forward.containerPort === containerPort) {
+                return port;
+            }
+        }
+        return undefined;
     }
 
     /**
@@ -430,12 +680,28 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
      * sandboxes are never touched; archives of any owner expire by the time in their name.
      */
     async reapOrphans(now: number = Date.now()): Promise<number> {
+        // Starting sandboxes count as live too: an auto-resumed task may be adopting one right now.
+        const live = new Set([...[...this.entries.values()].map(entry => entry.sandbox.name), ...[...this.pending.keys()].map(root => this.containerName(root))]);
+        if (this.mode() === 'broker') {
+            const broker = this.requireBroker();
+            let removed = 0;
+            for (const listed of await broker.list().catch(() => [])) {
+                if (live.has(listed.name)) {
+                    continue;
+                }
+                const archivedAt = Number(/-archived-(\d+)$/.exec(listed.name)?.[1]);
+                if (listed.archived && !listed.running && !(now - archivedAt > this.archiveTtlMs())) {
+                    continue;
+                }
+                await broker.destroy({ name: listed.name }).catch(() => undefined);
+                removed++;
+            }
+            return removed;
+        }
         const listed = await this.docker([
             'ps', '-a', '--filter', `label=${QAAP_TASK_SANDBOX_LABEL}=true`,
             '--format', `{{.Names}}\t{{.State}}\t{{.Label "${QAAP_TASK_SANDBOX_OWNER_LABEL}"}}`,
         ]).catch(() => '');
-        // Starting sandboxes count as live too: an auto-resumed task may be adopting one right now.
-        const live = new Set([...[...this.entries.values()].map(entry => entry.sandbox.name), ...[...this.pending.keys()].map(root => this.containerName(root))]);
         const prefix = qaapDockerName('qaap-task-');
         const owner = this.ownerId();
         let removed = 0;
@@ -464,7 +730,14 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         return process.env.QAAP_TASK_SANDBOX_OWNER?.trim() || os.hostname();
     }
 
+    protected newEntry(sandbox: QaapTaskSandbox): SandboxEntry {
+        return { sandbox, tasks: new Set(), forwards: new Map(), expectedPorts: new Map(), watchAll: false, unavailablePorts: new Set() };
+    }
+
     protected async createEntry(root: string, options: QaapTaskSandboxAcquireOptions): Promise<SandboxEntry> {
+        if (this.mode() === 'broker') {
+            return this.createBrokerEntry(root, options);
+        }
         const started = Date.now();
         const name = this.containerName(root);
         const plan = await this.resolveImagePlan(root);
@@ -498,9 +771,205 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         };
         console.info(`[qaap-task-sandbox] ${created ? 'started' : 'reused'} ${name} for ${root} `
             + `(image ${plan.image}, ${plan.kind}) in ${startupMs} ms${postCreateMs !== undefined ? `, postCreate ${postCreateMs} ms` : ''}`);
-        const entry: SandboxEntry = { sandbox, tasks: new Set(), forwards: new Map() };
+        const entry = this.newEntry(sandbox);
         this.entries.set(root, entry);
         return entry;
+    }
+
+    /**
+     * Broker mode: the control plane creates the container (fixed tenant roots, tenant network,
+     * exec server entrypoint). This backend only sends the worktree root, the devcontainer fields
+     * the broker honours and the HOME links that point at the tenant's persistent agent storage.
+     */
+    protected async createBrokerEntry(root: string, options: QaapTaskSandboxAcquireOptions): Promise<SandboxEntry> {
+        const started = Date.now();
+        const plan = this.devcontainers.plan(root, 'base');
+        const devcontainer = plan.kind === 'base' ? undefined : plan.devcontainer;
+        if (plan.kind === 'build') {
+            console.warn(`[qaap-task-sandbox] devcontainer Dockerfile builds are not supported in broker mode; ${root} uses the base image`);
+        }
+        const created: QaapTaskSandboxBrokerSandbox = await this.requireBroker().create({
+            root,
+            devcontainer: devcontainer ? {
+                image: plan.kind === 'image' ? plan.image : undefined,
+                containerEnv: devcontainer.containerEnv,
+            } : undefined,
+            homeLinks: this.homeLinks(options.env?.HOME),
+        });
+        const sandbox: QaapTaskSandbox = {
+            name: created.name,
+            root,
+            image: created.image,
+            imageKind: created.imageKind === 'image' && plan.kind === 'image' ? 'image' : 'base',
+            startupMs: created.created ? Date.now() - started : 0,
+            created: created.created,
+            forwardPorts: devcontainer?.forwardPorts ?? [],
+            remoteEnv: devcontainer?.remoteEnv ?? {},
+            exec: { host: created.host, port: created.port, token: created.token },
+        };
+        const entry = this.newEntry(sandbox);
+        this.entries.set(root, entry);
+        if (created.created && devcontainer?.postCreateCommand) {
+            const marker = await this.postCreateMarker(root);
+            if (!marker || !fs.existsSync(marker)) {
+                const postStarted = Date.now();
+                const result = await this.runRemote(sandbox, '/bin/sh', ['-c', devcontainer.postCreateCommand], root, POST_CREATE_TIMEOUT_MS)
+                    .catch(error => ({ code: -1, output: (error as Error).message }));
+                if (result.code === 0 && marker) {
+                    fs.writeFileSync(marker, `${new Date().toISOString()}\n`);
+                } else if (result.code !== 0) {
+                    console.warn(`[qaap-task-sandbox] postCreateCommand failed in ${sandbox.name}: ${result.output.slice(-400)}`);
+                }
+                entry.sandbox = { ...sandbox, postCreateMs: Date.now() - postStarted };
+            }
+        }
+        console.info(`[qaap-task-sandbox] ${created.created ? 'started' : 'reused'} ${sandbox.name} for ${root} via the broker `
+            + `(image ${sandbox.image}) in ${Date.now() - started} ms`);
+        return entry;
+    }
+
+    /** HOME entries that link to the tenant's persistent agent storage, recreated inside the sandbox. */
+    protected homeLinks(home: string | undefined): Array<{ name: string; target: string }> {
+        const links: Array<{ name: string; target: string }> = [];
+        if (!home) {
+            return links;
+        }
+        for (const name of [...QAAP_PERSISTENT_HOME_DIRECTORIES, ...QAAP_PERSISTENT_HOME_FILES]) {
+            try {
+                const link = path.join(home, name);
+                if (fs.lstatSync(link).isSymbolicLink()) {
+                    links.push({ name, target: path.resolve(path.dirname(link), fs.readlinkSync(link)) });
+                }
+            } catch {
+                // not linked in this backend
+            }
+        }
+        return links;
+    }
+
+    /**
+     * Local exec-client invocation (broker mode). The endpoint, token and the command's exact
+     * environment go into a 0600 request file in a backend-private directory, read and deleted by
+     * the client at once: none of them is on an argv or in the client's own environment.
+     */
+    protected execClientInvocation(
+        sandbox: QaapTaskSandbox, cwd: string, file: string, args: readonly string[], env: NodeJS.ProcessEnv, tty: boolean,
+    ): { file: string; args: string[] } {
+        const request: QaapSandboxExecClientRequest = {
+            host: sandbox.exec!.host,
+            port: sandbox.exec!.port,
+            token: sandbox.exec!.token,
+            file,
+            args: [...args],
+            cwd,
+            env: this.sandboxExecEnv(sandbox, env),
+            tty,
+        };
+        const dir = this.execRequestDir();
+        const requestFile = path.join(dir, `${crypto.randomBytes(12).toString('hex')}.json`);
+        fs.writeFileSync(requestFile, JSON.stringify(request), { mode: 0o600, flag: 'wx' });
+        return { file: process.execPath, args: [path.join(__dirname, 'qaap-task-sandbox-exec-client-main.js'), requestFile] };
+    }
+
+    protected execRequestDir(): string {
+        const dir = path.join(os.tmpdir(), `qaap-sandbox-exec-${process.getuid?.() ?? 'u'}`);
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const stat = fs.lstatSync(dir);
+        if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid())) {
+            throw new Error(`Refusing to write sandbox exec requests into ${dir}: not a private directory of this backend.`);
+        }
+        fs.chmodSync(dir, 0o700);
+        return dir;
+    }
+
+    /** The environment a command gets inside the sandbox: the task env minus host-only variables. */
+    protected sandboxExecEnv(sandbox: QaapTaskSandbox, env: NodeJS.ProcessEnv | undefined): Record<string, string> {
+        const result: Record<string, string> = {};
+        for (const [key, value] of Object.entries(env ?? {})) {
+            if (value !== undefined && !EXEC_ENV_DENYLIST.has(key) && !key.startsWith('QAAP_SANDBOX_') && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+                result[key] = value;
+            }
+        }
+        return { ...result, ...sandbox.remoteEnv, HOME: QAAP_TASK_SANDBOX_HOME, PATH: this.brokerContainerPath() };
+    }
+
+    /** Run a command to completion through the exec server (postCreateCommand); collects output. */
+    protected runRemote(sandbox: QaapTaskSandbox, file: string, args: string[], cwd: string, timeoutMs: number): Promise<{ code: number; output: string }> {
+        return new Promise((resolve, reject) => {
+            const socket = net.connect(sandbox.exec!.port, sandbox.exec!.host);
+            const decoder = new QaapSandboxFrameDecoder();
+            let output = '';
+            let done = false;
+            const timer = setTimeout(() => {
+                socket.write(encodeQaapSandboxFrame(QaapSandboxFrame.Signal, JSON.stringify({ signal: 'SIGKILL' })));
+                socket.destroy();
+                reject(new Error(`timed out after ${timeoutMs} ms`));
+            }, timeoutMs);
+            socket.on('connect', () => {
+                socket.write(`${JSON.stringify({
+                    token: sandbox.exec!.token, op: 'exec', file, args, cwd, env: this.sandboxExecEnv(sandbox, {}),
+                })}\n`);
+                socket.write(encodeQaapSandboxFrame(QaapSandboxFrame.StdinEnd));
+            });
+            socket.on('data', chunk => {
+                for (const { type, payload } of decoder.push(chunk)) {
+                    if (type === QaapSandboxFrame.Stdout || type === QaapSandboxFrame.Stderr) {
+                        output = (output + payload.toString('utf8')).slice(-64 * 1024);
+                    } else if (type === QaapSandboxFrame.Exit || type === QaapSandboxFrame.Error) {
+                        done = true;
+                        clearTimeout(timer);
+                        const parsed = JSON.parse(payload.toString('utf8')) as { code?: number | null; message?: string };
+                        resolve({ code: type === QaapSandboxFrame.Exit ? (parsed.code ?? 1) : 127, output: output + (parsed.message ?? '') });
+                    }
+                }
+            });
+            socket.on('error', error => {
+                clearTimeout(timer);
+                if (!done) {
+                    reject(error);
+                }
+            });
+            socket.on('close', () => {
+                clearTimeout(timer);
+                if (!done) {
+                    reject(new Error('the exec server closed the connection'));
+                }
+            });
+        });
+    }
+
+    /** One-line JSON request to the exec server (`ports`, `ping`). */
+    protected execServerQuery(sandbox: QaapTaskSandbox, op: 'ports' | 'ping'): Promise<{ ok?: boolean; ports?: unknown[] }> {
+        return new Promise((resolve, reject) => {
+            const socket = net.connect(sandbox.exec!.port, sandbox.exec!.host);
+            let text = '';
+            socket.setTimeout(5_000, () => socket.destroy(new Error(`exec server ${op} timed out`)));
+            socket.on('connect', () => socket.write(`${JSON.stringify({ token: sandbox.exec!.token, op })}\n`));
+            socket.on('data', chunk => text += chunk.toString('utf8'));
+            socket.on('error', reject);
+            socket.on('close', () => {
+                try {
+                    resolve(JSON.parse(text.trim() || '{}'));
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
+    }
+
+    protected requireBroker(): QaapTaskSandboxBrokerClient {
+        if (!this.broker?.isEnabled()) {
+            throw new Error('Task sandboxes in a tenant backend need the control-plane broker (QAAP_TASK_SANDBOX=1 on the control plane).');
+        }
+        return this.broker;
+    }
+
+    protected brokerContainerPath(): string {
+        return `${QAAP_TASK_SANDBOX_TOOLCHAIN_MOUNT}/current/bin:${DEFAULT_PATH}`;
+    }
+
+    protected portWatchMs(): number {
+        return this.positiveInt('QAAP_TASK_SANDBOX_PORT_WATCH_MS', 1_000);
     }
 
     /** `docker run` argv for a sandbox: hardened like the tenant workers, holding only this worktree. */

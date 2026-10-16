@@ -597,8 +597,9 @@ export class QaapTenantSpawnService {
     }
 
     /**
-     * The live per-task sandbox (QAAP_TASK_SANDBOX, doc/qaap-task-sandbox.md) that owns `cwd`, if any.
-     * v1 is direct mode only: with container-per-tenant isolation the tenant worker stays the boundary.
+     * The live per-task sandbox (QAAP_TASK_SANDBOX, doc/qaap-task-sandbox.md) that owns `cwd`, if any:
+     * direct mode, or broker mode inside a per-tenant backend. A control plane in container-per-tenant
+     * mode (QAAP_CLOUD_MODE=docker) keeps the tenant worker as the boundary.
      */
     protected taskSandboxFor(cwd: string): QaapTaskSandbox | undefined {
         if (!this.taskSandbox?.isEnabled() || this.isContainerIsolationEnabled()) {
@@ -1004,6 +1005,11 @@ export class QaapTenantSpawnService {
     wrapShellForTenant(cwd: string, file: string, args: readonly string[], environment?: NodeJS.ProcessEnv): { file: string; args: string[] } {
         cwd = this.canonicalizeCwd(cwd);
         this.enforceIsolationPolicy();
+        const sandbox = this.taskSandboxFor(cwd);
+        if (sandbox) {
+            // A terminal in a sandboxed worktree joins that task's sandbox: same processes, same ports.
+            return this.taskSandbox!.wrapInteractive(sandbox, cwd, file, args, environment);
+        }
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
             const tenantRoot = this.resolveTenantRoot(cwd);

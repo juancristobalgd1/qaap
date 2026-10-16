@@ -1,0 +1,695 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { expect } from 'chai';
+import { ChildProcess, spawn } from 'child_process';
+import * as crypto from 'crypto';
+import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as http from 'http';
+import * as net from 'net';
+import * as os from 'os';
+import * as path from 'path';
+import express = require('@theia/core/shared/express');
+import type { QaapDockerOrchestrator, QaapTaskSandboxPlacement, QaapTenantBackendTarget } from './qaap-docker-orchestrator';
+import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
+import { QaapTaskSandboxBroker } from './qaap-task-sandbox-broker';
+import { QaapTaskSandboxBrokerClient } from './qaap-task-sandbox-broker-client';
+import { QaapTaskSandboxBrokerAuth, type QaapTaskSandboxBrokerCreateArgs, type QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-protocol';
+import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+
+const SECRET = 'a'.repeat(64);
+const TOKEN = crypto.randomBytes(32).toString('base64url');
+
+function freePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+        server.on('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            const { port } = server.address() as net.AddressInfo;
+            server.close(() => resolve(port));
+        });
+    });
+}
+
+async function waitFor<T>(probe: () => T | undefined | Promise<T | undefined>, timeoutMs = 5_000): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        const value = await probe();
+        if (value !== undefined && value !== false) {
+            return value as T;
+        }
+        if (Date.now() > deadline) {
+            throw new Error('timed out');
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
+    }
+}
+
+function alive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** One request/answer line to an exec server (`ports`, `ping`) or an unauthorized probe. */
+function queryLine(port: number, request: object): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const socket = net.connect(port, '127.0.0.1', () => socket.write(`${JSON.stringify(request)}\n`));
+        let text = '';
+        socket.on('data', chunk => text += chunk.toString());
+        socket.on('close', () => resolve(text.trim()));
+        socket.on('error', reject);
+    });
+}
+
+describe('task sandbox exec protocol', () => {
+    it('round-trips frames split across arbitrary chunk boundaries', () => {
+        const wire = Buffer.concat([
+            encodeQaapSandboxFrame(QaapSandboxFrame.Stdout, 'hello'),
+            encodeQaapSandboxFrame(QaapSandboxFrame.StdinEnd),
+            encodeQaapSandboxFrame(QaapSandboxFrame.Exit, '{"code":3}'),
+        ]);
+        const decoder = new QaapSandboxFrameDecoder();
+        const frames = [];
+        for (let offset = 0; offset < wire.length; offset += 3) {
+            frames.push(...decoder.push(wire.subarray(offset, offset + 3)));
+        }
+        expect(frames.map(frame => [frame.type, frame.payload.toString()])).to.deep.equal([
+            [QaapSandboxFrame.Stdout, 'hello'], [QaapSandboxFrame.StdinEnd, ''], [QaapSandboxFrame.Exit, '{"code":3}'],
+        ]);
+    });
+
+    it('reads listening ports from /proc/net/tcp and tcp6 text', () => {
+        const text = [
+            '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode',
+            '   0: 0100007F:1435 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1001        0 1 1',
+            '   1: 0100007F:1435 0100007F:C350 01 00000000:00000000 00:00000000 00000000  1001        0 2 1',
+            '   0: 00000000000000000000000001000000:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 1001 0 3 1',
+        ].join('\n');
+        expect(parseQaapListeningPorts(text)).to.deep.equal([5173, 8080]);
+    });
+});
+
+describe('task sandbox broker auth', () => {
+    it('accepts only fresh requests signed for this tenant, op and arguments', () => {
+        const request = QaapTaskSandboxBrokerAuth.signRequest('Alice', SECRET, 'id1', 'create', { root: '/tmp/qaap-worktrees/alice/a' }, 1_000_000);
+        expect(QaapTaskSandboxBrokerAuth.verifyRequest(request, 'alice', SECRET, 1_000_500)).to.equal(true);
+        expect(QaapTaskSandboxBrokerAuth.verifyRequest(request, 'bob', SECRET, 1_000_500)).to.equal(false);
+        expect(QaapTaskSandboxBrokerAuth.verifyRequest({ ...request, args: { root: '/tmp/qaap-worktrees/bob/a' } }, 'alice', SECRET, 1_000_500)).to.equal(false);
+        expect(QaapTaskSandboxBrokerAuth.verifyRequest({ ...request, op: 'destroy' }, 'alice', SECRET, 1_000_500)).to.equal(false);
+        expect(QaapTaskSandboxBrokerAuth.verifyRequest(request, 'alice', 'b'.repeat(64), 1_000_500)).to.equal(false);
+        expect(QaapTaskSandboxBrokerAuth.verifyRequest(request, 'alice', SECRET, 1_000_000 + 61_000)).to.equal(false);
+        expect(QaapTaskSandboxBrokerAuth.verifyRequest('garbage', 'alice', SECRET)).to.equal(false);
+    });
+
+    it('binds the link probe to the tenant and the secret', () => {
+        const probe = QaapTaskSandboxBrokerAuth.createLinkProbe('alice', SECRET);
+        expect(QaapTaskSandboxBrokerAuth.verifyLinkProbe(probe, SECRET, 'Alice')).to.equal(true);
+        expect(QaapTaskSandboxBrokerAuth.verifyLinkProbe(probe, SECRET, 'bob')).to.equal(false);
+        expect(QaapTaskSandboxBrokerAuth.verifyLinkProbe(probe, 'short', 'alice')).to.equal(false);
+        expect(() => QaapTaskSandboxBrokerAuth.createLinkProbe('alice', 'short')).to.throw();
+    });
+});
+
+describe('task sandbox exec server and local client (real processes)', function (): void {
+    this.timeout(20_000);
+    if (process.platform === 'win32') {
+        return;
+    }
+    let server: ChildProcess;
+    let port: number;
+    let home: string;
+    let work: string;
+
+    before(async () => {
+        port = await freePort();
+        home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-exec-home-'));
+        work = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-exec-work-'));
+        server = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-server.js')], {
+            env: {
+                PATH: process.env.PATH, HOME: home,
+                QAAP_SANDBOX_EXEC_TOKEN: TOKEN, QAAP_SANDBOX_EXEC_PORT: String(port),
+                QAAP_SANDBOX_HOME_LINKS: JSON.stringify([{ name: '.claude', target: '/home/theia/.qaap/agent/.claude' }, { name: '../evil', target: '/' }]),
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        server.stdout!.on('data', chunk => stdout += chunk);
+        await waitFor(() => stdout.includes('QAAP_SANDBOX_EXEC_READY'));
+    });
+
+    after(() => {
+        server.kill();
+        fs.rmSync(home, { recursive: true, force: true });
+        fs.rmSync(work, { recursive: true, force: true });
+    });
+
+    const runClient = (file: string, args: string[], env: Record<string, string> = {}): { child: ChildProcess; requestFile: string; output: () => string } => {
+        const requestFile = path.join(work, `req-${crypto.randomBytes(4).toString('hex')}.json`);
+        fs.writeFileSync(requestFile, JSON.stringify({ host: '127.0.0.1', port, token: TOKEN, file, args, cwd: work, env }), { mode: 0o600 });
+        const child = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-client-main.js'), requestFile], {
+            env: { PATH: process.env.PATH }, stdio: ['pipe', 'pipe', 'pipe'], detached: true,
+        });
+        let output = '';
+        child.stdout!.on('data', chunk => output += chunk);
+        child.stderr!.on('data', chunk => output += chunk);
+        return { child, requestFile, output: () => output };
+    };
+
+    const exited = (child: ChildProcess): Promise<{ code: number | null; signal: NodeJS.Signals | null }> =>
+        new Promise(resolve => child.on('exit', (code, signal) => resolve({ code, signal })));
+
+    it('rejects a request without the sandbox token', async () => {
+        expect(await queryLine(port, { token: 'x'.repeat(43), op: 'ping' })).to.contain('unauthorized');
+        expect(await queryLine(port, { token: TOKEN, op: 'ping' })).to.equal('{"ok":true}');
+    });
+
+    it('streams stdin/stdout/stderr, the env and the exit code, and deletes the request file', async () => {
+        const run = runClient('/bin/sh', ['-c', 'read line; echo "out:$line:$TASK_VALUE:$(pwd)"; echo err >&2; exit 7'], { TASK_VALUE: 'v1' });
+        run.child.stdin!.end('hello\n');
+        const result = await exited(run.child);
+        expect(result.code).to.equal(7);
+        expect(run.output()).to.contain(`out:hello:v1:${fs.realpathSync(work)}`).and.to.contain('err');
+        expect(fs.existsSync(run.requestFile)).to.equal(false);
+    });
+
+    it('never passes the token to the commands it runs', async () => {
+        const run = runClient('/bin/sh', ['-c', 'echo "token=[${QAAP_SANDBOX_EXEC_TOKEN:-}]"']);
+        run.child.stdin!.end();
+        await exited(run.child);
+        expect(run.output()).to.contain('token=[]');
+    });
+
+    it('SIGTERM to the client ends the remote process group and the client dies by that signal', async () => {
+        const pidFile = path.join(work, 'term.pid');
+        const run = runClient('/bin/sh', ['-c', `sleep 30 & echo $! > ${pidFile}; wait`]);
+        const remote = Number(await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() || undefined));
+        expect(alive(remote)).to.equal(true);
+        process.kill(-run.child.pid!, 'SIGTERM');
+        const result = await exited(run.child);
+        expect(result.signal).to.equal('SIGTERM');
+        await waitFor(() => !alive(remote) || undefined);
+    });
+
+    it('a SIGKILLed client still takes the remote tree down (dead socket)', async () => {
+        const pidFile = path.join(work, 'kill.pid');
+        const run = runClient('/bin/sh', ['-c', `sleep 30 & echo $! > ${pidFile}; wait`]);
+        const remote = Number(await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() || undefined));
+        run.child.kill('SIGKILL');
+        await exited(run.child);
+        await waitFor(() => !alive(remote) || undefined, 8_000);
+    });
+
+    it('bridges a connect request to the sandbox loopback port (preview channel)', async () => {
+        const app = http.createServer((_req, res) => res.end('from-sandbox'));
+        await new Promise<void>(resolve => app.listen(0, '127.0.0.1', () => resolve()));
+        const appPort = (app.address() as net.AddressInfo).port;
+        try {
+            const socket = net.connect(port, '127.0.0.1');
+            socket.write(`${JSON.stringify({ token: TOKEN, op: 'connect', port: appPort })}\nGET / HTTP/1.0\r\n\r\n`);
+            let text = '';
+            socket.on('data', chunk => text += chunk.toString());
+            await new Promise(resolve => socket.on('close', resolve));
+            expect(text.startsWith('{"ok":true}\n')).to.equal(true);
+            expect(text).to.contain('from-sandbox');
+        } finally {
+            app.close();
+        }
+    });
+
+    it('recreates only well-formed HOME links', () => {
+        expect(fs.readlinkSync(path.join(home, '.claude'))).to.equal('/home/theia/.qaap/agent/.claude');
+        expect(fs.existsSync(path.join(path.dirname(home), 'evil'))).to.equal(false);
+    });
+
+    it('stays compatible with the shared frame codec', async () => {
+        const socket = net.connect(port, '127.0.0.1');
+        socket.write(`${JSON.stringify({ token: TOKEN, op: 'exec', file: '/bin/cat', args: [], cwd: work, env: {} })}\n`);
+        socket.write(encodeQaapSandboxFrame(QaapSandboxFrame.Stdin, 'ping'));
+        socket.write(encodeQaapSandboxFrame(QaapSandboxFrame.StdinEnd));
+        const decoder = new QaapSandboxFrameDecoder();
+        const frames: Array<[number, string]> = [];
+        socket.on('data', chunk => frames.push(...decoder.push(chunk).map(frame => [frame.type, frame.payload.toString()] as [number, string])));
+        await new Promise(resolve => socket.on('close', resolve));
+        expect(frames).to.deep.equal([[QaapSandboxFrame.Stdout, 'ping'], [QaapSandboxFrame.Exit, '{"code":0,"signal":null}']]);
+    });
+});
+
+/** Minimal Dockerode double: records createContainer configs and answers inspect/list/logs. */
+class FakeDocker {
+    readonly created: Array<Record<string, unknown>> = [];
+    readonly removed: string[] = [];
+    readonly containers = new Map<string, { labels: Record<string, string>; env: string[]; running: boolean; image: string }>();
+    readonly volumes: Array<Record<string, unknown>> = [];
+    readonly connected: string[] = [];
+    readonly presentImages = new Set(['qaap-theia:test']);
+    failImage: string | undefined;
+
+    createContainer(config: { name?: string; Image: string; Labels?: Record<string, string>; Env?: string[] }): unknown {
+        this.created.push(config as unknown as Record<string, unknown>);
+        const name = config.name ?? `helper-${this.created.length}`;
+        this.containers.set(name, { labels: config.Labels ?? {}, env: config.Env ?? [], running: false, image: config.Image });
+        return this.getContainer(name);
+    }
+
+    getContainer(name: string): unknown {
+        const containers = this.containers;
+        const removed = this.removed;
+        const failImage = (): string | undefined => this.failImage;
+        return {
+            start: async () => {
+                const container = containers.get(name)!;
+                container.running = container.image !== failImage();
+            },
+            wait: async () => ({ StatusCode: 0 }),
+            logs: async () => Buffer.from(containers.get(name)?.running ? 'QAAP_SANDBOX_EXEC_READY\n' : 'node: not found\n'),
+            remove: async () => {
+                containers.delete(name);
+                removed.push(name);
+            },
+            stop: async () => undefined,
+            rename: async () => undefined,
+            inspect: async () => {
+                const container = containers.get(name);
+                if (!container) {
+                    throw Object.assign(new Error('no such container'), { statusCode: 404 });
+                }
+                return { Config: { Labels: container.labels, Env: container.env, Image: container.image }, State: { Running: container.running, ExitCode: 127 } };
+            },
+        };
+    }
+
+    async listContainers(options: { filters?: { label?: string[] } }): Promise<unknown[]> {
+        const wanted = options.filters?.label ?? [];
+        return [...this.containers.entries()]
+            .filter(([, container]) => wanted.every(label => {
+                const [key, value] = label.split('=');
+                return container.labels[key] === value;
+            }))
+            .map(([name, container]) => ({ Names: [`/${name}`], Labels: container.labels, State: container.running ? 'running' : 'exited' }));
+    }
+
+    getImage(image: string): unknown {
+        return {
+            inspect: async () => {
+                if (!this.presentImages.has(image)) {
+                    throw Object.assign(new Error('no such image'), { statusCode: 404 });
+                }
+                return { Id: `sha256:${image}` };
+            },
+        };
+    }
+
+    async createVolume(config: Record<string, unknown>): Promise<void> {
+        this.volumes.push(config);
+    }
+
+    getNetwork(network: string): unknown {
+        return { connect: async ({ Container }: { Container: string }) => this.connected.push(`${network}:${Container}`) };
+    }
+
+    pull(_image: string, callback: (error: Error | undefined) => void): void {
+        callback(new Error('offline'));
+    }
+}
+
+describe('QaapTaskSandboxBroker (control plane)', () => {
+    let hostRoot: string;
+    let docker: FakeDocker;
+    let broker: QaapTaskSandboxBroker;
+
+    const placementFor = (tenant: string): QaapTaskSandboxPlacement => ({
+        docker: docker as unknown as QaapTaskSandboxPlacement['docker'],
+        image: 'qaap-theia:test',
+        user: '1001:1001',
+        network: `qaap-tenant-net-${tenant}`,
+        directEgressNetwork: `qaap-tenant-egress-${tenant}`,
+        egressEnv: {},
+        roots: [
+            { kind: 'repos', backendPath: `/workspace/repos/users/${tenant}`, hostPath: path.join(hostRoot, 'repos', tenant), source: `/node/repos/${tenant}` },
+            { kind: 'worktrees', backendPath: `/tmp/qaap-worktrees/${tenant}`, hostPath: path.join(hostRoot, 'worktrees', tenant), source: `/node/worktrees/${tenant}` },
+            { kind: 'parallel', backendPath: `/tmp/qaap-parallel/${tenant}`, hostPath: path.join(hostRoot, 'parallel', tenant), source: `/node/parallel/${tenant}` },
+            { kind: 'tenant-config', backendPath: '/home/theia/.qaap', hostPath: path.join(hostRoot, 'config', tenant), source: `/node/config/${tenant}` },
+        ],
+    });
+
+    beforeEach(() => {
+        hostRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-broker-'));
+        for (const tenant of ['alice', 'bob']) {
+            fs.mkdirSync(path.join(hostRoot, 'worktrees', tenant, 'repo-1'), { recursive: true });
+            fs.mkdirSync(path.join(hostRoot, 'repos', tenant, 'repo'), { recursive: true });
+        }
+        fs.symlinkSync('/etc', path.join(hostRoot, 'worktrees', 'alice', 'escape'));
+        docker = new FakeDocker();
+        broker = new QaapTaskSandboxBroker();
+        const orchestrator = {
+            taskSandboxPlacement: async (tenant: string) => placementFor(tenant),
+            isBackendPerTenantEnabled: () => true,
+            getTenantBackendAssertionSecret: () => SECRET,
+            getTenantBackendConnectionToken: () => undefined,
+            listTenantBackendTargets: () => [],
+        };
+        (broker as unknown as { orchestrator: unknown }).orchestrator = orchestrator;
+        (broker as unknown as { execServerSource: () => string }).execServerSource = () => '/* server */';
+    });
+
+    afterEach(() => fs.rmSync(hostRoot, { recursive: true, force: true }));
+
+    it('accepts only normalized roots strictly inside the calling tenant\'s own trees', () => {
+        const placement = placementFor('alice');
+        expect(broker.validateRoot(placement, '/tmp/qaap-worktrees/alice/repo-1')).to.equal('/tmp/qaap-worktrees/alice/repo-1');
+        expect(broker.validateRoot(placement, '/workspace/repos/users/alice/repo')).to.equal('/workspace/repos/users/alice/repo');
+        for (const hostile of [
+            '/tmp/qaap-worktrees/bob/repo-1', // another tenant
+            '/tmp/qaap-worktrees/alice', // the tenant root itself
+            '/tmp/qaap-worktrees/alice/../bob/repo-1',
+            '/tmp/qaap-worktrees/alice/escape', // a symlink out of the tree
+            '/tmp/qaap-worktrees/alice/missing',
+            '/home/theia/.qaap/agent', // tenant storage is never a worktree
+            '/var/run/docker.sock',
+            'relative/path',
+        ]) {
+            expect(() => broker.validateRoot(placement, hostile), hostile).to.throw();
+        }
+    });
+
+    it('creates a hardened sandbox on the tenant network that binds only the fixed tenant roots', async () => {
+        const args: QaapTaskSandboxBrokerCreateArgs = {
+            root: '/tmp/qaap-worktrees/alice/repo-1',
+            homeLinks: [{ name: '.claude', target: '/home/theia/.qaap/agent/.claude' }, { name: '.x', target: '/var/run/docker.sock' }],
+            devcontainer: { containerEnv: { APP_MODE: 'dev', PATH: '/evil', QAAP_SANDBOX_EXEC_TOKEN: 'mine', LD_PRELOAD: '/x.so' } },
+        };
+        const sandbox = await broker.create('alice', args);
+        const config = docker.created.find(entry => entry.name === sandbox.name) as {
+            User: string; Entrypoint: string[]; Env: string[]; Labels: Record<string, string>; WorkingDir: string;
+            HostConfig: { Binds: string[]; CapDrop: string[]; SecurityOpt: string[]; NetworkMode: string; ReadonlyRootfs: boolean; Init: boolean; Privileged?: boolean };
+        };
+        expect(sandbox).to.include({ root: args.root, host: sandbox.name, port: 7391, created: true, imageKind: 'base' });
+        expect(sandbox.token).to.have.length.greaterThan(40);
+        expect(config.User).to.equal('1001:1001');
+        expect(config.WorkingDir).to.equal(args.root);
+        expect(config.Entrypoint).to.deep.equal(['/opt/qaap-agent/current/bin/node', '/opt/qaap-agent/current/lib/qaap-task-sandbox-exec-server.js']);
+        expect(config.HostConfig.Binds.slice(0, 4)).to.deep.equal([
+            '/node/repos/alice:/workspace/repos/users/alice:rw',
+            '/node/worktrees/alice:/tmp/qaap-worktrees/alice:rw',
+            '/node/parallel/alice:/tmp/qaap-parallel/alice:rw',
+            '/node/config/alice:/home/theia/.qaap:rw',
+        ]);
+        expect(config.HostConfig.Binds[4]).to.match(/qaap-agent-toolchain-[0-9a-f]{12}:\/opt\/qaap-agent:ro$/);
+        expect(config.HostConfig.Binds).to.have.length(5);
+        expect(config.HostConfig).to.include({ NetworkMode: 'qaap-tenant-net-alice', ReadonlyRootfs: true, Init: true });
+        expect(config.HostConfig.CapDrop).to.deep.equal(['ALL']);
+        expect(config.HostConfig.SecurityOpt).to.deep.equal(['no-new-privileges:true']);
+        expect(docker.connected).to.deep.equal([`qaap-tenant-egress-alice:${sandbox.name}`]);
+        expect(config.Labels).to.include({ 'com.qaap.task-sandbox.broker': 'true', 'com.qaap.tenant-login': 'alice', 'com.qaap.task-sandbox.worktree': args.root });
+        expect(config.Env).to.include('APP_MODE=dev').and.to.include(`QAAP_SANDBOX_EXEC_TOKEN=${sandbox.token}`);
+        expect(config.Env.filter(entry => entry.startsWith('PATH='))).to.deep.equal(['PATH=/opt/qaap-agent/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin']);
+        expect(config.Env.some(entry => entry.startsWith('LD_PRELOAD'))).to.equal(false);
+        expect(config.Env).to.include('QAAP_SANDBOX_HOME_LINKS=[{"name":".claude","target":"/home/theia/.qaap/agent/.claude"}]');
+        // A second create for the same root reuses the running sandbox and its token.
+        const again = await broker.create('alice', args);
+        expect(again).to.include({ name: sandbox.name, token: sandbox.token, created: false });
+    });
+
+    it('falls back to the base image when a devcontainer image cannot run the exec server', async () => {
+        docker.presentImages.add('alpine:3');
+        docker.failImage = 'alpine:3';
+        const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1', devcontainer: { image: 'alpine:3' } });
+        expect(sandbox.image).to.equal('qaap-theia:test');
+        expect(sandbox.imageKind).to.equal('base');
+        expect(docker.removed).to.include(sandbox.name);
+    });
+
+    it('rejects a bad image reference and never touches another tenant\'s sandbox', async () => {
+        await expectRejection(broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1', devcontainer: { image: '--privileged' } }));
+        const bobs = await broker.create('bob', { root: '/tmp/qaap-worktrees/bob/repo-1' });
+        await expectRejection(broker.destroy('alice', { name: bobs.name }));
+        expect(await broker.list('alice')).to.deep.equal([]);
+        expect((await broker.list('bob')).map(entry => entry.name)).to.deep.equal([bobs.name]);
+        await broker.destroy('bob', { name: bobs.name });
+        expect(await broker.list('bob')).to.deep.equal([]);
+    });
+
+    it('caps the number of sandboxes per tenant', async () => {
+        process.env.QAAP_TASK_SANDBOX_MAX_PER_TENANT = '1';
+        try {
+            fs.mkdirSync(path.join(hostRoot, 'worktrees', 'alice', 'repo-2'));
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+            await expectRejection(broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-2' }), /limit 1/);
+        } finally {
+            delete process.env.QAAP_TASK_SANDBOX_MAX_PER_TENANT;
+        }
+    });
+});
+
+async function expectRejection(promise: Promise<unknown>, pattern?: RegExp): Promise<void> {
+    try {
+        await promise;
+    } catch (error) {
+        if (pattern) {
+            expect((error as Error).message).to.match(pattern);
+        }
+        return;
+    }
+    throw new Error('expected a rejection');
+}
+
+describe('task sandbox broker link (tenant backend ↔ control plane over HTTP)', function (): void {
+    this.timeout(10_000);
+    const saved: Record<string, string | undefined> = {};
+    const env = { QAAP_TASK_SANDBOX: '1', QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_BACKEND_SECRET: SECRET, QAAP_TENANT_LOGIN: 'alice' };
+    let httpServer: http.Server;
+    let client: QaapTaskSandboxBrokerClient;
+    let broker: QaapTaskSandboxBroker;
+    let target: QaapTenantBackendTarget;
+    const handled: Array<{ tenant: string; op: string; args: unknown }> = [];
+
+    before(async () => {
+        for (const [key, value] of Object.entries(env)) {
+            saved[key] = process.env[key];
+            process.env[key] = value;
+        }
+        client = new QaapTaskSandboxBrokerClient();
+        const app = express();
+        app.use(express.json());
+        client.configure(app as never);
+        httpServer = http.createServer(app);
+        await new Promise<void>(resolve => httpServer.listen(0, '127.0.0.1', () => resolve()));
+        target = { containerId: 'c1', containerName: 'backend', host: '127.0.0.1', port: (httpServer.address() as net.AddressInfo).port, tenantLogin: 'alice' };
+        broker = new QaapTaskSandboxBroker();
+        (broker as unknown as { orchestrator: Partial<QaapDockerOrchestrator> }).orchestrator = {
+            getTenantBackendAssertionSecret: () => SECRET,
+            getTenantBackendConnectionToken: () => undefined,
+            listTenantBackendTargets: () => [target],
+        };
+        broker.handle = async (tenant, request) => {
+            handled.push({ tenant, op: request.op, args: request.args });
+            if (request.op === 'create') {
+                return { name: 'qaap-task-x', root: (request.args as { root: string }).root, host: 'qaap-task-x', port: 7391, token: 't', image: 'i', imageKind: 'base', startupMs: 1, created: true };
+            }
+            throw new Error('no such sandbox');
+        };
+    });
+
+    after(() => {
+        broker.onStop();
+        client.onStop();
+        httpServer.close();
+        for (const [key, value] of Object.entries(saved)) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    });
+
+    it('refuses a link without the tenant-scoped probe', async () => {
+        const status = await new Promise<number | undefined>(resolve => {
+            http.get({ host: '127.0.0.1', port: target.port, path: '/qaap/api/tenant-runtime/task-sandbox/link' }, response => {
+                response.resume();
+                resolve(response.statusCode);
+            }).on('error', () => resolve(undefined));
+        });
+        expect(status).to.not.equal(200);
+        expect(client.isLinked()).to.equal(false);
+    });
+
+    it('carries signed requests down the link and replies back, scoped to the linked tenant', async () => {
+        broker.syncLinks();
+        await waitFor(() => client.isLinked() || undefined);
+        const created = await client.create({ root: '/tmp/qaap-worktrees/alice/repo-1' }) as QaapTaskSandboxBrokerSandbox;
+        expect(created.name).to.equal('qaap-task-x');
+        expect(handled[0]).to.deep.equal({ tenant: 'alice', op: 'create', args: { root: '/tmp/qaap-worktrees/alice/repo-1' } });
+        await expectRejection(client.destroy({ name: 'other' }), /no such sandbox/);
+    });
+});
+
+describe('QaapTaskSandboxService in broker mode (tenant backend)', function (): void {
+    this.timeout(20_000);
+    if (process.platform === 'win32') {
+        return;
+    }
+    const saved: Record<string, string | undefined> = {};
+    let server: ChildProcess;
+    let execPort: number;
+    let worktree: string;
+    let home: string;
+    let service: QaapTaskSandboxService;
+    const creates: QaapTaskSandboxBrokerCreateArgs[] = [];
+    const destroys: string[] = [];
+
+    before(async () => {
+        for (const [key, value] of Object.entries({ QAAP_TASK_SANDBOX: '1', QAAP_TENANT_BACKEND_MODE: '1', QAAP_TASK_SANDBOX_LINGER_MS: '0', QAAP_TASK_SANDBOX_PORT_WATCH_MS: '50' })) {
+            saved[key] = process.env[key];
+            process.env[key] = value;
+        }
+        execPort = await freePort();
+        worktree = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-broker-wt-')));
+        home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-broker-home-'));
+        fs.mkdirSync(path.join(home, 'store', '.claude'), { recursive: true });
+        fs.symlinkSync(path.join(home, 'store', '.claude'), path.join(home, '.claude'));
+        server = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-server.js')], {
+            env: { PATH: process.env.PATH, HOME: home, QAAP_SANDBOX_EXEC_TOKEN: TOKEN, QAAP_SANDBOX_EXEC_PORT: String(execPort) },
+            stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        let stdout = '';
+        server.stdout!.on('data', chunk => stdout += chunk);
+        await waitFor(() => stdout.includes('QAAP_SANDBOX_EXEC_READY'));
+        const brokerClient = {
+            isEnabled: () => true,
+            create: async (args: QaapTaskSandboxBrokerCreateArgs) => {
+                creates.push(args);
+                return { name: 'qaap-task-b', root: args.root, host: '127.0.0.1', port: execPort, token: TOKEN, image: 'qaap-theia:test', imageKind: 'base', startupMs: 5, created: true };
+            },
+            destroy: async (args: { name: string }) => {
+                destroys.push(args.name);
+            },
+            list: async () => [{ name: 'qaap-task-orphan', root: '/x', running: true, archived: false }],
+        };
+        service = new QaapTaskSandboxService();
+        (service as unknown as { broker: unknown }).broker = brokerClient;
+    });
+
+    after(async () => {
+        await service.end(worktree).catch(() => undefined);
+        server.kill();
+        fs.rmSync(worktree, { recursive: true, force: true });
+        fs.rmSync(home, { recursive: true, force: true });
+        for (const [key, value] of Object.entries(saved)) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    });
+
+    let sandbox: QaapTaskSandbox;
+
+    it('asks the broker for the worktree root and forwards the persistent HOME links', async () => {
+        sandbox = await service.acquire({ taskId: 't1', cwd: worktree, env: { HOME: home } });
+        expect(service.mode()).to.equal('broker');
+        expect(creates[0].root).to.equal(worktree);
+        expect(creates[0].homeLinks).to.deep.equal([{ name: '.claude', target: path.join(home, 'store', '.claude') }]);
+        expect(sandbox.exec).to.deep.equal({ host: '127.0.0.1', port: execPort, token: TOKEN });
+        expect(service.sandboxFor(worktree)?.name).to.equal('qaap-task-b');
+    });
+
+    it('spawns through the local exec client with the task env and no secret on the argv', async () => {
+        let launched: { file: string; args: string[]; options: { env: NodeJS.ProcessEnv } } | undefined;
+        const child = service.spawnInSandbox(sandbox, '/bin/sh', ['-c', 'echo "$TASK_KEY:$QAAP_TENANT_BACKEND_SECRET:$HOME"'],
+            { cwd: worktree, env: { TASK_KEY: 'k1', QAAP_TENANT_BACKEND_SECRET: SECRET }, stdio: ['pipe', 'pipe', 'pipe'] },
+            (file, args, options) => {
+                launched = { file, args, options: options as { env: NodeJS.ProcessEnv } };
+                return spawn(file, args, options as never);
+            });
+        child.stdin!.end();
+        let output = '';
+        child.stdout!.on('data', chunk => output += chunk);
+        const code = await new Promise(resolve => child.on('exit', resolve));
+        expect(code).to.equal(0);
+        expect(output.trim()).to.equal('k1::/tmp/qaap-home');
+        expect(launched!.file).to.equal(process.execPath);
+        expect(launched!.args.join(' ')).to.not.contain(TOKEN).and.to.not.contain('k1');
+        expect(Object.keys(launched!.options.env)).to.deep.equal(['PATH']);
+    });
+
+    it('wraps a terminal shell as the exec client in tty mode', () => {
+        const wrapped = service.wrapInteractive(sandbox, worktree, '/bin/bash', ['-l'], { TERM: 'xterm-256color' });
+        expect(wrapped.file).to.equal(process.execPath);
+        const request = JSON.parse(fs.readFileSync(wrapped.args[1], 'utf8'));
+        fs.rmSync(wrapped.args[1]);
+        expect(request).to.include({ file: '/bin/bash', tty: true, cwd: worktree, token: TOKEN });
+        expect(request.env.TERM).to.equal('xterm-256color');
+        expect((fs.statSync(path.dirname(wrapped.args[1])).mode & 0o777).toString(8)).to.equal('700');
+    });
+
+    it('retargets an expected preview port to the port an app that ignores PORT really bound', async () => {
+        const expected = await freePort();
+        const app = http.createServer((_req, res) => res.end('hardcoded'));
+        const listing = { ports: [] as number[] };
+        service.listPorts = async () => listing.ports;
+        service.expectPreviewPort(sandbox, expected);
+        await new Promise(resolve => setTimeout(resolve, 120));
+        await new Promise<void>(resolve => app.listen(0, '127.0.0.1', () => resolve()));
+        const hardcoded = (app.address() as net.AddressInfo).port;
+        listing.ports = [hardcoded];
+        try {
+            await waitFor(() => service.hostPortFor(worktree, hardcoded) === expected || undefined);
+            const body = await new Promise<string>((resolve, reject) => http.get({ host: '127.0.0.1', port: expected, path: '/' }, response => {
+                let text = '';
+                response.on('data', chunk => text += chunk);
+                response.on('end', () => resolve(text));
+            }).on('error', reject));
+            expect(body).to.equal('hardcoded');
+        } finally {
+            app.close();
+        }
+    });
+
+    it('reaps sandboxes the broker lists that this backend does not own, and destroys on release', async () => {
+        expect(await service.reapOrphans()).to.equal(1);
+        expect(destroys).to.deep.equal(['qaap-task-orphan']);
+        service.release('t1');
+        await waitFor(() => destroys.includes('qaap-task-b') || undefined);
+        expect(service.sandboxFor(worktree)).to.equal(undefined);
+    });
+});
+
+describe('QaapTenantSpawnService routes terminals into a task sandbox', () => {
+    it('wraps the shell of a sandboxed cwd and leaves other cwds alone', () => {
+        const sandbox: QaapTaskSandbox = {
+            name: 'qaap-task-t', root: path.resolve('/work/tree'), image: 'img', imageKind: 'base', startupMs: 0, created: true, forwardPorts: [], remoteEnv: {},
+        };
+        const sandboxService = new QaapTaskSandboxService();
+        sandboxService.isEnabled = () => true;
+        sandboxService.sandboxFor = cwd => cwd.startsWith(sandbox.root) ? sandbox : undefined;
+        const calls: string[] = [];
+        sandboxService.wrapInteractive = (_sandbox, cwd, file) => {
+            calls.push(`${cwd}:${file}`);
+            return { file: 'sandboxed', args: [] };
+        };
+        class Spawn extends QaapTenantSpawnService {
+            constructor() {
+                super();
+                (this as unknown as { taskSandbox: QaapTaskSandboxService }).taskSandbox = sandboxService;
+            }
+            override resolveSpawnIdentity(): {} { return {}; }
+            override isContainerIsolationEnabled(): boolean { return false; }
+            override enforceIsolationPolicy(): void { /* local dev */ }
+            protected override launchProcess(): ChildProcess { return new EventEmitter() as ChildProcess; }
+        }
+        const spawnService = new Spawn();
+        expect(spawnService.wrapShellForTenant(path.join(sandbox.root, 'src'), '/bin/bash', ['-l']).file).to.equal('sandboxed');
+        expect(spawnService.wrapShellForTenant(path.resolve('/elsewhere'), '/bin/bash', ['-l']).file).to.not.equal('sandboxed');
+        expect(calls).to.deep.equal([`${path.join(sandbox.root, 'src')}:/bin/bash`]);
+    });
+});

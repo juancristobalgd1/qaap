@@ -47,6 +47,8 @@ import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
 import { QaapTaskSandboxService } from './qaap-task-sandbox';
+import { QaapTaskSandboxBroker } from './qaap-task-sandbox-broker';
+import { QaapTaskSandboxBrokerClient } from './qaap-task-sandbox-broker-client';
 import { QaapDevcontainerResolver } from './qaap-devcontainer-config';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
@@ -231,6 +233,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapDevcontainerResolver).toSelf().inSingletonScope();
     bind(QaapTaskSandboxService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskSandboxService);
+    // Production path (doc/qaap-task-sandbox.md): the broker runs on the control plane, its client in tenant backends.
+    bind(QaapTaskSandboxBroker).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTaskSandboxBroker);
+    bind(QaapTaskSandboxBrokerClient).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTaskSandboxBrokerClient);
     bind(QaapTenantSpawnService).toSelf().inSingletonScope();
     bind(QaapTenantProcessExecutor).toService(QaapTenantSpawnService);
     bindRootContributionProvider(bind, QaapJobFunctionContribution);
