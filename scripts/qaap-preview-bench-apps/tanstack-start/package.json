@@ -1,0 +1,16 @@
+{
+  "name": "qaap-tanstack-start-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite dev", "build": "vite build" },
+  "dependencies": {
+    "@tanstack/react-router": "1.170.44",
+    "@tanstack/react-start": "1.169.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.4"
+  }
+}
