@@ -53,6 +53,7 @@ import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
+import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import {
     readCodexHelp as readCodexHelpHelper,
     isQaiqRunner as isQaiqRunnerHelper,
@@ -207,6 +208,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     @inject(QaapTenantActivityTracker) @optional()
     protected readonly tenantActivity: QaapTenantActivityTracker | undefined;
+
+    /** Each user's last turn per agent, shown in the harness settings (see listHarnessStatuses). */
+    @inject(QaapAgentLastTurnStore) @optional()
+    protected readonly lastTurns: QaapAgentLastTurnStore | undefined;
 
     /**
      * Structured agent-command audit. The extracted modules always called `ctx.observability?.…`,
@@ -622,6 +627,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const cliBinDirectory = resolveAgentCliPrefixBinDirectory(prefix);
         return QAAP_HARNESS_DEFINITIONS.map(definition => {
             const candidate = this.detectedAgents.get(definition.id);
+            const lastTurn = this.lastTurns?.get(ownerLogin, definition.id);
             const installed = candidate
                 ? !candidate.bin || this.isOnPath(candidate.bin, pathEnv)
                 : this.isOnPath(definition.bin, pathEnv);
@@ -634,6 +640,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     : 'unknown',
                 installSupported: isInstallSupported(definition.id),
                 cliBinDirectory,
+                ...(lastTurn ? { lastTurn } : {}),
             };
         });
     }
@@ -1553,8 +1560,28 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         this.releaseTenantOperation(id);
         if (task) {
             fireStopAgentHook(this, task, previousState, state);
+            this.recordLastTurn(task).catch(() => undefined);
         }
         return task;
+    }
+
+    /** Remembers how the owner's turn with this agent ended; never affects the task itself. */
+    protected async recordLastTurn(task: QaapAgentTask): Promise<void> {
+        if (!this.lastTurns) {
+            return;
+        }
+        const agentId = this.resolveTaskAgentId(task);
+        if (agentId === 'shell') {
+            return;
+        }
+        try {
+            const turn = classifyAgentLastTurn(task, await this.readLog(task.id), agentId);
+            if (turn) {
+                this.lastTurns.record(task.ownerLogin, agentId, turn);
+            }
+        } catch (error) {
+            console.warn('[qaap-agent-last-turn] could not record task', task.id, error instanceof Error ? error.message : String(error));
+        }
     }
 
     protected releaseTenantOperation(id: string): void {

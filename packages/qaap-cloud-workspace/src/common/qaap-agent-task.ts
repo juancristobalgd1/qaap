@@ -5,6 +5,7 @@
 
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentReadOnlyEnforcement } from './qaap-agent-readonly-workspace';
+import type { QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
 /** HTTP base path for the background agent-task endpoints. */
 export const QAAP_AGENT_TASK_API_PATH = '/qaap/api/agent-tasks';
@@ -296,6 +297,22 @@ export interface QaapCreateAgentTaskRequest {
 export type QaapAgentConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
 
 /** Installation and per-user state for a harness settings card. */
+/**
+ * Why the user's last turn with an agent failed: the shared failure kinds (auth, quota, …) or
+ * `exit_code` when the CLI exited non-zero without a recognisable cause.
+ */
+export type QaapAgentLastTurnFailureKind = QaapAgentFailureKind | 'exit_code';
+
+/** Outcome of the user's most recent finished turn with one agent (see QaapAgentLastTurnStore). */
+export interface QaapAgentLastTurn {
+    readonly outcome: 'ok' | 'failed';
+    /** Set when {@link outcome} is `failed`. */
+    readonly kind?: QaapAgentLastTurnFailureKind;
+    /** Server-clock milliseconds when the turn finished. */
+    readonly at: number;
+    readonly taskId: string;
+}
+
 export interface QaapAgentHarnessStatus {
     readonly id: string;
     readonly installed: boolean;
@@ -310,6 +327,8 @@ export interface QaapAgentHarnessStatus {
      * Connect flow prepends it to the login command; otherwise a per-user install is "not found".
      */
     readonly cliBinDirectory?: string;
+    /** The user's last finished turn with this agent, when there is one. */
+    readonly lastTurn?: QaapAgentLastTurn;
 }
 
 export interface QaapAgentHarnessStatusResponse {

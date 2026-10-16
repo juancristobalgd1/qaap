@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveHarnessCardAction, resolveHarnessCardStatus } from './qaap-harness-configuration-state';
+import { parseHarnessLastTurn, resolveHarnessCardAction, resolveHarnessCardStatus, resolveHarnessLastTurnAge } from './qaap-harness-configuration-state';
 
 describe('Qaap harness configuration card action', () => {
     it('hides install on servers that disallow it and keeps it available in local/dev', () => {
@@ -35,5 +35,29 @@ describe('Qaap harness configuration card action', () => {
         expect(enabled).to.equal(false);
         expect(resolveHarnessCardAction(installed, 'ready', true)).to.equal('toggle');
         expect(resolveHarnessCardStatus(installed, 'ready', 'connected')).to.equal('available');
+    });
+});
+
+describe('Qaap harness last turn', () => {
+    it('keeps ok and known failure kinds; unknown kinds read as a generic failure', () => {
+        expect(parseHarnessLastTurn({ outcome: 'ok', at: 5, taskId: 't' })).to.deep.equal({ outcome: 'ok', at: 5 });
+        expect(parseHarnessLastTurn({ outcome: 'failed', kind: 'auth', at: 5 })).to.deep.equal({ outcome: 'failed', kind: 'auth', at: 5 });
+        expect(parseHarnessLastTurn({ outcome: 'failed', kind: 'brand_new_kind', at: 5 })?.kind).to.equal('exit_code');
+        expect(parseHarnessLastTurn({ outcome: 'failed', at: 5 })?.kind).to.equal('exit_code');
+    });
+
+    it('treats a missing or malformed field as no last turn', () => {
+        for (const value of [undefined, JSON.parse('null'), {}, { outcome: 'ok' }, { outcome: 'maybe', at: 1 }, { outcome: 'ok', at: Number.NaN }]) {
+            expect(parseHarnessLastTurn(value), JSON.stringify(value)).to.equal(undefined);
+        }
+    });
+
+    it('rounds the age down to now, minutes, hours or days', () => {
+        const now = 10 * 24 * 3_600_000;
+        expect(resolveHarnessLastTurnAge(now - 30_000, now)).to.deep.equal({ unit: 'now', value: 0 });
+        expect(resolveHarnessLastTurnAge(now + 60_000, now)).to.deep.equal({ unit: 'now', value: 0 });
+        expect(resolveHarnessLastTurnAge(now - 5 * 60_000, now)).to.deep.equal({ unit: 'minutes', value: 5 });
+        expect(resolveHarnessLastTurnAge(now - 3 * 3_600_000, now)).to.deep.equal({ unit: 'hours', value: 3 });
+        expect(resolveHarnessLastTurnAge(now - 2 * 24 * 3_600_000, now)).to.deep.equal({ unit: 'days', value: 2 });
     });
 });

@@ -48,6 +48,30 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
         expect(statuses.find(status => status.id === 'qaiq')?.installed).to.equal(true);
     });
 
+    it("reports the owner's last turn per harness, and nothing for harnesses never used", () => {
+        const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+        const lookups: Array<[string | undefined, string]> = [];
+        Object.assign(runner, {
+            detectedAgents: new Map<string, AgentCandidate>(),
+            resolveAgentCliPrefix: () => '/home/alice/.qaap/cli',
+            isOnPath: () => true,
+            isAgentEnabled: () => true,
+            agentConnectionState: () => 'connected',
+            lastTurns: {
+                get: (login: string | undefined, agentId: string) => {
+                    lookups.push([login, agentId]);
+                    return agentId === 'copilot' ? { outcome: 'failed', kind: 'auth', at: 5, taskId: 't9' } : undefined;
+                },
+            },
+        });
+
+        const statuses = runner.listHarnessStatuses('alice', () => true);
+
+        expect(statuses.find(status => status.id === 'copilot')?.lastTurn).to.deep.equal({ outcome: 'failed', kind: 'auth', at: 5, taskId: 't9' });
+        expect(statuses.find(status => status.id === 'codex')).to.not.have.property('lastTurn');
+        expect(lookups.every(([login]) => login === 'alice')).to.equal(true);
+    });
+
     it('detects CLIs installed in the default prefix without ever adding it to the backend PATH', () => {
         const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-harness-path-'));
         const originalPath = process.env.PATH;

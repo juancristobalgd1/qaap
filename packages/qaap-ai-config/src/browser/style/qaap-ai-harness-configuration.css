@@ -165,6 +165,20 @@
     flex-shrink: 0;
 }
 
+.qaap-ai-harness-configuration .qaap-harness-card-last-turn {
+    display: block;
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--theia-descriptionForeground);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-card-last-turn.theia-mod-failed {
+    color: var(--theia-errorForeground);
+}
+
 .qaap-ai-harness-configuration .qaap-harness-card-status.theia-mod-available {
     color: var(--theia-testing-iconPassed, #73c991);
 }
