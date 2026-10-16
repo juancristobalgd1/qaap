@@ -40,9 +40,14 @@ function ensureFixtureDeps(cwd: string): void {
     }
 }
 
+/**
+ * Frees :5173 and the alternate ports the product's port recovery moves to. Dev servers the
+ * bootstrap spawned in earlier tests outlive their page (backend terminals), so leaving them up
+ * shifts every later managed run to another port.
+ */
 function killDevPreviewPort(): void {
     try {
-        execSync(`lsof -ti tcp:${DEV_PREVIEW_PORT} -sTCP:LISTEN | xargs kill -9`, { stdio: 'ignore' });
+        execSync(`lsof -ti tcp:${DEV_PREVIEW_PORT}-${DEV_PREVIEW_PORT + 7} -sTCP:LISTEN | xargs -r kill -9`, { stdio: 'ignore' });
     } catch {
         // Port was free.
     }

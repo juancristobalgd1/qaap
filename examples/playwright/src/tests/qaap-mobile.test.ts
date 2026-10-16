@@ -85,7 +85,14 @@ async function openDesktopIdeViaAccountMenu(page: Page): Promise<boolean> {
     if (!opened) {
         return false;
     }
-    await page.waitForSelector('.theia-qaap-account-menu', { timeout: 10_000 });
+    // A click that lands while the top bar re-renders after the viewport resize opens nothing.
+    // Report it as a failed attempt so openDesktopIde() retries (or uses the command palette)
+    // instead of aborting the test; expectClassicIdeSurface() still asserts the outcome.
+    const menuOpened = await page.waitForSelector('.theia-qaap-account-menu', { timeout: 10_000 })
+        .then(() => true, () => false);
+    if (!menuOpened) {
+        return false;
+    }
     return page.evaluate(() => {
         const item = [...document.querySelectorAll('.theia-qaap-account-menu-item')].find(
             element => /open ide/i.test(element.textContent?.trim() ?? ''),
