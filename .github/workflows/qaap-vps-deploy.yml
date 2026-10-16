@@ -225,6 +225,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
+      # The deps stage (Dockerfile: npm ci from the package manifests alone) changes only with the
+      # manifests. Cache it on its own scope with mode=max: the image build below keeps mode=min (its
+      # build-stage layers change every commit and never hit), so without this step every deploy
+      # reinstalled node_modules and re-uploaded it as a new layer the VPS pulled twice.
+      - name: Build cached dependency stages
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: Dockerfile
+          target: deps
+          outputs: type=cacheonly
+          no-cache: ${{ github.event.inputs.no_cache == 'true' }}
+          cache-from: type=gha,scope=qaap-deps
+          cache-to: type=gha,mode=max,scope=qaap-deps,ignore-error=true
+
       - name: Build and push image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -241,7 +256,9 @@ jobs:
             QAIQ_COMMIT=${{ steps.qaiq.outputs.sha }}
             CACHE_BUST=${{ steps.qaiq.outputs.sha }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
-          cache-from: type=gha,scope=qaap-production
+          cache-from: |
+            type=gha,scope=qaap-deps
+            type=gha,scope=qaap-production
           # mode=min: export only the final image's layers. mode=max also exported the build stage
           # (~159 s per deploy) although it can never hit: the sources are copied before npm ci.
           cache-to: type=gha,mode=min,scope=qaap-production,ignore-error=true

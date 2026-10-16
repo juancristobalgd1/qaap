@@ -104,6 +104,7 @@ jobs:
             CACHE_BUST=${{ steps.source.outputs.qaiq }}
           # Reads the production layer cache, writes only its own scope so staging never evicts it.
           cache-from: |
+            type=gha,scope=qaap-deps
             type=gha,scope=qaap-production
             type=gha,scope=qaap-staging
           cache-to: type=gha,mode=max,scope=qaap-staging,ignore-error=true
