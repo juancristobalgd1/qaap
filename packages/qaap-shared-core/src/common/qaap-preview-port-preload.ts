@@ -21,19 +21,26 @@ const FORCE_NODE_PREVIEW_PORT_SOURCE = [
         + "else if(String(a[i]).startsWith('--port=')){a[i]='--port='+p;s=true}}"
         + "if(!s){a.push('--port',p)}}}",
 ].join(';');
+// The allocated preview port is authoritative: a script that hardcodes its own (`vite --port 5173`,
+// `next dev -p 3000`, common in generated apps) is rewritten to it, never kept. Keeping it left the
+// dev server on its own port while the preview waited on the reserved one ("booting" forever), and
+// two projects hardcoding the same port could never both preview. `vinxi` is TanStack Start < 1.120.
 const FORCE_FRAMEWORK_PREVIEW_PORT_SOURCE = [
     'const p=process.env.QAAP_PREVIEW_PORT,a=process.argv,'
         + "e=(a[1]||'').replaceAll('\\\\','/').split('/').pop()||'',"
-        + "hasPort=a.some(v=>v==='--port'||v==='-p'||v.startsWith('--port=')),"
         + "hasStrict=a.some(v=>v==='--strictPort'||v.startsWith('--strictPort=')),"
         + "hasHost=a.some(v=>v==='--host'||v.startsWith('--host=')),"
-        + 'isVite=/^(vite|vite\\.js|astro|astro\\.js)$/.test(e)',
+        + 'isVite=/^(vite|vite\\.js|astro|astro\\.js)$/.test(e),'
+        + 'isNext=/^(next|next\\.js)$/.test(e),'
+        + 'isRemix=/^(remix|remix\\.js|vinxi|vinxi\\.js)$/.test(e),'
+        + 'setPort=f=>{let s=false;for(let i=2;i<a.length;i++){const v=String(a[i]);'
+        + "if(f.includes(v)&&i+1<a.length){a[i+1]=p;s=true;i++}else if(v.startsWith('--port=')){a[i]='--port='+p;s=true}}return s}",
     'if(p){if(isVite){'
         + "for(let i=a.length-1;i>=2;i--){if(a[i]==='--open'||String(a[i]).startsWith('--open='))a.splice(i,1)}"
-        + 'if(!hasPort){a.push(\'--port\',p)}if(!hasStrict){a.push(\'--strictPort\')}'
-        + 'if(!hasHost){a.push(\'--host\',\'127.0.0.1\')}'
-        + '}else if(!hasPort){if(/^(next|next\\.js)$/.test(e)){a.push(\'-p\',p)}'
-        + 'else if(/^(remix|remix\\.js)$/.test(e)){a.push(\'--port\',p)}}}',
+        + "if(!setPort(['--port'])){a.push('--port',p)}if(!hasStrict){a.push('--strictPort')}"
+        + "if(!hasHost){a.push('--host','127.0.0.1')}"
+        + "}else if(isNext){if(!setPort(['--port','-p'])){a.push('-p',p)}}"
+        + "else if(isRemix){if(!setPort(['--port'])){a.push('--port',p)}}}",
 ].join(';');
 
 /**

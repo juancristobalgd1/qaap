@@ -100,6 +100,8 @@ jobs:
       - name: Mobile bundle guard regression
         run: node --test scripts/qaap-mobile-bundle-guard.test.js
       # A preview of qaap itself must start Theia on the allocated port and kill nothing of the IDE.
+      - name: Preview bench helpers regression
+        run: node --test scripts/qaap-preview-bench.test.mjs
       - name: Browser start script preview port regression
         run: node --test scripts/qaap-start-browser.test.mjs
 

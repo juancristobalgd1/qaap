@@ -199,6 +199,40 @@ describe('qaap-project-bootstrap-port', () => {
         }
     });
 
+    it('replaces a port the app hardcodes with the allocated one (vite, next, vinxi)', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const directory = mkdtempSync(join(tmpdir(), 'qaap-preview-port-'));
+        // Each fake CLI prints the argv it received after the preload ran; `kind` only picks how
+        // wrapDevCommandForPort prefixes the command, the preload itself keys on the binary name.
+        let runs = 0;
+        const argvOf = (binary: string, args: string[], kind: 'node-vite' | 'node-next'): string[] => {
+            const cli = join(directory, binary);
+            // Neutral runner names: the bootstrap rewriter injects flags after a `vite` token in the command.
+            const runner = join(directory, `runner-${++runs}.cjs`);
+            writeFileSync(cli, 'process.stdout.write(JSON.stringify(process.argv.slice(2)));');
+            writeFileSync(runner, [
+                "const { execFileSync } = require('child_process');",
+                `process.stdout.write(execFileSync(process.execPath, [${JSON.stringify(cli)}, ...${JSON.stringify(args)}], { encoding: 'utf8' }));`,
+            ].join('\n'));
+            const command = wrapDevCommandForPort(`node ${JSON.stringify(runner)}`, 5182, kind);
+            return JSON.parse(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })) as string[];
+        };
+        try {
+            expect(argvOf('vite', ['--port', '5173', '--strictPort'], 'node-vite'))
+                .to.deep.equal(['--port', '5182', '--strictPort', '--host', '127.0.0.1']);
+            expect(argvOf('vite', ['dev', '--port=8080'], 'node-vite'))
+                .to.deep.equal(['dev', '--port=5182', '--strictPort', '--host', '127.0.0.1']);
+            expect(argvOf('next', ['dev', '-p', '3000'], 'node-next')).to.deep.equal(['dev', '-p', '5182']);
+            expect(argvOf('next', ['dev', '--port=3000'], 'node-next')).to.deep.equal(['dev', '--port=5182']);
+            expect(argvOf('next', ['dev'], 'node-next')).to.deep.equal(['dev', '-p', '5182']);
+            expect(argvOf('vinxi', ['dev'], 'node-vite')).to.deep.equal(['dev', '--port', '5182']);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
+
     it('strips vite --open so in-IDE preview does not launch a browser or exit 1', function (): void {
         if (process.platform === 'win32') {
             this.skip();
