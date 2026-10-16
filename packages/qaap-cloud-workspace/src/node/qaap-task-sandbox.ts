@@ -9,6 +9,7 @@ import { ChildProcess, execFile, spawn } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as net from 'net';
+import * as os from 'os';
 import * as path from 'path';
 import { QaapDevcontainerResolver, type QaapTaskSandboxImagePlan } from './qaap-devcontainer-config';
 import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
@@ -31,7 +32,7 @@ import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespa
 export const QAAP_TASK_SANDBOX_ENV = 'QAAP_TASK_SANDBOX';
 export const QAAP_TASK_SANDBOX_LABEL = 'com.qaap.task-sandbox';
 export const QAAP_TASK_SANDBOX_WORKTREE_LABEL = 'com.qaap.task-sandbox.worktree';
-export const QAAP_TASK_SANDBOX_ARCHIVED_LABEL = 'com.qaap.task-sandbox.archived';
+export const QAAP_TASK_SANDBOX_OWNER_LABEL = 'com.qaap.task-sandbox.owner';
 
 /** In-container HOME: a private tmpfs owned by the task uid; agent credential dirs are bound under it. */
 export const QAAP_TASK_SANDBOX_HOME = '/tmp/qaap-home';
@@ -43,6 +44,8 @@ const DEFAULT_HOME_DIRS = ['.claude', '.claude.json', '.codex', '.gemini', '.cop
 const DEFAULT_LINGER_MS = 10 * 60_000;
 const DEFAULT_ARCHIVE_TTL_MS = 24 * 60 * 60_000;
 const POST_CREATE_TIMEOUT_MS = 10 * 60_000;
+const STOP_TIMEOUT_MS = 8_000;
+const ARCHIVED_NAME = /-archived-(\d+)$/;
 
 /**
  * Variables that describe the backend host, not the task: they are never forwarded into a sandbox
@@ -144,6 +147,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
     protected readonly entries = new Map<string, SandboxEntry>();
     protected readonly pending = new Map<string, Promise<SandboxEntry>>();
     protected readonly taskRoots = new Map<string, string>();
+    /** Ends in flight, per worktree root: an acquire waits for them instead of reusing a dying container. */
+    protected readonly ending = new Map<string, Promise<void>>();
+    /** Tasks whose acquire() has not resolved yet, and those of them released meanwhile. */
+    protected readonly acquiring = new Set<string>();
+    protected readonly releasedWhileAcquiring = new Set<string>();
     protected readonly backgroundBuilds = new Map<string, Promise<void>>();
     protected execCounter = 0;
 
@@ -159,11 +167,16 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         });
     }
 
-    /** End every live sandbox on a clean shutdown; its worktree stays on disk. */
-    onStop(): void {
-        for (const root of [...this.entries.keys()]) {
-            this.end(root).catch(() => undefined);
-        }
+    /**
+     * End every live sandbox on a graceful shutdown (Theia awaits this); its worktree stays on disk.
+     * A hard exit cannot wait: the boot-time reaper removes what this owner left behind.
+     */
+    async onStop(): Promise<void> {
+        const ends = [...this.entries.keys()].map(root => this.end(root).catch(() => undefined));
+        await Promise.race([
+            Promise.all(ends),
+            new Promise(resolve => setTimeout(resolve, STOP_TIMEOUT_MS).unref?.()),
+        ]);
     }
 
     isEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -175,38 +188,76 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
      * acquires for one worktree share a single container; different worktrees get different ones.
      */
     async acquire(options: QaapTaskSandboxAcquireOptions): Promise<QaapTaskSandbox> {
-        const root = await this.resolveWorktreeRoot(options.cwd);
-        let entry = this.entries.get(root);
-        if (!entry) {
-            let pending = this.pending.get(root);
-            if (!pending) {
-                pending = this.createEntry(root, options).finally(() => this.pending.delete(root));
-                this.pending.set(root, pending);
-            }
-            entry = await pending;
+        const { taskId } = options;
+        this.acquiring.add(taskId);
+        let entry: SandboxEntry;
+        try {
+            entry = await this.ensureEntry(await this.resolveWorktreeRoot(options.cwd), options);
+        } catch (error) {
+            this.releasedWhileAcquiring.delete(taskId);
+            throw error;
+        } finally {
+            this.acquiring.delete(taskId);
         }
         if (entry.teardownTimer) {
             clearTimeout(entry.teardownTimer);
             entry.teardownTimer = undefined;
         }
-        entry.tasks.add(options.taskId);
-        this.taskRoots.set(options.taskId, root);
+        if (this.releasedWhileAcquiring.delete(taskId)) {
+            // The task ended (cancelled, failed) while its sandbox was still starting: never register
+            // it, and end the sandbox as a normal last release would if nobody else uses it.
+            if (entry.tasks.size === 0) {
+                this.scheduleEnd(entry);
+            }
+            return entry.sandbox;
+        }
+        entry.tasks.add(taskId);
+        this.taskRoots.set(taskId, entry.sandbox.root);
         return entry.sandbox;
+    }
+
+    /** The live entry of `root`, after any end in flight finished; created at most once at a time. */
+    protected async ensureEntry(root: string, options: QaapTaskSandboxAcquireOptions): Promise<SandboxEntry> {
+        for (;;) {
+            const live = this.entries.get(root);
+            if (live) {
+                return live;
+            }
+            const ending = this.ending.get(root);
+            if (!ending) {
+                break;
+            }
+            await ending.catch(() => undefined);
+        }
+        let pending = this.pending.get(root);
+        if (!pending) {
+            pending = this.createEntry(root, options).finally(() => this.pending.delete(root));
+            this.pending.set(root, pending);
+        }
+        return pending;
     }
 
     /** Unregister a task; when it was the last one the sandbox ends after the linger period. */
     release(taskId: string): void {
+        if (this.acquiring.has(taskId)) {
+            this.releasedWhileAcquiring.add(taskId);
+            return;
+        }
         const root = this.taskRoots.get(taskId);
         this.taskRoots.delete(taskId);
         const entry = root ? this.entries.get(root) : undefined;
         if (!entry || !entry.tasks.delete(taskId) || entry.tasks.size > 0) {
             return;
         }
-        const linger = this.lingerMs();
+        this.scheduleEnd(entry);
+    }
+
+    protected scheduleEnd(entry: SandboxEntry): void {
         const end = (): void => {
             this.end(entry.sandbox.root).catch(error =>
                 console.warn(`[qaap-task-sandbox] ending ${entry.sandbox.name} failed: ${(error as Error).message}`));
         };
+        const linger = this.lingerMs();
         if (linger <= 0) {
             end();
             return;
@@ -215,11 +266,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         entry.teardownTimer.unref?.();
     }
 
-    /** End the sandbox of `root` now: destroy it, or stop and label it for later inspection. */
-    async end(root: string, mode: QaapTaskSandboxEndMode = this.endMode()): Promise<void> {
+    /** End the sandbox of `root` now: destroy it, or stop and rename it for later inspection. */
+    end(root: string, mode: QaapTaskSandboxEndMode = this.endMode()): Promise<void> {
         const entry = this.entries.get(root);
         if (!entry) {
-            return;
+            return this.ending.get(root) ?? Promise.resolve();
         }
         this.entries.delete(root);
         if (entry.teardownTimer) {
@@ -228,13 +279,22 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         for (const server of entry.forwards.values()) {
             server.close();
         }
-        if (mode === 'archive') {
-            // Docker labels are immutable: the archive marker is the stopped state plus a rename.
-            await this.docker(['stop', '-t', '5', entry.sandbox.name]).catch(() => undefined);
-            await this.docker(['rename', entry.sandbox.name, `${entry.sandbox.name}-archived-${Date.now()}`]).catch(() => undefined);
-        } else {
-            await this.docker(['rm', '-f', entry.sandbox.name]);
-        }
+        const job = (async (): Promise<void> => {
+            if (mode === 'archive') {
+                // Docker labels are immutable: the archive marker is the stopped state plus a rename
+                // that carries the archive time (the reaper's TTL starts there, not at creation).
+                await this.docker(['stop', '-t', '5', entry.sandbox.name]).catch(() => undefined);
+                await this.docker(['rename', entry.sandbox.name, `${entry.sandbox.name}-archived-${Date.now()}`]).catch(() => undefined);
+            } else {
+                await this.docker(['rm', '-f', entry.sandbox.name]);
+            }
+        })().finally(() => {
+            if (this.ending.get(root) === job) {
+                this.ending.delete(root);
+            }
+        });
+        this.ending.set(root, job);
+        return job;
     }
 
     /** The live sandbox whose worktree contains `cwd`, if any (synchronous: used on the spawn path). */
@@ -250,20 +310,18 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
     }
 
     /**
-     * `docker exec` argv that runs `file args` inside the sandbox at `cwd`. Variables are passed by
-     * NAME only (the docker CLI copies the values from its own env), so secrets never appear on an
-     * argv or in the container's persisted config. Launch the docker CLI with `env` as its env.
+     * `docker exec` argv that runs `file args` inside the sandbox at `cwd`. Task variables and the
+     * devcontainer `remoteEnv` are passed by NAME only (the docker CLI copies the values from its
+     * own env), so their values never appear on an argv or in the container's persisted config.
+     * Launch the docker CLI with {@link execClientEnv} as its env.
      */
     wrapExec(sandbox: QaapTaskSandbox, cwd: string, file: string, args: readonly string[], env: NodeJS.ProcessEnv | undefined, execId: string): { file: string; args: string[] } {
         const envArgs: string[] = [];
-        for (const [key, value] of Object.entries(env ?? {})) {
+        for (const [key, value] of Object.entries({ ...sandbox.remoteEnv, ...env })) {
             if (value === undefined || EXEC_ENV_DENYLIST.has(key) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
                 continue;
             }
             envArgs.push('-e', key);
-        }
-        for (const key of Object.keys(sandbox.remoteEnv)) {
-            envArgs.push('-e', `${key}=${sandbox.remoteEnv[key]}`);
         }
         return {
             file: this.dockerCli(),
@@ -297,11 +355,13 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         const child = launch('/bin/sh', ['-c', SIGNAL_FORWARDER, 'qaap-sandbox-exec', wrapped.file, sandbox.name, this.killScript(execId), ...wrapped.args], {
             // The docker CLI runs on the host: its cwd only needs to exist.
             cwd: fs.existsSync(options.cwd) ? options.cwd : undefined,
-            env: { ...options.env, ...this.dockerClientEnv() },
+            env: this.execClientEnv(sandbox, options.env),
             stdio: options.stdio,
             detached: options.detached ?? process.platform !== 'win32',
         });
-        const port = Number(options.env.QAAP_PREVIEW_PORT ?? options.env.PORT);
+        // Only the preview supervisor's allocated port: `PORT` is inherited from the backend (the IDE
+        // port in the production image) by every spawn and must not be forwarded.
+        const port = Number(options.env.QAAP_PREVIEW_PORT);
         if (Number.isInteger(port) && port > 0 && port < 65536) {
             this.forwardPort(sandbox, port, port).catch(error =>
                 console.warn(`[qaap-task-sandbox] preview forward ${port} → ${sandbox.name} failed: ${(error as Error).message}`));
@@ -310,9 +370,19 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
     }
 
     /**
+     * Env for the host-side docker exec client: the devcontainer `remoteEnv` under the task's own
+     * variables (the task wins), plus what the docker CLI itself needs from the backend.
+     */
+    execClientEnv(sandbox: QaapTaskSandbox, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+        return { ...sandbox.remoteEnv, ...env, ...this.dockerClientEnv() };
+    }
+
+    /**
      * Expose the sandbox's loopback `containerPort` on the backend's `127.0.0.1:hostPort` (0 picks a
      * free port). Each connection runs a small bridge with `docker exec`, so nothing is published
-     * and it works whatever address the dev server bound inside its own network namespace.
+     * and it works whatever address the dev server bound inside its own network namespace. One exec
+     * per TCP connection costs ~100–300 ms per connection; a long-lived in-container relay is a
+     * documented follow-up (doc/qaap-task-sandbox.md).
      * Resolves to the host port.
      */
     async forwardPort(sandbox: QaapTaskSandbox, containerPort: number, hostPort = 0): Promise<number> {
@@ -354,29 +424,44 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         return (server.address() as net.AddressInfo).port;
     }
 
-    /** Remove sandboxes this namespace left behind (backend crash/restart) and expired archives. */
+    /**
+     * Remove sandboxes THIS backend left behind (crash, restart, deploy) and expired archives.
+     * Another backend sharing the daemon labels its sandboxes with a different owner, so its live
+     * sandboxes are never touched; archives of any owner expire by the time in their name.
+     */
     async reapOrphans(now: number = Date.now()): Promise<number> {
         const listed = await this.docker([
             'ps', '-a', '--filter', `label=${QAAP_TASK_SANDBOX_LABEL}=true`,
-            '--format', '{{.Names}}\t{{.State}}\t{{.CreatedAt}}',
+            '--format', `{{.Names}}\t{{.State}}\t{{.Label "${QAAP_TASK_SANDBOX_OWNER_LABEL}"}}`,
         ]).catch(() => '');
-        const live = new Set([...this.entries.values()].map(entry => entry.sandbox.name));
+        // Starting sandboxes count as live too: an auto-resumed task may be adopting one right now.
+        const live = new Set([...[...this.entries.values()].map(entry => entry.sandbox.name), ...[...this.pending.keys()].map(root => this.containerName(root))]);
         const prefix = qaapDockerName('qaap-task-');
+        const owner = this.ownerId();
         let removed = 0;
         for (const line of listed.split('\n').filter(Boolean)) {
-            const [name, state, createdAt] = line.split('\t');
+            const [name, state, labelOwner] = line.split('\t');
             if (!name.startsWith(prefix) || live.has(name)) {
                 continue;
             }
-            const archived = name.includes('-archived-');
-            const age = now - Date.parse(createdAt?.replace(/ [A-Z]+$/, '') ?? '');
-            if (archived && state !== 'running' && !(age > this.archiveTtlMs())) {
+            const archivedAt = ARCHIVED_NAME.exec(name);
+            const expired = archivedAt ? state !== 'running' && now - Number(archivedAt[1]) > this.archiveTtlMs() : labelOwner === owner;
+            if (!expired) {
                 continue;
             }
             await this.docker(['rm', '-f', name]).catch(() => undefined);
             removed++;
         }
         return removed;
+    }
+
+    /**
+     * Which backend owns a sandbox: `QAAP_TASK_SANDBOX_OWNER`, else the host name (a backend
+     * container keeps its host name across restarts). Set distinct owners for several backends
+     * that share one host and daemon.
+     */
+    ownerId(): string {
+        return process.env.QAAP_TASK_SANDBOX_OWNER?.trim() || os.hostname();
     }
 
     protected async createEntry(root: string, options: QaapTaskSandboxAcquireOptions): Promise<SandboxEntry> {
@@ -390,7 +475,8 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
             if (state !== undefined) {
                 await this.docker(['rm', '-f', name]).catch(() => undefined);
             }
-            await this.docker(await this.buildRunArgs(name, root, plan, options));
+            await this.docker(await this.buildRunArgs(name, root, plan, options), 60_000,
+                { ...process.env, ...(devcontainer?.containerEnv ?? {}) });
             created = true;
         }
         await this.waitReady(name);
@@ -443,6 +529,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
             '--name', name,
             '--label', `${QAAP_TASK_SANDBOX_LABEL}=true`,
             '--label', `${QAAP_TASK_SANDBOX_WORKTREE_LABEL}=${root}`,
+            '--label', `${QAAP_TASK_SANDBOX_OWNER_LABEL}=${this.ownerId()}`,
             '--label', `com.qaap.tenant-login=${(options.ownerLogin?.trim() || '__anonymous__').toLowerCase()}`,
             '--label', 'com.qaap.managed=true',
             ...Object.entries(qaapDockerNamespaceLabels()).flatMap(([key, value]) => ['--label', `${key}=${value}`]),
@@ -460,7 +547,9 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
             '-e', `QAAP_SANDBOX_EXEC_RUNNER=${EXEC_RUNNER}`,
             '-e', `QAAP_SANDBOX_BRIDGE_RUNNER=${BRIDGE_RUNNER}`,
             '-e', `QAAP_SANDBOX_BRIDGE_JS=${BRIDGE_JS}`,
-            ...Object.entries(devcontainer?.containerEnv ?? {}).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
+            // By name: `docker run` is launched with these values in its env (see createEntry), so
+            // they stay off the argv. They do persist in the container config, as containerEnv does.
+            ...Object.keys(devcontainer?.containerEnv ?? {}).flatMap(key => ['-e', key]),
             ...binds.flatMap(bind => ['-v', bind]),
             '-w', root,
         ];
@@ -666,9 +755,9 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
     }
 
     /** The one Docker CLI seam (overridden in specs). Resolves stdout; rejects with stderr. */
-    protected docker(args: string[], timeoutMs = 60_000): Promise<string> {
+    protected docker(args: string[], timeoutMs = 60_000, env: NodeJS.ProcessEnv = process.env): Promise<string> {
         return new Promise((resolve, reject) => {
-            execFile(this.dockerCli(), args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+            execFile(this.dockerCli(), args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env }, (error, stdout, stderr) => {
                 if (error) {
                     reject(new Error(`docker ${args[0]} failed: ${String(stderr || error.message).trim().slice(0, 500)}`));
                 } else {

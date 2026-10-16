@@ -16,13 +16,18 @@ import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 /** Records every Docker CLI call instead of running it; `inspect` misses until a `run` happened. */
 class FakeDockerSandboxService extends QaapTaskSandboxService {
     readonly calls: string[][] = [];
+    readonly envs: Array<NodeJS.ProcessEnv | undefined> = [];
     readonly running = new Set<string>();
     builtImages = new Set<string>();
     psOutput = '';
+    /** Per-command gates: a docker call of that command waits until the gate resolves. */
+    readonly gates = new Map<string, Promise<void>>();
 
-    protected override async docker(args: string[]): Promise<string> {
+    protected override async docker(args: string[], _timeoutMs?: number, env?: NodeJS.ProcessEnv): Promise<string> {
         this.calls.push(args);
+        this.envs.push(env);
         const [command] = args;
+        await this.gates.get(command);
         if (command === 'run') {
             this.running.add(args[args.indexOf('--name') + 1]);
             return 'container-id\n';
@@ -53,6 +58,13 @@ class FakeDockerSandboxService extends QaapTaskSandboxService {
         return this.calls.filter(call => call[0] === command);
     }
 }
+
+/** A promise plus its resolver, to hold a fake docker command until the spec releases it. */
+const gate = (): { promise: Promise<void>; open: () => void } => {
+    let open!: () => void;
+    const promise = new Promise<void>(resolve => { open = resolve; });
+    return { promise, open };
+};
 
 const gitEnv = {
     ...process.env,
@@ -112,6 +124,7 @@ describe('QaapTaskSandboxService', function (): void {
             QAAP_TASK_SANDBOX_ON_END: undefined,
             QAAP_TASK_SANDBOX_TOOLCHAIN: undefined,
             QAAP_TASK_SANDBOX_HOME_DIRS: undefined,
+            QAAP_TASK_SANDBOX_OWNER: undefined,
         });
     });
 
@@ -247,20 +260,101 @@ describe('QaapTaskSandboxService', function (): void {
         await service.end(sandbox.root);
     });
 
-    it('reaps orphaned sandboxes but keeps fresh archives and live ones', async () => {
+    it('reaps only its own orphans and archives past their TTL, never another backend\'s live sandboxes', async () => {
+        setEnv({ QAAP_TASK_SANDBOX_OWNER: 'backend-a' });
         const service = new FakeDockerSandboxService();
         const live = await service.acquire({ taskId: 't1', cwd: worktreeA });
+        expect(service.callsOf('run')[0]).to.include('com.qaap.task-sandbox.owner=backend-a');
         const now = Date.parse('2026-10-16T12:00:00Z');
+        const hour = 60 * 60_000;
         service.psOutput = [
-            `${live.name}\trunning\t2026-10-16 11:00:00 +0000 UTC`,
-            'qaap-task-aaaaaaaaaaaa\trunning\t2026-10-16 11:00:00 +0000 UTC',
-            'qaap-task-bbbbbbbbbbbb-archived-1\texited\t2026-10-16 11:00:00 +0000 UTC',
-            'qaap-task-cccccccccccc-archived-1\texited\t2026-10-10 11:00:00 +0000 UTC',
-            'someone-else\trunning\t2026-10-16 11:00:00 +0000 UTC',
+            `${live.name}\trunning\tbackend-a`,
+            'qaap-task-aaaaaaaaaaaa\trunning\tbackend-a',
+            'qaap-task-dddddddddddd\texited\tbackend-a',
+            'qaap-task-eeeeeeeeeeee\trunning\tbackend-b',
+            `qaap-task-bbbbbbbbbbbb-archived-${now - hour}\texited\tbackend-b`,
+            // Created long ago but archived one hour ago: the TTL counts from the archive time.
+            `qaap-task-ffffffffffff-archived-${now - hour}\texited\tbackend-a`,
+            `qaap-task-cccccccccccc-archived-${now - 25 * hour}\texited\tbackend-b`,
+            'someone-else\trunning\tbackend-a',
         ].join('\n');
-        expect(await service.reapOrphans(now)).to.equal(2);
-        expect(service.callsOf('rm').map(call => call[2])).to.deep.equal(['qaap-task-aaaaaaaaaaaa', 'qaap-task-cccccccccccc-archived-1']);
+        expect(await service.reapOrphans(now)).to.equal(3);
+        expect(service.callsOf('rm').map(call => call[2])).to.deep.equal([
+            'qaap-task-aaaaaaaaaaaa', 'qaap-task-dddddddddddd', `qaap-task-cccccccccccc-archived-${now - 25 * hour}`,
+        ]);
         await service.end(live.root);
+    });
+
+    it('never registers a task released while its sandbox was still starting, and ends the sandbox', async () => {
+        const service = new FakeDockerSandboxService();
+        const run = gate();
+        service.gates.set('run', run.promise);
+        const acquiring = service.acquire({ taskId: 't1', cwd: worktreeA });
+        await new Promise(resolve => setTimeout(resolve, 50));
+        service.release('t1'); // cancelled during startup
+        run.open();
+        const sandbox = await acquiring;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(service.callsOf('rm')).to.deep.equal([['rm', '-f', sandbox.name]]);
+        expect(service.sandboxFor(worktreeA)).to.equal(undefined);
+    });
+
+    it('waits for an end in flight instead of reusing the container being removed', async () => {
+        const service = new FakeDockerSandboxService();
+        const first = await service.acquire({ taskId: 't1', cwd: worktreeA });
+        const rm = gate();
+        service.gates.set('rm', rm.promise);
+        service.release('t1');
+        const next = service.acquire({ taskId: 't2', cwd: worktreeA });
+        await new Promise(resolve => setTimeout(resolve, 50));
+        expect(service.callsOf('run')).to.have.length(1); // still waiting for rm
+        service.gates.delete('rm');
+        rm.open();
+        const second = await next;
+        expect(second.created).to.equal(true);
+        expect(second).to.not.equal(first);
+        expect(service.callsOf('run')).to.have.length(2);
+        await service.end(second.root);
+    });
+
+    it('awaits the removal of every live sandbox on a graceful stop', async () => {
+        const service = new FakeDockerSandboxService();
+        await service.acquire({ taskId: 't1', cwd: worktreeA });
+        await service.acquire({ taskId: 't2', cwd: worktreeB });
+        const rm = gate();
+        service.gates.set('rm', rm.promise);
+        let stopped = false;
+        const stopping = service.onStop().then(() => { stopped = true; });
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(stopped).to.equal(false);
+        rm.open();
+        await stopping;
+        expect(service.callsOf('rm')).to.have.length(2);
+    });
+
+    it('forwards only the allocated preview port, never the inherited PORT', async () => {
+        const service = new FakeDockerSandboxService();
+        const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA });
+        const forwarded: number[] = [];
+        service.forwardPort = async (_sandbox, containerPort) => { forwarded.push(containerPort); return containerPort; };
+        const launch = (): ChildProcess => new EventEmitter() as ChildProcess;
+        service.spawnInSandbox(sandbox, 'npm', ['start'], { cwd: worktreeA, env: { PORT: '4873' }, stdio: ['ignore', 'pipe', 'pipe'] }, launch);
+        service.spawnInSandbox(sandbox, 'npm', ['run', 'dev'], { cwd: worktreeA, env: { PORT: '4873', QAAP_PREVIEW_PORT: '5180' }, stdio: ['ignore', 'pipe', 'pipe'] }, launch);
+        expect(forwarded).to.deep.equal([5180]);
+        await service.end(sandbox.root);
+    });
+
+    it('passes the devcontainer remoteEnv to exec by name, under the task\'s own variables', async () => {
+        const service = new FakeDockerSandboxService();
+        const base = await service.acquire({ taskId: 't1', cwd: worktreeA });
+        const sandbox = { ...base, remoteEnv: { REMOTE_TOKEN: 'r-secret', SHARED: 'remote' } };
+        const wrapped = service.wrapExec(sandbox, worktreeA, 'env', [], { SHARED: 'task' }, 'x1');
+        expect(wrapped.args.join(' ')).to.not.contain('r-secret');
+        expect(wrapped.args).to.include('REMOTE_TOKEN');
+        const env = service.execClientEnv(sandbox, { SHARED: 'task' });
+        expect(env.REMOTE_TOKEN).to.equal('r-secret');
+        expect(env.SHARED).to.equal('task');
+        await service.end(base.root);
     });
 
     it('uses a devcontainer image, and falls back to the base image while a Dockerfile build runs', async () => {
@@ -271,7 +365,11 @@ describe('QaapTaskSandboxService', function (): void {
         const withImage = await service.acquire({ taskId: 't1', cwd: worktreeB });
         expect(withImage.imageKind).to.equal('image');
         const run = service.callsOf('run')[0];
-        expect(run).to.include('mcr.microsoft.com/devcontainers/javascript-node:22').and.to.include('FOO=bar');
+        expect(run).to.include('mcr.microsoft.com/devcontainers/javascript-node:22');
+        // containerEnv goes to `docker run` by name; its value travels in the CLI's env, not on the argv.
+        expect(run[run.indexOf('FOO') - 1]).to.equal('-e');
+        expect(run.join(' ')).to.not.contain('FOO=bar');
+        expect(service.envs[service.calls.indexOf(run)]?.FOO).to.equal('bar');
         expect(run).to.not.include('--read-only');
         expect(service.callsOf('exec').some(call => call.includes('npm ci'))).to.equal(true);
         await service.end(withImage.root);

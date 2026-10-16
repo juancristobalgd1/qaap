@@ -65,9 +65,21 @@ except the in-sandbox exec server and the toolchain volume, which come with the 
      `…-archived-<ts>` for inspection.
    - The worktree and its `qaap/worktree/*` branch are never touched. They keep their existing
      apply, delete and GC lifecycle.
-4. On boot, `reapOrphans()` removes sandboxes that a crashed or restarted backend left behind,
-   plus archives older than `QAAP_TASK_SANDBOX_ARCHIVE_TTL_MS` (default 24 h). A clean shutdown
-   ends live sandboxes.
+4. On boot, `reapOrphans()` removes the sandboxes this backend left behind after a crash or
+   restart. "This backend" is the `com.qaap.task-sandbox.owner` label: `QAAP_TASK_SANDBOX_OWNER`,
+   else the host name.
+   - Another backend's live sandboxes on the same daemon are never touched. Several backends on
+     one host and daemon need distinct owners.
+   - Archives of any owner are reaped once older than `QAAP_TASK_SANDBOX_ARCHIVE_TTL_MS` (default
+     24 h). The age counts from the archive time in the name, not from container creation.
+   - A graceful shutdown awaits the removal of live sandboxes, with an 8 s cap. A hard exit
+     cannot wait, so the next boot's reaper covers it.
+
+**Races handled.**
+- A task released while its sandbox is still starting (cancelled during `docker run` or
+  `postCreateCommand`) is never registered, and the sandbox ends as after a last release.
+- An `acquire()` that arrives while the same worktree's sandbox is being removed waits for the
+  removal and starts a fresh container. It never adopts the dying one.
 
 **Container contract.** It uses the same hardening as tenant workers:
 
@@ -96,10 +108,16 @@ except the in-sandbox exec server and the toolchain volume, which come with the 
 - **An optional toolchain directory** (`QAAP_TASK_SANDBOX_TOOLCHAIN`), read-only at
   `/opt/qaap-agent`, first on `PATH`. It is for images that do not ship the agent CLIs.
 
-**Secrets.** Variables reach a task only at exec time and only by name (`-e NAME`; the docker
-CLI copies the value from its own env). They never appear in an argv, in the container's
-persisted config or in `docker inspect`. Host-only variables (`PATH`, `HOME`, `DOCKER_*`,
-`QAAP_TENANT_BACKEND_SECRET`, …) are never forwarded.
+**Secrets.**
+- The task's variables and the devcontainer `remoteEnv` reach a task only at exec time and only
+  by name (`-e NAME`; the docker CLI copies the value from its own env). They never appear in an
+  argv, in the container's persisted config or in `docker inspect`. When a name is in both, the
+  task's value wins.
+- The devcontainer `containerEnv` is also passed to `docker run` by name, so it stays off the
+  argv and `ps`. By its nature it persists in the container config (`docker inspect`): it is
+  declared in the repository, so it must not hold secrets.
+- Host-only variables (`PATH`, `HOME`, `DOCKER_*`, `QAAP_TENANT_BACKEND_SECRET`, …) are never
+  forwarded.
 
 **Kill semantics.** Killing a `docker exec` client does not kill the process inside the
 container. Every exec therefore runs under `setsid -w` and records its pgid in
@@ -114,12 +132,17 @@ when node is missing, to connect to the sandbox's own loopback. This is the
 `QaapDevPreviewUpstreamTunnel` idea at sandbox granularity. It works whatever address the dev
 server bound (Vite's `localhost` included) and for any port.
 
-- **Automatic case:** a dev server spawned into a sandbox with `QAAP_PREVIEW_PORT`/`PORT`=P (the
-  preview supervisor sets both) gets `127.0.0.1:P` on the backend forwarded to P inside the
-  sandbox. The existing preview proxy keeps targeting `127.0.0.1:P` unchanged.
+- **Automatic case:** a dev server spawned into a sandbox with `QAAP_PREVIEW_PORT`=P (set by the
+  preview supervisor) gets `127.0.0.1:P` on the backend forwarded to P inside the sandbox. The
+  existing preview proxy keeps targeting `127.0.0.1:P` unchanged.
+  - `PORT` alone is never forwarded. Every spawn inherits it from the backend, and in the
+    production image it is the IDE port.
 - **Hardcoded port case:** for an app that ignores `PORT`, `forwardPort(sandbox, 5173, 0)` maps
   its fixed port to a free host port. Wiring that into the preview port detection is a
   follow-up.
+- **Cost:** each TCP connection runs its own `docker exec` (~100–300 ms to open; HTTP keep-alive
+  and HMR websockets amortize it). Replacing it with one long-lived relay per sandbox, speaking
+  a multiplexed protocol over a single exec, is a known follow-up.
 
 ## Devcontainer handling
 
@@ -178,9 +201,18 @@ tasks of one tenant.
 
 - **What a task can't do:** it cannot see or signal another task's processes, bind its ports,
   or read another worktree's files.
-- **What a task still shares:** the repository's object store and refs, because commits must be
-  visible for merge-back. It can therefore rewrite another worktree's branch ref. Stronger
-  separation would need a `git clone --shared` per task, fetched on merge.
+- **What a task still shares (accepted limitation):** the repository's git common dir is mounted
+  read-write: `objects/`, `refs/`, `packed-refs` and `logs/`. Commits made in the sandbox must be
+  visible to the backend's merge-back.
+  - Consequence: a task can delete or rewrite other threads' branch refs, or run
+    `git gc --prune=now` and drop objects no ref reaches. That can lose another thread's
+    committed-but-unmerged work, or the main checkout's.
+  - Making only the task's own ref writable is not feasible with bind mounts. Git updates a ref
+    by writing `<ref>.lock` and renaming it over the ref, and a rename onto a bind-mounted file
+    fails, so commits would break.
+  - Real separation needs a per-task `git clone --shared` (alternates, objects read-only),
+    fetched back by the backend on merge. That is a follow-up, and it is required before
+    sandboxes isolate untrusted tasks from each other.
 - **Tenant isolation is unchanged.** It is still C1-full: a tenant's own uid and its own
   container.
 
@@ -218,6 +250,7 @@ tasks of one tenant.
 | `QAAP_TASK_SANDBOX_LINGER_MS` | 600000 | Keep the sandbox after the last task (0 = end immediately) |
 | `QAAP_TASK_SANDBOX_ON_END` | `destroy` | `archive` = stop + rename instead of remove |
 | `QAAP_TASK_SANDBOX_ARCHIVE_TTL_MS` | 86400000 | Archives older than this are reaped at boot |
+| `QAAP_TASK_SANDBOX_OWNER` | host name | Owner label; the boot reaper only removes this owner's sandboxes |
 | `QAAP_TASK_SANDBOX_NETWORK` | `bridge` | Docker network for sandboxes |
 | `QAAP_TASK_SANDBOX_MEMORY` / `_CPUS` / `_PIDS` | `2g` / `2` / `1024` | Limits |
 | `QAAP_TASK_SANDBOX_HOME_DIRS` | agent credential dirs | Comma list under `$HOME` mounted rw |
