@@ -289,6 +289,7 @@ linux_only_step "guards: tenant host loopback guard regression" bash scripts/qaa
 linux_only_step "guards: Dockerfile base image pin regression" bash scripts/qaap-dockerfile-base-pin-check.test.sh
 run_step "guards: tenant image seed regression" bash scripts/qaap-vps-tenant-image.test.sh
 run_step "guards: required mobile E2E workflow regression" node --test scripts/qaap-mobile-required-ci.test.js
+run_step "guards: post-deploy agent smoke regression" node --test scripts/qaap-post-deploy-agent-smoke.test.mjs
 run_step "guards: mobile bundle guard regression" node --test scripts/qaap-mobile-bundle-guard.test.js
 run_step "guards: browser start script preview port regression" node --test scripts/qaap-start-browser.test.mjs
 run_step "guards: endpoint ownership check" node scripts/qaap-endpoint-ownership-check.js

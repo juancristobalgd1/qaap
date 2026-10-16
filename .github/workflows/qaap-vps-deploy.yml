@@ -20,6 +20,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_agent_smoke:
+        description: Skip the post-deploy agent turn (one short real LLM turn per deploy)
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - master
@@ -368,6 +373,7 @@ jobs:
             scripts/qaap-release-config-check.js
             scripts/qaap-verify-auth-api-gate.sh
             scripts/qaap-vps-post-deploy-user-smoke.sh
+            scripts/qaap-post-deploy-agent-smoke.mjs
           sparse-checkout-cone-mode: false
 
       - name: Verify public endpoint
@@ -439,3 +445,31 @@ jobs:
           QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
           chmod +x ./scripts/qaap-vps-post-deploy-user-smoke.sh
           ./scripts/qaap-vps-post-deploy-user-smoke.sh "$QAAP_VPS_PUBLIC_URL" "$QAAP_EXPECTED_BUILD"
+
+      # One real agent turn as the smoke user (read-only, a random token as the expected reply): the
+      # HTTP probes above passed while agents hung in production (cwd ownership 403, turns lost to a
+      # backend restart). The release is already serving, so a red result flags it for a rollback
+      # (`npm run qaap:vps:rollback`) rather than blocking it.
+      - name: Post-deploy agent smoke
+        if: steps.ready.outputs.configured == 'true' && github.event.inputs.skip_agent_smoke != 'true'
+        env:
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          QAAP_SMOKE_SESSION: ${{ secrets.QAAP_SMOKE_SESSION }}
+          QAAP_SMOKE_COOKIE: ${{ secrets.QAAP_SMOKE_COOKIE }}
+          # Optional repository variables: the project (github:owner/name) and agent to use.
+          QAAP_SMOKE_AGENT_REPO: ${{ vars.QAAP_SMOKE_AGENT_REPO }}
+          QAAP_SMOKE_AGENT: ${{ vars.QAAP_SMOKE_AGENT }}
+          QAAP_SMOKE_ARTIFACT_DIR: test-results/qaap-agent-smoke
+        run: |
+          # shellcheck source=scripts/qaap-vps-normalize-public-url.sh
+          source ./scripts/qaap-vps-normalize-public-url.sh
+          QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
+          node scripts/qaap-post-deploy-agent-smoke.mjs "$QAAP_VPS_PUBLIC_URL"
+
+      - name: Upload agent smoke diagnostics
+        if: failure() && steps.ready.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qaap-agent-smoke
+          path: test-results/qaap-agent-smoke/
+          if-no-files-found: ignore

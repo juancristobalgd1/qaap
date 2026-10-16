@@ -90,6 +90,9 @@ jobs:
         run: bash scripts/qaap-vps-tenant-image.test.sh
       - name: Required mobile E2E workflow regression
         run: node --test scripts/qaap-mobile-required-ci.test.js
+      # The post-deploy agent smoke against a fake API: verdicts, timeout + cancel, dry run.
+      - name: Post-deploy agent smoke regression
+        run: node --test scripts/qaap-post-deploy-agent-smoke.test.mjs
       # Pure-node regression for the mobile bundle guard used below.
       - name: Mobile bundle guard regression
         run: node --test scripts/qaap-mobile-bundle-guard.test.js
