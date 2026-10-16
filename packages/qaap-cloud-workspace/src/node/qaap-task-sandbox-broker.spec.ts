@@ -86,11 +86,12 @@ describe('task sandbox exec protocol', () => {
         ]);
     });
 
-    it('reads listening ports from /proc/net/tcp and tcp6 text', () => {
+    it('reads listening ports from /proc/net/tcp and tcp6 text, skipping Docker\'s embedded DNS', () => {
         const text = [
             '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode',
             '   0: 0100007F:1435 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1001        0 1 1',
             '   1: 0100007F:1435 0100007F:C350 01 00000000:00000000 00:00000000 00000000  1001        0 2 1',
+            '   2: 0B00007F:8B4F 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 9 1', // Docker DNS
             '   0: 00000000000000000000000001000000:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 1001 0 3 1',
         ].join('\n');
         expect(parseQaapListeningPorts(text)).to.deep.equal([5173, 8080]);
@@ -525,6 +526,9 @@ describe('task sandbox broker link (tenant backend ↔ control plane over HTTP)'
     it('carries signed requests down the link and replies back, scoped to the linked tenant', async () => {
         broker.syncLinks();
         await waitFor(() => client.isLinked() || undefined);
+        // The link must stay up after the GET was read (not just long enough for one call).
+        await new Promise(resolve => setTimeout(resolve, 200));
+        expect(client.isLinked()).to.equal(true);
         const created = await client.create({ root: '/tmp/qaap-worktrees/alice/repo-1' }) as QaapTaskSandboxBrokerSandbox;
         expect(created.name).to.equal('qaap-task-x');
         expect(handled[0]).to.deep.equal({ tenant: 'alice', op: 'create', args: { root: '/tmp/qaap-worktrees/alice/repo-1' } });

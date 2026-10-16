@@ -511,8 +511,8 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
                 return hostPort;
             }
         } else {
-            for (const [port, forward] of entry.forwards) {
-                if (forward.containerPort === containerPort) {
+            for (const [port, candidate] of entry.forwards) {
+                if (candidate.containerPort === containerPort) {
                     return port;
                 }
             }
@@ -571,13 +571,13 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
                 socket.pipe(upstream);
             };
             upstream.on('data', onHeader);
-            const close = (): void => {
+            const closeBoth = (): void => {
                 socket.destroy();
                 upstream.destroy();
             };
-            upstream.on('error', close);
-            upstream.on('close', close);
-            socket.on('error', close);
+            upstream.on('error', closeBoth);
+            upstream.on('close', closeBoth);
+            socket.on('error', closeBoth);
             socket.on('close', () => open ? upstream.end() : upstream.destroy());
             return;
         }
@@ -684,19 +684,19 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         const live = new Set([...[...this.entries.values()].map(entry => entry.sandbox.name), ...[...this.pending.keys()].map(root => this.containerName(root))]);
         if (this.mode() === 'broker') {
             const broker = this.requireBroker();
-            let removed = 0;
-            for (const listed of await broker.list().catch(() => [])) {
-                if (live.has(listed.name)) {
+            let reaped = 0;
+            for (const sandbox of await broker.list().catch(() => [])) {
+                if (live.has(sandbox.name)) {
                     continue;
                 }
-                const archivedAt = Number(/-archived-(\d+)$/.exec(listed.name)?.[1]);
-                if (listed.archived && !listed.running && !(now - archivedAt > this.archiveTtlMs())) {
+                const archivedAt = Number(/-archived-(\d+)$/.exec(sandbox.name)?.[1]);
+                if (sandbox.archived && !sandbox.running && !(now - archivedAt > this.archiveTtlMs())) {
                     continue;
                 }
-                await broker.destroy({ name: listed.name }).catch(() => undefined);
-                removed++;
+                await broker.destroy({ name: sandbox.name }).catch(() => undefined);
+                reaped++;
             }
-            return removed;
+            return reaped;
         }
         const listed = await this.docker([
             'ps', '-a', '--filter', `label=${QAAP_TASK_SANDBOX_LABEL}=true`,
@@ -773,7 +773,13 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
             + `(image ${plan.image}, ${plan.kind}) in ${startupMs} ms${postCreateMs !== undefined ? `, postCreate ${postCreateMs} ms` : ''}`);
         const entry = this.newEntry(sandbox);
         this.entries.set(root, entry);
+        await this.seedPortBaseline(entry);
         return entry;
+    }
+
+    /** Ports already listening when the sandbox is handed out are never taken for an app's port. */
+    protected async seedPortBaseline(entry: SandboxEntry): Promise<void> {
+        entry.lastPorts = await this.listPorts(entry.sandbox).catch(() => []);
     }
 
     /**
@@ -809,6 +815,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         };
         const entry = this.newEntry(sandbox);
         this.entries.set(root, entry);
+        await this.seedPortBaseline(entry);
         if (created.created && devcontainer?.postCreateCommand) {
             const marker = await this.postCreateMarker(root);
             if (!marker || !fs.existsSync(marker)) {

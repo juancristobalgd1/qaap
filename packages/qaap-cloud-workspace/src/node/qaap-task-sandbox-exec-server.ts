@@ -322,7 +322,8 @@ function listeningPorts(): number[] {
         }
         for (const line of text.split('\n')) {
             const fields = line.trim().split(/\s+/);
-            if (fields.length < 4 || fields[3] !== '0A') {
+            // 127.0.0.11 is Docker's embedded DNS resolver, not an app.
+            if (fields.length < 4 || fields[3] !== '0A' || fields[1].startsWith('0B00007F:')) {
                 continue;
             }
             const port = Number.parseInt(fields[1].split(':').pop() ?? '', 16);

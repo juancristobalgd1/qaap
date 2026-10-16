@@ -14,6 +14,8 @@
  * ever on an argv or in this process's environment.
  */
 
+/* eslint-disable no-null/no-null */
+
 import * as fs from 'fs';
 import * as net from 'net';
 import { encodeQaapSandboxFrame, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';

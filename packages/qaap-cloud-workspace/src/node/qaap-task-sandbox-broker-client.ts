@@ -118,8 +118,9 @@ export class QaapTaskSandboxBrokerClient implements BackendApplicationContributi
                 }
             }
         };
+        // Not req 'close': it fires as soon as the (empty) GET body has been read.
         res.on('close', drop);
-        req.on('close', drop);
+        req.socket.on('close', drop);
         for (const waiter of [...this.linkWaiters]) {
             waiter();
         }

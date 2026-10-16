@@ -1,8 +1,12 @@
 # Per-task ephemeral sandbox (roadmap H2.2)
 
-Status: v1 behind `QAAP_TASK_SANDBOX=1` (default off), direct mode only. Code:
-`packages/qaap-cloud-workspace/src/node/qaap-task-sandbox.ts`, `qaap-devcontainer-config.ts`.
-End-to-end check: `node scripts/qaap-task-sandbox-e2e.mjs` (needs `npm run build:browser` and Docker).
+Status: behind `QAAP_TASK_SANDBOX=1` (default off) in two modes: **direct** (v1, the backend
+drives a Docker daemon it can reach) and **broker** (production, `QAAP_BACKEND_PER_TENANT=1`: the
+control plane creates sandboxes for tenant backends that have no Docker socket). Code:
+`packages/qaap-cloud-workspace/src/node/qaap-task-sandbox*.ts`, `qaap-devcontainer-config.ts`.
+End-to-end checks: `node scripts/qaap-task-sandbox-e2e.mjs` (direct mode, needs
+`npm run build:browser` and Docker) and `node scripts/qaap-task-sandbox-broker-e2e.mjs` (broker
+mode, needs the compiled `@theia/qaap-cloud-workspace` and Docker).
 
 ## Goal
 
@@ -137,12 +141,13 @@ server bound (Vite's `localhost` included) and for any port.
   existing preview proxy keeps targeting `127.0.0.1:P` unchanged.
   - `PORT` alone is never forwarded. Every spawn inherits it from the backend, and in the
     production image it is the IDE port.
-- **Hardcoded port case:** for an app that ignores `PORT`, `forwardPort(sandbox, 5173, 0)` maps
-  its fixed port to a free host port. Wiring that into the preview port detection is a
-  follow-up.
-- **Cost:** each TCP connection runs its own `docker exec` (~100–300 ms to open; HTTP keep-alive
-  and HMR websockets amortize it). Replacing it with one long-lived relay per sandbox, speaking
-  a multiplexed protocol over a single exec, is a known follow-up.
+- **Hardcoded port case:** for an app that ignores `PORT`, preview port detection retargets the
+  expected port to the port the app bound (see "Preview" under broker mode; the same watcher runs
+  in direct mode through `docker exec cat /proc/net/tcp`).
+- **Cost (direct mode):** each TCP connection runs its own `docker exec` (~100–300 ms to open;
+  HTTP keep-alive and HMR websockets amortize it). Broker mode opens a plain TCP connection to the
+  sandbox's exec server instead. Replacing the direct-mode exec with one long-lived relay per
+  sandbox is a known follow-up.
 
 ## Devcontainer handling
 
@@ -216,36 +221,131 @@ tasks of one tenant.
 - **Tenant isolation is unchanged.** It is still C1-full: a tenant's own uid and its own
   container.
 
-## Production: the remaining step (not in v1)
+## Production: broker mode
 
-- **Where v1 works.** v1 needs the backend that spawns the agent to reach a Docker daemon. That
-  holds in local development with Docker. It also holds on a control plane in
-  `QAAP_CLOUD_MODE=docker`, but that mode currently keeps the tenant worker as the boundary:
-  `taskSandboxFor()` is a no-op there.
-- **Why production is not covered yet.** Production runs `QAAP_BACKEND_PER_TENANT=1`: agents
-  spawn in a tenant backend container that has **no** Docker socket. Giving it one would let a
-  tenant create privileged containers. A filtered socket proxy cannot prevent that either.
-- **What the broker would be:**
-  1. **Create/destroy/list RPC.** The control plane exposes a narrow RPC, authenticated with
-     `QAAP_TENANT_BACKEND_SECRET`. It checks that the worktree path belongs to the tenant before
-     it creates the sandbox on that tenant's internal network, reusing this module's run
-     contract (mount source translation via the orchestrator).
-  2. **Exec server in the sandbox.** Each sandbox runs a small exec server from a read-only
-     `/opt/qaap-agent` toolchain volume (populated from the base image; glibc probe with
-     base-image fallback), authenticated with a per-sandbox token.
-  3. **Direct stdio.** The tenant backend's spawn seam launches a local node client that streams
-     stdio to that exec server, so stdio never transits the control plane.
-  4. **Preview.** Preview uses the same exec channel.
-- **Before the flag goes on in production:**
-  - this broker
-  - routing terminals (`wrapShellForTenant`) into the sandbox
-  - wiring `forwardPort` into the preview port detection for apps that ignore `PORT`
+In production (`QAAP_BACKEND_PER_TENANT=1`) agents spawn in a per-tenant backend container that has
+**no** Docker socket: giving it one, even through a filtered proxy, would let a tenant create
+privileged containers. The control plane therefore creates the sandboxes, through a narrow broker.
+`QaapTaskSandboxService.mode()` is `broker` whenever `QAAP_TENANT_BACKEND_MODE=1`; the control
+plane passes `QAAP_TASK_SANDBOX=1` to tenant backends only when the flag is on there (turning it
+off recreates them, deferred while a turn runs, like any stale backend).
+
+**1. The link (control plane ↔ tenant backend).** A tenant backend cannot reach the control plane:
+it sits on an internal bridge, and the host loopback guard (see `doc/qaap-ci-invariants.md`) rejects
+every control-plane port on purpose. The channel runs the other way. `QaapTaskSandboxBroker`
+(control plane) opens a long-lived `GET {runtime}/task-sandbox/link` to every tenant backend it
+routes to, through the same ingress relay as the busy probe, and reconnects every 2 s when it drops.
+The tenant backend (`QaapTaskSandboxBrokerClient`) writes signed requests down that NDJSON stream;
+the broker answers with `POST {runtime}/task-sandbox/reply`. Authentication uses the tenant-scoped
+`QAAP_TENANT_BACKEND_SECRET` (HMAC-SHA256, `qaap-task-sandbox-broker-protocol.ts`):
+
+- the link and every reply carry a probe over the tenant login and a timestamp (60 s window),
+- every request carries its own signature over the tenant login, id, time, op and a hash of its
+  arguments; the broker verifies it with the secret of the tenant whose link carried it and
+  rejects replays by id.
+
+**2. The broker's three operations**, each scoped to the linked tenant:
+
+- `create { root, devcontainer: { image?, containerEnv? }, homeLinks }`. `root` is the worktree as
+  the tenant backend sees it and must lie strictly inside that tenant's own repos, worktrees or
+  parallel tree, be normalized, and exist as a real directory (not a symlink) for the control
+  plane. The broker picks everything else: the tenant backend's Docker node and image
+  (`QaapDockerOrchestrator.taskSandboxPlacement`), uid `1001:1001` (the tenant backend's agent
+  uid), `--init`, `CapDrop ALL`, `no-new-privileges`, pids/memory/CPU limits, read-only rootfs on
+  the base image, tmpfs `/tmp` and `HOME`, the tenant's internal network plus its direct-egress
+  network or egress-proxy env, and no published port.
+- `destroy { name, mode }` and `list`: only containers labelled `com.qaap.task-sandbox.broker` and
+  `com.qaap.tenant-login=<tenant>`.
+- At most `QAAP_TASK_SANDBOX_MAX_PER_TENANT` (default 8) sandboxes per tenant. When a tenant's
+  backend stops being routed for 60 s, the broker removes its sandboxes (their linger timers died
+  with that backend). A restarted tenant backend reaps the sandboxes it no longer knows (`list`).
+
+**Mounts in broker mode** are the tenant's four **fixed** roots, with Docker mount sources
+translated by the orchestrator (`QAAP_DOCKER_REMOTE_*`) and destinations at the paths the tenant
+backend sees, so cwd and git `gitdir:` paths need no translation:
+`/workspace/repos/users/<login>`, `/tmp/qaap-worktrees/<login>`, `/tmp/qaap-parallel/<login>` and the
+tenant storage `/home/theia/.qaap`. The broker never binds a tenant-chosen sub-path: the tenant
+could swap it for a symlink between validation and the daemon's mount, and a rootless daemon would
+then mount any host path its uid can open (its own Docker socket included). Consequences, consistent
+with the threat model below:
+
+- a sandbox sees all of its tenant's trees, not only its worktree (the tenant backend already does);
+- the read-only git metadata overlays of direct mode are not applied: in production, agent code
+  already runs as the tenant in the tenant backend, and the backend's own git keeps
+  `-c core.hooksPath=/dev/null`;
+- agent sign-in state reaches the sandbox through `homeLinks`: the tenant backend's volatile HOME
+  links (`QaapTenantPersistentHome`) are recreated inside the sandbox's tmpfs HOME, pointing into the
+  mounted tenant storage. Link targets must be inside `/home/theia/.qaap`.
+
+**Devcontainers in broker mode.** The tenant backend reads `devcontainer.json` (the control plane
+never reads tenant files) and sends only `image` and `containerEnv`; the broker validates the image
+reference and drops reserved variables (`HOME`, `PATH`, `QAAP_*`, proxies, `NODE_OPTIONS`, `LD_*`).
+An image that is not present yet is pulled in the background and that task runs on the base image.
+Dockerfile builds are **not** run in broker mode (a tenant Dockerfile would execute on the shared
+daemon); those repos use the base image. `remoteEnv` and `postCreateCommand` are applied by the
+tenant backend through the exec server.
+
+**3. Exec server and toolchain volume.** Every broker sandbox runs
+`/opt/qaap-agent/current/bin/node /opt/qaap-agent/current/lib/qaap-task-sandbox-exec-server.js` as
+its entrypoint. `/opt/qaap-agent` is a read-only Docker volume
+`qaap-agent-toolchain-<sha(image id, server)>`, populated once per image and server version by a
+one-shot container of the tenant image (no network, no capabilities) that copies its `node` and the
+compiled exec server, then renames the result into place. The exec server listens on
+`:7391` on the tenant network (reached by container name), accepts only requests carrying the
+random per-sandbox token, and removes the token from its environment before starting anything.
+If the sandbox image cannot run the toolchain's node (musl or no glibc), the exec server never
+becomes ready and the broker recreates the sandbox on the base image.
+
+Operations (`qaap-task-sandbox-exec-protocol.ts`): `exec` (binary frames for stdin, stdout,
+stderr, signals, resize, exit), `connect` (raw pipe to a sandbox loopback port), `ports`
+(listening TCP ports from `/proc/net/tcp{,6}`) and `ping`.
+
+**4. Local exec client.** The tenant spawn seam (`QaapTenantSpawnService.spawn()` /
+`spawnArgvPrepared()` → `launchProcess`) starts `node qaap-task-sandbox-exec-client-main.js <file>`
+instead of the command. The request file (0600, in a backend-private 0700 directory) holds the
+endpoint, the token and the command's exact environment; the client reads and deletes it at once,
+so no secret is on an argv or in the client's environment. stdio streams directly between the
+tenant backend and the sandbox: it never transits the control plane. The client exits with the
+remote exit code, or dies by the remote signal. A signal to the client is forwarded to the remote
+process group; when the client dies (even by SIGKILL) the server sees the socket close and sends
+TERM, then KILL after 2 s, to the whole remote tree.
+
+**Terminals.** `wrapShellForTenant()` routes a terminal whose cwd belongs to a live sandbox into it:
+broker mode runs the shell under a pseudo-terminal in the sandbox (`script`, util-linux) and
+forwards window-size changes (`stty` on the inner pty); direct mode uses `docker exec -i[t]` under
+the same kill trap as other execs.
+
+**Preview.** Each forwarded host port opens a `connect` (broker) or `docker exec … bridge` (direct)
+per connection. Preview port detection: when a process starts in a sandbox with
+`QAAP_PREVIEW_PORT`=Q (or a terminal command contains `QAAP_PREVIEW_PORT=Q`), the backend's
+`127.0.0.1:Q` is forwarded to Q in the sandbox and a port watcher (`QAAP_TASK_SANDBOX_PORT_WATCH_MS`,
+default 1 s) reads the sandbox's listening ports. If Q never binds but a new port P does (the app
+ignores PORT, e.g. a hardcoded `:5173`), the forwarder on Q is retargeted to P (ports already
+listening when the sandbox started, and Docker's embedded DNS on `127.0.0.11`, never count), so the preview proxy,
+which keeps targeting Q, reaches the right task even when two sandboxes bind the same P. While a
+terminal is open, other new ports are forwarded 1:1 when that host port is free.
+
+**Verified end to end** (`scripts/qaap-task-sandbox-broker-e2e.mjs`, Oct 17 2026, macOS, Docker
+Desktop 29.1, `node:22-bookworm-slim`): the tenant backend container has no Docker socket, drops
+all capabilities, has a read-only rootfs and sits on an internal network; the broker runs on the host
+with real Docker. Two sandboxes start in parallel in 0.8–1.8 s once the images are local (4.7 s
+on the very first run, which also populated the toolchain volume); both bind the hardcoded port 4545 (each as PID 15 of its own namespace) and each preview
+port reaches its own app; a sandbox sees only its own server, runs as uid 1001 with no capabilities,
+no Docker socket, no exec token and no backend secret, and gets the agent sign-in state; a terminal
+gets a remote pty; killing a dev server's client frees its port; both sandboxes are removed when
+the tasks end. Not covered locally: a rootless daemon and the real ingress relay (the e2e publishes
+the tenant backend's port directly), and multiple Docker nodes.
+
+**Before the flag goes on in production:** run the broker e2e on the VPS (rootless daemon,
+`QAAP_DOCKER_REMOTE_*` translation, egress proxy), and decide whether the tenant image should ship
+the agent CLIs a devcontainer image lacks (today they must come from the image or from the tenant's
+CLI prefix in its storage).
 
 ## Flags
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `QAAP_TASK_SANDBOX` | off | Enable per-task sandboxes (direct mode) |
+| `QAAP_TASK_SANDBOX` | off | Enable per-task sandboxes (direct mode; on a per-tenant control plane, the broker and its tenant backends) |
 | `QAAP_TASK_SANDBOX_IMAGE` | `QAAP_TENANT_DOCKER_IMAGE` / `QAAP_THEIA_IMAGE` | Base image |
 | `QAAP_TASK_SANDBOX_LINGER_MS` | 600000 | Keep the sandbox after the last task (0 = end immediately) |
 | `QAAP_TASK_SANDBOX_ON_END` | `destroy` | `archive` = stop + rename instead of remove |
@@ -255,3 +355,5 @@ tasks of one tenant.
 | `QAAP_TASK_SANDBOX_MEMORY` / `_CPUS` / `_PIDS` | `2g` / `2` / `1024` | Limits |
 | `QAAP_TASK_SANDBOX_HOME_DIRS` | agent credential dirs | Comma list under `$HOME` mounted rw |
 | `QAAP_TASK_SANDBOX_TOOLCHAIN` | unset | Host dir mounted ro at `/opt/qaap-agent` (its `bin/` first on PATH) |
+| `QAAP_TASK_SANDBOX_MAX_PER_TENANT` | 8 | Broker mode: live sandboxes per tenant |
+| `QAAP_TASK_SANDBOX_PORT_WATCH_MS` | 1000 | Preview port detection interval |

@@ -258,9 +258,9 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             if (!this.ownedBy(existing, tenant)) {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
-            const token = this.envValue(existing, 'QAAP_SANDBOX_EXEC_TOKEN');
-            if (existing.State?.Running && !existing.State.Paused && token) {
-                return this.describe(name, root, token, existing.Config?.Image ?? placement.image, placement, 0, false);
+            const existingToken = this.envValue(existing, 'QAAP_SANDBOX_EXEC_TOKEN');
+            if (existing.State?.Running && !existing.State.Paused && existingToken) {
+                return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false);
             }
             await docker.getContainer(name).remove({ force: true });
         }
