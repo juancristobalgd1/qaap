@@ -34,6 +34,9 @@ jobs:
           LAPTOP_PUBKEY: ${{ inputs.public_key }}
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
+          # Pins the VPS host key (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the VPS,
+          # SHA256:...). Empty means no host-key check: a moved or spoofed host is accepted.
+          fingerprint: ${{ secrets.QAAP_VPS_SSH_FINGERPRINT }}
           username: ${{ secrets.QAAP_VPS_USER }}
           key: ${{ secrets.QAAP_VPS_SSH_KEY }}
           port: ${{ secrets.QAAP_VPS_SSH_PORT }}

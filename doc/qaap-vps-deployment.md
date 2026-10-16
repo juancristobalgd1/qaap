@@ -182,6 +182,7 @@ Follow the printed steps:
 | `QAAP_VPS_SSH_PORT` | `22` (optional) |
 | `QAAP_VPS_REPO_DIR` | `/opt/qaap` (optional) |
 | `QAAP_VPS_PUBLIC_URL` | `https://161.97.69.219.sslip.io` (health check / monitor — Caddy HTTPS, not `:4873`) |
+| `QAAP_VPS_SSH_FINGERPRINT` | `SHA256:…` from `ssh qaap-vps ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub \| cut -d' ' -f2` (pins the host key; update it when the VPS moves) |
 | `QAAP_SMOKE_SESSION` or `QAAP_SMOKE_COOKIE` | an active signed-in Qaap session (required by the post-deploy user smoke) |
 
 3. **Cursor Cloud Agent** (optional) — same `QAAP_VPS_HOST` + `QAAP_VPS_SSH_KEY` as agent secrets so chat can run `./scripts/qaap-vps-remote-update.sh`.
