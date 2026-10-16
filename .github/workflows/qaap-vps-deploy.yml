@@ -330,12 +330,16 @@ jobs:
           QAAP_VPS_HOST: ${{ secrets.QAAP_VPS_HOST }}
           QAAP_VPS_SSH_KEY: ${{ secrets.QAAP_VPS_SSH_KEY }}
           QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+          QAAP_VPS_SSH_FINGERPRINT: ${{ secrets.QAAP_VPS_SSH_FINGERPRINT }}
         run: |
           if [ -z "$QAAP_VPS_HOST" ] || [ -z "$QAAP_VPS_SSH_KEY" ] || [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
             echo "::error::Configure QAAP_VPS_HOST, QAAP_VPS_SSH_KEY and QAAP_VPS_PUBLIC_URL before releasing."
             exit 1
           fi
           echo "configured=true" >> "$GITHUB_OUTPUT"
+          if [ -z "$QAAP_VPS_SSH_FINGERPRINT" ]; then
+            echo "::warning::QAAP_VPS_SSH_FINGERPRINT is not set: the deploy does not verify the VPS host key."
+          fi
 
       - name: Deploy over SSH
         if: steps.ready.outputs.configured == 'true'
@@ -348,6 +352,9 @@ jobs:
           QAAP_DEPLOY_BRANCH: ${{ env.QAAP_DEPLOY_BRANCH }}
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
+          # Pins the VPS host key (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the VPS,
+          # SHA256:...). Empty means no host-key check: a moved or spoofed host is accepted.
+          fingerprint: ${{ secrets.QAAP_VPS_SSH_FINGERPRINT }}
           username: ${{ secrets.QAAP_VPS_USER }}
           key: ${{ secrets.QAAP_VPS_SSH_KEY }}
           port: ${{ secrets.QAAP_VPS_SSH_PORT }}

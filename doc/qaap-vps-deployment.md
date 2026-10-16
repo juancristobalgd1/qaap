@@ -182,6 +182,7 @@ Follow the printed steps:
 | `QAAP_VPS_SSH_PORT` | `22` (optional) |
 | `QAAP_VPS_REPO_DIR` | `/opt/qaap` (optional) |
 | `QAAP_VPS_PUBLIC_URL` | `https://161.97.69.219.sslip.io` (health check / monitor — Caddy HTTPS, not `:4873`) |
+| `QAAP_VPS_SSH_FINGERPRINT` | `SHA256:…` from `ssh qaap-vps ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub \| cut -d' ' -f2` (pins the host key; update it when the VPS moves) |
 | `QAAP_SMOKE_SESSION` or `QAAP_SMOKE_COOKIE` | an active signed-in Qaap session (required by the post-deploy user smoke) |
 
 3. **Cursor Cloud Agent** (optional) — same `QAAP_VPS_HOST` + `QAAP_VPS_SSH_KEY` as agent secrets so chat can run `./scripts/qaap-vps-remote-update.sh`.
@@ -201,9 +202,19 @@ After secrets exist:
   runs if the gate is skipped or cancelled. In-flight deploys are not cancelled
   when a newer `master` push starts.
 
-The GHCR package remains private by default. Keep it private: the runtime image contains the built
-application and source tree. GitHub links the package to this repository through the
-`org.opencontainers.image.source` label.
+The GHCR package is **public** today (checked Oct 16 2026: an anonymous manifest request returns
+200), and the rootless tenant seed relies on that: it pulls the deployed digest anonymously
+(`scripts/qaap-vps-tenant-image.sh`). The runtime image contains the built application and source
+tree, which is fine while the repository is public. Before Qaap goes closed-source, make the
+package private and give the tenant seed a read-only pull credential (or accept the
+`docker save | docker load` fallback, ~8 min per deploy). GitHub links the package to this
+repository through the `org.opencontainers.image.source` label.
+
+Where a deploy spends its time (Oct 2026, ~25 min push → serving): image build and push ~10 min,
+digest verification ~2 min, then the SSH step: host pull ~2.5 min, rootless tenant seed ~3 min,
+drain + switch + health ~1.5 min. The tenant seed now starts in the background next to the host
+pull (`prefetch_tenant_image_digest`) and retries a dropped registry connection before falling
+back to `docker save | docker load`, which once took 8.5 min after a single IPv6 reset.
 
 Remote update from your machine:
 
@@ -212,6 +223,25 @@ export QAAP_VPS_HOST=161.97.69.219
 export QAAP_VPS_SSH_KEY_FILE=~/.ssh/qaap-vps-deploy
 ./scripts/qaap-vps-remote-update.sh
 ```
+
+### Rollback (one command)
+
+Every healthy deploy records its image id in the deploy history
+(`~/.local/state/qaap-deploy/image-history` on the VPS), and the post-deploy cleanup keeps the
+serving image plus the one before it. To go back to the previous release without any build:
+
+```bash
+npm run qaap:vps:rollback
+```
+
+That runs `scripts/qaap-vps-rollback.sh` on the VPS over SSH (same `QAAP_VPS_HOST` /
+`QAAP_VPS_SSH_KEY_FILE` as the remote update). It checks out the commit baked into the retained
+image (`org.opencontainers.image.revision`) and redeploys that image by digest through
+`qaap-vps-update.sh`, so the drain, tenant seed, health and launch-gate checks all run. Options:
+`--list` shows the retained releases, `--to <commit or image id prefix>` picks one, and
+`--dry-run` prints the plan without changing anything. On the VPS itself:
+`./scripts/qaap-vps-rollback.sh`. A rollback does not stop the next push to master from
+deploying again: revert or fix the bad commit on master.
 
 ### Lost the laptop SSH key (Hetzner Console)
 
