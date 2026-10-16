@@ -138,6 +138,27 @@ export interface QaapDockerEnsureResult {
     readonly hostPath: string;
 }
 
+/** One fixed tenant root a broker-mode task sandbox binds (see {@link QaapDockerOrchestrator.taskSandboxPlacement}). */
+export interface QaapTaskSandboxRoot {
+    readonly kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config';
+    /** Path inside the tenant backend, reused verbatim inside the sandbox. */
+    readonly backendPath: string;
+    /** Same directory as this control plane sees it. */
+    readonly hostPath: string;
+    /** Same directory as the tenant's Docker node sees it (bind source). */
+    readonly source: string;
+}
+
+export interface QaapTaskSandboxPlacement {
+    readonly docker: Dockerode;
+    readonly image: string;
+    readonly user: string;
+    readonly network: string;
+    readonly directEgressNetwork?: string;
+    readonly egressEnv: Readonly<Record<string, string>>;
+    readonly roots: readonly QaapTaskSandboxRoot[];
+}
+
 export interface QaapTenantBackendTarget {
     readonly containerId: string;
     readonly containerName: string;
@@ -654,6 +675,67 @@ export class QaapDockerOrchestrator {
         return this.tenantBackendSecret(ownerLogin);
     }
 
+    /** Tenant backends this control plane currently routes to (the task-sandbox broker links to each). */
+    listTenantBackendTargets(): QaapTenantBackendTarget[] {
+        return [...this.tenantBackendTargets.values()];
+    }
+
+    /**
+     * Broker-mode task sandboxes of this namespace on every Docker node. The broker seeds its
+     * orphan reaping from this after a restart, when its in-memory state is gone.
+     */
+    async listTaskSandboxContainers(): Promise<Array<{ readonly tenantLogin: string; readonly name: string; readonly running: boolean }>> {
+        const found = await Promise.all(this.getDockerNodeClients().map(async node => {
+            const containers = await node.docker.listContainers({
+                all: true,
+                filters: { label: ['com.qaap.managed=true', 'com.qaap.task-sandbox.broker=true'] },
+            }).catch(() => []);
+            return containers.flatMap(container => {
+                const labels = container.Labels ?? {};
+                const tenantLogin = labels['com.qaap.tenant-login']?.trim().toLowerCase();
+                return isInQaapDockerNamespace(labels) && tenantLogin
+                    ? [{ tenantLogin, name: (container.Names?.[0] ?? '').replace(/^\//, ''), running: container.State === 'running' }]
+                    : [];
+            });
+        }));
+        return found.flat();
+    }
+
+    /**
+     * Where a broker-mode task sandbox of `ownerLogin` runs (doc/qaap-task-sandbox.md): the tenant
+     * backend's Docker node, image, internal network and egress, and the tenant's FIXED roots with
+     * their Docker mount sources translated for that node and their destinations at the paths the
+     * tenant backend sees. Only these control-plane-chosen roots are ever bound: a tenant-chosen
+     * sub-path could be swapped for a symlink between validation and the daemon's mount.
+     */
+    async taskSandboxPlacement(ownerLogin: string): Promise<QaapTaskSandboxPlacement> {
+        const tenant = ownerLogin.trim().toLowerCase();
+        if (!tenant) {
+            throw new Error('A task sandbox needs a tenant login.');
+        }
+        const segment = safeUserIdSegment(ownerLogin).toLowerCase();
+        const mounts = this.tenantMountsForRoot(this.tenantRootForLogin(ownerLogin));
+        const tenantDataRoot = this.normalizeHostPath(resolveQaapTenantUserRoot(ownerLogin));
+        const networkMode = this.getTenantNetworkMode(ownerLogin);
+        if (networkMode === 'none') {
+            throw new Error('Task sandboxes need the isolated tenant bridge to reach their exec server.');
+        }
+        return {
+            docker: await this.getDocker(ownerLogin),
+            image: this.getTenantImage(),
+            user: '1001:1001',
+            network: networkMode,
+            directEgressNetwork: this.tenantDirectEgressNetworkFor(networkMode, ownerLogin),
+            egressEnv: this.tenantEgressProxyEnv(),
+            roots: [
+                { kind: 'repos', backendPath: `${TENANT_BACKEND_REPOS_MOUNT}/${segment}`, hostPath: mounts.reposRoot, source: this.dockerMountSource(mounts.reposRoot, 'repos') },
+                { kind: 'worktrees', backendPath: `${TENANT_BACKEND_WORKTREES_MOUNT}/${segment}`, hostPath: mounts.worktreesRoot, source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees') },
+                { kind: 'parallel', backendPath: `${TENANT_BACKEND_PARALLEL_MOUNT}/${segment}`, hostPath: mounts.parallelRoot, source: this.dockerMountSource(mounts.parallelRoot, 'parallel') },
+                { kind: 'tenant-config', backendPath: TENANT_BACKEND_QAAP_HOME_MOUNT, hostPath: tenantDataRoot, source: this.dockerMountSource(tenantDataRoot, 'tenant-config') },
+            ],
+        };
+    }
+
     protected async getDocker(ownerLogin?: string): Promise<Dockerode> {
         assertQaapDockerControlPlane(process.env);
         const node = this.dockerNodeForTenant(ownerLogin);
@@ -896,6 +978,14 @@ export class QaapDockerOrchestrator {
      * back to it (isolated preview hosts, share links). Part of the backend contract: a change
      * recreates stale backends.
      */
+    /**
+     * Broker-mode task sandboxes (doc/qaap-task-sandbox.md): the tenant backend asks this control
+     * plane for them over the sandbox link, so it only gets the flag when the broker runs here.
+     */
+    protected tenantBackendTaskSandboxEnv(): string[] {
+        return /^(1|true)$/i.test(process.env.QAAP_TASK_SANDBOX?.trim() ?? '') ? ['QAAP_TASK_SANDBOX=1'] : [];
+    }
+
     protected tenantBackendPublicUrlEnv(env: NodeJS.ProcessEnv = process.env): string[] {
         return ['QAAP_OAUTH_PUBLIC_URL', 'QAAP_PREVIEW_BASE_DOMAIN', 'QAAP_PREVIEW_ALLOW_SAME_SITE', 'QAAP_PREVIEW_SHARE_TTL_HOURS']
             .map(key => [key, env[key]?.trim()] as const)
@@ -1267,6 +1357,7 @@ export class QaapDockerOrchestrator {
                 'THEIA_PLUGINS_DIR=/app/plugins',
                 'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
                 ...this.tenantBackendPublicUrlEnv(),
+                ...this.tenantBackendTaskSandboxEnv(),
             ];
             const repoMount = `${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
             const worktreeMount = `${dockerMounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
@@ -1851,6 +1942,7 @@ export class QaapDockerOrchestrator {
             'THEIA_PLUGINS_DIR=/app/plugins',
             'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
             ...this.tenantBackendPublicUrlEnv(),
+            ...this.tenantBackendTaskSandboxEnv(),
         ];
         // The backend must not publish its own port: a Docker internal network deliberately reports
         // a null mapping. Only the dedicated ingress relay publishes a host port.
@@ -1866,6 +1958,8 @@ export class QaapDockerOrchestrator {
                 '--no-cluster', '--plugins=local-dir:/app/plugins', '--ovsx-router-config=/app/examples/ovsx-router-config.json',
             ].join('\u0000')
             && expectedEnv.every(entry => env.has(entry))
+            // Turning the broker off must also recreate backends that still ask for sandboxes.
+            && (this.tenantBackendTaskSandboxEnv().length > 0 || ![...env].some(entry => entry.startsWith('QAAP_TASK_SANDBOX=')))
             && this.tenantContainerHasExpectedNetworks(inspect, networkMode, directEgressNetwork)
             && raw.Mounts?.length === expectedMounts.length
             && expectedMounts.every(expected => raw.Mounts?.some(actual =>
