@@ -32,7 +32,12 @@ async function withServer(options, run) {
             if (req.headers.cookie !== 'qaap_sid=abc') {
                 return send(401, { error: 'Not signed in' });
             }
-            if (req.method === 'GET' && req.url === '/qaap/api/agent-tasks') {
+            if (req.method === 'GET' && req.url.split('?')[0] === '/qaap/api/agent-tasks') {
+                options.listCalls = (options.listCalls ?? 0) + 1;
+                if (options.agentsByCall) {
+                    const agents = options.agentsByCall[Math.min(options.listCalls, options.agentsByCall.length) - 1];
+                    return send(200, { tasks: [], agentConfigured: true, defaultAgent: 'qaiq', agents });
+                }
                 return send(200, {
                     tasks: [], agentConfigured: options.agentConfigured ?? true, defaultAgent: 'qaiq',
                     agents: options.agents ?? [{ id: 'qaiq', available: true, connectionState: 'connected' }],
@@ -65,7 +70,7 @@ async function withServer(options, run) {
     }
 }
 
-const ENV = { QAAP_SMOKE_SESSION: 'abc', QAAP_SMOKE_AGENT_POLL_MS: '10' };
+const ENV = { QAAP_SMOKE_SESSION: 'abc', QAAP_SMOKE_AGENT_POLL_MS: '10', QAAP_SMOKE_AGENT_LIST_RETRY_MS: '10' };
 const echoToken = prompt => ({ id: 't1', state: 'completed', exitCode: 0, log: `assistant: ${prompt.split(': ').pop()}` });
 const quiet = async fn => {
     const log = console.log;
@@ -177,9 +182,27 @@ test('agent: requested, else a signed-in default, else the first signed-in agent
     assert.equal(pickSmokeAgent({ defaultAgent: 'codex', agents: [{ id: 'codex', available: true, connectionState: 'disconnected' }] }).agent, undefined);
 });
 
-test('no signed-in agent fails before any turn is started', async () => {
-    await withServer({ agents: [{ id: 'codex', available: true, connectionState: 'disconnected' }] }, async (base, calls) => {
-        await assert.rejects(quiet(() => main([base], ENV)), /none of the smoke user's agents is signed in/);
+test('no signed-in agent skips the turn with a warning instead of failing the deploy', async () => {
+    const options = { agents: [{ id: 'codex', available: true, connectionState: 'disconnected' }] };
+    await withServer(options, async (base, calls) => {
+        assert.equal(await quiet(() => main([base], ENV)), 0);
         assert.ok(!calls.some(call => call.method === 'POST'));
+        assert.equal(options.listCalls, 3, 'retries the cold probe before giving up');
+        assert.ok(calls.every(call => call.method !== 'GET' || !call.url.startsWith('/qaap/api/agent-tasks') || call.url.endsWith('?refresh=1')));
+    });
+});
+
+test('a cold probe that resolves on a retry runs the turn', async () => {
+    const options = {
+        finish: echoToken,
+        agentsByCall: [
+            [{ id: 'qaiq', available: true, connectionState: 'unknown' }],
+            [{ id: 'qaiq', available: true, connectionState: 'connected' }],
+        ],
+    };
+    await withServer(options, async (base, calls) => {
+        assert.equal(await quiet(() => main([base], ENV)), 0);
+        assert.equal(options.listCalls, 2);
+        assert.ok(calls.some(call => call.method === 'POST' && call.url === '/qaap/api/agent-tasks'));
     });
 });
