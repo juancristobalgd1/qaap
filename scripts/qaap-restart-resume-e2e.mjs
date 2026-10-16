@@ -57,6 +57,23 @@ function parseArgs(argv) {
 
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
+/** SIGKILL the whole process group of `pid` (falls back to the pid itself). */
+function killProcessGroupOf(pid) {
+    let group;
+    try {
+        group = Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim());
+    } catch {
+        group = undefined;
+    }
+    for (const target of group ? [-group, pid] : [pid]) {
+        try {
+            process.kill(target, 'SIGKILL');
+        } catch {
+            // Already gone.
+        }
+    }
+}
+
 async function waitFor(what, timeoutMs, probe) {
     const started = Date.now();
     for (;;) {
@@ -149,11 +166,14 @@ async function main() {
             throw new Error(`expected the turn to be streaming before the kill, got ${before.json?.status}`);
         }
         await sleep(500); // let the streaming state reach SQLite (WAL, synchronous=FULL)
-        console.log('turn is streaming: SIGKILL the backend process group');
+        console.log('turn is streaming: SIGKILL the backend and the agent, as a container restart does');
         killBackend();
+        // Agents run detached in their own process group (on Linux their shell parent survives the
+        // backend), so kill that group too: a real restart of the container takes every process.
+        const agentPid = Number(readFileSync(join(state, 'first.pid'), 'utf8'));
+        killProcessGroupOf(agentPid);
         await waitFor('the first agent run to exit', 15_000, async () => {
-            const pid = Number(readFileSync(join(state, 'first.pid'), 'utf8'));
-            try { process.kill(pid, 0); return false; } catch { return true; }
+            try { process.kill(agentPid, 0); return false; } catch { return true; }
         });
 
         await startBackend('restart');
