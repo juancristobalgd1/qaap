@@ -207,9 +207,16 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   The deploy gate falls back to plain `npm ci` when the deployed ref predates the helper.
 - **Why:** `--fetch-retries` only retries single requests; registry `ECONNRESET` after a ~6 min
   hang failed three required runs on Oct 15, 2026.
-- **Deploy image cache:** `cache-to: type=gha,mode=min` exports only the final image's layers. The
-  build stage never hits (sources are copied before `npm ci`), and `mode=max` spent ~159 s per
-  deploy exporting it.
+- **Deploy image cache:** the `Dockerfile` installs from the package manifests alone (`manifests`
+  → `deps` stage: `npm ci` + theia-patch) before any source is copied, and the runtime takes
+  `node_modules`, `/app/plugins` and the rest of `/app` as three separate layers. The publish job
+  first builds `--target deps` with `cache-to: type=gha,mode=max,scope=qaap-deps`, then the image
+  with `mode=min` (scope `qaap-production`; the `build` stage changes every commit, and exporting
+  it with `mode=max` spent ~159 s per deploy). A source-only commit then skips `npm ci` (~97 s),
+  and the VPS pulls only the build layer instead of the whole 457 MB `/app` layer, twice (host +
+  rootless daemon). Keep new install-time work in `deps` only if it reads nothing but manifests;
+  anything written into `node_modules` after `deps` is lost (the build stage's `node_modules` is
+  not copied).
 
 ### 13. Local preflight (`npm run qaap:preflight`)
 

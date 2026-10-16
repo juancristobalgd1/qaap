@@ -6,9 +6,45 @@
 # CI built and verified. Bump a pin deliberately: resolve the new index digest, let the publish and
 # verify jobs prove it, then deploy. These are the bases of the verified GHCR image for 3452a58d3.
 
-# --- Build -------------------------------------------------------------------
+# --- Layout for layer reuse ---------------------------------------------------
+# The image is rebuilt and re-pulled on every deploy, so what does not change with the sources gets
+# its own runtime layer:
+#   manifests -> deps: package manifests only -> `npm ci` + theia-patch (node_modules, ~1.4 GB)
+#   deps -> build:     sources -> postinstall, compile, plugins, production bundle (~400 MB)
+# The runtime copies node_modules, /app/plugins and the rest of /app as three layers. A commit that
+# only touches sources reuses the deps stage (CI caches it on its own scope, `--target deps`,
+# mode=max; see qaap-vps-deploy.yml), and BuildKit keys COPY --from on file content, so unchanged
+# plugins also reuse their layer: the VPS (host and rootless tenant daemons) downloads only the
+# build layer.
+
+# --- Dependency manifests ------------------------------------------------------
 # Node 22.23.3 (bookworm), multi-arch index digest.
-FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS build
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS manifests
+
+WORKDIR /src
+COPY package.json package-lock.json lerna.json ./
+COPY dev-packages ./dev-packages
+COPY packages ./packages
+COPY examples ./examples
+COPY sample-plugins ./sample-plugins
+
+# Workspace package.json files (workspaces: dev-packages/*, packages/*, examples/*,
+# sample-plugins/*/*), the dev-package bins npm links into node_modules/.bin, and the theia-patch
+# patches. The root postinstall needs the sources, so it is stripped here and runs in `build`.
+# BuildKit keys the COPY --from below on content, not timestamps: an unchanged set of manifests is
+# a cache hit even though this stage reruns on every commit.
+RUN mkdir /manifests \
+    && { printf '%s\n' package.json package-lock.json lerna.json dev-packages/cli/patches; \
+         find dev-packages packages examples -mindepth 2 -maxdepth 2 -name package.json; \
+         find sample-plugins -mindepth 3 -maxdepth 3 -name package.json; \
+         find dev-packages -mindepth 2 -maxdepth 2 -name bin -type d; } \
+        | sort | xargs cp -r --parents -t /manifests \
+    && cd /manifests \
+    && npm pkg delete scripts.postinstall
+
+# --- Dependencies --------------------------------------------------------------
+# Node 22.23.3 (bookworm), multi-arch index digest.
+FROM node:22.23.3-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS deps
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -23,22 +59,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY package.json package-lock.json lerna.json ./
+ENV NODE_OPTIONS=--max_old_space_size=4096
+
+COPY scripts/qaap-npm-ci-retry.sh ./scripts/qaap-npm-ci-retry.sh
+COPY --from=manifests /manifests ./
+
+# Whole-install retries on registry resets (scripts/qaap-npm-ci-retry.sh, also used by CI) and a
+# BuildKit cache mount for the npm cache (never part of a layer). RUN --mount needs BuildKit, the
+# default builder of `docker buildx`/Compose v2; its built-in Dockerfile frontend supports cache
+# mounts, so no `# syntax=` line (that would pull an unpinned frontend image at build time).
+# theia-patch is the only part of the root postinstall that edits node_modules, so it runs here and
+# node_modules is final after this layer (it is idempotent when `build` runs the postinstall again).
+RUN --mount=type=cache,target=/root/.npm \
+    bash scripts/qaap-npm-ci-retry.sh --include=optional \
+    && node dev-packages/cli/bin/theia-patch.js
+
+# --- Build ---------------------------------------------------------------------
+FROM deps AS build
+
 COPY configs ./configs
 COPY scripts ./scripts
 COPY dev-packages ./dev-packages
 COPY packages ./packages
 COPY examples ./examples
 COPY sample-plugins ./sample-plugins
+# The real root package.json: the deps stage installed with its postinstall stripped.
+COPY package.json ./package.json
 
-ENV NODE_OPTIONS=--max_old_space_size=4096
-
-# Whole-install retries on registry resets (scripts/qaap-npm-ci-retry.sh, also used by CI) and a
-# BuildKit cache mount for the npm cache (never part of a layer). RUN --mount needs BuildKit, the
-# default builder of `docker buildx`/Compose v2; its built-in Dockerfile frontend supports cache
-# mounts, so no `# syntax=` line (that would pull an unpinned frontend image at build time).
-RUN --mount=type=cache,target=/root/.npm \
-    bash scripts/qaap-npm-ci-retry.sh --include=optional
+RUN npm run postinstall
 
 # @theia/cli bin/theia.js requires ../lib/theia (built by compile)
 RUN npm run compile
@@ -47,6 +95,20 @@ RUN npm run download:plugins -- --rate-limit 5 --ignore-errors
 
 WORKDIR /app/examples/browser
 RUN npm run build:production && node scripts/copy-frontend-static.mjs
+
+# Everything the runtime needs from this stage except the npm dependency trees (from the deps stage)
+# and the plugins (their own layer), each excluded exactly where npm / download:plugins put them, so
+# a plugin's own node_modules or a build output is never dropped.
+RUN mkdir /app-out \
+    && tar -C /app --anchored --no-wildcards-match-slash \
+        --exclude=./node_modules \
+        --exclude=./plugins \
+        --exclude='./dev-packages/*/node_modules' \
+        --exclude='./packages/*/node_modules' \
+        --exclude='./examples/*/node_modules' \
+        --exclude='./sample-plugins/*/*/node_modules' \
+        -cf - . \
+    | tar -C /app-out -xf -
 
 # --- Runtime -----------------------------------------------------------------
 # Python 3.12.15 (slim bookworm), multi-arch index digest.
@@ -153,7 +215,10 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
 
 WORKDIR /app/examples/browser
 
-COPY --from=build /app /app
+# Three layers, most stable first: npm dependencies, plugins, then this commit's sources and build.
+COPY --from=deps /app /app
+COPY --from=build /app/plugins /app/plugins
+COPY --from=build /app-out /app
 
 # Bundled slash skills (global for every tenant, read-only at runtime). User-specific skills live
 # under /home/theia/.qaap/users/{login}/skills on the qaap-auth-data volume.
