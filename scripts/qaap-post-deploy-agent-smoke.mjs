@@ -50,6 +50,27 @@ export function pickProjectCwd(payload, wantedRepoKey) {
     return { repoKey: match.repoKey, cwd: fileURLToPath(match.workspaceUri) };
 }
 
+/**
+ * Agent for the smoke turn: the requested one, else the user's default when it is signed in, else the
+ * first available signed-in agent. A default whose CLI is signed out (Oct 16 2026: Codex answering
+ * 401 on every request) is an account state, not a release regression, so it is skipped with a note.
+ */
+export function pickSmokeAgent(list, requested) {
+    if (requested) {
+        return { agent: requested };
+    }
+    const usable = (Array.isArray(list?.agents) ? list.agents : []).filter(agent => agent?.available !== false
+        && (agent?.connectionState === 'connected' || agent?.connectionState === 'not-required'));
+    const preferred = usable.find(agent => agent.id === list?.defaultAgent) ?? usable[0];
+    if (!preferred) {
+        return { agent: undefined };
+    }
+    const note = list?.defaultAgent && preferred.id !== list.defaultAgent
+        ? `default agent ${list.defaultAgent} is not signed in; using ${preferred.id}`
+        : undefined;
+    return { agent: preferred.id, note };
+}
+
 /** Pass/fail verdict for a finished task detail. */
 // `completed_with_warnings` = the turn finished but the repository's own checks were red: that is the
 // project's state, not the release's, so it passes with a warning.
@@ -112,8 +133,14 @@ async function main(argv, env) {
     if (!list.agentConfigured) {
         throw new SmokeError('no coding agent is configured for the smoke user (agentConfigured=false)');
     }
-    const agent = env.QAAP_SMOKE_AGENT || list.defaultAgent;
-    console.log(`OK: agent configured (default ${list.defaultAgent ?? '<none>'}, smoke uses ${agent ?? '<default>'}).`);
+    const { agent, note } = pickSmokeAgent(list, env.QAAP_SMOKE_AGENT || undefined);
+    if (!agent) {
+        throw new SmokeError('none of the smoke user\'s agents is signed in (connectionState connected / not-required)');
+    }
+    if (note) {
+        console.log(`::warning::Post-deploy agent smoke: ${note}.`);
+    }
+    console.log(`OK: agent configured (default ${list.defaultAgent ?? '<none>'}, smoke uses ${agent}).`);
 
     const project = env.QAAP_SMOKE_AGENT_CWD
         ? { repoKey: '(QAAP_SMOKE_AGENT_CWD)', cwd: env.QAAP_SMOKE_AGENT_CWD }

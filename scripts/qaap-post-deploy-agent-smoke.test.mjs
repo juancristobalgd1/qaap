@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
-import { main, judgeTask, pickProjectCwd, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
+import { main, judgeTask, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
 
 const SESSIONS = {
     sessions: [
@@ -33,7 +33,10 @@ async function withServer(options, run) {
                 return send(401, { error: 'Not signed in' });
             }
             if (req.method === 'GET' && req.url === '/qaap/api/agent-tasks') {
-                return send(200, { tasks: [], agentConfigured: options.agentConfigured ?? true, defaultAgent: 'qaiq' });
+                return send(200, {
+                    tasks: [], agentConfigured: options.agentConfigured ?? true, defaultAgent: 'qaiq',
+                    agents: options.agents ?? [{ id: 'qaiq', available: true, connectionState: 'connected' }],
+                });
             }
             if (req.method === 'GET' && req.url === '/qaap/api/github/project-sessions') {
                 return send(200, options.sessions ?? SESSIONS);
@@ -156,4 +159,27 @@ test('no agent configured, no cloned project, bad session: clear failures', asyn
         await assert.rejects(quiet(() => main([base], { QAAP_SMOKE_SESSION: 'wrong' })), /HTTP 401/);
     });
     assert.equal(await main(['not-a-url'], ENV).catch(() => 'threw'), 2);
+});
+
+test('agent: requested, else a signed-in default, else the first signed-in agent', () => {
+    const list = {
+        defaultAgent: 'codex',
+        agents: [
+            { id: 'codex', available: true, connectionState: 'disconnected' },
+            { id: 'claude', available: false, connectionState: 'connected' },
+            { id: 'qaiq', available: true, connectionState: 'connected' },
+        ],
+    };
+    assert.deepEqual(pickSmokeAgent(list, 'codex'), { agent: 'codex' });
+    assert.deepEqual(pickSmokeAgent(list, undefined), { agent: 'qaiq', note: 'default agent codex is not signed in; using qaiq' });
+    assert.deepEqual(pickSmokeAgent({ ...list, defaultAgent: 'qaiq' }, undefined), { agent: 'qaiq', note: undefined });
+    assert.equal(pickSmokeAgent({ agents: [{ id: 'x', available: true, connectionState: 'not-required' }] }).agent, 'x');
+    assert.equal(pickSmokeAgent({ defaultAgent: 'codex', agents: [{ id: 'codex', available: true, connectionState: 'disconnected' }] }).agent, undefined);
+});
+
+test('no signed-in agent fails before any turn is started', async () => {
+    await withServer({ agents: [{ id: 'codex', available: true, connectionState: 'disconnected' }] }, async (base, calls) => {
+        await assert.rejects(quiet(() => main([base], ENV)), /none of the smoke user's agents is signed in/);
+        assert.ok(!calls.some(call => call.method === 'POST'));
+    });
 });
