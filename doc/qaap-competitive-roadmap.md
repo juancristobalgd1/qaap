@@ -4,6 +4,31 @@ Octubre 2026. Objetivo: igualar la **fiabilidad asíncrona** ("lanzo una tarea, 
 
 Principio rector: fiabilidad antes que paralelismo. No paralelizar agentes que todavía se caen.
 
+## Estado (16 oct 2026)
+
+Revisado contra producción (VPS Contabo `161.97.69.219`) y master. La primera versión de este
+documento daba por pendientes cosas que ya estaban hechas; quedan marcadas abajo.
+
+| Hito | Estado | Dónde |
+|---|---|---|
+| H0.1 Deploy rápido | 🟡 En revisión. El pipeline GHCR ya existía (~25 min push→sirviendo). Se añaden pull rootless en paralelo + reintentos, rollback en un comando, huella SSH fijada, y capas Docker estables (el VPS baja ~71 MB por deploy en vez de 457 MB). "≤5 min" no es realista: el build de la imagen tarda ~10 min | #272, #273 |
+| H0.2 Rotar secret de GitHub | ⏸ Manual, lo hace el dueño | — |
+| H0.3 Smoke E2E post-deploy | 🟡 En revisión. Turno real read-only con token tras cada deploy; señala rojo (no bloquea: la release ya sirve) y apunta al rollback. Sin la parte de preview | #274 |
+| H1.1 Turnos sobreviven reinicios | 🟢 Casi hecho: auto-resume, drain en el deploy y backend por tenant ya existían; prod con 0 reinicios y 0 OOM del kernel en 14 días (VPS con 23 GB). Falta el test que mata el backend a mitad de turno | — |
+| H1.2 Preview fiable | ❓ Sin medir. Varias correcciones entraron en sep/oct (#208, #239, #253, #254) | — |
+| H1.3 Salud por agente | 🟡 Parcial: estados instalado/conectado/activado, conexión para cada harness, detección de Copilot exit 0. Falta "último turno" por agente y test por tipo de fallo | — |
+| H2.1 C1-full | ✅ Hecho (12 jul, activo por defecto). Prod reporta `agentUidPerUser` y backend aislado por tenant | — |
+| H2.2 Sandbox por tarea | 🟡 Parcial: worktree automático por thread con merge de vuelta (#247) y puerto de preview propio (#254). Falta devcontainer y aislamiento de procesos por tarea | — |
+| H3.1 Camino único por defecto | 🟡 Dynamic Workflows construido con trigger en la UI; ADR-002 Fase B a medias | — |
+| H3.2 PR con evidencia | 🟡 Captura visual y verificador existen; no se componen en el PR | — |
+| H3.3 Mission-control por defecto | ✅ Hecho (8 jul): flag retirado y vista vieja borrada | — |
+| H3.4 E2E contrato senior | ⏳ Contrato (fases A–C) hecho; falta el benchmark nocturno | — |
+| H4.1 Entradas externas | ⏳ Sin empezar | — |
+| H4.2 Pulido móvil | 🟡 4 mejoras de render hechas; quedan #1–#3 y el tirón de scroll | — |
+
+Hallado de paso: el relay de ingress de un tenant con backend pausado acumulaba healthchecks
+colgados hasta su límite de PIDs (#275).
+
 ## Fase 0 — Desbloqueos rápidos (~1 semana)
 
 | Hito | Qué | Hecho cuando |
