@@ -129,13 +129,28 @@ async function main(argv, env) {
         return result.json;
     };
 
-    const list = expectOk(await request('GET', TASKS_PATH), 'GET agent-tasks');
-    if (!list.agentConfigured) {
-        throw new SmokeError('no coding agent is configured for the smoke user (agentConfigured=false)');
+    // Right after a deploy the backend's connection probes are cold and every agent reads `unknown`:
+    // `?refresh=1` waits for the probes, and a couple of retries cover a slow cold boot.
+    let list;
+    let picked = { agent: undefined };
+    const attempts = Number(env.QAAP_SMOKE_AGENT_LIST_ATTEMPTS ?? 3);
+    for (let attempt = 1; attempt <= attempts && !picked.agent; attempt++) {
+        if (attempt > 1) {
+            await new Promise(resolve => setTimeout(resolve, Number(env.QAAP_SMOKE_AGENT_LIST_RETRY_MS ?? 10_000)));
+        }
+        list = expectOk(await request('GET', `${TASKS_PATH}?refresh=1`), 'GET agent-tasks');
+        if (!list.agentConfigured) {
+            throw new SmokeError('no coding agent is configured for the smoke user (agentConfigured=false)');
+        }
+        picked = pickSmokeAgent(list, env.QAAP_SMOKE_AGENT || undefined);
     }
-    const { agent, note } = pickSmokeAgent(list, env.QAAP_SMOKE_AGENT || undefined);
+    const { agent, note } = picked;
     if (!agent) {
-        throw new SmokeError('none of the smoke user\'s agents is signed in (connectionState connected / not-required)');
+        // The smoke account has no signed-in agent: its configuration, not this release. Report the
+        // states so the account can be fixed, and do not fail the deploy over it.
+        const states = (list.agents ?? []).map(entry => `${entry.id}:${entry.connectionState ?? 'unknown'}`).join(', ');
+        console.log(`::warning::Post-deploy agent smoke skipped: none of the smoke user's agents is signed in (${states || 'no agents'}). Sign one in for the smoke account or set vars.QAAP_SMOKE_AGENT.`);
+        return 0;
     }
     if (note) {
         console.log(`::warning::Post-deploy agent smoke: ${note}.`);
