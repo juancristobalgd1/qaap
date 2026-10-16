@@ -237,3 +237,14 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 - Never add a `grepInvert`/`testIgnore` entry without a comment stating the product reason, and never as a stopgap for an unexplained failure.
 - master requires the 7 checks listed in "Required checks" above. To merge "when green", also verify the advisory checks (e.g. `Playwright @qaap-mobile`, the windows/macOS legs when they ran) and merge pinned to the verified head (`gh pr merge --match-head-commit <sha>`).
 - The owner may merge a PR at any moment. Check `gh pr view <n> --json state` right before pushing to a PR branch; if it is merged, open a new PR from master.
+
+### 14. Turns survive a backend kill (pre-deploy gate)
+
+- **Rule:** the pre-deploy gate runs `node scripts/qaap-restart-resume-e2e.mjs`. It starts the built
+  backend with an isolated `HOME` and a fake `qaiq`, starts a chat turn, `SIGKILL`s the backend
+  process group mid-turn, restarts it, and requires the boot-time auto-resume
+  (`QAAP_AUTO_RESUME_TURNS`, on by default) to finish the turn: the conversation is not `failed`, the
+  user message has `restartResumeCount: 1`, and the final agent message carries the prompt's token.
+- **Why:** OOM restarts and deploys used to fail every in-flight turn ("The backend restarted while
+  this turn was in progress"); the in-memory restart-resume specs stub the task runner and never
+  kill a process. Run it locally after `npm run build:browser`.

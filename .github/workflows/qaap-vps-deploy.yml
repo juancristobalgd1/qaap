@@ -153,6 +153,13 @@ jobs:
         shell: bash
         run: cd examples/playwright && npm run rioja-ui-flow-eval
 
+      # A chat turn must survive the backend dying under it (OOM, deploy): SIGKILL the backend
+      # mid-turn, restart it, and require the boot-time auto-resume to finish the turn. Uses its own
+      # backend on :3466 with an isolated HOME and a fake qaiq; ~10 s.
+      - name: Restart-resume e2e (turn survives a backend kill)
+        shell: bash
+        run: node scripts/qaap-restart-resume-e2e.mjs --port 3466
+
       - name: Upload gate artifacts
         if: always()
         uses: actions/upload-artifact@v4
