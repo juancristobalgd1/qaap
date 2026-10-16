@@ -27,6 +27,10 @@ import {
     resolveHarnessCardStatus,
     type HarnessConnectionState,
     type HarnessAvailabilityState,
+    type HarnessLastTurn,
+    type HarnessLastTurnFailureKind,
+    parseHarnessLastTurn,
+    resolveHarnessLastTurnAge,
 } from './qaap-harness-configuration-state';
 
 interface HarnessStatus {
@@ -37,6 +41,7 @@ interface HarnessStatus {
     readonly installSupported?: boolean;
     readonly installPackageAvailable?: boolean;
     readonly version?: string;
+    readonly lastTurn?: unknown;
 }
 
 interface HarnessAgentResponse {
@@ -50,6 +55,7 @@ interface LoadedHarnessStatus {
     readonly installSupported: boolean;
     readonly installPackageAvailable: boolean;
     readonly version?: string;
+    readonly lastTurn?: HarnessLastTurn;
 }
 
 const MIN_INSTALL_FEEDBACK_MS = 900;
@@ -181,6 +187,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                             )
                             : status}
                     </span>
+                    {!installing && installed && harnessStatus?.lastTurn && this.renderLastTurn(harnessStatus.lastTurn)}
                     {installing && <div
                         className="qaap-harness-install-progress"
                         role="progressbar"
@@ -354,6 +361,47 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
         }
     }
 
+    /** "Last turn: OK · 5 min ago" / "Last turn failed: signed out · 2 h ago" under the card status. */
+    protected renderLastTurn(lastTurn: HarnessLastTurn): React.ReactNode {
+        const failed = lastTurn.outcome === 'failed';
+        const summary = failed
+            ? nls.localize('qaap/aiConfiguration/harnessLastTurnFailed', 'Last turn failed: {0}', this.describeLastTurnFailure(lastTurn.kind ?? 'exit_code'))
+            : nls.localize('qaap/aiConfiguration/harnessLastTurnOk', 'Last turn: OK');
+        return (
+            <span
+                className={`qaap-harness-card-last-turn${failed ? ' theia-mod-failed' : ''}`}
+                data-last-turn-outcome={lastTurn.outcome}
+                title={new Date(lastTurn.at).toLocaleString()}
+            >
+                {summary} · {this.describeLastTurnAge(lastTurn.at)}
+            </span>
+        );
+    }
+
+    protected describeLastTurnFailure(kind: HarnessLastTurnFailureKind): string {
+        switch (kind) {
+            case 'auth': return nls.localize('qaap/aiConfiguration/harnessLastTurnAuth', 'signed out');
+            case 'quota': return nls.localize('qaap/aiConfiguration/harnessLastTurnQuota', 'quota exhausted');
+            case 'rate_limit': return nls.localize('qaap/aiConfiguration/harnessLastTurnRateLimit', 'rate limited');
+            case 'model_unavailable': return nls.localize('qaap/aiConfiguration/harnessLastTurnModel', 'model unavailable');
+            case 'tool_unsupported': return nls.localize('qaap/aiConfiguration/harnessLastTurnTools', 'model cannot use tools');
+            case 'cli_missing': return nls.localize('qaap/aiConfiguration/harnessLastTurnCliMissing', 'CLI not found');
+            case 'timeout': return nls.localize('qaap/aiConfiguration/harnessLastTurnTimeout', 'timed out');
+            case 'network': return nls.localize('qaap/aiConfiguration/harnessLastTurnNetwork', 'network error');
+            default: return nls.localize('qaap/aiConfiguration/harnessLastTurnExitCode', 'exited with an error');
+        }
+    }
+
+    protected describeLastTurnAge(at: number): string {
+        const age = resolveHarnessLastTurnAge(at, Date.now());
+        switch (age.unit) {
+            case 'now': return nls.localize('qaap/aiConfiguration/harnessLastTurnJustNow', 'just now');
+            case 'minutes': return nls.localizeByDefault('{0} min ago', age.value);
+            case 'hours': return nls.localize('qaap/aiConfiguration/harnessLastTurnHoursAgo', '{0} h ago', age.value);
+            default: return nls.localize('qaap/aiConfiguration/harnessLastTurnDaysAgo', '{0} d ago', age.value);
+        }
+    }
+
     protected async loadAvailability(): Promise<void> {
         try {
             const response = await fetch('/qaap/api/agent-tasks/harness-status', { credentials: 'same-origin' });
@@ -366,6 +414,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 if (typeof harness.id !== 'string') {
                     continue;
                 }
+                const lastTurn = parseHarnessLastTurn(harness.lastTurn);
                 harnessStatuses.set(harness.id.trim().toLowerCase(), {
                     installed: harness.installed === true,
                     enabled: harness.enabled === true,
@@ -373,6 +422,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                     installSupported: harness.installSupported === true,
                     installPackageAvailable: harness.installPackageAvailable !== false,
                     ...(harness.version ? { version: harness.version } : {}),
+                    ...(lastTurn ? { lastTurn } : {}),
                 });
             }
             this.harnessStatuses = harnessStatuses;

@@ -34,6 +34,7 @@ import { QaapAgentPostToolUseHookBridge } from './qaap-agent-post-tool-use-hook-
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 import { QaapConversationReadMarkEndpoint } from './qaap-conversation-read-mark-endpoint';
 import { QaapConversationReadMarkStore } from './qaap-conversation-read-mark-store';
+import { QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
@@ -298,6 +299,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);
     // Per-user read marks behind the Work Hub unread dot (shared by every device of the user).
     bind(QaapConversationReadMarkStore).toSelf().inSingletonScope();
+    bind(QaapAgentLastTurnStore).toSelf().inSingletonScope();
     bind(QaapConversationReadMarkEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapConversationReadMarkEndpoint);
     bind(QaapAgentApprovalStore).toSelf().inSingletonScope();
