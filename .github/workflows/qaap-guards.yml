@@ -88,6 +88,9 @@ jobs:
       # daemon with `docker save | docker load` instead of pulling the pinned digest.
       - name: Tenant image seed regression
         run: bash scripts/qaap-vps-tenant-image.test.sh
+      # Fails if the one-command VPS rollback stops pinning the retained release by digest and commit.
+      - name: VPS rollback regression
+        run: bash scripts/qaap-vps-rollback.test.sh
       - name: Required mobile E2E workflow regression
         run: node --test scripts/qaap-mobile-required-ci.test.js
       # Pure-node regression for the mobile bundle guard used below.

@@ -16,6 +16,8 @@
 #   export QAAP_VPS_SSH_KEY="$(cat ~/.ssh/qaap-vps-deploy)"
 #   ./scripts/qaap-vps-remote-update.sh
 #   ./scripts/qaap-vps-remote-update.sh --no-cache
+#   ./scripts/qaap-vps-remote-update.sh --rollback [--to <commit|image id prefix>] [--dry-run]
+#     redeploy the previous retained release (scripts/qaap-vps-rollback.sh), no build
 set -euo pipefail
 
 HOST="${QAAP_VPS_HOST:-}"
@@ -24,6 +26,8 @@ PORT="${QAAP_VPS_SSH_PORT:-22}"
 REPO_DIR="${QAAP_VPS_REPO_DIR:-/opt/qaap}"
 BRANCH="${QAAP_VPS_BRANCH:-master}"
 NO_CACHE=0
+ROLLBACK=0
+ROLLBACK_ARGS=()
 KEY_FILE="${QAAP_VPS_SSH_KEY_FILE:-}"
 
 while [[ $# -gt 0 ]]; do
@@ -34,6 +38,19 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-cache)
             NO_CACHE=1
+            shift
+            ;;
+        --rollback)
+            ROLLBACK=1
+            shift
+            ;;
+        --to)
+            [[ $# -ge 2 ]] || { echo "--to requires a value" >&2; exit 1; }
+            ROLLBACK_ARGS+=(--to "$2")
+            shift 2
+            ;;
+        --dry-run|--list)
+            ROLLBACK_ARGS+=("$1")
             shift
             ;;
         -h|--help)
@@ -77,6 +94,24 @@ SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInt
 NO_CACHE_FLAG=""
 if [[ "$NO_CACHE" -eq 1 ]]; then
     NO_CACHE_FLAG="--no-cache"
+fi
+
+if [[ "$ROLLBACK" -eq 1 ]]; then
+    echo "[qaap-vps-remote] $USER@$HOST:$REPO_DIR rollback ${ROLLBACK_ARGS[*]-}"
+    ssh "${SSH_OPTS[@]}" "$USER@$HOST" bash -s -- "$REPO_DIR" "$BRANCH" ${ROLLBACK_ARGS[@]+"${ROLLBACK_ARGS[@]}"} <<'REMOTE'
+set -euo pipefail
+REPO_DIR="$1"
+export QAAP_VPS_BRANCH="$2"
+shift 2
+cd "$REPO_DIR"
+./scripts/qaap-vps-rollback.sh "$@"
+REMOTE
+    echo "[qaap-vps-remote] done"
+    exit 0
+fi
+if (( ${#ROLLBACK_ARGS[@]} > 0 )); then
+    echo "--to, --dry-run and --list need --rollback" >&2
+    exit 1
 fi
 
 echo "[qaap-vps-remote] $USER@$HOST:$REPO_DIR branch=$BRANCH"

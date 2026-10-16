@@ -75,6 +75,11 @@ case "$1" in
         ;;
     pull)
         [[ "$daemon" == rootless && "${FAKE_PULL:-ok}" != fail ]] || exit 1
+        # FAKE_PULL=flaky: the first FAKE_PULL_FAILS pulls drop the connection.
+        if [[ "${FAKE_PULL:-ok}" == flaky ]]; then
+            echo x >> "$FAKE_STATE/pull-attempts"
+            (( $(wc -l < "$FAKE_STATE/pull-attempts") > ${FAKE_PULL_FAILS:-1} )) || exit 1
+        fi
         [[ "$2" == *@sha256:* ]] || exit 1
         # The default client config (~/.docker) holds the deploy's `docker login`.
         if [[ -z "${DOCKER_CONFIG:-}" || -e "$DOCKER_CONFIG/config.json" ]]; then
@@ -93,6 +98,9 @@ esac
 MOCK
 chmod +x "$TEST_ROOT/bin/docker"
 export PATH="$TEST_ROOT/bin:$PATH"
+
+# Retries of a failed pull (rootless_pull_digest) must not sleep in tests.
+export QAAP_TENANT_IMAGE_PULL_RETRY_DELAY_SECONDS=0
 
 failures=0
 fail() { echo "FAIL: $*" >&2; failures=$((failures + 1)); }
@@ -163,6 +171,57 @@ else
     fail "fallback seed failed: $(cat "$FAKE_STATE/output")"
 fi
 
+# 4b) Transient registry error (connection reset): the pull is retried, never streamed.
+setup pull-flaky
+export FAKE_PULL=flaky FAKE_PULL_FAILS=2
+if seed theia "$TAG_REF" "$SOURCE_REF"; then
+    [[ "$(grep -c "^rootless pull $DIGEST_REF\$" "$FAKE_STATE/calls")" == 3 ]] && ! streamed \
+        && [[ "$(rootless_id "$TAG_REF")" == sha256:new ]] \
+        && pass 'transient pull failures are retried before any docker save | docker load' \
+        || fail "flaky pull not retried: $(cat "$FAKE_STATE/calls")"
+else
+    fail "flaky seed failed: $(cat "$FAKE_STATE/output")"
+fi
+setup pull-exhausted
+export FAKE_PULL=flaky FAKE_PULL_FAILS=9 QAAP_TENANT_IMAGE_PULL_ATTEMPTS=2
+if seed theia "$TAG_REF" "$SOURCE_REF"; then
+    [[ "$(grep -c "^rootless pull $DIGEST_REF\$" "$FAKE_STATE/calls")" == 2 ]] && streamed \
+        && pass 'retries are bounded, then docker save | docker load' || fail "retry bound: $(cat "$FAKE_STATE/calls")"
+else
+    fail "exhausted seed failed: $(cat "$FAKE_STATE/output")"
+fi
+unset FAKE_PULL_FAILS QAAP_TENANT_IMAGE_PULL_ATTEMPTS
+
+# 4c) Prefetch (runs beside the host pull): downloads the digest only; the seed then verifies and
+# tags it without a second download. Never fails, even when the registry is down.
+setup prefetch
+if (
+    # shellcheck source=/dev/null
+    source "$TEST_ROOT/qaap-vps-tenant-image.sh"
+    prefetch_tenant_image_digest theia "$DIGEST_REF"
+) > "$FAKE_STATE/output" 2>&1; then
+    [[ -n "$(rootless_id "$DIGEST_REF")" && -z "$(rootless_id "$TAG_REF")" ]] \
+        && pass 'prefetch pulls the digest without tagging it' || fail "prefetch: $(cat "$FAKE_STATE/calls")"
+    if seed theia "$TAG_REF" "$SOURCE_REF" && ! streamed && [[ "$(rootless_id "$TAG_REF")" == sha256:new ]]; then
+        pass 'seed after a prefetch verifies and tags the prefetched digest'
+    else
+        fail "seed after prefetch: $(cat "$FAKE_STATE/output")"
+    fi
+else
+    fail "prefetch failed: $(cat "$FAKE_STATE/output")"
+fi
+setup prefetch-down
+export FAKE_PULL=fail
+if (
+    # shellcheck source=/dev/null
+    source "$TEST_ROOT/qaap-vps-tenant-image.sh"
+    prefetch_tenant_image_digest theia "$DIGEST_REF"
+) > "$FAKE_STATE/output" 2>&1; then
+    pass 'a failed prefetch never fails the deploy'
+else
+    fail 'prefetch failure propagated'
+fi
+
 # 5) Pulled image id differs from the serving image: never tag it, stream the host image instead.
 setup id-mismatch
 export FAKE_PULLED_ID=sha256:other
@@ -230,6 +289,9 @@ grep -rh '^CREDENTIALED' "$TEST_ROOT"/state-*/calls \
 grep -Fxq 'source "$REPO_DIR/scripts/qaap-vps-tenant-image.sh"' "$UPDATE" \
     && grep -Fxq '        QAAP_TENANT_IMAGE_SOURCE_REF="$IMAGE_REF"' "$UPDATE" \
     && pass 'qaap-vps-update.sh seeds tenants from the pinned digest' || fail 'qaap-vps-update.sh no longer wires the digest seed'
+grep -q 'prefetch_tenant_image_digest .* &$' "$UPDATE" \
+    && awk '/prefetch_tenant_image_digest .* &$/ { p = NR } /^    docker compose pull theia$/ { if (p && NR > p) ok = 1 } END { exit !ok }' "$UPDATE" \
+    && pass 'qaap-vps-update.sh prefetches the tenant image beside the host pull' || fail 'tenant prefetch no longer runs beside the host pull'
 
 if (( failures > 0 )); then
     echo "$failures failure(s)" >&2

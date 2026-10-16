@@ -140,6 +140,18 @@ preload_tenant_image_before_switch() {
     fi
 }
 
+# Joins the background prefetch started next to the host pull (if any) and shows its output.
+wait_tenant_image_prefetch() {
+    if [[ -n "${TENANT_PREFETCH_PID:-}" ]]; then
+        wait "$TENANT_PREFETCH_PID" || true
+        TENANT_PREFETCH_PID=''
+        grep -v -E ' (Downloading|Extracting|Waiting|Verifying Checksum) ' "$TENANT_PREFETCH_LOG" || true
+    fi
+    if [[ -n "${TENANT_PREFETCH_LOG:-}" ]]; then
+        rm -f -- "$TENANT_PREFETCH_LOG"
+    fi
+}
+
 # Post-deploy image cleanup (prune_old_qaap_images); sourced so it can be tested with a fake docker.
 # shellcheck source=scripts/qaap-vps-image-prune.sh
 source "$REPO_DIR/scripts/qaap-vps-image-prune.sh"
@@ -413,6 +425,17 @@ if [[ -n "$IMAGE_REF" ]]; then
     export QAAP_THEIA_IMAGE="$IMAGE_REF"
     echo "[qaap-vps-update] image: $QAAP_THEIA_IMAGE"
     ensure_docker_pull_space
+    # Rootless tenant daemon: start pulling the same digest now, through the still-serving
+    # container, so it downloads alongside the host pull instead of after it.
+    TENANT_PREFETCH_PID=''
+    TENANT_PREFETCH_LOG="$(mktemp -t qaap-tenant-prefetch.XXXXXXXX)"
+    TENANT_PREFETCH_DIGEST="$(tenant_image_digest_ref "$IMAGE_REF")"
+    TENANT_PREFETCH_CONTAINER="$(docker compose ps -q --status running theia 2>/dev/null | tr -d '\r' | sed -n '1p' || true)"
+    if [[ -n "$TENANT_PREFETCH_DIGEST" && -n "$TENANT_PREFETCH_CONTAINER" ]]; then
+        echo "[qaap-vps-update] prefetching tenant image into rootless Docker in parallel with the host pull"
+        prefetch_tenant_image_digest "$TENANT_PREFETCH_CONTAINER" "$TENANT_PREFETCH_DIGEST" >"$TENANT_PREFETCH_LOG" 2>&1 &
+        TENANT_PREFETCH_PID=$!
+    fi
     docker compose pull theia
     IMAGE_REVISION="$(docker image inspect "$QAAP_THEIA_IMAGE" \
         --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null || true)"
@@ -444,6 +467,7 @@ if [[ -n "$IMAGE_REF" ]]; then
         QAAP_TENANT_IMAGE_SOURCE_REF="$IMAGE_REF"
         echo "[qaap-vps-update] tenant image: $QAAP_TENANT_DOCKER_IMAGE"
     fi
+    wait_tenant_image_prefetch
     preload_tenant_image_before_switch
     drain_agent_turns
     docker compose up -d --no-build

@@ -45,27 +45,59 @@ tenant_docker_socket_on_host() {
         --format "{{range .Mounts}}{{if eq .Destination \"$target\"}}{{.Source}}{{end}}{{end}}"
 }
 
-# Pulls the digest into the rootless daemon, anonymously, and tags it as the tenant image.
-# Non-zero on any failure, including a pulled image that is not the host image of that digest.
-pull_tenant_image_digest() {
-    local container_id="$1" tenant_image="$2" digest_ref="$3" host_image_id="$4" socket pulled_id repo_digests anonymous status=0
+# Anonymous pull of the digest into the rootless daemon, retried: a registry pull keeps the layers
+# it already finished, so a retry after a dropped connection is cheap, while the save | load
+# fallback streams the whole image (8.5 min after one IPv6 "connection reset by peer", Oct 15 2026).
+rootless_pull_digest() {
+    local container_id="$1" digest_ref="$2" socket anonymous attempt status
+    local attempts="${QAAP_TENANT_IMAGE_PULL_ATTEMPTS:-3}" delay="${QAAP_TENANT_IMAGE_PULL_RETRY_DELAY_SECONDS:-5}"
     local -a limit=()
     if command -v timeout >/dev/null; then
         limit=(timeout "${QAAP_TENANT_IMAGE_PULL_TIMEOUT_SECONDS:-1800}")
     fi
     socket="$(tenant_docker_socket_on_host "$container_id" || true)"
-    if [[ -n "$socket" && -S "$socket" && -w "$socket" ]]; then
-        echo "[qaap-vps-update] pulling $digest_ref into rootless Docker (host client, anonymous, changed layers only)"
-        # Empty client config: the deploy's registry login is not sent as X-Registry-Auth.
-        anonymous="$(mktemp -d -t qaap-anonymous-pull.XXXXXXXX)" || return 1
-        DOCKER_CONFIG="$anonymous" ${limit[@]+"${limit[@]}"} docker -H "unix://$socket" pull "$digest_ref" || status=1
-        rm -rf -- "$anonymous"
-        (( status == 0 )) || return 1
-    else
-        echo "[qaap-vps-update] rootless socket not reachable from the host; anonymous pull of $digest_ref inside Theia"
-        ${limit[@]+"${limit[@]}"} docker exec -e DOCKER_CONFIG=/nonexistent/qaap-anonymous-pull "$container_id" \
-            docker pull "$digest_ref" || return 1
-    fi
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        status=0
+        if [[ -n "$socket" && -S "$socket" && -w "$socket" ]]; then
+            echo "[qaap-vps-update] pulling $digest_ref into rootless Docker (host client, anonymous, changed layers only)"
+            # Empty client config: the deploy's registry login is not sent as X-Registry-Auth.
+            anonymous="$(mktemp -d -t qaap-anonymous-pull.XXXXXXXX)" || return 1
+            DOCKER_CONFIG="$anonymous" ${limit[@]+"${limit[@]}"} docker -H "unix://$socket" pull "$digest_ref" || status=1
+            rm -rf -- "$anonymous"
+        else
+            echo "[qaap-vps-update] rootless socket not reachable from the host; anonymous pull of $digest_ref inside Theia"
+            ${limit[@]+"${limit[@]}"} docker exec -e DOCKER_CONFIG=/nonexistent/qaap-anonymous-pull "$container_id" \
+                docker pull "$digest_ref" || status=1
+        fi
+        (( status == 0 )) && return 0
+        if (( attempt < attempts )); then
+            echo "[qaap-vps-update] rootless pull attempt $attempt/$attempts failed; retrying in $((delay * attempt))s" >&2
+            sleep "$((delay * attempt))"
+        fi
+    done
+    return 1
+}
+
+# Starts pulling the deployed digest into the rootless daemon through the still-serving container
+# while the host daemon pulls the same image, instead of one after the other (~3 min per deploy).
+# Only downloads: preload_tenant_image still verifies and tags it. Best effort, never fails.
+prefetch_tenant_image_digest() {
+    local container_id="$1" digest_ref="$2" rootless
+    [[ -n "$container_id" && -n "$digest_ref" ]] || return 0
+    rootless="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+        | sed -n 's/^QAAP_DOCKER_ROOTLESS=//p' || true)"
+    [[ "$rootless" =~ ^(1|true)$ ]] || return 0
+    docker exec "$container_id" docker info >/dev/null 2>&1 || return 0
+    rootless_pull_digest "$container_id" "$digest_ref" \
+        || echo '[qaap-vps-update] tenant image prefetch failed; the pre-switch seed pulls it again' >&2
+    return 0
+}
+
+# Pulls the digest into the rootless daemon, anonymously, and tags it as the tenant image.
+# Non-zero on any failure, including a pulled image that is not the host image of that digest.
+pull_tenant_image_digest() {
+    local container_id="$1" tenant_image="$2" digest_ref="$3" host_image_id="$4" pulled_id repo_digests
+    rootless_pull_digest "$container_id" "$digest_ref" || return 1
     pulled_id="$(docker exec "$container_id" docker image inspect "$digest_ref" --format '{{.Id}}' 2>/dev/null || true)"
     if [[ -z "$host_image_id" || "$pulled_id" != "$host_image_id" ]]; then
         echo "[qaap-vps-update] pulled tenant image id ${pulled_id:-absent} does not match host image ${host_image_id:-absent}" >&2
