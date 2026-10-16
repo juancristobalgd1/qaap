@@ -328,6 +328,8 @@ export interface QaapAgentTaskRunnerContext {
     tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string };
     ensureAgentCwdOwnership(cwd: string): void;
     ensureAgentCwdOwnershipAsync(cwd: string): Promise<void>;
+    /** Start (or join) the task's per-task sandbox when QAAP_TASK_SANDBOX is on; no-op otherwise. */
+    acquireTaskSandbox?(task: QaapAgentTask): Promise<void>;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void;
     applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void;

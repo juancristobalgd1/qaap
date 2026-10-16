@@ -28,6 +28,7 @@ import {
 } from './qaap-agent-spawn-identity';
 import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { QaapTenantPersistentHome, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
@@ -86,6 +87,10 @@ export class QaapTenantSpawnService {
     protected readonly dockerOrchestrator?: QaapDockerOrchestrator;
 
     protected tenantUidRegistry: QaapTenantUidRegistry | undefined;
+
+    @inject(QaapTaskSandboxService)
+    @optional()
+    protected readonly taskSandbox?: QaapTaskSandboxService;
     protected agentSpawnIdentityWarned = false;
     protected agentIsolationDecision: QaapAgentIsolationDecision | undefined;
     protected agentIsolationRefusalLogged = false;
@@ -553,6 +558,11 @@ export class QaapTenantSpawnService {
      */
     spawn(command: string, options: QaapTenantSpawnOptions): ChildProcess {
         const cwd = this.canonicalizeCwd(options.cwd);
+        const sandbox = this.taskSandboxFor(cwd);
+        if (sandbox) {
+            return this.taskSandbox!.spawnInSandbox(sandbox, '/bin/sh', ['-c', command], { ...options, cwd },
+                (file, args, launchOptions) => this.launchProcess(file, args, launchOptions));
+        }
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
             const tenantRoot = this.resolveTenantRoot(cwd);
@@ -584,6 +594,17 @@ export class QaapTenantSpawnService {
             stdio: options.stdio,
             shell: limitedInvocation.shell,
         });
+    }
+
+    /**
+     * The live per-task sandbox (QAAP_TASK_SANDBOX, doc/qaap-task-sandbox.md) that owns `cwd`, if any.
+     * v1 is direct mode only: with container-per-tenant isolation the tenant worker stays the boundary.
+     */
+    protected taskSandboxFor(cwd: string): QaapTaskSandbox | undefined {
+        if (!this.taskSandbox?.isEnabled() || this.isContainerIsolationEnabled()) {
+            return undefined;
+        }
+        return this.taskSandbox.sandboxFor(cwd);
     }
 
     /** The single `child_process.spawn` seam — overridable in tests to capture argv without executing. */
@@ -690,6 +711,11 @@ export class QaapTenantSpawnService {
             stdio: options.stdio ?? ['pipe', 'pipe', 'pipe'],
             detached: options.detached ?? false,
         };
+        const sandbox = this.taskSandboxFor(cwd);
+        if (sandbox) {
+            return this.taskSandbox!.spawnInSandbox(sandbox, file, args, spawnOptions,
+                (launchFile, launchArgs, launchOptions) => this.launchProcess(launchFile, launchArgs, launchOptions));
+        }
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
             const tenantRoot = this.resolveTenantRoot(cwd);

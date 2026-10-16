@@ -407,6 +407,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
+            await ctx.acquireTaskSandbox?.(task);
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.

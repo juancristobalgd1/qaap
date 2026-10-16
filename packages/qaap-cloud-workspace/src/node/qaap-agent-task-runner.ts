@@ -34,6 +34,7 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapTaskSandboxService } from './qaap-task-sandbox';
 import {
     canExposeAgentCliBinToChild,
     prependAgentCliBinToPath,
@@ -1338,6 +1339,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly tenantSpawn: QaapTenantSpawnService;
 
+    @inject(QaapTaskSandboxService) @optional()
+    protected readonly taskSandbox?: QaapTaskSandboxService;
+
     /** Qaap-level lifecycle hooks (doc/qaap-agent-hooks.md); optional for bare test harnesses. */
     @inject(QaapAgentHookService) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1488,6 +1492,28 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         await this.tenantSpawn.prepareTenantIsolationAsync(cwd);
     }
 
+    /**
+     * Per-task sandbox (doc/qaap-task-sandbox.md): before the agent spawns, start or join the
+     * container that owns the task's worktree, so every process of the task (agent, dev servers,
+     * npm scripts) runs in its own PID/network namespace. Released in {@link finishTask}.
+     * @internal Used by the extracted qaap-agent-task-runner-* modules.
+     */
+    public async acquireTaskSandbox(task: QaapAgentTask): Promise<void> {
+        if (!this.taskSandbox?.isEnabled() || this.tenantSpawn.isContainerIsolationEnabled()) {
+            return;
+        }
+        const identity = this.resolveAgentSpawnIdentity(task.cwd);
+        const sandbox = await this.taskSandbox.acquire({
+            taskId: task.id,
+            cwd: task.cwd,
+            env: { HOME: this.tenantHomeEnvOverlay(task.cwd).HOME ?? process.env.HOME },
+            ownerLogin: task.ownerLogin,
+            uid: identity.uid,
+            gid: identity.gid,
+        });
+        console.info(`[qaap-task-sandbox] task ${task.id} → ${sandbox.name} (${sandbox.created ? `started in ${sandbox.startupMs} ms` : 'reused'})`);
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
         return buildChildEnvExtracted(this, task);
@@ -1558,6 +1584,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const previousState = this.tasks.get(id)?.state;
         const task = finishTaskExtracted(this, id, state, exitCode);
         this.releaseTenantOperation(id);
+        this.taskSandbox?.release(id);
         if (task) {
             fireStopAgentHook(this, task, previousState, state);
             this.recordLastTurn(task).catch(() => undefined);

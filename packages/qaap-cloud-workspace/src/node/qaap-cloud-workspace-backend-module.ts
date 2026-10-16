@@ -46,6 +46,8 @@ import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-q
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
+import { QaapTaskSandboxService } from './qaap-task-sandbox';
+import { QaapDevcontainerResolver } from './qaap-devcontainer-config';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
@@ -226,6 +228,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapPushSubscriptionStore).toSelf().inSingletonScope();
     bind(QaapWebPushService).toSelf().inSingletonScope();
     bind(QaapPreviewShareStore).toSelf().inSingletonScope();
+    bind(QaapDevcontainerResolver).toSelf().inSingletonScope();
+    bind(QaapTaskSandboxService).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTaskSandboxService);
     bind(QaapTenantSpawnService).toSelf().inSingletonScope();
     bind(QaapTenantProcessExecutor).toService(QaapTenantSpawnService);
     bindRootContributionProvider(bind, QaapJobFunctionContribution);

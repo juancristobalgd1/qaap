@@ -18,7 +18,7 @@ documento daba por pendientes cosas que ya estaban hechas; quedan marcadas abajo
 | H1.2 Preview fiable | ❓ Sin medir. Varias correcciones entraron en sep/oct (#208, #239, #253, #254) | — |
 | H1.3 Salud por agente | 🟡 Parcial: estados instalado/conectado/activado, conexión para cada harness, detección de Copilot exit 0. Falta "último turno" por agente y test por tipo de fallo | — |
 | H2.1 C1-full | ✅ Hecho (12 jul, activo por defecto). Prod reporta `agentUidPerUser` y backend aislado por tenant | — |
-| H2.2 Sandbox por tarea | 🟡 Parcial: worktree automático por thread con merge de vuelta (#247) y puerto de preview propio (#254). Falta devcontainer y aislamiento de procesos por tarea | — |
+| H2.2 Sandbox por tarea | 🟡 v1 tras flag (`QAAP_TASK_SANDBOX`, apagado): contenedor por tarea con su propio PID/red, devcontainer, destruido/archivado al terminar; e2e con 2 tareas en paralelo en el mismo puerto, arranque 1,6 s. Falta el broker del control plane para backends por tenant (prod) — ver `doc/qaap-task-sandbox.md` | este PR |
 | H3.1 Camino único por defecto | 🟡 Dynamic Workflows construido con trigger en la UI; ADR-002 Fase B a medias | — |
 | H3.2 PR con evidencia | 🟡 Captura visual y verificador existen; no se componen en el PR | — |
 | H3.3 Mission-control por defecto | ✅ Hecho (8 jul): flag retirado y vista vieja borrada | — |
