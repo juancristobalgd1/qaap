@@ -356,10 +356,37 @@ gets a remote pty; killing a dev server's client frees its port; both sandboxes 
 the tasks end. Not covered locally: a rootless daemon and the real ingress relay (the e2e publishes
 the tenant backend's port directly), and multiple Docker nodes.
 
+**Verified on the VPS's rootless daemon** (Oct 17 2026, build `4f49493f1`, Ubuntu 24.04, rootless
+Docker, the production tenant image `ghcr.io/juancristobalgd1/qaap:4f49493f1…` for both the tenant
+backend and the sandboxes): all 14 checks pass. Two sandboxes start in parallel in 4.4 s and 5.3 s
+(5.5 s for both), cold: each run uses a fresh namespace, so this includes populating the toolchain
+volume from the 9 GB tenant image. Recipe (as root, because the tenant host-loopback guard rejects the
+rootless uid's own connections to `127.0.0.1`, where the e2e publishes the tenant backend):
+
+```bash
+docker cp qaap-theia-1:/app /home/ubuntu/qaap-e2e/app && docker cp qaap-theia-1:/usr/local/bin/node /home/ubuntu/qaap-e2e/node
+cd /home/ubuntu/qaap-e2e && DOCKER_HOST=unix:///run/user/1000/docker.sock PATH=$PWD:$PATH ./node app/scripts/qaap-task-sandbox-broker-e2e.mjs --image <tenant image>
+```
+
+The e2e still stubs the orchestrator (no `QAAP_DOCKER_REMOTE_*` translation) and publishes the
+tenant backend directly; those two are covered by the production rollout below.
+
 **Before the flag goes on in production:** run the broker e2e on the VPS (rootless daemon,
 `QAAP_DOCKER_REMOTE_*` translation, egress proxy), and decide whether the tenant image should ship
 the agent CLIs a devcontainer image lacks (today they must come from the image or from the tenant's
 CLI prefix in its storage).
+
+## Production rollout (VPS)
+
+The control plane reads `QAAP_TASK_SANDBOX` (and the broker limits in the table below) from
+`/opt/qaap/.env`, passed through the `theia` service's `environment` in `docker-compose.yml`.
+
+- **Enable:** `QAAP_TASK_SANDBOX=1` in `/opt/qaap/.env`, then `docker compose up -d theia`. Tenant
+  backends are recreated with the flag when they are next routed (deferred while a turn runs).
+- **Roll back:** `QAAP_TASK_SANDBOX=0` (or remove the line), then `docker compose up -d theia`.
+  Tenant backends are recreated without it, and the broker reaps the sandboxes of tenants it no
+  longer routes. To check for leftovers, run
+  `docker ps -a --filter label=com.qaap.task-sandbox.broker=true` on the rootless daemon.
 
 ## Flags
 

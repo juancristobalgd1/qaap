@@ -57,6 +57,10 @@ const docker$ = (...argv) => execFileSync('docker', argv, { encoding: 'utf8' }).
 const log = message => console.log(`[broker-e2e] ${message}`);
 
 const work = realpathSync(mkdtempSync(join(tmpdir(), 'qaap-broker-e2e-')));
+// mkdtemp makes the directory 0700. A rootless daemon runs as another uid than a root caller (the
+// VPS run: the host loopback guard blocks the rootless uid's own 127.0.0.1 connections) and must
+// traverse it to bind the tenant roots.
+chmodSync(work, 0o755);
 const roots = {
     repos: join(work, 'repos', TENANT), worktrees: join(work, 'worktrees', TENANT),
     parallel: join(work, 'parallel', TENANT), config: join(work, 'config', TENANT),
@@ -103,6 +107,11 @@ async function main() {
         isBackendPerTenantEnabled: () => true,
         getTenantBackendAssertionSecret: () => SECRET,
         getTenantBackendConnectionToken: () => undefined,
+        listTaskSandboxContainers: async () => (await docker.listContainers({
+            all: true, filters: { label: ['com.qaap.task-sandbox.broker=true', `com.qaap.namespace=${NAMESPACE}`] },
+        })).map(container => ({
+            tenantLogin: container.Labels['com.qaap.tenant-login'], name: container.Names[0].replace(/^\//, ''), running: container.State === 'running',
+        })),
         listTenantBackendTargets: () => [{ containerId: tenantName, containerName: tenantName, host: '127.0.0.1', port, tenantLogin: TENANT }],
         taskSandboxPlacement: async () => ({
             docker, image: IMAGE, user: '1001:1001', network: internalNet, directEgressNetwork: undefined, egressEnv: {},
