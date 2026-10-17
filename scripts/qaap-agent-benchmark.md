@@ -182,6 +182,38 @@ OpenClaude expose structured cost when their provider reports it, while a Cursor
 may not expose a dollar amount in its result.
 Missing cost fails closed whenever the task declares `budgets.costUsd`.
 
+### Nightly: 10 real tasks on the default conversation path
+
+`scripts/qaap-agent-benchmark-nightly/` holds a fixed suite of ten small tasks (4 bug-fix, 3 feature, 3 refactor). Each
+one runs on a tiny dependency-free Node fixture (`fixtures/<task>/`, tests via `node --test`) and is graded by a hidden
+oracle (`oracles/<task>.mjs`, never copied into the workspace) that checks the new behaviour **and** that the public tests
+still pass. Budgets per task: 10 minutes and zero human interventions (no per-task cost budget: Qaap agent tasks do not record cost, and a missing cost would fail the run closed). `solutions/<task>/` are reference overlays used
+only by the self-tests.
+
+The `qaap-conversation` adapter drives the same path as the Work Hub composer: `POST /qaap/api/agent-conversations`
+(`isolation: 'none'`), poll until the conversation leaves `streaming` with no queued message, `POST .../cancel` when the
+wall-time budget runs out, then read each message's task from `/qaap/api/agent-tasks/:id` and keep its verification and
+review verdicts and cost in the run record (`conversation.tasks`). Cost is harvested best-effort from the claude `result` event in the task log. A suite-level `maxSuiteCostUsd` stops spending when cost IS reported: once it exceeds the cap, the remaining runs are recorded as failed with `skipReason: 'suite-budget-exhausted'` and the
+agent is not launched.
+
+```sh
+# Against a running backend (QAAP_SKIP_AUTH=true, QAAP_CLOUD_MODE=local, QAAP_TASK_PR=0, agent CLI installed):
+QAAP_BENCHMARK_AGENT=claude QAAP_BENCHMARK_MAX_COST_USD=5 \
+    npm run qaap:agent-benchmark:nightly -- --base-url http://127.0.0.1:3100 --output test-results/qaap-agent-benchmark/nightly
+
+# Deterministic smoke (no backend, no spend): a mock solver applies the reference solutions.
+npm run qaap:agent-benchmark:nightly -- --self-test
+```
+
+The adapter waits for each task to reach a terminal state (verification and review included) and sends `autoApprove: true` so headless edits are not blocked. The real spend cap is the Anthropic side: use a key from a workspace with a spend limit, and the workflow pins a cheap model through `ANTHROPIC_MODEL` (repository variable `QAAP_BENCHMARK_MODEL`, default `claude-haiku-5-5`).
+
+The last line printed is the success rate (`Nightly benchmark: 8/10 tasks passed (80.0%) cost=$... skipped=0`); it is also
+written to `report.json` (`nightly`) and appended to `scorecard.md`. `.github/workflows/qaap-agent-benchmark-nightly.yml`
+runs it at 03:30 UTC and on demand, only when the secret `QAAP_BENCHMARK_ANTHROPIC_API_KEY` exists, and uploads the output
+as an artifact for 30 days. `node --test scripts/qaap-agent-benchmark-runner.test.mjs` (part of the guards) verifies the
+cap, the adapter against an HTTP stub, and that every fixture fails its oracle as shipped and passes with its reference
+solution.
+
 ### Score an existing results manifest
 
 Copy the example manifest and replace every illustrative result with a real isolated run:

@@ -321,6 +321,7 @@ else
 fi
 
 run_step "guards: package graph check" package_graph_step
+run_step "guards: agent benchmark runner regression" node --test scripts/qaap-agent-benchmark-runner.test.mjs
 run_step "guards: compile" compile_step
 
 if [ "$MODE" = quick ]; then

@@ -119,6 +119,11 @@ jobs:
       - name: Package graph check
         run: node scripts/qaap-package-graph-check.js
 
+      # Needs `minimatch` from node_modules. Covers the runner (suite cost cap, qaap-conversation
+      # adapter) and the nightly suite: every fixture must fail its oracle as shipped.
+      - name: Agent benchmark runner regression
+        run: node --test scripts/qaap-agent-benchmark-runner.test.mjs
+
       - name: Compile
         run: npm run compile
 

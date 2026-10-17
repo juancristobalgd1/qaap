@@ -1,0 +1,148 @@
+# Nightly agent benchmark (H3.4): 10 small real tasks (bug-fix, feature, refactor) driven through the
+# default product path (agent conversations) against a locally started backend, graded by hidden oracles.
+#
+# Opt-in: the job does nothing unless the repository secret QAAP_BENCHMARK_ANTHROPIC_API_KEY exists, so
+# forks and repositories without the key stay green and free.
+#
+# Spend control (the per-task cost is not a hard budget, the agent task API does not record it):
+#   1. The key SHOULD belong to an Anthropic workspace with a monthly spend limit: that is the real cap.
+#   2. A cheap model is pinned through ANTHROPIC_MODEL (repository variable QAAP_BENCHMARK_MODEL,
+#      default claude-haiku-5-5).
+#   3. Each task has a 10 minute wall-time budget (the conversation is cancelled past it).
+#   4. Best effort: cost is harvested from the claude `result` event in the task log when present, and once
+#      it exceeds QAAP_BENCHMARK_MAX_COST_USD (default 5) the remaining tasks are recorded as
+#      `suite-budget-exhausted` without launching the agent.
+name: Qaap agent benchmark nightly
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      max_cost_usd:
+        description: 'Suite cost cap in USD (default 5)'
+        required: false
+        default: '5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qaap-agent-benchmark-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly-benchmark:
+    name: Nightly benchmark (10 tasks)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      QAAP_BENCHMARK_ANTHROPIC_API_KEY: ${{ secrets.QAAP_BENCHMARK_ANTHROPIC_API_KEY }}
+      QAAP_BENCHMARK_AGENT: claude
+      QAAP_BENCHMARK_MAX_COST_USD: ${{ github.event.inputs.max_cost_usd || '5' }}
+      QAAP_BENCHMARK_BASE_URL: http://127.0.0.1:3100
+    steps:
+      # Secrets cannot be read in `if:` expressions, so gate through a step output.
+      - name: Check the opt-in secret
+        id: gate
+        shell: bash
+        run: |
+          if [ -z "${QAAP_BENCHMARK_ANTHROPIC_API_KEY}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Nightly benchmark skipped::Secret QAAP_BENCHMARK_ANTHROPIC_API_KEY is not set; the nightly benchmark is opt-in."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Use Node.js 22.x
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '22.x'
+
+      - name: Install native-keymap build deps
+        if: steps.gate.outputs.enabled == 'true'
+        shell: bash
+        run: bash scripts/qaap-ci-install-native-deps.sh
+
+      - name: Install and build the browser app
+        if: steps.gate.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          npm ci
+          npm run build:browser
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install the Claude Code CLI
+        if: steps.gate.outputs.enabled == 'true'
+        shell: bash
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Start the backend
+        if: steps.gate.outputs.enabled == 'true'
+        shell: bash
+        env:
+          QAAP_SKIP_AUTH: 'true'
+          QAAP_CLOUD_MODE: local
+          # Task PRs need a GitHub token and a remote; the benchmark workspaces have neither.
+          QAAP_TASK_PR: '0'
+          ANTHROPIC_MODEL: ${{ vars.QAAP_BENCHMARK_MODEL || 'claude-haiku-5-5' }}
+        run: |
+          mkdir -p test-results/qaap-agent-benchmark/nightly
+          export ANTHROPIC_API_KEY="${QAAP_BENCHMARK_ANTHROPIC_API_KEY}"
+          cd examples/browser
+          node lib/backend/main.js --port 3100 --hostname 127.0.0.1 \
+            > "${GITHUB_WORKSPACE}/test-results/qaap-agent-benchmark/nightly/backend.log" 2>&1 &
+          echo $! > "${GITHUB_WORKSPACE}/test-results/backend.pid"
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:3100/qaap/api/agent-conversations/all >/dev/null; then
+              echo "Backend ready after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend did not become ready" >&2
+          tail -n 80 "${GITHUB_WORKSPACE}/test-results/qaap-agent-benchmark/nightly/backend.log" >&2 || true
+          exit 1
+
+      - name: Run the nightly benchmark
+        if: steps.gate.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          npm run qaap:agent-benchmark:nightly -- \
+            --base-url "${QAAP_BENCHMARK_BASE_URL}" \
+            --output test-results/qaap-agent-benchmark/nightly
+
+      - name: Add the scorecard to the job summary
+        if: always() && steps.gate.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          scorecard=test-results/qaap-agent-benchmark/nightly/scorecard.md
+          if [ -f "$scorecard" ]; then
+            cat "$scorecard" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The nightly benchmark produced no scorecard." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Stop the backend
+        if: always() && steps.gate.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          if [ -f test-results/backend.pid ]; then
+            kill "$(cat test-results/backend.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload benchmark output
+        if: always() && steps.gate.outputs.enabled == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: qaap-agent-benchmark-nightly
+          path: test-results/qaap-agent-benchmark/nightly
+          retention-days: 30
+          if-no-files-found: warn
