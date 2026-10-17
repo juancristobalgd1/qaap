@@ -4,7 +4,7 @@ Octubre 2026. Objetivo: igualar la **fiabilidad asíncrona** ("lanzo una tarea, 
 
 Principio rector: fiabilidad antes que paralelismo. No paralelizar agentes que todavía se caen.
 
-## Estado (16 oct 2026)
+## Estado (17 oct 2026)
 
 Revisado contra producción (VPS Contabo `161.97.69.219`) y master. La primera versión de este
 documento daba por pendientes cosas que ya estaban hechas; quedan marcadas abajo.
@@ -19,10 +19,10 @@ documento daba por pendientes cosas que ya estaban hechas; quedan marcadas abajo
 | H1.3 Salud por agente | 🟡 Parcial: estados instalado/conectado/activado, conexión para cada harness, detección de Copilot exit 0. Falta "último turno" por agente y test por tipo de fallo | — |
 | H2.1 C1-full | ✅ Hecho (12 jul, activo por defecto). Prod reporta `agentUidPerUser` y backend aislado por tenant | — |
 | H2.2 Sandbox por tarea | 🟡 v1 tras flag (`QAAP_TASK_SANDBOX`, apagado): contenedor por tarea con su propio PID/red, devcontainer, destruido/archivado al terminar; e2e con 2 tareas en paralelo en el mismo puerto, arranque 1,6 s. Falta el broker del control plane para backends por tenant (prod) — ver `doc/qaap-task-sandbox.md` | este PR |
-| H3.1 Camino único por defecto | 🟡 Dynamic Workflows construido con trigger en la UI; ADR-002 Fase B a medias | — |
-| H3.2 PR con evidencia | 🟡 Captura visual y verificador existen; no se componen en el PR | — |
+| H3.1 Camino único por defecto | 🟡 Cada tarea de la Work Hub termina por defecto en un PR (`QAAP_TASK_PR`, activo): rama `qaap/task/<conv>` construida desde los checkpoints del turno, push hospedado con el token del dueño, un PR por conversación. Falta el plan editable + fan-out a N subtareas en sandbox (Dynamic Workflows no tiene trigger en la UI: se revirtió en 92df9cd99; ADR-002 Fase B piezas 3–6 pendientes). Plan: `doc/qaap-task-to-pr.md` | #286 |
+| H3.2 PR con evidencia | 🟢 Cuerpo del PR con resumen, diffstat, checks, veredicto del revisor y capturas (`refs/qaap/evidence/<conv>`); rojo → draft + etiqueta `qaap: needs attention` + carril "Needs you". e2e con stub de GitHub en el gate pre-deploy. Falta validarlo contra GitHub real (ref de evidencia, enlaces raw, draft por GraphQL) | #286 |
 | H3.3 Mission-control por defecto | ✅ Hecho (8 jul): flag retirado y vista vieja borrada | — |
-| H3.4 E2E contrato senior | ⏳ Contrato (fases A–C) hecho; falta el benchmark nocturno | — |
+| H3.4 E2E contrato senior | 🟡 Suite de 10 tareas (bugfix/feature/refactor) con oráculos ocultos por el camino de conversación por defecto, tope de coste por suite, workflow nocturno opt-in. Falta cargar el secret `QAAP_BENCHMARK_ANTHROPIC_API_KEY` (con límite de gasto) y la primera cifra | #285 |
 | H4.1 Entradas externas | ⏳ Sin empezar | — |
 | H4.2 Pulido móvil | 🟡 4 mejoras de render hechas; quedan #1–#3 y el tirón de scroll | — |
 
