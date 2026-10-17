@@ -371,6 +371,16 @@ cd /home/ubuntu/qaap-e2e && DOCKER_HOST=unix:///run/user/1000/docker.sock PATH=$
 The e2e still stubs the orchestrator (no `QAAP_DOCKER_REMOTE_*` translation) and publishes the
 tenant backend directly; those two are covered by the production rollout below.
 
+**Exec server address (fixed Oct 17 2026).** In production a sandbox and its tenant backend sit on
+two networks: the tenant's internal bridge (ICC on) and its direct-egress bridge, which runs with
+`com.docker.network.bridge.enable_icc=false`. The broker used to return the container name as the
+exec server host. Docker DNS answered with the egress address, so every connection timed out
+(`connect ETIMEDOUT 172.25.0.3:7391`, exit 126). The post-deploy agent smoke failed on every deploy
+after the flag went on. The broker now returns the sandbox's IP on the internal network
+(`execServerHost`, read with `inspect` after start). It falls back to the name only when there is no
+egress network. The e2e now attaches an `enable_icc=false` egress network too. On the VPS it fails
+without the fix and passes with it: 14/14, two sandboxes in parallel in 2.8 s.
+
 **Before the flag goes on in production:** run the broker e2e on the VPS (rootless daemon,
 `QAAP_DOCKER_REMOTE_*` translation, egress proxy), and decide whether the tenant image should ship
 the agent CLIs a devcontainer image lacks (today they must come from the image or from the tenant's

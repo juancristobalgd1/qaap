@@ -353,7 +353,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             }
             const existingToken = this.tokens.get(name);
             if (existing.State?.Running && !existing.State.Paused && existingToken) {
-                return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false);
+                return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false, existing);
             }
             // Stopped, paused, or created before this control plane started (its token is gone): recreate.
             await docker.getContainer(name).remove({ force: true });
@@ -380,11 +380,11 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             await this.runSandbox(placement, name, tenant, root, placement.image, toolchain, token, homeLinks, containerEnv);
             this.tokens.set(name, token);
             this.tenantsWithSandboxes.set(tenant, Date.now());
-            return this.describe(name, root, token, placement.image, placement, Date.now() - started, true);
+            return this.describe(name, root, token, placement.image, placement, Date.now() - started, true, await this.inspect(docker, name));
         }
         this.tokens.set(name, token);
         this.tenantsWithSandboxes.set(tenant, Date.now());
-        const sandbox = this.describe(name, root, token, image, placement, Date.now() - started, true);
+        const sandbox = this.describe(name, root, token, image, placement, Date.now() - started, true, await this.inspect(docker, name));
         console.info(`[qaap-task-sandbox] broker started ${name} for ${tenant} ${root} (image ${image}) in ${sandbox.startupMs} ms`);
         return sandbox;
     }
@@ -774,8 +774,27 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     protected describe(
         name: string, root: string, token: string, image: string, placement: QaapTaskSandboxPlacement, startupMs: number, created: boolean,
+        inspect: Dockerode.ContainerInspectInfo | undefined,
     ): QaapTaskSandboxBrokerSandbox {
-        return { name, root, host: name, port: QAAP_SANDBOX_EXEC_PORT, token, image, imageKind: image === placement.image ? 'base' : 'image', startupMs, created };
+        const host = this.execServerHost(name, placement, inspect);
+        return { name, root, host, port: QAAP_SANDBOX_EXEC_PORT, token, image, imageKind: image === placement.image ? 'base' : 'image', startupMs, created };
+    }
+
+    /**
+     * Where the tenant backend reaches the exec server: the sandbox's address on the tenant's
+     * INTERNAL network. The container name is not enough once the sandbox is also on the tenant's
+     * direct-egress network: Docker DNS may answer with the egress address, and that bridge runs
+     * with `enable_icc=false`, so the connection is dropped (production, Oct 17 2026: ETIMEDOUT).
+     */
+    protected execServerHost(name: string, placement: QaapTaskSandboxPlacement, inspect: Dockerode.ContainerInspectInfo | undefined): string {
+        const address = inspect?.NetworkSettings?.Networks?.[placement.network]?.IPAddress?.trim();
+        if (address) {
+            return address;
+        }
+        if (placement.directEgressNetwork) {
+            throw new Error(`Sandbox ${name} has no address on the tenant network ${placement.network}.`);
+        }
+        return name;
     }
 
     containerName(tenant: string, root: string): string {
