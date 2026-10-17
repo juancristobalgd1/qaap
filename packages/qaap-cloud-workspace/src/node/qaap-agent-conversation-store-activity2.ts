@@ -1,7 +1,7 @@
 // Extracted from qaap-agent-conversation-store.ts
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
-import { QaapAgentConversation, QaapAgentMessage, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
+import { QaapAgentConversation, QaapAgentMessage, QaapAgentTurnVerdict, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
@@ -424,6 +424,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     if (blockedNeed !== undefined) {
         withReply = ctx.appendBlockedTrace(withReply, agentMessageId, blockedNeed);
     }
+    withReply = recordTurnVerdict(withReply, userMessageId, task, blockedNeed);
     const finalizedAgentMessageId = settledAgentMessage?.id ?? agentMessageId;
     withReply = ctx.clearRunActive(withReply, finalizedAgentMessageId);
     ctx.conversations.set(conversationId, withReply);
@@ -487,4 +488,30 @@ export async function maybeRetryTurnWithFallbackExtracted(ctx: QaapAgentConversa
     return ctx.maybeRetryTurnWithFallbackModel(
         conversationId, userMessageId, agentMessageId, task, conv, agentMessage, turnAgentId, startSha,
     );
+}
+
+/**
+ * Persists how the turn settled on its user message (task outcome, verification, review), so task
+ * pull requests read the verdict from the conversation even after the task runner pruned the task or
+ * the backend restarted.
+ */
+export function recordTurnVerdict(
+    conv: QaapAgentConversation,
+    userMessageId: string,
+    task: Pick<QaapAgentTask, 'state' | 'verification' | 'review' | 'readOnlyWorkspace'>,
+    blockedNeed: string | undefined,
+    now: number = Date.now(),
+): QaapAgentConversation {
+    const turnVerdict: QaapAgentTurnVerdict = {
+        taskState: blockedNeed !== undefined ? 'blocked' : task.state,
+        ...(task.verification ? { verification: task.verification } : {}),
+        ...(task.review ? { review: task.review } : {}),
+        ...(blockedNeed !== undefined ? { blockedNeed } : {}),
+        ...(task.readOnlyWorkspace ? { readOnly: true } : {}),
+        settledAt: now,
+    };
+    return {
+        ...conv,
+        messages: conv.messages.map(message => message.id === userMessageId && message.role === 'user' ? { ...message, turnVerdict } : message),
+    };
 }

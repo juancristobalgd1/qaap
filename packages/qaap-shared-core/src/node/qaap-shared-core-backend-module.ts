@@ -20,6 +20,7 @@ import { QaapHostedGitFetch } from './qaap-hosted-git-fetch';
 import { QaapHostedGitPush } from './qaap-hosted-git-push';
 import { QaapHostedWorktreeRegistry } from './qaap-hosted-worktree-registry';
 import { QaapHostedProjectResolver } from './qaap-hosted-project-resolver';
+import { QaapGithubOwnerTokenCache } from './qaap-github-owner-token-cache';
 import { QaapApiTokenEndpoint } from './qaap-api-token-endpoint';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -49,6 +50,7 @@ export default new ContainerModule(bind => {
     bind(QaapHostedGitPush).toSelf().inSingletonScope();
     bind(QaapHostedWorktreeRegistry).toSelf().inSingletonScope();
     bind(QaapHostedProjectResolver).toSelf().inSingletonScope();
+    bind(QaapGithubOwnerTokenCache).toSelf().inSingletonScope();
     bind(QaapGithubOauthEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapGithubOauthEndpoint);
     bind(QaapMissingCloneRecovery).toSelf().inSingletonScope();

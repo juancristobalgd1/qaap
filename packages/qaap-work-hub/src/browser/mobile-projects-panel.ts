@@ -1833,6 +1833,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return onSetConversationPausedExtracted(this, project, summary, paused);
     }
 
+    protected async onSetConversationTaskPullRequest(summary: QaapAgentConversationSummaryDTO, enabled: boolean): Promise<void> {
+        return this.conversationActionsUi.onSetConversationTaskPullRequest(summary, enabled);
+    }
+
+    protected async onRespondTaskPullRequestConsent(summary: QaapAgentConversationSummaryDTO, allow: boolean): Promise<void> {
+        return this.conversationActionsUi.onRespondTaskPullRequestConsent(summary, allow);
+    }
+
     protected async toggleConversationAutoApproveById(conversationId: string): Promise<void> {
         return this.conversationActionsUi.toggleConversationAutoApproveById(conversationId);
     }

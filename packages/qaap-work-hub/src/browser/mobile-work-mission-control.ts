@@ -62,6 +62,9 @@ export interface MissionControlItem {
 export interface MissionControlPullRequestAttention {
     readonly number?: number;
     readonly url?: string;
+    /** Why: red PR (default), waiting for the owner's consent, or no GitHub token. */
+    readonly reason?: 'consent' | 'sign-in';
+    readonly repository?: string;
 }
 
 /** Single-axis classification used by the "Chats / Tasks / PRs" filter. */
@@ -107,7 +110,7 @@ export function classifyMissionControlLane(
     if (isFailedRunSummary(summary)) {
         return 'needs-you';
     }
-    if (taskPullRequestNeedsAttention(summary.taskPullRequest)) {
+    if (summary.taskPullRequestEnabled !== false && taskPullRequestNeedsAttention(summary.taskPullRequest)) {
         return 'needs-you';
     }
     if (summary.priority) {
@@ -636,6 +639,16 @@ export class MobileWorkMissionControl {
     protected createPullRequestAttentionChip(attention: MissionControlPullRequestAttention): HTMLElement {
         const chip = document.createElement('span');
         chip.className = 'theia-mobile-mission-control-failure-chip theia-mod-pr-attention';
+        if (attention.reason === 'consent') {
+            chip.textContent = nls.localize('qaap/workMissionControl/prConsentChip', 'PR ready: allow?');
+            chip.title = nls.localize('qaap/workMissionControl/prConsentTitle',
+                'Allow Qaap to open PRs on {0}? Open the task menu to allow it or choose Not now.', attention.repository ?? '');
+            return chip;
+        }
+        if (attention.reason === 'sign-in') {
+            chip.textContent = nls.localize('qaap/workMissionControl/prSignInChip', 'PR: sign in again');
+            return chip;
+        }
         chip.textContent = attention.number
             ? nls.localize('qaap/workMissionControl/prAttentionChip', 'PR #{0} needs attention', String(attention.number))
             : nls.localize('qaap/workMissionControl/prAttentionNoNumberChip', 'PR needs attention');

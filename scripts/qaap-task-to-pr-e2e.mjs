@@ -10,6 +10,12 @@
 // - the stub received one `POST /repos/acme/demo/pulls` whose body has the evidence markers, the
 //   checks and the reviewer sections;
 // - the conversation records the task pull request.
+// It also covers the review fixes:
+// - consent gate: before the one-time "allow Qaap to open PRs on acme/demo" there is no push and no PR
+//   (the conversation shows `awaiting-consent`); after Allow the PR is opened;
+// - divergence: a foreign commit pushed to the task branch is kept, the next turn is built on it and
+//   the same PR is updated;
+// - the commit subject is the neutral title, never the prompt.
 //
 // Usage: node scripts/qaap-task-to-pr-e2e.mjs [--port 3467] [--keep]   (needs `npm run build:browser`)
 import { execFileSync, spawn } from 'node:child_process';
@@ -26,7 +32,10 @@ const FAKE_QAIQ = `#!/usr/bin/env bash
 # Fake qaiq for the task-to-pr e2e (stream-json over stdio): writes one file and reports success.
 if [[ "\${1:-}" == "--version" ]]; then echo "qaiq 0.0.0-task-pr-e2e"; exit 0; fi
 IFS= read -r line || true
-printf 'export const answer = 42;\\n' > feature.ts
+STATE="\${QAAP_E2E_STATE:?}"
+echo run >> "$STATE/runs"
+runs="$(wc -l < "$STATE/runs" | tr -d ' ')"
+if [[ "$runs" == 1 ]]; then printf 'export const answer = 42;\\n' > feature.ts; else printf 'export const second = %s;\\n' "$runs" > second.ts; fi
 emit() { printf '%s\\n' "$1"; }
 emit '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"task-pr-e2e","tools":[],"model":"mock/task-pr-e2e"}'
 emit '{"type":"assistant","message":{"content":[{"type":"text","text":"Added feature.ts exporting the answer."}]}}'
@@ -124,7 +133,8 @@ async function main() {
     const remote = join(work, 'remote', 'acme', 'demo.git');
     const seed = join(work, 'seed');
     const repo = join(work, 'repo');
-    for (const dir of [home, bin, remote, seed]) {
+    const state = join(work, 'state');
+    for (const dir of [home, bin, remote, seed, state]) {
         mkdirSync(dir, { recursive: true });
     }
     writeFileSync(join(bin, 'qaiq'), FAKE_QAIQ);
@@ -156,6 +166,8 @@ async function main() {
         QAAP_TASK_PR_DEBOUNCE_MS: '1500',
         QAAP_TASK_PR_TEST_TOKEN: 'gho_task_pr_e2e',
         QAAP_GITHUB_API_BASE_URL: `http://127.0.0.1:${stub.port}`,
+        QAAP_TASK_PR_RETRY_DELAYS_MS: '200,400,800',
+        QAAP_E2E_STATE: state,
     };
     const logPath = join(work, 'backend.log');
     const out = openSync(logPath, 'a');
@@ -188,37 +200,93 @@ async function main() {
             throw new Error(`creating the conversation returned HTTP ${created.status}: ${created.text.slice(0, 300)}`);
         }
         const id = created.json.id;
-        console.log(`conversation ${id} created; waiting for the turn and the task pull request`);
+        const prompt = 'Add feature.ts exporting the answer.';
+        console.log(`conversation ${id} created; waiting for the turn and the consent question`);
         await waitFor('the turn to finish', 90_000, async () => {
             const current = await api('GET', `${CONVERSATIONS}/${id}`);
             return current.json && current.json.status !== 'streaming' ? current.json : undefined;
         });
+        const asked = await waitFor('the consent question', 60_000, async () => {
+            const current = await api('GET', `${CONVERSATIONS}/${id}`);
+            return current.json?.taskPullRequest?.state === 'awaiting-consent' ? current.json : undefined;
+        });
+        const ref = `refs/heads/qaap/task/${id}`;
+        const remoteHead = () => {
+            try {
+                return execFileSync('git', ['--git-dir', remote, 'rev-parse', '--verify', '--quiet', ref], { encoding: 'utf8' }).trim();
+            } catch {
+                return '';
+            }
+        };
+        const creates = () => stub.requests.filter(request => request.method === 'POST' && /\/repos\/acme\/demo\/pulls$/.test(request.url));
+        const patches = () => stub.requests.filter(request => request.method === 'PATCH' && /\/repos\/acme\/demo\/pulls\/\d+$/.test(request.url));
+        const beforeConsent = { creates: creates().length, head: remoteHead() };
+
+        const allowed = await api('POST', `${CONVERSATIONS}/${id}/task-pull-request/consent`, { allow: true });
         const conv = await waitFor('the task pull request', 60_000, async () => {
             const current = await api('GET', `${CONVERSATIONS}/${id}`);
             return current.json?.taskPullRequest?.number || current.json?.taskPullRequest?.lastError ? current.json : undefined;
         });
 
-        const ref = `refs/heads/qaap/task/${id}`;
         let branchFiles = [];
         try {
             branchFiles = execFileSync('git', ['--git-dir', remote, 'ls-tree', '-r', '--name-only', ref], { encoding: 'utf8' }).trim().split('\n');
         } catch {
             branchFiles = [];
         }
-        const creates = stub.requests.filter(request => request.method === 'POST' && /\/repos\/acme\/demo\/pulls$/.test(request.url));
-        const prBody = creates[0]?.body?.body ?? '';
+        const firstCreate = creates()[0];
+        const prBody = firstCreate?.body?.body ?? '';
+        const subject = execFileSync('git', ['--git-dir', remote, 'log', '-1', '--format=%s', ref], { encoding: 'utf8' }).trim();
+
+        // Someone else pushes to the task branch; the next turn must build on their commit.
+        const other = join(work, 'other');
+        execFileSync('git', ['clone', '-q', '--branch', `qaap/task/${id}`, remote, other]);
+        writeFileSync(join(other, 'review.txt'), 'reviewer fix\n');
+        execFileSync('git', [...gitId, 'add', '-A'], { cwd: other });
+        execFileSync('git', [...gitId, 'commit', '-qm', 'reviewer fix'], { cwd: other });
+        execFileSync('git', ['push', '-q', 'origin', `qaap/task/${id}`], { cwd: other });
+        const foreign = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: other, encoding: 'utf8' }).trim();
+        const patchesBefore = patches().length;
+        const second = await api('POST', `${CONVERSATIONS}/${id}/messages`, { content: 'Also add second.ts.' });
+        const updated = await waitFor('the PR update after the second turn', 90_000, async () => {
+            const current = await api('GET', `${CONVERSATIONS}/${id}`);
+            const pr = current.json?.taskPullRequest;
+            return current.json?.status !== 'streaming' && pr?.headSha && pr.headSha !== conv.taskPullRequest?.headSha && patches().length > patchesBefore
+                ? current.json : undefined;
+        });
+        const head = remoteHead();
+        let builtOnForeign = false;
+        try {
+            execFileSync('git', ['--git-dir', remote, 'merge-base', '--is-ancestor', foreign, head]);
+            builtOnForeign = true;
+        } catch {
+            builtOnForeign = false;
+        }
+        const finalFiles = execFileSync('git', ['--git-dir', remote, 'ls-tree', '-r', '--name-only', head], { encoding: 'utf8' }).trim().split('\n');
+
         const checks = [
+            [asked.taskPullRequest?.state === 'awaiting-consent', 'consent asked before the first push'],
+            [beforeConsent.creates === 0 && beforeConsent.head === '', `no PR and no branch before consent (creates ${beforeConsent.creates}, head ${beforeConsent.head || 'none'})`],
+            [allowed.status === 200, `consent Allow returned HTTP ${allowed.status}`],
             [!conv.taskPullRequest?.lastError, `task pull request error ${JSON.stringify(conv.taskPullRequest?.lastError)}`],
             [conv.taskPullRequest?.number === 1, `task pull request number ${conv.taskPullRequest?.number}`],
             [branchFiles.includes('feature.ts'), `bare remote ${ref} has feature.ts (${branchFiles.join(', ')})`],
             [!branchFiles.includes('notes-by-user.txt'), 'pre-existing dirty file kept out of the branch'],
-            [creates.length === 1, `stub received ${creates.length} PR create(s)`],
-            [creates[0]?.authorization === 'Bearer gho_task_pr_e2e', 'PR create used the owner token'],
-            [creates[0]?.body?.head === `qaap/task/${id}` && creates[0]?.body?.base === 'main', `PR head/base ${creates[0]?.body?.head} → ${creates[0]?.body?.base}`],
+            [creates().length === 1, `stub received ${creates().length} PR create(s)`],
+            [firstCreate?.authorization === 'Bearer gho_task_pr_e2e', 'PR create used the owner token'],
+            [firstCreate?.body?.head === `qaap/task/${id}` && firstCreate?.body?.base === 'main', `PR head/base ${firstCreate?.body?.head} → ${firstCreate?.body?.base}`],
             [prBody.includes('<!-- qaap:evidence -->') && prBody.includes('<!-- /qaap:evidence -->'), 'PR body has the evidence markers'],
             [prBody.includes('### Checks'), 'PR body has the checks section'],
             [prBody.includes('### Reviewer verdict'), 'PR body has the reviewer section'],
             [prBody.includes('feature.ts'), 'PR body diffstat lists feature.ts'],
+            // The thread title is derived from the prompt here, so the subject names the changed files instead.
+            [subject === 'Qaap task: update feature.ts' && !subject.toLowerCase().includes(prompt.slice(0, 20).toLowerCase()),
+                `commit subject "${subject}" does not contain the prompt`],
+            [second.status === 202 || second.status === 200 || second.status === 201, `second message returned HTTP ${second.status}`],
+            [builtOnForeign, 'the second turn was built on the foreign push'],
+            [finalFiles.includes('review.txt') && finalFiles.includes('second.ts'), `branch keeps the foreign file and gains second.ts (${finalFiles.join(', ')})`],
+            [updated.taskPullRequest?.number === 1 && creates().length === 1, 'the same PR was updated (no second PR)'],
+            [updated.taskPullRequest?.divergence?.resolution === 'built-on-remote', `divergence ${JSON.stringify(updated.taskPullRequest?.divergence)}`],
         ];
         for (const [passed, label] of checks) {
             console.log(`${passed ? 'PASS' : 'FAIL'}  ${label}`);

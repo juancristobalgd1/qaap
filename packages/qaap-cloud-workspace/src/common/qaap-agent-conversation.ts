@@ -19,7 +19,7 @@ import {
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
-import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+import type { QaapAgentTaskReview, QaapAgentTaskState, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentGoalLoopPhase, QaapAgentGoalLoopState } from './qaap-agent-goal-loop';
 
@@ -109,6 +109,11 @@ export interface QaapAgentMessage {
     readonly createdAt: number;
     /** When set on a user message, points at the agent-task spawned for that turn. */
     readonly taskId?: string;
+    /**
+     * On a user message: the verdict its turn settled with, persisted so task pull requests read it
+     * after the task runner pruned or lost the task (restart).
+     */
+    readonly turnVerdict?: QaapAgentTurnVerdict;
     /**
      * Set on the user message that triggered a turn: which agent (`'qaiq'`, `'claude'`, `'codex'`, …)
      * actually drove it. Unlike {@link QaapAgentConversation.agentId} — which is per-conversation and
@@ -225,6 +230,18 @@ export interface QaapConversationCheckpoint {
     readonly kind?: 'pre-turn';
 }
 
+/** How a turn settled: the task's outcome and the verification / review verdicts. */
+export interface QaapAgentTurnVerdict {
+    readonly taskState: QaapAgentTaskState;
+    readonly verification?: QaapAgentTaskVerification;
+    readonly review?: QaapAgentTaskReview;
+    /** What the agent said it needs from the user when the turn ended blocked. */
+    readonly blockedNeed?: string;
+    /** The turn ran with a read-only workspace (exploration). */
+    readonly readOnly?: boolean;
+    readonly settledAt: number;
+}
+
 /** A persistent multi-turn thread with an agent, tied to a working directory. */
 export interface QaapAgentConversation {
     readonly id: string;
@@ -285,6 +302,8 @@ export interface QaapAgentConversation {
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     /** Pull request the backend opened for this task with its evidence (`QaapTaskPullRequestService`). */
     readonly taskPullRequest?: QaapTaskPullRequest;
+    /** `false`: the user turned "Create PR when done" off for this thread. Omitted means on. */
+    readonly taskPullRequestEnabled?: boolean;
     /** Latest context snapshot when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
@@ -376,6 +395,7 @@ export interface QaapAgentConversationSummary {
     readonly lastTurnDurationMs?: number;
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
+    readonly taskPullRequestEnabled?: boolean;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     readonly contextUsage?: QaapAgentContextUsage;
@@ -495,6 +515,8 @@ export interface QaapUpdateAgentConversationRequest {
     readonly archived?: boolean;
     /** `true` clears an explicit opt-out; `false` requires manual tool approval on future turns. */
     readonly autoApprove?: boolean;
+    /** "Create PR when done" for this thread; `true` clears an earlier opt-out. */
+    readonly taskPullRequestEnabled?: boolean;
     readonly linkedPullRequest?: QaapLinkedPullRequest | null;
     /** Composer agent picker — overrides the thread default for future turns. */
     readonly agent?: string;
@@ -654,6 +676,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),
         linkedPullRequest: conv.linkedPullRequest,
         ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
+        ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,
         ...(conv.goalLoop ? {

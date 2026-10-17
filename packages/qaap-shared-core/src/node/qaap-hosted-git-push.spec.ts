@@ -153,6 +153,31 @@ describe('qaap-hosted-git-push', function (): void {
             expect(fs.existsSync(scratch)).to.equal(false);
         });
 
+        it('reads a remote ref with ls-remote and force-pushes a rebuilt task branch and an evidence ref', async () => {
+            const push = new LocalHostedGitPush();
+            const first = git(project, 'rev-parse', 'HEAD');
+            const url = `file://${remote}`;
+            expect(await push.remoteRef({ url, ref: 'refs/heads/qaap/task/c1', token: TOKEN })).to.equal(undefined);
+            await push.push({ objectsDirectory: path.join(project, '.git', 'objects'), url, sha: first, ref: 'refs/heads/qaap/task/c1', token: TOKEN });
+            expect(await push.remoteRef({ url, ref: 'refs/heads/qaap/task/c1', token: TOKEN })).to.equal(first);
+            // A rebuilt branch is not a fast-forward of what was pushed: only `force` replaces it.
+            git(project, 'checkout', '--quiet', '--orphan', 'rebuilt');
+            fs.writeFileSync(path.join(project, 'a.txt'), 'rebuilt\n');
+            git(project, 'add', 'a.txt');
+            git(project, 'commit', '--quiet', '-m', 'rebuilt');
+            const rebuilt = git(project, 'rev-parse', 'HEAD');
+            const request = { objectsDirectory: path.join(project, '.git', 'objects'), url, sha: rebuilt, ref: 'refs/heads/qaap/task/c1', token: TOKEN };
+            let rejected = false;
+            await push.push(request).catch(() => { rejected = true; });
+            expect(rejected).to.equal(true);
+            await push.push({ ...request, force: true });
+            expect(git(remote, 'rev-parse', 'refs/heads/qaap/task/c1')).to.equal(rebuilt);
+            await push.push({ ...request, ref: 'refs/qaap/evidence/c1' });
+            expect(git(remote, 'rev-parse', 'refs/qaap/evidence/c1')).to.equal(rebuilt);
+            const lsRemote = push.calls.find(call => call.args.includes('ls-remote'));
+            expect(lsRemote?.args.join(' ')).not.to.contain(TOKEN);
+        });
+
         it('passes the orchestrator egress proxy to the sealed push and keeps TLS verification on', async () => {
             const saved = { HTTPS_PROXY: process.env.HTTPS_PROXY, NO_PROXY: process.env.NO_PROXY, GIT_SSL_NO_VERIFY: process.env.GIT_SSL_NO_VERIFY };
             process.env.HTTPS_PROXY = 'http://qaap-egress-proxy:3128';

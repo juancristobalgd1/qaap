@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
+import type { QaapTaskPullRequestConsentRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
@@ -98,6 +100,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapAgentGoalLoopRunner) @optional()
     protected readonly goalLoops: QaapAgentGoalLoopRunner | undefined;
+
+    @inject(QaapTaskPullRequestService) @optional()
+    protected readonly taskPullRequests: QaapTaskPullRequestService | undefined;
 
     /**
      * Idempotency guard for conversation creation: `${ownerLogin}:${clientRequestId}` → the id of the
@@ -258,6 +263,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 return;
             }
             this.handleUpdate(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-pull-request/consent`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            void this.handleTaskPullRequestConsent(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/worktree/apply`, (req, res) => {
             void this.handleApplyWorktree(req, res);
@@ -1092,6 +1103,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         if (typeof body.autoApprove === 'boolean') {
             patch.autoApprove = body.autoApprove;
         }
+        if (typeof body.taskPullRequestEnabled === 'boolean') {
+            patch.taskPullRequestEnabled = body.taskPullRequestEnabled;
+        }
         if (typeof body.agent === 'string' && body.agent.trim()) {
             patch.agent = body.agent.trim();
         }
@@ -1124,6 +1138,29 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         res.json(conv);
+    }
+
+    /** Allow (one-time consent for the owner and repository) or "Not now" for a task pull request. */
+    protected async handleTaskPullRequestConsent(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as Partial<QaapTaskPullRequestConsentRequest>;
+        if (typeof body.allow !== 'boolean') {
+            res.status(400).json({ error: '"allow" must be a boolean.' });
+            return;
+        }
+        if (!this.taskPullRequests) {
+            res.status(503).json({ error: 'Task pull requests are not available on this server.' });
+            return;
+        }
+        try {
+            const conv = await this.taskPullRequests.respondToConsent(req.params.id, body.allow);
+            if (!conv) {
+                res.status(404).json({ error: 'Conversation not found.' });
+                return;
+            }
+            res.json(conv);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     /** SSE feed of conversation events used by every connected client for live updates. */

@@ -11,12 +11,13 @@ import { inject, injectable, optional, postConstruct } from '@theia/core/shared/
 import type { BackendApplicationContribution } from '@theia/core/lib/node';
 import { nls } from '@theia/core/lib/common/nls';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
+import type { QaapTaskPullRequest, QaapTaskPullRequestDivergence } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import {
     addGithubIssueLabels,
     createGithubPullRequest,
     fetchGithubPullRequestRecord,
     fetchGithubRepository,
+    GithubApiError,
     removeGithubIssueLabel,
     setGithubPullRequestDraft,
     updateGithubPullRequest,
@@ -24,11 +25,22 @@ import {
 } from '@theia/qaap-shared-core/lib/node/qaap-github-api';
 import { QaapGithubSessionStore } from '@theia/qaap-shared-core/lib/node/qaap-github-session-store';
 import { QaapHostedGitPush } from '@theia/qaap-shared-core/lib/node/qaap-hosted-git-push';
+import { QaapHostedGitFetch } from '@theia/qaap-shared-core/lib/node/qaap-hosted-git-fetch';
+import { QaapGithubOwnerTokenCache } from '@theia/qaap-shared-core/lib/node/qaap-github-owner-token-cache';
+import { QAAP_TENANT_BACKEND_MODE_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { QAAP_SKIP_AUTH_USER_LOGIN, resolveQaapReposRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapHostedProjectResolver } from '@theia/qaap-shared-core/lib/node/qaap-hosted-project-resolver';
-import type { QaapAgentConversation, QaapAgentConversationEvent, QaapAgentMessage, QaapConversationCheckpoint } from '../common/qaap-agent-conversation';
+import type {
+    QaapAgentConversation,
+    QaapAgentConversationEvent,
+    QaapAgentMessage,
+    QaapAgentTurnVerdict,
+    QaapConversationCheckpoint,
+} from '../common/qaap-agent-conversation';
 import { isGoalLoopActive } from '../common/qaap-agent-goal-loop';
-import type { QaapAgentTask } from '../common/qaap-agent-task';
+import { deriveConversationTitle } from '../common/qaap-conversation-title';
 import {
+    buildTaskPullRequestCommitMessage,
     buildTaskPullRequestEvidenceSection,
     buildTaskPullRequestTitle,
     isTaskPullRequestRed,
@@ -41,6 +53,7 @@ import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { VISUAL_EVIDENCE_DIR } from './qaap-agent-conversation-store-constants';
 import { runGitAsync, type QaapGitRunResult } from './qaap-agent-conversation-store-git';
 import type { QaapTaskPullRequestRecordOptions } from './qaap-agent-conversation-store-task-pr';
+import { QaapTaskPullRequestConsentStore } from './qaap-task-pull-request-consent-store';
 
 /** Default quiet period before a settled conversation is turned into (or pushed to) its pull request. */
 export const QAAP_TASK_PR_DEFAULT_DEBOUNCE_MS = 10_000;
@@ -85,6 +98,8 @@ const DEFAULT_GITHUB: QaapTaskPullRequestGithub = {
 /** One user turn with the checkpoints that bracket it. */
 interface QaapTaskTurn {
     readonly userMessage: QaapAgentMessage;
+    /** Position among the conversation's user messages. */
+    readonly index: number;
     readonly pre: QaapConversationCheckpoint;
     readonly post: QaapConversationCheckpoint;
 }
@@ -116,6 +131,17 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
 
     @inject(QaapHostedProjectResolver) @optional()
     protected readonly projectResolver: QaapHostedProjectResolver | undefined;
+
+    /** Sealed fetch: brings a foreign push to the task branch into the project's objects. */
+    @inject(QaapHostedGitFetch) @optional()
+    protected readonly hostedFetch: QaapHostedGitFetch | undefined;
+
+    /** The owner's token from verified tenant assertions (per-tenant backends have no session store). */
+    @inject(QaapGithubOwnerTokenCache) @optional()
+    protected readonly ownerTokens: QaapGithubOwnerTokenCache | undefined;
+
+    @inject(QaapTaskPullRequestConsentStore) @optional()
+    protected readonly consents: QaapTaskPullRequestConsentStore | undefined;
 
     protected github: QaapTaskPullRequestGithub = DEFAULT_GITHUB;
 
@@ -205,7 +231,10 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         return next;
     }
 
-    /** Idle, nothing queued, no goal loop, no run, and not a read-only (plan / ask) thread. */
+    /**
+     * Idle, nothing queued, no goal loop, no run, and not a read-only thread: plan / ask modes never
+     * produce a PR (exploratory read-only turns are skipped turn by turn, see {@link collectNewTurns}).
+     */
     isQuiescent(conv: QaapAgentConversation): boolean {
         if (conv.status !== 'idle' || (conv.pendingUserMessages?.length ?? 0) > 0 || isGoalLoopActive(conv)) {
             return false;
@@ -216,25 +245,51 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         return this.store.getActiveTaskIdsForConversation(conv.id).length === 0;
     }
 
+    /**
+     * Answers "allow Qaap to open PRs on <owner/repo>?". Allow records the one-time consent of the
+     * owner for that repository and syncs at once; "Not now" turns "Create PR when done" off for
+     * this conversation (the user can turn it back on).
+     */
+    async respondToConsent(conversationId: string, allow: boolean): Promise<QaapAgentConversation | undefined> {
+        const conv = this.store.get(conversationId);
+        if (!conv) {
+            return undefined;
+        }
+        if (!allow) {
+            return this.store.update(conversationId, { taskPullRequestEnabled: false });
+        }
+        const project = conv.taskPullRequest ?? await this.resolveDestination(conv);
+        if (!project || !this.consents) {
+            throw new Error(nls.localize('qaap/taskPullRequest/consentNoRepository', 'This task is not in a GitHub repository Qaap can open pull requests on.'));
+        }
+        this.consents.allow(this.ownerLogin(conv), project.owner, project.repo);
+        const enabled = conv.taskPullRequestEnabled === false ? this.store.update(conversationId, { taskPullRequestEnabled: true }) : conv;
+        void this.sync(conversationId);
+        return enabled;
+    }
+
+    protected ownerLogin(conv: QaapAgentConversation): string {
+        return conv.ownerLogin?.trim() || QAAP_SKIP_AUTH_USER_LOGIN;
+    }
+
     protected async syncNow(conversationId: string): Promise<void> {
         const conv = this.store.get(conversationId);
-        if (!conv || conv.archived || !this.isQuiescent(conv)) {
+        if (!conv || conv.archived || conv.taskPullRequestEnabled === false || !this.isQuiescent(conv)) {
             return;
         }
         const state = conv.taskPullRequest;
-        const turns = this.collectNewTurns(conv, state?.lastUserMessageId);
+        const restoreAt = this.latestRestoreAt(conv);
+        const userIds = new Set(conv.messages.filter(message => message.role === 'user').map(message => message.id));
+        const rebuild = !!state?.headSha && ((!!state.lastUserMessageId && !userIds.has(state.lastUserMessageId))
+            || restoreAt > (state.restoreSeenAt ?? 0));
+        const turns = this.collectNewTurns(conv, rebuild ? undefined : state?.lastUserMessageId);
         const evidenceIds = this.collectEvidenceIds(conv);
-        const latestTask = this.latestTask(conv);
-        const bodyInputBase = this.bodyInput(conv, latestTask);
+        const bodyInputBase = this.bodyInput(conv, this.latestVerdict(conv));
         const wantsRed = isTaskPullRequestRed(bodyInputBase);
         const isRed = state?.state === 'draft-needs-attention';
         const evidenceChanged = evidenceIds.join(',') !== (state?.evidenceIds ?? []).join(',');
-        if (turns.length === 0 && (!state || (state.number && !state.lastError && wantsRed === isRed && !evidenceChanged))) {
-            return;
-        }
-        const token = this.resolveToken(conv);
-        if (!token) {
-            this.logSkipOnce(conversationId, 'no GitHub token for the conversation owner');
+        if (!rebuild && turns.length === 0 && (!state || (state.number && state.state !== 'awaiting-consent' && state.state !== 'needs-sign-in'
+            && !state.lastError && wantsRed === isRed && !evidenceChanged))) {
             return;
         }
         const destination = await this.resolveDestination(conv);
@@ -242,22 +297,72 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             this.logSkipOnce(conversationId, 'the checkout is not a GitHub project clone');
             return;
         }
-        const branch = `qaap/task/${conversationId}`;
+        const freshBranch = `qaap/task/${conversationId}`;
         let current: QaapTaskPullRequest = state ?? {
             owner: destination.owner,
             repo: destination.repo,
-            branch,
+            branch: freshBranch,
             state: 'open',
             updatedAt: Date.now(),
         };
+        if (!current.headSha && !(await this.hasChange(conv.cwd, turns))) {
+            return;
+        }
+        if (!current.headSha && !this.isConsentGiven(conv, destination)) {
+            const repository = `${destination.owner}/${destination.repo}`;
+            this.recordBlocked(conversationId, state, { ...current, state: 'awaiting-consent', lastError: undefined },
+                nls.localize('qaap/taskPullRequest/traceConsent', 'PR ready: allow Qaap to open PRs on {0}?', repository));
+            return;
+        }
+        const token = this.resolveToken(conv);
+        if (!token) {
+            this.recordBlocked(conversationId, state, { ...current, state: 'needs-sign-in', lastError: this.signInMessage() },
+                this.signInMessage());
+            return;
+        }
+        if (current.state === 'awaiting-consent' || current.state === 'needs-sign-in') {
+            current = { ...current, state: 'open', lastError: current.state === 'needs-sign-in' ? undefined : current.lastError };
+        }
         try {
-            const built = await this.buildBranchHead(conv, current, turns);
+            let startTip: string | undefined = rebuild ? current.baseSha : undefined;
+            if (rebuild && !startTip) {
+                // No recorded base: start over from the remote default branch.
+                current = { ...current, headSha: undefined };
+            }
+            let force = rebuild;
+            let supersedes: number | undefined;
+            let builtOnForeignPush = false;
+            let replay = turns;
+            if (current.headSha && !rebuild) {
+                const divergence = await this.reconcileRemoteHead(conv, current, destination, token);
+                if (divergence?.resolution === 'built-on-remote') {
+                    startTip = divergence.remoteSha;
+                    builtOnForeignPush = true;
+                } else if (divergence?.resolution === 'new-branch') {
+                    supersedes = current.number;
+                    current = {
+                        ...current, branch: this.nextBranch(current.branch, freshBranch), number: undefined, url: undefined, nodeId: undefined,
+                        headSha: undefined, lastUserMessageId: undefined,
+                    };
+                    replay = this.collectNewTurns(conv, undefined);
+                    startTip = current.baseSha;
+                    force = true;
+                }
+                if (divergence) {
+                    current = { ...current, divergence };
+                }
+            }
+            if (rebuild) {
+                replay = turns;
+                current = { ...current, lastUserMessageId: undefined, rebuiltAt: Date.now() };
+            }
+            const built = await this.buildBranchHead(conv, current, replay, startTip);
             const conflictReason = built?.conflict ? nls.localize('qaap/taskPullRequest/traceConflict',
-                'the latest turn conflicts with {0} ({1}) and was not pushed', branch, built.conflict) : undefined;
+                'the latest turn conflicts with {0} ({1}) and was not pushed', current.branch, built.conflict) : undefined;
             if (conflictReason && state?.lastError === conflictReason) {
                 return;
             }
-            if (conflictReason && !state?.headSha) {
+            if (conflictReason && (!current.headSha || startTip !== undefined)) {
                 this.record(conversationId, { ...current, state: 'draft-needs-attention', lastError: conflictReason, updatedAt: Date.now() }, {
                     traceNote: nls.localize('qaap/taskPullRequest/traceFailed', 'Task pull request was not updated: {0}', conflictReason),
                 });
@@ -265,39 +370,48 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             }
             if (!built) {
                 // Nothing reached the branch yet (every turn left the tree as it was).
-                if (!state?.number) {
+                if (!current.number) {
                     return;
                 }
             } else {
                 current = { ...current, ...built.base, lastUserMessageId: built.lastUserMessageId };
-                if (built.head !== current.headSha) {
-                    await this.pushCommit(destination, token, built.head, `refs/heads/${branch}`, conv.cwd);
+                if (built.head !== current.headSha || force) {
+                    await this.withRetry(() => this.pushCommit(destination, token, built.head, `refs/heads/${current.branch}`, conv.cwd, force));
                     current = { ...current, headSha: built.head };
                 }
             }
             const conflict = built?.conflict;
             if (current.repoPrivate === undefined) {
-                current = { ...current, repoPrivate: await this.github.isPrivate(token, destination.owner, destination.repo).catch(() => false) };
+                current = {
+                    ...current,
+                    repoPrivate: await this.withRetry(() => this.github.isPrivate(token, destination.owner, destination.repo)).catch(() => false),
+                };
             }
             const screenshots = await this.publishScreenshots(conv, current, destination, token, evidenceIds);
             current = { ...current, ...screenshots.state };
             const bodyInput: QaapTaskPullRequestBodyInput = {
                 ...bodyInputBase,
+                title: conv.title,
+                publicRepository: !current.repoPrivate,
                 diffstat: await this.diffstat(conv.cwd, current.baseSha, current.headSha),
                 ...(conflict ? { conflict } : {}),
                 screenshots: screenshots.links,
                 ...(screenshots.omittedReason ? { screenshotsOmittedReason: screenshots.omittedReason } : {}),
+                ...(current.rebuiltAt ? { rebuilt: true } : {}),
+                ...(supersedes ? { supersedes } : current.divergence?.resolution === 'new-branch' && current.divergence.previousNumber
+                    ? { supersedes: current.divergence.previousNumber } : {}),
+                ...(builtOnForeignPush || current.divergence?.resolution === 'built-on-remote' ? { builtOnForeignPush: true } : {}),
             };
             const red = isTaskPullRequestRed(bodyInput);
             current = await this.upsertPullRequest(conv, current, token, bodyInput, red);
-            current = { ...current, state: red ? 'draft-needs-attention' : 'open', lastError: conflictReason, updatedAt: Date.now() };
+            current = { ...current, state: red ? 'draft-needs-attention' : 'open', lastError: conflictReason, restoreSeenAt: restoreAt, updatedAt: Date.now() };
             this.record(conversationId, current, {
                 ...(current.number ? {
                     linkedPullRequest: {
                         owner: current.owner,
                         repo: current.repo,
                         number: current.number,
-                        branch,
+                        branch: current.branch,
                         title: buildTaskPullRequestTitle(conv.title, red),
                         state: 'open' as const,
                         draft: red,
@@ -306,6 +420,11 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
                 ...(conflictReason ? { traceNote: nls.localize('qaap/taskPullRequest/traceFailed', 'Task pull request was not updated: {0}', conflictReason) } : {}),
             });
         } catch (error) {
+            if (error instanceof GithubApiError && error.status === 401) {
+                this.ownerTokens?.forget(this.ownerLogin(conv), token);
+                this.recordBlocked(conversationId, state, { ...current, state: 'needs-sign-in', lastError: this.signInMessage() }, this.signInMessage());
+                return;
+            }
             const reason = this.describeError(error);
             if (state?.lastError === reason) {
                 return;
@@ -316,16 +435,139 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         }
     }
 
+    protected signInMessage(): string {
+        return nls.localize('qaap/taskPullRequest/noToken', 'no GitHub token: sign in again');
+    }
+
+    /** Records a state that blocks the push (consent, sign-in) once; the same state again writes nothing. */
+    protected recordBlocked(conversationId: string, previous: QaapTaskPullRequest | undefined, next: Omit<QaapTaskPullRequest, 'updatedAt'>, traceNote: string): void {
+        if (previous?.state === next.state && previous.lastError === next.lastError) {
+            return;
+        }
+        this.record(conversationId, { ...next, updatedAt: Date.now() }, { traceNote });
+    }
+
+    protected isConsentGiven(conv: QaapAgentConversation, destination: QaapTaskPullRequestDestination): boolean {
+        return !!this.consents?.isAllowed(this.ownerLogin(conv), destination.owner, destination.repo);
+    }
+
+    /** True when at least one turn changed the tree (the work is "ready" for a PR). */
+    protected async hasChange(cwd: string, turns: readonly QaapTaskTurn[]): Promise<boolean> {
+        for (const turn of turns) {
+            if (!(await this.sameTree(cwd, turn.pre.commit, turn.post.commit))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** `qaap/task/<id>` → `qaap/task/<id>-2` → `-3`… */
+    protected nextBranch(branch: string, freshBranch: string): string {
+        const suffix = /-(\d+)$/.exec(branch.slice(freshBranch.length));
+        return `${freshBranch}-${suffix ? Number(suffix[1]) + 1 : 2}`;
+    }
+
+    /**
+     * Compares the remote head of the task branch with the last commit we pushed. When someone else
+     * pushed, we fetch their commit and build on top of it; when it cannot be fetched we continue on a
+     * new branch instead (never wedged). `undefined`: the remote is ours (or the branch is gone).
+     */
+    protected async reconcileRemoteHead(
+        conv: QaapAgentConversation,
+        state: QaapTaskPullRequest,
+        destination: QaapTaskPullRequestDestination,
+        token: string,
+    ): Promise<QaapTaskPullRequestDivergence | undefined> {
+        const ref = `refs/heads/${state.branch}`;
+        const remoteSha = await this.withRetry(() => this.readRemoteHead(destination, token, ref, conv.cwd));
+        if (!remoteSha || remoteSha === state.headSha) {
+            return undefined;
+        }
+        const fetched = await this.fetchRemoteHead(conv, destination, token, ref, remoteSha, state).catch(() => false);
+        if (fetched && state.headSha && await this.isAncestor(conv.cwd, state.headSha, remoteSha)) {
+            return { at: Date.now(), remoteSha, resolution: 'built-on-remote' };
+        }
+        return { at: Date.now(), remoteSha, resolution: 'new-branch', previousBranch: state.branch, ...(state.number ? { previousNumber: state.number } : {}) };
+    }
+
+    protected async isAncestor(cwd: string, ancestor: string, descendant: string): Promise<boolean> {
+        return (await this.git(cwd, ['merge-base', '--is-ancestor', ancestor, descendant])).status === 0;
+    }
+
+    protected async readRemoteHead(destination: QaapTaskPullRequestDestination, token: string, ref: string, cwd: string): Promise<string | undefined> {
+        if (destination.localRemote) {
+            const listed = await this.git(cwd, ['ls-remote', destination.localRemote, ref]);
+            if (listed.status !== 0) {
+                throw new Error(`git ls-remote failed: ${listed.stderr.trim().slice(0, 300)}`);
+            }
+            return listed.stdout.split('\n').find(line => line.endsWith(`\t${ref}`))?.split('\t')[0]?.trim() || undefined;
+        }
+        if (!this.hostedPush) {
+            throw new Error('hosted push is not available');
+        }
+        return this.hostedPush.remoteRef({ url: `https://github.com/${destination.owner}/${destination.repo}.git`, ref, token });
+    }
+
+    /**
+     * Brings the foreign remote head into the project's objects (as `refs/qaap/task-pr-remote/<id>`):
+     * a plain fetch from the e2e bare remote, or the sealed hosted fetch bundle the GitHub open flow uses
+     * (the token never reaches tenant git). `true` when the commit is now available locally.
+     */
+    protected async fetchRemoteHead(
+        conv: QaapAgentConversation,
+        destination: QaapTaskPullRequestDestination,
+        token: string,
+        ref: string,
+        remoteSha: string,
+        state: QaapTaskPullRequest,
+    ): Promise<boolean> {
+        const localRef = `refs/qaap/task-pr-remote/${conv.id}`;
+        if (destination.localRemote) {
+            await this.git(conv.cwd, ['fetch', '--quiet', '--no-tags', destination.localRemote, `+${ref}:${localRef}`]);
+        } else {
+            const hostedFetch = this.hostedFetch;
+            const objectsDirectory = destination.objectsDirectory;
+            if (!hostedFetch || !objectsDirectory) {
+                return false;
+            }
+            const clone = path.dirname(path.dirname(objectsDirectory));
+            const reposRoot = resolveQaapReposRoot();
+            const bundleFile = path.join(path.dirname(clone), `.qaap-task-pr-${randomUUID()}.bundle`);
+            try {
+                await this.withRetry(() => hostedFetch.fetchBundle({
+                    url: `https://github.com/${destination.owner}/${destination.repo}.git`,
+                    token,
+                    bundleFile,
+                    bundleRoot: reposRoot,
+                    objectsDirectory,
+                    haves: [state.headSha, state.baseSha].filter((sha): sha is string => !!sha),
+                }));
+                await this.git(conv.cwd, ['fetch', '--quiet', '--no-tags', bundleFile, `+${ref}:${localRef}`]);
+            } finally {
+                await hostedFetch.removeBundle(reposRoot, bundleFile).catch(() => undefined);
+            }
+        }
+        return (await this.git(conv.cwd, ['cat-file', '-e', `${remoteSha}^{commit}`])).status === 0;
+    }
+
+    /** Capture time of the newest checkpoint restore (the undo snapshot carries `restoredFrom`). */
+    protected latestRestoreAt(conv: QaapAgentConversation): number {
+        return Math.max(0, ...(conv.checkpoints ?? []).filter(checkpoint => !!checkpoint.restoredFrom).map(checkpoint => checkpoint.capturedAt));
+    }
+
     protected record(conversationId: string, taskPullRequest: QaapTaskPullRequest, options: QaapTaskPullRequestRecordOptions): void {
         this.store.recordTaskPullRequest(conversationId, taskPullRequest, options);
     }
 
-    /** Turns after `afterUserMessageId` that have both a pre-turn and a post-turn checkpoint. */
+    /**
+     * Turns after `afterUserMessageId` that have both a pre-turn and a post-turn checkpoint. Turns a
+     * later checkpoint restore undid, and read-only (exploratory) turns, are left out.
+     */
     protected collectNewTurns(conv: QaapAgentConversation, afterUserMessageId: string | undefined): QaapTaskTurn[] {
         const users = conv.messages.filter(message => message.role === 'user');
         const startIndex = afterUserMessageId ? users.findIndex(message => message.id === afterUserMessageId) + 1 : 0;
         const checkpoints = conv.checkpoints ?? [];
-        const turns: QaapTaskTurn[] = [];
+        const all: QaapTaskTurn[] = [];
         let previousPost: QaapConversationCheckpoint | undefined;
         for (let index = 0; index < users.length; index++) {
             const user = users[index];
@@ -333,12 +575,28 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
                 && !checkpoint.restoredFrom && !!checkpoint.commit);
             const pre = [...checkpoints].reverse().find(checkpoint => checkpoint.messageId === user.id && checkpoint.kind === 'pre-turn' && !!checkpoint.commit)
                 ?? previousPost;
-            if (index >= startIndex && post && pre) {
-                turns.push({ userMessage: user, pre, post });
+            if (post && pre) {
+                all.push({ userMessage: user, pre, post, index });
             }
             previousPost = post ?? previousPost;
         }
-        return turns;
+        const restores = checkpoints.filter(checkpoint => !!checkpoint.restoredFrom);
+        return all.filter((turn, position) => turn.index >= startIndex
+            && !turn.userMessage.turnVerdict?.readOnly
+            && !restores.some(restore => this.undoneBy(turn, position, all, restore)));
+    }
+
+    /** A restore undid `turn` when it happened after the turn and went back to a state before it. */
+    protected undoneBy(turn: QaapTaskTurn, position: number, all: readonly QaapTaskTurn[], restore: QaapConversationCheckpoint): boolean {
+        if (turn.post.capturedAt >= restore.capturedAt) {
+            return false;
+        }
+        const keptThrough = all.findIndex(candidate => candidate.post.commit === restore.restoredFrom);
+        if (keptThrough >= 0) {
+            return position > keptThrough;
+        }
+        const droppedFrom = all.findIndex(candidate => candidate.pre.commit === restore.restoredFrom);
+        return droppedFrom >= 0 && position >= droppedFrom;
     }
 
     /**
@@ -346,7 +604,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
      * `merge-tree --merge-base=<pre> <tip> <post>` keeps exactly what that turn changed. Returns
      * `undefined` when no turn changed anything and the branch does not exist yet.
      */
-    protected async buildBranchHead(conv: QaapAgentConversation, state: QaapTaskPullRequest, turns: readonly QaapTaskTurn[]): Promise<{
+    protected async buildBranchHead(conv: QaapAgentConversation, state: QaapTaskPullRequest, turns: readonly QaapTaskTurn[], startTip?: string): Promise<{
         head: string;
         base: Pick<QaapTaskPullRequest, 'baseBranch' | 'baseSha'>;
         lastUserMessageId?: string;
@@ -355,7 +613,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         const cwd = conv.cwd;
         return this.store.runSerializedGit(cwd, async () => {
             let base: Pick<QaapTaskPullRequest, 'baseBranch' | 'baseSha'> = { baseBranch: state.baseBranch, baseSha: state.baseSha };
-            let tip = state.headSha;
+            let tip = startTip ?? state.headSha;
             if (!tip) {
                 const resolved = await this.resolveBaseBranch(cwd);
                 base = resolved;
@@ -378,11 +636,13 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
                     throw new Error(`git merge-tree failed: ${(merged.stderr || merged.stdout).trim().slice(0, 300)}`);
                 }
                 if (!(await this.sameTree(cwd, tip, tree))) {
-                    tip = await this.commitTree(cwd, tree, tip, this.commitMessage(conv, turn.userMessage));
+                    const changed = await this.git(cwd, ['diff-tree', '-r', '--name-only', '--no-commit-id', tip, tree]);
+                    const paths = changed.status === 0 ? changed.stdout.split('\n').map(line => line.trim()).filter(Boolean) : [];
+                    tip = await this.commitTree(cwd, tree, tip, buildTaskPullRequestCommitMessage(conv.id, paths, this.userSetTitle(conv)));
                 }
                 lastUserMessageId = turn.userMessage.id;
             }
-            if (tip === base.baseSha && !state.headSha) {
+            if (tip === base.baseSha && !state.headSha && startTip === undefined) {
                 return conflict ? { head: tip, base, lastUserMessageId, conflict } : undefined;
             }
             await this.git(cwd, ['update-ref', `refs/qaap/task-pr/${conv.id}`, tip]);
@@ -427,10 +687,16 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         return sha;
     }
 
-    protected commitMessage(conv: QaapAgentConversation, userMessage: QaapAgentMessage): string {
-        const request = (userMessage.content ?? '').replace(/\s+/g, ' ').trim();
-        const subject = request.length > 72 ? `${request.slice(0, 71)}…` : request || conv.title;
-        return `${subject}\n\nQaap task ${conv.id}`;
+    /** The conversation title, unless it is just derived from the first prompt (then it would leak the prompt). */
+    protected userSetTitle(conv: QaapAgentConversation): string | undefined {
+        const firstUser = conv.messages.find(message => message.role === 'user');
+        const title = conv.title?.trim();
+        if (!title || (firstUser && deriveConversationTitle(firstUser.content ?? '').trim() === title)) {
+            return undefined;
+        }
+        const prompt = (firstUser?.content ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const stem = title.replace(/…$/, '').trim().toLowerCase();
+        return stem && prompt.startsWith(stem) ? undefined : title;
     }
 
     protected conflictSummary(stdout: string): string {
@@ -449,20 +715,33 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         return result.status === 0 ? result.stdout.trimEnd() : undefined;
     }
 
-    protected latestTask(conv: QaapAgentConversation): QaapAgentTask | undefined {
-        const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
-        return lastUser?.taskId ? this.store.taskRunner.list().find(task => task.id === lastUser.taskId) : undefined;
+    /**
+     * The verdict of the newest settled turn: persisted on its user message at settle time; the task
+     * runner is only a fallback (turns settled before verdicts were persisted).
+     */
+    protected latestVerdict(conv: QaapAgentConversation): Omit<QaapAgentTurnVerdict, 'settledAt'> | undefined {
+        const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnVerdict || message.taskId));
+        if (lastUser?.turnVerdict) {
+            return lastUser.turnVerdict;
+        }
+        const task = lastUser?.taskId ? this.store.taskRunner.list().find(candidate => candidate.id === lastUser.taskId) : undefined;
+        return task ? {
+            taskState: task.state,
+            ...(task.verification ? { verification: task.verification } : {}),
+            ...(task.review ? { review: task.review } : {}),
+        } : undefined;
     }
 
-    protected bodyInput(conv: QaapAgentConversation, task: QaapAgentTask | undefined): QaapTaskPullRequestBodyInput {
+    protected bodyInput(conv: QaapAgentConversation, verdict: Omit<QaapAgentTurnVerdict, 'settledAt'> | undefined): QaapTaskPullRequestBodyInput {
         const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
         const summary = lastAgent?.content?.trim()
             || (lastAgent?.segments ?? []).filter(segment => segment.type === 'text').map(segment => segment.content ?? '').join('\n').trim();
         return {
             summary,
-            ...(task?.verification ? { verification: task.verification } : {}),
-            ...(task?.review ? { review: task.review } : {}),
-            ...(task ? { taskState: task.state } : {}),
+            ...(verdict?.verification ? { verification: verdict.verification } : {}),
+            ...(verdict?.review ? { review: verdict.review } : {}),
+            ...(verdict ? { taskState: verdict.taskState } : {}),
+            ...(verdict?.blockedNeed ? { blockedNeed: verdict.blockedNeed } : {}),
         };
     }
 
@@ -479,27 +758,29 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         if (!state.headSha || !state.baseBranch) {
             return state;
         }
+        const baseBranch = state.baseBranch;
         let record: QaapGithubPullRequestRecord;
         if (!state.number) {
-            record = await this.github.createPull(token, {
-                owner: state.owner, repo: state.repo, title, head: state.branch, base: state.baseBranch, body: section, draft: red,
-            });
+            record = await this.withRetry(() => this.github.createPull(token, {
+                owner: state.owner, repo: state.repo, title, head: state.branch, base: baseBranch, body: section, draft: red,
+            }));
             if (red) {
-                await this.github.addLabel(token, state.owner, state.repo, record.number, QAAP_TASK_PR_ATTENTION_LABEL);
+                await this.withRetry(() => this.github.addLabel(token, state.owner, state.repo, record.number, QAAP_TASK_PR_ATTENTION_LABEL));
             }
         } else {
-            const existing = await this.github.getPull(token, state.owner, state.repo, state.number);
-            record = await this.github.updatePull(token, {
-                owner: state.owner, repo: state.repo, number: state.number, title, body: mergeTaskPullRequestBody(existing.body, section),
-            });
+            const pullNumber = state.number;
+            const existing = await this.withRetry(() => this.github.getPull(token, state.owner, state.repo, pullNumber));
+            record = await this.withRetry(() => this.github.updatePull(token, {
+                owner: state.owner, repo: state.repo, number: pullNumber, title, body: mergeTaskPullRequestBody(existing.body, section),
+            }));
             if (red) {
-                await this.github.addLabel(token, state.owner, state.repo, state.number, QAAP_TASK_PR_ATTENTION_LABEL);
+                await this.withRetry(() => this.github.addLabel(token, state.owner, state.repo, pullNumber, QAAP_TASK_PR_ATTENTION_LABEL));
             } else if (state.state === 'draft-needs-attention') {
-                await this.github.removeLabel(token, state.owner, state.repo, state.number, QAAP_TASK_PR_ATTENTION_LABEL);
+                await this.withRetry(() => this.github.removeLabel(token, state.owner, state.repo, pullNumber, QAAP_TASK_PR_ATTENTION_LABEL));
             }
             const nodeId = existing.nodeId ?? state.nodeId;
             if (nodeId && existing.state === 'open' && existing.draft !== red) {
-                await this.github.setDraft(token, nodeId, red);
+                await this.withRetry(() => this.github.setDraft(token, nodeId, red));
             }
         }
         return { ...state, number: record.number, url: record.url, ...(record.nodeId ? { nodeId: record.nodeId } : {}) };
@@ -550,7 +831,8 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         let evidenceSha = state.evidenceSha;
         if (!evidenceSha || evidenceIds.join(',') !== (state.evidenceIds ?? []).join(',')) {
             evidenceSha = await this.commitEvidence(conv.id, evidenceIds, state.evidenceSha);
-            await this.pushEvidence(destination, token, conv.id, evidenceSha);
+            const pushedSha = evidenceSha;
+            await this.withRetry(() => this.pushEvidence(destination, token, conv.id, pushedSha));
         }
         const links = evidenceIds.map((id, index) => ({
             url: `https://github.com/${state.owner}/${state.repo}/raw/${evidenceSha}/screenshots/${id}.png`,
@@ -607,9 +889,9 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
     }
 
     /** Pushes `sha` from the project checkout to `ref`: hosted push with the owner's token, or a plain push to the e2e bare remote. */
-    protected async pushCommit(destination: QaapTaskPullRequestDestination, token: string, sha: string, ref: string, cwd: string): Promise<void> {
+    protected async pushCommit(destination: QaapTaskPullRequestDestination, token: string, sha: string, ref: string, cwd: string, force = false): Promise<void> {
         if (destination.localRemote) {
-            const pushed = await this.git(cwd, ['push', '--quiet', '--force', destination.localRemote, `${sha}:${ref}`]);
+            const pushed = await this.git(cwd, ['push', '--quiet', destination.localRemote, `${force ? '+' : ''}${sha}:${ref}`]);
             if (pushed.status !== 0) {
                 throw new Error(`git push failed: ${pushed.stderr.trim().slice(0, 300)}`);
             }
@@ -624,6 +906,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             sha,
             ref,
             token,
+            ...(force ? { force: true } : {}),
         });
     }
 
@@ -632,7 +915,51 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         if (this.isTestMode()) {
             return process.env.QAAP_TASK_PR_TEST_TOKEN?.trim();
         }
-        return this.sessions?.findAccessTokenForLogin(conv.ownerLogin);
+        if (this.isTenantBackendMode()) {
+            // A per-tenant backend has no shared session store; the control-plane proxy hands it the
+            // owner's token per request (HMAC tenant assertion) and the auth guard keeps it in memory.
+            return this.ownerTokens?.get(conv.ownerLogin);
+        }
+        return this.sessions?.findAccessTokenForLogin(conv.ownerLogin) ?? this.ownerTokens?.get(conv.ownerLogin);
+    }
+
+    protected isTenantBackendMode(env: NodeJS.ProcessEnv = process.env): boolean {
+        return /^(1|true)$/i.test(env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '');
+    }
+
+    /** Retry delays for transient failures: `QAAP_TASK_PR_RETRY_DELAYS_MS` (comma-separated), default 2 s, 8 s, 30 s. */
+    protected retryDelaysMs(): number[] {
+        const configured = process.env.QAAP_TASK_PR_RETRY_DELAYS_MS?.split(',')
+            .map(value => Number.parseInt(value.trim(), 10))
+            .filter(value => Number.isInteger(value) && value >= 0);
+        return configured && configured.length > 0 ? configured.slice(0, 5) : [2_000, 8_000, 30_000];
+    }
+
+    /**
+     * Runs `operation`, retrying transient failures (network errors, 5xx, 429 and 403 secondary rate
+     * limits) after each of {@link retryDelaysMs}. 401, 422 and every other error fail at once.
+     */
+    protected async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+        const delays = this.retryDelaysMs();
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await operation();
+            } catch (error) {
+                if (attempt >= delays.length || !this.isRetryable(error)) {
+                    throw error;
+                }
+                await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+            }
+        }
+    }
+
+    isRetryable(error: unknown): boolean {
+        if (error instanceof GithubApiError) {
+            return error.status >= 500 || error.status === 429 || (error.status === 403 && error.rateLimited);
+        }
+        const message = error instanceof Error ? `${error.message} ${String((error as { cause?: unknown }).cause ?? '')}` : String(error);
+        return /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|timed out|Could not resolve host|Failed to connect|unable to access|The requested URL returned error: 5\d\d|HTTP 5\d\d|RPC failed|early EOF|remote end hung up/i
+            .test(message);
     }
 
     /**
