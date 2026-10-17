@@ -91,6 +91,9 @@ export function updateExtracted(ctx: QaapAgentConversationStoreContext, id: stri
         if (request.linkedPullRequest !== undefined) {
             patch.linkedPullRequest = request.linkedPullRequest ?? undefined;
         }
+        if (request.taskPullRequestEnabled !== undefined) {
+            patch.taskPullRequestEnabled = request.taskPullRequestEnabled ? undefined : false;
+        }
         if (request.agent !== undefined) {
             const normalized = ctx.taskRunner.normalizeAgentId(request.agent);
             if (!normalized) {

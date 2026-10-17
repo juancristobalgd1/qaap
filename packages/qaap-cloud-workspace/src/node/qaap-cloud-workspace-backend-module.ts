@@ -38,6 +38,7 @@ import { QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
+import { QaapTaskPullRequestConsentStore } from './qaap-task-pull-request-consent-store';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
@@ -310,6 +311,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapAgentGoalLoopRunner);
     // Task → PR with evidence (doc/qaap-task-to-pr.md): subscribes to the store at construction,
     // so it is eager via the contribution provider. `QAAP_TASK_PR=0` turns it off.
+    bind(QaapTaskPullRequestConsentStore).toSelf().inSingletonScope();
     bind(QaapTaskPullRequestService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskPullRequestService);
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();

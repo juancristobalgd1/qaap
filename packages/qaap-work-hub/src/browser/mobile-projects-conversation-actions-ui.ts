@@ -15,6 +15,7 @@ import {
     forkConversation,
     isConversationAutoApproveEnabled,
     renameConversation,
+    respondTaskPullRequestConsent,
     retryConversation,
     type QaapRetryConversationOptions,
     updateConversation,
@@ -245,6 +246,46 @@ export class MobileProjectsConversationActionsUi {
             ));
         } finally {
             this.host.transcriptAutoApproveBusy = false;
+        }
+    }
+
+    async onSetConversationTaskPullRequest(summary: QaapAgentConversationSummaryDTO, enabled: boolean): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        try {
+            const full = await updateConversation(summary.id, { taskPullRequestEnabled: enabled });
+            this.host.conversations?.recordSnapshot(conversationToSummary(full));
+            this.host.renderList();
+            MobileSnackbar.show(
+                enabled
+                    ? nls.localize('qaap/mobileProjects/taskPrEnabled', 'Qaap will open a pull request when this task is done')
+                    : nls.localize('qaap/mobileProjects/taskPrDisabled', 'No pull request for this task'),
+                { kind: 'success', duration: 2200 },
+            );
+        } catch (error) {
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/taskPrToggleFailed',
+                'Could not change "Create PR when done": {0}',
+                error instanceof Error ? error.message : String(error),
+            ));
+        }
+    }
+
+    async onRespondTaskPullRequestConsent(summary: QaapAgentConversationSummaryDTO, allow: boolean): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        try {
+            const full = await respondTaskPullRequestConsent(summary.id, allow);
+            this.host.conversations?.recordSnapshot(conversationToSummary(full));
+            this.host.renderList();
+            if (allow) {
+                MobileSnackbar.show(nls.localize('qaap/mobileProjects/taskPrAllowed', 'Allowed: Qaap is opening the pull request'),
+                    { kind: 'success', duration: 2200 });
+            }
+        } catch (error) {
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/taskPrConsentFailed',
+                'Could not answer the pull request question: {0}',
+                error instanceof Error ? error.message : String(error),
+            ));
         }
     }
 

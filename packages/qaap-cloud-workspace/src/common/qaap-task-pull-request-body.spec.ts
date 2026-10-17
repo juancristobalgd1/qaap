@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    buildTaskPullRequestCommitMessage,
     buildTaskPullRequestEvidenceSection,
     buildTaskPullRequestTitle,
     isTaskPullRequestRed,
@@ -95,5 +96,50 @@ describe('qaap-task-pull-request-body', () => {
         expect(buildTaskPullRequestTitle('Add login', true)).to.equal('[needs attention] Add login');
         expect(buildTaskPullRequestTitle('[needs attention] Add login', true)).to.equal('[needs attention] Add login');
         expect(buildTaskPullRequestTitle('[needs attention] Add login', false)).to.equal('Add login');
+    });
+
+    it('keeps the agent\'s words out of a public repository\'s body', () => {
+        const section = buildTaskPullRequestEvidenceSection({
+            publicRepository: true,
+            title: 'Add login',
+            summary: 'I read /home/alice/.env and fixed the login form',
+            diffstat: ' login.ts | 3 +++',
+            verification: { status: 'failed', command: 'npm test', attempts: 1, summary: 'stack trace with /home/alice/secret-path' },
+            review: { status: 'failed', reason: 'The patch leaks the session cookie' },
+            blockedNeed: 'Paste your API key',
+        });
+        expect(section).to.contain('Qaap task: Add login.');
+        expect(section).to.contain('login.ts');
+        expect(section).to.contain('Failing: `npm test`');
+        expect(section).to.contain('Rejected');
+        expect(section).not.to.contain('/home/alice');
+        expect(section).not.to.contain('session cookie');
+        expect(section).not.to.contain('Paste your API key');
+    });
+
+    it('scrubs obvious secrets from a private repository\'s body', () => {
+        const section = buildTaskPullRequestEvidenceSection({
+            summary: 'Configured it with token ghp_abcdefghijklmnopqrstuvwxyz0123456789 and API_KEY=sk-live-123',
+            verification: { status: 'failed', command: 'npm test', attempts: 1, summary: 'Authorization: Bearer abc.def.ghi' },
+        });
+        expect(section).not.to.contain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+        expect(section).not.to.contain('sk-live-123');
+        expect(section).not.to.contain('abc.def.ghi');
+        expect(section).to.contain('[REDACTED]');
+    });
+
+    it('notes a rebuilt branch and a superseded PR', () => {
+        const section = buildTaskPullRequestEvidenceSection({ rebuilt: true, supersedes: 4, builtOnForeignPush: true });
+        expect(section).to.contain('rebuilt from its base');
+        expect(section).to.contain('Supersedes #4');
+        expect(section).to.contain('on top of theirs');
+    });
+
+    it('builds a neutral commit message: a user-set title or the changed files, never the prompt', () => {
+        expect(buildTaskPullRequestCommitMessage('c1', ['a.ts'], '[needs attention] Add login\nform')).to.equal('Qaap task: Add login form\n\nQaap task c1');
+        expect(buildTaskPullRequestCommitMessage('c1', ['src/a.ts', 'b.ts'])).to.equal('Qaap task: update src/a.ts, b.ts\n\nQaap task c1');
+        expect(buildTaskPullRequestCommitMessage('c1', ['a', 'b', 'c', 'd', 'e']).split('\n')[0]).to.equal('Qaap task: update a, b, c +2');
+        expect(buildTaskPullRequestCommitMessage('c1', [], 'Use password=hunter2 here')).not.to.contain('hunter2');
+        expect(buildTaskPullRequestCommitMessage('c1', [], 'x'.repeat(200)).split('\n')[0].length).to.be.at.most(72);
     });
 });

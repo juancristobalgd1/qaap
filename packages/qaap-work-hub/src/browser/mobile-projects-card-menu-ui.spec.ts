@@ -188,6 +188,52 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
     });
 });
 
+describe('MobileProjectsCardMenuUi task pull request items', () => {
+
+    useSuiteJSDOM();
+
+    function menuFor(summary: Record<string, unknown>, calls: string[]): HTMLElement {
+        const host = {
+            chatService: undefined,
+            conversations: undefined,
+            conversationIndexUi: { resolveConversationFlags: () => ({ priority: false, paused: false }) },
+            conversationFlags: {},
+            ensureOverlayUi: () => ({ parallel: { openVariantChooseSheet: () => undefined } }),
+            onSetConversationTaskPullRequest: async (_summary: unknown, enabled: boolean) => { calls.push(`enabled:${enabled}`); },
+            onRespondTaskPullRequestConsent: async (_summary: unknown, allow: boolean) => { calls.push(`allow:${allow}`); },
+        } as unknown as MobileProjectsCardMenuHost;
+        return new MobileProjectsCardMenuUi(host).buildConversationMenu(project({ id: 'alpha' }), {
+            id: 'c1', title: 'T', status: 'idle', createdAt: 1, updatedAt: 2, messageCount: 2, agentId: 'qaiq', cwd: '/repo', source: 'vps',
+            ...summary,
+        } as never);
+    }
+
+    function click(menu: HTMLElement, label: string): void {
+        const item = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')].find(entry => entry.textContent?.trim() === label);
+        expect(item, label).to.not.equal(undefined);
+        (item as HTMLElement).click();
+    }
+
+    it('toggles "Create PR when done", on by default', () => {
+        const calls: string[] = [];
+        const menu = menuFor({}, calls);
+        expect(menu.querySelector('.codicon-check')).to.not.equal(null);
+        click(menu, 'Create PR when done');
+        click(menuFor({ taskPullRequestEnabled: false }, calls), 'Create PR when done');
+        expect(calls).to.deep.equal(['enabled:false', 'enabled:true']);
+    });
+
+    it('offers Allow / Not now while the task PR waits for consent', () => {
+        const calls: string[] = [];
+        const pr = { owner: 'acme', repo: 'demo', branch: 'qaap/task/c1', state: 'awaiting-consent', updatedAt: 1 };
+        click(menuFor({ taskPullRequest: pr }, calls), 'Allow PRs on acme/demo');
+        click(menuFor({ taskPullRequest: pr }, calls), 'Not now');
+        expect(calls).to.deep.equal(['allow:true', 'allow:false']);
+        const open = menuFor({ taskPullRequest: { ...pr, state: 'open' } }, calls);
+        expect([...open.querySelectorAll('.theia-mobile-projects-card-menu-item')].map(item => item.textContent?.trim())).not.to.include('Not now');
+    });
+});
+
 describe('MobileProjectsCardMenuUi.toggleCardMenu', () => {
 
     useSuiteJSDOM();

@@ -104,6 +104,28 @@ only valid objects reachable from the pushed commit go to the project's own GitH
 only objects reachable from GitHub's refs (minus the project's tips) go into the bundle. We accept
 this.
 
+### Task pull requests (request-less)
+
+`QaapTaskPullRequestService` (qaap-cloud-workspace) pushes task branches and opens PRs after a turn
+settles, with no HTTP request in flight. It never gives the token to an agent and uses the same sealed
+paths: `QaapHostedGitPush.push` (task branch, force only for a branch it rebuilt; `refs/qaap/evidence/*`),
+`QaapHostedGitPush.remoteRef` (sealed `ls-remote` before each push, to detect someone else's push) and
+`QaapHostedGitFetch.fetchBundle` (to bring a foreign push into the project before building on it).
+
+Where the token comes from:
+
+- **Shared control plane** (no per-tenant backends): `QaapGithubSessionStore.findAccessTokenForLogin`.
+- **Per-tenant backend** (`QAAP_BACKEND_PER_TENANT=1`, the tenant container runs with
+  `QAAP_TENANT_BACKEND_MODE=1`): there is no shared session store. The control-plane proxy forwards the
+  owner's token on every request inside the short-lived HMAC assertion (`x-qaap-tenant-assertion`,
+  30 s TTL, `githubAccessToken`), exactly as diff-review's commit-push gets it. `QaapGithubAuthGuard`
+  records the token of each verified assertion in `QaapGithubOwnerTokenCache`: backend heap only, never
+  on disk, never in an agent's env, dropped after 12 h without a request and on a GitHub 401. The tenant
+  backend serves exactly one login, so the cache holds one token. The tenant-local session store is not
+  read in this mode (agents can write it).
+- Without a token the conversation shows "no GitHub token: sign in again" (state `needs-sign-in` plus a
+  timeline note) instead of failing silently.
+
 ## Why not a git process as the agent uid with the token
 
 Any process of the same uid can read `/proc/<pid>/environ`, open its fds and (depending on

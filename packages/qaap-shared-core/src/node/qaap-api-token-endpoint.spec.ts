@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapGithubOwnerTokenCache } from './qaap-github-owner-token-cache';
 import {
     QAAP_TENANT_BACKEND_ASSERTION_HEADER,
     QAAP_TENANT_BACKEND_MODE_ENV,
@@ -236,7 +237,12 @@ describe('QaapApiTokenEndpoint (personal API tokens)', () => {
                 user: { provider: 'github', login: 'alice', name: 'Alice' },
                 githubAccessToken: 'gh-alice',
             }, secret);
+            const ownerTokens = new QaapGithubOwnerTokenCache();
+            Object.assign(guard, { ownerTokens });
+            expect(ownerTokens.get('alice')).to.equal(undefined);
             expect(guard.authenticate({ headers: { [QAAP_TENANT_BACKEND_ASSERTION_HEADER]: assertion } }).kind).to.equal('authenticated');
+            // Request-less task pull requests in this tenant backend reuse the token of the verified assertion.
+            expect(ownerTokens.get('Alice')).to.equal('gh-alice');
         } finally {
             keys.forEach((key, index) => {
                 if (saved[index] === undefined) {

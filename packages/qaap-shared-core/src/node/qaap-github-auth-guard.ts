@@ -27,6 +27,7 @@ import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qa
 import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task-client';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
+import { QaapGithubOwnerTokenCache } from './qaap-github-owner-token-cache';
 import { isRealPathUnder } from './qaap-realpath-guard';
 import {
     QAAP_TENANT_BACKEND_ASSERTION_HEADER,
@@ -96,6 +97,10 @@ export class QaapGithubAuthGuard {
     @inject(QaapApiTokenStore) @optional()
     protected readonly apiTokens: QaapApiTokenStore | undefined;
 
+    /** Keeps the owner's token from verified tenant assertions for request-less work (task pull requests). */
+    @inject(QaapGithubOwnerTokenCache) @optional()
+    protected readonly ownerTokens: QaapGithubOwnerTokenCache | undefined;
+
     protected readonly reposRoot = resolveQaapReposRoot();
 
     // Only `req.headers` is ever read on this path (see `authenticateTenantBackend` and
@@ -153,6 +158,7 @@ export class QaapGithubAuthGuard {
         if (!payload) {
             return undefined;
         }
+        this.ownerTokens?.remember(payload.tenantLogin, payload.githubAccessToken);
         return {
             kind: 'authenticated',
             sessionId: `tenant-backend:${payload.tenantLogin.toLowerCase()}`,

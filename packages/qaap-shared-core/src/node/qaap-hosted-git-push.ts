@@ -18,6 +18,8 @@ export interface QaapHostedGitPushRequest {
     readonly ref: string;
     /** The signed-in user's GitHub token. Lives only in this backend and the push child's env. */
     readonly token: string;
+    /** Force the update (`+<sha>:<ref>`): only for refs the backend owns (task branches it rebuilt). */
+    readonly force?: boolean;
 }
 
 /**
@@ -37,12 +39,41 @@ export class QaapHostedGitPush extends QaapSealedGithubGit {
                 '--git-dir', scratch,
                 ...this.sealedConfig(),
                 ...this.credentialConfig(request.token),
-                'push', '--porcelain', request.url, `${request.sha}:${request.ref}`,
+                'push', '--porcelain', request.url, `${request.force ? '+' : ''}${request.sha}:${request.ref}`,
             ], {
                 ...this.baseEnv(scratch),
                 GIT_ALTERNATE_OBJECT_DIRECTORIES: request.objectsDirectory,
                 ...this.credentialEnv(request.token),
             });
+        } finally {
+            await this.removeScratch(scratch);
+        }
+    }
+
+    /**
+     * The commit `ref` points to on GitHub (`git ls-remote`, sealed like the push), or `undefined`
+     * when the ref does not exist.
+     */
+    async remoteRef(request: { readonly url: string; readonly ref: string; readonly token: string }): Promise<string | undefined> {
+        if (!this.isAllowedUrl(request.url) || !this.isAllowedRef(request.ref)) {
+            throw new Error('Hosted ls-remote only reads a branch or evidence ref of a GitHub repository.');
+        }
+        this.assertValidToken(request.token, true);
+        const scratch = await this.createScratch('qaap-ls-remote-');
+        try {
+            await this.runGit(['init', '--bare', '--quiet', '--template=', scratch], this.baseEnv(scratch));
+            const output = await this.runGit([
+                '--git-dir', scratch,
+                ...this.sealedConfig(),
+                ...this.credentialConfig(request.token),
+                'ls-remote', request.url, request.ref,
+            ], {
+                ...this.baseEnv(scratch),
+                ...this.credentialEnv(request.token),
+            });
+            const line = output.split('\n').find(entry => entry.endsWith(`\t${request.ref}`));
+            const sha = line?.split('\t')[0]?.trim();
+            return sha && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(sha) ? sha : undefined;
         } finally {
             await this.removeScratch(scratch);
         }
