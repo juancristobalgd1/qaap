@@ -33,6 +33,13 @@ describe('classifyMissionControlLane', () => {
         expect(classifyMissionControlLane(summary({ status: 'streaming' }), true)).to.equal('running');
     });
 
+    it('classifies a task pull request that needs attention as needs-you, a green one by read state', () => {
+        const pr = { owner: 'acme', repo: 'demo', number: 3, url: 'https://github.com/acme/demo/pull/3', branch: 'qaap/task/c1', updatedAt: 1 };
+        expect(classifyMissionControlLane(summary({ taskPullRequest: { ...pr, state: 'draft-needs-attention' } }), false)).to.equal('needs-you');
+        expect(classifyMissionControlLane(summary({ taskPullRequest: { ...pr, state: 'open', lastError: 'Bad credentials' } }), false)).to.equal('needs-you');
+        expect(classifyMissionControlLane(summary({ taskPullRequest: { ...pr, state: 'open' } }), false)).to.equal('done');
+    });
+
     it('classifies a failed conversation as needs-you', () => {
         expect(classifyMissionControlLane(summary({ status: 'failed' }), false)).to.equal('needs-you');
     });

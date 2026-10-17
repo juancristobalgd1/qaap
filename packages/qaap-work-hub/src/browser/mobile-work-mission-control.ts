@@ -6,6 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { taskPullRequestNeedsAttention } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import {
     buildMissionControlRowFingerprint,
     buildMissionControlStructureFingerprint,
@@ -53,6 +54,14 @@ export interface MissionControlItem {
     readonly hasPullRequest: boolean;
     /** Classified agent/API failure when the conversation last turn failed. */
     readonly failureKind?: QaapAgentFailureKind;
+    /** The task pull request the backend opened is red (draft, labelled) or could not be updated. */
+    readonly pullRequestAttention?: MissionControlPullRequestAttention;
+}
+
+/** Link and number of a task pull request that needs the human. */
+export interface MissionControlPullRequestAttention {
+    readonly number?: number;
+    readonly url?: string;
 }
 
 /** Single-axis classification used by the "Chats / Tasks / PRs" filter. */
@@ -96,6 +105,9 @@ export function classifyMissionControlLane(
         return 'running';
     }
     if (isFailedRunSummary(summary)) {
+        return 'needs-you';
+    }
+    if (taskPullRequestNeedsAttention(summary.taskPullRequest)) {
         return 'needs-you';
     }
     if (summary.priority) {
@@ -530,6 +542,8 @@ export class MobileWorkMissionControl {
             titleRow.append(this.createProgressChip(item));
         } else if (item.failureKind) {
             titleRow.append(this.createFailureChip(item.failureKind));
+        } else if (item.pullRequestAttention) {
+            titleRow.append(this.createPullRequestAttentionChip(item.pullRequestAttention));
         }
 
         const meta = document.createElement('span');
@@ -611,6 +625,29 @@ export class MobileWorkMissionControl {
                 break;
             default:
                 chip.textContent = nls.localize('qaap/workMissionControl/failedChip', 'Failed');
+        }
+        return chip;
+    }
+
+    /**
+     * Reuses the failure chip look; when the PR exists it opens it on GitHub (the row itself still
+     * opens the conversation).
+     */
+    protected createPullRequestAttentionChip(attention: MissionControlPullRequestAttention): HTMLElement {
+        const chip = document.createElement('span');
+        chip.className = 'theia-mobile-mission-control-failure-chip theia-mod-pr-attention';
+        chip.textContent = attention.number
+            ? nls.localize('qaap/workMissionControl/prAttentionChip', 'PR #{0} needs attention', String(attention.number))
+            : nls.localize('qaap/workMissionControl/prAttentionNoNumberChip', 'PR needs attention');
+        const url = attention.url;
+        if (url && /^https:\/\//.test(url)) {
+            chip.setAttribute('role', 'link');
+            chip.title = url;
+            chip.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                window.open(url, '_blank', 'noopener');
+            });
         }
         return chip;
     }

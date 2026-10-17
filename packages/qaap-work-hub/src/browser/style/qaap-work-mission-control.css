@@ -152,6 +152,16 @@
   background: color-mix(in srgb, var(--theia-warningForeground, #c77c00) 16%, transparent);
 }
 
+.theia-mobile-mission-control-failure-chip.theia-mod-pr-attention {
+  color: var(--theia-warningForeground, #c77c00);
+  background: color-mix(in srgb, var(--theia-warningForeground, #c77c00) 16%, transparent);
+}
+
+.theia-mobile-mission-control-failure-chip.theia-mod-pr-attention[role="link"] {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .theia-mobile-mission-control-row.theia-mod-failure-quota::before {
   background: var(--theia-warningForeground, #c77c00);
 }

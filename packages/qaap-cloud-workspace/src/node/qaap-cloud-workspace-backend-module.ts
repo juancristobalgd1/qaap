@@ -37,6 +37,7 @@ import { QaapConversationReadMarkStore } from './qaap-conversation-read-mark-sto
 import { QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
+import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
@@ -307,6 +308,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // budgets from onStart — eager via the contribution provider.
     bind(QaapAgentGoalLoopRunner).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentGoalLoopRunner);
+    // Task → PR with evidence (doc/qaap-task-to-pr.md): subscribes to the store at construction,
+    // so it is eager via the contribution provider. `QAAP_TASK_PR=0` turns it off.
+    bind(QaapTaskPullRequestService).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTaskPullRequestService);
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);
     // Per-user read marks behind the Work Hub unread dot (shared by every device of the user).
