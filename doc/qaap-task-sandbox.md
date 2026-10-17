@@ -1,6 +1,7 @@
 # Per-task ephemeral sandbox (roadmap H2.2)
 
-Status: behind `QAAP_TASK_SANDBOX=1` (default off) in two modes: **direct** (v1, the backend
+Status: **on in production since Oct 17 2026** (broker mode, see "Production rollout"). Behind
+`QAAP_TASK_SANDBOX=1` (default off) in two modes: **direct** (v1, the backend
 drives a Docker daemon it can reach) and **broker** (production, `QAAP_BACKEND_PER_TENANT=1`: the
 control plane creates sandboxes for tenant backends that have no Docker socket). Code:
 `packages/qaap-cloud-workspace/src/node/qaap-task-sandbox*.ts`, `qaap-devcontainer-config.ts`.
@@ -397,6 +398,19 @@ The control plane reads `QAAP_TASK_SANDBOX` (and the broker limits in the table 
   Tenant backends are recreated without it, and the broker reaps the sandboxes of tenants it no
   longer routes. To check for leftovers, run
   `docker ps -a --filter label=com.qaap.task-sandbox.broker=true` on the rootless daemon.
+
+**Production result (Oct 17 2026, build `11182b16b`, after #287).** The deploy's post-deploy agent
+smoke (run 39024182157) passed. Its turn (task `3f6f6af1…`, `qaiq` on `jcristgd/OpenDots`) ran in
+broker sandbox `qaap-task-6e835751c058`:
+
+- Startup: 8.0 s, cold. This was the first sandbox on the new image, so it includes populating the
+  toolchain volume.
+- The turn completed in 33 s with the expected reply.
+- The sandbox was gone 10 min after the turn ended (default linger).
+
+The three deploys before #287 failed this smoke: the exec server was unreachable over the egress
+bridge (see "Exec server address" above). Not yet verified in production: two parallel tasks from
+the Work Hub UI with both previews.
 
 ## Flags
 
