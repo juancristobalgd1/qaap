@@ -9,7 +9,8 @@
 //     read-only rootfs, on a per-tenant INTERNAL network (+ an ingress network for the link). It
 //     runs the compiled QaapTaskSandboxService / QaapTaskSandboxBrokerClient / QaapTenantSpawnService
 //     from this checkout (bind-mounted read-only) under QAAP_TENANT_BACKEND_MODE=1.
-//   - sandboxes: created by the broker on the tenant internal network, with the tenant roots bound
+//   - sandboxes: created by the broker on the tenant internal network (plus an enable_icc=false
+//     direct-egress network, as in production), with the tenant roots bound
 //     at the tenant backend's paths and the exec server from the read-only toolchain volume.
 //
 // Inside the tenant backend the harness, for TWO worktrees at once:
@@ -75,6 +76,10 @@ writeFileSync(join(roots.config, 'agent-home', '.claude', 'credentials.json'), '
 
 const internalNet = `${NAMESPACE}-tenant`;
 const ingressNet = `${NAMESPACE}-ingress`;
+// Production's direct-egress bridge: it has enable_icc=false, so containers on it cannot reach each
+// other. The tenant backend and every sandbox sit on it AND on the internal network; the exec server
+// must be reached on the internal one (Oct 17 2026: by name, Docker DNS answered with the egress IP).
+const egressNet = `${NAMESPACE}-egress`;
 const tenantName = `${NAMESPACE}-backend`;
 const nodeModules = realpathSync(join(ROOT, 'node_modules'));
 const mountsForCode = [...new Set([ROOT, dirname(nodeModules)])];
@@ -84,6 +89,7 @@ const HARNESS = join(import.meta.dirname, 'qaap-task-sandbox-broker-e2e-harness.
 async function main() {
     docker$('network', 'create', '--internal', '--label', `com.qaap.e2e=${RUN}`, internalNet);
     docker$('network', 'create', '--label', `com.qaap.e2e=${RUN}`, ingressNet);
+    docker$('network', 'create', '--label', `com.qaap.e2e=${RUN}`, '-o', 'com.docker.network.bridge.enable_icc=false', egressNet);
     const backend = [
         'run', '-d', '--name', tenantName, '--label', `com.qaap.e2e=${RUN}`,
         '--network', ingressNet, '-p', '127.0.0.1::4873',
@@ -100,6 +106,7 @@ async function main() {
     ];
     docker$(...backend);
     docker$('network', 'connect', internalNet, tenantName);
+    docker$('network', 'connect', egressNet, tenantName);
     const port = Number(docker$('port', tenantName, '4873/tcp').split(':').pop());
     log(`tenant backend ${tenantName} (no Docker socket, cap-drop ALL, read-only) published on 127.0.0.1:${port}`);
 
@@ -114,7 +121,7 @@ async function main() {
         })),
         listTenantBackendTargets: () => [{ containerId: tenantName, containerName: tenantName, host: '127.0.0.1', port, tenantLogin: TENANT }],
         taskSandboxPlacement: async () => ({
-            docker, image: IMAGE, user: '1001:1001', network: internalNet, directEgressNetwork: undefined, egressEnv: {},
+            docker, image: IMAGE, user: '1001:1001', network: internalNet, directEgressNetwork: egressNet, egressEnv: {},
             roots: [
                 { kind: 'repos', backendPath: `/workspace/repos/users/${TENANT}`, hostPath: roots.repos, source: roots.repos },
                 { kind: 'worktrees', backendPath: `/tmp/qaap-worktrees/${TENANT}`, hostPath: roots.worktrees, source: roots.worktrees },
@@ -184,7 +191,7 @@ function cleanup() {
         }
     })();
     quiet('rm', '-f', tenantName, ...names);
-    quiet('network', 'rm', internalNet, ingressNet);
+    quiet('network', 'rm', internalNet, ingressNet, egressNet);
     try {
         for (const volume of docker$('volume', 'ls', '-q', '--filter', `label=com.qaap.agent-toolchain=true`).split('\n').filter(name => name.startsWith(NAMESPACE))) {
             quiet('volume', 'rm', volume);

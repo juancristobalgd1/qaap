@@ -261,7 +261,7 @@ describe('task sandbox exec server and local client (real processes)', function 
 class FakeDocker {
     readonly created: Array<Record<string, unknown>> = [];
     readonly removed: string[] = [];
-    readonly containers = new Map<string, { labels: Record<string, string>; env: string[]; running: boolean; image: string }>();
+    readonly containers = new Map<string, { labels: Record<string, string>; env: string[]; running: boolean; image: string; networks: Record<string, string> }>();
     readonly volumes: Array<Record<string, unknown>> = [];
     readonly connected: string[] = [];
     readonly presentImages = new Set(['qaap-theia:test']);
@@ -271,10 +271,11 @@ class FakeDocker {
     failImage: string | undefined;
     modem = { followProgress: (_stream: unknown, done: (error: Error | null) => void) => done(null) };
 
-    createContainer(config: { name?: string; Image: string; Labels?: Record<string, string>; Env?: string[] }): unknown {
+    createContainer(config: { name?: string; Image: string; Labels?: Record<string, string>; Env?: string[]; HostConfig?: { NetworkMode?: string } }): unknown {
         this.created.push(config as unknown as Record<string, unknown>);
         const name = config.name ?? `helper-${this.created.length}`;
-        this.containers.set(name, { labels: config.Labels ?? {}, env: config.Env ?? [], running: false, image: config.Image });
+        const networks: Record<string, string> = config.HostConfig?.NetworkMode ? { [config.HostConfig.NetworkMode]: `172.24.0.${this.created.length + 1}` } : {};
+        this.containers.set(name, { labels: config.Labels ?? {}, env: config.Env ?? [], running: false, image: config.Image, networks });
         return this.getContainer(name);
     }
 
@@ -312,7 +313,11 @@ class FakeDocker {
                 if (!container) {
                     throw Object.assign(new Error('no such container'), { statusCode: 404 });
                 }
-                return { Config: { Labels: container.labels, Env: container.env, Image: container.image }, State: { Running: container.running, ExitCode: 127 } };
+                return {
+                    Config: { Labels: container.labels, Env: container.env, Image: container.image },
+                    State: { Running: container.running, ExitCode: 127 },
+                    NetworkSettings: { Networks: Object.fromEntries(Object.entries(container.networks).map(([network, IPAddress]) => [network, { IPAddress }])) },
+                };
             },
         };
     }
@@ -343,7 +348,15 @@ class FakeDocker {
     }
 
     getNetwork(network: string): unknown {
-        return { connect: async ({ Container }: { Container: string }) => this.connected.push(`${network}:${Container}`) };
+        return {
+            connect: async ({ Container }: { Container: string }) => {
+                this.connected.push(`${network}:${Container}`);
+                const container = this.containers.get(Container);
+                if (container) {
+                    container.networks[network] = `172.25.0.${this.connected.length + 1}`;
+                }
+            },
+        };
     }
 
     pull(image: string, callback: (error: Error | undefined, stream?: unknown) => void): void {
@@ -427,7 +440,11 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
             User: string; Entrypoint: string[]; Env: string[]; Labels: Record<string, string>; WorkingDir: string;
             HostConfig: { Binds: string[]; CapDrop: string[]; SecurityOpt: string[]; NetworkMode: string; ReadonlyRootfs: boolean; Init: boolean; Privileged?: boolean };
         };
-        expect(sandbox).to.include({ root: args.root, host: sandbox.name, port: 7391, created: true, imageKind: 'base' });
+        // The exec server is reached on the INTERNAL network's address, never by name: Docker DNS may
+        // answer with the direct-egress address, and that bridge drops container-to-container traffic.
+        const internalAddress = docker.containers.get(sandbox.name)!.networks['qaap-tenant-net-alice'];
+        expect(internalAddress).to.match(/^172\.24\./);
+        expect(sandbox).to.include({ root: args.root, host: internalAddress, port: 7391, created: true, imageKind: 'base' });
         expect(sandbox.token).to.have.length.greaterThan(40);
         expect(config.User).to.equal('1001:1001');
         expect(config.WorkingDir).to.equal(args.root);
@@ -455,7 +472,7 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         expect(config.Env).to.include('QAAP_SANDBOX_HOME_LINKS=[{"name":".claude","target":"/home/theia/.qaap/agent/.claude"}]');
         // A second create for the same root reuses the running sandbox and its token.
         const again = await broker.create('alice', args);
-        expect(again).to.include({ name: sandbox.name, token: sandbox.token, created: false });
+        expect(again).to.include({ name: sandbox.name, token: sandbox.token, host: internalAddress, created: false });
         // A restarted control plane no longer knows the token: it recreates instead of guessing.
         const restarted = new QaapTaskSandboxBroker();
         (restarted as unknown as { orchestrator: unknown }).orchestrator = (broker as unknown as { orchestrator: unknown }).orchestrator;
@@ -463,6 +480,21 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         const recreated = await restarted.create('alice', args);
         expect(recreated.created).to.equal(true);
         expect(recreated.token).to.not.equal(sandbox.token);
+    });
+
+    it('returns the internal-network address of the exec server, and the name only without an egress network', async () => {
+        const root = '/tmp/qaap-worktrees/alice/repo-1';
+        const name = broker.containerName('alice', root);
+        const placement = placementFor('alice');
+        const describe = (inspect: unknown, withEgress: boolean): string => (broker as unknown as {
+            execServerHost(name: string, placement: QaapTaskSandboxPlacement, inspect: unknown): string;
+        }).execServerHost(name, withEgress ? placement : { ...placement, directEgressNetwork: undefined }, inspect);
+        const networks = { 'qaap-tenant-egress-alice': { IPAddress: '172.25.0.3' }, 'qaap-tenant-net-alice': { IPAddress: '172.24.0.4' } };
+        expect(describe({ NetworkSettings: { Networks: networks } }, true)).to.equal('172.24.0.4');
+        expect(() => describe({ NetworkSettings: { Networks: { 'qaap-tenant-egress-alice': networks['qaap-tenant-egress-alice'] } } }, true))
+            .to.throw(/no address on the tenant network/);
+        // Only one network: its DNS name can resolve to nothing else.
+        expect(describe({ NetworkSettings: { Networks: {} } }, false)).to.equal(name);
     });
 
     it('pulls a missing devcontainer image only when allowlisted, and caps pulls per tenant', async () => {
