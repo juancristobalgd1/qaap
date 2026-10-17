@@ -8,6 +8,7 @@ import { evaluateBenchmark, renderBenchmarkMarkdown } from './qaap-agent-benchma
 
 const TERMINAL_WORKFLOW_STATUSES = new Set(['succeeded', 'failed', 'budget-exhausted']);
 const CONVERSATIONS_API_PATH = '/qaap/api/agent-conversations';
+const TERMINAL_TASK_STATES = new Set(['completed', 'completed_with_warnings', 'blocked', 'failed', 'interrupted', 'cancelled']);
 const SUITE_BUDGET_EXHAUSTED = 'suite-budget-exhausted';
 const DEFAULT_PROCESS_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
@@ -775,9 +776,11 @@ async function runQaapConversationSystem(system, task, context, runDir) {
             cwd,
             agent: system.agent ?? 'claude',
             isolation: 'none',
+            // Unattended: nobody can answer a permission prompt, so edits must be pre-approved.
+            autoApprove: system.autoApprove !== false,
             title: `benchmark ${task.id}`,
             message: context.prompt,
-            ...(system.model ? { model: system.model } : {}),
+            ...(system.requestModel ? { model: system.requestModel } : {}),
         }),
         headers,
     }, 30_000);
@@ -819,10 +822,23 @@ async function runQaapConversationSystem(system, task, context, runDir) {
     const taskDetails = [];
     for (const taskId of taskIds) {
         try {
-            taskDetails.push(await fetchJson(
-                joinUrl(baseUrl, `/qaap/api/agent-tasks/${encodeURIComponent(taskId)}`),
-                { headers },
-            ));
+            // A settled conversation can still have a task in its verification / review phase: wait for a
+            // terminal task state so the verdicts exist before they are recorded.
+            let detail;
+            for (;;) {
+                detail = await fetchJson(
+                    joinUrl(baseUrl, `/qaap/api/agent-tasks/${encodeURIComponent(taskId)}`),
+                    { headers },
+                );
+                if (TERMINAL_TASK_STATES.has(detail.state) || Date.now() >= deadline) {
+                    break;
+                }
+                await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+            }
+            if (!TERMINAL_TASK_STATES.has(detail.state)) {
+                timedOut = true;
+            }
+            taskDetails.push(detail);
         } catch (error) {
             taskDetails.push({ id: taskId, detailError: error instanceof Error ? error.message : String(error) });
         }

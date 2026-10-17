@@ -2,9 +2,16 @@
 # default product path (agent conversations) against a locally started backend, graded by hidden oracles.
 #
 # Opt-in: the job does nothing unless the repository secret QAAP_BENCHMARK_ANTHROPIC_API_KEY exists, so
-# forks and repositories without the key stay green and free. Spend is capped per run by
-# QAAP_BENCHMARK_MAX_COST_USD (default 5): once exceeded, the remaining tasks are recorded as
-# `suite-budget-exhausted` without launching the agent.
+# forks and repositories without the key stay green and free.
+#
+# Spend control (the per-task cost is not a hard budget, the agent task API does not record it):
+#   1. The key SHOULD belong to an Anthropic workspace with a monthly spend limit: that is the real cap.
+#   2. A cheap model is pinned through ANTHROPIC_MODEL (repository variable QAAP_BENCHMARK_MODEL,
+#      default claude-haiku-5-5).
+#   3. Each task has a 10 minute wall-time budget (the conversation is cancelled past it).
+#   4. Best effort: cost is harvested from the claude `result` event in the task log when present, and once
+#      it exceeds QAAP_BENCHMARK_MAX_COST_USD (default 5) the remaining tasks are recorded as
+#      `suite-budget-exhausted` without launching the agent.
 name: Qaap agent benchmark nightly
 
 on:
@@ -85,6 +92,7 @@ jobs:
           QAAP_CLOUD_MODE: local
           # Task PRs need a GitHub token and a remote; the benchmark workspaces have neither.
           QAAP_TASK_PR: '0'
+          ANTHROPIC_MODEL: ${{ vars.QAAP_BENCHMARK_MODEL || 'claude-haiku-5-5' }}
         run: |
           mkdir -p test-results/qaap-agent-benchmark/nightly
           export ANTHROPIC_API_KEY="${QAAP_BENCHMARK_ANTHROPIC_API_KEY}"

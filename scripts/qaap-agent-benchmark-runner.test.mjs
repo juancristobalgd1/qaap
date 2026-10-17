@@ -232,7 +232,7 @@ test('maxSuiteCostUsd must be a positive number', async () => {
 
 /** Tiny in-process stand-in for the conversation + task endpoints. */
 async function startConversationStub({ settleAfterPolls }) {
-    const state = { created: [], cancelled: 0, polls: 0 };
+    const state = { created: [], cancelled: 0, polls: 0, taskFetches: 0 };
     const server = http.createServer((request, response) => {
         let body = '';
         request.on('data', chunk => { body += chunk; });
@@ -271,9 +271,10 @@ async function startConversationStub({ settleAfterPolls }) {
                 });
             }
             if (request.method === 'GET' && request.url === '/qaap/api/agent-tasks/task-1') {
+                state.taskFetches++;
                 return send(200, {
                     id: 'task-1',
-                    state: 'completed',
+                    state: state.taskFetches < 3 ? 'running' : 'completed',
                     verification: { status: 'passed', command: 'npm test', attempts: 1 },
                     review: { status: 'passed', reason: 'looks fine' },
                     log: `${JSON.stringify({ type: 'result', subtype: 'success', result: 'x', total_cost_usd: 0.12 })}\n`,
@@ -311,6 +312,9 @@ test('qaap-conversation adapter drives the conversation API and records verdicts
         const [payload] = stub.state.created;
         assert.equal(payload.agent, 'claude');
         assert.equal(payload.isolation, 'none');
+        assert.equal(payload.autoApprove, true);
+        assert.equal(payload.model, undefined, 'no request model unless requestModel is configured');
+        assert.ok(stub.state.taskFetches >= 3, 'waited for the task to reach a terminal state');
         assert.equal(payload.cwd, run.artifacts.workspace);
         assert.match(payload.title, /repair-answer/);
         assert.match(payload.message, /answer\.js/);
@@ -379,7 +383,7 @@ test('the nightly suite has 10 tasks with the intended mix, budgets and safety r
     const count = category => tasks.filter(task => task.category === category).length;
     assert.deepEqual([count('bug-fix'), count('feature'), count('refactor')], [4, 3, 3]);
     for (const task of tasks) {
-        assert.deepEqual(task.budgets, { wallTimeMs: 600000, costUsd: 0.5, humanInterventions: 0 });
+        assert.deepEqual(task.budgets, { wallTimeMs: 600000, humanInterventions: 0 });
         assert.ok(task.safety.forbiddenChanges.includes('.env'), `${task.id} protects secrets`);
         assert.ok(task.safety.forbiddenChanges.some(pattern => pattern.startsWith('test/')), `${task.id} protects public tests`);
         assert.equal(fs.existsSync(path.join(nightlyDir, 'oracles', `${task.id}.mjs`)), true);
