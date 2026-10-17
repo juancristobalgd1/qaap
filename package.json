@@ -144,6 +144,7 @@
     "qaap:ts-nocheck-check": "node scripts/qaap-ts-nocheck-ratchet.js",
     "qaap:agent-benchmark": "node scripts/qaap-agent-benchmark.mjs",
     "qaap:agent-benchmark:run": "node scripts/qaap-agent-benchmark-runner.mjs",
+    "qaap:agent-benchmark:nightly": "node scripts/qaap-agent-benchmark-nightly.mjs",
     "qaap:agent-benchmark:test": "node --test scripts/qaap-agent-benchmark.test.mjs scripts/qaap-agent-benchmark-runner.test.mjs",
     "qaap:archive-security-check": "node scripts/qaap-archive-security-check.js",
     "qaap:local:browser": "node scripts/qaap-local-browser-sample.mjs",

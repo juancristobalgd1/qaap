@@ -7,6 +7,8 @@ import { minimatch } from 'minimatch';
 import { evaluateBenchmark, renderBenchmarkMarkdown } from './qaap-agent-benchmark-lib.mjs';
 
 const TERMINAL_WORKFLOW_STATUSES = new Set(['succeeded', 'failed', 'budget-exhausted']);
+const CONVERSATIONS_API_PATH = '/qaap/api/agent-conversations';
+const SUITE_BUDGET_EXHAUSTED = 'suite-budget-exhausted';
 const DEFAULT_PROCESS_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 const SNAPSHOT_IGNORES = new Set(['.git', 'node_modules', 'dist', 'build', '.next']);
@@ -81,6 +83,8 @@ function validateSuite(suite, suiteDir) {
     assert(Array.isArray(suite.systems) && suite.systems.length, 'systems must not be empty');
     assert(Number.isInteger(suite.repetitions ?? 1) && (suite.repetitions ?? 1) >= 1,
         'repetitions must be a positive integer');
+    assert(suite.maxSuiteCostUsd === undefined || (isFiniteNumber(suite.maxSuiteCostUsd) && suite.maxSuiteCostUsd > 0),
+        'maxSuiteCostUsd must be a positive number');
 
     const taskIds = new Set();
     for (const task of suite.suite.tasks) {
@@ -108,12 +112,16 @@ function validateSuite(suite, suiteDir) {
         assert(typeof system.id === 'string' && system.id.trim(), 'every system needs an id');
         assert(!systemIds.has(system.id), `duplicate system id "${system.id}"`);
         systemIds.add(system.id);
-        assert(['command', 'cursor-cli', 'claude-code', 'openclaude', 'qaap-workflow'].includes(system.adapter),
+        assert(['command', 'cursor-cli', 'claude-code', 'openclaude', 'qaap-workflow', 'qaap-conversation'].includes(system.adapter),
             `system "${system.id}" has an unsupported adapter`);
         if (system.adapter === 'command') {
             assert(typeof system.executable === 'string' && system.executable.trim(),
                 `command system "${system.id}" needs executable`);
             assert(Array.isArray(system.args), `command system "${system.id}" args must be an array`);
+        }
+        if (system.adapter === 'qaap-conversation') {
+            assert(typeof system.baseUrl === 'string' && /^https?:\/\//.test(system.baseUrl),
+                `Qaap system "${system.id}" needs an HTTP baseUrl`);
         }
         if (system.adapter === 'qaap-workflow') {
             assert(typeof system.baseUrl === 'string' && /^https?:\/\//.test(system.baseUrl),
@@ -457,6 +465,9 @@ function resultTextFromLog(log) {
  * explored forever without ever delivering a report.
  */
 function extractAgentOutput(agent) {
+    if (typeof agent.finalAgentMessage === 'string' && agent.finalAgentMessage.trim()) {
+        return agent.finalAgentMessage;
+    }
     if (Array.isArray(agent.taskDetails) && agent.taskDetails.length) {
         const nodeByTask = new Map((agent.qaapWorkflow?.trace ?? [])
             .filter(entry => entry.externalId)
@@ -743,6 +754,115 @@ async function runQaapWorkflowSystem(system, task, context, runDir) {
     };
 }
 
+function taskCostUsd(detail) {
+    return numericField(detail, ['costUsd', 'cost_usd', 'total_cost_usd'])
+        ?? usageFromLog(detail.log ?? '').costUsd;
+}
+
+/**
+ * Drive the default product path: one conversation per task, exactly what the Work Hub composer
+ * does. The conversation settles when it leaves `streaming` and no queued user message is left
+ * (auto-continuation and the verification fix-turns run inside the same streaming window).
+ */
+async function runQaapConversationSystem(system, task, context, runDir) {
+    const baseUrl = system.baseUrl.replace(/\/+$/, '');
+    const headers = system.headers ?? {};
+    const startedAt = Date.now();
+    const cwd = expand(system.cwd ?? '{workspace}', context);
+    const created = await fetchJson(joinUrl(baseUrl, CONVERSATIONS_API_PATH), {
+        method: 'POST',
+        body: JSON.stringify({
+            cwd,
+            agent: system.agent ?? 'claude',
+            isolation: 'none',
+            title: `benchmark ${task.id}`,
+            message: context.prompt,
+            ...(system.model ? { model: system.model } : {}),
+        }),
+        headers,
+    }, 30_000);
+    const conversationId = created.id;
+    if (!conversationId) {
+        throw new Error('Qaap conversation start returned no id');
+    }
+    const conversationUrl = joinUrl(baseUrl, `${CONVERSATIONS_API_PATH}/${encodeURIComponent(conversationId)}`);
+    const deadline = startedAt + (task.budgets?.wallTimeMs ?? DEFAULT_PROCESS_TIMEOUT_MS);
+    const pollIntervalMs = system.pollIntervalMs ?? 2_000;
+    let conversation = created;
+    let timedOut = false;
+    let settledPolls = 0;
+    while (settledPolls < 2) {
+        if (Date.now() >= deadline) {
+            timedOut = true;
+            try {
+                await fetchJson(`${conversationUrl}/cancel`, { method: 'POST', body: '{}', headers });
+            } catch {
+                // Best effort: the run is already recorded as timed out.
+            }
+            break;
+        }
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        conversation = await fetchJson(conversationUrl, { headers });
+        const queued = conversation.pendingUserMessages?.length ?? conversation.pendingUserMessageCount ?? 0;
+        settledPolls = conversation.status !== 'streaming' && queued === 0 ? settledPolls + 1 : 0;
+    }
+    if (timedOut) {
+        try {
+            conversation = await fetchJson(conversationUrl, { headers });
+        } catch {
+            // Keep the last observed snapshot.
+        }
+    }
+
+    const messages = conversation.messages ?? [];
+    const taskIds = [...new Set(messages.map(message => message.taskId).filter(Boolean))];
+    const taskDetails = [];
+    for (const taskId of taskIds) {
+        try {
+            taskDetails.push(await fetchJson(
+                joinUrl(baseUrl, `/qaap/api/agent-tasks/${encodeURIComponent(taskId)}`),
+                { headers },
+            ));
+        } catch (error) {
+            taskDetails.push({ id: taskId, detailError: error instanceof Error ? error.message : String(error) });
+        }
+    }
+    const conversationSummary = {
+        id: conversationId,
+        status: conversation.status,
+        tasks: taskDetails.map(detail => ({
+            taskId: detail.id,
+            state: detail.state,
+            ...(detail.verification ? { verification: detail.verification } : {}),
+            ...(detail.review ? { review: detail.review } : {}),
+            ...(taskCostUsd(detail) !== undefined ? { costUsd: taskCostUsd(detail) } : {}),
+            ...(detail.detailError ? { detailError: detail.detailError } : {}),
+        })),
+    };
+    await fsp.mkdir(path.join(runDir, 'agent'), { recursive: true });
+    await fsp.writeFile(path.join(runDir, 'agent', 'conversation.json'), `${JSON.stringify(conversation, null, 2)}\n`);
+    await fsp.writeFile(path.join(runDir, 'agent', 'tasks.json'), `${JSON.stringify(taskDetails, null, 2)}\n`);
+    const finishedAt = Date.now();
+    const lastAgentMessage = [...messages].reverse().find(message => message.role === 'agent'
+        && typeof message.content === 'string' && message.content.trim());
+    const failed = timedOut || ['failed', 'cancelled'].includes(conversation.status);
+    return {
+        execution: {
+            startedAt,
+            finishedAt,
+            durationMs: finishedAt - startedAt,
+            timedOut,
+            exitCode: failed ? 1 : 0,
+            conversationStatus: conversation.status,
+        },
+        usage: mergeUsage(taskDetails.map(detail => ({ costUsd: taskCostUsd(detail) }))),
+        conversation: conversationSummary,
+        finalAgentMessage: lastAgentMessage?.content,
+        taskDetails,
+        humanInterventions: 0,
+    };
+}
+
 async function runOracle(task, context, runDir) {
     const checks = [];
     let earnedWeight = 0;
@@ -792,7 +912,7 @@ function benchmarkTask(task) {
     };
 }
 
-async function failedRun(entry, runId, startedAt, error, runDir) {
+async function failedRun(entry, runId, startedAt, error, runDir, skipReason) {
     const finishedAt = Date.now();
     const result = {
         id: runId,
@@ -803,10 +923,13 @@ async function failedRun(entry, runId, startedAt, error, runDir) {
         model: entry.system.model ?? 'unspecified',
         repetition: entry.repetition,
         oracle: { score: 0, checksPassed: 0, checksTotal: entry.task.oracle.checks.length },
-        safety: { passed: false, violations: ['runner-error'] },
+        safety: { passed: false, violations: [skipReason ?? 'runner-error'] },
         humanInterventions: 0,
         timing: { wallTimeMs: finishedAt - startedAt },
-        execution: { error: error instanceof Error ? error.message : String(error) },
+        execution: {
+            error: error instanceof Error ? error.message : String(error),
+            ...(skipReason ? { skipped: true, skipReason } : {}),
+        },
         artifacts: { runDir },
     };
     await fsp.mkdir(runDir, { recursive: true });
@@ -814,12 +937,16 @@ async function failedRun(entry, runId, startedAt, error, runDir) {
     return result;
 }
 
-async function runEntry(entry, suiteDir, sessionDir, options) {
-    const runId = [
+function runIdFor(entry) {
+    return [
         sanitizeSegment(entry.system.id),
         sanitizeSegment(entry.task.id),
         `r${entry.repetition}`,
     ].join('-');
+}
+
+async function runEntry(entry, suiteDir, sessionDir, options) {
+    const runId = runIdFor(entry);
     const runDir = path.join(sessionDir, 'artifacts', runId);
     const startedAt = Date.now();
     try {
@@ -846,7 +973,9 @@ async function runEntry(entry, suiteDir, sessionDir, options) {
         const before = await snapshotWorkspace(workspace, snapshotIgnores);
         const agent = entry.system.adapter === 'qaap-workflow'
             ? await runQaapWorkflowSystem(entry.system, entry.task, context, runDir)
-            : await runCommandSystem(entry.system, entry.task, context, runDir);
+            : entry.system.adapter === 'qaap-conversation'
+                ? await runQaapConversationSystem(entry.system, entry.task, context, runDir)
+                : await runCommandSystem(entry.system, entry.task, context, runDir);
         const agentOutput = path.join(runDir, 'agent', 'final-output.txt');
         await fsp.mkdir(path.dirname(agentOutput), { recursive: true });
         await fsp.writeFile(agentOutput, `${extractAgentOutput(agent).trim()}\n`);
@@ -875,6 +1004,7 @@ async function runEntry(entry, suiteDir, sessionDir, options) {
             },
             ...(Object.keys(agent.usage).length ? { usage: agent.usage } : {}),
             ...(agent.qaapWorkflow ? { qaapWorkflow: agent.qaapWorkflow } : {}),
+            ...(agent.conversation ? { conversation: agent.conversation } : {}),
             execution: {
                 exitCode: agent.execution.exitCode,
                 timedOut: agent.execution.timedOut,
@@ -907,6 +1037,12 @@ async function preflightSystems(systems, allowHostAgentExecution) {
         );
     }
     for (const system of systems) {
+        if (system.adapter === 'qaap-conversation') {
+            await fetchJson(joinUrl(system.baseUrl, `${CONVERSATIONS_API_PATH}/all`), {
+                headers: system.headers ?? {},
+            });
+            continue;
+        }
         if (system.adapter === 'qaap-workflow') {
             const templates = await fetchJson(joinUrl(system.baseUrl, '/qaap/api/workflows/templates'), {
                 headers: system.headers ?? {},
@@ -947,8 +1083,25 @@ export async function runBenchmarkSuite(options) {
     const sessionDir = path.join(outputDir, 'sessions', currentSessionId);
     await fsp.mkdir(sessionDir, { recursive: true });
     const runs = [];
+    const maxSuiteCostUsd = suite.maxSuiteCostUsd;
+    let cumulativeCostUsd = 0;
     for (let index = 0; index < plan.length; index++) {
         const entry = plan[index];
+        if (maxSuiteCostUsd !== undefined && cumulativeCostUsd > maxSuiteCostUsd) {
+            // The cap is checked between runs: a run already in flight is bounded by its own
+            // task budget, so the overshoot is at most one task budget.
+            const skipped = await failedRun(
+                entry,
+                runIdFor(entry),
+                Date.now(),
+                new Error(`Suite cost cap of $${maxSuiteCostUsd} exceeded ($${cumulativeCostUsd.toFixed(4)} spent)`),
+                path.join(sessionDir, 'artifacts', runIdFor(entry)),
+                SUITE_BUDGET_EXHAUSTED,
+            );
+            runs.push(skipped);
+            options.onProgress?.({ type: 'run-skip', index: index + 1, total: plan.length, result: skipped });
+            continue;
+        }
         options.onProgress?.({
             type: 'run-start',
             index: index + 1,
@@ -959,6 +1112,7 @@ export async function runBenchmarkSuite(options) {
         });
         const result = await runEntry(entry, suiteDir, sessionDir, options);
         runs.push(result);
+        cumulativeCostUsd += result.usage?.costUsd ?? 0;
         options.onProgress?.({ type: 'run-finish', index: index + 1, total: plan.length, result });
     }
     const manifest = {
@@ -992,6 +1146,8 @@ export async function runBenchmarkSuite(options) {
         manifest,
         report,
         scorecard,
+        suiteCostUsd: cumulativeCostUsd,
+        skippedRuns: runs.filter(run => run.execution?.skipReason === SUITE_BUDGET_EXHAUSTED).length,
         paths: { outputDir, sessionDir, manifestPath, reportPath, scorecardPath },
     };
 }

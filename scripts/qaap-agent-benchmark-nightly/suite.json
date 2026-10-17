@@ -1,0 +1,436 @@
+{
+  "schemaVersion": 1,
+  "repetitions": 1,
+  "maxSuiteCostUsd": 5,
+  "suite": {
+    "id": "qaap-nightly-10",
+    "name": "Qaap nightly: 10 small real tasks on the default conversation path",
+    "completionThreshold": 1,
+    "tasks": [
+      {
+        "id": "bugfix-pagination",
+        "category": "bug-fix",
+        "difficulty": "easy",
+        "prompt": "Bug report: paginate() in src/paginate.js drops the last page when the item count is not a multiple of the page size (for example 11 items with a page size of 5 report 2 pages and the 11th item can never be reached). Fix the bug without changing the shape of the returned object or the signature. Run `npm test` before you finish and do not edit the existing tests.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/bugfix-pagination",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/bugfix-pagination.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/paginate.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "bugfix-date-timezone",
+        "category": "bug-fix",
+        "difficulty": "medium",
+        "prompt": "Bug report: the day-key helpers in src/dates.js (parseDate, toDateKey, addDays, daysBetween) return the previous or the next calendar day for users whose machine is not on UTC, especially around daylight-saving changes. The helpers must behave identically in every time zone: a day key (YYYY-MM-DD) is a calendar day, not an instant. Fix src/dates.js without changing the exported API. `npm test` passes today because it pins TZ=UTC; do not edit the tests or package.json.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/bugfix-date-timezone",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/bugfix-date-timezone.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/dates.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "bugfix-csv-quoting",
+        "category": "bug-fix",
+        "difficulty": "medium",
+        "prompt": "Bug report: src/csv.js breaks on real data. Exporting a name like `Smith, John` or a note containing a double quote produces a file other tools cannot read, and importing a quoted field with a comma or an embedded line break splits it into the wrong columns. Make parseCsv and toCsv follow RFC 4180: toCsv quotes a field only if it contains a comma, a double quote, CR or LF (doubling inner quotes) and keeps `\\n` row separators with a trailing newline; parseCsv understands quoted fields, `\"\"` escapes, embedded newlines, both `\\n` and `\\r\\n` row endings, a missing final newline, and ignores blank lines. parseCsv(toCsv(rows)) must give back the original rows. Do not edit the existing tests.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/bugfix-csv-quoting",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/bugfix-csv-quoting.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/csv.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "bugfix-null-safety",
+        "category": "bug-fix",
+        "difficulty": "easy",
+        "prompt": "Bug report: src/profile.js crashes with TypeError for users that have no profile, no address or no reviews. Make the three functions null-safe with these rules. displayName(user): the trimmed profile name if it is a non-blank string, otherwise the part of the e-mail before the @, otherwise the string 'Anonymous' (also for a null or undefined user). formatAddress(user): '' when the user has no address; otherwise `<street>, <city> <zip>` where missing parts are skipped together with their separator (street only, city + zip joined by a single space). averageRating(reviews): the mean of the finite numeric `rating` values, ignoring entries that are null or have no usable rating, and 0 when reviews is null, undefined, empty or has no usable rating. Do not edit the existing tests.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/bugfix-null-safety",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/bugfix-null-safety.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/profile.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "feature-cli-json-flag",
+        "category": "feature",
+        "difficulty": "easy",
+        "prompt": "Feature request: add options to the `wcl` CLI in src/cli.js. `--json` (anywhere on the command line) prints one JSON line {\"lines\":..,\"words\":..,\"chars\":..,\"file\":\"<file>\"} instead of the plain text line. `--help` or `-h` prints `Usage: wcl [--json] <file>` to stdout and returns 0. Any other argument that starts with `-` is an error: write `wcl: unknown option: <arg>` plus a newline to stderr and return 2. With no file the usage text goes to stderr and the exit code is 2 (the usage text is the new one, `Usage: wcl [--json] <file>`). Plain output and the missing-file behaviour must not change. Add tests for the new behaviour in a new test file; do not edit the existing test file.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/feature-cli-json-flag",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/feature-cli-json-flag.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/cli.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "feature-lru-ttl",
+        "category": "feature",
+        "difficulty": "medium",
+        "prompt": "Feature request: add time-to-live support to LRUCache in src/lru-cache.js. The constructor becomes `new LRUCache(capacity, { ttlMs, now = Date.now } = {})` where `now` is an injectable clock returning milliseconds. An entry set at time t with a ttl expires when now() >= t + ttl. `set(key, value, { ttlMs })` overrides the default ttl for that entry; without any ttl an entry never expires. Expired entries behave as missing in has/get, do not count towards `size`, and are preferred for eviction over live least-recently-used entries when the cache is over capacity. get() on a live entry refreshes its recency but not its expiry; set() on an existing key replaces the value and restarts its expiry; has() must not change recency. A ttl that is not a positive finite number throws RangeError('ttlMs must be a positive number'). Existing behaviour of `new LRUCache(capacity)` must not change. Add tests in a new test file; do not edit the existing one.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/feature-lru-ttl",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/feature-lru-ttl.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/lru-cache.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "feature-input-validation",
+        "category": "feature",
+        "difficulty": "medium",
+        "prompt": "Feature request: validate user input in src/users.js. Export `validateUser(input)` returning `{ valid, errors }` where errors maps a field to a message: name -> 'name is required' (missing, not a string, or blank after trimming) or 'name must be at most 100 characters'; email -> 'email is invalid' (must be a string matching local@domain.tld without spaces or extra @); age -> 'age must be an integer between 13 and 120' (an integer number, inclusive). Non-object input (null, string, array) gives `{ valid: false, errors: { input: 'input must be an object' } }`. Errors are listed in the order name, email, age. Export `ValidationError` (extends Error, `name` is 'ValidationError', has an `errors` property with the same map, message `Invalid user: <comma separated field names>`), and make createUser throw it for invalid input and trim the e-mail before lower-casing it. Valid input behaves exactly as before. Add tests in a new test file; do not edit the existing one.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/feature-input-validation",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/feature-input-validation.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/users.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "refactor-extract-totals",
+        "category": "refactor",
+        "difficulty": "easy",
+        "prompt": "Refactor: src/documents.js (twice) and src/summary.js repeat the same line-total, tax and rounding computation. Extract it into a new module src/totals.js exporting `computeTotals(lines, taxRate)` which returns `{ subtotal, tax, total }` with exactly the same arithmetic and rounding as today, and make all three call sites use it so that the computation exists in one place only. Behaviour must not change at all (same output for every input). Do not edit the existing tests.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/refactor-extract-totals",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/refactor-extract-totals.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/documents.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "refactor-rename-deprecated-alias",
+        "category": "refactor",
+        "difficulty": "easy",
+        "prompt": "Refactor: rename the logger function `logMsg(level, msg)` in src/logger.js to `log(level, message)`; behaviour and the returned line stay the same. Update every caller in src/ to use `log`. Keep `logMsg` exported from src/logger.js as a deprecated alias that delegates to `log` and calls `process.emitWarning('logMsg() is deprecated, use log()', 'DeprecationWarning', 'QAAP_LOGMSG')` the first time it is called in the process only. Do not edit the existing tests.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/refactor-rename-deprecated-alias",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/refactor-rename-deprecated-alias.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/app.test.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "refactor-callbacks-to-async",
+        "category": "refactor",
+        "difficulty": "medium",
+        "prompt": "Refactor: convert src/store.js (readRecords, saveRecords) and src/sync.js (appendIfMissing) from Node-style callbacks to promise-returning async/await functions. Same names and arguments minus the trailing callback; errors must reject with the very same errors as before (including the `Corrupt store <file>: <reason>` message and passing other filesystem errors through untouched); a missing store file still reads as an empty array; the on-disk format does not change; saveRecords resolves with undefined and appendIfMissing resolves with true or false. Use `node:fs/promises`; no callback parameters may remain. The existing tests call the functions through a helper that supports both styles, so they must keep passing; do not edit them.",
+        "fixture": {
+          "type": "copy",
+          "source": "fixtures/refactor-callbacks-to-async",
+          "initializeGit": true
+        },
+        "oracle": {
+          "timeoutMs": 300000,
+          "checks": [
+            {
+              "id": "hidden-oracle",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/oracles/refactor-callbacks-to-async.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "package.json",
+            "test/sync.test.mjs",
+            "test/helpers.mjs"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "costUsd": 0.5,
+          "humanInterventions": 0
+        }
+      }
+    ]
+  },
+  "systems": [
+    {
+      "id": "qaap-conversation",
+      "name": "Qaap (conversation)",
+      "track": "nightly",
+      "configuration": "default-conversation-path",
+      "model": "agent-default",
+      "adapter": "qaap-conversation",
+      "baseUrl": "http://127.0.0.1:3100",
+      "agent": "claude",
+      "pollIntervalMs": 2000
+    }
+  ]
+}
