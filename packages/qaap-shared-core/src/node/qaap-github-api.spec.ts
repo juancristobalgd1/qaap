@@ -14,9 +14,29 @@ import {
     fetchGithubPullRequests,
     mergeGithubPullRequest,
     fetchGithubRepositoryRequest,
+    resolveGithubApiBaseUrl,
     resolveGithubApiTimeoutMs,
     searchGithubPullRequests,
 } from './qaap-github-api';
+
+describe('resolveGithubApiBaseUrl', () => {
+    const stub = 'http://127.0.0.1:4567/';
+    const local = { QAAP_SKIP_AUTH: 'true', QAAP_CLOUD_MODE: 'local', QAAP_GITHUB_API_BASE_URL: stub };
+
+    it('honours the override only in the local skip-auth e2e mode', () => {
+        expect(resolveGithubApiBaseUrl(local)).to.equal('http://127.0.0.1:4567');
+        expect(resolveGithubApiBaseUrl({ ...local, QAAP_SKIP_AUTH: '1' })).to.equal('http://127.0.0.1:4567');
+    });
+
+    it('ignores the override everywhere else', () => {
+        expect(resolveGithubApiBaseUrl({})).to.equal('https://api.github.com');
+        expect(resolveGithubApiBaseUrl({ QAAP_GITHUB_API_BASE_URL: stub })).to.equal('https://api.github.com');
+        expect(resolveGithubApiBaseUrl({ ...local, QAAP_SKIP_AUTH: undefined })).to.equal('https://api.github.com');
+        expect(resolveGithubApiBaseUrl({ ...local, QAAP_CLOUD_MODE: 'docker' })).to.equal('https://api.github.com');
+        expect(resolveGithubApiBaseUrl({ ...local, NODE_ENV: 'production' })).to.equal('https://api.github.com');
+        expect(resolveGithubApiBaseUrl({ ...local, QAAP_GITHUB_API_BASE_URL: 'ftp://stub' })).to.equal('https://api.github.com');
+    });
+});
 
 describe('fetchGithubRepositoryRequest', () => {
     let server: http.Server;

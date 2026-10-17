@@ -114,6 +114,20 @@ export class QaapGithubSessionStore {
         return [...this.sessions.values()].filter(session => this.betaAccess.allows(session.user.login));
     }
 
+    /**
+     * A GitHub access token of `login` for request-less backend work (task pull requests), or
+     * `undefined` when that user has no live session. Never hand the result to an agent process.
+     */
+    findAccessTokenForLogin(login: string | undefined): string | undefined {
+        const wanted = login?.trim().toLowerCase();
+        if (!wanted) {
+            return undefined;
+        }
+        const session = this.listSessions().find(candidate => candidate.user.provider === 'github'
+            && candidate.user.login.toLowerCase() === wanted && !!candidate.accessToken);
+        return session?.accessToken;
+    }
+
     deleteSession(sessionId: string | undefined): void {
         if (!sessionId) {
             return;

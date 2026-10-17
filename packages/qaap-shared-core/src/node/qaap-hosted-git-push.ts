@@ -14,7 +14,7 @@ export interface QaapHostedGitPushRequest {
     readonly url: string;
     /** Full commit id to push. */
     readonly sha: string;
-    /** Full destination ref, `refs/heads/<branch>`. */
+    /** Full destination ref, `refs/heads/<branch>` or `refs/qaap/evidence/<conversationId>`. */
     readonly ref: string;
     /** The signed-in user's GitHub token. Lives only in this backend and the push child's env. */
     readonly token: string;
@@ -57,10 +57,21 @@ export class QaapHostedGitPush extends QaapSealedGithubGit {
         }
         // `check-ref-format` rules that matter for a refspec; `:`, `..`, control chars, `@{` and
         // spaces cannot appear, so the refspec is exactly `<sha>:<ref>`.
-        if (!/^refs\/heads\/(?!-)(?!.*(?:\.\.|@\{|\/\.|\/\/|\.lock(?:\/|$)|\.$|\/$))[A-Za-z0-9._/+-]+$/.test(request.ref)) {
+        if (!this.isAllowedRef(request.ref)) {
             throw new Error('Hosted push needs a valid branch ref.');
         }
         this.assertValidObjectsDirectory(request.objectsDirectory);
         this.assertValidToken(request.token, true);
+    }
+
+    /**
+     * A branch (`refs/heads/<branch>`) or a task's evidence ref (`refs/qaap/evidence/<conversationId>`,
+     * screenshots kept out of the branch list and the diff).
+     */
+    protected isAllowedRef(ref: string): boolean {
+        if (/^refs\/qaap\/evidence\/[A-Za-z0-9][A-Za-z0-9-]{0,127}$/.test(ref)) {
+            return true;
+        }
+        return /^refs\/heads\/(?!-)(?!.*(?:\.\.|@\{|\/\.|\/\/|\.lock(?:\/|$)|\.$|\/$))[A-Za-z0-9._/+-]+$/.test(ref);
     }
 }

@@ -11,6 +11,7 @@ import {
     type MissionControlItem,
 } from './mobile-work-mission-control';
 import { resolveMissionControlFailure } from './qaap-work-mission-control-failure';
+import { taskPullRequestNeedsAttention } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 
 export interface CollectMissionControlItemsInput {
     readonly projects: readonly MobileProjectEntry[];
@@ -52,8 +53,11 @@ export function collectMissionControlItems(input: CollectMissionControlItemsInpu
                 progressTotal: summary.turnProgressTotal,
                 linesAdded: summary.linesAdded,
                 linesRemoved: summary.linesRemoved,
-                hasPullRequest: !!summary.linkedPullRequest?.number,
+                hasPullRequest: !!summary.linkedPullRequest?.number || !!summary.taskPullRequest?.number,
                 failureKind: failure?.kind,
+                ...(taskPullRequestNeedsAttention(summary.taskPullRequest) ? {
+                    pullRequestAttention: { number: summary.taskPullRequest?.number, url: summary.taskPullRequest?.url },
+                } : {}),
             });
             seenConversationIds.add(summary.id);
         }

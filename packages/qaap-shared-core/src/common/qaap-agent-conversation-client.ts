@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import type { QaapTaskPullRequest } from './qaap-task-pull-request';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
 import { buildConversationListMetrics, type QaapSidebarGitActionKind } from './qaap-agent-conversation-list-metrics';
@@ -118,6 +119,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly turnProgressTotal?: number;
     readonly lastTurnDurationMs?: number;
     readonly linkedPullRequest?: QaapLinkedPullRequest;
+    /** Pull request the backend opened for this task (see `QaapTaskPullRequestService`). */
+    readonly taskPullRequest?: QaapTaskPullRequest;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     /**
@@ -274,6 +277,7 @@ export interface QaapAgentConversationDTO {
     readonly worktreeOrdinal?: number;
     readonly checkpoints?: QaapConversationCheckpointDTO[];
     readonly linkedPullRequest?: QaapLinkedPullRequest;
+    readonly taskPullRequest?: QaapTaskPullRequest;
     readonly contextPreamble?: string;
     readonly contextUsage?: QaapAgentContextUsage;
     readonly contextWindowSize?: number;
@@ -578,6 +582,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         worktreeBranch: conv.worktreeBranch,
         ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),
         linkedPullRequest: conv.linkedPullRequest,
+        ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
         ...metrics,
         hasGitOperation,
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),

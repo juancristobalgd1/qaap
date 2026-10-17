@@ -112,6 +112,8 @@ import { captureCheckpointExtracted, discardCheckpointRefExtracted, countDurable
 import { previewRewindExtracted, restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-agent-conversation-store-diff2';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qaap-conversation-rewind-preview';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
+import { recordTaskPullRequestExtracted, type QaapTaskPullRequestRecordOptions } from './qaap-agent-conversation-store-task-pr';
+import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 
 /**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
@@ -308,6 +310,11 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
 
     dispatchQueuedMessage(conversationId: string, queuedMessageId: string, deliveryMode: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode): import('../common/qaap-agent-conversation').QaapAgentConversation | undefined {
         return dispatchQueuedMessageExtracted(this, conversationId, queuedMessageId, deliveryMode);
+    }
+
+    /** Records the task pull request the backend opened or updated for `id` (see `QaapTaskPullRequestService`). */
+    recordTaskPullRequest(id: string, taskPullRequest: QaapTaskPullRequest, options?: QaapTaskPullRequestRecordOptions): QaapAgentConversation | undefined {
+        return recordTaskPullRequestExtracted(this, id, taskPullRequest, options);
     }
 
     linkConversationsToPullRequest(input: QaapLinkConversationsByBranchRequest): number {

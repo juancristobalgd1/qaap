@@ -248,3 +248,14 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 - **Why:** OOM restarts and deploys used to fail every in-flight turn ("The backend restarted while
   this turn was in progress"); the in-memory restart-resume specs stub the task runner and never
   kill a process. Run it locally after `npm run build:browser`.
+
+### 15. A task turn becomes a PR with evidence (pre-deploy gate)
+
+- **Rule:** the pre-deploy gate runs `node scripts/qaap-task-to-pr-e2e.mjs --port 3467` right after the
+  restart-resume e2e. It starts the built backend in skip-auth local mode with a fake `qaiq` that
+  edits a file, a local bare repository as `origin` and a local GitHub REST stub
+  (`QAAP_GITHUB_API_BASE_URL`, honoured only in that local skip-auth mode), and requires
+  `refs/heads/qaap/task/<id>` on the bare remote (without the user's pre-existing dirty file) and one
+  PR create whose body carries the evidence markers, checks and reviewer sections.
+- **Why:** `QaapTaskPullRequestService` only runs after a real turn settles (checkpoints, quiescence,
+  push, GitHub API); its specs fake the store and GitHub. Run it locally after `npm run build:browser`.

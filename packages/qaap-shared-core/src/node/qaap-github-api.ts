@@ -11,6 +11,7 @@ import type {
     QaapGithubPullRequestSummary,
     QaapGithubRepositorySummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { parseGithubRepositoryApiUrl } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import type { QaapGithubOAuthConfig } from './qaap-github-oauth-config';
 
@@ -110,6 +111,25 @@ export function resolveGithubApiTimeoutMs(env: NodeJS.ProcessEnv = process.env):
     return Number.isInteger(configured) && configured > 0 ? configured : 30_000;
 }
 
+/**
+ * Base URL of the GitHub REST API: always `https://api.github.com`, except in the local e2e mode
+ * (skip-auth, `QAAP_CLOUD_MODE=local`, not production, not hosted), where `QAAP_GITHUB_API_BASE_URL`
+ * (an `http(s)` URL, trailing slashes dropped) points every call at a local stub. A deployment can
+ * never redirect the users' tokens elsewhere with it.
+ */
+export function resolveGithubApiBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+    const skipAuth = env.QAAP_SKIP_AUTH === 'true' || env.QAAP_SKIP_AUTH === '1';
+    const localTestMode = skipAuth
+        && env.QAAP_CLOUD_MODE?.trim().toLowerCase() === 'local'
+        && env.NODE_ENV !== 'production'
+        && !isQaapHostedEnvironment(env);
+    const configured = env.QAAP_GITHUB_API_BASE_URL?.trim().replace(/\/+$/, '');
+    if (localTestMode && configured && /^https?:\/\/[^\s]+$/i.test(configured)) {
+        return configured;
+    }
+    return 'https://api.github.com';
+}
+
 /** Overall budget for the pull request listing; stays below the browser's 60 s request timeout. */
 const GITHUB_PULL_REQUESTS_DEADLINE_MS = 45_000;
 /** Repositories scanned concurrently by the pull request listing. */
@@ -182,7 +202,7 @@ export async function exchangeGithubCode(
 }
 
 export async function fetchGithubUser(accessToken: string): Promise<QaapAuthSessionUser> {
-    const response = await fetchGithubRepositoryRequest('https://api.github.com/user', {
+    const response = await fetchGithubRepositoryRequest(`${resolveGithubApiBaseUrl()}/user`, {
         headers: {
             Accept: 'application/vnd.github+json',
             Authorization: `Bearer ${accessToken}`,
@@ -206,7 +226,7 @@ export async function fetchGithubRepositories(accessToken: string): Promise<Qaap
     let page = 1;
     const perPage = 100;
     while (true) {
-        const url = new URL('https://api.github.com/user/repos');
+        const url = new URL(`${resolveGithubApiBaseUrl()}/user/repos`);
         url.searchParams.set('per_page', String(perPage));
         url.searchParams.set('page', String(page));
         url.searchParams.set('sort', 'updated');
@@ -251,7 +271,7 @@ export async function fetchGithubRepositories(accessToken: string): Promise<Qaap
 
 export async function fetchGithubRepository(accessToken: string | undefined, owner: string, name: string): Promise<QaapGithubRepositorySummary> {
     const response = await fetchGithubRepositoryRequest(
-        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+        `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
         { headers: githubHeaders(accessToken) },
     );
     if (!response.ok) {
@@ -264,7 +284,7 @@ export async function createGithubRepository(
     accessToken: string,
     input: { name: string; private?: boolean; description?: string }
 ): Promise<QaapGithubRepositorySummary> {
-    const response = await fetchGithubRepositoryRequest('https://api.github.com/user/repos', {
+    const response = await fetchGithubRepositoryRequest(`${resolveGithubApiBaseUrl()}/user/repos`, {
         method: 'POST',
         headers: {
             Accept: 'application/vnd.github+json',
@@ -325,7 +345,7 @@ async function fetchRepositoryPullRequests(
     if (budget <= 0) {
         return [];
     }
-    const url = new URL(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/pulls`);
+    const url = new URL(`${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/pulls`);
     url.searchParams.set('state', 'open');
     url.searchParams.set('per_page', '3');
     const response = await fetchGithubRepositoryRequest(url.toString(), {
@@ -400,7 +420,7 @@ export async function searchGithubPullRequests(
     perPage: number,
     timeoutMs = resolveGithubApiTimeoutMs(),
 ): Promise<GithubPullRequestSearchPage> {
-    const url = new URL('https://api.github.com/search/issues');
+    const url = new URL(`${resolveGithubApiBaseUrl()}/search/issues`);
     url.searchParams.set('q', query);
     url.searchParams.set('sort', 'updated');
     url.searchParams.set('order', 'desc');
@@ -456,7 +476,7 @@ export async function searchGithubPullRequests(
 
 /** Logins of the organizations the user belongs to (public memberships unless `read:org` was granted). */
 export async function fetchGithubUserOrganizations(accessToken: string, timeoutMs = resolveGithubApiTimeoutMs()): Promise<string[]> {
-    const response = await fetchGithubRepositoryRequest('https://api.github.com/user/orgs?per_page=100', {
+    const response = await fetchGithubRepositoryRequest(`${resolveGithubApiBaseUrl()}/user/orgs?per_page=100`, {
         headers: githubHeaders(accessToken),
     }, timeoutMs);
     if (!response.ok) {
@@ -474,7 +494,7 @@ export async function fetchGithubPullRequestDetail(
     number: number,
 ): Promise<QaapGithubPullRequestSummary> {
     const response = await fetchGithubRepositoryRequest(
-        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+        `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
         { headers: githubHeaders(accessToken) },
     );
     if (!response.ok) {
@@ -533,7 +553,7 @@ export async function resolveGithubMergeMethod(accessToken: string, owner: strin
     let settings: GithubRepoResponse | undefined;
     try {
         const response = await fetchGithubRepositoryRequest(
-            `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+            `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
             { headers: githubHeaders(accessToken) },
         );
         settings = response.ok ? await response.json() as GithubRepoResponse : undefined;
@@ -563,7 +583,7 @@ export async function mergeGithubPullRequest(
     accessToken: string,
     input: { owner: string; repo: string; number: number }
 ): Promise<QaapGithubMergePullRequestResponse> {
-    const pullUrl = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/pulls/${input.number}`;
+    const pullUrl = `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/pulls/${input.number}`;
     const mergeMethod = await resolveGithubMergeMethod(accessToken, input.owner, input.repo);
     let response: Response;
     try {
@@ -628,7 +648,7 @@ export async function fetchGithubPullRequestFiles(
     number: number,
     timeoutMs = resolveGithubApiTimeoutMs(),
 ): Promise<QaapGithubPullRequestFile[]> {
-    const url = new URL(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files`);
+    const url = new URL(`${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files`);
     url.searchParams.set('per_page', '8');
     let response: Response;
     try {
@@ -715,4 +735,130 @@ function githubRepoToSummary(repo: GithubRepoResponse): QaapGithubRepositorySumm
         description: repo.description ?? undefined,
         updatedAt: repo.updated_at,
     };
+}
+
+/** A pull request as the task pull request service needs it. */
+export interface QaapGithubPullRequestRecord {
+    readonly number: number;
+    readonly url: string;
+    readonly nodeId?: string;
+    readonly body: string;
+    readonly draft: boolean;
+    readonly state: 'open' | 'closed';
+    readonly merged: boolean;
+}
+
+interface GithubPullRequestRecordResponse {
+    number: number;
+    html_url: string;
+    node_id?: string;
+    body?: string | null;
+    draft?: boolean;
+    state?: string;
+    merged?: boolean;
+    merged_at?: string | null;
+    message?: string;
+}
+
+function githubPullRequestRecord(data: GithubPullRequestRecordResponse): QaapGithubPullRequestRecord {
+    return {
+        number: data.number,
+        url: data.html_url,
+        ...(data.node_id ? { nodeId: data.node_id } : {}),
+        body: data.body ?? '',
+        draft: data.draft === true,
+        state: data.state === 'closed' ? 'closed' : 'open',
+        merged: data.merged === true || !!data.merged_at,
+    };
+}
+
+async function githubJsonRequest<T>(accessToken: string, method: string, url: string, body: unknown, what: string): Promise<T> {
+    const response = await fetchGithubRepositoryRequest(url, {
+        method,
+        headers: { ...githubHeaders(accessToken), 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    let data: unknown = undefined;
+    try {
+        data = text ? JSON.parse(text) : undefined;
+    } catch {
+        data = undefined;
+    }
+    if (!response.ok) {
+        const message = (data as { message?: string } | undefined)?.message;
+        throw new GithubApiError(message || `GitHub ${what} failed (${response.status})`, response.status, isGithubRateLimitResponse(response));
+    }
+    return data as T;
+}
+
+function githubRepoPath(owner: string, repo: string): string {
+    return `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+}
+
+/** `POST /repos/{owner}/{repo}/pulls`. */
+export async function createGithubPullRequest(
+    accessToken: string,
+    input: { owner: string; repo: string; title: string; head: string; base: string; body: string; draft?: boolean },
+): Promise<QaapGithubPullRequestRecord> {
+    const data = await githubJsonRequest<GithubPullRequestRecordResponse>(accessToken, 'POST', `${githubRepoPath(input.owner, input.repo)}/pulls`, {
+        title: input.title,
+        head: input.head,
+        base: input.base,
+        body: input.body,
+        draft: input.draft === true,
+    }, 'create pull request');
+    return githubPullRequestRecord(data);
+}
+
+/** `GET /repos/{owner}/{repo}/pulls/{number}`, including its raw body. */
+export async function fetchGithubPullRequestRecord(accessToken: string, owner: string, repo: string, pullNumber: number): Promise<QaapGithubPullRequestRecord> {
+    const data = await githubJsonRequest<GithubPullRequestRecordResponse>(accessToken, 'GET', `${githubRepoPath(owner, repo)}/pulls/${pullNumber}`,
+        undefined, 'read pull request');
+    return githubPullRequestRecord(data);
+}
+
+/** `PATCH /repos/{owner}/{repo}/pulls/{number}` (title and/or body). */
+export async function updateGithubPullRequest(
+    accessToken: string,
+    input: { owner: string; repo: string; number: number; title?: string; body?: string },
+): Promise<QaapGithubPullRequestRecord> {
+    const data = await githubJsonRequest<GithubPullRequestRecordResponse>(accessToken, 'PATCH', `${githubRepoPath(input.owner, input.repo)}/pulls/${input.number}`, {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.body !== undefined ? { body: input.body } : {}),
+    }, 'update pull request');
+    return githubPullRequestRecord(data);
+}
+
+/** `POST /repos/{owner}/{repo}/issues/{number}/labels` (pull requests are issues). */
+export async function addGithubIssueLabels(accessToken: string, owner: string, repo: string, issueNumber: number, labels: readonly string[]): Promise<void> {
+    await githubJsonRequest<unknown>(accessToken, 'POST', `${githubRepoPath(owner, repo)}/issues/${issueNumber}/labels`, { labels: [...labels] }, 'add labels');
+}
+
+/** `DELETE /repos/{owner}/{repo}/issues/{number}/labels/{name}`; a label that is not there is fine. */
+export async function removeGithubIssueLabel(accessToken: string, owner: string, repo: string, issueNumber: number, label: string): Promise<void> {
+    try {
+        await githubJsonRequest<unknown>(accessToken, 'DELETE',
+            `${githubRepoPath(owner, repo)}/issues/${issueNumber}/labels/${encodeURIComponent(label)}`, undefined, 'remove label');
+    } catch (error) {
+        if (!(error instanceof GithubApiError && error.status === 404)) {
+            throw error;
+        }
+    }
+}
+
+/**
+ * Flips a pull request between draft and ready for review. REST cannot do this, so it goes through the
+ * GraphQL `convertPullRequestToDraft` / `markPullRequestReadyForReview` mutations (`{base}/graphql`).
+ */
+export async function setGithubPullRequestDraft(accessToken: string, pullRequestNodeId: string, draft: boolean): Promise<void> {
+    const mutation = draft
+        ? 'mutation($id: ID!) { convertPullRequestToDraft(input: { pullRequestId: $id }) { pullRequest { isDraft } } }'
+        : 'mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }';
+    const data = await githubJsonRequest<{ errors?: { message?: string }[] }>(accessToken, 'POST', `${resolveGithubApiBaseUrl()}/graphql`,
+        { query: mutation, variables: { id: pullRequestNodeId } }, 'change draft state');
+    const error = data?.errors?.[0]?.message;
+    if (error) {
+        throw new GithubApiError(error, 200);
+    }
 }

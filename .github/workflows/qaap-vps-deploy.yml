@@ -160,6 +160,13 @@ jobs:
         shell: bash
         run: node scripts/qaap-restart-resume-e2e.mjs --port 3466
 
+      # Every Work Hub task ends in a PR carrying its evidence (doc/qaap-task-to-pr.md): one chat turn
+      # with a fake qaiq must push refs/heads/qaap/task/<id> to a local bare origin and open a PR on a
+      # local GitHub stub whose body has the checks and reviewer sections. Own backend on :3467; ~10 s.
+      - name: Task-to-PR e2e (turn becomes a PR with evidence)
+        shell: bash
+        run: node scripts/qaap-task-to-pr-e2e.mjs --port 3467
+
       - name: Upload gate artifacts
         if: always()
         uses: actions/upload-artifact@v4

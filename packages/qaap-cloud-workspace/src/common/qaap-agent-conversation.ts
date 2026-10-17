@@ -17,6 +17,7 @@ import {
     type QaapAgentContextUsage,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
@@ -282,6 +283,8 @@ export interface QaapAgentConversation {
     readonly gitDiffRemoved?: number;
     /** When set, this thread is tied to a GitHub pull request (Work Hub inbox). */
     readonly linkedPullRequest?: QaapLinkedPullRequest;
+    /** Pull request the backend opened for this task with its evidence (`QaapTaskPullRequestService`). */
+    readonly taskPullRequest?: QaapTaskPullRequest;
     /** Latest context snapshot when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
@@ -372,6 +375,7 @@ export interface QaapAgentConversationSummary {
     /** Duration of the last completed agent turn. */
     readonly lastTurnDurationMs?: number;
     readonly linkedPullRequest?: QaapLinkedPullRequest;
+    readonly taskPullRequest?: QaapTaskPullRequest;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     readonly contextUsage?: QaapAgentContextUsage;
@@ -649,6 +653,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         worktreeBranch: conv.worktreeBranch,
         ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),
         linkedPullRequest: conv.linkedPullRequest,
+        ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,
         ...(conv.goalLoop ? {
