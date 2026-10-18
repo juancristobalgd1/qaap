@@ -137,6 +137,60 @@ describe('QaapProjectBootstrapService dev run guards', () => {
         });
     });
 
+    describe('startDevServer with a server already on the expected port', () => {
+        const DESCRIPTOR = { name: 'app' } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+
+        const makeCtx = (attachable: boolean, devTerminal?: { isDisposed: boolean }): {
+            ctx: QaapProjectBootstrapServiceContext; attachCalls: number[][]; reserved: number[];
+        } => {
+            const attachCalls: number[][] = [];
+            const reserved: number[] = [];
+            const ctx = {
+                _selectedApp: undefined,
+                _error: undefined,
+                devRunGeneration: 0,
+                // Exhausted budget: the rejected reservation ends the run instead of retrying.
+                automaticPortRecoveryAttempts: 99,
+                devTerminal,
+                attemptedDevPorts: new Set<number>(),
+                previewClaimByConversation: new Map(),
+                activePreviewConversationId: 'c1',
+                beginDevRun: () => undefined,
+                clearForwardedPorts: () => undefined,
+                readOomKillCount: () => 0,
+                setPhase: () => undefined,
+                buildDevSpawnPlan: () => ({ command: 'npm run dev', targetPort: 5173 }),
+                tryAttachToExistingServer: async (ports: number[]) => { attachCalls.push(ports); return attachable; },
+                reconcileRestoredPreviewTerminals: async () => undefined,
+                disposeRestoredPreviewTerminals: async () => undefined,
+                ensurePreviewProcessIdForConversation: () => undefined,
+                reserveActivePreview: async (port: number) => { reserved.push(port); return { kind: 'conflict' }; },
+            };
+            return { ctx: ctx as unknown as QaapProjectBootstrapServiceContext, attachCalls, reserved };
+        };
+
+        it('attaches to it instead of reserving a second port and spawning another server', async () => {
+            const { ctx, attachCalls, reserved } = makeCtx(true);
+            await streaming.startDevServerExtracted(ctx, PLAN, DESCRIPTOR);
+            expect(attachCalls).to.deep.equal([[5173]]);
+            expect(reserved).to.deep.equal([]);
+        });
+
+        it('falls through to the normal reservation when nothing attributable answers there', async () => {
+            const { ctx, attachCalls, reserved } = makeCtx(false);
+            await streaming.startDevServerExtracted(ctx, PLAN, DESCRIPTOR);
+            expect(attachCalls).to.deep.equal([[5173]]);
+            expect(reserved).to.deep.equal([5173]);
+        });
+
+        it('does not adopt the old server of a restart while its managed terminal is still alive', async () => {
+            const { ctx, attachCalls, reserved } = makeCtx(true, { isDisposed: false });
+            await streaming.startDevServerExtracted(ctx, PLAN, DESCRIPTOR);
+            expect(attachCalls).to.deep.equal([]);
+            expect(reserved).to.deep.equal([5173]);
+        });
+    });
+
     describe('failDevRun', () => {
         function failingRunContext(overrides: object = {}): { ctx: QaapProjectBootstrapServiceContext; attachCalls: () => number } {
             let attachCalls = 0;
