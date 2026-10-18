@@ -18,6 +18,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
+import type { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import type { QaapAgentTaskReview, QaapAgentTaskState, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
@@ -304,6 +305,12 @@ export interface QaapAgentConversation {
     readonly taskPullRequest?: QaapTaskPullRequest;
     /** `false`: the user turned "Create PR when done" off for this thread. Omitted means on. */
     readonly taskPullRequestEnabled?: boolean;
+    /** Editable plan of this task and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
+    readonly taskPlan?: QaapTaskPlan;
+    /** Set on a subtask's child conversation: the conversation whose plan created it. */
+    readonly parentConversationId?: string;
+    /** Set on a subtask's child conversation: its subtask id in the parent's {@link taskPlan}. */
+    readonly taskPlanSubtaskId?: string;
     /** Latest context snapshot when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
@@ -396,6 +403,12 @@ export interface QaapAgentConversationSummary {
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
     readonly taskPullRequestEnabled?: boolean;
+    /** Editable plan of this task and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
+    readonly taskPlan?: QaapTaskPlan;
+    /** Set on a subtask's child conversation: the conversation whose plan created it. */
+    readonly parentConversationId?: string;
+    /** Set on a subtask's child conversation: its subtask id in the parent's {@link taskPlan}. */
+    readonly taskPlanSubtaskId?: string;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     readonly contextUsage?: QaapAgentContextUsage;
@@ -474,6 +487,14 @@ export interface QaapCreateAgentConversationRequest {
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
     /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
+    /** `true` asks for an editable plan split into parallel subtasks; `false` never plans. Omitted: the server decides. */
+    readonly fanOut?: boolean;
+    /** Set by the plan fan-out service: create the conversation with its plan being drafted. */
+    readonly taskPlan?: QaapTaskPlan;
+    readonly parentConversationId?: string;
+    readonly taskPlanSubtaskId?: string;
+    /** `false` creates the conversation with "Create PR when done" off (subtasks of a plan). */
+    readonly taskPullRequestEnabled?: boolean;
 }
 
 export interface QaapPostAgentMessageRequest {
@@ -677,6 +698,9 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         linkedPullRequest: conv.linkedPullRequest,
         ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
         ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
+        ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
+        ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
+        ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,
         ...(conv.goalLoop ? {

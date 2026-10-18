@@ -60,6 +60,40 @@ export function capturePreTurnCheckpointGate(
     });
 }
 
+/**
+ * Like {@link capturePreTurnCheckpointGate}, then `prepare` writes into the worktree in the same
+ * serialized git section (see `PostUserMessageInternalOptions.prepareWorkspace`). No budget: the turn
+ * waits. When the checkpoint cannot be recorded or `prepare` fails, the turn's task is cancelled so the
+ * agent never runs on a tree that is missing the prepared changes; `prepare` reports its own error.
+ */
+export function capturePreTurnCheckpointThenPrepare(
+    ctx: QaapAgentConversationStoreContext,
+    conversationId: string,
+    cwd: string,
+    userMessage: Pick<QaapAgentMessage, 'id' | 'content'>,
+    prepare: (cwd: string, preTurn: QaapConversationCheckpoint) => Promise<void>,
+): Promise<void> {
+    const label = `Before: ${ctx.checkpointLabel(userMessage.content ?? '')}`;
+    return ctx.runSerializedGit(cwd, async () => {
+        const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessage.id, label);
+        const recorded: QaapConversationCheckpoint | undefined = checkpoint ? { ...checkpoint, kind: 'pre-turn' } : undefined;
+        if (!recorded?.commit || !recordPreTurnCheckpoint(ctx, conversationId, recorded)) {
+            if (checkpoint) {
+                await ctx.discardCheckpointRef(cwd, checkpoint.ref).catch(() => undefined);
+            }
+            throw new Error('the pre-turn checkpoint could not be recorded');
+        }
+        await prepare(cwd, recorded);
+    }).catch(error => {
+        console.warn(`[qaap-agent-conversation] ${conversationId}: workspace preparation failed, cancelling the turn:`, error instanceof Error ? error.message : error);
+        for (const [taskId, ref] of ctx.taskToConversation) {
+            if (ref.conversationId === conversationId && ref.userMessageId === userMessage.id) {
+                ctx.taskRunner.cancel(taskId);
+            }
+        }
+    });
+}
+
 /** Append a pre-turn checkpoint when its user message still exists; `false` when it was dropped. */
 export function recordPreTurnCheckpoint(
     ctx: QaapAgentConversationStoreContext,

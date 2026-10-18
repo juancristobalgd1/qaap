@@ -31,6 +31,7 @@ import {
 import { syncStickyComposerStepPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-step-pill';
 import { syncStickyComposerGoalLoopPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-goal-loop-pill';
 import { syncTranscriptGoalLoopChips } from '@theia/qaap-transcript/lib/browser/qaap-transcript-goal-loop-chip';
+import { syncOpenTranscriptTaskPlanCard } from '@theia/qaap-transcript/lib/browser/qaap-transcript-task-plan-card';
 import {
     resolveGoalLoopChipView,
     resolveGoalLoopPillLabel,
@@ -442,6 +443,8 @@ export function updateGoalLoopChromeExtracted(ctx: MobileProjectsTasksHubUiConte
             ? ctx.host.conversations?.threadStore.getSummary(ctx.host.transcriptOpenSummary.id) ?? ctx.host.transcriptOpenSummary
             : undefined;
         syncTranscriptGoalLoopChips(document, resolveGoalLoopChipView(headerSummary));
+        // Re-mount the task plan card when a Work Hub re-render replaced the transcript chat host.
+        syncOpenTranscriptTaskPlanCard(ctx.host, ctx.host.transcriptLiveUi?.resolveActiveTranscriptChatHost());
 }
 
 export function resolveActiveConversationTodoStepProgressExtracted(ctx: MobileProjectsTasksHubUiContext): ReturnType<typeof resolveTodoStepProgress> {

@@ -9,6 +9,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
+import type { QaapConversationCheckpoint } from '../common/qaap-agent-conversation';
 
 // ─── Store paths ─────────────────────────────────────────────────────────────
 
@@ -142,6 +143,14 @@ export interface PostUserMessageInternalOptions {
     readonly goalLoopIteration?: number;
     /** Set by Retry: which attempt of the same request this turn is (2 = first retry). */
     readonly retryAttempt?: number;
+    /**
+     * Writes into the worktree after the pre-turn checkpoint is recorded and before the agent spawns,
+     * inside the same serialized git section (so the snapshot excludes and the post checkpoint includes
+     * what it writes). Unlike the plain checkpoint gate it waits without a budget, and a failure (or a
+     * checkpoint that could not be recorded) cancels the turn instead of running the agent. It must not
+     * call `runSerializedGit` itself. Used by the task plan's integration turn.
+     */
+    readonly prepareWorkspace?: (cwd: string, preTurn: QaapConversationCheckpoint) => Promise<void>;
 }
 
 /** How an agent turn settled, as reported to the goal loop runner. */

@@ -4,6 +4,7 @@ import type { QaapAgentConversationStoreContext } from './qaap-agent-conversatio
 import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 
 import { QaapAgentConversation, QaapAgentConversationStatus, QaapAgentMessage, QaapConversationCheckpoint, QaapCreateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
+import { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 
 import { agentSupportsModelPicker, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
@@ -395,10 +396,34 @@ export function buildTaskCreateRequestExtracted(ctx: QaapAgentConversationStoreC
         turnAgentId: string,
         latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
         turnUserMessageId?: string, ): QaapCreateAgentTaskRequest {
-        return buildTaskCreateRequestHelper(conv, turnAgentId, latencyMarks, turnUserMessageId, {
+        const request = buildTaskCreateRequestHelper(conv, turnAgentId, latencyMarks, turnUserMessageId, {
             stripLeadingAgentMention: c => ctx.stripLeadingAgentMention(c),
             buildPrompt: (c, a) => ctx.buildPrompt(c, a),
         });
+        return withTaskPlanningInstruction(conv, request, turnUserMessageId);
+}
+
+/**
+ * The planning turn of a task plan (roadmap H3.1) asks for a `qaap-plan` block on top of the Plan mode
+ * instruction. Request-only: nothing is stored on the conversation.
+ */
+export function withTaskPlanningInstruction(
+    conv: QaapAgentConversation,
+    request: QaapCreateAgentTaskRequest,
+    turnUserMessageId: string | undefined,
+): QaapCreateAgentTaskRequest {
+    const plan = conv.taskPlan;
+    if (plan?.state !== 'drafting' || !request.prompt) {
+        return request;
+    }
+    const firstUserId = conv.messages.find(message => message.role === 'user')?.id;
+    const planningMessageId = plan.sourceMessageId ?? firstUserId;
+    if (!turnUserMessageId || turnUserMessageId !== planningMessageId) {
+        return request;
+    }
+    // Appended to the prompt itself: a conversation prompt already carries the task-context marker, so
+    // a request preamble would be skipped (prependAgentTaskContextToPrompt).
+    return { ...request, prompt: `${request.prompt}\n\n[Qaap task plan instruction]\n${QaapTaskPlan.planningInstruction()}` };
 }
 
 export function stripLeadingAgentMentionExtracted(ctx: QaapAgentConversationStoreContext, content: string): string {

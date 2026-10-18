@@ -5,6 +5,7 @@
 
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
+import type { QaapTaskPlan, QaapTaskPlanEditRequest } from './qaap-task-plan';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
 import { buildConversationListMetrics, type QaapSidebarGitActionKind } from './qaap-agent-conversation-list-metrics';
@@ -123,6 +124,11 @@ export interface QaapAgentConversationSummaryDTO {
     readonly taskPullRequest?: QaapTaskPullRequest;
     /** `false` when the user turned "Create PR when done" off for this thread (default on). */
     readonly taskPullRequestEnabled?: boolean;
+    /** Editable plan and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
+    readonly taskPlan?: QaapTaskPlan;
+    /** Subtask child conversation: the conversation whose plan created it. */
+    readonly parentConversationId?: string;
+    readonly taskPlanSubtaskId?: string;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     /**
@@ -281,6 +287,11 @@ export interface QaapAgentConversationDTO {
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
     readonly taskPullRequestEnabled?: boolean;
+    /** Editable plan and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
+    readonly taskPlan?: QaapTaskPlan;
+    /** Subtask child conversation: the conversation whose plan created it. */
+    readonly parentConversationId?: string;
+    readonly taskPlanSubtaskId?: string;
     readonly contextPreamble?: string;
     readonly contextUsage?: QaapAgentContextUsage;
     readonly contextWindowSize?: number;
@@ -587,6 +598,9 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         linkedPullRequest: conv.linkedPullRequest,
         ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
         ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
+        ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
+        ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
+        ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
         ...metrics,
         hasGitOperation,
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),
@@ -646,6 +660,8 @@ export interface QaapCreateConversationBody {
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /** Defaults to `'auto'` on the server. */
     readonly isolation?: QaapAgentConversationIsolation;
+    /** `true` asks for an editable plan split into parallel subtasks; `false` never plans. Omitted: the server decides. */
+    readonly fanOut?: boolean;
 }
 
 export async function listAllConversationGroups(options?: { readonly onRetry?: () => void }): Promise<QaapAgentConversationGroupDTO[]> {
@@ -933,6 +949,56 @@ export async function respondTaskPullRequestConsent(id: string, allow: boolean):
         throw new Error((await response.text()) || response.statusText);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+async function readTaskPlanResponse(response: Response): Promise<QaapAgentConversationDTO> {
+    if (!response.ok) {
+        let message = response.statusText;
+        try {
+            const body = await response.json() as { error?: unknown };
+            if (typeof body.error === 'string' && body.error.trim()) {
+                message = body.error;
+            }
+        } catch {
+            // Non-JSON error body — keep the status text.
+        }
+        throw new Error(message);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+async function postTaskPlanAction(id: string, action: 'run' | 'run-single' | 'cancel'): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/task-plan/${action}`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+    return readTaskPlanResponse(response);
+}
+
+/** Replaces the editable task plan (only while it awaits approval); editing subtasks turns auto-run off. */
+export async function editConversationTaskPlan(id: string, body: QaapTaskPlanEditRequest): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/task-plan`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    return readTaskPlanResponse(response);
+}
+
+/** Runs the approved plan: one child conversation per subtask. */
+export async function runConversationTaskPlan(id: string): Promise<QaapAgentConversationDTO> {
+    return postTaskPlanAction(id, 'run');
+}
+
+/** "Run as one task": drops the split and continues with a single build turn. */
+export async function runConversationTaskPlanAsSingle(id: string): Promise<QaapAgentConversationDTO> {
+    return postTaskPlanAction(id, 'run-single');
+}
+
+/** Cancels the plan and any live subtask conversations. */
+export async function cancelConversationTaskPlan(id: string): Promise<QaapAgentConversationDTO> {
+    return postTaskPlanAction(id, 'cancel');
 }
 
 /** "Create PR when done" is on unless the user turned it off for this thread. */

@@ -38,6 +38,7 @@ import { QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
+import { QaapTaskPlanFanOutService } from './qaap-task-plan-fanout-service';
 import { QaapTaskPullRequestConsentStore } from './qaap-task-pull-request-consent-store';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
@@ -314,6 +315,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapTaskPullRequestConsentStore).toSelf().inSingletonScope();
     bind(QaapTaskPullRequestService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskPullRequestService);
+    bind(QaapTaskPlanFanOutService).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTaskPlanFanOutService);
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);
     // Per-user read marks behind the Work Hub unread dot (shared by every device of the user).

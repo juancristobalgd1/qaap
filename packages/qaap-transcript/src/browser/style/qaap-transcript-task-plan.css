@@ -1,0 +1,346 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*
+ * Editable task plan card (roadmap H3.1, qaap-transcript-task-plan-card.ts). Mounted as a sibling of the
+ * scrolling message list inside `.theia-mobile-agent-transcript-real-chat`, so it stays above the composer.
+ * Its body is the only nested scroll host and is registered in qaap-mobile-touch-scroll.css and
+ * MOBILE_VERTICAL_SCROLL_SELECTOR.
+ */
+.theia-mobile-transcript-task-plan {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-4, 8px);
+  min-height: 0;
+  max-height: 70%;
+  margin: var(--q-space-4, 8px) var(--q-space-6, 12px);
+  padding: var(--q-space-6, 12px);
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+  border-radius: var(--q-radius-card, 14px);
+  background: var(--theia-editorWidget-background);
+  color: var(--theia-foreground);
+  font-size: var(--q-text-body, 14px);
+  line-height: var(--q-leading-snug, 1.35);
+}
+
+.theia-mobile-transcript-task-plan[data-task-plan-state="drafting"],
+.theia-mobile-transcript-task-plan[data-task-plan-state="done"],
+.theia-mobile-transcript-task-plan[data-task-plan-state="failed"],
+.theia-mobile-transcript-task-plan[data-task-plan-state="cancelled"] {
+  padding: var(--q-space-4, 8px) var(--q-space-6, 12px);
+}
+
+.theia-mobile-transcript-task-plan-status {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-3, 6px);
+  min-width: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-meta, 13px);
+}
+
+.theia-mobile-transcript-task-plan-status-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-transcript-task-plan-status.theia-mod-ok {
+  color: var(--theia-testing-iconPassed);
+}
+
+.theia-mobile-transcript-task-plan-status.theia-mod-fail {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-transcript-task-plan-header {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-4, 8px);
+}
+
+.theia-mobile-transcript-task-plan-title {
+  font-size: var(--q-text-strong, 15px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-mobile-transcript-task-plan-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(45vh, 420px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-4, 8px);
+}
+
+.theia-mobile-transcript-task-plan-summary {
+  margin: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-meta, 13px);
+  white-space: pre-wrap;
+}
+
+.theia-mobile-transcript-task-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-4, 8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theia-mobile-transcript-task-plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--q-space-3, 6px);
+  min-width: 0;
+}
+
+.theia-mobile-transcript-task-plan-fields {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-2, 4px);
+  min-width: 0;
+}
+
+.theia-mobile-transcript-task-plan-title-input,
+.theia-mobile-transcript-task-plan-prompt-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--q-space-3, 6px) var(--q-space-4, 8px);
+  border: 1px solid var(--theia-input-border, var(--theia-widget-border));
+  border-radius: var(--q-radius-row, 12px);
+  background: var(--theia-input-background);
+  color: var(--theia-input-foreground);
+  font-family: inherit;
+  font-size: var(--q-text-body, 14px);
+  line-height: var(--q-leading-snug, 1.35);
+}
+
+.theia-mobile-transcript-task-plan-title-input {
+  min-height: 40px;
+  font-weight: 500;
+}
+
+/* Collapsed to two lines until focused. */
+.theia-mobile-transcript-task-plan-prompt-input {
+  height: calc(2lh + 2 * var(--q-space-3, 6px) + 2px);
+  resize: none;
+  overflow: hidden;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-transcript-task-plan-prompt-input:focus {
+  height: calc(7lh + 2 * var(--q-space-3, 6px) + 2px);
+  overflow-y: auto;
+  color: var(--theia-input-foreground);
+}
+
+.theia-mobile-transcript-task-plan-title-input:focus,
+.theia-mobile-transcript-task-plan-prompt-input:focus {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: -1px;
+}
+
+.theia-mobile-transcript-task-plan-remove {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--q-radius-icon, 10px);
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+}
+
+.theia-mobile-transcript-task-plan-remove:hover:not(:disabled) {
+  background: var(--theia-toolbar-hoverBackground);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-transcript-task-plan-button {
+  min-height: 40px;
+  padding: 0 var(--q-space-8, 16px);
+  border: 1px solid transparent;
+  border-radius: var(--q-radius-pill, 99px);
+  background: transparent;
+  color: var(--theia-foreground);
+  font-family: inherit;
+  font-size: var(--q-text-body, 14px);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.theia-mobile-transcript-task-plan-button:disabled,
+.theia-mobile-transcript-task-plan-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.theia-mobile-transcript-task-plan-button:focus-visible,
+.theia-mobile-transcript-task-plan-row-main:focus-visible,
+.theia-mobile-transcript-task-plan-remove:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.theia-mobile-transcript-task-plan-button.theia-mod-primary {
+  background: var(--theia-button-background);
+  color: var(--theia-button-foreground);
+}
+
+.theia-mobile-transcript-task-plan-button.theia-mod-primary:hover:not(:disabled) {
+  background: var(--theia-button-hoverBackground);
+}
+
+.theia-mobile-transcript-task-plan-button.theia-mod-secondary {
+  border-color: var(--theia-button-border, var(--theia-widget-border));
+  background: var(--theia-button-secondaryBackground);
+  color: var(--theia-button-secondaryForeground);
+}
+
+.theia-mobile-transcript-task-plan-button.theia-mod-tertiary,
+.theia-mobile-transcript-task-plan-button.theia-mod-add {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-transcript-task-plan-button.theia-mod-add {
+  align-self: flex-start;
+  padding: 0 var(--q-space-4, 8px);
+}
+
+.theia-mobile-transcript-task-plan-button.theia-mod-link {
+  min-height: 40px;
+  padding: 0 var(--q-space-2, 4px);
+  color: var(--theia-textLink-foreground);
+  text-decoration: underline;
+}
+
+.theia-mobile-transcript-task-plan-countdown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--q-space-2, 4px) var(--q-space-4, 8px);
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-meta, 13px);
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-mobile-transcript-task-plan-countdown[hidden],
+.theia-mobile-transcript-task-plan-error[hidden] {
+  display: none;
+}
+
+.theia-mobile-transcript-task-plan-error {
+  color: var(--theia-errorForeground);
+  font-size: var(--q-text-meta, 13px);
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-transcript-task-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--q-space-4, 8px);
+}
+
+/* Running / integrating rows: a tap opens the subtask's own conversation. */
+.theia-mobile-transcript-task-plan-row-main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-4, 8px);
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 var(--q-space-4, 8px);
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+  border-radius: var(--q-radius-row, 12px);
+  background: transparent;
+  color: var(--theia-foreground);
+  font-family: inherit;
+  font-size: var(--q-text-body, 14px);
+  text-align: left;
+}
+
+button.theia-mobile-transcript-task-plan-row-main {
+  cursor: pointer;
+}
+
+button.theia-mobile-transcript-task-plan-row-main:hover {
+  background: var(--theia-list-hoverBackground);
+}
+
+.theia-mobile-transcript-task-plan-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-transcript-task-plan-chip {
+  flex: 0 0 auto;
+  padding: var(--q-space-1, 2px) var(--q-space-4, 8px);
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+  border-radius: var(--q-radius-pill, 99px);
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-overline, 11px);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.theia-mobile-transcript-task-plan-chip.theia-mod-running {
+  color: var(--theia-textLink-foreground);
+  border-color: var(--theia-textLink-foreground);
+}
+
+.theia-mobile-transcript-task-plan-chip.theia-mod-done {
+  color: var(--theia-testing-iconPassed);
+  border-color: var(--theia-testing-iconPassed);
+}
+
+.theia-mobile-transcript-task-plan-chip.theia-mod-failed,
+.theia-mobile-transcript-task-plan-chip.theia-mod-conflict {
+  color: var(--theia-editorWarning-foreground);
+  border-color: var(--theia-editorWarning-foreground);
+}
+
+/* Narrow viewport (767px, see MOBILE_NARROW_VIEWPORT_MEDIA_QUERY). */
+@media (max-width: 767px) {
+  .theia-mobile-transcript-task-plan {
+    margin: var(--q-space-3, 6px) var(--q-space-4, 8px);
+    padding: var(--q-space-5, 10px);
+  }
+
+  /* 16px keeps iOS from zooming into a focused field. */
+  .theia-mobile-transcript-task-plan-title-input,
+  .theia-mobile-transcript-task-plan-prompt-input {
+    font-size: 16px;
+  }
+
+  .theia-mobile-transcript-task-plan-body {
+    max-height: 40vh;
+  }
+
+  .theia-mobile-transcript-task-plan-actions .theia-mobile-transcript-task-plan-button.theia-mod-primary {
+    flex: 1 1 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-transcript-task-plan .codicon-modifier-spin {
+    animation: none;
+  }
+}
