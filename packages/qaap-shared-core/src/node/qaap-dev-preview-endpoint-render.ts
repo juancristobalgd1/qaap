@@ -498,7 +498,27 @@ export async function allocatePreviewPortExtracted(
                 port,
             });
         } else if (await ctx.probeLocalDevServer(port, owner)) {
-            // Crucial fail-closed rule: never infer project ownership from a responding port.
+            // Crucial fail-closed rule: never infer project ownership from a responding port. The
+            // one exception is not an inference: the SAME owner explicitly claimed this very port
+            // (an external Vite they started and pointed the workspace at). The claim endpoint
+            // already refuses that claim for an unregistered listener in authenticated sessions,
+            // so reaching it here means the listener is the owner's. Binding the new identity to
+            // it keeps the preview on that server instead of parking a second copy of the app on
+            // the next free port.
+            if (offset === 0 && ctx.portRegistry.ownerOf(port) === owner) {
+                const adopted = ctx.portRegistry.register({ ...registration, port }, {
+                    claimedAt: Date.now() - PREVIEW_RESERVATION_START_GRACE_MS,
+                });
+                if (adopted) {
+                    console.info('[qaap-preview] adopted listener explicitly claimed by its owner', {
+                        previewId: adopted.previewId,
+                        ownerLogin: owner,
+                        projectId: registration.projectId,
+                        port,
+                    });
+                    return adopted;
+                }
+            }
             continue;
         }
         if (!await ctx.isPortBindable(port, owner)) {

@@ -1031,6 +1031,67 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(ep.probedPorts).to.include(8080);
         });
 
+        it('binds a process identity to a listener its own owner explicitly claimed instead of parking a copy', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('_dev', registry, 'skip');
+            ep.listeningPorts.add(5173);
+            const legacy = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173), legacy);
+            expect(legacy.record.code).to.equal(204);
+
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/dev/site',
+                projectId: 'file:///workspace/dev/site',
+                processId: 'process-external',
+            }), res);
+
+            expect(res.record.code).to.equal(200);
+            expect((res.record.body as { port: number }).port).to.equal(5173);
+            const previewId = (res.record.body as { previewId: string }).previewId;
+            expect(registry.getByPort(5173)?.previewId).to.equal(previewId);
+        });
+
+        it('does not hold an adopted listener inside the start grace, so the reaper frees it once it stops', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('_dev', registry, 'skip');
+            ep.listeningPorts.add(5173);
+            await ep.exposeHandleClaim(claimReq(5173), makeRes());
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/dev/site',
+                projectId: 'file:///workspace/dev/site',
+                processId: 'process-external',
+            }), res);
+            expect((res.record.body as { port: number }).port).to.equal(5173);
+
+            // No pending start to protect: the reservation age is already past the grace window.
+            const record = registry.getByPort(5173);
+            expect(Date.now() - (record?.claimedAt ?? Date.now())).to.be.at.least(5 * 60_000 - 1000);
+        });
+
+        it('never binds a process identity to a listener claimed by a different owner', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            registry.claim(5173, 'bob');
+            ep.setClaimFakes('alice', registry);
+            ep.listeningPorts.add(5173);
+
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/site',
+                projectId: 'file:///workspace/alice/site',
+                processId: 'process-alice',
+            }), res);
+
+            expect((res.record.body as { port?: number }).port).to.not.equal(5173);
+        });
+
         it('rebinds an empty process reservation onto the preferred port once it listens', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

@@ -35,6 +35,12 @@ export interface QaapDevPreviewRegisterOptions {
      * returned by {@link QaapDevPreviewPortRegistry.expiredRegistrationConflicts} is no longer accepting connections.
      */
     readonly replaceExpired?: boolean;
+    /**
+     * Back-dates the immutable reservation age of a NEW record. Used when the registration adopts
+     * a listener that is already serving: there is no pending start to protect with the start
+     * grace, so the record must be reaped as soon as that listener goes away.
+     */
+    readonly claimedAt?: number;
 }
 
 interface PersistedQaapDevPreviewRegistry {
@@ -158,7 +164,7 @@ export class QaapDevPreviewPortRegistry {
 
         const record: QaapDevPreviewRecord = {
             ...registration,
-            claimedAt: now,
+            claimedAt: options.claimedAt ?? now,
             touchedAt: now,
             accessToken: randomBytes(24).toString('base64url'),
         };
