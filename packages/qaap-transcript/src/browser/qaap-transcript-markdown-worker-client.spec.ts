@@ -120,4 +120,95 @@ describe('qaap-transcript-markdown-worker-client', () => {
             enableTranscriptRenderMetrics(false);
         }
     });
+
+    it('paints superseded stream results instead of starving the host while the reveal ticks every frame', async () => {
+        const runtime = globalThis as unknown as { Worker?: typeof Worker; location?: { href: string } };
+        const previousWorker = runtime.Worker;
+        const previousLocation = runtime.location;
+        runtime.Worker = TestWorker as unknown as typeof Worker;
+        runtime.location = { href: 'http://localhost/' };
+        const { QaapTranscriptMarkdownWorkerClient } = await import('./qaap-transcript-markdown-worker-client');
+        try {
+            QaapTranscriptMarkdownWorkerClient.resetForTests();
+            const client = QaapTranscriptMarkdownWorkerClient.get();
+            const host = { dataset: {} as DOMStringMap } as HTMLElement;
+            const painted: number[] = [];
+            const apply = (target: HTMLElement, patch: { stableLength: number; totalLength: number }): void => {
+                painted.push(patch.totalLength);
+                target.dataset.qaapStreamStableLength = String(patch.stableLength);
+                target.dataset.qaapStreamTotalLength = String(patch.totalLength);
+            };
+            const request = (content: string): void => client.requestStreamingPatch(
+                host, content, Number(host.dataset.qaapStreamStableLength ?? '-1'), Number(host.dataset.qaapStreamTotalLength ?? '-1'),
+                apply, () => undefined);
+            const respond = (index: number, totalLength: number): void => {
+                const posted = TestWorker.latest!.posted[index];
+                TestWorker.latest!.emit({
+                    type: 'stream_result', requestId: posted.requestId, generation: posted.generation,
+                    stableLength: 0, totalLength, tailHtml: `<p>${totalLength}</p>`, cleanLength: totalLength,
+                });
+            };
+
+            // Each worker response lands only after the next frame already asked for a newer snapshot.
+            request('a'.repeat(10));
+            request('a'.repeat(20));
+            respond(0, 10);
+            request('a'.repeat(30));
+            respond(1, 20);
+            request('a'.repeat(40));
+            respond(2, 30);
+
+            expect(painted, 'every superseded-but-newer prefix paints').to.deep.equal([10, 20, 30]);
+            const next = TestWorker.latest!.posted[3];
+            expect(next.type === 'parse_stream' ? next.previousTotalLength : undefined,
+                'the queued request diffs against what was painted, not what was shown at enqueue').to.equal(30);
+        } finally {
+            QaapTranscriptMarkdownWorkerClient.resetForTests();
+            if (previousWorker) {
+                runtime.Worker = previousWorker;
+            } else {
+                delete runtime.Worker;
+            }
+            if (previousLocation) {
+                runtime.location = previousLocation;
+            } else {
+                delete runtime.location;
+            }
+        }
+    });
+
+    it('does not paint a superseded stream result over a queued final parse', async () => {
+        const runtime = globalThis as unknown as { Worker?: typeof Worker; location?: { href: string } };
+        const previousWorker = runtime.Worker;
+        const previousLocation = runtime.location;
+        runtime.Worker = TestWorker as unknown as typeof Worker;
+        runtime.location = { href: 'http://localhost/' };
+        const { QaapTranscriptMarkdownWorkerClient } = await import('./qaap-transcript-markdown-worker-client');
+        try {
+            QaapTranscriptMarkdownWorkerClient.resetForTests();
+            const client = QaapTranscriptMarkdownWorkerClient.get();
+            const host = { dataset: {} as DOMStringMap } as HTMLElement;
+            const painted: string[] = [];
+            client.requestStreamingPatch(host, 'partial', -1, -1, () => painted.push('stream'), () => undefined);
+            client.requestParse(host, 'final answer', (_target, html) => painted.push(html), () => undefined);
+            const posted = TestWorker.latest!.posted[0];
+            TestWorker.latest!.emit({
+                type: 'stream_result', requestId: posted.requestId, generation: posted.generation,
+                stableLength: 0, totalLength: 7, tailHtml: '<p>partial</p>', cleanLength: 7,
+            });
+            expect(painted).to.deep.equal([]);
+        } finally {
+            QaapTranscriptMarkdownWorkerClient.resetForTests();
+            if (previousWorker) {
+                runtime.Worker = previousWorker;
+            } else {
+                delete runtime.Worker;
+            }
+            if (previousLocation) {
+                runtime.location = previousLocation;
+            } else {
+                delete runtime.location;
+            }
+        }
+    });
 });

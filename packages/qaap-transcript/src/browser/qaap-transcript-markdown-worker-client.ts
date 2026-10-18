@@ -9,7 +9,11 @@ import {
     type TranscriptMarkdownWorkerResponse,
     type TranscriptMarkdownWorkerStreamResponse,
 } from './qaap-transcript-markdown-worker-protocol';
-import type { StreamingMarkdownHtmlPatch } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-streaming-markdown-view';
+import {
+    TRANSCRIPT_STREAM_STABLE_LENGTH_DATA,
+    TRANSCRIPT_STREAM_TOTAL_LENGTH_DATA,
+    type StreamingMarkdownHtmlPatch,
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-streaming-markdown-view';
 import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 
 export type TranscriptMarkdownApplyFn = (host: HTMLElement, html: string, cleanLength: number) => void;
@@ -51,6 +55,8 @@ export class QaapTranscriptMarkdownWorkerClient {
     protected nextRequestId = 0;
     protected nextStreamId = 0;
     protected readonly hostGenerations = new WeakMap<HTMLElement, number>();
+    /** Generation of the last result painted per host; stream results only ever move forward. */
+    protected readonly appliedGenerations = new WeakMap<HTMLElement, number>();
     /** Stable per-host stream id so the worker can accumulate frozen HTML across streaming ticks. */
     protected readonly hostStreamIds = new WeakMap<HTMLElement, number>();
     protected readonly pendingRequests = new Map<number, PendingRequest>();
@@ -139,7 +145,7 @@ export class QaapTranscriptMarkdownWorkerClient {
         if (this.workerFailed || this.inFlightRequestIds.has(host)) {
             return;
         }
-        const pending = this.latestRequests.get(host);
+        let pending = this.latestRequests.get(host);
         if (!pending) {
             return;
         }
@@ -149,6 +155,9 @@ export class QaapTranscriptMarkdownWorkerClient {
         }
 
         this.latestRequests.delete(host);
+        if (pending.kind === 'stream') {
+            pending = this.withCurrentStreamLengths(pending);
+        }
         const requestId = ++this.nextRequestId;
         this.pendingRequests.set(requestId, pending);
         this.inFlightRequestIds.set(host, requestId);
@@ -216,17 +225,51 @@ export class QaapTranscriptMarkdownWorkerClient {
         }
         this.pendingRequests.delete(message.requestId);
         this.inFlightRequestIds.delete(pending.host);
-        this.dispatchLatestRequest(pending.host);
-        if (!shouldApplyTranscriptMarkdownWorkerResult(this.hostGenerations.get(pending.host), message.generation)) {
-            return;
+        try {
+            if (!this.shouldApplyResult(pending, message.generation)) {
+                return;
+            }
+            this.appliedGenerations.set(pending.host, message.generation);
+            if (message.type === 'result' && pending.kind === 'parse') {
+                pending.apply(pending.host, message.html, message.cleanLength);
+                return;
+            }
+            if (message.type === 'stream_result' && pending.kind === 'stream') {
+                this.applyStreamResult(pending, message);
+            }
+        } finally {
+            // Dispatch after painting, so the next stream request diffs against what is shown.
+            this.dispatchLatestRequest(pending.host);
         }
-        if (message.type === 'result' && pending.kind === 'parse') {
-            pending.apply(pending.host, message.html, message.cleanLength);
-            return;
+    }
+
+    /**
+     * The latest generation always applies. While a turn streams, the smooth reveal requests a
+     * new snapshot every frame, so whenever the worker round-trip outlasts a frame (a long tail,
+     * a slow phone) the in-flight result is already superseded on arrival. Dropping it then
+     * starves the host: nothing ever paints and the answer freezes until the turn settles.
+     * A superseded stream result is still a newer prefix than what the DOM shows, so it paints
+     * (generations only move forward), unless a final parse is queued behind it.
+     */
+    protected shouldApplyResult(pending: PendingRequest, generation: number): boolean {
+        if (shouldApplyTranscriptMarkdownWorkerResult(this.hostGenerations.get(pending.host), generation)) {
+            return true;
         }
-        if (message.type === 'stream_result' && pending.kind === 'stream') {
-            this.applyStreamResult(pending, message);
+        if (pending.kind !== 'stream' || this.latestRequests.get(pending.host)?.kind === 'parse') {
+            return false;
         }
+        return generation > (this.appliedGenerations.get(pending.host) ?? 0);
+    }
+
+    /** A queued stream request diffs against the DOM as of dispatch, not as of its enqueue. */
+    protected withCurrentStreamLengths(pending: PendingStreamRequest): PendingStreamRequest {
+        const dataset = (pending.host as Partial<HTMLElement>).dataset;
+        const stable = dataset?.[TRANSCRIPT_STREAM_STABLE_LENGTH_DATA];
+        const total = dataset?.[TRANSCRIPT_STREAM_TOTAL_LENGTH_DATA];
+        if (stable === undefined || total === undefined) {
+            return pending;
+        }
+        return { ...pending, previousStableLength: Number(stable), previousTotalLength: Number(total) };
     }
 
     protected applyStreamResult(

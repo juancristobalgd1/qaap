@@ -109,14 +109,16 @@ export function patchStreamingAgentTextSegmentsExtracted(ctx: MobileProjectsTran
                     // visible change. Keep patching in place instead.
                     continue;
                 } else {
-                    // Genuinely missing closing-narrative host. Prefer refreshing
-                    // the Codex timeline in place over forcing a full agent-row
-                    // remount (which restarts shimmer/spin mid-stream).
-                    if (hasMobileExecutionEventTimeline(row)) {
-                        ctx.queueExecutionTimelineRefresh(row, nextSegments);
-                        return true;
+                    // Genuinely missing closing-narrative host: the first tick saw this
+                    // segment empty (a `content_block_start` with `text: ''` flushed before
+                    // its first delta), which reads as process text, so the append path
+                    // skipped it. Refreshing the timeline never mounts it, so the final
+                    // answer stayed invisible until the turn settled. Mount it now with
+                    // the same append helper (dedup and error-card aware), in place.
+                    if (!hasMobileExecutionEventTimeline(row)) {
+                        return false;
                     }
-                    return false;
+                    ctx.appendStreamingAgentTextSegment(row, nextSegments.slice(0, segmentIndex + 1), conv);
                 }
             }
             // Coalesce execution-timeline refresh with the final activity patch
