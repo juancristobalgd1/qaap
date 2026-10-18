@@ -111,14 +111,60 @@ print(content)')"
     PROMPT="$PROMPT_LINE"
   fi
 else
-  PROMPT="${@: -1}"
+  # Like the real CLI: the prompt is the positional argument when there is one, otherwise stdin.
+  # Qaap pipes it on stdin for every QAIQ run outside stream-json (`resolveAgentPromptTransport`:
+  # plain-stdin, placeholder omitted) — reviewer and verification fix turns included — so the last
+  # argv is then a flag value such as the model id, never the prompt.
+  POSITIONAL_PROMPT=''
+  HAS_POSITIONAL_PROMPT=0
+  EXPECT_FLAG_VALUE=0
+  for arg in "$@"; do
+      if [[ "$EXPECT_FLAG_VALUE" -eq 1 ]]; then
+          EXPECT_FLAG_VALUE=0
+          continue
+      fi
+      case "$arg" in
+          --tools | --disallowed-tools | --disallowedTools | --allowed-tools | --allowedTools \
+          | --permission-mode | --output-format | --input-format | --provider | --model \
+          | --permission-prompt-tool | --prompt-file | --append-system-prompt | --system-prompt \
+          | --max-turns | --resume | --session-id | --settings | --add-dir | --mcp-config)
+              EXPECT_FLAG_VALUE=1
+              ;;
+          -*)
+              ;;
+          *)
+              POSITIONAL_PROMPT="$arg"
+              HAS_POSITIONAL_PROMPT=1
+              ;;
+      esac
+  done
+  if [[ "$HAS_POSITIONAL_PROMPT" -eq 1 ]]; then
+      PROMPT="$POSITIONAL_PROMPT"
+  else
+      PROMPT="$(cat)"
+  fi
 fi
 PROMPT="${PROMPT#\'}"
 PROMPT="${PROMPT%\'}"
 
+# Both ends only: Qaap wraps the request in a long task-context preamble and workflow rules.
+mock_debug "$(date -u +%FT%TZ) prompt(${#PROMPT} chars) head: $(printf '%s' "$PROMPT" | head -c 300 | tr '\n' ' ')"
+mock_debug "$(date -u +%FT%TZ) prompt tail: $(printf '%s' "$PROMPT" | tail -c 600 | tr '\n' ' ')"
+
 if [[ -z "${PROMPT//[[:space:]]/}" ]]; then
     echo "mock-qaiq-rioja-agent: empty prompt" >&2
     exit 1
+fi
+
+# Qaap's independent post-turn reviewer (QAAP_AGENT_REVIEW, `buildAgentReviewPrompt`) only judges:
+# never touch the workspace, answer with the verdict sentinel. Checked first because the review
+# prompt quotes the original task, which may itself match a branch below.
+REVIEW_VERDICT_MARKER='@@QAAP:VERDICT@@'
+if [[ "$PROMPT" == *"$REVIEW_VERDICT_MARKER"* ]]; then
+    emit_json '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"mock-review","tools":[],"model":"mock/qaiq-review"}'
+    emit_assistant_text "${REVIEW_VERDICT_MARKER} pass Mock reviewer: no blocking issues."
+    emit_result "${REVIEW_VERDICT_MARKER} pass Mock reviewer: no blocking issues."
+    exit 0
 fi
 
 # The Playwright continuation regression asks this exact run-app question. Model the real
@@ -127,7 +173,8 @@ fi
 RUN_APP_CONTINUATION_PROMPT='Figure out how to build and run this project locally.'
 if [[ "$PROMPT" == *"$RUN_APP_CONTINUATION_PROMPT"* ]]; then
     emit_json '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"mock-auto-continue","tools":["Bash"],"model":"mock/qaiq-auto-continue"}'
-    if [[ "${PROMPT,,}" == *"continue this task now"* ]]; then
+    # grep -i instead of ${PROMPT,,}: macOS ships bash 3.2, which has no case-folding expansion.
+    if printf '%s' "$PROMPT" | grep -qi 'continue this task now'; then
         emit_assistant_thinking 'I have confirmed the Vite project and am starting the dev server now.'
         emit_tool_use 'mock-auto-continue-bash' 'Bash' '{"command":"npm run dev"}'
         emit_tool_result 'mock-auto-continue-bash' 'Vite dev server started at http://127.0.0.1:5173.'

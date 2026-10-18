@@ -80,6 +80,10 @@ jobs:
           # channel opens with "transport close", taking down the test server.
           # 45 minutes covers the full suite while preserving eventual cleanup.
           FRONTEND_CONNECTION_TIMEOUT: '2700000'
+          # argv + extracted prompt of every mock QAIQ run, archived below on failure. Kept outside
+          # test-results/ (Playwright empties it at startup) but under examples/playwright so the
+          # artifact keeps its layout.
+          QAAP_MOCK_QAIQ_DEBUG_LOG: ${{ github.workspace }}/examples/playwright/mock-qaiq-logs/mock-qaiq-debug.log
 
       - name: Archive test results
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -89,4 +93,5 @@ jobs:
           path: |
             examples/playwright/test-results/
             examples/playwright/playwright-report/
+            examples/playwright/mock-qaiq-logs/
           retention-days: 7
