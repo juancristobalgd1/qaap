@@ -8,6 +8,7 @@ import { Application, Request, Response } from '@theia/core/shared/express';
 import { json, raw } from 'body-parser';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapExpressRouteOrder } from '@theia/qaap-shared-core/lib/node/qaap-express-route-order';
 import {
     QAAP_BILLING_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,
@@ -50,6 +51,8 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             raw({ type: 'application/json' }),
             (req, res) => void this.handleWebhook(req, res),
         );
+        // An earlier global `json()` (upstream `@theia/filesystem`) would consume the stream before `raw()` runs.
+        QaapExpressRouteOrder.moveLastRouteFirst(app, 'qaap-billing-webhook');
         app.use(json());
         app.get(QAAP_BILLING_API_PATH, (req, res) => void this.handleGet(req, res));
         app.post(QAAP_BILLING_CHECKOUT_API_PATH, (req, res) => void this.handleCheckout(req, res));
@@ -204,10 +207,14 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'missing_signature' });
             return;
         }
+        if (!Buffer.isBuffer(req.body)) {
+            // Another parser consumed the stream first: the signed bytes are gone, so nothing can be verified.
+            res.status(400).json({ error: 'webhook_body_unavailable' });
+            return;
+        }
         let event;
         try {
-            const payload = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body ?? ''), 'utf8');
-            event = verifyStripeWebhookEvent(payload, signature, webhookSecret);
+            event = verifyStripeWebhookEvent(req.body, signature, webhookSecret);
         } catch {
             res.status(400).json({ error: 'invalid_signature' });
             return;
