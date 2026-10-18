@@ -16,6 +16,8 @@ const VITE_FIXTURE = path.join(RESOURCES, 'qaap-vite-fixture');
 const VITE_SUBFOLDER_FIXTURE = path.join(RESOURCES, 'qaap-vite-subfolder-fixture');
 const VITE_SUBFOLDER_APP = path.join(VITE_SUBFOLDER_FIXTURE, 'rioja-wines-landing-page');
 const DEV_PREVIEW_PORT = 5173;
+/** Ports the preview allocator walks from :5173 before this spec's servers would land elsewhere. */
+const DEV_PREVIEW_PORT_RANGE = 8;
 
 async function dismissMobileTutorial(page: Page): Promise<void> {
     const skip = page.locator('button').filter({ hasText: /^skip$/i }).first();
@@ -218,6 +220,32 @@ async function releasePreviewIdentities(page: Page): Promise<void> {
     }).catch(() => undefined);
 }
 
+/**
+ * Releases every preview identity registered on the dev-preview port range, whichever project or
+ * spec registered it. Release also stops the server behind it, so call it before this spec starts
+ * its own external Vite (or after it stopped it).
+ */
+async function releaseRegisteredPreviewPorts(baseURL: string | undefined): Promise<void> {
+    if (!baseURL) {
+        return;
+    }
+    for (let port = DEV_PREVIEW_PORT; port < DEV_PREVIEW_PORT + DEV_PREVIEW_PORT_RANGE; port++) {
+        try {
+            const probe = await fetch(new URL(`/qaap-dev/api/probe/${port}`, baseURL), { cache: 'no-store' });
+            const previewId = probe.ok ? (await probe.json() as { previewId?: string }).previewId : undefined;
+            if (previewId) {
+                await fetch(new URL('/qaap-dev/api/release', baseURL), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ previewId }),
+                });
+            }
+        } catch {
+            // Backend not reachable yet: nothing registered to release.
+        }
+    }
+}
+
 async function selectPreviewTab(page: Page): Promise<void> {
     const menuTrigger = page.locator('.theia-mobile-transcript-tab-icon-select').first();
     if (await menuTrigger.count()) {
@@ -340,8 +368,18 @@ test.describe('@qaap-mobile transcript dev preview flow', () => {
     test.use({ viewport: MOBILE_VIEWPORT });
     test.describe.configure({ timeout: 300_000 });
 
-    test.beforeEach(() => {
+    // Earlier specs leave Qaap-managed previews registered on the Vite ports (the run-app turn's
+    // autopilot preview on :5173, the occupied-port recovery on :5174), and an attempt of this
+    // flow can leave its own. Killing the listener is not enough: the backend keeps the identity
+    // until it is released, and refuses to bind :5173 to this workspace while another project's
+    // identity holds it — so the bootstrap parked a second server on :5175/:5176.
+    test.beforeEach(async ({ baseURL }) => {
+        await releaseRegisteredPreviewPorts(baseURL);
         killDevPreviewPort();
+    });
+
+    test.afterEach(async ({ baseURL }) => {
+        await releaseRegisteredPreviewPorts(baseURL);
     });
 
     test('external Vite on :5173 mounts proxied preview in Work Hub (root fixture)', async ({ playwright, browser }) => {
