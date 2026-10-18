@@ -167,6 +167,14 @@ jobs:
         shell: bash
         run: node scripts/qaap-task-to-pr-e2e.mjs --port 3467
 
+      # A multi-step task shows an editable plan, fans out to parallel subtasks in their own worktrees
+      # and ends in ONE PR (doc/qaap-task-plan-fanout.md): plan → PATCH edit → Run → ≥ 2 children
+      # streaming at once → integration turn → PR whose tree has every subtask's file. Own backend on
+      # :3468; ~30 s.
+      - name: Task plan fan-out e2e (plan → parallel subtasks → one PR)
+        shell: bash
+        run: node scripts/qaap-task-plan-fanout-e2e.mjs --port 3468
+
       - name: Upload gate artifacts
         if: always()
         uses: actions/upload-artifact@v4

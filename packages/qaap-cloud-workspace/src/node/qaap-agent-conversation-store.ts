@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 import { Emitter, Event } from '@theia/core/lib/common/event';
+import type { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 import {
     inject,
     injectable,
@@ -228,6 +229,9 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     public readonly onDidChangeStampedEmitter = new Emitter<QaapConversationLogEntry>();
     /** Same events as {@link onDidChange}, stamped with their sequence number (fires right after it). */
     readonly onDidChangeStamped: Event<QaapConversationLogEntry> = this.onDidChangeStampedEmitter.event;
+    protected readonly onDidSettleTurnEmitter = new Emitter<QaapGoalLoopTurnSettlement>();
+    /** Every terminally settled turn (success, blocked, failed, cancelled), goal loop or not. */
+    readonly onDidSettleTurn: Event<QaapGoalLoopTurnSettlement> = this.onDidSettleTurnEmitter.event;
     /** Resolves once {@link restoreFromDisk} finishes — consumers that reconcile against conversations should await this. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public restoreReady!: Promise<void>;
@@ -576,8 +580,23 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
         return next;
     }
 
+    /** Replaces the conversation's task plan (roadmap H3.1) and publishes it. */
+    setTaskPlan(conversationId: string, taskPlan: QaapTaskPlan | undefined, patch: Pick<Partial<QaapAgentConversation>, 'interactionModeId'> = {}): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(conversationId);
+        if (!conv) {
+            return undefined;
+        }
+        const next: QaapAgentConversation = { ...conv, ...patch, taskPlan, updatedAt: Date.now() };
+        this.conversations.set(conversationId, next);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        this.flushPersist();
+        return next;
+    }
+
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public notifyGoalLoopTurnSettled(settlement: QaapGoalLoopTurnSettlement): boolean {
+        // Optional: specs build the store from its prototype, without field initializers.
+        this.onDidSettleTurnEmitter?.fire(settlement);
         if (!isGoalLoopActive(this.conversations.get(settlement.conversationId))) {
             return false;
         }

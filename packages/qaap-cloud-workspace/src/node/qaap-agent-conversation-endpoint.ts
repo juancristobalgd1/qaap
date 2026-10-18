@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
+import { QaapTaskPlanError, QaapTaskPlanFanOutService } from './qaap-task-plan-fanout-service';
+import type { QaapTaskPlanEditRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 import type { QaapTaskPullRequestConsentRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
@@ -103,6 +105,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapTaskPullRequestService) @optional()
     protected readonly taskPullRequests: QaapTaskPullRequestService | undefined;
+
+    @inject(QaapTaskPlanFanOutService) @optional()
+    protected readonly taskPlans: QaapTaskPlanFanOutService | undefined;
 
     /**
      * Idempotency guard for conversation creation: `${ownerLogin}:${clientRequestId}` → the id of the
@@ -269,6 +274,18 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 return;
             }
             void this.handleTaskPullRequestConsent(req, res);
+        });
+        app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan`, (req, res) => {
+            this.handleTaskPlan(req, res, plans => plans.edit(req.params.id, (req.body ?? {}) as QaapTaskPlanEditRequest));
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan/run`, (req, res) => {
+            this.handleTaskPlan(req, res, plans => plans.run(req.params.id));
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan/run-single`, (req, res) => {
+            this.handleTaskPlan(req, res, plans => plans.runSingle(req.params.id));
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan/cancel`, (req, res) => {
+            this.handleTaskPlan(req, res, plans => plans.cancel(req.params.id));
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/worktree/apply`, (req, res) => {
             void this.handleApplyWorktree(req, res);
@@ -644,6 +661,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
             const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
             await this.warmBilling(ownerLogin);
+            const planTask = !!this.taskPlans && this.taskPlans.shouldPlan(
+                { message: body.message, interactionModeId: body.interactionModeId, fanOut: typeof body.fanOut === 'boolean' ? body.fanOut : undefined },
+                this.resolveCreateAgentId(cwd, body),
+            );
             const conv = this.store.create({
                 cwd,
                 ...(baseCwd ? { parallelBaseCwd: baseCwd } : {}),
@@ -659,6 +680,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 approvalPolicyId,
                 ...(toolApprovalRules ? { toolApprovalRules } : {}),
                 latencyMarks: sanitizeLatencyMarks(body.latencyMarks),
+                // A multi-step task starts with its read-only planning turn (roadmap H3.1).
+                ...(planTask ? { interactionModeId: 'plan', taskPlan: this.taskPlans!.createDraftPlan() } : {}),
             }, ownerLogin);
             if (dedupKey) {
                 this.rememberClientRequest(dedupKey, conv.id);
@@ -678,6 +701,16 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     this.repoClaims.delete(claimedRepo);
                 }
             }
+        }
+    }
+
+    /** The agent the first turn of a create request will run (mirrors the store's resolution). */
+    protected resolveCreateAgentId(cwd: string, body: Partial<QaapCreateAgentConversationRequest>): string | undefined {
+        try {
+            const seed = (body.agent ?? '').trim() || this.store.taskRunner.defaultAgent();
+            return this.store.resolveTurnAgent({ id: '', cwd, agentId: seed, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, (body.message ?? '').trim(), body.agent);
+        } catch {
+            return undefined;
         }
     }
 
@@ -1138,6 +1171,23 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         res.json(conv);
+    }
+
+    /** Edit / Run / Run as one task / Cancel on a task plan (`doc/qaap-task-plan-fanout.md`). */
+    protected handleTaskPlan(req: Request, res: Response, action: (plans: QaapTaskPlanFanOutService) => QaapAgentConversation): void {
+        if (!this.getConversationIfOwned(req, res, req.params.id)) {
+            return;
+        }
+        if (!this.taskPlans) {
+            res.status(503).json({ error: 'Task plans are not available on this server.' });
+            return;
+        }
+        try {
+            res.json(action(this.taskPlans));
+        } catch (error) {
+            const status = error instanceof QaapTaskPlanError ? error.status : 400;
+            res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     /** Allow (one-time consent for the owner and repository) or "Not now" for a task pull request. */
