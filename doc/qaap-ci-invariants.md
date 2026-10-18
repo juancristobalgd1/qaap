@@ -259,3 +259,14 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   PR create whose body carries the evidence markers, checks and reviewer sections.
 - **Why:** `QaapTaskPullRequestService` only runs after a real turn settles (checkpoints, quiescence,
   push, GitHub API); its specs fake the store and GitHub. Run it locally after `npm run build:browser`.
+
+### 16. A multi-step task fans out and still ends in one PR (pre-deploy gate)
+
+- **Rule:** the pre-deploy gate runs `node scripts/qaap-task-plan-fanout-e2e.mjs --port 3468` right after
+  the task-to-PR e2e. Same recipe (fake `qaiq`, bare `origin`, GitHub stub) with `QAAP_TASK_FANOUT=auto`
+  and `fanOut: true`: the plan must be shown, edited over PATCH, run as one child conversation per
+  subtask in its own worktree with at least two streaming at once, integrated by a parent turn, and
+  pushed as a single PR whose tree has every remaining subtask's file.
+- **Why:** the fan-out crosses the store, the worktree service, the pre-turn checkpoint gate and the
+  PR service; `qaap-task-plan-fanout-service.spec.ts` fakes the store. Run it locally after
+  `npm run build:browser`.

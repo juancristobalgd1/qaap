@@ -45,7 +45,7 @@ import {
     QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION,
     type PostUserMessageInternalOptions,
 } from './qaap-agent-conversation-store-constants';
-import { capturePreTurnCheckpointGate } from './qaap-agent-conversation-store-pre-turn-checkpoint';
+import { capturePreTurnCheckpointGate, capturePreTurnCheckpointThenPrepare } from './qaap-agent-conversation-store-pre-turn-checkpoint';
 
 /**
  * MUTATING git under the tenant wrapper, run asynchronously so a turn settle / checkpoint never
@@ -214,6 +214,10 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
         ...(request.approvalPolicyId ? { approvalPolicyId: request.approvalPolicyId } : {}),
         ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
+        ...(request.taskPlan ? { taskPlan: request.taskPlan } : {}),
+        ...(request.parentConversationId ? { parentConversationId: request.parentConversationId } : {}),
+        ...(request.taskPlanSubtaskId ? { taskPlanSubtaskId: request.taskPlanSubtaskId } : {}),
+        ...(request.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
         ...(() => {
             const agentModel = request.agentModel ?? request.qaiqModel;
             return agentModel && agentSupportsModelPicker(agentId)
@@ -238,6 +242,12 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
             request.toolApprovalRules,
             request.latencyMarks,
         );
+        // The planning turn's user message: the plan belongs to it (see buildTaskCreateRequestExtracted).
+        const started = ctx.conversations.get(id);
+        const firstUser = started?.messages.find(message => message.role === 'user');
+        if (started?.taskPlan && !started.taskPlan.sourceMessageId && firstUser) {
+            ctx.conversations.set(id, { ...started, taskPlan: { ...started.taskPlan, sourceMessageId: firstUser.id } });
+        }
     }
     return ctx.conversations.get(id)!;
 
@@ -771,7 +781,9 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         }
         // Snapshot the worktree BEFORE the agent can write (bounded wait, see
         // capturePreTurnCheckpointGate) so a cancelled turn can later be discarded.
-        const spawnGate = capturePreTurnCheckpointGate(ctx, id, next.cwd, userMessage);
+        const spawnGate = internal?.prepareWorkspace
+            ? capturePreTurnCheckpointThenPrepare(ctx, id, next.cwd, userMessage, internal.prepareWorkspace)
+            : capturePreTurnCheckpointGate(ctx, id, next.cwd, userMessage);
         task = ctx.taskRunner.create(
             ctx.buildTaskCreateRequest(next, turnAgentId, latencyMarks, userMessage.id),
             next.ownerLogin,

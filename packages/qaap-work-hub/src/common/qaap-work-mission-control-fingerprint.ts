@@ -24,6 +24,8 @@ export interface MissionControlRowFingerprintInput {
     readonly linesRemoved?: number;
     readonly updatedAt: number;
     readonly pullRequestAttention?: { readonly number?: number; readonly reason?: string };
+    readonly planLabel?: string;
+    readonly subtaskLabel?: string;
 }
 
 export interface MissionControlStructureFingerprintInput {
@@ -48,6 +50,8 @@ export function buildMissionControlRowFingerprint(input: MissionControlRowFinger
         input.linesRemoved ?? '',
         input.updatedAt,
         input.pullRequestAttention ? `pr${input.pullRequestAttention.number ?? ''}${input.pullRequestAttention.reason ?? ''}` : '',
+        input.planLabel ?? '',
+        input.subtaskLabel ?? '',
     ].join(':');
 }
 

@@ -40,6 +40,7 @@ async function loadTranscriptSurfaceCss(): Promise<void> {
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premium.css?qaap-lazy'),
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css?qaap-lazy'),
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css?qaap-lazy'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-task-plan.css?qaap-lazy'),
         // Rewind preview dialog: only opened from transcript messages.
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-rewind-preview.css?qaap-lazy'),
         import('../../src/browser/style/mobile-workbench-conversation.css?qaap-lazy'),

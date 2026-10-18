@@ -30,6 +30,7 @@ import { isTranscriptScrollNearBottom } from '@theia/qaap-transcript-overlay/lib
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
 import { markTranscriptConversationRetryOptimistic } from '../common/qaap-transcript-turn-recovery';
+import { syncOpenTranscriptTaskPlanCard } from './qaap-transcript-task-plan-card';
 
 export function touchTranscriptSemanticProgressFromConversationExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): void {
         const segments = resolveTranscriptStreamingAgentSegments(conv);
@@ -358,6 +359,7 @@ export function bindOpenTranscriptThreadStoreExtracted(ctx: MobileProjectsTransc
                         ctx.ensureTranscriptConversationRefresh();
                     }
                 }
+                syncOpenTranscriptTaskPlanCard(ctx.host, ctx.resolveActiveTranscriptChatHost());
             },
             snapshot => snapshot.summariesById.get(conversationId),
             conversationId,

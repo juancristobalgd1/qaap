@@ -171,6 +171,53 @@ async function waitForPreviewStaged(page: Page): Promise<void> {
     }), { timeout: 120_000 }).toBe('staged');
 }
 
+/**
+ * The preview must be the external Vite the test started, not a second copy the bootstrap spawned.
+ * Without this the flow also passes when the bootstrap parks its own server on the next free port
+ * (:5174, or :5176 when earlier runs left :5174/:5175 behind), which then races the staging
+ * check and was the source of the CI flake.
+ */
+async function expectAttachedToExternalServer(page: Page, port: number): Promise<void> {
+    await expect.poll(async () => page.evaluate((expectedPort: number) => {
+        const state = (window as unknown as {
+            __qaapBootstrap?: { getState?: () => { lastPort?: number; devOutputTail?: string } };
+        }).__qaapBootstrap?.getState?.();
+        const spawnedOwnServer = /--port\s+\d+/.test(state?.devOutputTail ?? '');
+        // On failure the poll reports where the preview landed and what the bootstrap launched.
+        return state?.lastPort === expectedPort && !spawnedOwnServer
+            ? 'attached'
+            : JSON.stringify({ lastPort: state?.lastPort, spawnedOwnServer, devOutputTail: (state?.devOutputTail ?? '').slice(-400) });
+    }, port), { timeout: 30_000 }).toBe('attached');
+}
+
+/**
+ * The backend registry outlives the page and the Vite process. A preview identity left on :5173
+ * keeps that port reserved for the next test or retry, which then cannot attach to its own
+ * external server. Release what this flow registered before the page goes away.
+ */
+async function releasePreviewIdentities(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+        const ids = new Set<string>();
+        for (const frame of document.querySelectorAll('iframe[src*="/qaap-preview/"]')) {
+            const match = /\/qaap-preview\/([^/?#]+)\//.exec(frame.getAttribute('src') ?? '');
+            if (match) {
+                ids.add(match[1]);
+            }
+        }
+        const state = (window as unknown as { __qaapBootstrap?: { getState?: () => { previewUrl?: string } } })
+            .__qaapBootstrap?.getState?.();
+        const fromState = /\/qaap-preview\/([^/?#]+)\//.exec(state?.previewUrl ?? '');
+        if (fromState) {
+            ids.add(fromState[1]);
+        }
+        await Promise.all([...ids].map(previewId => fetch('/qaap-dev/api/release', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ previewId }),
+        }).catch(() => undefined)));
+    }).catch(() => undefined);
+}
+
 async function selectPreviewTab(page: Page): Promise<void> {
     const menuTrigger = page.locator('.theia-mobile-transcript-tab-icon-select').first();
     if (await menuTrigger.count()) {
@@ -271,17 +318,22 @@ async function runWorkHubProxiedPreviewFlow(
     scaffoldRelativePath?: string,
     port: number = DEV_PREVIEW_PORT,
 ): Promise<void> {
-    await waitForWorkHubReady(page);
-    await waitForBackendDevProbe(page, port);
-    await claimDevPreviewPort(page, workspaceRootUrl, port);
-    await waitForBootstrapDetected(page, scaffoldRelativePath);
-    await triggerBootstrapAttachToRunningDevServer(page);
-    await waitForPreviewStaged(page);
-    await selectPreviewTab(page);
-    if (!await clickOpenPreviewIfOffered(page)) {
-        await mountPreviewIframeFallback(page, port);
+    try {
+        await waitForWorkHubReady(page);
+        await waitForBackendDevProbe(page, port);
+        await claimDevPreviewPort(page, workspaceRootUrl, port);
+        await waitForBootstrapDetected(page, scaffoldRelativePath);
+        await triggerBootstrapAttachToRunningDevServer(page);
+        await waitForPreviewStaged(page);
+        await expectAttachedToExternalServer(page, port);
+        await selectPreviewTab(page);
+        if (!await clickOpenPreviewIfOffered(page)) {
+            await mountPreviewIframeFallback(page, port);
+        }
+        await expectDevPreviewMounted(page);
+    } finally {
+        await releasePreviewIdentities(page);
     }
-    await expectDevPreviewMounted(page);
 }
 
 test.describe('@qaap-mobile transcript dev preview flow', () => {

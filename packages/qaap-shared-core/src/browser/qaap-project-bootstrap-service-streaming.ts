@@ -153,6 +153,22 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             return;
         }
 
+        // A server already answering on the framework's own port that the backend attributes to
+        // THIS project (external Vite, a run that outlived a reload) is the preview. Reserving
+        // instead makes the allocator skip the occupied port and park a second copy of the app on
+        // the next free one (:5174, or :5176 when earlier runs left :5174/:5175 behind). Ownership
+        // is still verified by the claim + probe inside the attach, so another project's or an
+        // unregistered listener is never adopted. A live managed terminal means this run is a
+        // restart whose old server may still be shutting down: spawn then, do not attach to it.
+        const hasLiveManagedTerminal = ctx.devTerminal !== undefined && !ctx.devTerminal.isDisposed;
+        if (spawnPlan.targetPort !== undefined && spawnPlan.targetPort !== sectionPort && !hasLiveManagedTerminal
+            && await ctx.tryAttachToExistingServer([spawnPlan.targetPort])) {
+            if (runId === ctx.devRunGeneration) {
+                ctx._error = undefined;
+            }
+            return;
+        }
+
         // VPS/container restore can resurrect Dev terminals whose durable claim was already reaped.
         // Reconcile globally before cwd-scoped disposal so orphan listeners do not respawn.
         await ctx.reconcileRestoredPreviewTerminals();
