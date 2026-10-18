@@ -46,6 +46,13 @@ export function clearTranscriptUserScrollIntent(scroller: HTMLElement): void {
     scroller.removeAttribute(TRANSCRIPT_USER_SCROLL_INTENT_REASON_ATTR);
 }
 
+/** Selection state per scroller, kept by {@link attachTranscriptScrollIntentObserver}'s `selectionchange` listener. */
+const observedSelectionByScroller = new WeakMap<HTMLElement, boolean>();
+
+/**
+ * Live check. Reading the selection makes the engine flush style and layout, so after a DOM
+ * mutation it forces a synchronous layout of the whole transcript: never call it per render.
+ */
 export function transcriptHasActiveSelection(scroller: HTMLElement): boolean {
     const selection = document.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
@@ -54,6 +61,15 @@ export function transcriptHasActiveSelection(scroller: HTMLElement): boolean {
     const anchor = selection.anchorNode;
     const focus = selection.focusNode;
     return (!!anchor && scroller.contains(anchor)) || (!!focus && scroller.contains(focus));
+}
+
+/**
+ * Layout-free variant for hot paths (every streaming patch): the state the intent observer
+ * recorded on the last `selectionchange`. A scroller without an observer reports no selection
+ * rather than paying for the live read: the observer is also what detaches follow on a selection.
+ */
+export function transcriptHasObservedSelection(scroller: HTMLElement): boolean {
+    return observedSelectionByScroller.get(scroller) === true;
 }
 
 export function transcriptHasInteractiveFocus(scroller: HTMLElement): boolean {
@@ -97,7 +113,9 @@ export function attachTranscriptScrollIntentObserver(scroller: HTMLElement): Dis
         markTranscriptUserScrollIntent(scroller, 'keyboard');
     };
     const onSelectionChange = (): void => {
-        if (transcriptHasActiveSelection(scroller)) {
+        const selected = transcriptHasActiveSelection(scroller);
+        observedSelectionByScroller.set(scroller, selected);
+        if (selected) {
             markTranscriptUserScrollIntent(scroller, 'selection');
         }
     };
@@ -119,6 +137,7 @@ export function attachTranscriptScrollIntentObserver(scroller: HTMLElement): Dis
         }
     };
 
+    observedSelectionByScroller.set(scroller, transcriptHasActiveSelection(scroller));
     scroller.addEventListener('wheel', onWheel, { passive: true });
     scroller.addEventListener('touchstart', onTouchStart, { passive: true });
     scroller.addEventListener('keydown', onKeydown);
@@ -133,5 +152,6 @@ export function attachTranscriptScrollIntentObserver(scroller: HTMLElement): Dis
         scroller.removeEventListener('focusin', onFocusIn);
         scroller.removeEventListener('click', onClick, true);
         document.removeEventListener('selectionchange', onSelectionChange);
+        observedSelectionByScroller.delete(scroller);
     });
 }

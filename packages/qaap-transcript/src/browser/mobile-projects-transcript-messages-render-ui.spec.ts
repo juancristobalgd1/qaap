@@ -844,6 +844,43 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(scrollTop).to.equal(1000); // max scrollTop = scrollHeight - clientHeight
     });
 
+    it('skips the preserve-anchor pass after an in-place tail patch while the reader is detached', () => {
+        // Each preserve-anchor costs two rAFs of forced layout reads; an in-place patch of the
+        // last row cannot move a still-mounted anchor row, so it must not queue one per SSE flush.
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        const cssHost = globalThis as unknown as { CSS?: { escape(v: string): string; supports(...a: unknown[]): boolean } };
+        if (!cssHost.CSS) {
+            cssHost.CSS = { escape: (value: string) => value, supports: () => false };
+        }
+        const agent = (text: string): QaapAgentMessageDTO => ({
+            id: 'agent-1', role: 'agent', content: '', createdAt: 2,
+            traceEvents: [{ type: 'assistant_text', id: 'text-1', content: text, status: 'streaming' }],
+        });
+        const user: QaapAgentMessageDTO = { id: 'user-1', role: 'user', content: 'Explain this bug', createdAt: 1 };
+        const first = conversationWithMessages([user, agent('First chunk')]);
+        renderUi.renderTranscriptMessages(chatHost, first);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const controller = ensureTranscriptScrollController(messageHost);
+        controller.notifyUserDetach('wheel');
+
+        host.transcriptLastConv = first;
+        host.transcriptLastRenderedConversationId = first.id;
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
+        try {
+            renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([user, agent('First chunk with more streaming tokens')]));
+            expect(getTranscriptRenderMetricsSnapshot().render_patch_last_agent_in_place).to.equal(1);
+        } finally {
+            resetTranscriptRenderMetrics();
+            enableTranscriptRenderMetrics(false);
+        }
+        expect(controller.isPreserveAnchorPending()).to.equal(false);
+        chatHost.remove();
+    });
+
     function settledConversation(
         id: string,
         messages: QaapAgentConversationDTO['messages'],

@@ -701,4 +701,116 @@ describe('qaap-transcript-scroll-controller', () => {
         expect(scrollToCalls).to.equal(1);
         expect(scrollTop).to.equal(500); // scrollHeight - clientHeight
     });
+
+    describe('preserve-anchor restore vs. the reader\'s own scroll', () => {
+        /** A detached scroller with one tall row whose content-space top is `row.top`. */
+        function detachedScroller(row: { top: number }): { scroller: HTMLElement; scrollTop: { value: number } } {
+            const scroller = document.createElement('div');
+            const scrollTop = { value: 0 };
+            Object.defineProperties(scroller, {
+                scrollTop: { configurable: true, get: () => scrollTop.value, set: (value: number) => { scrollTop.value = value; } },
+                clientHeight: { configurable: true, value: 400 },
+                scrollHeight: { configurable: true, value: 4000 },
+                getBoundingClientRect: {
+                    configurable: true,
+                    value: () => ({ top: 0, bottom: 400, left: 0, right: 320, width: 320, height: 400, x: 0, y: 0, toJSON: () => ({}) }),
+                },
+            });
+            const element = document.createElement('div');
+            element.setAttribute('data-transcript-message-id', 'agent-1');
+            Object.defineProperty(element, 'getBoundingClientRect', {
+                configurable: true,
+                value: () => {
+                    const top = row.top - scrollTop.value;
+                    return { top, bottom: top + 3000, left: 0, right: 320, width: 320, height: 3000, x: 0, y: top, toJSON: () => ({}) };
+                },
+            });
+            scroller.append(element);
+            document.body.append(scroller);
+            return { scroller, scrollTop };
+        }
+
+        it('does not scroll the reader back when they scrolled between capture and restore', () => {
+            const { scroller, scrollTop } = detachedScroller({ top: -200 });
+            const controller = ensureTranscriptScrollController(scroller);
+            const binding = controller.bind(scroller);
+            controller.notifyUserDetach('wheel');
+            const anchor = controller.captureAnchor(scroller);
+
+            // The reader wheels 300px down before the next frame runs the restore.
+            scroller.dispatchEvent(new window.WheelEvent('wheel', { deltaY: 300 }));
+            scrollTop.value = 300;
+
+            expect(controller.restoreAnchor(scroller, anchor), 'no write over a user gesture').to.equal(false);
+            expect(scrollTop.value).to.equal(300);
+            binding.dispose();
+            scroller.remove();
+        });
+
+        it('does not write while a gesture is in flight, even for an anchor captured after its input', () => {
+            // The wheel event fires first and its scroll lands a frame later: a streaming patch
+            // in between captures an anchor that does not include the gesture yet.
+            const { scroller, scrollTop } = detachedScroller({ top: -200 });
+            const controller = ensureTranscriptScrollController(scroller);
+            const binding = controller.bind(scroller);
+            controller.notifyUserDetach('wheel');
+            scroller.dispatchEvent(new window.WheelEvent('wheel', { deltaY: 90 }));
+            const anchor = controller.captureAnchor(scroller);
+            scrollTop.value = 90;
+
+            expect(controller.restoreAnchor(scroller, anchor)).to.equal(false);
+            expect(scrollTop.value).to.equal(90);
+            binding.dispose();
+            scroller.remove();
+        });
+
+        it('does not write over a scroll whose input event has not been dispatched yet', () => {
+            // On a busy main thread the compositor applies the wheel scroll first; the restore's
+            // frame then sees a moved viewport with no wheel/scroll event to explain it.
+            const { scroller, scrollTop } = detachedScroller({ top: -200 });
+            const controller = ensureTranscriptScrollController(scroller);
+            const binding = controller.bind(scroller);
+            controller.notifyUserDetach('wheel');
+            const anchor = controller.captureAnchor(scroller);
+            scrollTop.value = 90;
+
+            expect(controller.restoreAnchor(scroller, anchor)).to.equal(false);
+            expect(scrollTop.value).to.equal(90);
+            binding.dispose();
+            scroller.remove();
+        });
+
+        it('lets the settle pass correct a late shift after its own first write', () => {
+            const row = { top: -200 };
+            const { scroller, scrollTop } = detachedScroller(row);
+            const controller = ensureTranscriptScrollController(scroller);
+            const binding = controller.bind(scroller);
+            controller.notifyUserDetach('wheel');
+            const anchor = controller.captureAnchor(scroller);
+
+            row.top += 50;
+            expect(controller.restoreAnchor(scroller, anchor)).to.equal(true);
+            row.top += 20; // an image above finished loading after the first pass
+            expect(controller.restoreAnchor(scroller, anchor)).to.equal(true);
+            expect(scrollTop.value).to.equal(70);
+            binding.dispose();
+            scroller.remove();
+        });
+
+        it('still restores a real layout shift when the reader did not scroll', () => {
+            const row = { top: -200 };
+            const { scroller, scrollTop } = detachedScroller(row);
+            const controller = ensureTranscriptScrollController(scroller);
+            const binding = controller.bind(scroller);
+            controller.notifyUserDetach('wheel');
+            const anchor = controller.captureAnchor(scroller);
+
+            row.top += 50; // content above the anchor grew by 50px
+
+            expect(controller.restoreAnchor(scroller, anchor)).to.equal(true);
+            expect(scrollTop.value).to.equal(50);
+            binding.dispose();
+            scroller.remove();
+        });
+    });
 });

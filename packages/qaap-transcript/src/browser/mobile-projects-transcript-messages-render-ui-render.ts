@@ -14,7 +14,7 @@ import {
     resolveTranscriptEffectiveStatus,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
-    transcriptHasActiveSelection,
+    transcriptHasObservedSelection,
     transcriptHasInteractiveFocus,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-intent';
 import {
@@ -423,7 +423,9 @@ export function shouldFollowTranscriptTailExtracted(ctx: MobileProjectsTranscrip
     if (scroll.shouldFollowTail()) {
         return true;
     }
-    if (transcriptHasActiveSelection(scroller) || transcriptHasInteractiveFocus(scroller)) {
+    // Runs on every streaming patch, right after a DOM mutation: the observed (event-kept)
+    // selection avoids the forced synchronous layout a live selection read costs.
+    if (transcriptHasObservedSelection(scroller) || transcriptHasInteractiveFocus(scroller)) {
         scroll.notifyUserDetach('interaction');
         return false;
     }

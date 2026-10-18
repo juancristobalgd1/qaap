@@ -174,7 +174,13 @@ export function tryPatchStreamingTranscriptMessagesExtracted(ctx: MobileProjects
                 ctx.host.transcriptLastConv = conv;
                 ctx.host.transcriptLastRenderedConversationId = conv.id;
                 ctx.host.transcriptLastRenderedMessageId = lastAgent.id;
-                ctx.applyTranscriptScrollAfterMutation(messageHost, anchor);
+                // An in-place patch only touches the last row, so it cannot move the top of an
+                // anchor row that is still mounted (the reader's row is that row or one above it),
+                // nor an absolute scroll position. Skipping the preserve-anchor saves two rAFs of
+                // forced layout reads per SSE flush while the reader is detached; native scroll
+                // anchoring covers shifts inside the row.
+                const anchorLost = !!anchor?.element && !anchor.element.isConnected;
+                ctx.applyTranscriptScrollAfterMutation(messageHost, anchorLost ? anchor : undefined);
                 return true;
             }
         }
