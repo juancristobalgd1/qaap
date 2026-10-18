@@ -165,6 +165,10 @@ describe('QaapTaskPlanFanOutService', function (): void {
         expect(service.shouldPlan({ message: 'x', fanOut: true }, 'shell')).to.equal(false);
         process.env.QAAP_TASK_FANOUT = 'on';
         expect(service.shouldPlan({ message: 'Fix the bug' }, 'qaiq')).to.equal(true);
+        expect(service.shouldPlan({ message: 'Fix the bug' }, 'qaiq', repo)).to.equal(true);
+        const plain = path.join(work, 'not-git');
+        fs.mkdirSync(plain);
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'qaiq', plain)).to.equal(false);
         expect(service.shouldPlan({ message: 'Fix the bug', fanOut: false }, 'qaiq')).to.equal(false);
     });
 

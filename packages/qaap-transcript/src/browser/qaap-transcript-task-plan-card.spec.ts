@@ -122,15 +122,20 @@ describe('syncTranscriptTaskPlanCard', () => {
         expect(button('.theia-mod-tertiary').textContent).to.equal('Cancel');
     });
 
-    it('sends the full list as one debounced PATCH after an edit', async () => {
+    it('disarms auto-run at once on the first edit, then sends the full list as one debounced PATCH', async () => {
         syncTranscriptTaskPlanCard(chatHost, { id: 'parent', taskPlan: plan() }, deps());
         const title = card()!.querySelector<HTMLInputElement>('input')!;
         title.value = 'API routes';
         title.dispatchEvent(new window.Event('input'));
+        // Sent without waiting for the debounce, so the server timer cannot start the unedited plan.
+        expect(api.calls).to.deep.equal([{
+            action: 'edit',
+            body: { subtasks: [{ id: 's1', title: 'API routes', prompt: 'Add the route' }, { id: 's2', title: 'UI', prompt: 'Add the card' }], autoRun: false },
+        }]);
         title.value = 'API routes v2';
         title.dispatchEvent(new window.Event('input'));
         await settle();
-        expect(api.calls).to.deep.equal([{
+        expect(api.calls.slice(1)).to.deep.equal([{
             action: 'edit',
             body: { subtasks: [{ id: 's1', title: 'API routes v2', prompt: 'Add the route' }, { id: 's2', title: 'UI', prompt: 'Add the card' }] },
         }]);
@@ -165,7 +170,9 @@ describe('syncTranscriptTaskPlanCard', () => {
         prompt.dispatchEvent(new window.Event('input'));
         button('.theia-mod-primary').click();
         await settle();
-        expect(api.calls.map(call => call.action)).to.deep.equal(['edit', 'run']);
+        // The immediate auto-run disarm, the pending content edit, then Run.
+        expect(api.calls.map(call => call.action)).to.deep.equal(['edit', 'edit', 'run']);
+        expect(api.calls[0].body?.autoRun).to.equal(false);
         expect(card()?.dataset.taskPlanState).to.equal('running');
     });
 

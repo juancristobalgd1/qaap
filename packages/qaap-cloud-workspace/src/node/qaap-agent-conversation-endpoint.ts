@@ -664,6 +664,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             const planTask = !!this.taskPlans && this.taskPlans.shouldPlan(
                 { message: body.message, interactionModeId: body.interactionModeId, fanOut: typeof body.fanOut === 'boolean' ? body.fanOut : undefined },
                 this.resolveCreateAgentId(cwd, body),
+                cwd,
             );
             const conv = this.store.create({
                 cwd,

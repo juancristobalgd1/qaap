@@ -88,6 +88,8 @@ interface TaskPlanCardState {
     editTimer?: number;
     countdownTimer?: number;
     nextLocalKey: number;
+    /** The first edit already told the server to stop the auto-run timer (sent without the debounce). */
+    autoRunDisarmed?: boolean;
 }
 
 const cardStates = new WeakMap<HTMLElement, TaskPlanCardState>();
@@ -539,8 +541,13 @@ function stopCountdown(card: HTMLElement, state: TaskPlanCardState): void {
 function markDirty(card: HTMLElement, state: TaskPlanCardState, debounce: boolean): void {
     state.dirty = true;
     state.revision++;
-    // Editing turns auto-run off on the server; stop showing the countdown right away.
+    // Editing turns auto-run off on the server; stop showing the countdown right away, and disarm the
+    // server timer now rather than after the debounce, or it could start the unedited plan meanwhile.
     syncCountdown(card, state);
+    if (state.plan.autoRun && !state.autoRunDisarmed && state.plan.state === 'awaiting-approval') {
+        state.autoRunDisarmed = true;
+        void sendEdit(card, state, { autoRun: false });
+    }
     if (!debounce) {
         return;
     }

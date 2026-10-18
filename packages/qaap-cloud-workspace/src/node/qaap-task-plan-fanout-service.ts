@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { randomUUID } from 'crypto';
+import { nls } from '@theia/core/lib/common/nls';
 import * as fs from 'fs';
 import * as path from 'path';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
@@ -109,9 +110,17 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
      * Whether a create request starts with a planning turn. Never for follow-ups, plan/ask modes, shell
      * agents or agents whose workspace cannot be made read-only; `fanOut: false` always opts out.
      */
-    shouldPlan(request: Pick<QaapCreateAgentConversationRequest, 'message' | 'interactionModeId' | 'fanOut'>, agentId: string | undefined): boolean {
+    shouldPlan(
+        request: Pick<QaapCreateAgentConversationRequest, 'message' | 'interactionModeId' | 'fanOut'>,
+        agentId: string | undefined,
+        cwd?: string,
+    ): boolean {
         const mode = this.mode();
         if (mode === 'off' || request.fanOut === false || !request.message?.trim()) {
+            return false;
+        }
+        // Subtasks run in git worktrees: a non-git project keeps the single-turn path.
+        if (cwd !== undefined && !this.isGitWorkspace(cwd)) {
             return false;
         }
         const interaction = request.interactionModeId?.trim().toLowerCase();
@@ -122,6 +131,21 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
             return false;
         }
         return mode === 'on' || request.fanOut === true || QaapTaskPlan.isMultiStepCandidate(request.message);
+    }
+
+    /** `cwd` is inside a git work tree (a `.git` directory or worktree file at it or above it). */
+    isGitWorkspace(cwd: string): boolean {
+        let dir = path.resolve(cwd);
+        for (;;) {
+            if (fs.existsSync(path.join(dir, '.git'))) {
+                return true;
+            }
+            const parent = path.dirname(dir);
+            if (parent === dir) {
+                return false;
+            }
+            dir = parent;
+        }
     }
 
     /** The initial plan stored on a conversation whose first turn plans the task. */
@@ -135,14 +159,14 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
     edit(conversationId: string, request: QaapTaskPlanEditRequest): QaapAgentConversation {
         const { plan } = this.requirePlan(conversationId, 'awaiting-approval');
         if (!Array.isArray(request.subtasks)) {
-            throw new QaapTaskPlanError('"subtasks" must be an array.', 400);
+            throw new QaapTaskPlanError(nls.localize('qaap/taskPlan/errorSubtasksArray', '"subtasks" must be an array.'), 400);
         }
         const draft = QaapTaskPlan.normalizeDraft({
             summary: typeof request.summary === 'string' ? request.summary : plan.summary,
             subtasks: request.subtasks.map(row => ({ title: String(row?.title ?? ''), prompt: String(row?.prompt ?? '') })),
         });
         if (draft.subtasks.length === 0) {
-            throw new QaapTaskPlanError('A plan needs at least one subtask.', 400);
+            throw new QaapTaskPlanError(nls.localize('qaap/taskPlan/errorNoSubtask', 'A plan needs at least one subtask.'), 400);
         }
         const previous = new Map(plan.subtasks.map(subtask => [subtask.id, subtask]));
         const subtasks: QaapTaskPlanSubtask[] = draft.subtasks.map((row, index) => {
@@ -174,7 +198,7 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
             return this.runSingle(conversationId);
         }
         if (!this.worktrees) {
-            throw new QaapTaskPlanError('Parallel subtasks need git worktrees, which this server does not provide.', 503);
+            throw new QaapTaskPlanError(nls.localize('qaap/taskPlan/errorNoWorktrees', 'Parallel subtasks need git worktrees, which this server does not provide.'), 503);
         }
         const running = this.save(conv.id, { ...plan, state: 'running', autoRunAt: undefined, updatedAt: Date.now() });
         this.scheduleEvaluate(conversationId);
@@ -193,7 +217,7 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
         const conv = this.store.get(conversationId);
         const plan = conv?.taskPlan;
         if (!conv || !plan) {
-            throw new QaapTaskPlanError('This conversation has no task plan.', 404);
+            throw new QaapTaskPlanError(nls.localize('qaap/taskPlan/errorNoPlan', 'This conversation has no task plan.'), 404);
         }
         if (!QaapTaskPlan.isActive(plan)) {
             return conv;
@@ -220,10 +244,10 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
         const conv = this.store.get(conversationId);
         const plan = conv?.taskPlan;
         if (!conv || !plan) {
-            throw new QaapTaskPlanError('This conversation has no task plan.', 404);
+            throw new QaapTaskPlanError(nls.localize('qaap/taskPlan/errorNoPlan', 'This conversation has no task plan.'), 404);
         }
         if (plan.state !== state) {
-            throw new QaapTaskPlanError(`The task plan is ${plan.state}, not ${state}.`);
+            throw new QaapTaskPlanError(nls.localize('qaap/taskPlan/errorWrongState', 'The task plan is {0}, not {1}.', plan.state, state));
         }
         return { conv, plan };
     }
@@ -734,7 +758,7 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
     protected save(conversationId: string, plan: QaapTaskPlan, patch: Pick<Partial<QaapAgentConversation>, 'interactionModeId'> = {}): QaapAgentConversation {
         const next = this.store.setTaskPlan(conversationId, plan, patch);
         if (!next) {
-            throw new QaapTaskPlanError('Conversation not found.', 404);
+            throw new QaapTaskPlanError(nls.localize('qaap/taskPlan/errorNoConversation', 'Conversation not found.'), 404);
         }
         return next;
     }
