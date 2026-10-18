@@ -16,6 +16,8 @@
 
 import { Page, PlaywrightWorkerArgs, _electron as electron } from '@playwright/test';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { QaapMenuBar } from './qaap-menu-bar';
 import { TheiaApp } from './theia-app';
 import { TheiaMenuBar } from './theia-main-menu';
@@ -101,6 +103,10 @@ function initializeTemporaryWorkspaceGit(workspace: TheiaWorkspace): void {
         return;
     }
     git(['init', '--quiet', '--initial-branch=main']);
+    // Real projects gitignore their dependencies; the fixtures carry none of their own. Without
+    // this, the snapshot tracks `node_modules/`, so the Vite cache Qaap's own dev preview writes
+    // (`node_modules/.vite/`) shows up as agent edits and arms post-turn verification and review.
+    fs.appendFileSync(path.join(cwd, '.git', 'info', 'exclude'), '\nnode_modules/\n');
     git(['add', '--all']);
     git(['-c', 'user.name=Qaap Playwright', '-c', 'user.email=qaap-playwright@localhost',
         'commit', '--quiet', '--allow-empty', '-m', 'Initial Qaap workspace snapshot']);
