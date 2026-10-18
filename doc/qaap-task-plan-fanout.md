@@ -45,7 +45,7 @@ llevan `parentConversationId` y `taskPlanSubtaskId`.
 
 ## Fases
 
-1. **Disparo.** `QAAP_TASK_FANOUT=off|auto|on` (por defecto `auto` tras el flip; empezó en `off`). Al crear una
+1. **Disparo.** `QAAP_TASK_FANOUT=off|auto|on`, por defecto `auto` (entró apagado en el primer commit y pasó a `auto` en el mismo PR tras el e2e). Al crear una
    conversación con primer mensaje en modo build, cwd git y un agente con solo lectura forzada:
    - `fanOut: true` en la petición (toggle del composer) → planifica;
    - `auto`: también si el mensaje es claramente multi-paso (≥ 3 elementos de lista accionables);

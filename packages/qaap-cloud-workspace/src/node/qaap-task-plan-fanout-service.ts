@@ -85,10 +85,11 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
         if (value === 'on' || value === '1' || value === 'true' || value === 'always') {
             return 'on';
         }
-        if (value === 'auto') {
-            return 'auto';
+        if (value === 'off' || value === '0' || value === 'false' || value === 'no') {
+            return 'off';
         }
-        return 'off';
+        // Default: plan the tasks that ask for it (fanOut) or are clearly multi-step; others stay one turn.
+        return 'auto';
     }
 
     protected autoRunMs(): number {

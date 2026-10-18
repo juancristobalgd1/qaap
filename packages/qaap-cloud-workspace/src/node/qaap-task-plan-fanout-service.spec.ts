@@ -152,6 +152,9 @@ describe('QaapTaskPlanFanOutService', function (): void {
 
     it('plans only eligible first messages, by mode', () => {
         const service = makeService(new FakeStore());
+        delete process.env.QAAP_TASK_FANOUT;
+        expect(service.mode()).to.equal('auto');
+        expect(service.shouldPlan({ message: 'Fix the bug' }, 'qaiq')).to.equal(false);
         process.env.QAAP_TASK_FANOUT = 'off';
         expect(service.shouldPlan({ message: 'x', fanOut: true }, 'qaiq')).to.equal(false);
         process.env.QAAP_TASK_FANOUT = 'auto';
