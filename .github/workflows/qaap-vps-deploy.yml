@@ -175,6 +175,13 @@ jobs:
         shell: bash
         run: node scripts/qaap-task-plan-fanout-e2e.mjs --port 3468
 
+      # A labelled GitHub issue becomes a linked PR without opening the app (doc/qaap-external-task-inputs.md):
+      # signed webhook deliveries to a local backend with a stateful GitHub stub; opt-in, refusals, the PR with
+      # `Closes #7`, the issue comments and a real (decrypted) web push. Own backend on :3469; ~20 s.
+      - name: External task e2e (GitHub issue → linked PR + notifications)
+        shell: bash
+        run: node scripts/qaap-external-task-e2e.mjs --port 3469
+
       - name: Upload gate artifacts
         if: always()
         uses: actions/upload-artifact@v4

@@ -218,6 +218,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         ...(request.parentConversationId ? { parentConversationId: request.parentConversationId } : {}),
         ...(request.taskPlanSubtaskId ? { taskPlanSubtaskId: request.taskPlanSubtaskId } : {}),
         ...(request.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
+        ...(request.externalTask ? { externalTask: request.externalTask } : {}),
         ...(() => {
             const agentModel = request.agentModel ?? request.qaiqModel;
             return agentModel && agentSupportsModelPicker(agentId)

@@ -142,4 +142,9 @@ describe('qaap-task-pull-request-body', () => {
         expect(buildTaskPullRequestCommitMessage('c1', [], 'Use password=hunter2 here')).not.to.contain('hunter2');
         expect(buildTaskPullRequestCommitMessage('c1', [], 'x'.repeat(200)).split('\n')[0].length).to.be.at.most(72);
     });
+
+    it('adds the closing keyword only when closesIssue is set', () => {
+        expect(buildTaskPullRequestEvidenceSection({ closesIssue: 7 })).to.contain('Closes #7');
+        expect(buildTaskPullRequestEvidenceSection({})).not.to.contain('Closes #');
+    });
 });

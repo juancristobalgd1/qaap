@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapExternalTaskOrigin } from './qaap-external-task';
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentConversationIsolation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -311,6 +312,8 @@ export interface QaapAgentConversation {
     readonly parentConversationId?: string;
     /** Set on a subtask's child conversation: its subtask id in the parent's {@link taskPlan}. */
     readonly taskPlanSubtaskId?: string;
+    /** Set when the task was started from outside the app (a GitHub issue): doc/qaap-external-task-inputs.md. */
+    readonly externalTask?: QaapExternalTaskOrigin;
     /** Latest context snapshot when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
@@ -409,6 +412,8 @@ export interface QaapAgentConversationSummary {
     readonly parentConversationId?: string;
     /** Set on a subtask's child conversation: its subtask id in the parent's {@link taskPlan}. */
     readonly taskPlanSubtaskId?: string;
+    /** Set when the task was started from outside the app (a GitHub issue): doc/qaap-external-task-inputs.md. */
+    readonly externalTask?: QaapExternalTaskOrigin;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     readonly contextUsage?: QaapAgentContextUsage;
@@ -495,6 +500,8 @@ export interface QaapCreateAgentConversationRequest {
     readonly taskPlanSubtaskId?: string;
     /** `false` creates the conversation with "Create PR when done" off (subtasks of a plan). */
     readonly taskPullRequestEnabled?: boolean;
+    /** Server-side only (the HTTP endpoint drops it): the external origin of the task. */
+    readonly externalTask?: QaapExternalTaskOrigin;
 }
 
 export interface QaapPostAgentMessageRequest {
@@ -701,6 +708,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
         ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
+        ...(conv.externalTask ? { externalTask: conv.externalTask } : {}),
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,
         ...(conv.goalLoop ? {
