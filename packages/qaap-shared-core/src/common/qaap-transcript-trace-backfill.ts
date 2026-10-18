@@ -59,7 +59,11 @@ export function backfillAgentMessageTraceEvents(
         return { message, changed: false };
     }
     let traceEvents = existing;
-    if (segments.length > 0) {
+    // A structured trace is authoritative: every writer that still produces segments writes the
+    // trace alongside them, and `materializeAgentMessageForApi` derives segments FROM the trace.
+    // Rebuilding it from those segments renumbers the AG-UI ids (`text-1` → `text-0`) under a live
+    // turn, so every later wire patch misses its event and the client transcript stops painting.
+    if (segments.length > 0 && !hasStructuredTraceEvents(existing)) {
         traceEvents = mergeSegmentTraceEvents(
             existing,
             segments,
@@ -171,6 +175,10 @@ export function backfillConversationTraceEvents(
         conversation: { ...conversation, messages },
         changed: true,
     };
+}
+
+function hasStructuredTraceEvents(events: readonly QaapTranscriptTraceEventDTO[]): boolean {
+    return events.some(event => event.type === 'assistant_text' || event.type === 'thought' || event.type === 'tool_call');
 }
 
 function traceEventsEqual(

@@ -136,4 +136,37 @@ describe('qaap-transcript-trace-backfill', () => {
         expect(materialized.content).to.equal('Landing creada.');
         expect(materialized.segments?.some(segment => segment.type === 'tool' && segment.name === 'Write')).to.equal(true);
     });
+
+    it('keeps a live AG-UI trace and its ids when materialized segments round-trip through backfill', () => {
+        const live: QaapAgentMessageDTO = {
+            id: 'a1',
+            role: 'agent',
+            content: '',
+            createdAt: 1,
+            traceEvents: [
+                { type: 'assistant_text', id: 'text-1', content: 'I will read the code.', status: 'completed' },
+                { type: 'tool_call', id: 'tool-1', name: 'Read', args: '{}', status: 'completed' },
+                { type: 'assistant_text', id: 'text-2', content: 'The transcript', status: 'streaming' },
+            ],
+        };
+        // GET materializes segments from the trace and the store writes the result back…
+        const materialized = materializeAgentMessageForApi(live);
+        expect(materialized.segments?.length).to.equal(3);
+        // …so the next GET backfills a message carrying both. The ids the wire deltas address must survive.
+        const { message: next, changed } = backfillAgentMessageTraceEvents(materialized, { streamingTail: true });
+        expect(changed).to.equal(false);
+        expect(next.traceEvents?.map(event => event.id)).to.deep.equal(['text-1', 'tool-1', 'text-2']);
+    });
+
+    it('settles a structured trace in place instead of rebuilding it from segments', () => {
+        const { message: next } = backfillAgentMessageTraceEvents({
+            id: 'a1',
+            role: 'agent',
+            content: 'Done',
+            createdAt: 1,
+            segments: [{ type: 'text', content: 'Done' }],
+            traceEvents: [{ type: 'assistant_text', id: 'text-1', content: 'Done', status: 'streaming' }],
+        });
+        expect(next.traceEvents).to.deep.equal([{ type: 'assistant_text', id: 'text-1', content: 'Done', status: 'completed' }]);
+    });
 });

@@ -370,6 +370,35 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
             expect(toolNames(agents[0])).to.deep.equal(['Read', 'Grep']);
         });
 
+        it('keeps AG-UI trace ids stable across chunks that map to no AG-UI event', () => {
+            const store = new TestConversationStore();
+            store.configureForTest(new TestTaskRunner());
+            store.seed({ ...idleConversation('c1'), agentId: AG_UI_AGENT_ID });
+            postConcurrentMessage(store, 'stream a long answer', AG_UI_AGENT_ID);
+            const line = (value: object): string => `${JSON.stringify(value)}\n`;
+            const textDelta = (index: number, text: string): string =>
+                line({ type: 'stream_event', event: { type: 'content_block_delta', index, delta: { type: 'text_delta', text } } });
+            const traceIds = (): string[] => (store.get('c1')!.messages.find(message => message.role === 'agent')?.traceEvents ?? [])
+                .map(event => event.id);
+
+            store.streamOutput('task-1', line({ type: 'system', subtype: 'init', session_id: 's', tools: [] }));
+            store.streamOutput('task-1', line({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } }));
+            store.streamOutput('task-1', textDelta(0, 'I will read '));
+            const liveIds = traceIds();
+            expect(liveIds, 'the live text event exists').to.have.length(1);
+
+            // Event-less chunks: a partial line, then the snapshot of text that already streamed.
+            const delta = textDelta(0, 'the code first.');
+            store.streamOutput('task-1', delta.slice(0, 20));
+            expect(traceIds(), 'a partial line keeps the AG-UI ids').to.deep.equal(liveIds);
+            store.streamOutput('task-1', delta.slice(20));
+            store.streamOutput('task-1', line({ type: 'assistant', message: { content: [{ type: 'text', text: 'I will read the code first.' }] } }));
+            expect(traceIds(), 'an already-streamed snapshot keeps the AG-UI ids').to.deep.equal(liveIds);
+
+            const text = store.get('c1')!.messages.find(message => message.role === 'agent')?.traceEvents?.[0];
+            expect(text?.type === 'assistant_text' ? text.content : undefined).to.equal('I will read the code first.');
+        });
+
         it('uses the run agent for AG-UI reduction and wire deltas after the picker changes', () => {
             const store = new TestConversationStore();
             store.configureForTest(new TestTaskRunner());
