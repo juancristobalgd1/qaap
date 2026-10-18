@@ -2,6 +2,7 @@
 
 import type { Application, Handler, NextFunction, Request, Response } from '@theia/core/shared/express';
 import { FileUri } from '@theia/core/lib/node';
+import * as path from 'path';
 import {
     QAAP_DEV_PREVIEW_CLAIM_PATH,
     QAAP_DEV_PREVIEW_CURRENT_PATH,
@@ -300,6 +301,10 @@ export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, r
             res.status(200).json({ previewId: record.previewId, previewUrl, port: record.port });
             return;
         }
+        // A port claim is how a bootstrap attaches to a server already answering there: hand the
+        // port back from another project's process-less identity when that server is provably this
+        // root's, or the probe keeps answering with the other project and the attach fails closed.
+        await ctx.releaseSupersededProcesslessPreview(port, owner, FileUri.fsPath(root));
         // An EXPIRED claim from a different tenant only frees the port once nothing is
         // listening on it: an idle-but-still-running server must not be silently taken over
         // just because its owner did not touch the preview for 30 minutes.
@@ -468,6 +473,67 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
     });
 }
 
+function isSameOrInsideQaapPreviewRoot(candidate: string, root: string): boolean {
+    const relative = path.relative(root, candidate);
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/**
+ * A preview identity outlives the server it was bound to: once the server stops and another one
+ * takes its port, the identity keeps answering for that port. For an identity with a live process
+ * the start grace and the process itself protect it. A PROCESS-LESS identity (an external server
+ * adopted by #292, or a terminal whose recorded process died) has nothing that ever ends it, so
+ * it would block every other project of the same owner from that port for as long as something
+ * answers there.
+ *
+ * Release it to `claimingRoot` only on positive evidence that the server now answering is the
+ * claiming project's own: every listener runs from inside `claimingRoot` and none from inside the
+ * identity's root. Never across owners, never inside the start grace (an empty reservation is still
+ * waiting for its process), never when either root contains the other (the evidence would be
+ * ambiguous), and never when the listeners cannot be inspected. The listener is NOT signalled: it
+ * is the server being handed over.
+ */
+export async function releaseSupersededProcesslessPreviewExtracted(
+    ctx: QaapDevPreviewEndpointContext,
+    port: number,
+    owner: string,
+    claimingRoot: string,
+): Promise<boolean> {
+    const record = ctx.portRegistry.getByPort(port);
+    if (!record || record.ownerLogin !== owner) {
+        return false;
+    }
+    const recordRoot = canonicalizeQaapPreviewRoot(record.root);
+    const root = canonicalizeQaapPreviewRoot(claimingRoot);
+    if (isSameOrInsideQaapPreviewRoot(root, recordRoot) || isSameOrInsideQaapPreviewRoot(recordRoot, root)) {
+        return false;
+    }
+    if (Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS) {
+        return false;
+    }
+    if (record.osProcessId !== undefined && !ctx.isPreviewProcessDead(record)) {
+        return false;
+    }
+    if (!await ctx.probeLocalDevServer(port)) {
+        return false;
+    }
+    const listenerCwds = ctx.resolvePortListenerCwds(port, owner);
+    if (listenerCwds.length === 0
+        || !listenerCwds.every(cwd => isSameOrInsideQaapPreviewRoot(cwd, root))
+        || listenerCwds.some(cwd => isSameOrInsideQaapPreviewRoot(cwd, recordRoot))) {
+        return false;
+    }
+    ctx.portRegistry.releasePreview(record.previewId, owner);
+    console.info('[qaap-preview] released process-less identity to the project now serving its port', {
+        previewId: record.previewId,
+        ownerLogin: owner,
+        port,
+        fromRoot: recordRoot,
+        root,
+    });
+    return true;
+}
+
 /**
  * Reserves the first safe port at or after `preferredPort` for `registration` and registers it.
  * Skips the IDE port, ports held by a registration (start grace, or still answering), any
@@ -485,7 +551,11 @@ export async function allocatePreviewPortExtracted(
         if (ctx.isIdeListenPort(port)) {
             continue;
         }
-        const occupiedRecord = ctx.portRegistry.getByPort(port);
+        let occupiedRecord = ctx.portRegistry.getByPort(port);
+        if (occupiedRecord && offset === 0 && occupiedRecord.ownerLogin === owner
+            && await ctx.releaseSupersededProcesslessPreview(port, owner, registration.root)) {
+            occupiedRecord = undefined;
+        }
         if (occupiedRecord) {
             const withinStartGrace = Date.now() - occupiedRecord.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
             if (withinStartGrace || await ctx.probeLocalDevServer(port)) {

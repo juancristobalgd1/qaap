@@ -4,9 +4,12 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as net from 'net';
 import {
     extractListeningInodesForPort,
     findListeningPidsOnPort,
+    findListeningProcessCwdsOnPort,
     findPidsForSocketInodes,
     parseProcNetTcpLocalPort,
     terminateListenersOnPort,
@@ -46,5 +49,28 @@ describe('qaap-dev-preview-port-listener', () => {
         expect(() => terminateListenersOnPort(-1)).not.to.throw();
         expect(() => terminateListenersOnPort(0)).not.to.throw();
         expect(() => terminateListenersOnPort(65536)).not.to.throw();
+    });
+
+    it('reports the working directory of the process listening on a port', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const server = net.createServer();
+        await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+        try {
+            const port = (server.address() as net.AddressInfo).port;
+            const cwds = findListeningProcessCwdsOnPort(port).map(cwd => fs.realpathSync(cwd));
+            expect(cwds).to.deep.equal([fs.realpathSync(process.cwd())]);
+        } finally {
+            await new Promise<void>(resolve => server.close(() => resolve()));
+        }
+    });
+
+    it('reports no working directory for a port nobody listens on', async () => {
+        const server = net.createServer();
+        await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+        const port = (server.address() as net.AddressInfo).port;
+        await new Promise<void>(resolve => server.close(() => resolve()));
+        expect(findListeningProcessCwdsOnPort(port)).to.deep.equal([]);
     });
 });

@@ -1092,6 +1092,174 @@ describe('QaapDevPreviewEndpoint', () => {
             expect((res.record.body as { port?: number }).port).to.not.equal(5173);
         });
 
+        describe('process-less identity of another project on the claimed port', () => {
+            const SITE_A = 'file:///workspace/dev/site-a';
+            const SITE_B = 'file:///workspace/dev/site-b';
+
+            class HandoverTestEndpoint extends ClaimTestEndpoint {
+                readonly listenerCwds = new Map<number, string[]>();
+                readonly terminated: number[] = [];
+
+                override resolvePortListenerCwds(port: number): string[] {
+                    return this.listenerCwds.get(port) ?? [];
+                }
+
+                override terminatePreviewProcess(record: { readonly port?: number }): void {
+                    if (record.port !== undefined) {
+                        this.terminated.push(record.port);
+                    }
+                }
+            }
+
+            /** Site A's external Vite on :5173, adopted by #292: a record with no OS process. */
+            const adoptForSiteA = async (ep: HandoverTestEndpoint, login: string): Promise<string> => {
+                ep.listeningPorts.add(5173);
+                ep.listenerCwds.set(5173, ['/workspace/dev/site-a']);
+                // Authenticated sessions refuse a bare claim of an unregistered listener; the owner's
+                // port claim is what #292's adoption requires, so seed it directly.
+                (ep as unknown as { portRegistry: QaapDevPreviewPortRegistry }).portRegistry.claim(5173, login);
+                await ep.exposeHandleClaim(claimReq(5173, undefined, SITE_A), makeRes());
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, {
+                    workspaceId: SITE_A,
+                    projectId: SITE_A,
+                    processId: 'process-site-a',
+                }, SITE_A), res);
+                expect((res.record.body as { port: number }).port).to.equal(5173);
+                return (res.record.body as { previewId: string }).previewId;
+            };
+
+            const claimForSiteB = async (ep: HandoverTestEndpoint): Promise<{ legacy: number; port?: number; previewId?: string }> => {
+                const legacy = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, undefined, SITE_B), legacy);
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, {
+                    workspaceId: SITE_B,
+                    projectId: SITE_B,
+                    processId: 'process-site-b',
+                }, SITE_B), res);
+                const body = res.record.body as { port?: number; previewId?: string } | undefined;
+                return { legacy: legacy.record.code, port: body?.port, previewId: body?.previewId };
+            };
+
+            it('hands the port to the same owner\'s other project once its own server answers there', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new HandoverTestEndpoint();
+                ep.setClaimFakes('_dev', registry, 'skip');
+                const siteA = await adoptForSiteA(ep, '_dev');
+
+                // Site A's server stopped; site B's external Vite now answers on :5173.
+                ep.listenerCwds.set(5173, ['/workspace/dev/site-b']);
+                const siteB = await claimForSiteB(ep);
+
+                expect(siteB.legacy).to.equal(204);
+                expect(siteB.port).to.equal(5173);
+                expect(registry.getByPort(5173)?.previewId).to.equal(siteB.previewId);
+                expect(registry.getForOwner(siteA, '_dev')).to.equal(undefined);
+                // The listener is the server being handed over: never signalled.
+                expect(ep.terminated).to.deep.equal([]);
+            });
+
+            it('keeps the identity while the server on the port still runs from its own project', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new HandoverTestEndpoint();
+                ep.setClaimFakes('_dev', registry, 'skip');
+                const siteA = await adoptForSiteA(ep, '_dev');
+
+                const siteB = await claimForSiteB(ep);
+
+                expect(siteB.port).to.not.equal(5173);
+                expect(registry.getByPort(5173)?.previewId).to.equal(siteA);
+            });
+
+            it('keeps the identity when the listener cannot be inspected', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new HandoverTestEndpoint();
+                ep.setClaimFakes('_dev', registry, 'skip');
+                const siteA = await adoptForSiteA(ep, '_dev');
+
+                ep.listenerCwds.delete(5173);
+                const siteB = await claimForSiteB(ep);
+
+                expect(siteB.port).to.not.equal(5173);
+                expect(registry.getByPort(5173)?.previewId).to.equal(siteA);
+            });
+
+            it('never hands over another owner\'s identity, whatever runs on the port', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new HandoverTestEndpoint();
+                ep.setClaimFakes('alice', registry);
+                const alicePreview = await adoptForSiteA(ep, 'alice');
+
+                ep.setClaimFakes('bob', registry);
+                ep.listenerCwds.set(5173, ['/workspace/dev/site-b']);
+                const bob = await claimForSiteB(ep);
+
+                expect(bob.legacy).to.equal(409);
+                expect(bob.port).to.not.equal(5173);
+                expect(registry.getByPort(5173)?.previewId).to.equal(alicePreview);
+                expect(registry.getByPort(5173)?.ownerLogin).to.equal('alice');
+            });
+
+            it('keeps another project\'s identity whose recorded process is still alive', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new HandoverTestEndpoint();
+                ep.setClaimFakes('_dev', registry, 'skip');
+                registry.claim(5173, '_dev');
+                const managed = registry.register({
+                    userId: '_dev',
+                    workspaceId: SITE_A,
+                    projectId: SITE_A,
+                    conversationId: 'default',
+                    processId: 'process-site-a',
+                    previewId: 'u-dev-w-site-a-p-site-a-x-process-site-a',
+                    ownerLogin: '_dev',
+                    root: '/workspace/dev/site-a',
+                    port: 5173,
+                    osProcessId: process.pid,
+                }, { claimedAt: Date.now() - 10 * 60_000 });
+                expect(managed).to.not.equal(undefined);
+                ep.listeningPorts.add(5173);
+                ep.listenerCwds.set(5173, ['/workspace/dev/site-b']);
+
+                const siteB = await claimForSiteB(ep);
+
+                expect(siteB.port).to.not.equal(5173);
+                expect(registry.getByPort(5173)?.previewId).to.equal(managed?.previewId);
+            });
+
+            it('keeps a process-less reservation inside its start grace', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new HandoverTestEndpoint();
+                ep.setClaimFakes('_dev', registry, 'skip');
+                registry.claim(5173, '_dev');
+                const pending = registry.register({
+                    userId: '_dev',
+                    workspaceId: SITE_A,
+                    projectId: SITE_A,
+                    conversationId: 'default',
+                    processId: 'process-site-a',
+                    previewId: 'u-dev-w-site-a-p-site-a-x-process-site-a',
+                    ownerLogin: '_dev',
+                    root: '/workspace/dev/site-a',
+                    port: 5173,
+                });
+                ep.listeningPorts.add(5173);
+                ep.listenerCwds.set(5173, ['/workspace/dev/site-b']);
+
+                const siteB = await claimForSiteB(ep);
+
+                expect(siteB.port).to.not.equal(5173);
+                expect(registry.getByPort(5173)?.previewId).to.equal(pending?.previewId);
+            });
+        });
+
         it('rebinds an empty process reservation onto the preferred port once it listens', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

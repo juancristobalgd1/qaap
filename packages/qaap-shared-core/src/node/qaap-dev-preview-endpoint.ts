@@ -19,8 +19,9 @@ import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-head
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel';
 import { isQaapDevPreviewPortBindable } from './qaap-dev-preview-port-bind-probe';
+import { findListeningProcessCwdsOnPort } from './qaap-dev-preview-port-listener';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
-import { allocatePreviewPortExtracted, configureExtracted, earlyMiddlewareExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
+import { allocatePreviewPortExtracted, configureExtracted, earlyMiddlewareExtracted, handleClaimExtracted, handleProcessClaimExtracted, releaseSupersededProcesslessPreviewExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
 import { buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, previewBaseDomainExtracted, previewHostLabelExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
 
@@ -139,6 +140,20 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
             return false;
         }
         return isPreviewProcessDeadExtracted(this, record);
+    }
+
+    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
+    public resolvePortListenerCwds(port: number, ownerLogin?: string): string[] {
+        if (this.tunnelOwnerFor(port, ownerLogin) !== undefined) {
+            // The listener lives in the tenant runtime's pid namespace; nothing local describes it.
+            return [];
+        }
+        return findListeningProcessCwdsOnPort(port).map(canonicalizeQaapPreviewRoot);
+    }
+
+    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
+    public releaseSupersededProcesslessPreview(port: number, owner: string, claimingRoot: string): Promise<boolean> {
+        return releaseSupersededProcesslessPreviewExtracted(this, port, owner, claimingRoot);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
