@@ -40,6 +40,13 @@ import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
 import { QaapTaskPlanFanOutService } from './qaap-task-plan-fanout-service';
 import { QaapTaskPullRequestConsentStore } from './qaap-task-pull-request-consent-store';
+import { QaapExternalTaskEndpoint } from './qaap-external-task-endpoint';
+import { QaapExternalTaskIntake } from './qaap-external-task-intake';
+import { QaapExternalTaskLauncher } from './qaap-external-task-launcher';
+import { QaapExternalTaskNotifier } from './qaap-external-task-notifier';
+import { QaapExternalTaskStore } from './qaap-external-task-store';
+import { QaapGithubExternalTaskSource } from './qaap-github-external-task-source';
+import { QaapGithubWebhookListener } from '@theia/qaap-shared-core/lib/node/qaap-github-webhook-listener';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
@@ -317,6 +324,16 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapTaskPullRequestService);
     bind(QaapTaskPlanFanOutService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskPlanFanOutService);
+    // Tasks started from GitHub issues (doc/qaap-external-task-inputs.md), behind QAAP_EXTERNAL_TASKS_GITHUB.
+    bind(QaapExternalTaskStore).toSelf().inSingletonScope();
+    bind(QaapGithubExternalTaskSource).toSelf().inSingletonScope();
+    bind(QaapExternalTaskLauncher).toSelf().inSingletonScope();
+    bind(QaapExternalTaskIntake).toSelf().inSingletonScope();
+    bind(QaapGithubWebhookListener).toService(QaapExternalTaskIntake);
+    bind(QaapExternalTaskNotifier).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapExternalTaskNotifier);
+    bind(QaapExternalTaskEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapExternalTaskEndpoint);
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);
     // Per-user read marks behind the Work Hub unread dot (shared by every device of the user).

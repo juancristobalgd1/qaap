@@ -21,6 +21,7 @@ import { QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantActivityReason } from '../
 import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
 import { QAAP_PREVIEW_ROUTE_HEADER, parseQaapPreviewRoutes, type QaapPreviewRoute } from '@theia/qaap-shared-core/lib/common/qaap-preview-route';
 import { parseQaapPublicPreviewSharePath } from '../common/qaap-preview-share';
+import { QAAP_EXTERNAL_TASK_SIGNATURE_HEADER } from '../common/qaap-external-task';
 import { QaapTenantPreviewRouteTable } from './qaap-tenant-preview-route-table';
 import { QaapDockerOrchestrator, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
@@ -829,7 +830,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 // minted and must not cross the tenant boundary or appear in tenant logs.
                 && lowerKey !== 'cookie'
                 // Same for a personal API token (`Authorization: Bearer qaap_pat_…`).
-                && !(lowerKey === 'authorization' && /^\s*Bearer\s+qaap_pat_/i.test(String(value)))) {
+                && !(lowerKey === 'authorization' && /^\s*Bearer\s+qaap_pat_/i.test(String(value)))
+                // Only the control plane signs external task hand-offs (QaapExternalTaskIntake); a browser never does.
+                && lowerKey !== QAAP_EXTERNAL_TASK_SIGNATURE_HEADER) {
                 headers[key] = value;
             }
         }

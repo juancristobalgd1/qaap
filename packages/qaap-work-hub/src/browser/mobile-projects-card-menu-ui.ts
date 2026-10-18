@@ -9,6 +9,8 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { ChatService } from '@theia/ai-chat';
 import { type QaapAgentConversationSummaryDTO, isConversationTaskPullRequestEnabled, isFailedRunSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { taskPullRequestAwaitsConsent } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
+import { QaapExternalTaskOptInClient } from '@theia/qaap-shared-core/lib/common/qaap-external-task-opt-in-client';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -82,7 +84,12 @@ export class MobileProjectsCardMenuUi {
     protected openMenuCard: HTMLElement | undefined;
     protected openMenuRepositionDispose: Disposable = Disposable.NULL;
 
-    constructor(protected readonly host: MobileProjectsCardMenuHost) { }
+    /** Per-repository opt-in for tasks started from GitHub issues (doc/qaap-external-task-inputs.md). */
+    protected readonly externalTaskOptIns = new QaapExternalTaskOptInClient();
+
+    constructor(protected readonly host: MobileProjectsCardMenuHost) {
+        void this.externalTaskOptIns.load();
+    }
 
     handleDocumentPointerDown(ev: PointerEvent): void {
         if (!this.openMenu) {
@@ -130,6 +137,8 @@ export class MobileProjectsCardMenuUi {
             iconClass: project.pinned ? 'codicon-pinned' : 'codicon-pin',
             onSelect: () => { void this.host.onTogglePin(project); },
         });
+
+        this.appendGithubIssueTasksItem(menu, project);
 
         if (project.isCurrent) {
             this.appendCardMenuItem(menu, {
@@ -433,6 +442,39 @@ export class MobileProjectsCardMenuUi {
             }
         });
         menu.append(item);
+    }
+
+    /** "Start tasks from GitHub issues" for a GitHub project, while the server has the feature on. */
+    protected appendGithubIssueTasksItem(menu: HTMLElement, project: MobileProjectEntry): void {
+        const github = project.github;
+        if (!github || !this.externalTaskOptIns.available) {
+            return;
+        }
+        const enabled = this.externalTaskOptIns.isEnabled(github.owner, github.name);
+        this.appendCardMenuItem(menu, {
+            label: nls.localize('qaap/mobileProjects/githubIssueTasks', 'Start tasks from GitHub issues'),
+            iconClass: enabled ? 'codicon-check' : 'codicon-circle-large-outline',
+            title: enabled
+                ? nls.localize('qaap/mobileProjects/githubIssueTasksOnTitle',
+                    'On: the label "qaap" or a comment starting with "@qaap" on an issue of {0} starts a task that ends in a pull request.', github.fullName)
+                : nls.localize('qaap/mobileProjects/githubIssueTasksOffTitle',
+                    'Off: issues of {0} never start tasks. Turning it on also allows Qaap to open pull requests there.', github.fullName),
+            onSelect: () => { void this.toggleGithubIssueTasks(github.owner, github.name, !enabled); },
+        });
+    }
+
+    protected async toggleGithubIssueTasks(owner: string, repo: string, enabled: boolean): Promise<void> {
+        this.closeCardMenu();
+        try {
+            await this.externalTaskOptIns.setEnabled(owner, repo, enabled);
+            MobileSnackbar.show(enabled
+                ? nls.localize('qaap/mobileProjects/githubIssueTasksEnabled', 'GitHub issues of {0}/{1} can now start tasks', owner, repo)
+                : nls.localize('qaap/mobileProjects/githubIssueTasksDisabled', 'GitHub issues of {0}/{1} no longer start tasks', owner, repo),
+            { kind: 'success', duration: 2600 });
+        } catch (error) {
+            MobileSnackbar.show(nls.localize('qaap/mobileProjects/githubIssueTasksFailed', 'Could not change GitHub issue tasks: {0}',
+                error instanceof Error ? error.message : String(error)), { kind: 'warning', duration: 4000 });
+        }
     }
 
     /** "Create PR when done" toggle, plus Allow / Not now while the task PR waits for consent. */
