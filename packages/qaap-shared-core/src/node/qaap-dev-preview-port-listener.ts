@@ -130,6 +130,43 @@ export function findListeningPidsOnPort(port: number): number[] {
     return findListeningPidsViaLsof(port);
 }
 
+function readProcessCwd(pid: number): string | undefined {
+    if (process.platform === 'linux') {
+        try {
+            return fs.readlinkSync(path.join('/proc', String(pid), 'cwd'));
+        } catch {
+            return undefined;
+        }
+    }
+    try {
+        const output = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+            encoding: 'utf8',
+            timeout: 2000,
+        });
+        const line = output.split('\n').find(entry => entry.startsWith('n'));
+        return line ? line.slice(1) : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Working directories of every process listening on `port`. Empty when nothing listens or when
+ * ANY listener's directory cannot be read: callers use it as ownership evidence, and evidence
+ * about only some of the listeners is not evidence.
+ */
+export function findListeningProcessCwdsOnPort(port: number): string[] {
+    const cwds: string[] = [];
+    for (const pid of findListeningPidsOnPort(port)) {
+        const cwd = readProcessCwd(pid);
+        if (!cwd) {
+            return [];
+        }
+        cwds.push(cwd);
+    }
+    return cwds;
+}
+
 function swallowEsrch(fn: () => void): void {
     try {
         fn();

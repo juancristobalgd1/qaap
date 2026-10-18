@@ -65,6 +65,19 @@ export interface QaapDevPreviewEndpointContext {
 
     isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): boolean;
 
+    /**
+     * Canonical working directories of the processes listening on `port`. Empty when unknown
+     * (nothing listens, a tunnelled tenant runtime, an unreadable listener): callers fail closed.
+     */
+    resolvePortListenerCwds(port: number, ownerLogin?: string): string[];
+
+    /**
+     * Hands `port` back to `claimingRoot` when it is held by a process-less identity of ANOTHER
+     * project of the same owner and the server answering there provably runs from `claimingRoot`.
+     * Detaches the identity without signalling the listener. True when it released one.
+     */
+    releaseSupersededProcesslessPreview(port: number, owner: string, claimingRoot: string): Promise<boolean>;
+
     nextAllocationCandidate(preferredPort: number, offset: number): number;
 
     /** Reserves and registers the first safe port at or after `preferredPort`; undefined when none is safe. */
