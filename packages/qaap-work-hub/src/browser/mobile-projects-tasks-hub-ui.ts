@@ -90,6 +90,10 @@ export interface MobileProjectsTasksHubHost {
     onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     /** Optional — hydrates Working DETAIL activity feed from cached transcripts. */
     conversations?: MobileProjectsConversations;
+    /** Optional — task plan card of the open transcript (`syncOpenTranscriptTaskPlanCard`). */
+    transcriptLiveUi?: { resolveActiveTranscriptChatHost(): HTMLElement | undefined };
+    findConversationSummaryById?(id: string): QaapAgentConversationSummaryDTO | undefined;
+    openConversationSummary?(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     /** Optional — live VPS task WS + command-output tails for Working DETAIL. */
     activeTasks?: MobileProjectsActiveTasks;
     /** Optional toast surface for Stop All / Working chrome failures. */

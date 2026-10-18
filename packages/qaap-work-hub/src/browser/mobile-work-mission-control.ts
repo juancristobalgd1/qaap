@@ -56,6 +56,10 @@ export interface MissionControlItem {
     readonly failureKind?: QaapAgentFailureKind;
     /** The task pull request the backend opened is red (draft, labelled) or could not be updated. */
     readonly pullRequestAttention?: MissionControlPullRequestAttention;
+    /** Task plan parent: "Plan ready · runs in 40s", "Subtasks 2/3", "Integrating subtasks", "Plan failed". */
+    readonly planLabel?: string;
+    /** Task plan subtask child: "Subtask 2/3". */
+    readonly subtaskLabel?: string;
 }
 
 /** Link and number of a task pull request that needs the human. */
@@ -105,6 +109,15 @@ export function classifyMissionControlLane(
     unread: boolean,
 ): MissionControlLane {
     if (summary.status === 'streaming') {
+        return 'running';
+    }
+    // A plan waiting for Run is the human's call; while its subtasks run (or are being integrated)
+    // the plan is live work even though the parent conversation itself is idle.
+    const planState = summary.taskPlan?.state;
+    if (planState === 'awaiting-approval') {
+        return 'needs-you';
+    }
+    if (planState === 'running' || planState === 'integrating') {
         return 'running';
     }
     if (isFailedRunSummary(summary)) {
@@ -541,7 +554,12 @@ export class MobileWorkMissionControl {
         title.className = 'theia-mobile-work-hub-home-row-title';
         title.textContent = item.title;
         titleRow.append(title);
-        if (item.lane === 'running') {
+        if (item.subtaskLabel) {
+            titleRow.append(this.createPlanChip(item.subtaskLabel, 'subtask'));
+        }
+        if (item.planLabel) {
+            titleRow.append(this.createPlanChip(item.planLabel, 'plan'));
+        } else if (item.lane === 'running') {
             titleRow.append(this.createProgressChip(item));
         } else if (item.failureKind) {
             titleRow.append(this.createFailureChip(item.failureKind));
@@ -604,6 +622,14 @@ export class MobileWorkMissionControl {
         } else {
             chip.textContent = nls.localize('qaap/workMissionControl/working', 'working…');
         }
+        return chip;
+    }
+
+    /** Task plan chip: the plan's phase on the parent row, "Subtask k/N" on a child row. */
+    protected createPlanChip(label: string, kind: 'plan' | 'subtask'): HTMLElement {
+        const chip = document.createElement('span');
+        chip.className = `theia-mobile-mission-control-progress theia-mobile-mission-control-plan-chip theia-mod-${kind}`;
+        chip.textContent = label;
         return chip;
     }
 

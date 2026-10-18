@@ -6,6 +6,9 @@
 import { expect } from 'chai';
 import { collectMissionControlItems } from './qaap-work-mission-control-collector';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
+import { buildMissionControlRowFingerprint } from '../common/qaap-work-mission-control-fingerprint';
 
 describe('collectMissionControlItems', () => {
 
@@ -141,5 +144,66 @@ describe('collectMissionControlItems', () => {
         expect(item?.lane).to.equal('needs-you');
         expect(item?.failureKind).to.equal('quota');
         expect(item?.preview).to.include('quota');
+    });
+
+    describe('task plans', () => {
+
+        const now = 1_000_000;
+        const base = { cwd: '/repo', agentId: 'qaiq', createdAt: 1, messageCount: 2, lastMessageRole: 'agent' as const };
+        const subtasks = [
+            { id: 's1', title: 'API', prompt: 'p', state: 'done' as const, conversationId: 'child-1' },
+            { id: 's2', title: 'UI', prompt: 'p', state: 'running' as const, conversationId: 'child-2' },
+        ];
+        const taskPlan = (state: QaapTaskPlan['state'], extra: Partial<QaapTaskPlan> = {}): QaapTaskPlan =>
+            ({ id: 'plan', state, subtasks, autoRun: false, createdAt: 1, updatedAt: 1, ...extra });
+
+        function collect(summaries: QaapAgentConversationSummaryDTO[]): ReturnType<typeof collectMissionControlItems> {
+            return collectMissionControlItems({
+                projects: [project],
+                conversationsForProject: () => summaries,
+                isUnread: () => false,
+                resolveAgentLabel: agentId => agentId,
+                now: () => now,
+            });
+        }
+
+        it('puts a plan awaiting approval in Needs you with its countdown', () => {
+            const [item] = collect([{ ...base, id: 'parent', title: 'Task', status: 'idle', updatedAt: 5,
+                taskPlan: taskPlan('awaiting-approval', { autoRun: true, autoRunAt: now + 40_000 }) }]);
+            expect(item.lane).to.equal('needs-you');
+            expect(item.planLabel).to.equal('Plan ready · runs in 40s');
+            const [untimed] = collect([{ ...base, id: 'parent', title: 'Task', status: 'idle', updatedAt: 5, taskPlan: taskPlan('awaiting-approval') }]);
+            expect(untimed.planLabel).to.equal('Plan ready');
+        });
+
+        it('keeps an idle parent in Running while its subtasks run, and its children as their own rows', () => {
+            const items = collect([
+                { ...base, id: 'parent', title: 'Task', status: 'idle', updatedAt: 5, taskPlan: taskPlan('running') },
+                { ...base, id: 'child-1', title: '1/2 · API', status: 'idle', updatedAt: 4, parentConversationId: 'parent', taskPlanSubtaskId: 's1' },
+                { ...base, id: 'child-2', title: 'UI', status: 'streaming', updatedAt: 3, parentConversationId: 'parent', taskPlanSubtaskId: 's2' },
+            ]);
+            const byId = new Map(items.map(item => [item.conversationId, item]));
+            expect(byId.get('parent')).to.include({ lane: 'running', planLabel: 'Subtasks 1/2' });
+            // Title prefix first, then the parent plan's subtask index.
+            expect(byId.get('child-1')?.subtaskLabel).to.equal('Subtask 1/2');
+            expect(byId.get('child-2')).to.include({ lane: 'running', subtaskLabel: 'Subtask 2/2' });
+        });
+
+        it('labels integrating and failed plans', () => {
+            expect(collect([{ ...base, id: 'p', title: 'T', status: 'idle', updatedAt: 1, taskPlan: taskPlan('integrating') }])[0])
+                .to.include({ lane: 'running', planLabel: 'Integrating subtasks' });
+            expect(collect([{ ...base, id: 'p', title: 'T', status: 'idle', updatedAt: 1, taskPlan: taskPlan('failed') }])[0].planLabel)
+                .to.equal('Plan failed');
+            expect(collect([{ ...base, id: 'p', title: 'T', status: 'idle', updatedAt: 1, taskPlan: taskPlan('done') }])[0].planLabel)
+                .to.equal(undefined);
+        });
+
+        it('changes the row fingerprint when a plan label changes', () => {
+            const row = { key: 'k', lane: 'running', title: 'T', updatedAt: 1 };
+            expect(buildMissionControlRowFingerprint({ ...row, planLabel: 'Subtasks 1/2' }))
+                .to.not.equal(buildMissionControlRowFingerprint({ ...row, planLabel: 'Subtasks 2/2' }));
+            expect(buildMissionControlRowFingerprint({ ...row, subtaskLabel: 'Subtask 1/2' }))
+                .to.not.equal(buildMissionControlRowFingerprint(row));
+        });
     });
 });

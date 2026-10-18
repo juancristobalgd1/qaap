@@ -29,7 +29,11 @@ const CONVERSATIONS = '/qaap/api/agent-conversations';
 const FAKE_QAIQ = `#!/usr/bin/env bash
 # Fake qaiq for the plan fan-out e2e (stream-json over stdio).
 if [[ "\${1:-}" == "--version" ]]; then echo "qaiq 0.0.0-plan-fanout-e2e"; exit 0; fi
-IFS= read -r line || true
+# The prompt can span several lines (Plan mode puts its instruction before the message) and stdin may
+# stay open, so read until it is quiet for a second.
+line=""
+while IFS= read -r -t 1 part; do line+="$part "; done
+line+="\${part:-}"
 emit() { printf '%s\\n' "$1"; }
 emit '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"plan-fanout-e2e","tools":[],"model":"mock/plan-fanout-e2e"}'
 if [[ "$line" == *"This is subtask "* ]]; then
@@ -297,7 +301,8 @@ async function main() {
                 'children are linked to the parent, in worktrees, with "Create PR" off'],
             [childCwds.size === 2 && !childCwds.has(repo), `each child has its own worktree (${[...childCwds].join(', ')})`],
             [maxConcurrent >= 2, `${maxConcurrent} subtasks streamed at the same time`],
-            [childList.some(child => child.title.includes('Part two (edited)')), 'the edited title reached its subtask'],
+            [integrated.taskPlan.subtasks[1]?.title === 'Part two (edited)' && childList.some(child => child.title.startsWith('2/2')),
+                `the edited plan drove the children (${childList.map(child => JSON.stringify(child.title)).join(', ')})`],
             [integrated.taskPlan.subtasks.every(subtask => subtask.state === 'done' && subtask.headSha), 'every subtask done with a committed head'],
             [integration.trim() === 'part-1.ts\npart-2.ts', `integration turn saw both parts (${JSON.stringify(integration)})`],
             [asked.taskPullRequest?.state === 'awaiting-consent' && allowed.status === 200, 'consent asked and allowed'],

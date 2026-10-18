@@ -527,6 +527,8 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
                 taskPlanSubtaskId: subtask.id,
                 taskPullRequestEnabled: false,
             }, parent.ownerLogin);
+            // The first turn titles a conversation after its message; keep "k/N · title" (mission control reads it).
+            this.store.rename(child.id, { title: `${index + 1}/${total} · ${subtask.title}` });
             return { ...subtask, state: 'running', conversationId: child.id, branch: worktree.branch };
         } catch (error) {
             return { ...subtask, state: 'failed', error: this.describe(error) };

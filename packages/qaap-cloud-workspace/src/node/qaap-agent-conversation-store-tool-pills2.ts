@@ -405,7 +405,7 @@ export function buildTaskCreateRequestExtracted(ctx: QaapAgentConversationStoreC
 
 /**
  * The planning turn of a task plan (roadmap H3.1) asks for a `qaap-plan` block on top of the Plan mode
- * instruction. Request-only: the conversation's stored preamble is untouched.
+ * instruction. Request-only: nothing is stored on the conversation.
  */
 export function withTaskPlanningInstruction(
     conv: QaapAgentConversation,
@@ -421,8 +421,9 @@ export function withTaskPlanningInstruction(
     if (!turnUserMessageId || turnUserMessageId !== planningMessageId) {
         return request;
     }
-    const instruction = QaapTaskPlan.planningInstruction();
-    return { ...request, contextPreamble: request.contextPreamble ? `${request.contextPreamble}\n\n${instruction}` : instruction };
+    // Appended to the prompt itself: a conversation prompt already carries the task-context marker, so
+    // a request preamble would be skipped (prependAgentTaskContextToPrompt).
+    return { ...request, prompt: `${request.prompt}\n\n[Qaap task plan instruction]\n${QaapTaskPlan.planningInstruction()}` };
 }
 
 export function stripLeadingAgentMentionExtracted(ctx: QaapAgentConversationStoreContext, content: string): string {

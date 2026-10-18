@@ -77,6 +77,13 @@ class FakeStore {
         this.conversations.set(id, conv);
         return conv;
     }
+    rename(id: string, request: { title: string }): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(id);
+        if (conv) {
+            this.conversations.set(id, { ...conv, title: request.title });
+        }
+        return this.conversations.get(id);
+    }
     cancel(id: string): QaapAgentConversation | undefined {
         this.cancelled.push(id);
         return this.conversations.get(id);
@@ -252,6 +259,7 @@ describe('QaapTaskPlanFanOutService', function (): void {
         expect(store.created.every(request => request.taskPullRequestEnabled === false && request.parentConversationId === 'p')).to.equal(true);
         expect(new Set(store.created.map(request => request.cwd)).size).to.equal(2);
         expect(parent.taskPlan?.subtasks.every(subtask => subtask.state === 'running')).to.equal(true);
+        expect(store.get('child-2')!.title).to.equal('2/2 · B2');
 
         // Each child writes its file in its own worktree and settles.
         fs.writeFileSync(path.join(store.created[0].cwd, 'a.ts'), 'a\n');
