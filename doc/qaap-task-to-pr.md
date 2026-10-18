@@ -58,6 +58,33 @@ suscrito a los eventos del store de conversaciones:
    script `scripts/qaap-task-to-pr-e2e.mjs` arranca el backend con el agente mock (con la misma receta que
    `qaap-restart-resume-e2e.mjs`), lanza una tarea y comprueba que sale un PR con evidencia.
 
+## Correcciones tras la revisión (#286)
+
+- **Consentimiento.** "Create PR when done" se puede apagar por conversación desde el menú de la tarea
+  (`taskPullRequestEnabled`, PATCH). Antes del primer push hace falta un consentimiento único por usuario y
+  repositorio, guardado en el servidor (`QaapTaskPullRequestConsentStore`, SQLite de las conversaciones,
+  espacio `task-pr-consent`). Sin él no se sube nada: la conversación queda en `awaiting-consent` ("PR ready:
+  allow Qaap to open PRs on owner/repo?") y el menú ofrece Allow / Not now
+  (`POST /agent-conversations/:id/task-pull-request/consent`). Los hilos plan/ask y los turnos de solo
+  lectura no generan PR.
+- **Token en per-tenant.** Ver `doc/qaap-github-token-boundary.md`, "Task pull requests". Se reutiliza la
+  aserción HMAC del proxy: el guard guarda el token en memoria (`QaapGithubOwnerTokenCache`).
+- **Divergencia.** Antes de cada push se mira la cabeza remota (`ls-remote` sellado). Si otra persona subió
+  algo encima de lo nuestro, se trae (bundle sellado) y se construye encima. Si no se puede, se sigue en
+  `qaap/task/<conv>-2` con un PR nuevo que dice a cuál sustituye. Se anota en `taskPullRequest.divergence`.
+- **Rewind / restore.** Si el último turno empujado desaparece o hay un restore posterior, la rama se
+  reconstruye desde la base sin los turnos deshechos y se sube con force-push. El cuerpo lo indica.
+- **Fugas.** El asunto del commit es el título solo si el usuario lo puso; si el título sale del primer
+  prompt, se usan los ficheros cambiados. En repos públicos el cuerpo no lleva palabras del agente (ni
+  resumen, ni salida de checks, ni razonamiento del revisor). En todos, `redactQaapSecrets` quita secretos
+  obvios.
+- **Veredicto persistido.** Al asentarse el turno, el veredicto (estado, verificación, revisión, bloqueo,
+  solo lectura) se guarda en el mensaje del usuario (`turnVerdict`); el task runner queda de respaldo.
+- **Reintentos.** Errores de red, 5xx, 429 y 403 por rate limit secundario se reintentan tras 2 s, 8 s y
+  30 s (`QAAP_TASK_PR_RETRY_DELAYS_MS`). Los 401 piden volver a iniciar sesión; los 422 no se reintentan.
+- **Validación contra GitHub real:** `node scripts/qaap-task-pr-github-validate.mjs --repo owner/scratch`
+  (solo `gh`, repo privado de pruebas).
+
 ## Fuera de este corte (siguiente)
 
 - **Plan visible y editable y fan-out a N subtareas en sandbox.** Hoy existe como modo `plan` del composer y como

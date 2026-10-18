@@ -121,6 +121,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     /** Pull request the backend opened for this task (see `QaapTaskPullRequestService`). */
     readonly taskPullRequest?: QaapTaskPullRequest;
+    /** `false` when the user turned "Create PR when done" off for this thread (default on). */
+    readonly taskPullRequestEnabled?: boolean;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     /**
@@ -278,6 +280,7 @@ export interface QaapAgentConversationDTO {
     readonly checkpoints?: QaapConversationCheckpointDTO[];
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
+    readonly taskPullRequestEnabled?: boolean;
     readonly contextPreamble?: string;
     readonly contextUsage?: QaapAgentContextUsage;
     readonly contextWindowSize?: number;
@@ -583,6 +586,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ...(conv.worktreeOrdinal ? { worktreeOrdinal: conv.worktreeOrdinal } : {}),
         linkedPullRequest: conv.linkedPullRequest,
         ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
+        ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
         ...metrics,
         hasGitOperation,
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),
@@ -888,6 +892,8 @@ export interface QaapUpdateConversationBody {
     readonly paused?: boolean;
     readonly archived?: boolean;
     readonly autoApprove?: boolean;
+    /** "Create PR when done" for this thread (default on). */
+    readonly taskPullRequestEnabled?: boolean;
     readonly linkedPullRequest?: QaapLinkedPullRequest | null;
     /** Composer agent picker — persisted on the conversation thread. */
     readonly agent?: string;
@@ -913,6 +919,25 @@ export async function updateConversation(id: string, patch: QaapUpdateConversati
         throw new Error((await response.text()) || response.statusText);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+/** Answers the one-time "allow Qaap to open PRs on <owner/repo>?" question of a task pull request. */
+export async function respondTaskPullRequestConsent(id: string, allow: boolean): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/task-pull-request/consent`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allow }),
+    });
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+/** "Create PR when done" is on unless the user turned it off for this thread. */
+export function isConversationTaskPullRequestEnabled(summary: { readonly taskPullRequestEnabled?: boolean }): boolean {
+    return summary.taskPullRequestEnabled !== false;
 }
 
 export async function forkConversation(id: string): Promise<QaapAgentConversationDTO> {

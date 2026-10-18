@@ -55,8 +55,14 @@ export function collectMissionControlItems(input: CollectMissionControlItemsInpu
                 linesRemoved: summary.linesRemoved,
                 hasPullRequest: !!summary.linkedPullRequest?.number || !!summary.taskPullRequest?.number,
                 failureKind: failure?.kind,
-                ...(taskPullRequestNeedsAttention(summary.taskPullRequest) ? {
-                    pullRequestAttention: { number: summary.taskPullRequest?.number, url: summary.taskPullRequest?.url },
+                ...(summary.taskPullRequestEnabled !== false && summary.taskPullRequest && taskPullRequestNeedsAttention(summary.taskPullRequest) ? {
+                    pullRequestAttention: {
+                        number: summary.taskPullRequest.number,
+                        url: summary.taskPullRequest.url,
+                        repository: `${summary.taskPullRequest.owner}/${summary.taskPullRequest.repo}`,
+                        ...(summary.taskPullRequest.state === 'awaiting-consent' ? { reason: 'consent' as const }
+                            : summary.taskPullRequest.state === 'needs-sign-in' ? { reason: 'sign-in' as const } : {}),
+                    },
                 } : {}),
             });
             seenConversationIds.add(summary.id);

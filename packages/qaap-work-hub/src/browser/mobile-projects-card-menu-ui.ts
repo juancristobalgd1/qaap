@@ -7,7 +7,8 @@ import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { ChatService } from '@theia/ai-chat';
-import { type QaapAgentConversationSummaryDTO, isFailedRunSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO, isConversationTaskPullRequestEnabled, isFailedRunSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { taskPullRequestAwaitsConsent } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -48,6 +49,10 @@ export interface MobileProjectsCardMenuHost {
     onRenameConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onSetConversationPriority(summary: QaapAgentConversationSummaryDTO, priority: boolean): Promise<void>;
     onSetConversationPaused(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, paused: boolean): Promise<void>;
+    /** "Create PR when done" for this thread. */
+    onSetConversationTaskPullRequest(summary: QaapAgentConversationSummaryDTO, enabled: boolean): Promise<void>;
+    /** Allow (one-time per repository) or "Not now" for a task pull request awaiting consent. */
+    onRespondTaskPullRequestConsent(summary: QaapAgentConversationSummaryDTO, allow: boolean): Promise<void>;
     onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     onDeleteConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     openAgentComposer(project: MobileProjectEntry): Promise<void>;
@@ -263,6 +268,10 @@ export class MobileProjectsCardMenuUi {
             onSelect: () => { void this.host.onSetConversationPaused(project, summary, !flags.paused); },
         });
 
+        if (!isTheiaChat) {
+            this.appendTaskPullRequestItems(menu, summary);
+        }
+
         if (summary.status === 'streaming') {
             const separator = document.createElement('div');
             separator.className = 'theia-mobile-projects-card-menu-separator';
@@ -424,5 +433,35 @@ export class MobileProjectsCardMenuUi {
             }
         });
         menu.append(item);
+    }
+
+    /** "Create PR when done" toggle, plus Allow / Not now while the task PR waits for consent. */
+    protected appendTaskPullRequestItems(menu: HTMLElement, summary: QaapAgentConversationSummaryDTO): void {
+        const pr = summary.taskPullRequest;
+        if (taskPullRequestAwaitsConsent(pr) && pr && isConversationTaskPullRequestEnabled(summary)) {
+            const repository = `${pr.owner}/${pr.repo}`;
+            this.appendCardMenuItem(menu, {
+                label: nls.localize('qaap/mobileProjects/taskPrAllow', 'Allow PRs on {0}', repository),
+                iconClass: 'codicon-git-pull-request',
+                title: nls.localize('qaap/mobileProjects/taskPrAllowTitle',
+                    'Let Qaap push task branches and open pull requests on {0} from now on.', repository),
+                onSelect: () => { void this.host.onRespondTaskPullRequestConsent(summary, true); },
+            });
+            this.appendCardMenuItem(menu, {
+                label: nls.localize('qaap/mobileProjects/taskPrNotNow', 'Not now'),
+                iconClass: 'codicon-close',
+                title: nls.localize('qaap/mobileProjects/taskPrNotNowTitle', 'Do not open a pull request for this task.'),
+                onSelect: () => { void this.host.onRespondTaskPullRequestConsent(summary, false); },
+            });
+        }
+        const enabled = isConversationTaskPullRequestEnabled(summary);
+        this.appendCardMenuItem(menu, {
+            label: nls.localize('qaap/mobileProjects/taskPrWhenDone', 'Create PR when done'),
+            iconClass: enabled ? 'codicon-check' : 'codicon-circle-large-outline',
+            title: enabled
+                ? nls.localize('qaap/mobileProjects/taskPrWhenDoneOnTitle', 'On: when this task is done, Qaap opens a pull request with its evidence.')
+                : nls.localize('qaap/mobileProjects/taskPrWhenDoneOffTitle', 'Off: Qaap does not open a pull request for this task.'),
+            onSelect: () => { void this.host.onSetConversationTaskPullRequest(summary, !enabled); },
+        });
     }
 }

@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentTaskReview, QaapAgentTaskState, QaapAgentTaskVerification } from './qaap-agent-task';
+import { redactQaapSecrets } from './qaap-secret-redaction';
 
 /** Opening marker of the section the backend owns in a task pull request body. */
 export const QAAP_TASK_PR_EVIDENCE_START = '<!-- qaap:evidence -->';
@@ -43,6 +44,19 @@ export interface QaapTaskPullRequestBodyInput {
     readonly screenshots?: readonly QaapTaskPullRequestScreenshot[];
     /** Shown instead of screenshots when they exist but are not published (public repository). */
     readonly screenshotsOmittedReason?: string;
+    /** The conversation title: the neutral summary of a public repository's PR. */
+    readonly title?: string;
+    /**
+     * A public repository: the body never carries the agent's own words (reply, check output, review
+     * reasoning), only the title, diffstat and the verdicts.
+     */
+    readonly publicRepository?: boolean;
+    /** The branch was rebuilt from its base after a rewind or checkpoint restore. */
+    readonly rebuilt?: boolean;
+    /** The task moved to a new branch because someone else pushed to the old one; that old PR. */
+    readonly supersedes?: number;
+    /** We built on a commit someone else pushed to the task branch. */
+    readonly builtOnForeignPush?: boolean;
 }
 
 /** Red blocks: a red verdict, a blocked turn or a conflict opens the PR as a labelled draft. */
@@ -79,18 +93,21 @@ export function buildTaskPullRequestEvidenceSection(input: QaapTaskPullRequestBo
             'Needs attention: Qaap opened this pull request as a draft because the task is not green yet.')}`);
     }
     parts.push(`### ${nls.localizeByDefault('Summary')}`);
-    parts.push(bounded(sanitize(input.summary?.trim() ?? ''), SUMMARY_LIMIT)
-        || `_${nls.localize('qaap/taskPullRequest/noSummary', 'The agent left no summary.')}_`);
+    parts.push(describeSummary(input));
+    const notes = describeBranchNotes(input);
+    if (notes) {
+        parts.push(notes);
+    }
     parts.push(`### ${nls.localize('qaap/taskPullRequest/diffstat', 'Diffstat')}`);
     parts.push(fenced(boundLines(input.diffstat?.trim() ?? '', DIFFSTAT_LINE_LIMIT)
         || nls.localize('qaap/taskPullRequest/noDiff', 'No file changes.')));
     parts.push(`### ${nls.localizeByDefault('Checks')}`);
-    parts.push(describeVerification(input.verification));
+    parts.push(describeVerification(input.verification, !!input.publicRepository));
     parts.push(`### ${nls.localize('qaap/taskPullRequest/reviewer', 'Reviewer verdict')}`);
-    parts.push(describeReview(input.review));
+    parts.push(describeReview(input.review, !!input.publicRepository));
     if (input.blockedNeed || input.conflict) {
         parts.push(`### ${nls.localize('qaap/taskPullRequest/blockers', 'Blockers')}`);
-        if (input.blockedNeed) {
+        if (input.blockedNeed && !input.publicRepository) {
             parts.push(`- ${nls.localize('qaap/taskPullRequest/blocked', 'The agent is waiting for input: {0}', oneLine(input.blockedNeed))}`);
         }
         if (input.conflict) {
@@ -124,7 +141,35 @@ export function mergeTaskPullRequestBody(existing: string | undefined, section: 
     return body.slice(0, start) + section + body.slice(end + QAAP_TASK_PR_EVIDENCE_END.length);
 }
 
-function describeVerification(verification: QaapAgentTaskVerification | undefined): string {
+function describeSummary(input: QaapTaskPullRequestBodyInput): string {
+    if (input.publicRepository) {
+        const title = oneLine(input.title?.trim() ?? '');
+        return title
+            ? nls.localize('qaap/taskPullRequest/publicSummary', 'Qaap task: {0}. See the diffstat and checks below.', title)
+            : nls.localize('qaap/taskPullRequest/publicSummaryUntitled', 'Qaap task. See the diffstat and checks below.');
+    }
+    return bounded(sanitize(input.summary?.trim() ?? ''), SUMMARY_LIMIT)
+        || `_${nls.localize('qaap/taskPullRequest/noSummary', 'The agent left no summary.')}_`;
+}
+
+function describeBranchNotes(input: QaapTaskPullRequestBodyInput): string | undefined {
+    const notes: string[] = [];
+    if (input.rebuilt) {
+        notes.push(`- ${nls.localize('qaap/taskPullRequest/rebuilt',
+            'The branch was rebuilt from its base after a rewind or checkpoint restore in Qaap, and force-pushed.')}`);
+    }
+    if (input.supersedes) {
+        notes.push(`- ${nls.localize('qaap/taskPullRequest/supersedes',
+            'Supersedes #{0}: someone else pushed to that branch, so Qaap continued on a new one.', String(input.supersedes))}`);
+    }
+    if (input.builtOnForeignPush) {
+        notes.push(`- ${nls.localize('qaap/taskPullRequest/builtOnForeign',
+            'Someone else pushed to this branch; Qaap added its new commits on top of theirs.')}`);
+    }
+    return notes.length ? notes.join('\n') : undefined;
+}
+
+function describeVerification(verification: QaapAgentTaskVerification | undefined, publicRepository: boolean): string {
     if (!verification || verification.status === 'skipped') {
         return `- ⚪ ${nls.localize('qaap/taskPullRequest/checksSkipped', 'Not run: the turn made no verifiable change or the repository has no checks.')}`;
     }
@@ -133,19 +178,19 @@ function describeVerification(verification: QaapAgentTaskVerification | undefine
     if (verification.status === 'passed') {
         return `- ✅ ${nls.localize('qaap/taskPullRequest/checksPassed', 'Passed: {0} (fix attempts: {1})', command, String(attempts))}`;
     }
-    const detail = bounded(verification.summary.trim(), CHECK_DETAIL_LIMIT);
+    const detail = publicRepository ? '' : bounded(verification.summary.trim(), CHECK_DETAIL_LIMIT);
     const headline = verification.status === 'failed'
         ? `- ❌ ${nls.localize('qaap/taskPullRequest/checksFailed', 'Failing: {0} (fix attempts: {1})', command, String(attempts))}`
         : `- 🟡 ${nls.localize('qaap/taskPullRequest/checksPreexisting', 'Already failing before this task, in files it did not touch: {0}', command)}`;
     return detail ? `${headline}\n\n${fenced(detail)}` : headline;
 }
 
-function describeReview(review: QaapAgentTaskReview | undefined): string {
+function describeReview(review: QaapAgentTaskReview | undefined, publicRepository: boolean): string {
     if (!review) {
         return `- ⚪ ${nls.localize('qaap/taskPullRequest/reviewSkipped', 'No independent review ran for this turn.')}`;
     }
     const by = review.agentId ? ` (${oneLine(review.agentId)})` : '';
-    const reason = review.reason?.trim() ? `: ${oneLine(bounded(review.reason.trim(), CHECK_DETAIL_LIMIT))}` : '';
+    const reason = review.reason?.trim() && !publicRepository ? `: ${oneLine(bounded(review.reason.trim(), CHECK_DETAIL_LIMIT))}` : '';
     switch (review.status) {
         case 'passed':
             return `- ✅ ${nls.localize('qaap/taskPullRequest/reviewPassed', 'Approved{0}', by)}${reason}`;
@@ -171,9 +216,22 @@ function describeScreenshots(input: QaapTaskPullRequestBodyInput): string {
     return `_${nls.localize('qaap/taskPullRequest/noScreenshots', 'No preview screenshots for this task.')}_`;
 }
 
-/** Agent text must not be able to close or reopen the backend-owned section. */
+/** Agent text must not be able to close or reopen the backend-owned section, nor leak an obvious secret. */
 function sanitize(text: string): string {
-    return text.split(QAAP_TASK_PR_EVIDENCE_START).join('').split(QAAP_TASK_PR_EVIDENCE_END).join('');
+    return redactQaapSecrets(text.split(QAAP_TASK_PR_EVIDENCE_START).join('').split(QAAP_TASK_PR_EVIDENCE_END).join(''));
+}
+
+/**
+ * Message of a task commit. Never the prompt: the subject is the conversation title when the user set
+ * one (`title`; pass `undefined` for a title derived from the first prompt), else the files the turn
+ * changed. The body carries the task id.
+ */
+export function buildTaskPullRequestCommitMessage(conversationId: string, changedPaths: readonly string[], title?: string): string {
+    const clean = oneLine(stripAttentionPrefix(title?.trim() ?? ''));
+    const names = changedPaths.map(file => oneLine(file)).filter(Boolean);
+    const files = names.length === 0 ? '' : names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} +${names.length - 3}`;
+    const subject = clean ? `Qaap task: ${clean}` : files ? `Qaap task: update ${files}` : 'Qaap task update';
+    return `${subject.length > 72 ? `${subject.slice(0, 71)}…` : subject}\n\nQaap task ${conversationId}`;
 }
 
 function oneLine(text: string): string {

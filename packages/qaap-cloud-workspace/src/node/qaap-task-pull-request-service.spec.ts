@@ -10,11 +10,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { Emitter } from '@theia/core/lib/common/event';
 import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
-import type { QaapGithubPullRequestRecord } from '@theia/qaap-shared-core/lib/node/qaap-github-api';
+import { GithubApiError, type QaapGithubPullRequestRecord } from '@theia/qaap-shared-core/lib/node/qaap-github-api';
+import { QaapGithubOwnerTokenCache } from '@theia/qaap-shared-core/lib/node/qaap-github-owner-token-cache';
 import type { QaapAgentConversation, QaapAgentConversationEvent, QaapConversationCheckpoint } from '../common/qaap-agent-conversation';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { QAAP_TASK_PR_ATTENTION_LABEL, QAAP_TASK_PR_EVIDENCE_START } from '../common/qaap-task-pull-request-body';
 import { runGitAsync } from './qaap-agent-conversation-store-git';
+import { recordTurnVerdict } from './qaap-agent-conversation-store-activity2';
 import type { QaapTaskPullRequestRecordOptions } from './qaap-agent-conversation-store-task-pr';
 import {
     QaapTaskPullRequestService,
@@ -31,6 +33,8 @@ function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = GIT_ENV): str
     return execFileSync('git', args, { cwd, env, encoding: 'utf8' });
 }
 
+let clock = 1_000;
+
 /** The same snapshot the store takes: HEAD tree + `add -A` in a throwaway index, as a parentless commit. */
 function snapshot(repo: string, id: string, messageId: string, kind?: 'pre-turn'): QaapConversationCheckpoint {
     const index = path.join(os.tmpdir(), `qaap-task-pr-spec-${process.pid}-${Date.now()}-${Math.random()}.index`);
@@ -42,7 +46,7 @@ function snapshot(repo: string, id: string, messageId: string, kind?: 'pre-turn'
         const commit = git(repo, ['commit-tree', tree, '-m', `checkpoint ${id}`], env).trim();
         const ref = `refs/qaap/checkpoints/c1/${id}`;
         git(repo, ['update-ref', ref, commit]);
-        return { id, messageId, label: id, commit, ref, capturedAt: Date.now(), ...(kind ? { kind } : {}) };
+        return { id, messageId, label: id, commit, ref, capturedAt: clock++, ...(kind ? { kind } : {}) };
     } finally {
         fs.rmSync(index, { force: true });
     }
@@ -83,8 +87,9 @@ class FakeGithub implements QaapTaskPullRequestGithub {
         this.calls.push({ method: 'setDraft', args: [token, nodeId, draft] });
         this.draft = draft;
     }
+    privateRepo = true;
     async isPrivate(): Promise<boolean> {
-        return true;
+        return this.privateRepo;
     }
     protected record(): QaapGithubPullRequestRecord {
         return { number: 7, url: 'https://github.com/acme/demo/pull/7', nodeId: 'PR_node', body: this.body, draft: this.draft, state: 'open', merged: false };
@@ -101,13 +106,31 @@ interface FakeStore {
     readonly emitter: Emitter<QaapAgentConversationEvent>;
 }
 
+class FakeConsents {
+    readonly allowed = new Set<string>(['octo:acme/demo']);
+    isAllowed(login: string, owner: string, repo: string): boolean {
+        return this.allowed.has(`${login}:${owner}/${repo}`);
+    }
+    allow(login: string, owner: string, repo: string): void {
+        this.allowed.add(`${login}:${owner}/${repo}`);
+    }
+}
+
 class SpecTaskPullRequestService extends QaapTaskPullRequestService {
     token: string | undefined = 'gho_spec';
+    readonly fakeConsents = new FakeConsents();
+    readonly tokenCache = new QaapGithubOwnerTokenCache();
     constructor(readonly fake: FakeStore, readonly fakeGithub: FakeGithub, readonly remote: string) {
         super();
         this.github = fakeGithub;
         Object.assign(this, {
+            consents: this.fakeConsents,
+            ownerTokens: this.tokenCache,
             store: {
+                update: (id: string, patch: { taskPullRequestEnabled?: boolean }) => {
+                    fake.conv = { ...fake.conv, taskPullRequestEnabled: patch.taskPullRequestEnabled ? undefined : false };
+                    return fake.conv;
+                },
                 get: (id: string) => id === fake.conv.id ? fake.conv : undefined,
                 onDidChange: fake.emitter.event,
                 getActiveTaskIdsForConversation: () => [],
@@ -134,7 +157,8 @@ class SpecTaskPullRequestService extends QaapTaskPullRequestService {
 }
 
 describe('QaapTaskPullRequestService', function (): void {
-    this.timeout(30_000);
+    // Real git per test: generous for loaded CI hosts.
+    this.timeout(90_000);
 
     let work: string;
     let remote: string;
@@ -170,6 +194,25 @@ describe('QaapTaskPullRequestService', function (): void {
     function branchFiles(): string[] {
         return git(remote, ['ls-tree', '-r', '--name-only', 'refs/heads/qaap/task/c1']).trim().split('\n');
     }
+
+    let savedRetryDelays: string | undefined;
+
+    function headCommit(ref = 'refs/heads/qaap/task/c1'): string {
+        return git(remote, ['rev-parse', ref]).trim();
+    }
+
+    before(() => {
+        savedRetryDelays = process.env.QAAP_TASK_PR_RETRY_DELAYS_MS;
+        process.env.QAAP_TASK_PR_RETRY_DELAYS_MS = '0,0,0';
+    });
+
+    after(() => {
+        if (savedRetryDelays === undefined) {
+            delete process.env.QAAP_TASK_PR_RETRY_DELAYS_MS;
+        } else {
+            process.env.QAAP_TASK_PR_RETRY_DELAYS_MS = savedRetryDelays;
+        }
+    });
 
     beforeEach(() => {
         work = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-task-pr-spec-'));
@@ -267,16 +310,19 @@ describe('QaapTaskPullRequestService', function (): void {
         expect(fake.records.at(-1)!.pr).to.include({ headSha: head, lastUserMessageId: 'u2' });
     });
 
-    it('does nothing without a token', async () => {
+    it('asks the owner to sign in again when there is no token, once, without pushing', async () => {
         service.token = undefined;
         turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
         fake.tasks = [task('t1')];
 
         await service.sync('c1');
+        await service.sync('c1');
 
         expect(github.calls).to.deep.equal([]);
-        expect(fake.records).to.deep.equal([]);
         expect(git(remote, ['for-each-ref', 'refs/heads/qaap'])).to.equal('');
+        expect(fake.records).to.have.length(1);
+        expect(fake.records[0].pr).to.include({ state: 'needs-sign-in', lastError: 'no GitHub token: sign in again' });
+        expect(fake.records[0].options?.traceNote).to.equal('no GitHub token: sign in again');
     });
 
     it('does nothing while the conversation is still busy or in plan mode', async () => {
@@ -333,5 +379,237 @@ describe('QaapTaskPullRequestService', function (): void {
         expect(service.isTestMode({ QAAP_CLOUD_MODE: 'local', QAAP_TASK_PR_TEST_TOKEN: 't' })).to.equal(false);
         expect(service.isTestMode({ QAAP_SKIP_AUTH: 'true', QAAP_CLOUD_MODE: 'local', QAAP_TASK_PR_TEST_TOKEN: 't', NODE_ENV: 'production' })).to.equal(false);
         expect(service.isTestMode({ QAAP_SKIP_AUTH: 'true', QAAP_CLOUD_MODE: 'local' })).to.equal(false);
+    });
+
+    it('waits for the one-time consent per user and repository, then opens the PR on Allow', async () => {
+        service.fakeConsents.allowed.clear();
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+
+        await service.sync('c1');
+        await service.sync('c1');
+        expect(github.calls).to.deep.equal([]);
+        expect(git(remote, ['for-each-ref', 'refs/heads/qaap'])).to.equal('');
+        expect(fake.records).to.have.length(1);
+        expect(fake.records[0].pr.state).to.equal('awaiting-consent');
+        expect(fake.records[0].options?.traceNote).to.equal('PR ready: allow Qaap to open PRs on acme/demo?');
+
+        await service.respondToConsent('c1', true);
+        await service.sync('c1');
+        expect(service.fakeConsents.isAllowed('octo', 'acme', 'demo')).to.equal(true);
+        expect(github.methods()).to.deep.equal(['createPull']);
+        expect(fake.records.at(-1)!.pr).to.include({ state: 'open', number: 7 });
+    });
+
+    it('"Not now" turns "Create PR when done" off for the conversation', async () => {
+        service.fakeConsents.allowed.clear();
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        await service.sync('c1');
+        await service.respondToConsent('c1', false);
+        expect(fake.conv.taskPullRequestEnabled).to.equal(false);
+        service.fakeConsents.allow('octo', 'acme', 'demo');
+        await service.sync('c1');
+        expect(github.calls).to.deep.equal([]);
+    });
+
+    it('skips read-only (exploratory) turns', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'notes.md'), 'exploration notes\n'));
+        fake.conv = {
+            ...fake.conv,
+            messages: fake.conv.messages.map(message => message.id === 'u1'
+                ? { ...message, turnVerdict: { taskState: 'completed', readOnly: true, settledAt: 1 } }
+                : message),
+        };
+        await service.sync('c1');
+        expect(github.calls).to.deep.equal([]);
+        expect(fake.records).to.deep.equal([]);
+    });
+
+    it('uses a neutral commit subject: a user-set title or the changed files, never the prompt', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+        await service.sync('c1');
+        const message = git(remote, ['log', '-1', '--format=%B', 'refs/heads/qaap/task/c1']);
+        expect(message.split('\n')[0]).to.equal('Qaap task: Add feature');
+        expect(message).not.to.contain('do u1');
+        // A title that is just the first prompt is not used: the subject names the changed files.
+        fake.conv = { ...fake.conv, title: 'do u2' };
+        turn('u2', 't2', () => fs.writeFileSync(path.join(repo, 'more.ts'), 'more\n'));
+        fake.tasks = [task('t1'), task('t2')];
+        fake.conv = { ...fake.conv, messages: [{ id: 'u0', role: 'user', content: 'do u2 please', createdAt: 0 }, ...fake.conv.messages] };
+        await service.sync('c1');
+        const second = git(remote, ['log', '-1', '--format=%s', 'refs/heads/qaap/task/c1']).trim();
+        expect(second).to.equal('Qaap task: update more.ts');
+    });
+
+    it('keeps the agent reply out of a public repository\'s PR body', async () => {
+        github.privateRepo = false;
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+        await service.sync('c1');
+        const body = (github.calls[0].args[1] as { body: string }).body;
+        expect(body).not.to.contain('finished u1');
+        expect(body).to.contain('Qaap task: Add feature.');
+        expect(body).to.contain('feature.ts');
+    });
+
+    it('reads the red/green verdict persisted on the turn when the task runner forgot the task', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'broken(\n'));
+        fake.conv = recordTurnVerdict(fake.conv, 'u1', {
+            state: 'completed_with_warnings',
+            verification: { status: 'failed', command: 'npm run build', attempts: 2, summary: 'error TS1005' },
+        }, undefined, 5);
+        fake.tasks = [];
+        await service.sync('c1');
+        const input = github.calls[0].args[1] as { draft: boolean; body: string };
+        expect(input.draft).to.equal(true);
+        expect(input.body).to.contain('error TS1005');
+        expect(fake.conv.messages.find(message => message.id === 'u1')?.turnVerdict).to.include({ taskState: 'completed_with_warnings', settledAt: 5 });
+    });
+
+    it('records a blocked turn as blocked in the persisted verdict', () => {
+        const conv = recordTurnVerdict(fake.conv.messages.length ? fake.conv : {
+            ...fake.conv, messages: [{ id: 'u9', role: 'user', content: 'x', createdAt: 1 }],
+        }, 'u9', { state: 'completed' }, 'the API key', 7);
+        expect(conv.messages[0].turnVerdict).to.deep.equal({ taskState: 'blocked', blockedNeed: 'the API key', settledAt: 7 });
+    });
+
+    it('retries transient GitHub failures (5xx, secondary rate limits) and not 422', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+        const create = github.createPull.bind(github);
+        let attempts = 0;
+        github.createPull = async (token, input) => {
+            attempts++;
+            if (attempts === 1) {
+                throw new GithubApiError('Bad gateway', 502);
+            }
+            if (attempts === 2) {
+                throw new GithubApiError('secondary rate limit', 403, true);
+            }
+            return create(token, input);
+        };
+        await service.sync('c1');
+        expect(attempts).to.equal(3);
+        expect(fake.records.at(-1)!.pr).to.include({ number: 7, state: 'open' });
+
+        expect(service.isRetryable(new GithubApiError('Validation Failed', 422))).to.equal(false);
+        expect(service.isRetryable(new GithubApiError('Bad credentials', 401))).to.equal(false);
+        expect(service.isRetryable(new GithubApiError('Forbidden', 403))).to.equal(false);
+        expect(service.isRetryable(new GithubApiError('Too many', 429))).to.equal(true);
+        expect(service.isRetryable(new TypeError('fetch failed'))).to.equal(true);
+    });
+
+    it('does not retry a 422 and records it', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+        let attempts = 0;
+        github.createPull = async () => {
+            attempts++;
+            throw new GithubApiError('Validation Failed', 422);
+        };
+        await service.sync('c1');
+        expect(attempts).to.equal(1);
+        expect(fake.records.at(-1)!.pr.lastError).to.equal('Validation Failed');
+    });
+
+    it('turns a 401 into "sign in again" and drops the cached token', async () => {
+        service.tokenCache.remember('octo', 'gho_spec');
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+        github.createPull = async () => {
+            throw new GithubApiError('Bad credentials', 401);
+        };
+        await service.sync('c1');
+        expect(fake.records.at(-1)!.pr.state).to.equal('needs-sign-in');
+        expect(service.tokenCache.get('octo')).to.equal(undefined);
+    });
+
+    it('builds on a commit someone else pushed to the task branch', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+        await service.sync('c1');
+        // A reviewer pushes a fix on top of our branch.
+        const other = path.join(work, 'other');
+        git(work, ['clone', '-q', '--branch', 'qaap/task/c1', remote, other]);
+        fs.writeFileSync(path.join(other, 'review.txt'), 'reviewer fix\n');
+        git(other, ['add', '-A']);
+        git(other, ['commit', '-qm', 'reviewer fix']);
+        git(other, ['push', '-q', 'origin', 'qaap/task/c1']);
+        const foreign = git(other, ['rev-parse', 'HEAD']).trim();
+
+        turn('u2', 't2', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 2;\n'));
+        fake.tasks = [task('t1'), task('t2')];
+        await service.sync('c1');
+
+        const head = headCommit();
+        expect(git(remote, ['rev-parse', `${head}^`]).trim()).to.equal(foreign);
+        expect(branchFiles()).to.include('review.txt');
+        expect(github.methods()).to.deep.equal(['createPull', 'getPull', 'updatePull']);
+        expect(fake.records.at(-1)!.pr.divergence).to.include({ resolution: 'built-on-remote', remoteSha: foreign });
+        expect((github.calls[2].args[1] as { body: string }).body).to.contain('on top of theirs');
+    });
+
+    it('moves to a new branch when the remote branch was replaced by unrelated history', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 1;\n'));
+        fake.tasks = [task('t1')];
+        await service.sync('c1');
+        const other = path.join(work, 'other');
+        fs.mkdirSync(other);
+        git(other, ['init', '-q', '-b', 'x']);
+        fs.writeFileSync(path.join(other, 'unrelated.txt'), 'x\n');
+        git(other, ['add', '-A']);
+        git(other, ['commit', '-qm', 'unrelated']);
+        git(other, ['push', '-q', '--force', remote, 'x:refs/heads/qaap/task/c1']);
+
+        turn('u2', 't2', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'export const x = 2;\n'));
+        fake.tasks = [task('t1'), task('t2')];
+        await service.sync('c1');
+
+        const recorded = fake.records.at(-1)!.pr;
+        expect(recorded.branch).to.equal('qaap/task/c1-2');
+        expect(recorded.divergence).to.include({ resolution: 'new-branch', previousBranch: 'qaap/task/c1', previousNumber: 7 });
+        expect(git(remote, ['show', 'refs/heads/qaap/task/c1-2:feature.ts'])).to.equal('export const x = 2;\n');
+        const create = github.calls.filter(call => call.method === 'createPull').at(-1)!.args[1] as { head: string; body: string };
+        expect(create.head).to.equal('qaap/task/c1-2');
+        expect(create.body).to.contain('Supersedes #7');
+    });
+
+    it('rebuilds the branch from its base and force-pushes it after a rewind', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'a.ts'), 'a\n'));
+        turn('u2', 't2', () => fs.writeFileSync(path.join(repo, 'b.ts'), 'b\n'));
+        fake.tasks = [task('t1'), task('t2')];
+        await service.sync('c1');
+        expect(branchFiles()).to.deep.equal(['README.md', 'a.ts', 'b.ts']);
+
+        // Rewind to before u2: its messages and checkpoints are gone, the tree is restored.
+        fake.conv = {
+            ...fake.conv,
+            messages: fake.conv.messages.filter(message => !message.id.startsWith('u2')),
+            checkpoints: (fake.conv.checkpoints ?? []).filter(checkpoint => checkpoint.messageId !== 'u2'),
+        };
+        await service.sync('c1');
+
+        expect(branchFiles()).to.deep.equal(['README.md', 'a.ts']);
+        const recorded = fake.records.at(-1)!.pr;
+        expect(recorded.rebuiltAt).to.be.a('number');
+        expect(recorded.lastUserMessageId).to.equal('u1');
+        expect((github.calls.at(-1)!.args[1] as { body?: string }).body ?? (github.calls.find(call => call.method === 'updatePull')!.args[1] as { body: string }).body)
+            .to.contain('rebuilt from its base');
+    });
+
+    it('drops the turns a checkpoint restore undid', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'a.ts'), 'a\n'));
+        turn('u2', 't2', () => fs.writeFileSync(path.join(repo, 'b.ts'), 'b\n'));
+        fake.tasks = [task('t1'), task('t2')];
+        await service.sync('c1');
+        const u1Post = fake.conv.checkpoints!.find(checkpoint => checkpoint.id === 'u1-post')!;
+        // Restore to u1's snapshot: the undo snapshot records what was written back.
+        fs.rmSync(path.join(repo, 'b.ts'));
+        const undo = { ...snapshot(repo, 'undo', 'u2'), restoredFrom: u1Post.commit };
+        fake.conv = { ...fake.conv, checkpoints: [...fake.conv.checkpoints!, undo] };
+        await service.sync('c1');
+        expect(branchFiles()).to.deep.equal(['README.md', 'a.ts']);
+        expect(fake.records.at(-1)!.pr.restoreSeenAt).to.equal(undo.capturedAt);
     });
 });

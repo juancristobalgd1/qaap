@@ -62,6 +62,28 @@ describe('collectMissionControlItems', () => {
         expect(items.find(item => item.conversationId === 'c-done')?.lane).to.equal('done');
     });
 
+    it('puts a task PR awaiting consent in needs-you with the consent reason, unless "Create PR when done" is off', () => {
+        const pr = { owner: 'acme', repo: 'demo', branch: 'qaap/task/c', state: 'awaiting-consent' as const, updatedAt: 1 };
+        const base = { cwd: '/repo', agentId: 'qaiq', status: 'idle' as const, createdAt: 1, messageCount: 2, lastMessageRole: 'agent' as const };
+        const items = collectMissionControlItems({
+            projects: [project],
+            conversationsForProject: () => [
+                { ...base, id: 'c-consent', title: 'Ready', updatedAt: 10, taskPullRequest: pr },
+                { ...base, id: 'c-off', title: 'Opted out', updatedAt: 9, taskPullRequest: pr, taskPullRequestEnabled: false },
+                { ...base, id: 'c-signin', title: 'Token', updatedAt: 8, taskPullRequest: { ...pr, state: 'needs-sign-in' as const } },
+            ],
+            isUnread: () => false,
+            resolveAgentLabel: agentId => agentId,
+        });
+        const consent = items.find(item => item.conversationId === 'c-consent');
+        expect(consent?.lane).to.equal('needs-you');
+        expect(consent?.pullRequestAttention).to.deep.include({ reason: 'consent', repository: 'acme/demo' });
+        const off = items.find(item => item.conversationId === 'c-off');
+        expect(off?.lane).to.equal('done');
+        expect(off?.pullRequestAttention).to.equal(undefined);
+        expect(items.find(item => item.conversationId === 'c-signin')?.pullRequestAttention?.reason).to.equal('sign-in');
+    });
+
     it('applies search, including to worktree threads', () => {
         const items = collectMissionControlItems({
             projects: [project],
