@@ -9,6 +9,7 @@ import {
     attachTranscriptScrollIntentObserver,
     clearTranscriptUserScrollIntent,
     markTranscriptUserScrollIntent,
+    transcriptHasObservedSelection,
     transcriptHasRecentUserScrollIntent,
 } from './qaap-transcript-scroll-intent';
 import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
@@ -125,6 +126,37 @@ describe('qaap-transcript-scroll-intent', () => {
             }
         } finally {
             dispose.dispose();
+        }
+    });
+
+    it('answers the hot-path selection check from the selectionchange state, without reading the selection', () => {
+        const scroller = document.createElement('div');
+        scroller.textContent = 'streaming answer';
+        document.body.append(scroller);
+        const observer = attachTranscriptScrollIntentObserver(scroller);
+        const originalGetSelection = document.getSelection.bind(document);
+        let reads = 0;
+        document.getSelection = (): Selection | null => {
+            reads++;
+            return originalGetSelection();
+        };
+        try {
+            // Reading the selection forces a synchronous layout, so a streaming patch must not.
+            expect(transcriptHasObservedSelection(scroller)).to.equal(false);
+            expect(reads).to.equal(0);
+
+            const range = document.createRange();
+            range.selectNodeContents(scroller);
+            originalGetSelection()!.addRange(range);
+            document.dispatchEvent(new window.Event('selectionchange'));
+            const readsAfterEvent = reads;
+            expect(transcriptHasObservedSelection(scroller)).to.equal(true);
+            expect(reads, 'the listener reads once, the hot path never').to.equal(readsAfterEvent);
+        } finally {
+            document.getSelection = originalGetSelection;
+            originalGetSelection()?.removeAllRanges();
+            observer.dispose();
+            scroller.remove();
         }
     });
 });

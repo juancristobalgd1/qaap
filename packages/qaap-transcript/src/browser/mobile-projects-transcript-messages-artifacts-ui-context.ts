@@ -84,6 +84,7 @@ export type MobileProjectsTranscriptMessagesArtifactsUiContextMember =
     | 'pinnedLiveStatusTurnKey'
     | 'populateTranscriptActivityStepCopy'
     | 'queueExecutionTimelineRefresh'
+    | 'appendStreamingAgentTextSegment'
     | 'refreshMobileClosingNarrativeBlocks'
     | 'refreshTranscriptThoughtBriefTitle'
     | 'refreshTranscriptToolGroupSummary'

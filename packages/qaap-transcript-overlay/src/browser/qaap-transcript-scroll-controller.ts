@@ -42,6 +42,13 @@ export interface TranscriptScrollAnchor {
     readonly messageId?: string;
     readonly element?: HTMLElement;
     readonly offsetTop?: number;
+    /**
+     * The controller's user-scroll epoch when the anchor was captured. A preserve-anchor
+     * restore runs one or two frames after the capture; if the reader scrolled in between,
+     * comparing the anchor's viewport offset would read their own gesture as a layout shift
+     * and scroll them back. Native scroll anchoring already absorbs real shifts meanwhile.
+     */
+    readonly userScrollEpoch?: number;
 }
 
 function eventHasTranscriptScrollIntent(event: KeyboardEvent): boolean {
@@ -113,6 +120,16 @@ export class TranscriptScrollController {
     protected currentPhase: TranscriptScrollPhase = 'idle';
     protected currentConversationId: string | undefined;
     protected programmaticScrollUntil = 0;
+    /** Bumped by every user scroll input (wheel, touch, pointer, keys, gesture-driven scroll). */
+    protected userScrollEpoch = 0;
+    /**
+     * From the first input of a wheel/touch/key gesture until it settles. The gesture's scroll
+     * lands a frame after its input event (and may be attributed to a programmatic-scroll
+     * window), so an anchor captured meanwhile is stale: no preserve-anchor write while true.
+     */
+    protected userGestureActive = false;
+    /** scrollTop each preserve-anchor left the viewport at, so its settle pass recognises its own write. */
+    protected readonly anchorScrollTops = new WeakMap<TranscriptScrollAnchor, number>();
     protected reconcileRaf = 0;
     protected reconcileScroller: HTMLElement | undefined;
     protected reconcileIntent: TranscriptScrollReconcileIntent | undefined;
@@ -252,13 +269,29 @@ export class TranscriptScrollController {
     }
 
     captureAnchor(scroller: HTMLElement): TranscriptScrollAnchor {
-        return captureTranscriptScrollAnchor(scroller);
+        return { ...captureTranscriptScrollAnchor(scroller), userScrollEpoch: this.userScrollEpoch };
     }
 
     restoreAnchor(scroller: HTMLElement, anchor: TranscriptScrollAnchor): boolean {
         const kind = this.currentPhase === 'restoring' ? 'restore' : 'preserve-anchor';
         if (!transcriptScrollPhaseAllowsViewportMutation(this.currentPhase, kind)) {
             return false;
+        }
+        if (kind === 'preserve-anchor') {
+            if (this.userGestureActive
+                || (anchor.userScrollEpoch !== undefined && anchor.userScrollEpoch !== this.userScrollEpoch)) {
+                // The reader is scrolling, or scrolled since the capture: their gesture wins and
+                // native scroll anchoring absorbs layout shifts meanwhile (see TranscriptScrollAnchor).
+                return false;
+            }
+            // A busy main thread can apply a wheel/touch scroll (on the compositor) before its input
+            // event is even dispatched, so events alone cannot tell. If anything other than this
+            // controller moved the viewport since the capture — the reader, or native scroll
+            // anchoring compensating the shift itself — the anchor is stale: never write over it.
+            const expectedTop = this.anchorScrollTops.get(anchor) ?? anchor.top;
+            if (Math.abs(scroller.scrollTop - expectedTop) >= 1) {
+                return false;
+            }
         }
         // Mark before the write so the (async) scroll event is attributed to us; roll the
         // window back when the restore is a sub-pixel no-op so a genuine user gesture arriving
@@ -268,6 +301,8 @@ export class TranscriptScrollController {
         const moved = restoreTranscriptScrollAnchor(scroller, anchor);
         if (!moved) {
             this.programmaticScrollUntil = previousProgrammaticUntil;
+        } else {
+            this.anchorScrollTops.set(anchor, scroller.scrollTop);
         }
         return moved;
     }
@@ -496,7 +531,6 @@ export class TranscriptScrollController {
     }
 
     bind(scroller: HTMLElement): Disposable {
-        let userGestureActive = false;
         let touchActive = false;
         let gestureTimer: ReturnType<typeof setTimeout> | undefined;
         let resizeObserver: ResizeObserver | undefined;
@@ -516,7 +550,7 @@ export class TranscriptScrollController {
             TRANSCRIPT_SCROLL_TO_BOTTOM_NEAR_BOTTOM_PX,
         );
         const settleGesture = (): void => {
-            userGestureActive = false;
+            this.userGestureActive = false;
             if (!pendingReturnToLiveEdge) {
                 return;
             }
@@ -544,7 +578,8 @@ export class TranscriptScrollController {
             }, USER_GESTURE_SCROLL_WINDOW_MS);
         };
         const onWheel = (event: WheelEvent): void => {
-            userGestureActive = true;
+            this.userGestureActive = true;
+            this.userScrollEpoch++;
             this.programmaticScrollUntil = 0;
             pendingReturnToLiveEdge = false;
             this.notifyUserDetach('wheel');
@@ -552,14 +587,16 @@ export class TranscriptScrollController {
         };
         const onTouchStart = (): void => {
             touchActive = true;
-            userGestureActive = true;
+            this.userGestureActive = true;
+            this.userScrollEpoch++;
             this.programmaticScrollUntil = 0;
             pendingReturnToLiveEdge = false;
             this.notifyUserDetach('touch');
             expireGesture();
         };
         const onTouchMove = (): void => {
-            userGestureActive = true;
+            this.userGestureActive = true;
+            this.userScrollEpoch++;
             this.programmaticScrollUntil = 0;
             expireGesture();
         };
@@ -569,7 +606,8 @@ export class TranscriptScrollController {
         };
         const onPointerDown = (event: PointerEvent): void => {
             if (event.pointerType !== 'mouse' || event.buttons > 0) {
-                userGestureActive = true;
+                this.userGestureActive = true;
+                this.userScrollEpoch++;
                 this.programmaticScrollUntil = 0;
                 pendingReturnToLiveEdge = false;
                 this.notifyUserDetach('pointer');
@@ -578,7 +616,8 @@ export class TranscriptScrollController {
         };
         const onKeydown = (event: KeyboardEvent): void => {
             if (eventHasTranscriptScrollIntent(event)) {
-                userGestureActive = true;
+                this.userGestureActive = true;
+                this.userScrollEpoch++;
                 this.programmaticScrollUntil = 0;
                 pendingReturnToLiveEdge = false;
                 this.notifyUserDetach('keyboard');
@@ -598,9 +637,10 @@ export class TranscriptScrollController {
                 }
                 return;
             }
-            if (!userGestureActive) {
+            if (!this.userGestureActive) {
                 return;
             }
+            this.userScrollEpoch++;
             if (nearBottom) {
                 // Arm, do not attach: settleGesture() commits once scrolling stops.
                 pendingReturnToLiveEdge = true;
@@ -657,6 +697,7 @@ export class TranscriptScrollController {
 
         return Disposable.create(() => {
             clearGestureTimer();
+            this.userGestureActive = false;
             childObserver?.disconnect();
             resizeObserver?.disconnect();
             scroller.removeEventListener('wheel', onWheel);

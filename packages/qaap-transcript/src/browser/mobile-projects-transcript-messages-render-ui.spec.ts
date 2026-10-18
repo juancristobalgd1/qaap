@@ -10,6 +10,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import type { QaapTranscriptTraceEventDTO } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
@@ -407,6 +408,57 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         }
     });
 
+    it('mounts the final answer when its first streaming tick read as process text', () => {
+        // The first SSE flush of the closing answer can carry only a prefix that reads as process
+        // text ('', 'Let me…'), so no block was mounted, and every later in-place tick found no
+        // host and only refreshed the timeline: the answer stayed invisible until the turn settled.
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        const cssHost = globalThis as unknown as { CSS?: { escape(v: string): string; supports(...a: unknown[]): boolean } };
+        if (!cssHost.CSS) {
+            cssHost.CSS = { escape: (value: string) => value, supports: () => false };
+        }
+        const base = Date.now();
+        const user: QaapAgentMessageDTO = { id: 'user-1', role: 'user', content: 'Explain anchoring', createdAt: base };
+        // The live wire carries traceEvents only (trace-first storage drops segments).
+        const tool = (id: string, name: string, finished: boolean): QaapTranscriptTraceEventDTO => ({
+            type: 'tool_call', id, name, args: '{}', status: finished ? 'completed' : 'running', ...(finished ? { result: 'ok' } : {}),
+        });
+        const intro: QaapTranscriptTraceEventDTO = { type: 'assistant_text', id: 'text-1', content: 'I will read the transcript code first.', status: 'completed' };
+        const mk = (traceEvents: QaapTranscriptTraceEventDTO[], tick: number): QaapAgentConversationDTO => ({
+            id: 'conv-coalesced', cwd: '/workspace', agentId: 'qaiq', title: '', status: 'streaming',
+            createdAt: base, updatedAt: base + tick,
+            messages: [user, { id: 'agent-1', role: 'agent', content: '', traceEvents, createdAt: base + 1 }],
+        });
+        // Past 280 characters a closing text is an answer, not process prose.
+        const longParagraph = 'The transcript keeps the reader anchored while new markdown streams into the tail. '.repeat(4);
+        const answer = (text: string): QaapTranscriptTraceEventDTO[] =>
+            [intro, tool('t1', 'Read', true), tool('t2', 'Grep', true), { type: 'assistant_text', id: 'text-2', content: text, status: 'streaming' }];
+        const snapshots = [
+            mk([{ ...intro, status: 'streaming' }], 0),
+            mk([intro, tool('t1', 'Read', false)], 1),
+            mk([intro, tool('t1', 'Read', true), tool('t2', 'Grep', false)], 2),
+            // The answer's first flush holds only a prefix that reads as process text.
+            mk(answer('Let me'), 3),
+            mk(answer(`Let me explain. ${longParagraph}`), 4),
+            mk(answer(`Let me explain. ${longParagraph} The reader stays anchored while the agent streams.`), 5),
+        ];
+        let prev: QaapAgentConversationDTO | undefined;
+        for (const snap of snapshots) {
+            host.transcriptLastConv = prev;
+            renderUi.renderTranscriptMessages(chatHost, snap);
+            prev = snap;
+        }
+
+        const row = renderUi.resolveTranscriptMessageHost(chatHost).querySelector<HTMLElement>('[data-transcript-message-id="agent-1"]');
+        expect(row, 'the agent row is mounted').to.not.equal(null);
+        expect(row!.querySelector('[data-transcript-segment-index="3"]'), 'the answer block exists').to.not.equal(null);
+        expect(row!.textContent).to.contain('The reader stays anchored while the agent streams.');
+        chatHost.remove();
+    });
+
     it('keeps the setup indicator DOM mounted across activity refreshes and full rebuilds', () => {
         const { renderUi, host } = createRenderUi();
         const chatHost = document.createElement('div');
@@ -790,6 +842,43 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             });
         });
         expect(scrollTop).to.equal(1000); // max scrollTop = scrollHeight - clientHeight
+    });
+
+    it('skips the preserve-anchor pass after an in-place tail patch while the reader is detached', () => {
+        // Each preserve-anchor costs two rAFs of forced layout reads; an in-place patch of the
+        // last row cannot move a still-mounted anchor row, so it must not queue one per SSE flush.
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        const cssHost = globalThis as unknown as { CSS?: { escape(v: string): string; supports(...a: unknown[]): boolean } };
+        if (!cssHost.CSS) {
+            cssHost.CSS = { escape: (value: string) => value, supports: () => false };
+        }
+        const agent = (text: string): QaapAgentMessageDTO => ({
+            id: 'agent-1', role: 'agent', content: '', createdAt: 2,
+            traceEvents: [{ type: 'assistant_text', id: 'text-1', content: text, status: 'streaming' }],
+        });
+        const user: QaapAgentMessageDTO = { id: 'user-1', role: 'user', content: 'Explain this bug', createdAt: 1 };
+        const first = conversationWithMessages([user, agent('First chunk')]);
+        renderUi.renderTranscriptMessages(chatHost, first);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const controller = ensureTranscriptScrollController(messageHost);
+        controller.notifyUserDetach('wheel');
+
+        host.transcriptLastConv = first;
+        host.transcriptLastRenderedConversationId = first.id;
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
+        try {
+            renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([user, agent('First chunk with more streaming tokens')]));
+            expect(getTranscriptRenderMetricsSnapshot().render_patch_last_agent_in_place).to.equal(1);
+        } finally {
+            resetTranscriptRenderMetrics();
+            enableTranscriptRenderMetrics(false);
+        }
+        expect(controller.isPreserveAnchorPending()).to.equal(false);
+        chatHost.remove();
     });
 
     function settledConversation(

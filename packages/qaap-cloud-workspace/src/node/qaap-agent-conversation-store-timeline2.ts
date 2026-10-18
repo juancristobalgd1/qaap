@@ -437,6 +437,9 @@ export function applyTaskOutputExtracted(ctx: QaapAgentConversationStoreContext,
         ctx.schedulePersist();
 }
 
+/** AG-UI emitters (one per run) that have produced at least one transcript event. */
+const agUiEmittersWithEvents = new WeakSet<object>();
+
 export function applyAgUiTaskOutputExtracted(ctx: QaapAgentConversationStoreContext, taskId: string,
         ref: QaapConversationTaskRef,
         chunk: string,
@@ -446,9 +449,18 @@ export function applyAgUiTaskOutputExtracted(ctx: QaapAgentConversationStoreCont
         const emitter = ctx.ensureAgUiStream(taskId, agentId);
         const events = emitter.push(chunk);
         if (events.length === 0) {
-            ctx.applyAccumulatorStructuredOutput(taskId, ref, agentId);
+            // QA-003 fallback: persist the accumulator snapshot only while the AG-UI mapping has
+            // produced nothing for this run. Once it has, the trace is AG-UI-owned (`text-1`,
+            // `text-2`…); rewriting it with the accumulator's ordinal ids (`text-0`…) on every
+            // event-less chunk (a partial line, `system`, an already-streamed `assistant`
+            // snapshot) flips the ids under the live wire deltas, the client patches an event
+            // that no longer exists and the transcript stops painting until the turn settles.
+            if (!agUiEmittersWithEvents.has(emitter)) {
+                ctx.applyAccumulatorStructuredOutput(taskId, ref, agentId);
+            }
             return;
         }
+        agUiEmittersWithEvents.add(emitter);
         let conv = ctx.conversations.get(ref.conversationId);
         if (!conv) {
             return;

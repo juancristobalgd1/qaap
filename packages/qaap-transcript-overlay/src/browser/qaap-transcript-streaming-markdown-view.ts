@@ -10,8 +10,11 @@ export const TRANSCRIPT_STREAM_TAIL_CLASS = 'theia-transcript-stream-tail';
 /** Live monospace suffix appended after worker HTML while the stream is ahead of the worker. */
 export const TRANSCRIPT_STREAM_PLAIN_PREVIEW_CLASS = 'theia-transcript-stream-plain-preview';
 
-const STREAM_STABLE_LENGTH_DATA = 'qaapStreamStableLength';
-const STREAM_TOTAL_LENGTH_DATA = 'qaapStreamTotalLength';
+/** `dataset` keys recording the lengths the DOM shows; streaming requests diff against them. */
+export const TRANSCRIPT_STREAM_STABLE_LENGTH_DATA = 'qaapStreamStableLength';
+export const TRANSCRIPT_STREAM_TOTAL_LENGTH_DATA = 'qaapStreamTotalLength';
+const STREAM_STABLE_LENGTH_DATA = TRANSCRIPT_STREAM_STABLE_LENGTH_DATA;
+const STREAM_TOTAL_LENGTH_DATA = TRANSCRIPT_STREAM_TOTAL_LENGTH_DATA;
 
 export interface StreamingMarkdownPatchOptions {
     /** Markdown source → sanitized HTML. */

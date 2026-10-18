@@ -8,6 +8,7 @@ import { exposeModulePlugin } from '@theia/bundle-plugin';
 import esbuild from 'esbuild';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -404,11 +405,21 @@ const mainOptions = {
     // returns contents, and exposeModulePlugin also intercepts .js files.
     plugins: [esmDiInteropPlugin, vendorShimPlugin, woff2OnlyFontsPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
 };
+/**
+ * The transcript markdown worker (`new Worker('./qaap-transcript-markdown-worker.js')`)
+ * renders streaming markdown off the main thread. The webpack config declared it as
+ * its own entry; without it here the URL falls through to the app shell, the worker
+ * errors on load and every streaming frame renders markdown synchronously instead.
+ */
+const transcriptMarkdownWorkerEntry = createRequire(import.meta.url)
+    .resolve('@theia/qaap-transcript/lib/browser/qaap-transcript-markdown-worker.js');
+
 const workerOptions = {
     ...browserOptions,
     entryPoints: {
         'editor.worker': editorWorkerEntry,
         'plugin-worker': pluginWorkerEntry,
+        'qaap-transcript-markdown-worker': transcriptMarkdownWorkerEntry,
     },
 };
 

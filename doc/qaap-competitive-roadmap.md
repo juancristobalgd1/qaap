@@ -24,7 +24,7 @@ documento daba por pendientes cosas que ya estaban hechas; quedan marcadas abajo
 | H3.3 Mission-control por defecto | ✅ Hecho (8 jul): flag retirado y vista vieja borrada | — |
 | H3.4 E2E contrato senior | 🟡 Suite de 10 tareas (bugfix/feature/refactor) con oráculos ocultos por el camino de conversación por defecto, tope de coste por suite, workflow nocturno opt-in. Falta cargar el secret `QAAP_BENCHMARK_ANTHROPIC_API_KEY` (con límite de gasto) y la primera cifra | #285 |
 | H4.1 Entradas externas | ⏳ Sin empezar | — |
-| H4.2 Pulido móvil | 🟡 4 mejoras de render hechas; quedan #1–#3 y el tirón de scroll | — |
+| H4.2 Pulido móvil | 🟡 Arnés reproducible `scripts/qaap-transcript-scroll-perf.mjs` (backend real + agente falso en streaming, 375×812, CPU 4×). Arreglados: el tirón de scroll (el anchor deshacía el gesto del lector: 16–21 escrituras/10 s → 0; 80 gestos recorrían 180–450 px → ~3000 px), tres congelaciones de la respuesta en vivo (ids de traza que cambiaban bajo los deltas, inanición del worker de markdown, bloque de respuesta nunca montado), layouts forzados por parche y el worker de markdown que esbuild no empaquetaba. fps streaming/scroll/reposo 7,0/6,1/5,2 → 13,7/12,7/10,3. **60 fps aún no**: queda el recálculo de estilo por `:has()` (~3 s/10 s; sin `:has()` 28/19/24 fps), un panel desconectado que re-renderiza cada tick y ~20 rAF por frame | este PR |
 
 Hallado de paso: el relay de ingress de un tenant con backend pausado acumulaba healthchecks
 colgados hasta su límite de PIDs (#275).
