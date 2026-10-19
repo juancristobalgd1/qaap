@@ -47,6 +47,7 @@ import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { resolveQaapPublicOrigin } from '@theia/qaap-shared-core/lib/node/qaap-github-oauth-config';
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 @injectable()
 export class QaapCloudWorkspaceEndpoint implements BackendApplicationContribution {
@@ -86,20 +87,20 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
 
     configure(app: Application): void {
         app.use(json());
-        app.get(`${QAAP_CLOUD_API_PATH}/workspaces`, (req, res) => { void this.handleListWorkspaces(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/workspaces/ensure`, (req, res) => { void this.handleEnsureWorkspace(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/preview/share`, (req, res) => { void this.handleCreateShare(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/preview/share/revoke`, (req, res) => { void this.handleRevokeShare(req, res); });
-        app.post(QAAP_PREVIEW_RESTART_PATH, (req, res) => { void this.handleRestartPreview(req, res); });
-        app.get(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, (req, res) => { void this.handleGetTerminalSessions(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, (req, res) => { void this.handleUpsertTerminalSessions(req, res); });
-        app.get(`${QAAP_CLOUD_API_PATH}/deploy/env`, (req, res) => { void this.handleGetDeployEnv(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/deploy/env`, (req, res) => { void this.handleSetDeployEnv(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/deploy/run`, (req, res) => { void this.handleDeployRun(req, res); });
-        app.get(`${QAAP_CLOUD_API_PATH}/push/vapid`, (req, res) => { void this.handlePushVapid(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/push/subscribe`, (req, res) => { void this.handlePushSubscribe(req, res); });
-        app.post(`${QAAP_CLOUD_API_PATH}/push/notify`, (req, res) => { void this.handlePushNotify(req, res); });
-        app.get(`${QAAP_CLOUD_API_PATH}/cdp-status`, (req, res) => { void this.handleCdpStatus(req, res); });
+        app.get(`${QAAP_CLOUD_API_PATH}/workspaces`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleListWorkspaces(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/workspaces/ensure`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleEnsureWorkspace(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/preview/share`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleCreateShare(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/preview/share/revoke`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleRevokeShare(req, res)));
+        app.post(QAAP_PREVIEW_RESTART_PATH, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleRestartPreview(req, res)));
+        app.get(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleGetTerminalSessions(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleUpsertTerminalSessions(req, res)));
+        app.get(`${QAAP_CLOUD_API_PATH}/deploy/env`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleGetDeployEnv(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/deploy/env`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleSetDeployEnv(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/deploy/run`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleDeployRun(req, res)));
+        app.get(`${QAAP_CLOUD_API_PATH}/push/vapid`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handlePushVapid(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/push/subscribe`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handlePushSubscribe(req, res)));
+        app.post(`${QAAP_CLOUD_API_PATH}/push/notify`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handlePushNotify(req, res)));
+        app.get(`${QAAP_CLOUD_API_PATH}/cdp-status`, QaapAsyncRoute.wrap('qaap-cloud-workspace', (req, res) => this.handleCdpStatus(req, res)));
         this.shareProxy.configure(app);
     }
 
