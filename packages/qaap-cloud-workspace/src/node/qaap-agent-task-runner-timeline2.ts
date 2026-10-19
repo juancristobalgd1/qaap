@@ -12,7 +12,8 @@ import {
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import { canStartNewAgentJob, hostedModelDenialReason, isHostedCodexUsage } from '../common/qaap-billing-plans';
+import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
+import { canStartNewAgentJob, hostedModelDenialPlanLimit, hostedModelDenialReason, isHostedCodexUsage } from '../common/qaap-billing-plans';
 import {
     buildQaiqControlResponseLine,
     buildQaiqStdioPromptLine,
@@ -256,6 +257,25 @@ export function clearQueuedApprovalTimersExtracted(ctx: QaapAgentTaskRunnerConte
         }
 }
 
+const BILLING_READ_ATTEMPTS = 3;
+const BILLING_READ_RETRY_DELAY_MS = 250;
+
+/** Retries a transient billing-store read before the caller falls back to failing open. */
+async function retryBillingRead<T>(read: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= BILLING_READ_ATTEMPTS; attempt++) {
+        try {
+            return await read();
+        } catch (error) {
+            lastError = error;
+            if (attempt < BILLING_READ_ATTEMPTS) {
+                await new Promise<void>(resolve => setTimeout(resolve, BILLING_READ_RETRY_DELAY_MS * attempt));
+            }
+        }
+    }
+    throw lastError;
+}
+
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
@@ -270,12 +290,14 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         }
         if (task.ownerLogin && ctx.billingStore) {
             try {
-                const account = await ctx.billingStore.getOrCreateAccount(task.ownerLogin);
+                const billingStore = ctx.billingStore;
+                const ownerLogin = task.ownerLogin;
+                const account = await retryBillingRead(() => billingStore.getOrCreateAccount(ownerLogin));
                 if (!canStartNewAgentJob(account)) {
                     fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                     fs.writeFileSync(
                         ctx.logPath(task.id),
-                        'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.\n',
+                        `${QaapPlanLimit.tagged('runtime_exhausted', 'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.')}\n`,
                         'utf8',
                     );
                     ctx.finishTask(task.id, 'failed', 1);
@@ -290,21 +312,20 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                     : undefined;
                 if (hostedDenial) {
                     fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-                    fs.writeFileSync(ctx.logPath(task.id), `${hostedDenial}\n`, 'utf8');
+                    const denialReason = hostedModelDenialPlanLimit(account, modelId);
+                    fs.writeFileSync(
+                        ctx.logPath(task.id),
+                        `${denialReason ? QaapPlanLimit.tagged(denialReason, hostedDenial) : hostedDenial}\n`,
+                        'utf8',
+                    );
                     ctx.finishTask(task.id, 'failed', 1);
                     return;
                 }
             } catch (error) {
-                // Fail closed for authenticated owners: a billing outage must not silently grant Pro quotas.
-                fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-                const message = error instanceof Error ? error.message : 'Billing check failed';
-                fs.writeFileSync(
-                    ctx.logPath(task.id),
-                    `Could not verify billing entitlements for this turn. ${message}\n`,
-                    'utf8',
-                );
-                ctx.finishTask(task.id, 'failed', 1);
-                return;
+                // Fail open: a billing outage must not fail the user's task. Quotas are still enforced
+                // on the next turn once the store answers again.
+                const message = error instanceof Error ? error.message : String(error);
+                console.warn(`[qaap-billing] Entitlement check failed for ${task.ownerLogin}; letting the turn run. ${message}`);
             }
         }
         const markedTask = ctx.tasks.get(task.id) ?? task;

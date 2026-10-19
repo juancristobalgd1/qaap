@@ -35,6 +35,7 @@ import {
     QaapBillingQuota,
     QaapPlanRepoLimitError,
 } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
+import { QAAP_PLAN_LIMIT_CODE, QAAP_PLAN_REPO_LIMIT_CODE } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
     QAAP_ANONYMOUS_USER_LOGIN,
     isPathUnderUserWorkspace,
@@ -1372,7 +1373,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             });
         } catch (err) {
             if (err instanceof QaapPlanRepoLimitError) {
-                throw new QaapGithubWorkspaceJobError(err.message, 'plan_repo_limit');
+                throw new QaapGithubWorkspaceJobError(err.message, QAAP_PLAN_LIMIT_CODE);
             }
             throw err;
         }
@@ -1831,7 +1832,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return false;
         }
         res.status(403).json({
-            error: 'plan_repo_limit',
+            error: QAAP_PLAN_REPO_LIMIT_CODE,
+            code: QAAP_PLAN_LIMIT_CODE,
+            reason: 'repo_limit',
             planId: err.planId,
             limit: err.limit,
             message: err.message,

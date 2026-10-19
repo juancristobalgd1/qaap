@@ -24,7 +24,7 @@ import {
     ensureTranscriptToolSpeculativePlaceholderExtracted,
 } from './mobile-projects-transcript-messages-tool-ui-streaming';
 import { patchTranscriptToolResultStreamBodyExtracted } from './mobile-projects-transcript-messages-tool-ui-timeline';
-import { createTranscriptAgentAuthLoginCardExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
+import { createTranscriptAgentAuthLoginCardExtracted, createTranscriptAgentFailureDialogExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -53,6 +53,32 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
                 expect(other.querySelector('.codicon-settings-gear'), agentId).to.equal(null);
                 expect(other.querySelector('.codicon-terminal'), agentId).to.not.equal(null);
             }
+        });
+    });
+
+    describe('plan-limit failure card', () => {
+        const ctx = {
+            appendTranscriptShellSummaryTail: () => undefined,
+            contentUi: { cleanTranscriptDisplayText: (text: string) => text },
+        } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
+
+        it('shows the localized message and an Upgrade button that opens billing, hiding the raw tag', () => {
+            let opened = 0;
+            const raw = '[qaap:plan_limit:hosted_model_denied] Hosted Codex models require Pro or Team.';
+            const card = createTranscriptAgentFailureDialogExtracted(ctx, raw, raw, { onOpenBilling: () => { opened++; } });
+            const cta = card.querySelector<HTMLButtonElement>('.theia-mobile-agent-turn-failure-plan-cta');
+            expect(cta?.textContent).to.equal('Upgrade plan');
+            expect(card.textContent).not.to.contain('qaap:plan_limit');
+            cta!.click();
+            expect(opened).to.equal(1);
+        });
+
+        it('offers Top up for exhausted credits and omits the CTA when billing cannot be opened', () => {
+            const raw = '[qaap:plan_limit:credits_exhausted] Codex hosted credits are exhausted.';
+            const withBilling = createTranscriptAgentFailureDialogExtracted(ctx, raw, raw, { onOpenBilling: () => undefined });
+            expect(withBilling.querySelector('.theia-mobile-agent-turn-failure-plan-cta')?.textContent).to.equal('Top up');
+            const without = createTranscriptAgentFailureDialogExtracted(ctx, raw, raw);
+            expect(without.querySelector('.theia-mobile-agent-turn-failure-plan-cta')).to.equal(null);
         });
     });
 

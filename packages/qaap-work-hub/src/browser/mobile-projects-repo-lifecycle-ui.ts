@@ -35,6 +35,7 @@ export interface MobileProjectsRepoLifecycleHost {
     closeCardMenu(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     syncWorkHubProjectSkillRoots(): void;
+    readonly openBillingSheet?: () => Promise<void>;
 }
 
 export class MobileProjectsRepoLifecycleUi {
@@ -51,6 +52,7 @@ export class MobileProjectsRepoLifecycleUi {
                     this.host.delegate.onProjectsChanged?.();
                 },
                 onWorkspaceOpened: () => this.host.delegate.onWorkspaceOpened?.(),
+                openBillingSheet: this.host.openBillingSheet ? () => this.host.openBillingSheet!() : undefined,
             });
             this.host.root.append(this.host.openRepoDialog.node);
         }

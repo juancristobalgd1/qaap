@@ -223,6 +223,13 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/auth/oauth/notConfigured': 'El inicio de sesión con GitHub aún no está configurado en este servidor. Pide al administrador que configure las credenciales de GitHub OAuth.',
     'qaap/auth/oauth/exchangeFailed': 'No pudimos completar el inicio de sesión con GitHub. Inténtalo de nuevo en un momento.',
     'qaap/auth/oauth/generic': 'Falló el inicio de sesión con GitHub. Inténtalo de nuevo.',
+    'qaap/planLimit/ctaTopUp': 'Recargar',
+    'qaap/planLimit/ctaUpgrade': 'Mejorar plan',
+    'qaap/planLimit/repoLimit': 'Has alcanzado el número de repositorios activos que permite tu plan. Mejora tu plan o elimina un clon para abrir otro.',
+    'qaap/planLimit/hostedModelDenied': 'Los modelos Codex alojados no están incluidos en tu plan. Elige un modelo BYOK o mejora tu plan.',
+    'qaap/planLimit/creditsExhausted': 'Se agotaron tus créditos de Codex alojado de este periodo de facturación. Recarga créditos o espera al siguiente ciclo.',
+    'qaap/planLimit/runtimeExhausted': 'Se agotó tu tiempo de ejecución de agentes de este periodo de facturación. Recarga horas o espera al siguiente ciclo.',
+    'qaap/mobileProjects/transcriptPlanLimitReached': 'Límite del plan alcanzado',
     'qaap/auth/notSignedIn': 'No has iniciado sesión',
 
     'qaap/mobileProjects/previewButton': 'Vista previa',

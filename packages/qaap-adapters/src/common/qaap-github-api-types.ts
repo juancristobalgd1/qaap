@@ -141,7 +141,7 @@ export interface QaapGithubWorkspaceJob {
     readonly detail?: string;
     /** Readable failure message (never contains credentials). */
     readonly error?: string;
-    /** Machine readable failure code, e.g. `plan_repo_limit`. */
+    /** Machine readable failure code, e.g. `plan_limit` (see qaap-plan-limit.ts; legacy `plan_repo_limit`). */
     readonly errorCode?: string;
     readonly result?: QaapGithubOpenRepositoryResponse;
     readonly startedAt: number;

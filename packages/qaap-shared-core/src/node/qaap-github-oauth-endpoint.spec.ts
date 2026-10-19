@@ -273,6 +273,8 @@ describe('QaapGithubOauthEndpoint plan repo limit', () => {
         expect(res.statusCode).to.equal(403);
         expect(res.body).to.deep.include({
             error: 'plan_repo_limit',
+            code: 'plan_limit',
+            reason: 'repo_limit',
             planId: 'starter',
             limit: 3,
         });
