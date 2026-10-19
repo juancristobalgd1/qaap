@@ -12,7 +12,29 @@ import { qaapProjectRemovalIdentity } from '@theia/qaap-shared-core/lib/common/q
 /** Id of the synthetic sidebar project that stands for a conversation cwd. */
 export const conversationCwdProjectId = (cwd: string): string => `ws:${FileUri.create(cwd).toString()}`;
 
-const uriKey = (uri: { toString(): string } | undefined): string | undefined => uri?.toString().toLowerCase();
+// Trailing separators are dropped: `…/repo/` and `…/repo` are the same folder.
+const uriKey = (uri: { toString(): string } | undefined): string | undefined => uri?.toString().toLowerCase().replace(/\/+$/, '');
+
+/**
+ * `github:owner/repo` of a repository clone ROOT at `cwd` (a folder below the root does not count:
+ * the clone's card only lists the conversations run at its root), whatever layout the clone path uses.
+ */
+const cloneRootIdentity = (cwd: string | undefined): string | undefined => {
+    const identity = qaapProjectRemovalIdentity(cwd);
+    if (!cwd || !identity?.startsWith('github:')) {
+        return undefined;
+    }
+    const base = cwd.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase();
+    return base === identity.slice(identity.indexOf('/') + 1) ? identity : undefined;
+};
+
+/** Every `github:owner/repo` identity a catalog card answers to (its repository, id or clone URI). */
+const projectCloneIdentities = (project: MobileProjectEntry): string[] => [
+    project.github ? `github:${project.github.owner}/${project.github.name}` : undefined,
+    project.id,
+    project.uri?.toString(),
+].map(key => qaapProjectRemovalIdentity(key))
+    .filter((identity): identity is string => !!identity?.startsWith('github:'));
 
 /**
  * Source clone (`parallelBaseCwd`) of the task worktree at `uri`, from the conversations run in it, or
@@ -45,6 +67,12 @@ export const worktreeSourceCwdOf = (
  *
  * Archived conversations never add a card: the hub does not list them, and the server archives the
  * conversations of a removed project, whose card they would otherwise bring back.
+ *
+ * A cwd is covered by a catalog card when both resolve to the same canonical `github:owner/repo`
+ * identity, not only when the URIs are byte-identical: a github card without a clone URI yet, a
+ * conversation recorded under the legacy flat clone path (`repos/<owner>/<repo>`) while the card
+ * carries the per-user one (`repos/users/<login>/<owner>/<repo>`), a trailing slash or a casing
+ * difference all used to synthesize a second card with the same name next to the real one.
  */
 export const mergeConversationCwdProjects = (
     projects: readonly MobileProjectEntry[],
@@ -55,6 +83,15 @@ export const mergeConversationCwdProjects = (
     const inRemovedProject = (cwd: string | undefined): boolean => {
         const identity = removedProjects.size > 0 ? qaapProjectRemovalIdentity(cwd) : undefined;
         return !!identity && removedProjects.has(identity);
+    };
+    // Synthetic `ws:` cards (from an earlier merge) never claim: the deduplicated catalog keeps a `ws:`
+    // card next to a github card of the same repo only when the `ws:` one was synthesized here.
+    const catalogIdentities = new Set(projects
+        .filter(project => project.isCurrent || !project.id.startsWith('ws:'))
+        .flatMap(projectCloneIdentities));
+    const coveredByCatalog = (cwd: string | undefined): boolean => {
+        const identity = cloneRootIdentity(cwd);
+        return !!identity && catalogIdentities.has(identity);
     };
     const byUri = new Map<string, MobileProjectEntry>();
     for (const project of projects) {
@@ -93,6 +130,9 @@ export const mergeConversationCwdProjects = (
         if (project.isCurrent) {
             return [project];
         }
+        if (coveredByCatalog(project.uri?.path.toString())) {
+            return [];
+        }
         const label = labelFor(project.uri);
         const relabelled = label && label !== project.name ? { ...project, name: label } : project;
         return [worktreeSourceCwd && worktreeSourceCwd !== relabelled.worktreeSourceCwd ? { ...relabelled, worktreeSourceCwd } : relabelled];
@@ -104,7 +144,7 @@ export const mergeConversationCwdProjects = (
         }
         const uri = FileUri.create(summary.cwd);
         const key = uriKey(uri)!;
-        if (seen.has(key)) {
+        if (seen.has(key) || coveredByCatalog(summary.cwd)) {
             continue;
         }
         const id = conversationCwdProjectId(summary.cwd);

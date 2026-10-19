@@ -131,3 +131,56 @@ describe('mergeConversationCwdProjects for a removed project', () => {
         expect(merged.map(project => [project.name, project.worktreeSourceCwd])).to.deep.equal([['vyyq_1', VYYQ]]);
     });
 });
+
+describe('mergeConversationCwdProjects canonical project identity', () => {
+    // Production layout: per-user clones under `repos/users/<login>/<owner>/<repo>`.
+    const CLONE = '/workspace/repos/users/jcristgd/juancristobalgd1/OpenDots';
+    const LEGACY_CLONE = '/workspace/repos/juancristobalgd1/OpenDots';
+
+    const githubCard = (uri?: string): MobileProjectEntry => ({
+        ...baseProject('OpenDots'),
+        id: 'github:juancristobalgd1/OpenDots',
+        uri: uri ? FileUri.create(uri) : undefined,
+        github: { owner: 'juancristobalgd1', name: 'OpenDots', fullName: 'juancristobalgd1/OpenDots', htmlUrl: '', private: false },
+    });
+    const names = (projects: readonly MobileProjectEntry[]): string[] => projects.map(project => project.name);
+
+    it('does not add a second card for a repo whose github card has no clone URI yet', () => {
+        const merged = mergeConversationCwdProjects([githubCard()], [summary('a', CLONE, 1)]);
+
+        expect(names(merged)).to.deep.equal(['OpenDots']);
+        expect(merged[0].id).to.equal('github:juancristobalgd1/OpenDots');
+    });
+
+    it('does not add a second card for a conversation recorded under the legacy flat clone path', () => {
+        const merged = mergeConversationCwdProjects([githubCard(CLONE)], [summary('old', LEGACY_CLONE, 1), summary('new', CLONE, 2)]);
+
+        expect(names(merged)).to.deep.equal(['OpenDots']);
+    });
+
+    it('ignores a trailing slash and casing differences in the conversation cwd', () => {
+        const merged = mergeConversationCwdProjects([githubCard(CLONE)], [
+            summary('slash', `${CLONE}/`, 1),
+            summary('case', CLONE.toLowerCase(), 2),
+        ]);
+
+        expect(names(merged)).to.deep.equal(['OpenDots']);
+    });
+
+    it('drops a card synthesized before the catalog loaded once the github card for that repo arrives', () => {
+        const stale = mergeConversationCwdProjects([], [summary('a', CLONE, 1)]);
+        expect(names(stale)).to.deep.equal(['OpenDots']);
+
+        const merged = mergeConversationCwdProjects([githubCard(), ...stale], [summary('a', CLONE, 1)]);
+
+        expect(merged.map(project => project.id)).to.deep.equal(['github:juancristobalgd1/OpenDots']);
+    });
+
+    it('keeps a same-named repository of another owner and a folder below the clone root', () => {
+        const fork = '/workspace/repos/users/jcristgd/someone-else/OpenDots';
+        const subfolder = `${CLONE}/packages/web`;
+        const merged = mergeConversationCwdProjects([githubCard(CLONE)], [summary('fork', fork, 1), summary('sub', subfolder, 2)]);
+
+        expect(merged.map(project => project.uri?.path.toString())).to.deep.equal([CLONE, fork, subfolder]);
+    });
+});
