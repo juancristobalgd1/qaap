@@ -31,13 +31,16 @@ describe('qaap frame check', () => {
     describe('isQaapBlockedFrameCheckIp', () => {
         it('blocks loopback, private, link-local and metadata addresses', () => {
             for (const ip of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.1', '192.168.0.1', '169.254.169.254', '0.0.0.0', '100.64.0.1',
-                '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', 'not-an-ip']) {
+                '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', 'not-an-ip',
+                // IPv6 spellings of private IPv4 targets (the hex mapped form is what DNS lookup returns for `[::ffff:10.0.0.1]`).
+                '::ffff:a00:1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '::a00:1', '2002:a00:1::1', '64:ff9b::a00:1', '2001:0:4136:e378::1',
+                'ff02::1', '198.18.0.1', '192.0.0.170']) {
                 expect(isQaapBlockedFrameCheckIp(ip), ip).to.equal(true);
             }
         });
 
         it('allows public addresses', () => {
-            for (const ip of ['8.8.8.8', '172.32.0.1', '1.1.1.1', '2606:4700:4700::1111']) {
+            for (const ip of ['8.8.8.8', '172.32.0.1', '1.1.1.1', '2606:4700:4700::1111', '::ffff:808:808', '2002:808:808::1', '2a00:1450:4003:80e::200e']) {
                 expect(isQaapBlockedFrameCheckIp(ip), ip).to.equal(false);
             }
         });

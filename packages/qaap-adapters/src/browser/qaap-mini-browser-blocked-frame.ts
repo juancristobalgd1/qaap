@@ -3,11 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-/** Sandbox tokens added for external origins on top of the upstream default. */
+/**
+ * Sandbox tokens added for external origins on top of the upstream default. Top navigation stays
+ * forbidden: a framed third-party page must never be able to replace the Qaap tab (tab-nabbing).
+ */
 export const QAAP_EXTERNAL_FRAME_SANDBOX_TOKENS: readonly string[] = [
     'allow-downloads',
     'allow-popups-to-escape-sandbox',
-    'allow-top-navigation-by-user-activation',
 ];
 
 /**

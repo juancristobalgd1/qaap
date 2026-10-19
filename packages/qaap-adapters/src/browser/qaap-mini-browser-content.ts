@@ -43,12 +43,7 @@ import {
 import { getSameOriginPreviewProxyPort, normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import { getQaapPreviewFrameSlot } from './qaap-mini-browser-frame-lifecycle';
-import { QAAP_FRAME_CHECK_API_PATH, QaapFrameCheckResult } from '../common/qaap-frame-check';
-import {
-    isQaapExternalPreviewUrl,
-    QAAP_BLOCKED_FRAME_TIMEOUT_MS,
-    QAAP_EXTERNAL_FRAME_SANDBOX_TOKENS,
-} from './qaap-mini-browser-blocked-frame';
+import { QaapPreviewBlockedFrameGuard } from './qaap-preview-blocked-frame-guard';
 /** How long a hidden preview keeps its page (and app state) before the iframe is unloaded to save memory. */
 export const QAAP_PREVIEW_FRAME_SUSPEND_DELAY_MS = 60_000;
 
@@ -128,7 +123,7 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         }
         this.ensureFramePicker();
         this.toDispose.push({ dispose: () => this.cancelPendingPreviewFrameSuspend() });
-        this.toDispose.push({ dispose: () => this.clearBlockedFrameFallback() });
+        this.toDispose.push({ dispose: () => this.blockedFrameGuard?.dispose() });
     }
 
     protected ensureFramePicker(): QaapPreviewFramePicker {
@@ -221,86 +216,23 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         return result.then(() => this.armBlockedFrameFallback());
     }
 
-    /** Pending "site cannot be shown" timer and card for the current external navigation. */
-    protected blockedFrameTimer: number | undefined;
-
-    protected blockedFrameCard: HTMLElement | undefined;
+    /** "Site cannot be shown" detection for the current external navigation. */
+    protected blockedFrameGuard: QaapPreviewBlockedFrameGuard | undefined;
 
     protected clearBlockedFrameFallback(): void {
-        if (this.blockedFrameTimer !== undefined) {
-            window.clearTimeout(this.blockedFrameTimer);
-            this.blockedFrameTimer = undefined;
-        }
-        this.blockedFrameCard?.remove();
-        this.blockedFrameCard = undefined;
+        this.blockedFrameGuard?.clear();
     }
 
-    /**
-     * External sites that send `X-Frame-Options` / `frame-ancestors` render blank and cannot be inspected cross-origin.
-     * Heuristic: when no iframe `load` event arrives within {@link QAAP_BLOCKED_FRAME_TIMEOUT_MS}, show an
-     * "Open in new tab" card; a late `load` removes it. The sandbox is widened only for external origins.
-     */
+    /** Starts blocked-frame detection once the base class assigned the frame `src`. */
     protected armBlockedFrameFallback(): void {
-        const url = this.frameSrc();
-        const external = !!url && isQaapExternalPreviewUrl(url, window.location.origin);
-        for (const token of QAAP_EXTERNAL_FRAME_SANDBOX_TOKENS) {
-            if (external) {
-                this.frame.sandbox.add(token);
-            } else {
-                this.frame.sandbox.remove(token);
-            }
-        }
-        if (!external || this.isDisposed) {
+        if (this.isDisposed) {
             return;
         }
-        const onLoad = (): void => this.clearBlockedFrameFallback();
-        this.frame.addEventListener('load', onLoad, { once: true });
-        void this.preflightExternalFrame(url, onLoad);
-        this.blockedFrameTimer = window.setTimeout(() => {
-            this.blockedFrameTimer = undefined;
-            this.frame.removeEventListener('load', onLoad);
-            this.showBlockedFrameCard(url);
-        }, QAAP_BLOCKED_FRAME_TIMEOUT_MS);
-    }
-
-    /** Backend HEAD check of `X-Frame-Options` / `frame-ancestors`; a blocked answer shows the card immediately. Failures are ignored. */
-    protected async preflightExternalFrame(url: string, onLoad: () => void): Promise<void> {
-        try {
-            const response = await fetch(`${window.location.origin}${QAAP_FRAME_CHECK_API_PATH}?url=${encodeURIComponent(url)}`, { cache: 'no-store' });
-            if (!response.ok) {
-                return;
-            }
-            const result = await response.json() as QaapFrameCheckResult;
-            if (result.embeddable === false && this.frameSrc() === url && !this.blockedFrameCard && !this.isDisposed) {
-                this.frame.removeEventListener('load', onLoad);
-                if (this.blockedFrameTimer !== undefined) {
-                    window.clearTimeout(this.blockedFrameTimer);
-                    this.blockedFrameTimer = undefined;
-                }
-                this.showBlockedFrameCard(url);
-            }
-        } catch {
-            /* preflight is best-effort; the load timer remains */
-        }
-    }
-
-    protected showBlockedFrameCard(url: string): void {
-        const host = this.frame.parentElement;
-        if (!host || this.isDisposed) {
-            return;
-        }
-        const card = document.createElement('div');
-        card.className = 'qaap-preview-blocked-frame';
-        const text = document.createElement('p');
-        text.className = 'qaap-preview-blocked-frame-text';
-        text.textContent = nls.localize('qaap/preview/blockedFrame', "This site can't be shown inside Qaap");
-        const open = document.createElement('button');
-        open.className = 'theia-button main qaap-preview-blocked-frame-open';
-        open.textContent = nls.localize('qaap/preview/openInNewTab', 'Open in new tab');
-        open.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
-        card.append(text, open);
-        host.append(card);
-        this.blockedFrameCard = card;
+        this.blockedFrameGuard ??= new QaapPreviewBlockedFrameGuard({
+            frame: this.frame,
+            openExternal: url => window.open(url, '_blank', 'noopener'),
+        });
+        this.blockedFrameGuard.arm(this.frameSrc() ?? '');
     }
 
     /**
