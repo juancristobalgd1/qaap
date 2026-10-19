@@ -13,6 +13,7 @@ import {
     QAAP_GITHUB_API_PATH,
     type QaapGithubPullRequestSummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { QaapExpressRouteOrder } from './qaap-express-route-order';
 import { fetchGithubPullRequestFiles, fetchGithubRepositories } from './qaap-github-api';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
@@ -73,28 +74,10 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
         });
         // Contributions configured earlier (upstream `@theia/filesystem`'s download endpoint) install a global
         // `json()` that would consume the stream first. The webhook route goes to the front of the router.
-        this.moveLastRouteFirst(app);
+        QaapExpressRouteOrder.moveLastRouteFirst(app, 'qaap-github-webhook');
         app.get(`${QAAP_GITHUB_API_PATH}/inbox/stream`, (req, res) => {
             void this.handleInboxStream(req, res);
         });
-    }
-
-    /**
-     * Moves the layer just added ahead of every middleware, but after Express 4's own init layers (`query`,
-     * `expressInit`: they give `req.header`, `res.status`, ...). Express 4 `_router`, Express 5 `router`.
-     */
-    protected moveLastRouteFirst(app: Application): void {
-        const router = (app as unknown as { _router?: { stack?: { name?: string }[] }; router?: { stack?: { name?: string }[] } });
-        const stack = router._router?.stack ?? router.router?.stack;
-        if (Array.isArray(stack) && stack.length > 1) {
-            const layer = stack.pop()!;
-            // Bundlers may suffix function names (`query2`); `expressInit` comes right after `query` in Express 4
-            // and does not exist in Express 5 (its init runs in app.handle).
-            const init = stack.findIndex(candidate => /^expressInit\d*$/.test(candidate.name ?? ''));
-            stack.splice(init + 1, 0, layer);
-        } else {
-            console.warn('[qaap-github-webhook] could not move the webhook route first; signed deliveries may be refused');
-        }
     }
 
     protected async handleWebhook(req: Request, res: Response): Promise<void> {
