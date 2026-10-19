@@ -36,6 +36,14 @@ import {
 } from './qaap-project-bootstrap-static';
 import { formatMissingBootstrapProjectHint } from '../common/qaap-project-bootstrap-scaffold-plan';
 import {
+    QAAP_BUILD_OUTPUT_DIRS,
+    QaapWorkspaceManifests,
+    buildQaapWorkspaceScriptCommand,
+    extractScriptBinary,
+    findQaapWorkspaceRoot,
+    resolveWorkspacePreviewBuildScript,
+} from '../common/qaap-workspace-root';
+import {
     QAAP_PREVIEW_CONFIG_PATH,
     QaapPreviewLaunchPlan,
     parseQaapPreviewLaunchConfigJson,
@@ -145,7 +153,11 @@ export class QaapProjectBootstrapDetector {
             ? pkg.name.trim()
             : rootUri.path.base || 'project';
 
-        const packageManager = await this.detectPackageManager(rootUri, pkg);
+        // A workspace member opened on its own still installs and resolves bins at its workspace root.
+        const enclosingWorkspaceRoot = await this.findEnclosingWorkspaceRoot(rootUri, pkg);
+        const packageManager = enclosingWorkspaceRoot
+            ? await this.detectPackageManager(enclosingWorkspaceRoot, await this.readPackageJson(enclosingWorkspaceRoot))
+            : await this.detectPackageManager(rootUri, pkg);
         const installCommand = buildBootstrapInstallCommand(packageManager);
 
         const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
@@ -159,12 +171,18 @@ export class QaapProjectBootstrapDetector {
             const directFrameworkCommand = typeof script === 'string'
                 ? this.buildDirectFrameworkCommand(kind, script)
                 : undefined;
-            devCommand = directFrameworkCommand ?? this.buildRunCommand(packageManager, devScriptKey);
+            const buildScript = enclosingWorkspaceRoot && packageManager !== 'native'
+                ? await this.resolvePreviewBuildScript(rootUri, devScriptKey, scripts, kind)
+                : undefined;
+            devCommand = directFrameworkCommand ?? (buildScript && packageManager !== 'native'
+                ? buildQaapWorkspaceScriptCommand({ packageManager, packageName: name, script: devScriptKey, buildScript })
+                : this.buildRunCommand(packageManager, devScriptKey));
             devCommandLabel = devCommand;
         }
 
         const { flavor, apps } = await this.detectMonorepo(rootUri, pkg, packageManager);
-        const nodeModulesPresent = await this.resolveNodeModulesPresent(rootUri, kind, packageManager, apps);
+        const workspaceRootUri = flavor && flavor !== 'implicit' ? rootUri : enclosingWorkspaceRoot;
+        const nodeModulesPresent = await this.resolveNodeModulesPresent(rootUri, kind, packageManager, apps, workspaceRootUri, !!devCommand);
 
         // A package.json without any dev/start script and no runnable monorepo apps cannot serve a
         // preview — but a plain index.html next to it can (hand-written sites whose package.json
@@ -199,7 +217,71 @@ export class QaapProjectBootstrapDetector {
             nodeModulesPresent,
             monorepoFlavor: flavor,
             apps,
+            workspaceRootUri,
         };
+    }
+
+    /**
+     * The package-manager workspace that lists `rootUri` as a member, when `rootUri` is not a git
+     * checkout root itself (a clone never adopts a workspace that merely encloses it).
+     */
+    protected async findEnclosingWorkspaceRoot(rootUri: URI, pkg: PackageJsonShape): Promise<URI | undefined> {
+        if (pkg.workspaces !== undefined) {
+            return undefined;
+        }
+        const match = await findQaapWorkspaceRoot(
+            rootUri.path.toString(),
+            dir => this.readWorkspaceManifests(rootUri.withPath(dir)),
+            { isBoundary: async dir => this.fileService.exists(rootUri.withPath(dir).resolve('.git')) },
+        );
+        return match ? rootUri.withPath(match.rootDir) : undefined;
+    }
+
+    protected async readWorkspaceManifests(dirUri: URI): Promise<QaapWorkspaceManifests | undefined> {
+        const readJson = async (name: string): Promise<{ workspaces?: unknown; packages?: unknown } | undefined> => {
+            const uri = dirUri.resolve(name);
+            if (!(await this.fileService.exists(uri))) {
+                return undefined;
+            }
+            try {
+                const parsed = JSON.parse((await this.fileService.read(uri)).value || '{}');
+                return parsed && typeof parsed === 'object' ? parsed : undefined;
+            } catch {
+                return undefined;
+            }
+        };
+        const packageJson = await readJson('package.json');
+        const lernaJson = await readJson('lerna.json');
+        let pnpmPackages: string[] | undefined;
+        const pnpmWorkspace = dirUri.resolve('pnpm-workspace.yaml');
+        if (await this.fileService.exists(pnpmWorkspace)) {
+            try {
+                pnpmPackages = parsePnpmWorkspaceYaml((await this.fileService.read(pnpmWorkspace)).value || '');
+            } catch {
+                pnpmPackages = undefined;
+            }
+        }
+        if (!packageJson && !lernaJson && !pnpmPackages) {
+            return undefined;
+        }
+        return { packageJson, lernaJson, pnpmPackages };
+    }
+
+    /** Build step a workspace member's `start`/`serve` needs before it can run (see `resolveWorkspacePreviewBuildScript`). */
+    protected async resolvePreviewBuildScript(
+        packageRootUri: URI,
+        scriptKey: string,
+        scripts: Record<string, unknown>,
+        kind: QaapProjectKind,
+    ): Promise<string | undefined> {
+        let buildOutputPresent = false;
+        for (const dir of QAAP_BUILD_OUTPUT_DIRS) {
+            if (await this.fileService.exists(packageRootUri.resolve(dir))) {
+                buildOutputPresent = true;
+                break;
+            }
+        }
+        return resolveWorkspacePreviewBuildScript({ scriptKey, scripts, genericKind: kind === 'node-generic', buildOutputPresent });
     }
 
     /** Explicit launch configuration is authoritative, including for mixed-language repos. */
@@ -716,7 +798,7 @@ export class QaapProjectBootstrapDetector {
             if (apps.length >= MAX_MONOREPO_APPS) {
                 break;
             }
-            const candidate = await this.toAppCandidate(rootUri, appUri, pm);
+            const candidate = await this.toAppCandidate(rootUri, appUri, pm, flavor !== undefined && flavor !== 'implicit');
             if (candidate) {
                 apps.push(candidate);
             }
@@ -898,6 +980,7 @@ export class QaapProjectBootstrapDetector {
         rootUri: URI,
         appUri: URI,
         rootPm: QaapPackageManager,
+        workspaceMember: boolean = false,
     ): Promise<QaapMonorepoAppCandidate | undefined> {
         const packageJsonUri = appUri.resolve('package.json');
         if (!(await this.fileService.exists(packageJsonUri))) {
@@ -919,7 +1002,15 @@ export class QaapProjectBootstrapDetector {
         const pkgName = typeof pkg.name === 'string' && pkg.name.trim().length > 0
             ? pkg.name.trim()
             : appUri.path.base || 'app';
-        const devCommand = this.buildMonorepoDevCommand(rootPm, devScriptKey, pkgName);
+        // Workspace members get their hoisted bin checked before install is skipped, and a missing
+        // build (`theia start` without `theia build`) runs before the preview script.
+        const devScriptBinary = workspaceMember ? extractScriptBinary(String(scripts[devScriptKey])) : undefined;
+        const buildScript = workspaceMember && rootPm !== 'native'
+            ? await this.resolvePreviewBuildScript(appUri, devScriptKey, scripts, kind)
+            : undefined;
+        const devCommand = buildScript && rootPm !== 'native'
+            ? buildQaapWorkspaceScriptCommand({ packageManager: rootPm, packageName: pkgName, script: devScriptKey, buildScript })
+            : this.buildMonorepoDevCommand(rootPm, devScriptKey, pkgName);
         const relativePath = this.relativePathFromRoot(rootUri, appUri) ?? pkgName;
         return {
             rootUri: appUri,
@@ -929,6 +1020,8 @@ export class QaapProjectBootstrapDetector {
             devCommand,
             devCommandLabel: devCommand,
             expectedPort,
+            ...(devScriptBinary ? { devScriptBinary } : {}),
+            ...(buildScript ? { buildScript } : {}),
         };
     }
 
@@ -972,30 +1065,66 @@ export class QaapProjectBootstrapDetector {
         kind: QaapProjectKind,
         pm: QaapPackageManager,
         apps: QaapMonorepoAppCandidate[],
+        workspaceRootUri?: URI,
+        rootRunnable: boolean = true,
     ): Promise<boolean> {
+        // Workspace dependencies live at the workspace root; a member's own node_modules only
+        // holds version conflicts and says nothing about whether install ran.
+        const hoistRoot = workspaceRootUri ?? rootUri;
         if (apps.length > 0) {
             for (const app of apps) {
                 if (await this.fileService.exists(app.rootUri.resolve('node_modules'))
-                    && await this.isDevToolingPresent(app.rootUri, app.kind, rootUri)) {
+                    && await this.isAppToolingPresent(app, hoistRoot)) {
                     return true;
                 }
             }
         }
-        const hasRootModules = await this.fileService.exists(rootUri.resolve('node_modules'));
+        const hasRootModules = await this.fileService.exists(hoistRoot.resolve('node_modules'));
         if (!hasRootModules) {
             return false;
         }
-        if (pm === 'pnpm' && await this.fileService.exists(rootUri.resolve('node_modules/.pnpm'))) {
+        if (pm === 'pnpm' && await this.fileService.exists(hoistRoot.resolve('node_modules/.pnpm'))) {
             return true;
         }
         if (apps.length > 0) {
             for (const app of apps) {
-                if (await this.isDevToolingPresent(app.rootUri, app.kind, rootUri)) {
+                if (await this.isAppToolingPresent(app, hoistRoot)) {
                     return true;
                 }
             }
         }
-        return this.isDevToolingPresent(rootUri, kind, rootUri);
+        if (workspaceRootUri && apps.length > 0 && !rootRunnable) {
+            // Only members can be previewed and none has its tooling: install has not completed.
+            return false;
+        }
+        return this.isDevToolingPresent(rootUri, kind, hoistRoot);
+    }
+
+    /**
+     * A partial or interrupted install leaves `node_modules` without the bin the script runs
+     * (`sh: theia: not found`). Members of a workspace therefore also need their script's own bin,
+     * in the member's or any ancestor's `node_modules/.bin` up to the workspace root.
+     */
+    protected async isAppToolingPresent(app: QaapMonorepoAppCandidate, workspaceRootUri: URI): Promise<boolean> {
+        if (!await this.isDevToolingPresent(app.rootUri, app.kind, workspaceRootUri)) {
+            return false;
+        }
+        return !app.devScriptBinary || this.isBinaryReachable(app.rootUri, app.devScriptBinary, workspaceRootUri);
+    }
+
+    protected async isBinaryReachable(packageRootUri: URI, binary: string, workspaceRootUri: URI): Promise<boolean> {
+        const stop = workspaceRootUri.toString();
+        let dir: URI | undefined = packageRootUri;
+        for (let depth = 0; dir && depth < 8; depth++) {
+            if (await this.fileService.exists(dir.resolve(`node_modules/.bin/${binary}`))) {
+                return true;
+            }
+            if (dir.toString() === stop || dir.path.isRoot) {
+                return false;
+            }
+            dir = dir.parent;
+        }
+        return false;
     }
 
     /**

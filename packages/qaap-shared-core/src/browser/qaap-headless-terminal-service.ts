@@ -81,6 +81,8 @@ export function stripTerminalControlSequences(text: string): string {
 /** Plain-text line buffer with xterm-like `\r` (carriage return) handling. */
 export class QaapHeadlessTerminalBuffer {
     protected readonly lines: string[] = [''];
+    /** A chunk ended on `\r`: whether it redraws the line depends on the next chunk's first char. */
+    protected pendingCarriageReturn = false;
 
     get length(): number {
         return this.lines.length;
@@ -88,13 +90,22 @@ export class QaapHeadlessTerminalBuffer {
 
     write(data: string): void {
         const text = stripTerminalControlSequences(data);
+        if (this.pendingCarriageReturn && text.length > 0) {
+            this.pendingCarriageReturn = false;
+            if (text[0] !== '\n') {
+                this.lines[this.lines.length - 1] = '';
+            }
+        }
         for (let index = 0; index < text.length; index++) {
             const char = text[index];
             const last = this.lines.length - 1;
             if (char === '\n') {
                 this.lines.push('');
             } else if (char === '\r') {
-                if (text[index + 1] !== '\n') {
+                if (index + 1 === text.length) {
+                    // `\r\n` split across PTY chunks must not erase the line it terminates.
+                    this.pendingCarriageReturn = true;
+                } else if (text[index + 1] !== '\n') {
                     // A bare carriage return redraws the line (progress bars, spinners).
                     this.lines[last] = '';
                 }

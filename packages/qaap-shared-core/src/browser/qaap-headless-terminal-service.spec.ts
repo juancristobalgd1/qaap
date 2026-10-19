@@ -124,4 +124,12 @@ describe('QaapHeadlessTerminalService (mobile process runner)', () => {
         expect(buffer.getLines(0, buffer.length, true)).to.deep.equal(['installing 100%', 'done', '']);
         expect(stripTerminalControlSequences('\u001b]0;title\u0007ok\u001b[2K')).to.equal('ok');
     });
+
+    it('keeps a line whose \\r\\n terminator is split across output chunks', () => {
+        const buffer = new QaapHeadlessTerminalBuffer();
+        buffer.write('sh: 1: theia: not found\r');
+        buffer.write('\nnpm error code 127\r');
+        buffer.write('progress 50%');
+        expect(buffer.getLines(0, buffer.length, true)).to.deep.equal(['sh: 1: theia: not found', 'progress 50%']);
+    });
 });

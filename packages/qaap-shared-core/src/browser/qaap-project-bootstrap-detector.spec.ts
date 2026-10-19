@@ -470,3 +470,108 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(candidates.map(c => c.relativePath)).to.deep.equal(['rioja-wines-landing-page']);
     });
 });
+
+describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
+
+    /** The Theia/Qaap layout: npm workspaces + lerna, no root dev script, `theia start` in a member. */
+    function theiaMonorepo(mock: MockFileService): void {
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: '@theia/monorepo',
+            private: true,
+            scripts: { 'build:browser': 'cd examples/browser && npm run build' },
+            workspaces: ['dev-packages/*', 'packages/*', 'examples/*'],
+        }));
+        mock.addFile('/ws/lerna.json', JSON.stringify({ npmClient: 'npm' }));
+        mock.addFile('/ws/package-lock.json', '{}');
+        mock.addDir('/ws/examples');
+        mock.addFile('/ws/examples/browser/package.json', JSON.stringify({
+            name: '@theia/example-browser',
+            scripts: {
+                build: 'theiaext build && npm run -s bundle',
+                start: 'theia start --log-level=warn --plugins=local-dir:../../plugins',
+            },
+            dependencies: { '@theia/core': '1.73.0' },
+            devDependencies: { '@theia/cli': '1.73.0' },
+        }));
+    }
+
+    it('installs at the workspace root and builds before `theia start`', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.monorepoFlavor).to.equal('npm-workspaces');
+        expect(descriptor?.workspaceRootUri?.path.toString()).to.equal('/ws');
+        const app = descriptor?.apps.find(candidate => candidate.relativePath === 'examples/browser');
+        expect(app?.devScriptBinary).to.equal('theia');
+        expect(app?.buildScript).to.equal('build');
+        expect(app?.devCommand).to.equal('npm run build && npm run start');
+        expect(descriptor?.nodeModulesPresent).to.equal(false);
+    });
+
+    it('does not trust a partial root node_modules that lacks the script bin', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        // An interrupted install: node_modules and .bin exist, `theia` does not.
+        mock.addDir('/ws/node_modules');
+        mock.addFile('/ws/node_modules/.bin/lerna', '');
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.nodeModulesPresent).to.equal(false);
+    });
+
+    it('skips install and build once the hoisted bin and the build output exist', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        mock.addDir('/ws/node_modules');
+        mock.addFile('/ws/node_modules/.bin/theia', '');
+        mock.addDir('/ws/examples/browser/lib');
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        const app = descriptor?.apps.find(candidate => candidate.relativePath === 'examples/browser');
+        expect(descriptor?.nodeModulesPresent).to.equal(true);
+        expect(app?.buildScript).to.equal(undefined);
+        expect(app?.devCommand).to.equal('npm run start');
+    });
+
+    it('resolves the enclosing workspace when a member folder is opened directly', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true, workspaces: ['apps/*'] }));
+        mock.addFile('/ws/yarn.lock', '');
+        mock.addDir('/ws/apps');
+        mock.addFile('/ws/apps/web/package.json', JSON.stringify({ name: 'web', scripts: { dev: 'vite' }, devDependencies: { vite: '^6.0.0' } }));
+        mock.addDir('/ws/node_modules');
+        mock.addFile('/ws/node_modules/.bin/vite', '');
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws/apps/web'));
+        expect(descriptor?.workspaceRootUri?.path.toString()).to.equal('/ws');
+        expect(descriptor?.packageManager).to.equal('yarn');
+        expect(descriptor?.devCommand).to.equal('yarn dev');
+        expect(descriptor?.nodeModulesPresent).to.equal(true);
+    });
+
+    it('keeps standalone projects and implicit app folders on their own install root', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', VITE_PKG);
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.workspaceRootUri).to.equal(undefined);
+        expect(descriptor?.devCommand).to.equal('npm run dev');
+    });
+});

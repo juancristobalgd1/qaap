@@ -61,6 +61,13 @@ export interface QaapMonorepoAppCandidate {
     readonly devCommandLabel: string;
     /** Default port hint for this framework, used when stdout parsing fails. */
     readonly expectedPort?: number;
+    /**
+     * `node_modules/.bin` executable the dev script starts with (`theia`, `vite`, …). Set for members
+     * of a package-manager workspace, whose bins are hoisted to the workspace root.
+     */
+    readonly devScriptBinary?: string;
+    /** Script run before {@link devCommand} because the member's build output is missing. */
+    readonly buildScript?: string;
 }
 
 /** Default HTTP port for `@theia/*` example apps (`theia start`). */
@@ -108,6 +115,12 @@ export interface QaapProjectDescriptor {
     readonly monorepoFlavor?: QaapMonorepoFlavor;
     /** Sub-apps with a runnable dev script, empty unless the project is a monorepo. */
     readonly apps: QaapMonorepoAppCandidate[];
+    /**
+     * Package-manager workspace root that owns `node_modules` (npm/yarn/pnpm/bun workspaces, Lerna,
+     * Turborepo, Nx). Install runs there, never inside a member. Equal to {@link rootUri} for a
+     * monorepo opened at its root; an ancestor when the inspected folder is itself a member.
+     */
+    readonly workspaceRootUri?: URI;
     /**
      * When preview/install targets a child folder (e.g. `create-vite` scaffold) while the workspace
      * root has no `package.json`, the relative path from the workspace root to that app.

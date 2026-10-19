@@ -9,6 +9,9 @@ import {
     diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
     extractTerminalFailureLine,
+    restoreEscapedLineBreaks,
+    terminalOutputMissingBinary,
+    terminalOutputNeedsBuild,
     terminalOutputNeedsInstall,
     terminalOutputNextDevLock,
     terminalOutputOutOfMemory,
@@ -54,6 +57,42 @@ describe('qaap-project-bootstrap-dev-errors', () => {
 
     it('terminalOutputNeedsInstall detects missing modules', () => {
         expect(terminalOutputNeedsInstall('Cannot find package \'@foo/bar\'')).to.equal(true);
+    });
+
+    // Production report: Theia monorepo previewed from examples/browser before any root install.
+    const THEIA_NOT_FOUND = [
+        '> @theia/example-browser@1.73.0 start',
+        '> theia start --log-level=warn --plugins=local-dir:../../plugins',
+        'sh: 1: theia: not found',
+        'npm error Lifecycle script `start` failed with error:',
+        'npm error code 127',
+        'npm error path /workspace/repos/users/jcristgd/juancristobalgd1/qaap/examples/browser',
+    ].join('\n');
+
+    it('names the missing script bin instead of dumping npm output', () => {
+        expect(terminalOutputMissingBinary(THEIA_NOT_FOUND)).to.equal('theia');
+        expect(terminalOutputMissingBinary('bash: line 1: vite: command not found')).to.equal('vite');
+        expect(terminalOutputMissingBinary('sh: 1: npm: not found')).to.equal(undefined);
+        expect(terminalOutputNeedsInstall(THEIA_NOT_FOUND)).to.equal(true);
+        const diagnosis = diagnoseBootstrapFailure(THEIA_NOT_FOUND, 'fallback');
+        expect(diagnosis.kind).to.equal('dependencies');
+        expect(diagnosis.message).to.include('`theia`').and.include('workspace root');
+        expect(diagnosis.message).not.to.include('npm error');
+    });
+
+    it('reads output whose line breaks arrived as literal \\n escapes', () => {
+        const escaped = THEIA_NOT_FOUND.replace(/\n/g, '\\n');
+        expect(restoreEscapedLineBreaks(escaped)).to.equal(THEIA_NOT_FOUND);
+        expect(restoreEscapedLineBreaks('C:\\new\\app\nnext line')).to.equal('C:\\new\\app\nnext line');
+        expect(diagnoseBootstrapFailure('npm error code 1\\nError: boom', 'fallback').message).to.equal('Error: boom');
+    });
+
+    it('asks for a build when the project\'s own compiled output is missing', () => {
+        const output = "Error: Cannot find module '/workspace/repo/dev-packages/cli/lib/theia'\nRequire stack:";
+        expect(terminalOutputNeedsBuild(output)).to.equal(true);
+        expect(terminalOutputNeedsInstall(output)).to.equal(false);
+        expect(diagnoseBootstrapFailure(output, 'fallback').kind).to.equal('build-required');
+        expect(terminalOutputNeedsBuild("Cannot find module '/repo/node_modules/vite/dist/node/cli.js'")).to.equal(false);
     });
 
     it('terminalOutputPortInUse detects EADDRINUSE', () => {

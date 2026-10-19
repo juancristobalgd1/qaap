@@ -28,6 +28,16 @@ describe('qaap-project-bootstrap-scaffold-plan', () => {
         expect(plan.cwdKey).to.equal('/ws/rioja-wines-landing-page');
     });
 
+    it('resolveBootstrapInstallTarget installs workspace members at the workspace root', () => {
+        // Theia: the root has no dev script, so the old rule installed inside examples/browser.
+        const plan = resolveBootstrapInstallTarget(
+            { rootKey: '/repo', workspaceRootKey: '/repo', installCommand: 'npm install' },
+            { rootKey: '/repo/examples/browser', devCommand: 'npm run start' },
+            undefined,
+        );
+        expect(plan.cwdKey).to.equal('/repo');
+    });
+
     it('resolveBootstrapDevTarget runs orphan apps from their folder', () => {
         const plan = resolveBootstrapDevTarget(
             { rootKey: '/ws', installCommand: 'npm install', packageManager: 'npm' },

@@ -5,8 +5,26 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 
+/**
+ * A script's executable is missing from every `node_modules/.bin` on `PATH`: `sh: 1: theia: not
+ * found` (dash), `bash: line 1: vite: command not found`, `sh: vite: command not found` (macOS).
+ * Package managers, runtimes and git are excluded: their absence is an image problem, not install.
+ */
+const MISSING_SCRIPT_BINARY_REGEX = /\b(?:sh|bash|zsh)(?::\s*(?:line\s*)?\d+)?:\s*(?!(?:npm|npx|pnpm|yarn|bun|node|corepack|git):)([\w@.\/-]+): (?:command )?not found/i;
+
 /** Dev/install output that usually means dependencies were not installed (or only production deps). */
-export const DEV_INSTALL_NEEDED_REGEX = /ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|(?:sh|bash):\s*1:\s*(?:vite|esbuild|next|nuxt|astro): not found|Missing script:|npm error code ENOENT/i;
+export const DEV_INSTALL_NEEDED_REGEX = new RegExp(
+    '(?:ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|Missing script:|npm error code ENOENT)|'
+    + MISSING_SCRIPT_BINARY_REGEX.source,
+    'i',
+);
+
+/**
+ * `Cannot find module` pointing at compiled output (`lib/`, `dist/`, `out/`, `build/`) of a package
+ * in the repository itself, not under `node_modules`: the monorepo was installed but never built
+ * (`theia start` before `npm run build`). Reinstalling cannot fix it.
+ */
+const BUILD_OUTPUT_MISSING_REGEX = /Cannot find module '((?:(?!node_modules)[^'])*\/(?:lib|dist|out|build)\/[^']*)'/i;
 
 /**
  * A dev port bound by another process. Node prints `EADDRINUSE` / `address already in use`, but
@@ -43,6 +61,7 @@ const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
 export type QaapBootstrapFailureKind =
     | 'out-of-memory'
+    | 'build-required'
     | 'dependencies'
     | 'port-conflict'
     | 'next-lock'
@@ -59,7 +78,17 @@ export interface QaapBootstrapFailureDiagnosis {
 }
 
 export function terminalOutputNeedsInstall(output: string): boolean {
-    return DEV_INSTALL_NEEDED_REGEX.test(output);
+    return DEV_INSTALL_NEEDED_REGEX.test(output) && !terminalOutputNeedsBuild(output);
+}
+
+/** The executable a script could not find (`theia` for `sh: 1: theia: not found`). */
+export function terminalOutputMissingBinary(output: string): string | undefined {
+    return MISSING_SCRIPT_BINARY_REGEX.exec(output.replace(ANSI_REGEX, ''))?.[1];
+}
+
+/** Whether the output shows the project's own compiled output is missing (needs a build, not an install). */
+export function terminalOutputNeedsBuild(output: string): boolean {
+    return BUILD_OUTPUT_MISSING_REGEX.test(output.replace(ANSI_REGEX, ''));
 }
 
 export function terminalOutputOutOfMemory(output: string): boolean {
@@ -96,8 +125,20 @@ export function isTerminalDoesNotExistError(message: string): boolean {
     return /terminal "[\d]+" does not exist/i.test(message);
 }
 
+/**
+ * Output whose line breaks arrived as literal `\n` escapes (JSON-encoded or double-escaped
+ * terminal text) is one long line; restore real line breaks so it is quoted line by line.
+ * Text that already has real line breaks is left alone (`C:\new` in a Windows path stays intact).
+ */
+export function restoreEscapedLineBreaks(output: string): string {
+    if (/[\r\n]/.test(output) || !/\\n/.test(output)) {
+        return output;
+    }
+    return output.replace(/(?:\\r)?\\n/g, '\n');
+}
+
 function lastUsefulErrorLine(output: string): string | undefined {
-    const clean = output.replace(ANSI_REGEX, '');
+    const clean = restoreEscapedLineBreaks(output.replace(ANSI_REGEX, ''));
     const lines = clean.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i];
@@ -115,6 +156,21 @@ export function diagnoseBootstrapFailure(output: string, fallback: string): Qaap
             kind: 'out-of-memory',
             message: 'The dev server ran out of memory and was stopped. Raise the workspace memory limit or use a lighter '
                 + 'dev mode (for example Next.js with Turbopack instead of --webpack), then retry.',
+        };
+    }
+    if (terminalOutputNeedsBuild(output)) {
+        return {
+            kind: 'build-required',
+            message: 'The project has not been built yet: its start script needs compiled output that does not exist. '
+                + 'Run the repository build from the workspace root (for example npm run build), then retry the preview.',
+        };
+    }
+    const missingBinary = terminalOutputMissingBinary(output);
+    if (missingBinary) {
+        return {
+            kind: 'dependencies',
+            message: `The \`${missingBinary}\` command is not installed. In a monorepo it is installed at the workspace root, `
+                + 'so run Install there (Try again does it automatically), then retry the preview.',
         };
     }
     if (terminalOutputNeedsInstall(output)) {
@@ -176,7 +232,7 @@ export const DEV_EXIT_OUTPUT_LINES = 12;
 
 /** The last non-empty lines of dev output, without ANSI escapes. */
 export function lastDevOutputLines(output: string, maxLines: number = DEV_EXIT_OUTPUT_LINES): string {
-    return output.replace(ANSI_REGEX, '')
+    return restoreEscapedLineBreaks(output.replace(ANSI_REGEX, ''))
         .split(/\r?\n|\r/)
         .map(line => line.trimEnd())
         .filter(line => line.trim().length > 0)

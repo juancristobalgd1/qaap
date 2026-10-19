@@ -152,7 +152,7 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
         const canAutoRetry = !portConflict
             && !exitedWithoutListening
-            && !terminalOutputNeedsInstall(ctx.devOutputTail)
+            && !terminalOutputNeedsInstall(ctx.devOutputTail || message)
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown')
             && ctx.previewAutoRetryAttempts < DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS
             && typeof window !== 'undefined';
@@ -198,14 +198,17 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
             return;
         }
-        ctx._needsInstall = terminalOutputNeedsInstall(ctx.devOutputTail);
+        // The output listener can miss a fast exit (restored or attached terminals): the exit
+        // message then carries the only copy of the output, so diagnose it instead of quoting it raw.
+        const failureOutput = ctx.devOutputTail || message;
+        ctx._needsInstall = terminalOutputNeedsInstall(failureOutput);
         const diagnosedError = nextLock
             ? extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message))
             : portConflict && conflictPort
                 ? `Port :${conflictPort} is already in use. Qaap exhausted ${DEV_PORT_RECOVERY_MAX_ATTEMPTS} alternate ports; stop stale dev servers, then retry.`
                 : exitedWithoutListening
                     ? message
-                    : extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message));
+                    : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
         ctx._error = ctx.enrichDevRunError(diagnosedError);
         ctx.releaseActivePreview();
         ctx.setPhase('run-failed');
