@@ -231,6 +231,7 @@ export class MobileProjectsStickyComposerColumnUi {
             agentId,
             label: agentLabel,
             agentModel,
+            connectionState: this.host.stickyComposerAgentsUi.isAgentDisconnected(agentId) ? 'disconnected' : undefined,
         });
         if (options.agentLocked) {
             agentBtn.classList.add('theia-mod-locked');

@@ -124,6 +124,21 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         });
     });
 
+    it('flags only signed-out harnesses as disconnected, not ones still being probed', () => {
+        const host = createHost();
+        host.stickyComposerBackendAgents = [
+            { id: 'codex', label: 'Codex', available: true, connectionState: 'connected' },
+            { id: 'opencode', label: 'OpenCode', available: false, connectionState: 'disconnected' },
+            { id: 'claude', label: 'Claude Code', available: true, connectionState: 'unknown' },
+        ];
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        expect(ui.isAgentDisconnected('OpenCode')).to.equal(true);
+        expect(ui.isAgentDisconnected('codex')).to.equal(false);
+        expect(ui.isAgentDisconnected('claude')).to.equal(false);
+        expect(ui.isAgentDisconnected('missing')).to.equal(false);
+    });
+
     it('recognizes a harness as connected after the backend catalog refreshes', () => {
         const host = createHost();
         host.stickyComposerBackendAgents = [

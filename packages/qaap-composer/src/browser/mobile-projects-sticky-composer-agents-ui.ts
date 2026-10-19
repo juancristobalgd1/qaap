@@ -333,6 +333,20 @@ export class MobileProjectsStickyComposerAgentsUi {
         return agent?.available === true && agent.connectionState === 'connected';
     }
 
+    /**
+     * True only when the catalog says the harness is signed out. `unknown` (probe pending) is not
+     * flagged, so the chip never shows a false "Connect" while the auth probe is still running.
+     */
+    isAgentDisconnected(agentId: string | undefined): boolean {
+        const normalizedAgentId = agentId?.trim().toLowerCase();
+        if (!normalizedAgentId) {
+            return false;
+        }
+        return this.host.stickyComposerBackendAgents.find(
+            candidate => candidate.id.trim().toLowerCase() === normalizedAgentId,
+        )?.connectionState === 'disconnected';
+    }
+
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {
         renderAgentPickerSkeleton(chrome.list);
     }
