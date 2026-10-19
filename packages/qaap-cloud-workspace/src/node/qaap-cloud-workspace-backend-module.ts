@@ -7,6 +7,7 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
+import { WsRequestValidatorContribution } from '@theia/core/lib/node/ws-request-validators';
 import { NodeFileUploadService } from '@theia/filesystem/lib/node/upload/node-file-upload-service';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { DefaultWorkspaceServer } from '@theia/workspace/lib/node/default-workspace-server';
@@ -86,6 +87,7 @@ import { QaapRemovedRepositoryCleanup } from './qaap-removed-repository-cleanup'
 import { QaapRepositoryRemovalContribution } from '@theia/qaap-shared-core/lib/node/qaap-repository-removal-contribution';
 import { bindQaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
 import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
+import { QaapAuthenticatedWsRequestValidator } from './qaap-authenticated-ws-request-validator';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contribution';
 import { QaapJobEndpoint } from './qaap-job-endpoint';
@@ -165,6 +167,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapTenantBackendProxyContribution);
     bind(QaapWebsocketAuthListener).toSelf().inSingletonScope();
     bind(MessagingListenerContribution).toService(QaapWebsocketAuthListener);
+    // Hosted runtimes refuse the Theia Socket.IO handshake of an unauthenticated caller.
+    bind(QaapAuthenticatedWsRequestValidator).toSelf().inSingletonScope();
+    bind(WsRequestValidatorContribution).toService(QaapAuthenticatedWsRequestValidator);
     bind(QaapMessagingAuthContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapMessagingAuthContribution);
     onActivation<ProcessManager>(ProcessManager, (ctx, processManager) => {
