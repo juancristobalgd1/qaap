@@ -10,6 +10,7 @@ import { buildWorkHubSessionsSidebarRowFingerprint, buildWorkHubSessionsSidebarV
 import { expandConversationSlots, partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
+import { collapseSessionsSidebarFailedDuplicates } from './mobile-projects-sessions-sidebar-ui-streaming';
 import { readLocalRemovedProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-session-cache';
 import { withoutRemovedMobileProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dedup';
 import { qaapProjectRemovalIdentity } from '@theia/qaap-shared-core/lib/common/qaap-project-removal-identity';
@@ -349,7 +350,9 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
     };
     const entries: SessionsSidebarConversationEntry[] = [];
     const pinnedGroups = ctx.collectSessionsSidebarPinnedGroups(projects, query);
-    for (const { project, conversations } of pinnedGroups) {
+    for (const { project, conversations: all } of pinnedGroups) {
+        // Same rows as the renderer (see collapseSessionsSidebarFailedDuplicates).
+        const conversations = collapseSessionsSidebarFailedDuplicates(ctx, project, all).conversations;
         const parentIds = ctx.collectParentIds(conversations);
         const partitioned = partitionAgentConversations(conversations);
         const { visible } = ctx.resolveSessionsSidebarVisibleConversations(
@@ -373,6 +376,7 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
         } else if (conversations.length === 0) {
             continue;
         }
+        conversations = collapseSessionsSidebarFailedDuplicates(ctx, project, conversations).conversations;
         const parentIds = ctx.collectParentIds(conversations);
         const partitioned = partitionAgentConversations(conversations);
         const { visible } = ctx.resolveSessionsSidebarVisibleConversations(

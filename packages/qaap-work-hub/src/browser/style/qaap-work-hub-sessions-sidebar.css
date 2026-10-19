@@ -1827,17 +1827,17 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   }
 
   /* Desktop: lift the time/age out of the meta row and pin it to the right edge.
-     Keep only the timestamp's footprint reserved in the resting state so titles
-     remain readable. On hover the Archive + menu actions fade in at the same spot
-     and the time fades out, so restore their right slot. */
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-body {
-    padding-right: calc(var(--qaap-sessions-row-gutter) + 40px);
+     Keep only the timestamp's footprint reserved so titles remain readable. On hover the
+     Archive + menu actions fade in at the same spot over a patch of the row surface (the
+     row ::after below) that fades the title out; the body keeps its padding, so hovering
+     never re-wraps or re-truncates the title (a wider hover padding made it jump). The
+     title marquee subtracts the covered width (--qaap-task-title-hover-reserve). */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {
+    --qaap-task-title-hover-reserve: 36px;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-body,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-body,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-task-body {
-    padding-right: 84px;
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-body {
+    padding-right: calc(var(--qaap-sessions-row-gutter) + 40px);
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(.theia-mobile-projects-conversation-retry-btn) .theia-mobile-projects-task-body,
@@ -1845,6 +1845,11 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within:has(.theia-mobile-projects-conversation-retry-btn) .theia-mobile-projects-task-body,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open:has(.theia-mobile-projects-conversation-retry-btn) .theia-mobile-projects-task-body {
     padding-right: 120px;
+  }
+
+  /* The retry slot is reserved at rest already: nothing more is covered on hover. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(.theia-mobile-projects-conversation-retry-btn) {
+    --qaap-task-title-hover-reserve: 0px;
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-since {
@@ -1955,7 +1960,10 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     width: 88px;
     border-radius: 0 8px 8px 0;
     border-left: 0;
-    background: transparent;
+    background: linear-gradient(
+      to right,
+      transparent 0,
+      var(--qaap-task-title-fade-surface) 20px);
     pointer-events: none;
     z-index: 1;
   }

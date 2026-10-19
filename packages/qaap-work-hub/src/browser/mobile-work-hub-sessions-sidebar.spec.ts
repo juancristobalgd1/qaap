@@ -503,6 +503,37 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"]')).to.equal(liveRow);
     });
 
+    it('keeps the live list when only stamped fingerprints, the heading tooltip or icon ids differ', () => {
+        let render = 0;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                render++;
+                const label = document.createElement('span');
+                label.className = 'theia-mobile-tasks-inbox-section-label';
+                label.textContent = 'Projects';
+                const row = document.createElement('div');
+                row.dataset.qaapConversationId = 'conv-1';
+                // Agent icons get a fresh gradient id suffix on every render (uniquifySvgIds).
+                row.innerHTML = `<svg><linearGradient id="qaiq__ear-gradient-${render}"></linearGradient><path fill="url(#qaiq__ear-gradient-${render})"></path></svg>`;
+                host.append(label, row);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        const liveRow = sidebar.node.querySelector<HTMLElement>('[data-qaap-conversation-id="conv-1"]')!;
+        // Written on the live list only, after it is painted.
+        liveRow.setAttribute('data-qaap-sessions-sidebar-row-fp', 'fp-1');
+        liveRow.setAttribute('data-qaap-inbox-row-fp', 'fp-2');
+        sidebar.node.querySelector<HTMLElement>('.theia-mobile-tasks-inbox-section-label')!.title = 'Projects';
+
+        sidebar.refreshList();
+
+        expect(render).to.equal(2);
+        expect(sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"]')).to.equal(liveRow);
+    });
+
     it('does not touch DOM when refreshed markup is unchanged', () => {
         let renderCalls = 0;
         const sidebar = new MobileWorkHubSessionsSidebar({

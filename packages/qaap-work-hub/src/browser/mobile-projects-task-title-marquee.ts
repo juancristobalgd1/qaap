@@ -21,7 +21,11 @@ export function refreshTaskTitleMarquee(titleViewport: HTMLElement): void {
         return;
     }
 
-    const overflow = Math.max(0, titleText.scrollWidth - titleViewport.clientWidth);
+    // On hover the row's actions cover the end of the title instead of narrowing it (see
+    // --qaap-task-title-hover-reserve in the sessions sidebar CSS): travel past that patch too.
+    const view = titleViewport.ownerDocument.defaultView;
+    const reserve = view ? parseFloat(view.getComputedStyle(titleViewport).getPropertyValue('--qaap-task-title-hover-reserve')) || 0 : 0;
+    const overflow = Math.max(0, titleText.scrollWidth - titleViewport.clientWidth + reserve);
     if (overflow > 1) {
         titleViewport.classList.add(TASK_TITLE_OVERFLOW_CLASS);
         titleViewport.style.setProperty('--qaap-task-title-overflow', `${Math.ceil(overflow)}px`);

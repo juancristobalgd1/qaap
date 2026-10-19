@@ -88,9 +88,12 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/\.theia-mod-current\.theia-mod-menu-open::before\s*\{\s*background:\s*var\(--qaap-task-title-fade-surface\);/s);
     });
 
-    it('gives resting titles more room and reserves the action slot on interaction', () => {
+    it('gives resting titles more room and covers the action slot on interaction without resizing', () => {
         expect(css).to.match(/\.theia-mobile-projects-task-row \.theia-mobile-projects-task-body\s*\{[^}]*padding-right:\s*calc\(var\(--qaap-sessions-row-gutter\) \+ 40px\)/s);
-        expect(css).to.match(/\.theia-mobile-projects-task-row:hover \.theia-mobile-projects-task-body[^}]*padding-right:\s*84px/s);
+        // A hover-only padding re-wrapped and re-truncated the title under the pointer.
+        expect(css).not.to.match(/\.theia-mobile-projects-task-row:hover \.theia-mobile-projects-task-body\s*[,{]/);
+        expect(css).to.match(/\.theia-mobile-projects-task-row:hover::after[^{]*\{[^}]*linear-gradient\(\s*to right,\s*transparent 0,\s*var\(--qaap-task-title-fade-surface\)/s);
+        expect(css).to.match(/\.theia-mobile-projects-task-row\s*\{\s*--qaap-task-title-hover-reserve:\s*36px;/s);
         expect(css).not.to.include('theia-mobile-projects-conversation-pin-btn');
     });
 

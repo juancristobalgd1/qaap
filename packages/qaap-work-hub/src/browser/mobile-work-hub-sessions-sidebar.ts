@@ -42,6 +42,12 @@ const PULL_REQUEST_SCROLL_SETTLE_MS = 350;
 /** Title marquee measurement, written only on the laid-out list (see refreshTaskTitleMarquee). */
 const TASK_TITLE_OVERFLOW_CLASS_MARKUP = new RegExp(` ${TASK_TITLE_OVERFLOW_CLASS}(?=[ "])`, 'g');
 const TASK_TITLE_OVERFLOW_STYLE_MARKUP = / style="(?:--qaap-task-title-overflow:[^;"]*;?\s*)?"/g;
+/** Row fingerprints stamped on the live list after each paint (sidebar and inbox patchers). */
+const ROW_FINGERPRINT_MARKUP = / data-qaap-[a-z-]+-fp="[^"]*"/g;
+/** Sticky Projects heading tooltip, written by updateProjectsHeading on the live list only. */
+const PROJECTS_HEADING_TITLE_MARKUP = /(class="theia-mobile-tasks-inbox-section-label") title="[^"]*"/g;
+/** Per-instance suffix `uniquifySvgIds` appends to every agent icon's gradient ids on each render. */
+const SVG_INSTANCE_ID_SUFFIX_MARKUP = /(\bid="[^"]*?|url\(#[^)]*?)-\d+(?=[")])/g;
 const DESKTOP_SIDEBAR_MIN_WIDTH = 240;
 const DESKTOP_SIDEBAR_MAX_WIDTH = 460;
 const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
@@ -826,14 +832,19 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     /**
-     * List markup without the title marquee measurement: the live titles carry it once laid
-     * out and a detached render never does, so comparing it would replace the list (and
-     * restart a running marquee) on every refresh of a list with a long title.
+     * List markup without what only the live list carries or what changes on every render: the
+     * title marquee measurement, the stamped row fingerprints and the Projects heading tooltip
+     * (written after the list is laid out, never on a detached render), and the per-render ids
+     * of agent icon gradients. Comparing any of them made two identical lists always differ, so
+     * every refresh replaced the whole list (the hovered row was rebuilt, a marquee restarted).
      */
     protected sessionListMarkup(host: HTMLElement): string {
         return host.innerHTML
             .replace(TASK_TITLE_OVERFLOW_CLASS_MARKUP, '')
-            .replace(TASK_TITLE_OVERFLOW_STYLE_MARKUP, '');
+            .replace(TASK_TITLE_OVERFLOW_STYLE_MARKUP, '')
+            .replace(ROW_FINGERPRINT_MARKUP, '')
+            .replace(PROJECTS_HEADING_TITLE_MARKUP, '$1')
+            .replace(SVG_INSTANCE_ID_SUFFIX_MARKUP, '$1');
     }
 
     /**
