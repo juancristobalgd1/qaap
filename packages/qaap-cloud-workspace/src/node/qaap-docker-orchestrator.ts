@@ -986,6 +986,20 @@ export class QaapDockerOrchestrator {
         return /^(1|true)$/i.test(process.env.QAAP_TASK_SANDBOX?.trim() ?? '') ? ['QAAP_TASK_SANDBOX=1'] : [];
     }
 
+    /**
+     * Tasks started from GitHub issues (doc/qaap-external-task-inputs.md): the tenant backend owns the opt-in,
+     * the intake route and the notifier, so it needs the flag; the webhook secret stays on the control plane.
+     */
+    protected tenantBackendExternalTaskEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+        if (!/^(1|true|on|yes)$/i.test(env.QAAP_EXTERNAL_TASKS_GITHUB?.trim() ?? '')) {
+            return [];
+        }
+        return ['QAAP_EXTERNAL_TASKS_GITHUB=1', ...['QAAP_EXTERNAL_TASKS_AGENT', 'QAAP_EXTERNAL_TASKS_MAX_ACTIVE']
+            .map(key => [key, env[key]?.trim()] as const)
+            .filter((entry): entry is readonly [string, string] => !!entry[1] && /^[A-Za-z0-9_.:@/-]+$/.test(entry[1]))
+            .map(([key, value]) => `${key}=${value}`)];
+    }
+
     protected tenantBackendPublicUrlEnv(env: NodeJS.ProcessEnv = process.env): string[] {
         return ['QAAP_OAUTH_PUBLIC_URL', 'QAAP_PREVIEW_BASE_DOMAIN', 'QAAP_PREVIEW_ALLOW_SAME_SITE', 'QAAP_PREVIEW_SHARE_TTL_HOURS']
             .map(key => [key, env[key]?.trim()] as const)
@@ -1358,6 +1372,7 @@ export class QaapDockerOrchestrator {
                 'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
                 ...this.tenantBackendPublicUrlEnv(),
                 ...this.tenantBackendTaskSandboxEnv(),
+                ...this.tenantBackendExternalTaskEnv(),
             ];
             const repoMount = `${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
             const worktreeMount = `${dockerMounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
@@ -1943,6 +1958,7 @@ export class QaapDockerOrchestrator {
             'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
             ...this.tenantBackendPublicUrlEnv(),
             ...this.tenantBackendTaskSandboxEnv(),
+            ...this.tenantBackendExternalTaskEnv(),
         ];
         // The backend must not publish its own port: a Docker internal network deliberately reports
         // a null mapping. Only the dedicated ingress relay publishes a host port.
@@ -1960,6 +1976,8 @@ export class QaapDockerOrchestrator {
             && expectedEnv.every(entry => env.has(entry))
             // Turning the broker off must also recreate backends that still ask for sandboxes.
             && (this.tenantBackendTaskSandboxEnv().length > 0 || ![...env].some(entry => entry.startsWith('QAAP_TASK_SANDBOX=')))
+            // Same for GitHub issue tasks: a backend still running the opt-in and intake after the flag went off.
+            && (this.tenantBackendExternalTaskEnv().length > 0 || ![...env].some(entry => entry.startsWith('QAAP_EXTERNAL_TASKS_')))
             && this.tenantContainerHasExpectedNetworks(inspect, networkMode, directEgressNetwork)
             && raw.Mounts?.length === expectedMounts.length
             && expectedMounts.every(expected => raw.Mounts?.some(actual =>

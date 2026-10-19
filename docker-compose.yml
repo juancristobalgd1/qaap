@@ -83,6 +83,16 @@ services:
       QAAP_TASK_SANDBOX_PULLS_PER_TENANT: ${QAAP_TASK_SANDBOX_PULLS_PER_TENANT:-}
       QAAP_TASK_SANDBOX_PULLS_PER_DAY: ${QAAP_TASK_SANDBOX_PULLS_PER_DAY:-}
       # Production boot exits if OAuth is missing (NODE_ENV=production). Override only on a private box:
+      # Tasks started from GitHub issues (doc/qaap-external-task-inputs.md). The webhook secret signs
+      # every delivery to /qaap/api/github/webhook; without it the route answers 503. The flag is passed
+      # on to tenant backends (turning it off recreates them).
+      QAAP_GITHUB_WEBHOOK_SECRET: ${QAAP_GITHUB_WEBHOOK_SECRET:-}
+      QAAP_EXTERNAL_TASKS_GITHUB: ${QAAP_EXTERNAL_TASKS_GITHUB:-0}
+      QAAP_EXTERNAL_TASKS_REPO_ALLOWLIST: ${QAAP_EXTERNAL_TASKS_REPO_ALLOWLIST:-}
+      QAAP_EXTERNAL_TASKS_AGENT: ${QAAP_EXTERNAL_TASKS_AGENT:-}
+      QAAP_EXTERNAL_TASKS_MAX_PER_HOUR: ${QAAP_EXTERNAL_TASKS_MAX_PER_HOUR:-}
+      QAAP_EXTERNAL_TASKS_MAX_PER_REPO_HOUR: ${QAAP_EXTERNAL_TASKS_MAX_PER_REPO_HOUR:-}
+      QAAP_EXTERNAL_TASKS_MAX_ACTIVE: ${QAAP_EXTERNAL_TASKS_MAX_ACTIVE:-}
       QAAP_VAPID_PUBLIC_KEY: ${QAAP_VAPID_PUBLIC_KEY:-}
       QAAP_VAPID_PRIVATE_KEY: ${QAAP_VAPID_PRIVATE_KEY:-}
       QAAP_VAPID_SUBJECT: ${QAAP_VAPID_SUBJECT:-mailto:qaap@localhost}

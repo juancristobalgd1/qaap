@@ -384,6 +384,30 @@ describe('QaapDockerOrchestrator', () => {
         }
     });
 
+    describe('tenantBackendExternalTaskEnv', () => {
+
+        const externalTaskEnv = (env: NodeJS.ProcessEnv): string[] =>
+            (new QaapDockerOrchestrator() as unknown as { tenantBackendExternalTaskEnv(env: NodeJS.ProcessEnv): string[] }).tenantBackendExternalTaskEnv(env);
+
+        it('passes nothing while GitHub issue tasks are off', () => {
+            expect(externalTaskEnv({})).to.deep.equal([]);
+            expect(externalTaskEnv({ QAAP_EXTERNAL_TASKS_GITHUB: '0', QAAP_EXTERNAL_TASKS_AGENT: 'qaiq' })).to.deep.equal([]);
+        });
+
+        it('passes the flag, the agent and the active cap to tenant backends, never the webhook secret', () => {
+            const env = externalTaskEnv({
+                QAAP_EXTERNAL_TASKS_GITHUB: 'true', QAAP_EXTERNAL_TASKS_AGENT: 'qaiq', QAAP_EXTERNAL_TASKS_MAX_ACTIVE: '2',
+                QAAP_GITHUB_WEBHOOK_SECRET: 'secret', QAAP_EXTERNAL_TASKS_REPO_ALLOWLIST: 'acme/*',
+            });
+            expect(env).to.deep.equal(['QAAP_EXTERNAL_TASKS_GITHUB=1', 'QAAP_EXTERNAL_TASKS_AGENT=qaiq', 'QAAP_EXTERNAL_TASKS_MAX_ACTIVE=2']);
+        });
+
+        it('drops a value that could smuggle another variable', () => {
+            expect(externalTaskEnv({ QAAP_EXTERNAL_TASKS_GITHUB: '1', QAAP_EXTERNAL_TASKS_AGENT: 'qaiq\nNODE_OPTIONS=--inspect' }))
+                .to.deep.equal(['QAAP_EXTERNAL_TASKS_GITHUB=1']);
+        });
+    });
+
     describe('tenantMountsForRoot', () => {
 
         it('derives all three roots from the tenant segment', () => {
