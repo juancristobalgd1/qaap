@@ -57,6 +57,8 @@ export interface QaapTaskPullRequestBodyInput {
     readonly supersedes?: number;
     /** We built on a commit someone else pushed to the task branch. */
     readonly builtOnForeignPush?: boolean;
+    /** The task came from this issue of the same repository (doc/qaap-external-task-inputs.md): `Closes #N`. */
+    readonly closesIssue?: number;
 }
 
 /** Red blocks: a red verdict, a blocked turn or a conflict opens the PR as a labelled draft. */
@@ -91,6 +93,10 @@ export function buildTaskPullRequestEvidenceSection(input: QaapTaskPullRequestBo
     if (isTaskPullRequestRed(input)) {
         parts.push(`> [!WARNING]\n> ${nls.localize('qaap/taskPullRequest/needsAttention',
             'Needs attention: Qaap opened this pull request as a draft because the task is not green yet.')}`);
+    }
+    if (input.closesIssue && Number.isInteger(input.closesIssue) && input.closesIssue > 0) {
+        // GitHub's closing keyword stays English whatever the UI language.
+        parts.push(`Closes #${input.closesIssue}`);
     }
     parts.push(`### ${nls.localizeByDefault('Summary')}`);
     parts.push(describeSummary(input));

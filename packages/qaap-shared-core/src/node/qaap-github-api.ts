@@ -847,6 +847,104 @@ export async function removeGithubIssueLabel(accessToken: string, owner: string,
     }
 }
 
+/** A repository as the caller's token sees it: its stable id, visibility and the caller's push right. */
+export interface QaapGithubRepositoryAccess {
+    readonly id: number;
+    readonly fullName: string;
+    readonly private: boolean;
+    readonly push: boolean;
+}
+
+/** `GET /repos/{owner}/{repo}` reduced to what an authorization decision needs. */
+export async function fetchGithubRepositoryAccess(accessToken: string, owner: string, repo: string): Promise<QaapGithubRepositoryAccess> {
+    const data = await githubJsonRequest<{ id?: number; full_name?: string; private?: boolean; permissions?: { push?: boolean } }>(
+        accessToken, 'GET', githubRepoPath(owner, repo), undefined, 'read repository');
+    return {
+        id: Number(data?.id ?? 0),
+        fullName: String(data?.full_name ?? `${owner}/${repo}`),
+        private: data?.private === true,
+        push: data?.permissions?.push === true,
+    };
+}
+
+/** An issue (never a pull request: those carry `pullRequest: true`) as GitHub stores it now. */
+export interface QaapGithubIssueRecord {
+    readonly number: number;
+    readonly title: string;
+    readonly body: string;
+    readonly authorLogin: string;
+    /** `OWNER`, `MEMBER`, `COLLABORATOR`, `CONTRIBUTOR`, `NONE`, ... of the issue author. */
+    readonly authorAssociation: string;
+    readonly pullRequest: boolean;
+    readonly htmlUrl: string;
+    readonly state: string;
+}
+
+/** `GET /repos/{owner}/{repo}/issues/{number}`. */
+export async function fetchGithubIssue(accessToken: string, owner: string, repo: string, issueNumber: number): Promise<QaapGithubIssueRecord> {
+    const data = await githubJsonRequest<{
+        number?: number; title?: string; body?: string | null; user?: { login?: string } | null; author_association?: string;
+        pull_request?: unknown; html_url?: string; state?: string;
+    }>(accessToken, 'GET', `${githubRepoPath(owner, repo)}/issues/${issueNumber}`, undefined, 'read issue');
+    return {
+        number: Number(data?.number ?? issueNumber),
+        title: String(data?.title ?? ''),
+        body: String(data?.body ?? ''),
+        authorLogin: String(data?.user?.login ?? ''),
+        authorAssociation: String(data?.author_association ?? 'NONE').toUpperCase(),
+        pullRequest: data?.pull_request !== undefined && data?.pull_request !== null,
+        htmlUrl: String(data?.html_url ?? ''),
+        state: String(data?.state ?? ''),
+    };
+}
+
+/** An issue comment as GitHub stores it now. */
+export interface QaapGithubIssueCommentRecord {
+    readonly id: number;
+    readonly body: string;
+    readonly authorLogin: string;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+}
+
+function githubIssueCommentRecord(data: { id?: number; body?: string | null; user?: { login?: string } | null; created_at?: string; updated_at?: string }): QaapGithubIssueCommentRecord {
+    return {
+        id: Number(data?.id ?? 0),
+        body: String(data?.body ?? ''),
+        authorLogin: String(data?.user?.login ?? ''),
+        createdAt: String(data?.created_at ?? ''),
+        updatedAt: String(data?.updated_at ?? ''),
+    };
+}
+
+/** `GET /repos/{owner}/{repo}/issues/comments/{id}`. */
+export async function fetchGithubIssueComment(accessToken: string, owner: string, repo: string, commentId: number): Promise<QaapGithubIssueCommentRecord> {
+    return githubIssueCommentRecord(await githubJsonRequest(accessToken, 'GET', `${githubRepoPath(owner, repo)}/issues/comments/${commentId}`,
+        undefined, 'read issue comment'));
+}
+
+/** `POST /repos/{owner}/{repo}/issues/{number}/comments`. */
+export async function createGithubIssueComment(accessToken: string, owner: string, repo: string, issueNumber: number, body: string): Promise<QaapGithubIssueCommentRecord> {
+    return githubIssueCommentRecord(await githubJsonRequest(accessToken, 'POST', `${githubRepoPath(owner, repo)}/issues/${issueNumber}/comments`,
+        { body }, 'comment on issue'));
+}
+
+/** One `labeled` event of an issue: who applied which label. */
+export interface QaapGithubIssueLabelEvent {
+    readonly actorLogin: string;
+    readonly label: string;
+    readonly createdAt: string;
+}
+
+/** The `labeled` events of an issue, newest page (`GET /repos/{owner}/{repo}/issues/{number}/events?per_page=100`). */
+export async function fetchGithubIssueLabelEvents(accessToken: string, owner: string, repo: string, issueNumber: number): Promise<QaapGithubIssueLabelEvent[]> {
+    const data = await githubJsonRequest<{ event?: string; actor?: { login?: string } | null; label?: { name?: string } | null; created_at?: string }[]>(
+        accessToken, 'GET', `${githubRepoPath(owner, repo)}/issues/${issueNumber}/events?per_page=100`, undefined, 'read issue events');
+    return (Array.isArray(data) ? data : [])
+        .filter(event => event?.event === 'labeled')
+        .map(event => ({ actorLogin: String(event.actor?.login ?? ''), label: String(event.label?.name ?? ''), createdAt: String(event.created_at ?? '') }));
+}
+
 /**
  * Flips a pull request between draft and ready for review. REST cannot do this, so it goes through the
  * GraphQL `convertPullRequestToDraft` / `markPullRequestReadyForReview` mutations (`{base}/graphql`).

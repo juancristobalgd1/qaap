@@ -3,9 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, named, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
+import { ContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { raw } from 'body-parser';
 import { createHmac, timingSafeEqual } from 'crypto';
 import {
     QAAP_GITHUB_API_PATH,
@@ -15,8 +17,11 @@ import { fetchGithubPullRequestFiles, fetchGithubRepositories } from './qaap-git
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
+import { QaapGithubWebhookListener } from './qaap-github-webhook-listener';
 
 const SSE_HEARTBEAT_MS = 25_000;
+/** GitHub caps webhook payloads at 25 MB; issue and PR events are a few KB. */
+const WEBHOOK_MAX_BODY = '1mb';
 
 interface GithubWebhookPullRequest {
     number: number;
@@ -58,31 +63,85 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
+    @inject(ContributionProvider) @named(QaapGithubWebhookListener) @optional()
+    protected readonly listeners: ContributionProvider<QaapGithubWebhookListener> | undefined;
+
     configure(app: Application): void {
-        app.post(`${QAAP_GITHUB_API_PATH}/webhook`, (req, res) => {
+        // The signature covers GitHub's exact bytes: this route parses its own raw body (any content type).
+        app.post(`${QAAP_GITHUB_API_PATH}/webhook`, raw({ type: () => true, limit: WEBHOOK_MAX_BODY }), (req, res) => {
             void this.handleWebhook(req, res);
         });
+        // Contributions configured earlier (upstream `@theia/filesystem`'s download endpoint) install a global
+        // `json()` that would consume the stream first. The webhook route goes to the front of the router.
+        this.moveLastRouteFirst(app);
         app.get(`${QAAP_GITHUB_API_PATH}/inbox/stream`, (req, res) => {
             void this.handleInboxStream(req, res);
         });
     }
 
+    /**
+     * Moves the layer just added ahead of every middleware, but after Express 4's own init layers (`query`,
+     * `expressInit`: they give `req.header`, `res.status`, ...). Express 4 `_router`, Express 5 `router`.
+     */
+    protected moveLastRouteFirst(app: Application): void {
+        const router = (app as unknown as { _router?: { stack?: { name?: string }[] }; router?: { stack?: { name?: string }[] } });
+        const stack = router._router?.stack ?? router.router?.stack;
+        if (Array.isArray(stack) && stack.length > 1) {
+            const layer = stack.pop()!;
+            // Bundlers may suffix function names (`query2`); `expressInit` comes right after `query` in Express 4
+            // and does not exist in Express 5 (its init runs in app.handle).
+            const init = stack.findIndex(candidate => /^expressInit\d*$/.test(candidate.name ?? ''));
+            stack.splice(init + 1, 0, layer);
+        } else {
+            console.warn('[qaap-github-webhook] could not move the webhook route first; signed deliveries may be refused');
+        }
+    }
+
     protected async handleWebhook(req: Request, res: Response): Promise<void> {
+        const rawBody = Buffer.isBuffer(req.body) ? req.body : undefined;
+        if (!rawBody) {
+            // Another parser consumed the stream first: the signed bytes are gone, so nothing can be verified.
+            res.status(400).json({ error: 'Webhook body unavailable.' });
+            return;
+        }
         const secret = process.env.QAAP_GITHUB_WEBHOOK_SECRET?.trim();
         if (!secret) {
-            // Fail closed: an unset secret means any caller could forge PR events into the
-            // inbox. Only accept unsigned webhooks under skip-auth (single-user/local dev).
+            // Fail closed: an unset secret means any caller could forge events. Only accept unsigned
+            // webhooks under skip-auth (single-user/local dev).
             if (!this.auth.isSkipAuthEnabled()) {
                 res.status(503).json({ error: 'Webhook secret not configured.' });
                 return;
             }
-        } else if (!this.verifyWebhookSignature(req, secret)) {
+        } else if (!this.verifyWebhookSignature(req.header('x-hub-signature-256'), rawBody, secret)) {
             res.status(401).json({ error: 'Invalid webhook signature.' });
             return;
         }
-        const body = (req.body ?? {}) as GithubWebhookBody;
-        if (!body.pull_request || !body.repository?.owner?.login || !body.repository.name) {
-            res.status(202).json({ ok: true, ignored: true });
+        let payload: unknown;
+        try {
+            payload = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : {};
+        } catch {
+            res.status(400).json({ error: 'Webhook body is not JSON.' });
+            return;
+        }
+        const event = req.header('x-github-event')?.trim() ?? '';
+        const deliveryId = req.header('x-github-delivery')?.trim() ?? '';
+        res.status(202).json({ ok: true });
+        this.notifyListeners({ event, deliveryId, payload });
+        if (event === 'pull_request' || (!event && (payload as GithubWebhookBody)?.pull_request)) {
+            await this.publishPullRequest(payload as GithubWebhookBody);
+        }
+    }
+
+    protected notifyListeners(delivery: { event: string; deliveryId: string; payload: unknown }): void {
+        for (const listener of this.listeners?.getContributions() ?? []) {
+            Promise.resolve()
+                .then(() => listener.onGithubWebhook(delivery))
+                .catch(error => console.warn(`[qaap-github-webhook] listener failed for delivery ${delivery.deliveryId}:`, error));
+        }
+    }
+
+    protected async publishPullRequest(body: GithubWebhookBody): Promise<void> {
+        if (!body?.pull_request || !body.repository?.owner?.login || !body.repository.name) {
             return;
         }
         const action = body.action ?? 'unknown';
@@ -121,23 +180,16 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
             updatedAt: pull.updated_at,
         };
         this.hub.publishPullRequest(action, summary, 0);
-        res.status(202).json({ ok: true });
     }
 
-    protected verifyWebhookSignature(req: Request, secret: string): boolean {
-        const signature = req.header('x-hub-signature-256');
+    /** `sha256=<hex HMAC-SHA256 of the raw body>`, compared in constant time. */
+    verifyWebhookSignature(signature: string | undefined, rawBody: Buffer, secret: string): boolean {
         if (!signature?.startsWith('sha256=')) {
             return false;
         }
-        const payload = typeof req.body === 'string'
-            ? req.body
-            : JSON.stringify(req.body ?? {});
-        const expected = `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
-        try {
-            return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-        } catch {
-            return false;
-        }
+        const expected = Buffer.from(`sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`);
+        const received = Buffer.from(signature);
+        return received.length === expected.length && timingSafeEqual(received, expected);
     }
 
     protected async handleInboxStream(req: Request, res: Response): Promise<void> {

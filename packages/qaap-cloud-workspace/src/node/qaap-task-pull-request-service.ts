@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import type { BackendApplicationContribution } from '@theia/core/lib/node';
 import { nls } from '@theia/core/lib/common/nls';
+import { Emitter, Event } from '@theia/core/lib/common/event';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import type { QaapTaskPullRequest, QaapTaskPullRequestDivergence } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import {
@@ -117,6 +118,14 @@ interface QaapTaskTurn {
  * `QAAP_TASK_PR=0|off|false` disables it. Without a token, a GitHub project checkout or a change it
  * does nothing; failures are recorded on the conversation, never swallowed.
  */
+/** See {@link QaapTaskPullRequestService.onDidSync}. */
+export interface QaapTaskPullRequestSyncOutcome {
+    readonly conversationId: string;
+    readonly outcome: 'no-changes' | 'not-github';
+    /** The turn this outcome is about. */
+    readonly lastUserMessageId?: string;
+}
+
 @injectable()
 export class QaapTaskPullRequestService implements BackendApplicationContribution {
 
@@ -144,6 +153,13 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
     protected readonly consents: QaapTaskPullRequestConsentStore | undefined;
 
     protected github: QaapTaskPullRequestGithub = DEFAULT_GITHUB;
+
+    protected readonly onDidSyncEmitter = new Emitter<QaapTaskPullRequestSyncOutcome>();
+    /**
+     * A quiescent conversation was looked at and nothing will be pushed for its latest turn (no change, or
+     * not a GitHub clone). Opened PRs and blocked states show up on the conversation itself.
+     */
+    readonly onDidSync: Event<QaapTaskPullRequestSyncOutcome> = this.onDidSyncEmitter.event;
 
     protected readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
     protected readonly chains = new Map<string, Promise<void>>();
@@ -288,6 +304,10 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         const wantsRed = isTaskPullRequestRed(bodyInputBase);
         const isRed = state?.state === 'draft-needs-attention';
         const evidenceChanged = evidenceIds.join(',') !== (state?.evidenceIds ?? []).join(',');
+        if (!rebuild && turns.length === 0 && !state) {
+            this.fireOutcome(conv, 'no-changes');
+            return;
+        }
         if (!rebuild && turns.length === 0 && (!state || (state.number && state.state !== 'awaiting-consent' && state.state !== 'needs-sign-in'
             && !state.lastError && wantsRed === isRed && !evidenceChanged))) {
             return;
@@ -295,6 +315,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         const destination = await this.resolveDestination(conv);
         if (!destination) {
             this.logSkipOnce(conversationId, 'the checkout is not a GitHub project clone');
+            this.fireOutcome(conv, 'not-github');
             return;
         }
         const freshBranch = `qaap/task/${conversationId}`;
@@ -306,6 +327,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             updatedAt: Date.now(),
         };
         if (!current.headSha && !(await this.hasChange(conv.cwd, turns))) {
+            this.fireOutcome(conv, 'no-changes');
             return;
         }
         if (!current.headSha && !this.isConsentGiven(conv, destination)) {
@@ -371,6 +393,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             if (!built) {
                 // Nothing reached the branch yet (every turn left the tree as it was).
                 if (!current.number) {
+                    this.fireOutcome(conv, 'no-changes');
                     return;
                 }
             } else {
@@ -401,6 +424,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
                 ...(supersedes ? { supersedes } : current.divergence?.resolution === 'new-branch' && current.divergence.previousNumber
                     ? { supersedes: current.divergence.previousNumber } : {}),
                 ...(builtOnForeignPush || current.divergence?.resolution === 'built-on-remote' ? { builtOnForeignPush: true } : {}),
+                ...(this.closesIssue(conv, destination) ? { closesIssue: this.closesIssue(conv, destination) } : {}),
             };
             const red = isTaskPullRequestRed(bodyInput);
             current = await this.upsertPullRequest(conv, current, token, bodyInput, red);
@@ -433,6 +457,11 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
                 traceNote: nls.localize('qaap/taskPullRequest/traceFailed', 'Task pull request was not updated: {0}', reason),
             });
         }
+    }
+
+    protected fireOutcome(conv: QaapAgentConversation, outcome: QaapTaskPullRequestSyncOutcome['outcome']): void {
+        const lastUser = [...conv.messages].reverse().find(message => message.role === 'user');
+        this.onDidSyncEmitter.fire({ conversationId: conv.id, outcome, ...(lastUser ? { lastUserMessageId: lastUser.id } : {}) });
     }
 
     protected signInMessage(): string {
@@ -910,17 +939,31 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         });
     }
 
+    /** The issue a task started from GitHub closes, when the PR goes to that same repository. */
+    protected closesIssue(conv: QaapAgentConversation, destination: { owner: string; repo: string }): number | undefined {
+        const origin = conv.externalTask;
+        return origin?.source === 'github'
+            && origin.owner.toLowerCase() === destination.owner.toLowerCase()
+            && origin.repo.toLowerCase() === destination.repo.toLowerCase()
+            ? origin.issueNumber : undefined;
+    }
+
     /** The owner's GitHub token (by login, request-less); the test token only in {@link isTestMode}. */
     protected resolveToken(conv: QaapAgentConversation): string | undefined {
+        return this.resolveOwnerToken(conv.ownerLogin);
+    }
+
+    /** {@link resolveToken} by login: also used to answer GitHub issues that started a task. */
+    resolveOwnerToken(ownerLogin: string | undefined): string | undefined {
         if (this.isTestMode()) {
             return process.env.QAAP_TASK_PR_TEST_TOKEN?.trim();
         }
         if (this.isTenantBackendMode()) {
             // A per-tenant backend has no shared session store; the control-plane proxy hands it the
             // owner's token per request (HMAC tenant assertion) and the auth guard keeps it in memory.
-            return this.ownerTokens?.get(conv.ownerLogin);
+            return ownerLogin ? this.ownerTokens?.get(ownerLogin) : undefined;
         }
-        return this.sessions?.findAccessTokenForLogin(conv.ownerLogin) ?? this.ownerTokens?.get(conv.ownerLogin);
+        return this.sessions?.findAccessTokenForLogin(ownerLogin) ?? (ownerLogin ? this.ownerTokens?.get(ownerLogin) : undefined);
     }
 
     protected isTenantBackendMode(env: NodeJS.ProcessEnv = process.env): boolean {
