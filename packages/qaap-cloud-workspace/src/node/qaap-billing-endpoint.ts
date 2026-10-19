@@ -71,7 +71,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             },
             checkout: {
                 stripeEnabled: isStripeBillingConfigured(),
-                devActivateEnabled: !isStripeBillingConfigured() && isBillingDevActivateEnabled(),
+                devActivateEnabled: !isStripeBillingConfigured() && isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
                 payablePlanIds: ['pro', 'team'],
             },
         };
@@ -100,7 +100,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             res.status(503).json({
                 error: 'stripe_not_configured',
                 message: 'Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_*_MONTHLY.',
-                devActivateEnabled: isBillingDevActivateEnabled(),
+                devActivateEnabled: isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
             });
             return;
         }
@@ -176,7 +176,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         if (!login) {
             return;
         }
-        if (isStripeBillingConfigured() || !isBillingDevActivateEnabled()) {
+        if (isStripeBillingConfigured() || !isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled())) {
             res.status(403).json({ error: 'dev_activate_disabled' });
             return;
         }

@@ -5,6 +5,7 @@
 
 import * as crypto from 'crypto';
 import type { QaapBillingPlanId } from '../common/qaap-billing-plans';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 
 export type QaapPayablePlanId = Extract<QaapBillingPlanId, 'pro' | 'team'>;
 
@@ -20,12 +21,17 @@ export function isStripeBillingConfigured(): boolean {
     );
 }
 
-/** Local-only plan switch when Stripe keys are absent (QAAP_SKIP_AUTH / QAAP_BILLING_DEV_CHECKOUT). */
-export function isBillingDevActivateEnabled(): boolean {
-    if (process.env.QAAP_BILLING_DEV_CHECKOUT === '1' || process.env.QAAP_BILLING_DEV_CHECKOUT === 'true') {
-        return true;
+/**
+ * Local-only plan switch when Stripe keys are absent (skip-auth or QAAP_BILLING_DEV_CHECKOUT).
+ * Never in a production/hosted runtime: there it would hand out Pro/Team for free. Pass
+ * `QaapGithubAuthGuard.isSkipAuthEnabled()`, which already refuses skip-auth in production,
+ * rather than reading QAAP_SKIP_AUTH here.
+ */
+export function isBillingDevActivateEnabled(skipAuthEnabled: boolean, env: NodeJS.ProcessEnv = process.env): boolean {
+    if (isQaapProductionRuntime(env)) {
+        return false;
     }
-    return process.env.QAAP_SKIP_AUTH === '1' || process.env.QAAP_SKIP_AUTH === 'true';
+    return skipAuthEnabled || env.QAAP_BILLING_DEV_CHECKOUT === '1' || env.QAAP_BILLING_DEV_CHECKOUT === 'true';
 }
 
 export function stripePriceIdForPlan(planId: QaapPayablePlanId): string | undefined {

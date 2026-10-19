@@ -45,6 +45,73 @@ describe('QaapBillingEndpoint auth gate', () => {
         await (endpoint as unknown as { handleGet(req: object, response: typeof res): Promise<void> }).handleGet({}, res);
         expect(res.statusCode).to.equal(401);
     });
+
+    describe('dev-activate', () => {
+        const ENV_KEYS = ['NODE_ENV', 'QAAP_CLOUD_MODE', 'QAAP_SKIP_AUTH', 'QAAP_BILLING_DEV_CHECKOUT', 'STRIPE_SECRET_KEY'] as const;
+        const savedEnv = new Map<string, string | undefined>(ENV_KEYS.map(key => [key, process.env[key]]));
+
+        beforeEach(() => {
+            for (const key of ENV_KEYS) {
+                delete process.env[key];
+            }
+        });
+
+        afterEach(() => {
+            for (const [key, value] of savedEnv) {
+                if (value === undefined) {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            }
+        });
+
+        async function devActivate(skipAuthEnabled: boolean): Promise<{ statusCode?: number; plans: string[] }> {
+            const plans: string[] = [];
+            const endpoint = Object.create(QaapBillingEndpoint.prototype) as QaapBillingEndpoint;
+            Object.assign(endpoint, {
+                auth: {
+                    authenticate: () => ({ kind: 'authenticated', userLogin: 'mallory' }),
+                    resolveUserLogin: () => 'mallory',
+                    isSkipAuthEnabled: () => skipAuthEnabled,
+                },
+                store: {
+                    setPlan: async (_login: string, plan: string) => {
+                        plans.push(plan);
+                        return { login: 'mallory', planId: plan };
+                    },
+                },
+            });
+            const res = makeRes();
+            await (endpoint as unknown as { handleDevActivate(req: object, response: typeof res): Promise<void> })
+                .handleDevActivate({ body: { planId: 'team' } }, res);
+            return { statusCode: res.statusCode, plans };
+        }
+
+        it('is refused in production even when QAAP_SKIP_AUTH and QAAP_BILLING_DEV_CHECKOUT are set', async () => {
+            process.env.NODE_ENV = 'production';
+            process.env.QAAP_SKIP_AUTH = 'true';
+            process.env.QAAP_BILLING_DEV_CHECKOUT = '1';
+            expect(await devActivate(false)).to.deep.equal({ statusCode: 403, plans: [] });
+        });
+
+        it('is refused in a hosted cloud mode with the dev-checkout flag', async () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_BILLING_DEV_CHECKOUT = 'true';
+            expect(await devActivate(true)).to.deep.equal({ statusCode: 403, plans: [] });
+        });
+
+        it('ignores a raw QAAP_SKIP_AUTH that the auth guard does not honour', async () => {
+            process.env.QAAP_SKIP_AUTH = 'true';
+            expect(await devActivate(false)).to.deep.equal({ statusCode: 403, plans: [] });
+        });
+
+        it('still switches plans locally under skip-auth or the dev-checkout flag', async () => {
+            expect(await devActivate(true)).to.deep.equal({ statusCode: 200, plans: ['team'] });
+            process.env.QAAP_BILLING_DEV_CHECKOUT = '1';
+            expect(await devActivate(false)).to.deep.equal({ statusCode: 200, plans: ['team'] });
+        });
+    });
 });
 
 describe('QaapBillingEndpoint Stripe webhook', () => {
