@@ -204,6 +204,15 @@ Reglas del aviso:
 4. Crear la etiqueta `qaap` en el repo.
 5. En Qaap, activar el opt-in del repo.
 
+Las variables llegan al contenedor `theia` por `docker-compose.yml`. El plano de control pasa a los backends
+de tenant `QAAP_EXTERNAL_TASKS_GITHUB`, `QAAP_EXTERNAL_TASKS_AGENT` y `QAAP_EXTERNAL_TASKS_MAX_ACTIVE`; el
+secreto del webhook no sale nunca del plano de control. Si se activa o desactiva el flag, los backends de
+tenant se recrean.
+
+**Push móvil en modo por tenant:** hoy no llega. Las claves VAPID no se pasan a los tenants y las
+suscripciones se guardan en el tenant. Mientras se arregla, el aviso de una tarea externa es el comentario
+en el issue.
+
 ## Fuera de este corte
 
 - **PR desde un fork del requester** para aceptar issues de autores sin permiso de escritura, porque los PRs
