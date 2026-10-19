@@ -8,6 +8,14 @@
 # See packages/qaap-mobile-shell/src/common/qaap-ide-port.ts (QAAP_DOCKER_IDE_PORT).
 # Theia binds to loopback only; Caddy publishes 80/443 with automatic HTTPS.
 
+# Bounded json-file logs for every service: the VPS once filled its disk with unrotated
+# container logs. 5 x 50 MB per container; `docker compose logs` keeps working.
+x-qaap-logging: &qaap-logging
+  driver: json-file
+  options:
+    max-size: ${QAAP_LOG_MAX_SIZE:-50m}
+    max-file: "${QAAP_LOG_MAX_FILE:-5}"
+
 services:
   theia:
     # The backend is PID 1 and launches terminal/dev-server process trees for previews.
@@ -285,6 +293,7 @@ services:
       # would still expose a dangerous control-plane capability to a compromised backend.
       - ${QAAP_DOCKER_SOCKET_SOURCE:-/run/user/1000/docker.sock}:${QAAP_DOCKER_SOCKET_TARGET:-/run/user/1000/docker.sock}
     restart: unless-stopped
+    logging: *qaap-logging
     deploy:
       resources:
         limits:
@@ -299,6 +308,7 @@ services:
     build: ./deploy/caddy
     image: qaap-caddy:local
     restart: unless-stopped
+    logging: *qaap-logging
     depends_on:
       - theia
     ports:
@@ -332,6 +342,7 @@ services:
     volumes:
       - ./deploy/searxng:/etc/searxng:rw
     restart: unless-stopped
+    logging: *qaap-logging
     # Surface crash-loops / up-but-broken searxng as "unhealthy" in `docker compose ps` and to the
     # deploy script. NOT wired into theia's depends_on on purpose: search is a feature, not the IDE,
     # so a broken searxng must never block the whole IDE from starting. start_period is generous
