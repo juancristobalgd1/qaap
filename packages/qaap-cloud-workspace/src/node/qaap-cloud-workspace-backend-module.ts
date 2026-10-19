@@ -113,6 +113,7 @@ import {
 import { QaapWorkflowService } from './qaap-workflow-service';
 import { ProcessManager } from '@theia/process/lib/node';
 import { QaapTerminalOwnership, installQaapTerminalOwnership } from './qaap-terminal-ownership';
+import { QaapTerminalCwdGuard } from './qaap-terminal-cwd-guard';
 import { QaapDockerControlPlaneContribution } from './qaap-docker-control-plane-contribution';
 import { QaapTenantActivityContribution } from './qaap-tenant-activity-contribution';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
@@ -143,6 +144,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     rebind(NodeFileUploadService).toService(QaapNodeFileUploadService);
     bind(QaapWebsocketAuthRegistry).toSelf().inSingletonScope();
     bind(QaapTerminalOwnership).toSelf().inSingletonScope();
+    bind(QaapTerminalCwdGuard).toSelf().inSingletonScope();
     bind(QaapDockerControlPlaneContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapDockerControlPlaneContribution);
     bind(QaapTenantRuntimeStore).toSelf().inSingletonScope();
@@ -382,6 +384,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
         const taskRunner = ctx.container.get(QaapAgentTaskRunner);
         const tenantSpawn = ctx.container.get(QaapTenantSpawnService);
         const registry = ctx.container.get(QaapWebsocketAuthRegistry);
+        const cwdGuard = ctx.container.get(QaapTerminalCwdGuard);
         const shellServer = server as IShellTerminalServer & {
             collections: MultiKeyMap<string, unknown>;
             applyToProcessEnvironment(cwdUri: URI, env: { [key: string]: string | null }): void;
@@ -432,6 +435,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             withTenantCollections(() => originalGetEnvVarCollectionDescriptions(...args));
         const originalCreate = server.create.bind(server);
         server.create = async (options: IShellTerminalServerOptions) => {
+            // S2: the rootURI comes from the browser and decides which tenant the shell runs as
+            // (uid / worker container below). In hosted mode it must belong to the caller.
+            const cwd = isQaapHostedRuntime(process.env)
+                ? cwdGuard.resolveHostedTerminalCwd(options.rootURI ? getRootPath(options.rootURI) : undefined, registry.getCurrentLogin())
+                : normalizeIsolationPath(getRootPath(options.rootURI));
             if (options.strictEnv !== true) {
                 // Under a PTY, corepack's interactive download prompt blocks stdin forever (no
                 // packageManager pin ⇒ latest-resolve too); explicit incoming env still wins below.
@@ -467,7 +475,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             //
             // Windows browsers often send FileUri.fsPath as "/\workspace\repos\..." — normalize and
             // rewrite rootURI so ShellProcess.getRootPath also gets a real Linux cwd for the PTY.
-            const cwd = normalizeIsolationPath(getRootPath(options.rootURI));
             options.rootURI = FileUri.create(cwd).toString(true);
             const shell = options.shell || ShellProcess.getShellExecutablePath();
             const shellArgs = options.args === undefined
