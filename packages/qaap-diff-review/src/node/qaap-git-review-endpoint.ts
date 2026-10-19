@@ -70,9 +70,10 @@ interface QaapGitChangedFilesSnapshot {
  * replaces or breaks the patch format — and errors out entirely when the tool is missing on the
  * server — while `color.ui=always` injects ANSI codes the parser reads as context lines. Plumbing
  * calls (`--numstat`, `status --porcelain`) ignore external diff drivers, which is how a broken
- * host config makes `/changes` succeed while every `/diff` fails.
+ * host config makes `/changes` succeed while every `/diff` fails. `--no-textconv` keeps a
+ * repository's own `diff.<driver>.textconv` from running a command while a review diff renders.
  */
-const PATCH_SAFETY_FLAGS = ['--no-ext-diff', '--no-color'] as const;
+const PATCH_SAFETY_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color'] as const;
 
 class QaapGitDiffTooLargeError extends Error {
     constructor(readonly size: number) {
@@ -913,7 +914,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     protected async readLastCommitStat(root: string): Promise<{ files: number; insertions: number; deletions: number } | undefined> {
         try {
             // --numstat with an empty format prints only "<added>\t<deleted>\t<path>" rows for HEAD.
-            const out = await this.git(root, ['show', '--numstat', '--format=', 'HEAD']);
+            const out = await this.git(root, ['show', '--no-ext-diff', '--no-textconv', '--numstat', '--format=', 'HEAD']);
             let files = 0;
             let insertions = 0;
             let deletions = 0;
@@ -1011,7 +1012,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
 
     /** Disable hooks/config-driven execution even in local mode; hosted mode adds the worker boundary. */
     protected hardenedGitArgs(args: readonly string[]): string[] {
-        return ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args];
+        return ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.pager=cat', ...args];
     }
 
     /** Run git inside the authenticated tenant worker, never as the shared backend uid. */

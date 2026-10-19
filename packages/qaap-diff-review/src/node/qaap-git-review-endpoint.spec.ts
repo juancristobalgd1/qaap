@@ -171,6 +171,25 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         }
     });
 
+    it('never runs a textconv command configured by the repository', async () => {
+        // A repository's own config must not make the backend execute commands while it renders
+        // a review diff (S8). The marker is created only if git runs the textconv driver.
+        const marker = path.join(repo, '..', `${path.basename(repo)}-textconv-ran`);
+        const attributes = path.join(repo, '.git', 'info', 'attributes');
+        fs.mkdirSync(path.dirname(attributes), { recursive: true });
+        fs.writeFileSync(attributes, '*.html diff=qaapspec\n');
+        git(['config', 'diff.qaapspec.textconv', `touch '${marker}' && cat`]);
+        try {
+            const patch = await endpoint.computeFileDiffForTest(repo, 'index.html');
+            expect(patch).to.contain('--- a/index.html');
+            expect(fs.existsSync(marker)).to.equal(false);
+        } finally {
+            git(['config', '--remove-section', 'diff.qaapspec']);
+            fs.rmSync(attributes, { force: true });
+            fs.rmSync(marker, { force: true });
+        }
+    });
+
     it('returns staged deleted and renamed patches against HEAD', async () => {
         const deleted = await endpoint.computeFileDiffForTest(repo, 'deleted.ts');
         expect(deleted).to.contain('deleted file mode');
