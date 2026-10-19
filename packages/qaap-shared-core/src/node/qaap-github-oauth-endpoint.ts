@@ -507,7 +507,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     protected handleOAuthStart(_req: Request, res: Response): void {
         const config = readQaapGithubOAuthConfig();
         if (!config) {
-            res.status(503).send('GitHub OAuth is not configured (QAAP_GITHUB_CLIENT_ID, QAAP_GITHUB_CLIENT_SECRET, QAAP_OAUTH_PUBLIC_URL).');
+            console.error('[qaap-oauth] GitHub OAuth is not configured (QAAP_GITHUB_CLIENT_ID, QAAP_GITHUB_CLIENT_SECRET, QAAP_OAUTH_PUBLIC_URL).');
+            this.redirectOAuthNotConfigured(res);
             return;
         }
         const state = this.sessions.createOAuthState();
@@ -522,14 +523,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     protected async handleOAuthCallback(req: Request, res: Response): Promise<void> {
         const config = readQaapGithubOAuthConfig();
         if (!config) {
-            res.status(503).send('GitHub OAuth is not configured.');
+            console.error('[qaap-oauth] Callback hit but GitHub OAuth is not configured.');
+            this.redirectOAuthNotConfigured(res);
             return;
         }
         const error = typeof req.query.error === 'string' ? req.query.error : undefined;
         const errorDescription = typeof req.query.error_description === 'string' ? req.query.error_description : undefined;
         if (error) {
             console.error('[qaap-oauth] GitHub returned error on callback:', error, errorDescription ?? '');
-            this.redirectAfterOAuth(res, config.publicUrl, false, errorDescription || error);
+            this.redirectAfterOAuth(res, config.publicUrl, false, error === 'access_denied' ? 'access_denied' : 'github_error');
             return;
         }
         const code = typeof req.query.code === 'string' ? req.query.code : undefined;
@@ -558,7 +560,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
-            this.redirectAfterOAuth(res, config.publicUrl, false, message);
+            this.redirectAfterOAuth(res, config.publicUrl, false, 'exchange_failed');
         }
     }
 
@@ -2166,6 +2168,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 complete(() => reject(timeoutError()));
             }, Math.max(0, deadline - Date.now()));
         });
+    }
+
+    /** Without OAuth credentials there is no configured public URL: send the user back to the app root with a reason code instead of a bare 503. */
+    protected redirectOAuthNotConfigured(res: Response): void {
+        res.redirect(302, `/?qaap_oauth_error=1&qaap_oauth_reason=not_configured#${THEIA_EMPTY_WINDOW_HASH}`);
     }
 
     protected redirectAfterOAuth(res: Response, publicUrl: string, success: boolean, reason?: string): void {

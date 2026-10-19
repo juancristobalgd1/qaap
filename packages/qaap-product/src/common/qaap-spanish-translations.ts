@@ -217,6 +217,12 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/auth/githubConnected': 'Conectado a GitHub.',
     'qaap/auth/githubConnectFailed': 'Falló el inicio de sesión con GitHub.',
     'qaap/auth/githubConnectFailedWithReason': 'Falló el inicio de sesión con GitHub: {0}',
+    'qaap/auth/oauth/accessDenied': 'Se canceló el inicio de sesión con GitHub. Elige «Iniciar sesión con GitHub» para volver a intentarlo.',
+    'qaap/auth/oauth/stateLost': 'Tu sesión de inicio caducó antes de que GitHub respondiera. Inténtalo de nuevo.',
+    'qaap/auth/oauth/missingCode': 'GitHub no completó el inicio de sesión. Inténtalo de nuevo.',
+    'qaap/auth/oauth/notConfigured': 'El inicio de sesión con GitHub aún no está configurado en este servidor. Pide al administrador que configure las credenciales de GitHub OAuth.',
+    'qaap/auth/oauth/exchangeFailed': 'No pudimos completar el inicio de sesión con GitHub. Inténtalo de nuevo en un momento.',
+    'qaap/auth/oauth/generic': 'Falló el inicio de sesión con GitHub. Inténtalo de nuevo.',
     'qaap/auth/notSignedIn': 'No has iniciado sesión',
 
     'qaap/mobileProjects/previewButton': 'Vista previa',

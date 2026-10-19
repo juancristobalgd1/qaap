@@ -817,3 +817,63 @@ describe('QaapGithubOauthEndpoint.restoreMissingRepositoryClone', () => {
         expect(message).to.equal('Could not download the repository from GitHub. Check that GitHub is reachable and try again.');
     });
 });
+
+describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
+
+    type Callback = (req: unknown, res: unknown) => Promise<void>;
+
+    const run = async (query: Record<string, string>, consumeOk = true): Promise<string> => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, { sessions: { consumeOAuthState: () => consumeOk } });
+        let location = '';
+        const res = { redirect: (_status: number, url: string) => { location = url; }, status: () => res, send: () => undefined };
+        const saved = { ...process.env };
+        Object.assign(process.env, {
+            QAAP_GITHUB_CLIENT_ID: 'id', QAAP_GITHUB_CLIENT_SECRET: 'secret', QAAP_OAUTH_PUBLIC_URL: 'https://qaap.test',
+        });
+        const quiet = console.error;
+        console.error = () => undefined;
+        try {
+            await (endpoint as unknown as { handleOAuthCallback: Callback }).handleOAuthCallback({ query }, res);
+        } finally {
+            console.error = quiet;
+            process.env = saved;
+        }
+        return location;
+    };
+
+    it('maps a user-cancelled GitHub authorization to access_denied', async () => {
+        expect(await run({ error: 'access_denied', error_description: 'The user has denied your application access.' }))
+            .to.contain('qaap_oauth_reason=access_denied');
+    });
+
+    it('never forwards GitHub error text; other errors become github_error', async () => {
+        const location = await run({ error: 'redirect_uri_mismatch', error_description: 'secret detail' });
+        expect(location).to.contain('qaap_oauth_reason=github_error');
+        expect(location).not.to.contain('secret');
+    });
+
+    it('reports missing_code and state_lost', async () => {
+        expect(await run({})).to.contain('qaap_oauth_reason=missing_code');
+        expect(await run({ code: 'c', state: 's' }, false)).to.contain('qaap_oauth_reason=state_lost');
+    });
+
+    it('redirects (no bare 503) with not_configured when OAuth credentials are absent', () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        let status = 0;
+        let location = '';
+        const res = { redirect: (s: number, url: string) => { status = s; location = url; } };
+        const saved = { ...process.env };
+        delete process.env.QAAP_GITHUB_CLIENT_ID;
+        const quiet = console.error;
+        console.error = () => undefined;
+        try {
+            (endpoint as unknown as { handleOAuthStart(q: unknown, r: unknown): void }).handleOAuthStart({}, res);
+        } finally {
+            console.error = quiet;
+            process.env = saved;
+        }
+        expect(status).to.equal(302);
+        expect(location).to.contain('qaap_oauth_error=1').and.to.contain('qaap_oauth_reason=not_configured');
+    });
+});
