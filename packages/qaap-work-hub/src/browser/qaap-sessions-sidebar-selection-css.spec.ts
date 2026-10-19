@@ -99,4 +99,18 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/:has\(\.theia-mobile-projects-conversation-retry-btn\)[^}]*padding-right:\s*120px/s);
         expect(css).to.match(/:has\(\.theia-mobile-projects-conversation-retry-btn\)[^{}]*::after\s*\{[^}]*width:\s*136px/s);
     });
+
+    it('hides the header back button and the shortcuts nav from the eagerly bundled sheet', () => {
+        // The pull-request sheet is attached lazily (after `ready` + idle): a [hidden] override that
+        // only lives there leaves codicon's `display` in charge until then, so the root sidebar
+        // showed a stray back button right after a page load.
+        expect(css).to.match(
+            /\.theia-mobile-work-hub-sessions-sidebar-back\[hidden\],\s*\.theia-mobile-work-hub-sessions-sidebar-nav\[hidden\]\s*\{[^}]*display:\s*none\s*!important/s,
+        );
+        const lazyCss = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-pull-requests.css'),
+            'utf8',
+        );
+        expect(lazyCss).not.to.include('.theia-mobile-work-hub-sessions-sidebar-back');
+    });
 });
