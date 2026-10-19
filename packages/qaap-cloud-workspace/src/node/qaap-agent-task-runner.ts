@@ -159,6 +159,7 @@ export {
 import {
     AGENT_CANDIDATES,
     CUSTOM_AGENTS_ENV,
+    HOSTED_KEYLESS_DEFAULT_AGENTS,
     QAIQ_AGENT_ID,
     SHELL_AGENT_ID,
     ENV_AGENT_ID,
@@ -795,8 +796,28 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     defaultAgent(ownerLogin?: string): string {
         return defaultAgentExtracted(
             this,
-            agentId => this.isAgentEnabled(agentId, ownerLogin) && this.agentConnectionState(agentId, ownerLogin) !== 'disconnected',
+            // A disconnected harness is skipped unless the plan still lets it run hosted (Codex on Pro/Team).
+            agentId => this.isAgentEnabled(agentId, ownerLogin)
+                && (this.agentConnectionState(agentId, ownerLogin) !== 'disconnected' || this.isAgentUsableAsDefault(agentId, ownerLogin)),
+            agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
         );
+    }
+
+    /**
+     * Whether `agentId` can run the owner's first task without further setup: signed in / keyed, a
+     * keyless hosted agent, or Codex through Qaap-hosted access that the owner's plan includes.
+     */
+    protected isAgentUsableAsDefault(agentId: string, ownerLogin?: string): boolean {
+        const normalized = agentId.trim().toLowerCase();
+        if (this.agentConnectionState(normalized, ownerLogin) === 'connected') {
+            return true;
+        }
+        if (HOSTED_KEYLESS_DEFAULT_AGENTS.includes(normalized)) {
+            return this.agentConnectionState(normalized, ownerLogin) !== 'disconnected';
+        }
+        return normalized === 'codex'
+            && !!ownerLogin?.trim()
+            && this.billingStore?.peekEntitlements?.(ownerLogin)?.hostedModels === true;
     }
 
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean {

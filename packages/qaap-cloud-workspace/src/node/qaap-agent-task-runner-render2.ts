@@ -1,5 +1,5 @@
 import {
-    AGENT_CANDIDATES, CUSTOM_AGENTS_ENV, DEFAULT_AGENT_PREFERENCE, ENV_AGENT_ID, HELPER_BIN_DIR, HELPER_BIN_PATH, HELPER_CLI_SOURCE, INDEX_PATH,
+    AGENT_CANDIDATES, CUSTOM_AGENTS_ENV, DEFAULT_AGENT_PREFERENCE, HOSTED_KEYLESS_DEFAULT_AGENTS, ENV_AGENT_ID, HELPER_BIN_DIR, HELPER_BIN_PATH, HELPER_CLI_SOURCE, INDEX_PATH,
     QAIQ_AGENT_ID, SHELL_AGENT_ID, TOKEN_PATH, TOKENS_PATH, type AgentCandidate, type PersistedAgentTaskIndex,
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -621,13 +621,29 @@ export function listModelsForAgentExtracted(
         });
 }
 
-export function defaultAgentExtracted(ctx: QaapAgentTaskRunnerContext, isAgentEnabled: (agentId: string) => boolean = () => true): string {
+/**
+ * Default agent for an owner. Order: the operator's `QAAP_DEFAULT_AGENT`; then the first agent in
+ * {@link DEFAULT_AGENT_PREFERENCE} that is actually usable right now (`isAgentUsable`: connected, or a
+ * hosted agent the owner's plan allows); then `HOSTED_KEYLESS_DEFAULT_AGENTS`; and only then the
+ * pre-existing "installed and not known to be disconnected" fallback.
+ */
+export function defaultAgentExtracted(
+    ctx: QaapAgentTaskRunnerContext,
+    isAgentEnabled: (agentId: string) => boolean = () => true,
+    isAgentUsable: (agentId: string) => boolean = () => true,
+): string {
         const configured = ctx.normalizeAgentId(process.env.QAAP_DEFAULT_AGENT);
         if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured) && isAgentEnabled(configured)) {
             return configured;
         }
+        const selectable = (id: string): boolean => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id);
+        for (const id of [...DEFAULT_AGENT_PREFERENCE, ...HOSTED_KEYLESS_DEFAULT_AGENTS]) {
+            if (selectable(id) && isAgentUsable(id)) {
+                return id;
+            }
+        }
         for (const id of DEFAULT_AGENT_PREFERENCE) {
-            if (ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id)) {
+            if (selectable(id)) {
                 return id;
             }
         }
