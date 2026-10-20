@@ -172,7 +172,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         throw new Error(QAAP_CONTAINER_CWD_ERROR);
     }
     const requestedAgent = (request.agent ?? '').trim();
-    const seedAgent = requestedAgent || ctx.taskRunner.defaultAgent();
+    const seedAgent = requestedAgent || ctx.taskRunner.defaultAgent(ownerLogin);
     const firstMessage = (request.message ?? '').trim();
     const agentId = firstMessage
         ? ctx.resolveTurnAgent({ id: '', cwd, agentId: seedAgent, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, firstMessage, request.agent)

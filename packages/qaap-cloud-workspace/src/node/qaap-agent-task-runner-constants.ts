@@ -64,6 +64,12 @@ export const REPO_MAP_CACHE_TTL_MS = 60_000;
 /** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
 export const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'openclaude', 'grok', 'codex', 'claude', 'cursor'];
 
+/**
+ * Hosted agents that run without a user key or login (OpenCode's free catalog). They are the safe
+ * default for a new user who has connected nothing; the tail of the preference order, not the head.
+ */
+export const HOSTED_KEYLESS_DEFAULT_AGENTS: readonly string[] = ['opencode'];
+
 export const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: string }[] = [
     { env: 'OPENAI_API_KEY', pref: 'ai-features.openAiOfficial.openAiApiKey' },
     { env: 'ANTHROPIC_API_KEY', pref: 'ai-features.anthropic.AnthropicApiKey' },

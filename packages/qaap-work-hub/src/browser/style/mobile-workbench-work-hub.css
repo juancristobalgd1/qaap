@@ -7917,6 +7917,34 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   white-space: nowrap;
 }
 
+/* Signed-out agent: warning dot + "Connect" chip so the user sees it before the first send fails. */
+/* The dot badges the avatar corner so the cue costs no horizontal room in the narrow chip. */
+.theia-mod-disconnected .theia-qaap-agent-identity-avatar {
+  position: relative;
+}
+
+.theia-qaap-agent-disconnected-dot {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--theia-editorWarning-foreground);
+  box-shadow: 0 0 0 1.5px var(--theia-editor-background);
+}
+
+.theia-qaap-agent-connect-chip {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--theia-editorWarning-foreground);
+  border: 1px solid var(--theia-editorWarning-foreground);
+}
+
 .theia-mobile-projects-sticky-composer-agent-intent {
   flex: 0 0 auto;
   color: var(--theia-descriptionForeground);

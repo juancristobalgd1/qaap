@@ -319,6 +319,7 @@ export async function resolveModelsForAgentPickerExtracted(ctx: MobileProjectsSt
 export async function resolveModelsForAgentPickerSafeExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, agentId: string,): Promise<{ readonly models: QaapQaiqModelOption[]; readonly loadFailed: boolean }> {
     try {
         const models = await ctx.resolveModelsForAgentPicker(agentId);
+        ctx.host.stickyComposerAgentsUi.rememberModelLabels(models);
         return { models, loadFailed: false };
     } catch {
         return { models: [], loadFailed: true };

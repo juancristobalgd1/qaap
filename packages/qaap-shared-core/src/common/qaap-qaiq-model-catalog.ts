@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapQaiqModelOption } from './qaap-agent-task-client';
+import { OPENCODE_FALLBACK_MODELS, type QaapQaiqModelOption } from './qaap-agent-task-client';
 import {
     formatQaiqModelProviderLabel,
     listByokModelsFromDescriptor,
@@ -164,4 +164,19 @@ export function formatQaiqModelIdShortLabel(modelId: string): string {
         return trimmed;
     }
     return trimmed.slice(slash + 1);
+}
+
+/**
+ * Human label for a model chip. Prefers the catalog `label` ("Big Pickle"), then the static catalog
+ * entry for the id (so surfaces that only persisted the id, like the sidebar rows, still get the
+ * label), and only then the short slug.
+ */
+export function formatQaiqModelDisplayLabel(model: { readonly modelId: string; readonly label?: string }): string {
+    const label = model.label?.trim();
+    if (label) {
+        return label;
+    }
+    const modelId = model.modelId.trim();
+    const known = OPENCODE_FALLBACK_MODELS.find(candidate => candidate.modelId === modelId);
+    return known?.label ?? formatQaiqModelIdShortLabel(modelId);
 }

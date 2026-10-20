@@ -7,7 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { appendAgentBrandIcon, createAgentBrandIcon, resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import type { MobileProjectTaskVerification } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
-import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
+import { formatQaiqModelDisplayLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import type { QaapAgentApprovalPolicyOption } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapComposerInteractionModeId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 
@@ -608,7 +608,10 @@ export function createAgentIdentityElement(options: QaapAgentIdentityOptions): H
         if (options.extraClasses?.label) {
             labelEl.classList.add(options.extraClasses.label);
         }
-        labelEl.textContent = options.label;
+        // Surfaces that only persisted the model id (sidebar rows) pass the raw slug as the label.
+        labelEl.textContent = modelId && options.label.trim() === modelId
+            ? formatQaiqModelDisplayLabel({ modelId })
+            : options.label;
         identity.append(labelEl);
     }
     return identity;
@@ -620,7 +623,9 @@ export function populateAgentToolbarButton(
     options: {
         readonly agentId: string;
         readonly label: string;
-        readonly agentModel?: { readonly vendor: string; readonly modelId: string };
+        readonly agentModel?: { readonly vendor: string; readonly modelId: string; readonly label?: string };
+        /** `disconnected` adds a warning dot and a "Connect" affordance: the first send would fail. */
+        readonly connectionState?: 'connected' | 'disconnected' | 'unknown';
         /** Optional compact intent label, e.g. `Next run`, shown before the model label. */
         readonly intentLabel?: string;
     },
@@ -634,7 +639,7 @@ export function populateAgentToolbarButton(
         const identity = createAgentIdentityElement({
             agentId: options.agentId,
             agentModel: options.agentModel,
-            label: formatQaiqModelIdShortLabel(modelId),
+            label: formatQaiqModelDisplayLabel({ modelId, label: options.agentModel?.label }),
             extraClasses: {
                 root: 'theia-mobile-projects-sticky-composer-agent-identity',
                 avatar: 'theia-mobile-projects-sticky-composer-agent-avatar',
@@ -656,6 +661,17 @@ export function populateAgentToolbarButton(
         appendAgentBrandIcon(button, options.agentId, 'sm');
         button.append(chevron);
         button.classList.add('theia-mod-logo-only');
+    }
+    button.classList.toggle('theia-mod-disconnected', options.connectionState === 'disconnected');
+    if (options.connectionState === 'disconnected') {
+        const warning = document.createElement('span');
+        warning.className = 'theia-qaap-agent-disconnected-dot';
+        warning.setAttribute('aria-hidden', 'true');
+        const connect = document.createElement('span');
+        connect.className = 'theia-qaap-agent-connect-chip';
+        connect.textContent = nls.localize('qaap/agentPicker/connect', 'Connect');
+        (button.querySelector('.theia-qaap-agent-identity-avatar') ?? button).prepend(warning);
+        chevron.before(connect);
     }
 }
 

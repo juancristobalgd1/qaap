@@ -134,6 +134,28 @@ describe('qaap-agent-model-selection', () => {
         expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/gpt-5');
     });
 
+    it('pickDefaultAgentModel skips models the plan or connection denies', () => {
+        const base = { provider: 'openai' as const, vendor: 'codex' };
+        expect(pickDefaultAgentModel([
+            { ...base, modelId: 'gpt-pro', label: 'GPT Pro', available: false, unavailableReason: 'plan' },
+            { ...base, modelId: 'gpt-offline', label: 'GPT Offline', available: false, unavailableReason: 'not-connected' },
+            { ...base, modelId: 'gpt-mini', label: 'GPT Mini', available: true },
+        ])?.modelId).to.equal('gpt-mini');
+        expect(pickDefaultAgentModel([
+            { ...base, modelId: 'gpt-pro', label: 'GPT Pro', available: false, unavailableReason: 'plan' },
+        ])).to.equal(undefined);
+    });
+
+    it('ensureStoredAgentModel keeps an explicit stored choice even if the catalog marks it unavailable', () => {
+        const base = { provider: 'openai' as const, vendor: 'codex' };
+        writeStoredAgentModel('/repo', 'codex', { ...base, modelId: 'gpt-pro', label: 'GPT Pro' });
+        const resolved = ensureStoredAgentModel('/repo', 'codex', [
+            { ...base, modelId: 'gpt-pro', label: 'GPT Pro', available: false, unavailableReason: 'plan' },
+            { ...base, modelId: 'gpt-mini', label: 'GPT Mini', available: true },
+        ]);
+        expect(resolved?.modelId).to.equal('gpt-pro');
+    });
+
     it('scopes stored model picks per authenticated user', () => {
         const cwd = '/workspace/repos/users/alice/acme/app';
         const modelA = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-4o-mini' };

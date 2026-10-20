@@ -682,6 +682,11 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                     // Peek stays on Starter until the store recovers.
                 }
             }
+            if (!(typeof body.agent === 'string' && body.agent.trim())) {
+                // See QaapAgentTaskRunner.defaultAgentFresh: never default to the keyless agent just
+                // because the auth probes of a freshly started backend have not answered yet.
+                await this.runner.defaultAgentFresh(ownerLogin);
+            }
             const task = this.runner.create({
                 clientRequestId: typeof body.clientRequestId === 'string' ? body.clientRequestId.trim() : undefined,
                 command: body.command,

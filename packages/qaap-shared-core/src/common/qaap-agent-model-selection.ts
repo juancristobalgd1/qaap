@@ -241,11 +241,18 @@ export function resolveStoredAgentModelForSubmit(
     return resolveAgentModelForSubmit(agentId, cwd);
 }
 
-/** First catalog entry that is still usable as a composer default. */
+/**
+ * First catalog entry that is still usable as a composer default. Entries the account cannot run
+ * (`available === false`, e.g. `unavailableReason: 'plan'` on Starter) are skipped so a new user is
+ * never defaulted to a model the first send would reject.
+ */
 export function pickDefaultAgentModel(
     models: readonly QaapQaiqModelOption[],
 ): QaapQaiqModelOption | undefined {
     for (const model of models) {
+        if (model.available === false) {
+            continue;
+        }
         const candidate: QaapAgentModelSelection = {
             provider: model.provider,
             vendor: model.vendor,
