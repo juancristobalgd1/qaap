@@ -1866,7 +1866,8 @@ export class QaapDockerOrchestrator {
             const request = http.get({
                 host: target.host,
                 port: target.port,
-                path: '/qaap/api/health',
+                // Liveness only: a storage problem must not keep the tenant from waking up.
+                path: '/qaap/api/health?probe=liveness',
                 timeout: 2_000,
                 headers: token ? { cookie: `theia-connection-token=${encodeURIComponent(token)}` } : undefined,
             }, response => {

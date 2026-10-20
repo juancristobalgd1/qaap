@@ -56,6 +56,8 @@ import { QaapBillingQuotaService } from './qaap-billing-quota-service';
 import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentStorageHealthCheck } from './qaap-agent-storage-health-check';
+import { QaapHealthCheckContribution } from '@theia/qaap-shared-core/lib/node/qaap-health-check-contribution';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
 import { QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTaskSandboxBroker } from './qaap-task-sandbox-broker';
@@ -305,6 +307,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapCloudWorkspaceEndpoint);
     bind(BackendApplicationContribution).toService(QaapPreviewShareProxyContribution);
     bind(QaapAgentTaskRunner).toSelf().inSingletonScope();
+    bind(QaapAgentStorageHealthCheck).toSelf().inSingletonScope();
+    bind(QaapHealthCheckContribution).toService(QaapAgentStorageHealthCheck);
     bind(QaapAgentCliUpdateService).toSelf().inSingletonScope();
     bind(QaapWorktreeGcContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
