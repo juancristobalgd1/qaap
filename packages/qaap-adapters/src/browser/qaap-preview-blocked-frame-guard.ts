@@ -6,9 +6,11 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { QAAP_FRAME_CHECK_API_PATH, QaapFrameCheckResult } from '../common/qaap-frame-check';
+import { parseQaapIsolatedPreviewUrl } from '../common/qaap-isolated-preview-url';
 import {
     isQaapExternalPreviewUrl,
     QAAP_BLOCKED_FRAME_TIMEOUT_MS,
+    QAAP_EXTERNAL_FRAME_FORBIDDEN_SANDBOX_TOKENS,
     QAAP_EXTERNAL_FRAME_SANDBOX_TOKENS,
 } from './qaap-mini-browser-blocked-frame';
 
@@ -21,7 +23,15 @@ export interface QaapPreviewBlockedFrameGuardOptions {
     readonly checkFrame?: (url: string) => Promise<QaapFrameCheckResult | undefined>;
     readonly ideOrigin?: string;
     readonly timeoutMs?: number;
+    /**
+     * Qaap's own previews on another origin (isolated `https://<label>.<QAAP_PREVIEW_BASE_DOMAIN>`
+     * hosts) are treated like same-origin previews: no extra sandbox, no preflight, no timer.
+     * Defaults to the isolated-preview URL shape.
+     */
+    readonly isInternalPreviewUrl?: (url: string) => boolean;
 }
+
+type QaapBlockedFrameReason = 'blocked' | 'mixed-content';
 
 /**
  * Detects external sites that refuse to be framed (`X-Frame-Options` / CSP `frame-ancestors`) and
@@ -56,7 +66,7 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
         if (this.disposed) {
             return;
         }
-        const external = !!url && isQaapExternalPreviewUrl(url, this.ideOrigin());
+        const external = !!url && isQaapExternalPreviewUrl(url, this.ideOrigin()) && !this.isInternalPreviewUrl(url);
         for (const token of QAAP_EXTERNAL_FRAME_SANDBOX_TOKENS) {
             if (external) {
                 this.options.frame.sandbox.add(token);
@@ -67,7 +77,15 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
         if (!external) {
             return;
         }
+        for (const token of QAAP_EXTERNAL_FRAME_FORBIDDEN_SANDBOX_TOKENS) {
+            this.options.frame.sandbox.remove(token);
+        }
         this.armedUrl = url;
+        if (isMixedContent(url, this.ideOrigin())) {
+            // The browser refuses http:// frames inside an https:// page before any request is made.
+            this.showCard(url, 'mixed-content');
+            return;
+        }
         const onLoad = (): void => {
             this.cancelTimer();
             this.detachLoadListener();
@@ -104,7 +122,14 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
         } catch {
             return;
         }
-        if (result?.embeddable !== false || this.armedUrl !== url || this.disposed) {
+        if (!result || this.armedUrl !== url || this.disposed) {
+            return;
+        }
+        if (result.embeddable) {
+            if (!result.unknown) {
+                // The headers allow framing: a slow first load is not a refusal.
+                this.cancelTimer();
+            }
             return;
         }
         // The browser fires `load` for its own "refused to connect" page; the header answer wins.
@@ -118,7 +143,13 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
         return response.ok ? await response.json() as QaapFrameCheckResult : undefined;
     }
 
-    protected showCard(url: string): void {
+    protected isInternalPreviewUrl(url: string): boolean {
+        return this.options.isInternalPreviewUrl
+            ? this.options.isInternalPreviewUrl(url)
+            : !!parseQaapIsolatedPreviewUrl(url, this.ideOrigin());
+    }
+
+    protected showCard(url: string, reason: QaapBlockedFrameReason = 'blocked'): void {
         if (this.card || this.disposed || this.armedUrl !== url) {
             return;
         }
@@ -132,14 +163,22 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
         card.setAttribute('role', 'status');
         const title = doc.createElement('p');
         title.className = 'qaap-preview-blocked-frame-title';
-        title.textContent = nls.localize('qaap/preview/blockedFrameTitle', "This site doesn't allow being shown inside Qaap");
+        title.textContent = reason === 'mixed-content'
+            ? nls.localize('qaap/preview/mixedContentFrameTitle', "This insecure page can't be shown inside Qaap")
+            : nls.localize('qaap/preview/blockedFrameTitle', "This site doesn't allow being shown inside Qaap");
         const text = doc.createElement('p');
         text.className = 'qaap-preview-blocked-frame-text';
-        text.textContent = nls.localize(
-            'qaap/preview/blockedFrameDetail',
-            '{0} blocks embedding in other apps. Open it in a new tab to keep browsing.',
-            hostLabel(url),
-        );
+        text.textContent = reason === 'mixed-content'
+            ? nls.localize(
+                'qaap/preview/mixedContentFrameDetail',
+                '{0} uses http://, and browsers block insecure pages inside Qaap. Open it in a new tab, or use https://.',
+                hostLabel(url),
+            )
+            : nls.localize(
+                'qaap/preview/blockedFrameDetail',
+                '{0} blocks embedding in other apps. Open it in a new tab to keep browsing.',
+                hostLabel(url),
+            );
         const open = doc.createElement('button');
         open.type = 'button';
         open.className = 'theia-button main qaap-preview-blocked-frame-open';
@@ -170,6 +209,16 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
 
     protected ideOrigin(): string {
         return this.options.ideOrigin ?? this.view().location.origin;
+    }
+}
+
+function isMixedContent(url: string, ideOrigin: string): boolean {
+    try {
+        const target = new URL(url);
+        return new URL(ideOrigin).protocol === 'https:' && target.protocol === 'http:'
+            && !/^(localhost|127\.0\.0\.1|\[::1\])$/i.test(target.hostname);
+    } catch {
+        return false;
     }
 }
 

@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { evaluateQaapFrameHeaders } from '@theia/qaap-adapters/lib/common/qaap-frame-check';
-import { isQaapBlockedFrameCheckIp, QaapFrameCheckCache } from './qaap-frame-check-guard';
+import { isQaapBlockedFrameCheckIp, isQaapInternalFrameCheckHost, QaapFrameCheckCache, QaapFrameCheckRateLimiter } from './qaap-frame-check-guard';
 
 describe('qaap frame check', () => {
 
@@ -25,6 +25,44 @@ describe('qaap frame check', () => {
             expect(evaluateQaapFrameHeaders({ 'content-security-policy': "default-src 'self'" }).embeddable).to.equal(true);
             expect(evaluateQaapFrameHeaders({ 'x-frame-options': 'ALLOW-FROM https://a.com' }).embeddable).to.equal(true);
             expect(evaluateQaapFrameHeaders({}).embeddable).to.equal(true);
+        });
+
+        it('allows frame-ancestors that name the Qaap app origin (isolated previews)', () => {
+            const headers = { 'content-security-policy': "frame-ancestors 'self' https://qaap.example/" };
+            expect(evaluateQaapFrameHeaders(headers).embeddable).to.equal(false);
+            expect(evaluateQaapFrameHeaders(headers, 'https://qaap.example').embeddable).to.equal(true);
+            expect(evaluateQaapFrameHeaders({ 'content-security-policy': 'frame-ancestors https:' }, 'https://qaap.example').embeddable).to.equal(true);
+            expect(evaluateQaapFrameHeaders({ 'content-security-policy': 'frame-ancestors https://evil.example' }, 'https://qaap.example').embeddable)
+                .to.equal(false);
+            expect(evaluateQaapFrameHeaders({ 'x-frame-options': 'DENY' }, 'https://qaap.example').embeddable).to.equal(false);
+        });
+    });
+
+    describe('isQaapInternalFrameCheckHost', () => {
+        it('recognizes isolated preview hosts and the app host', () => {
+            const app = 'https://qaap.example';
+            expect(isQaapInternalFrameCheckHost(new URL('https://0123456789abcdef0123456789abcdef.preview.qaap.example/'), app, 'preview.qaap.example'))
+                .to.equal(true);
+            expect(isQaapInternalFrameCheckHost(new URL('https://x.preview.qaap.example/'), app, 'preview.qaap.example:443')).to.equal(true);
+            expect(isQaapInternalFrameCheckHost(new URL('https://qaap.example/x'), app, undefined)).to.equal(true);
+        });
+
+        it('rejects look-alike and unrelated hosts', () => {
+            const app = 'https://qaap.example';
+            expect(isQaapInternalFrameCheckHost(new URL('https://evilpreview.qaap.example/'), app, 'preview.qaap.example')).to.equal(false);
+            expect(isQaapInternalFrameCheckHost(new URL('https://preview.qaap.example.evil.com/'), app, 'preview.qaap.example')).to.equal(false);
+            expect(isQaapInternalFrameCheckHost(new URL('https://claude.ai/'), app, 'preview.qaap.example')).to.equal(false);
+        });
+    });
+
+    describe('QaapFrameCheckRateLimiter', () => {
+        it('allows a burst, refuses past capacity and refills over time', () => {
+            const limiter = new QaapFrameCheckRateLimiter(2, 1, 10);
+            expect(limiter.tryTake('a', 0)).to.equal(true);
+            expect(limiter.tryTake('a', 0)).to.equal(true);
+            expect(limiter.tryTake('a', 0)).to.equal(false);
+            expect(limiter.tryTake('b', 0)).to.equal(true);
+            expect(limiter.tryTake('a', 1000)).to.equal(true);
         });
     });
 

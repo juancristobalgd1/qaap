@@ -4,12 +4,25 @@
 // *****************************************************************************
 
 /**
- * Sandbox tokens added for external origins on top of the upstream default. Top navigation stays
- * forbidden: a framed third-party page must never be able to replace the Qaap tab (tab-nabbing).
+ * Sandbox tokens added for external origins on top of the upstream default. Top navigation and
+ * `allow-popups-to-escape-sandbox` stay forbidden: a framed third-party page (or an unsandboxed popup
+ * it opens, which keeps `opener`) must never be able to replace the Qaap tab (tab-nabbing).
  */
 export const QAAP_EXTERNAL_FRAME_SANDBOX_TOKENS: readonly string[] = [
     'allow-downloads',
+];
+
+/**
+ * Sandbox tokens always stripped from a frame pointed at an external origin, even when the frame was
+ * created with them: each one lets the framed site (or a popup it opens) navigate the Qaap tab.
+ * Without `allow-popups-to-escape-sandbox` a popup inherits the sandbox, so it cannot use
+ * `window.opener` to redirect Qaap. "Open in new tab" is done by Qaap itself with `noopener,noreferrer`.
+ */
+export const QAAP_EXTERNAL_FRAME_FORBIDDEN_SANDBOX_TOKENS: readonly string[] = [
     'allow-popups-to-escape-sandbox',
+    'allow-top-navigation',
+    'allow-top-navigation-by-user-activation',
+    'allow-top-navigation-to-custom-protocols',
 ];
 
 /**

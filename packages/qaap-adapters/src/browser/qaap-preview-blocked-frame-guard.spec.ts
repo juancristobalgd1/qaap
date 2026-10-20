@@ -94,13 +94,68 @@ describe('QaapPreviewBlockedFrameGuard', () => {
             return { embeddable: false };
         });
         guard.arm('https://example.com/');
-        expect(frame.sandbox.contains('allow-popups-to-escape-sandbox')).to.equal(true);
-        expect(frame.sandbox.contains('allow-top-navigation-by-user-activation')).to.equal(false);
+        expect(frame.sandbox.contains('allow-downloads')).to.equal(true);
         guard.arm(`${IDE}/qaap-dev/5173/`);
         await flush();
         expect(checks).to.equal(1);
         expect(card()).to.equal(null);
+        expect(frame.sandbox.contains('allow-downloads')).to.equal(false);
+        guard.dispose();
+    });
+
+    it('never lets an external frame or its popups navigate the Qaap tab (tab-nabbing)', () => {
+        frame.sandbox.add('allow-popups', 'allow-popups-to-escape-sandbox', 'allow-top-navigation', 'allow-top-navigation-by-user-activation');
+        const guard = createGuard(async () => ({ embeddable: true }));
+        guard.arm('https://example.com/');
+        expect(frame.sandbox.contains('allow-popups')).to.equal(true);
         expect(frame.sandbox.contains('allow-popups-to-escape-sandbox')).to.equal(false);
+        expect(frame.sandbox.contains('allow-top-navigation')).to.equal(false);
+        expect(frame.sandbox.contains('allow-top-navigation-by-user-activation')).to.equal(false);
+        guard.dispose();
+    });
+
+    it('treats isolated Qaap preview hosts as internal: no preflight, no extra sandbox, no timeout card', async () => {
+        let checks = 0;
+        const guard = createGuard(async () => {
+            checks++;
+            return { embeddable: false };
+        }, 5);
+        guard.arm('https://0123456789abcdef0123456789abcdef.preview.qaap.dev/');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(checks).to.equal(0);
+        expect(card()).to.equal(null);
+        expect(guard.blockedUrl).to.equal(undefined);
+        expect(frame.sandbox.contains('allow-downloads')).to.equal(false);
+        guard.dispose();
+    });
+
+    it('keeps the load timeout when the preflight could not answer', async () => {
+        const guard = createGuard(async () => ({ embeddable: true, unknown: true }), 5);
+        guard.arm('https://claude.ai/');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(card()).to.not.equal(null);
+        guard.dispose();
+    });
+
+    it('cancels the load timeout once the preflight confirms the site is embeddable', async () => {
+        const guard = createGuard(async () => ({ embeddable: true }), 5);
+        guard.arm('https://slow.example/');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(card()).to.equal(null);
+        guard.dispose();
+    });
+
+    it('shows the insecure-page card for http:// sites inside an https:// Qaap without a preflight', async () => {
+        let checks = 0;
+        const guard = createGuard(async () => {
+            checks++;
+            return { embeddable: true };
+        });
+        guard.arm('http://neverssl.com/');
+        await flush();
+        expect(checks).to.equal(0);
+        expect(card()).to.not.equal(null);
+        expect(card()!.textContent).to.contain('neverssl.com');
         guard.dispose();
     });
 

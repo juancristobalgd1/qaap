@@ -230,7 +230,7 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         }
         this.blockedFrameGuard ??= new QaapPreviewBlockedFrameGuard({
             frame: this.frame,
-            openExternal: url => window.open(url, '_blank', 'noopener'),
+            openExternal: url => window.open(url, '_blank', 'noopener,noreferrer'),
         });
         this.blockedFrameGuard.arm(this.frameSrc() ?? '');
     }

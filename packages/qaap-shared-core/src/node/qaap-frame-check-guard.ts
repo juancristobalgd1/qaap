@@ -99,3 +99,55 @@ export class QaapFrameCheckCache<T> {
         }
     }
 }
+
+/**
+ * True for Qaap's own hosts, which the frame check must never fetch: the public app origin's host
+ * and any `*.<previewBaseDomain>` isolated preview host (their `frame-ancestors` names Qaap anyway).
+ */
+export function isQaapInternalFrameCheckHost(url: URL, appOrigin: string | undefined, previewBaseDomain: string | undefined): boolean {
+    const hostname = url.hostname.toLowerCase();
+    const baseDomain = previewBaseDomain?.toLowerCase().replace(/:\d+$/, '');
+    if (baseDomain && (hostname === baseDomain || hostname.endsWith(`.${baseDomain}`))) {
+        return true;
+    }
+    if (!appOrigin) {
+        return false;
+    }
+    try {
+        return new URL(appOrigin).hostname.toLowerCase() === hostname;
+    } catch {
+        return false;
+    }
+}
+
+/** Per-key token bucket: `capacity` checks in a burst, refilled at `refillPerSecond`. Bounded by `maxKeys`. */
+export class QaapFrameCheckRateLimiter {
+
+    protected readonly buckets = new Map<string, { tokens: number; updated: number }>();
+
+    constructor(
+        protected readonly capacity = 20,
+        protected readonly refillPerSecond = 0.5,
+        protected readonly maxKeys = 1000,
+    ) { }
+
+    tryTake(key: string, now = Date.now()): boolean {
+        const bucket = this.buckets.get(key) ?? { tokens: this.capacity, updated: now };
+        bucket.tokens = Math.min(this.capacity, bucket.tokens + ((now - bucket.updated) / 1000) * this.refillPerSecond);
+        bucket.updated = now;
+        this.buckets.delete(key);
+        this.buckets.set(key, bucket);
+        while (this.buckets.size > this.maxKeys) {
+            const oldest = this.buckets.keys().next().value;
+            if (oldest === undefined) {
+                break;
+            }
+            this.buckets.delete(oldest);
+        }
+        if (bucket.tokens < 1) {
+            return false;
+        }
+        bucket.tokens -= 1;
+        return true;
+    }
+}
