@@ -15,6 +15,7 @@ interface QaapSecurityLogWindow {
 
 const LOG_WINDOW_MS = 60_000;
 const MAX_TRACKED_KEYS = 10_000;
+const MAX_FORWARDED_HOPS = 10;
 
 /**
  * Loopback peers (Caddy on the host) are always trusted when no `QAAP_TRUSTED_PROXY_CIDRS` is set.
@@ -78,8 +79,9 @@ export class QaapSecurityLogRateLimiter {
         const header = request.headers['x-forwarded-for'];
         const hops = (Array.isArray(header) ? header.join(',') : header ?? '')
             .split(',')
+            .slice(-MAX_FORWARDED_HOPS)
             .map(hop => normalizeAddress(hop.trim()))
-            .filter(hop => hop.length > 0);
+            .filter(hop => net.isIP(hop) !== 0);
         for (let i = hops.length - 1; i >= 0; i--) {
             if (!this.isTrustedProxy(hops[i])) {
                 return hops[i];
@@ -98,16 +100,20 @@ export class QaapSecurityLogRateLimiter {
     }
 
     /**
-     * CIDRs of this process's own non-internal interfaces. In the theia container these are the
-     * compose network(s) shared with Caddy, plus any per-tenant bridge the control plane joins
-     * (tenant containers there are trusted too; harmless because the address only keys log
-     * sampling). On a bare-metal, non-Docker install the host's LAN subnet becomes trusted.
+     * CIDRs of this process's own non-internal, non-link-local interfaces. In the theia container
+     * these are the compose network(s) shared with Caddy. If the control plane is ever attached to
+     * a tenant bridge, its tenants become trusted for log keying only (the orchestrator does not
+     * do this today). On a bare-metal, non-Docker install the host's LAN subnet becomes trusted.
      */
+    protected networkInterfaces(): NodeJS.Dict<os.NetworkInterfaceInfo[]> {
+        return os.networkInterfaces();
+    }
+
     protected ownInterfaceCidrs(): string[] {
         const cidrs: string[] = [];
-        for (const entries of Object.values(os.networkInterfaces())) {
+        for (const entries of Object.values(this.networkInterfaces())) {
             for (const entry of entries ?? []) {
-                if (!entry.internal && entry.cidr) {
+                if (!entry.internal && entry.cidr && !entry.address.toLowerCase().startsWith('fe80:') && !entry.scopeid) {
                     cidrs.push(entry.cidr);
                 }
             }

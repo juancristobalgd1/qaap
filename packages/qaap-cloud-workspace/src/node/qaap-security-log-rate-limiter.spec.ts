@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import * as http from 'http';
+import * as os from 'os';
 import { QaapSecurityLogRateLimiter } from './qaap-security-log-rate-limiter';
 import { QaapAuthenticatedWsRequestValidator } from './qaap-authenticated-ws-request-validator';
 
@@ -15,6 +16,20 @@ class StubbedInterfaceLimiter extends QaapSecurityLogRateLimiter {
 
     protected override ownInterfaceCidrs(): string[] {
         return this.cidrs;
+    }
+}
+
+class StubbedNicLimiter extends QaapSecurityLogRateLimiter {
+    constructor(protected readonly nics: NodeJS.Dict<os.NetworkInterfaceInfo[]>) {
+        super();
+    }
+
+    protected override networkInterfaces(): NodeJS.Dict<os.NetworkInterfaceInfo[]> {
+        return this.nics;
+    }
+
+    cidrs(): string[] {
+        return this.ownInterfaceCidrs();
     }
 }
 
@@ -122,5 +137,28 @@ describe('QaapSecurityLogRateLimiter', () => {
                 process.env.QAAP_CLOUD_MODE = savedMode;
             }
         }
+    });
+
+    it('ignores garbage X-Forwarded-For hops from a trusted peer', () => {
+        const limiter = new StubbedInterfaceLimiter(['172.18.0.9/16']);
+        expect(limiter.admit('e', request('172.18.0.5', '203.0.113.7, not-an-ip'), 0)).to.deep.equal({ client: '203.0.113.7' });
+        expect(limiter.admit('e', request('172.18.0.5', 'garbage, unknown'), 0)).to.deep.equal({ client: '172.18.0.5' });
+    });
+
+    it('only considers the last 10 forwarded hops', () => {
+        const limiter = new StubbedInterfaceLimiter(['172.18.0.9/16']);
+        const hops = ['198.51.100.1', ...Array.from({ length: 10 }, () => '172.18.0.7')].join(', ');
+        expect(limiter.admit('e', request('172.18.0.5', hops), 0)).to.deep.equal({ client: '172.18.0.7' });
+    });
+
+    it('skips internal and IPv6 link-local interfaces when deriving trusted subnets', () => {
+        const nic = (address: string, cidr: string, internal: boolean, scopeid?: number): os.NetworkInterfaceInfo => ({
+            address, cidr, internal, netmask: '', family: address.includes(':') ? 'IPv6' : 'IPv4', mac: '', scopeid
+        } as os.NetworkInterfaceInfo);
+        const limiter = new StubbedNicLimiter({
+            lo: [nic('127.0.0.1', '127.0.0.1/8', true)],
+            eth0: [nic('10.200.5.9', '10.200.5.9/24', false), nic('fe80::1', 'fe80::1/64', false, 2), nic('fd00::9', 'fd00::9/64', false, 0)],
+        });
+        expect(limiter.cidrs()).to.deep.equal(['10.200.5.9/24', 'fd00::9/64']);
     });
 });
