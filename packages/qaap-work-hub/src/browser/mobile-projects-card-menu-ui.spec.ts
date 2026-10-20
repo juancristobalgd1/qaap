@@ -107,6 +107,7 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
             conversations: undefined,
             conversationIndexUi: {
                 resolveConversationFlags: () => ({ priority: false, paused: false }),
+                findSummaryById: () => undefined,
             },
             conversationFlags: undefined,
             ensureOverlayUi: () => ({ parallel: { openVariantChooseSheet: () => undefined } }),
@@ -150,6 +151,7 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
             conversations: undefined,
             conversationIndexUi: {
                 resolveConversationFlags: () => ({ priority: false, paused: false }),
+                findSummaryById: () => undefined,
             },
             conversationFlags: undefined,
             ensureOverlayUi: () => ({ parallel: { openVariantChooseSheet: () => undefined } }),
@@ -184,6 +186,42 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
         const plain = ui.buildConversationMenu(target, failed('Bash exited with code 1.'));
         expect(labels(plain).some(label => label.includes('Continue task'))).to.equal(false);
         expect(labels(plain).some(label => label.includes('Retry task'))).to.equal(true);
+    });
+
+    it('re-reads the summary on Continue / Retry and skips a run that is already recovering', () => {
+        const target = project({ id: 'alpha' });
+        const failed = {
+            id: 'c1', title: 'Task', status: 'failed', createdAt: 1, updatedAt: 2, messageCount: 2, agentId: 'qaiq',
+            cwd: '/repo', source: 'vps', lastMessageRole: 'agent',
+            lastMessageError: 'Stopped automatically after 46 min: the turn exceeded the maximum allowed time.',
+        };
+        let latest: object = failed;
+        const calls: string[] = [];
+        const host = {
+            chatService: undefined,
+            conversations: undefined,
+            conversationIndexUi: {
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+                findSummaryById: () => latest,
+            },
+            conversationFlags: undefined,
+            ensureOverlayUi: () => ({ parallel: { openVariantChooseSheet: () => undefined } }),
+            onRetryConversation: async () => { calls.push('retry'); },
+            onContinueConversation: async () => { calls.push('continue'); },
+        } as unknown as MobileProjectsCardMenuHost;
+        const menu = new MobileProjectsCardMenuUi(host).buildConversationMenu(target, failed as never);
+        const item = (label: string): HTMLElement => [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .find(candidate => candidate.textContent?.includes(label)) as HTMLElement;
+
+        // A first recovery flipped the summary to streaming while the menu stayed open.
+        latest = { ...failed, status: 'streaming' };
+        item('Continue task').click();
+        item('Retry task').click();
+        expect(calls).to.deep.equal([]);
+
+        latest = failed;
+        item('Retry task').click();
+        expect(calls).to.deep.equal(['retry']);
     });
 
     it('uses pin icons for the high-priority (pin) action', () => {
