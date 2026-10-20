@@ -315,6 +315,21 @@ export function hostedModelDenialReason(account: QaapBillingAccount, modelId: st
     return undefined;
 }
 
+/** Structured counterpart of {@link hostedModelDenialReason}: which plan boundary denied the hosted model. */
+export function hostedModelDenialPlanLimit(
+    account: QaapBillingAccount,
+    modelId: string | undefined,
+): 'hosted_model_denied' | 'credits_exhausted' | undefined {
+    if (!modelId || !isQaapCodexHostedModel(modelId)) {
+        return undefined;
+    }
+    const entitlements = entitlementsFor(account);
+    if (!entitlements.hostedModels) {
+        return 'hosted_model_denied';
+    }
+    return entitlements.creditsRemaining <= 0 ? 'credits_exhausted' : undefined;
+}
+
 /** Codex frontier models billed as hosted credits — only when the agent is Codex. */
 export function isHostedCodexUsage(agentId: string | undefined, modelId: string | undefined): boolean {
     if ((agentId ?? '').trim().toLowerCase() !== 'codex') {

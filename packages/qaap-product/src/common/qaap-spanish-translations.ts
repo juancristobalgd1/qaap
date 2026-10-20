@@ -217,6 +217,7 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/auth/githubConnected': 'Conectado a GitHub.',
     'qaap/auth/githubConnectFailed': 'Falló el inicio de sesión con GitHub.',
     'qaap/auth/githubConnectFailedWithReason': 'Falló el inicio de sesión con GitHub: {0}',
+    'qaap/billing/hostedCodexUnavailable': 'La facturación no está disponible temporalmente, así que no se pueden iniciar modelos Codex alojados ahora mismo. Inténtalo de nuevo en un momento o elige un modelo BYOK.',
     'qaap/auth/notSignedIn': 'No has iniciado sesión',
 
     'qaap/mobileProjects/previewButton': 'Vista previa',

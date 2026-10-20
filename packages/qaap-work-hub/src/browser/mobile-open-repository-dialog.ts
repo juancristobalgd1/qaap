@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/qaap-github-repository-input';
 import { syncQaapAuthSessionFromServer } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
@@ -22,6 +23,8 @@ export interface MobileOpenRepositoryDialogDelegate {
     onProjectsChanged?(nextProjects: MobileProjectEntry[]): void;
     /** Open / clone / create finished and the IDE workspace was switched. */
     onWorkspaceOpened?(): void;
+    /** Opens the billing sheet; offered as the call to action when the plan's repository cap blocks a clone. */
+    openBillingSheet?(): Promise<void>;
 }
 
 /**
@@ -59,6 +62,7 @@ export class MobileOpenRepositoryDialog {
     protected progressFill!: HTMLElement;
     protected progressDetail!: HTMLElement;
     protected progressError!: HTMLElement;
+    protected progressUpgrade!: HTMLButtonElement;
     protected progressHint!: HTMLElement;
     protected progressCancel!: HTMLButtonElement;
     protected progressRetry!: HTMLButtonElement;
@@ -373,6 +377,17 @@ export class MobileOpenRepositoryDialog {
         this.progressError.setAttribute('role', 'alert');
         this.progressError.hidden = true;
 
+        this.progressUpgrade = document.createElement('button');
+        this.progressUpgrade.type = 'button';
+        this.progressUpgrade.hidden = true;
+        this.progressUpgrade.className = 'theia-mobile-open-repo-progress-action theia-mod-primary theia-mobile-open-repo-progress-upgrade';
+        this.progressUpgrade.textContent = QaapPlanLimit.ctaLabel('repo_limit');
+        this.progressUpgrade.addEventListener('click', () => {
+            // Close the picker first so the billing sheet is not stacked under it.
+            this.hide();
+            void this.delegate.openBillingSheet?.();
+        });
+
         this.progressHint = document.createElement('p');
         this.progressHint.className = 'theia-mobile-open-repo-progress-hint';
         this.progressHint.textContent = nls.localize(
@@ -390,7 +405,7 @@ export class MobileOpenRepositoryDialog {
             nls.localize('qaap/mobileOpenRepo/progressRetry', 'Retry'), 'theia-mod-primary', () => this.onProgressRetry());
         actions.append(this.progressBack, this.progressCancel, this.progressRetry);
 
-        view.append(this.progressTitle, phaseRow, this.progressBar, this.progressDetail, this.progressError, this.progressHint, actions);
+        view.append(this.progressTitle, phaseRow, this.progressBar, this.progressDetail, this.progressError, this.progressUpgrade, this.progressHint, actions);
         return view;
     }
 
@@ -474,8 +489,12 @@ export class MobileOpenRepositoryDialog {
         }
         this.progressDetail.textContent = running ? job.detail ?? '' : '';
         this.progressDetail.hidden = !this.progressDetail.textContent;
-        this.progressError.textContent = job.state === 'failed' ? job.error ?? '' : '';
+        const planLimited = job.state === 'failed' && QaapPlanLimit.isPlanLimitCode(job.errorCode);
+        this.progressError.textContent = planLimited
+            ? QaapPlanLimit.describe('repo_limit')
+            : job.state === 'failed' ? job.error ?? '' : '';
         this.progressError.hidden = !this.progressError.textContent;
+        this.progressUpgrade.hidden = !(planLimited && this.delegate.openBillingSheet);
         this.progressHint.hidden = !running;
         this.progressCancel.hidden = !running;
         this.progressRetry.hidden = !failed;

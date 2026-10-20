@@ -707,6 +707,10 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   color: var(--theia-editor-background);
 }
 
+.theia-mobile-open-repo-progress-upgrade {
+  align-self: flex-start;
+}
+
 .theia-mobile-open-repo-progress-action:disabled {
   opacity: 0.6;
   cursor: default;

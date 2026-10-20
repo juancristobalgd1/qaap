@@ -17,7 +17,8 @@ import {
     syncQaapAuthSessionFromServer,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { placeholderQaapAuthUser, writeQaapAuthSession } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { dismissQaapLoginGate, isQaapLoginGateMounted, presentQaapLoginGate } from './qaap-login-gate';
+import { QaapOAuthErrorMessages } from '@theia/qaap-adapters/lib/common/qaap-oauth-error-reason';
+import { dismissQaapLoginGate, isQaapLoginGateMounted, presentQaapLoginGate, setQaapLoginGateNotice } from './qaap-login-gate';
 import { readQaapAuthUser, readQaapSignedIn } from './qaap-login-storage';
 
 /**
@@ -53,9 +54,9 @@ export class QaapLoginContribution implements FrontendApplicationContribution {
             window.dispatchEvent(new Event('qaap-auth-open-first-repo'));
             this.requestWorkbenchLayoutRefresh();
         } else if (oauthResult === 'error') {
-            const detail = oauthErrorReason
-                ? nls.localize('qaap/auth/githubConnectFailedWithReason', 'GitHub sign-in failed: {0}', oauthErrorReason)
-                : nls.localize('qaap/auth/githubConnectFailed', 'GitHub sign-in failed.');
+            // The gate overlay covers toasts, so the mapped reason also goes into the gate status line.
+            const detail = QaapOAuthErrorMessages.describe(oauthErrorReason);
+            setQaapLoginGateNotice(detail);
             this.messages.error(detail);
             console.error('[qaap-auth] OAuth callback returned error.', oauthErrorReason ?? '(no reason)');
         }

@@ -1,6 +1,7 @@
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
+import { checkAgentTaskBillingGate } from './qaap-agent-task-billing-gate';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -12,7 +13,6 @@ import {
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import { canStartNewAgentJob, hostedModelDenialReason, isHostedCodexUsage } from '../common/qaap-billing-plans';
 import {
     buildQaiqControlResponseLine,
     buildQaiqStdioPromptLine,
@@ -268,44 +268,13 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         if (ctx.tasks.get(task.id)?.state !== 'running') {
             return;
         }
-        if (task.ownerLogin && ctx.billingStore) {
-            try {
-                const account = await ctx.billingStore.getOrCreateAccount(task.ownerLogin);
-                if (!canStartNewAgentJob(account)) {
-                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-                    fs.writeFileSync(
-                        ctx.logPath(task.id),
-                        'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.\n',
-                        'utf8',
-                    );
-                    ctx.finishTask(task.id, 'failed', 1);
-                    return;
-                }
-                const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim(), task.ownerLogin);
-                const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-                const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent, task.ownerLogin) ?? request.agent ?? task.agentId;
-                const usesUserCodexSession = await ctx.isAgentConnectedFresh?.(agentId) === true;
-                const hostedDenial = isHostedCodexUsage(agentId, modelId) && !usesUserCodexSession
-                    ? hostedModelDenialReason(account, modelId)
-                    : undefined;
-                if (hostedDenial) {
-                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-                    fs.writeFileSync(ctx.logPath(task.id), `${hostedDenial}\n`, 'utf8');
-                    ctx.finishTask(task.id, 'failed', 1);
-                    return;
-                }
-            } catch (error) {
-                // Fail closed for authenticated owners: a billing outage must not silently grant Pro quotas.
-                fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-                const message = error instanceof Error ? error.message : 'Billing check failed';
-                fs.writeFileSync(
-                    ctx.logPath(task.id),
-                    `Could not verify billing entitlements for this turn. ${message}\n`,
-                    'utf8',
-                );
-                ctx.finishTask(task.id, 'failed', 1);
-                return;
-            }
+        // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
+        const billingRejection = await checkAgentTaskBillingGate(ctx, task, request);
+        if (billingRejection !== undefined) {
+            fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
+            fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');
+            ctx.finishTask(task.id, 'failed', 1);
+            return;
         }
         const markedTask = ctx.tasks.get(task.id) ?? task;
         const baseline = ctx.captureWorktreeBaseline(task.cwd);

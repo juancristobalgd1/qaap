@@ -31,6 +31,17 @@ export function dismissQaapLoginGate(): void {
     }
 }
 
+let loginNotice: string | undefined;
+
+/** Message shown in the gate status line until the user starts a new sign-in (e.g. a mapped OAuth failure). */
+export function setQaapLoginGateNotice(message: string | undefined): void {
+    loginNotice = message;
+    const status = activeHost?.querySelector<HTMLElement>('#qaap-login-status');
+    if (status && message) {
+        status.textContent = message;
+    }
+}
+
 export function presentQaapLoginGate(): void {
     if (readQaapSignedIn() || isQaapLoginGateMounted()) {
         return;
@@ -138,7 +149,15 @@ export function presentQaapLoginGate(): void {
     // If the server confirms GitHub OAuth is not configured, keep the user on this page with an
     // actionable explanation. A failed capabilities probe does not establish server liveness, so it
     // must not disable sign-in or tell the user the server is down.
-    void reflectGithubAvailability(host);
+    void reflectGithubAvailability(host).then(() => {
+        const status = host.querySelector<HTMLElement>('#qaap-login-status');
+        if (status && loginNotice && !status.textContent) {
+            status.textContent = loginNotice;
+        }
+    });
+    if (loginNotice) {
+        setQaapLoginGateNotice(loginNotice);
+    }
     githubButton?.focus();
 }
 
@@ -146,6 +165,7 @@ function authorize(button: HTMLButtonElement): void {
     if (button.disabled || button.classList.contains('qaap-login-btn--loading')) {
         return;
     }
+    loginNotice = undefined;
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
     const label = button.querySelector('.qaap-login-btn-label');

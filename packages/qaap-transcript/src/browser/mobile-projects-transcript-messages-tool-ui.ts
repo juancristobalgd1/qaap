@@ -122,7 +122,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         renderTranscriptRichContentExtracted(this, host, content, options);
     }
 
-    createTranscriptAgentFailureDialog(error: string, technicalContent?: string, options?: { readonly failedToolName?: string; readonly onRetry?: () => void | Promise<void>; readonly onOpenAuthUrl?: (url: string) => void; readonly onOpenAgentSignIn?: () => void | Promise<void>; readonly onOpenAiFeaturesSettings?: () => void | Promise<void>; readonly agentLabel?: string; readonly agentId?: string; readonly agentMessage?: Pick<import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>; },): HTMLElement {
+    createTranscriptAgentFailureDialog(error: string, technicalContent?: string, options?: { readonly failedToolName?: string; readonly onRetry?: () => void | Promise<void>; readonly onOpenAuthUrl?: (url: string) => void; readonly onOpenAgentSignIn?: () => void | Promise<void>; readonly onOpenAiFeaturesSettings?: () => void | Promise<void>; readonly onOpenBilling?: () => void | Promise<void>; readonly agentLabel?: string; readonly agentId?: string; readonly agentMessage?: Pick<import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>; },): HTMLElement {
         return createTranscriptAgentFailureDialogExtracted(this, error, technicalContent, options);
     }
 

@@ -168,6 +168,7 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                     onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
                         ? () => ctx.host.openPreferencesSheet?.('ai-features')
                         : undefined,
+                    onOpenBilling: ctx.host.openBillingSheet ? () => ctx.host.openBillingSheet?.() : undefined,
                     agentId,
                     agentMessage: failureMessage,
                 },

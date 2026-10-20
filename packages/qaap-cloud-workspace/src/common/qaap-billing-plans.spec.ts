@@ -15,6 +15,7 @@ import {
     creditsRemaining,
     entitlementsFor,
     filterModelsForHostedPlan,
+    hostedModelDenialPlanLimit,
     hostedModelDenialReason,
     hoursToMinutes,
     isHostedCodexUsage,
@@ -168,6 +169,10 @@ describe('qaap-billing-plans', () => {
             .to.match(/exhausted/);
         expect(hostedModelDenialReason(account(), 'gpt-5.6-sol')).to.equal(undefined);
         expect(hostedModelDenialReason(account({ planId: 'starter' }), 'gpt-4o-mini')).to.equal(undefined);
+        expect(hostedModelDenialPlanLimit(account({ planId: 'starter' }), 'gpt-5.6-sol')).to.equal('hosted_model_denied');
+        expect(hostedModelDenialPlanLimit(account({ includedCreditsRemaining: 0, purchasedCredits: 0 }), 'gpt-5.6-sol'))
+            .to.equal('credits_exhausted');
+        expect(hostedModelDenialPlanLimit(account(), 'gpt-5.6-sol')).to.equal(undefined);
         expect(isHostedCodexUsage('codex', 'gpt-5.6-sol')).to.equal(true);
         expect(isHostedCodexUsage('qaiq', 'gpt-5.6-sol')).to.equal(false);
         expect(isHostedCodexUsage('copilot', 'gpt-5.6-sol')).to.equal(false);
