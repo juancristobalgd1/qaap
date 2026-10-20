@@ -830,6 +830,14 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
         let location = '';
         const res = { redirect: (_status: number, url: string) => { location = url; }, status: () => res, send: () => undefined };
         const saved = { ...process.env };
+        const restoreEnv = (): void => {
+            for (const key of Object.keys(process.env)) {
+                if (!(key in saved)) {
+                    delete process.env[key];
+                }
+            }
+            Object.assign(process.env, saved);
+        };
         Object.assign(process.env, {
             QAAP_GITHUB_CLIENT_ID: 'id', QAAP_GITHUB_CLIENT_SECRET: 'secret', QAAP_OAUTH_PUBLIC_URL: 'https://qaap.test',
         });
@@ -839,7 +847,7 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
             await (endpoint as unknown as { handleOAuthCallback: Callback }).handleOAuthCallback({ query }, res);
         } finally {
             console.error = quiet;
-            process.env = saved;
+            restoreEnv();
         }
         return location;
     };
@@ -865,7 +873,7 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
         let status = 0;
         let location = '';
         const res = { redirect: (s: number, url: string) => { status = s; location = url; } };
-        const saved = { ...process.env };
+        const savedId = process.env.QAAP_GITHUB_CLIENT_ID;
         delete process.env.QAAP_GITHUB_CLIENT_ID;
         const quiet = console.error;
         console.error = () => undefined;
@@ -873,7 +881,9 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
             (endpoint as unknown as { handleOAuthStart(q: unknown, r: unknown): void }).handleOAuthStart({}, res);
         } finally {
             console.error = quiet;
-            process.env = saved;
+            if (savedId !== undefined) {
+                process.env.QAAP_GITHUB_CLIENT_ID = savedId;
+            }
         }
         expect(status).to.equal(302);
         expect(location).to.contain('qaap_oauth_error=1').and.to.contain('qaap_oauth_reason=not_configured');
