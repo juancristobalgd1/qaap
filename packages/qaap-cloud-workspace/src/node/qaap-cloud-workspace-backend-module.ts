@@ -89,6 +89,7 @@ import { bindQaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-sy
 import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
 import { QaapAuthenticatedWsRequestValidator } from './qaap-authenticated-ws-request-validator';
 import { QaapControlPlaneRpcGuard } from './qaap-control-plane-rpc-guard';
+import { QaapSecurityLogRateLimiter } from './qaap-security-log-rate-limiter';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contribution';
 import { QaapJobEndpoint } from './qaap-job-endpoint';
@@ -171,6 +172,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapWebsocketAuthListener).toSelf().inSingletonScope();
     bind(MessagingListenerContribution).toService(QaapWebsocketAuthListener);
     // Hosted runtimes refuse the Theia Socket.IO handshake of an unauthenticated caller.
+    bind(QaapSecurityLogRateLimiter).toSelf().inSingletonScope();
     bind(QaapAuthenticatedWsRequestValidator).toSelf().inSingletonScope();
     bind(WsRequestValidatorContribution).toService(QaapAuthenticatedWsRequestValidator);
     // Hosted control planes never serve Theia RPC themselves: that runs in per-tenant backends.

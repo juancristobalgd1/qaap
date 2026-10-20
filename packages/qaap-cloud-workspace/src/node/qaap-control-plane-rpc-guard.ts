@@ -4,11 +4,12 @@
 // *****************************************************************************
 
 import * as http from 'http';
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { WsRequestValidatorContribution } from '@theia/core/lib/node/ws-request-validators';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { isQaapHostedRuntime } from './qaap-docker-control-plane';
+import { QaapSecurityLogRateLimiter } from './qaap-security-log-rate-limiter';
 
 /** Server-side mark (never settable by a client) on a request the tenant proxy is forwarding. */
 const ROUTED_TO_TENANT_BACKEND = Symbol('qaapRoutedToTenantBackend');
@@ -37,6 +38,9 @@ export class QaapControlPlaneRpcGuard implements WsRequestValidatorContribution 
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    @inject(QaapSecurityLogRateLimiter) @optional()
+    protected readonly logLimiter: QaapSecurityLogRateLimiter | undefined;
 
     protected earlyRoutingFallbackWarned = false;
 
@@ -68,10 +72,14 @@ export class QaapControlPlaneRpcGuard implements WsRequestValidatorContribution 
     }
 
     protected deny(request: http.IncomingMessage, reason: string): false {
-        this.auth.logSecurityEvent('control_plane_rpc_denied', {
-            reason,
-            path: (request.url ?? '/').split('?', 1)[0],
-        });
+        const sampled = this.logLimiter ? this.logLimiter.admit('control_plane_rpc_denied', request) : {};
+        if (sampled) {
+            this.auth.logSecurityEvent('control_plane_rpc_denied', {
+                reason,
+                path: (request.url ?? '/').split('?', 1)[0],
+                ...sampled,
+            });
+        }
         return false;
     }
 
