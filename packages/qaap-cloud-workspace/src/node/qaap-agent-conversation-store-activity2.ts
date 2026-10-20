@@ -174,7 +174,8 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     };
     // The turn watchdog stops a run as `interrupted` and records its own timeout reason and trace
     // right after this synchronous settle; the run otherwise settles like a stop (no fallback model,
-    // no failure reason derived from the log).
+    // no failure reason derived from the log). No await may precede this check: the watchdog's
+    // marker is only set while its synchronous cancel() runs and is cleared right after.
     const pausedByWatchdog = task.state === 'interrupted' && ctx.turnWatchdogPausedTaskIds.has(task.id);
     if (task.state === 'cancelled' || pausedByWatchdog) {
         const cancelledReason = 'Turn cancelled.';
