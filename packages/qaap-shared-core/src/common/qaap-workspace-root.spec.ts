@@ -9,7 +9,11 @@ import {
     buildQaapWorkspaceScriptCommand,
     extractScriptBinary,
     findQaapWorkspaceRoot,
-    resolveWorkspacePreviewBuildScript,
+    isQaapInstalledBinary,
+    parseQaapPreviewBuildPolicy,
+    qaapTenantRepositoryCeiling,
+    resolveQaapPreviewBuildPlan,
+    scriptBuildOutputDir,
     workspaceGlobMatches,
     workspaceMemberPatterns,
 } from './qaap-workspace-root';
@@ -73,11 +77,20 @@ describe('qaap-workspace-root', () => {
                 .to.deep.equal({ rootDir: '/repo', relativePath: 'examples/browser' });
         });
 
-        it('finds pnpm and lerna-only roots', async () => {
+        it('finds pnpm roots but not lerna-only roots (a root install does not install their members)', async () => {
             const pnpm = fakeTree({ '/ws': { packageJson: {}, pnpmPackages: ['apps/*'] } });
             expect((await findQaapWorkspaceRoot('/ws/apps/web', pnpm.read))?.rootDir).to.equal('/ws');
             const lerna = fakeTree({ '/ws': { packageJson: {}, lernaJson: {} } });
-            expect((await findQaapWorkspaceRoot('/ws/packages/app', lerna.read))?.relativePath).to.equal('packages/app');
+            expect(await findQaapWorkspaceRoot('/ws/packages/app', lerna.read)).to.equal(undefined);
+        });
+
+        it('never reads above the open workspace roots or the tenant repository area', async () => {
+            const tree = fakeTree({
+                '/projects': { packageJson: { workspaces: ['**'] } },
+                '/workspace/repos/users': { packageJson: { workspaces: ['**'] } },
+            });
+            expect(await findQaapWorkspaceRoot('/projects/site/app', tree.read, { ceilingDirs: ['/projects/site'] })).to.equal(undefined);
+            expect(await findQaapWorkspaceRoot('/workspace/repos/users/alice/app', tree.read)).to.equal(undefined);
         });
 
         it('ignores an ancestor whose workspaces do not include the package', async () => {
@@ -115,20 +128,73 @@ describe('qaap-workspace-root', () => {
         });
     });
 
-    describe('resolveWorkspacePreviewBuildScript', () => {
+    describe('resolveQaapPreviewBuildPlan (build is opt-in only)', () => {
         const scripts = { start: 'theia start', build: 'theiaext build && npm run -s bundle' };
+        const none = (): boolean => false;
+        const base = { scriptKey: 'start', script: 'theia start', scripts, genericKind: true, outputDirExists: none };
 
-        it('builds before a generic start script whose output is missing', () => {
-            expect(resolveWorkspacePreviewBuildScript({ scriptKey: 'start', scripts, genericKind: true, buildOutputPresent: false }))
-                .to.equal('build');
+        it('never chains a build without the opt-in, even when the output is missing (Theia monorepo)', () => {
+            expect(resolveQaapPreviewBuildPlan({ ...base, policy: 'manual' })).to.deep.equal({ buildRequired: false });
         });
 
-        it('skips the build when output exists, for dev scripts, frameworks and packages without build', () => {
-            expect(resolveWorkspacePreviewBuildScript({ scriptKey: 'start', scripts, genericKind: true, buildOutputPresent: true })).to.equal(undefined);
-            expect(resolveWorkspacePreviewBuildScript({ scriptKey: 'dev', scripts, genericKind: true, buildOutputPresent: false })).to.equal(undefined);
-            expect(resolveWorkspacePreviewBuildScript({ scriptKey: 'start', scripts, genericKind: false, buildOutputPresent: false })).to.equal(undefined);
-            expect(resolveWorkspacePreviewBuildScript({ scriptKey: 'start', scripts: { start: 'x' }, genericKind: true, buildOutputPresent: false }))
-                .to.equal(undefined);
+        it('chains the build only with "build": "auto" and missing output', () => {
+            expect(resolveQaapPreviewBuildPlan({ ...base, policy: 'auto' })).to.deep.equal({ buildScript: 'build', buildRequired: false });
+            expect(resolveQaapPreviewBuildPlan({ ...base, policy: 'auto', outputDirExists: dir => dir === 'lib' }))
+                .to.deep.equal({ buildRequired: false });
+        });
+
+        it('reports buildRequired (fail fast) when the script names a missing output folder and there is no opt-in', () => {
+            const plan = resolveQaapPreviewBuildPlan({ ...base, script: 'node dist/server.js', policy: 'manual' });
+            expect(plan).to.deep.equal({ buildRequired: true, missingOutputDir: 'dist' });
+            expect(resolveQaapPreviewBuildPlan({ ...base, script: 'node dist/server.js', policy: 'manual', outputDirExists: dir => dir === 'dist' }))
+                .to.deep.equal({ buildRequired: false });
+        });
+
+        it('never builds dev scripts, framework dev servers or packages without a build script', () => {
+            expect(resolveQaapPreviewBuildPlan({ ...base, scriptKey: 'dev', policy: 'auto' }).buildScript).to.equal(undefined);
+            expect(resolveQaapPreviewBuildPlan({ ...base, genericKind: false, policy: 'auto' }).buildScript).to.equal(undefined);
+            expect(resolveQaapPreviewBuildPlan({ ...base, scripts: { start: 'x' }, policy: 'auto' }).buildScript).to.equal(undefined);
+        });
+    });
+
+    describe('scriptBuildOutputDir', () => {
+        it('finds the output folder a script runs from', () => {
+            expect(scriptBuildOutputDir('node dist/server.js')).to.equal('dist');
+            expect(scriptBuildOutputDir('serve -s build')).to.equal('build');
+            expect(scriptBuildOutputDir('NODE_ENV=production node ./lib/main.js')).to.equal('lib');
+            expect(scriptBuildOutputDir('http-server --root=out')).to.equal('out');
+        });
+
+        it('never mistakes a command or a script name for a folder', () => {
+            expect(scriptBuildOutputDir('theia start --plugins=local-dir:../../plugins')).to.equal(undefined);
+            expect(scriptBuildOutputDir('npm run build && node server.js')).to.equal(undefined);
+            expect(scriptBuildOutputDir('yarn build && serve')).to.equal(undefined);
+            expect(scriptBuildOutputDir('build')).to.equal(undefined);
+        });
+    });
+
+    describe('parseQaapPreviewBuildPolicy', () => {
+        it('accepts only the explicit "auto" opt-in', () => {
+            expect(parseQaapPreviewBuildPolicy({ build: 'auto' })).to.equal('auto');
+            expect(parseQaapPreviewBuildPolicy({ build: true })).to.equal('manual');
+            expect(parseQaapPreviewBuildPolicy({})).to.equal('manual');
+            expect(parseQaapPreviewBuildPolicy(undefined)).to.equal('manual');
+        });
+    });
+
+    describe('isQaapInstalledBinary', () => {
+        it('treats dependency and workspace bins as install output, system tools as not', () => {
+            expect(isQaapInstalledBinary('theia', { dependencyNames: ['@theia/cli'] })).to.equal(true);
+            expect(isQaapInstalledBinary('vite', { dependencyNames: ['vite'] })).to.equal(true);
+            expect(isQaapInstalledBinary('fixture-serve', { dependencyNames: [], workspaceBins: new Set(['fixture-serve']) })).to.equal(true);
+            expect(isQaapInstalledBinary('docker', { dependencyNames: ['vite'] })).to.equal(false);
+        });
+    });
+
+    describe('qaapTenantRepositoryCeiling', () => {
+        it('bounds discovery to the tenant repository area', () => {
+            expect(qaapTenantRepositoryCeiling('/workspace/repos/users/alice/qaap/examples/browser')).to.equal('/workspace/repos/users/alice');
+            expect(qaapTenantRepositoryCeiling('/Users/jc/qaap')).to.equal(undefined);
         });
     });
 
@@ -147,7 +213,7 @@ describe('qaap-workspace-root', () => {
             })).to.equal('npm run build && npm run start');
             expect(buildQaapWorkspaceScriptCommand({
                 packageManager: 'pnpm', packageName: "o'web", script: 'start', buildScript: 'build',
-            })).to.equal("pnpm --filter 'o'\\''web' build && pnpm --filter 'o'\\''web' start");
+            })).to.equal("pnpm --filter 'o'\\''web...' build && pnpm --filter 'o'\\''web' start");
         });
     });
 });

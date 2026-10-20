@@ -183,6 +183,31 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(reserved).to.deep.equal([5173]);
         });
 
+        it('fails fast as build-required without spawning when the build output is certainly missing', async () => {
+            const { ctx, attachCalls, reserved } = makeCtx(true);
+            const phases: string[] = [];
+            (ctx as unknown as { setPhase: (phase: string) => void }).setPhase = phase => { phases.push(phase); };
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => false };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, PLAN, descriptor);
+            expect(phases).to.deep.equal(['run-failed']);
+            expect(ctx._error).to.contain('"build": "auto"');
+            expect(attachCalls).to.deep.equal([]);
+            expect(reserved).to.deep.equal([]);
+        });
+
+        it('starts normally once the user built the missing output by hand', async () => {
+            const { ctx, attachCalls } = makeCtx(true);
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => true };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, PLAN, descriptor);
+            expect(attachCalls).to.deep.equal([[5173]]);
+        });
+
         it('does not adopt the old server of a restart while its managed terminal is still alive', async () => {
             const { ctx, attachCalls, reserved } = makeCtx(true, { isDisposed: false });
             await streaming.startDevServerExtracted(ctx, PLAN, DESCRIPTOR);
@@ -287,6 +312,40 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(attachCalls()).to.equal(1);
             expect(ctx._error).to.contain('exited with code 0 without listening on port 3001');
             expect(ctx._error).to.contain('SQLite errcode 14 (non-fatal)');
+        });
+
+        it('never auto-retries a failed opted-in build chained before the server', async () => {
+            const { ctx, attachCalls } = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build' },
+                devOutputTail: 'src/index.ts(3,7): error TS2322: Type \'string\' is not assignable to type \'number\'.\n'
+                    + 'npm error Lifecycle script `build` failed with error:\nnpm error code 2\n',
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 2.', PLAN, 7);
+
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            expect(attachCalls()).to.equal(1);
+            expect(ctx._error).to.contain('runs `build` first');
+            expect(ctx._error).to.contain('does not retry builds');
+            expect(ctx._error).to.contain('npm error code 2');
+        });
+
+        it('reports an out-of-memory opted-in build once, as a build failure, without retrying', async () => {
+            const { ctx } = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build' },
+                devOutputTail: 'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n',
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 134.', PLAN, 7);
+
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            expect(ctx._error).to.contain('`build` step that runs before the preview ran out of memory');
         });
 
         it('handles a later failure of the same run once the first one settled', async () => {

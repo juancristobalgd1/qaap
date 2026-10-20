@@ -8,6 +8,7 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import {
     QaapProjectDescriptor,
     QaapProjectKind,
+    resolveQaapPreviewBuildTarget,
 } from './qaap-project-bootstrap-types';
 import {
     probeQaapDevPreviewPort,
@@ -20,6 +21,7 @@ import {
 import {
     describeDevProcessExit,
     extractTerminalFailureLine,
+    QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
     terminalOutputNeedsInstall,
 } from './qaap-project-bootstrap-dev-errors';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
@@ -129,6 +131,18 @@ export async function runDevServerExtracted(ctx: QaapProjectBootstrapServiceCont
 
 export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceContext, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
         descriptor: QaapProjectDescriptor,): Promise<void> {
+        // The start script runs build output that does not exist and the project did not opt in to
+        // building first: fail now with how to build, instead of a server that cannot run (or an
+        // implicit build that can exhaust the workspace memory).
+        // The folder is re-checked so a build the user ran by hand since detection is honoured.
+        const buildTarget = resolveQaapPreviewBuildTarget(descriptor, ctx._selectedApp);
+        if (buildTarget?.buildRequired
+            && !(buildTarget.buildOutputUri && await ctx.detector.pathExists(buildTarget.buildOutputUri))) {
+            ctx._needsInstall = false;
+            ctx._error = QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE;
+            ctx.setPhase('run-failed');
+            return;
+        }
         ctx.beginDevRun();
         ctx.clearForwardedPorts();
         ctx._portConflictDetected = false;

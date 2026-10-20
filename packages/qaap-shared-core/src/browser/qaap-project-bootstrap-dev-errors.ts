@@ -62,6 +62,7 @@ const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 export type QaapBootstrapFailureKind =
     | 'out-of-memory'
     | 'build-required'
+    | 'build-failed'
     | 'dependencies'
     | 'port-conflict'
     | 'next-lock'
@@ -75,6 +76,39 @@ export type QaapBootstrapFailureKind =
 export interface QaapBootstrapFailureDiagnosis {
     readonly kind: QaapBootstrapFailureKind;
     readonly message: string;
+}
+
+/**
+ * Preview never builds a project on its own (a monorepo build can take tens of minutes and exhaust
+ * the workspace memory): this tells the user how to build, or how to opt in explicitly.
+ */
+export const QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE = 'The project has not been built yet: its start script needs compiled output that does not exist. '
+    + 'Run the build yourself (for example npm run build from the workspace root), or opt in to building before preview '
+    + 'with {"build": "auto"} in .qaap/preview.json, then start the preview again.';
+
+/**
+ * A preview whose command chains an opted-in build (`npm run build && npm run start`) failed.
+ * Every retry would rerun the whole build, so the failure is final and says so: an out-of-memory
+ * build is reported as such, any other exit quotes the useful line. Diagnoses that are not about the
+ * process itself (dependencies, environment, …) keep their own message.
+ */
+export function diagnoseBuildFirstPreviewFailure(diagnosis: QaapBootstrapFailureDiagnosis, buildScript: string): QaapBootstrapFailureDiagnosis {
+    const noRetry = 'Qaap does not retry builds automatically.';
+    if (diagnosis.kind === 'out-of-memory') {
+        return {
+            kind: 'out-of-memory',
+            message: `The \`${buildScript}\` step that runs before the preview ran out of memory and was stopped. ${noRetry} `
+                + 'Build with more memory or a narrower build in a terminal, or remove "build": "auto" from .qaap/preview.json, then start the preview again.',
+        };
+    }
+    if (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown') {
+        return {
+            kind: 'build-failed',
+            message: `The preview runs \`${buildScript}\` first (opted in via .qaap/preview.json) and it failed: ${diagnosis.message} `
+                + `${noRetry} Fix the error, then start the preview again.`,
+        };
+    }
+    return diagnosis;
 }
 
 export function terminalOutputNeedsInstall(output: string): boolean {
@@ -161,8 +195,7 @@ export function diagnoseBootstrapFailure(output: string, fallback: string): Qaap
     if (terminalOutputNeedsBuild(output)) {
         return {
             kind: 'build-required',
-            message: 'The project has not been built yet: its start script needs compiled output that does not exist. '
-                + 'Run the repository build from the workspace root (for example npm run build), then retry the preview.',
+            message: QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
         };
     }
     const missingBinary = terminalOutputMissingBinary(output);

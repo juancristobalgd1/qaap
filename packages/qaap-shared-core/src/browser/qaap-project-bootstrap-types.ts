@@ -66,8 +66,32 @@ export interface QaapMonorepoAppCandidate {
      * of a package-manager workspace, whose bins are hoisted to the workspace root.
      */
     readonly devScriptBinary?: string;
-    /** Script run before {@link devCommand} because the member's build output is missing. */
+    /**
+     * Script chained before the preview script in {@link devCommand} (`npm run build && npm run
+     * start`). Only set when the project opted in with `"build": "auto"` in `.qaap/preview.json`.
+     */
     readonly buildScript?: string;
+    /** The preview script runs build output that does not exist and no build is chained (fail fast). */
+    readonly buildRequired?: boolean;
+    /** The missing output folder behind {@link buildRequired}; a manual build creates it. */
+    readonly buildOutputUri?: URI;
+}
+
+/** Build state shared by monorepo apps and a workspace member opened directly. */
+export type QaapPreviewBuildTarget = Pick<QaapMonorepoAppCandidate, 'buildScript' | 'buildRequired' | 'buildOutputUri'>;
+
+/**
+ * The package whose dev command Preview runs: the selected app, the only app, or the project
+ * itself (same choice as the dev plan).
+ */
+export function resolveQaapPreviewBuildTarget(
+    descriptor: QaapProjectDescriptor | undefined,
+    selectedApp: QaapMonorepoAppCandidate | undefined,
+): QaapPreviewBuildTarget | undefined {
+    if (!descriptor) {
+        return undefined;
+    }
+    return selectedApp ?? (descriptor.apps?.length === 1 ? descriptor.apps[0] : undefined) ?? descriptor;
 }
 
 /** Default HTTP port for `@theia/*` example apps (`theia start`). */
@@ -126,6 +150,14 @@ export interface QaapProjectDescriptor {
      * root has no `package.json`, the relative path from the workspace root to that app.
      */
     readonly scaffoldRelativePath?: string;
+    /** {@link QaapMonorepoAppCandidate.devScriptBinary} for a workspace member opened directly. */
+    readonly devScriptBinary?: string;
+    /** {@link QaapMonorepoAppCandidate.buildScript} for a workspace member opened directly. */
+    readonly buildScript?: string;
+    /** {@link QaapMonorepoAppCandidate.buildRequired} for a workspace member opened directly. */
+    readonly buildRequired?: boolean;
+    /** {@link QaapMonorepoAppCandidate.buildOutputUri} for a workspace member opened directly. */
+    readonly buildOutputUri?: URI;
 }
 
 /** True when a managed preview stop closed the dev terminal on purpose. */

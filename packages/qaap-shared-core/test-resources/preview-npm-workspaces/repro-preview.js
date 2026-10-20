@@ -11,6 +11,8 @@
 //   [NODE_PATH=node_modules] node packages/qaap-shared-core/test-resources/preview-npm-workspaces/repro-preview.js <scenario> [libDir] [port]
 // scenario: `interrupted` (root node_modules/.bin without the app's bin — the production state)
 //           or `fresh` (no node_modules). libDir defaults to packages/qaap-shared-core/lib.
+// QAAP_REPRO_BUILD_AUTO=1 adds `.qaap/preview.json` with `"build": "auto"` (the explicit opt-in);
+// without it the app's missing `lib/` is reported as build-required and nothing is started.
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -25,10 +27,17 @@ const repoDir = path.join(__dirname, '../../../..');
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), `qaap-preview-${scenario}-`));
 fs.cpSync(path.join(__dirname, 'fixture'), workspace, { recursive: true });
 fs.mkdirSync(path.join(workspace, '.git'));
+if (process.env.QAAP_REPRO_BUILD_AUTO === '1') {
+    fs.mkdirSync(path.join(workspace, '.qaap'), { recursive: true });
+    fs.writeFileSync(path.join(workspace, '.qaap/preview.json'), JSON.stringify({ build: 'auto' }));
+}
 if (scenario === 'interrupted') {
     fs.mkdirSync(path.join(workspace, 'node_modules/.bin'), { recursive: true });
 }
 const req = m => require(require.resolve(m, { paths: [repoDir] }));
+// The detector's DI graph (WorkspaceService) imports stylesheets, as in the mocha setup.
+req('ignore-styles');
+req('reflect-metadata');
 const { enableJSDOM } = req('@theia/core/lib/browser/test/jsdom');
 const disable = enableJSDOM();
 if (!globalThis.DragEvent) { globalThis.DragEvent = class DragEvent { }; }
@@ -86,7 +95,7 @@ async function probe() {
     console.log('[detect]', JSON.stringify({
         flavor: descriptor.monorepoFlavor, nodeModulesPresent: descriptor.nodeModulesPresent,
         workspaceRoot: descriptor.workspaceRootUri ? (path.relative(workspace, descriptor.workspaceRootUri.path.fsPath()) || '.') : undefined,
-        app: app && { path: app.relativePath, devCommand: app.devCommand, bin: app.devScriptBinary, build: app.buildScript },
+        app: app && { path: app.relativePath, devCommand: app.devCommand, bin: app.devScriptBinary, build: app.buildScript, buildRequired: app.buildRequired },
     }));
     // Same arguments as resolveInstallPlanExtracted / resolveDevPlanExtracted in the bootstrap service.
     const install = plan.resolveBootstrapInstallTarget(
@@ -100,6 +109,12 @@ async function probe() {
         console.log(`[install] exit ${code}`);
     } else {
         console.log('\n[install] skipped: detector reports dependencies present');
+    }
+    // Same guard as startDevServerExtracted: no implicit build, fail fast with how to build.
+    if (app.buildRequired) {
+        console.log('\n[dev] not started: build output missing and no "build": "auto" opt-in');
+        console.log('RESULT: BUILD REQUIRED');
+        process.exit(3);
     }
     const child = run('dev', dev.command, new URI(dev.cwdKey), { PORT: String(port) });
     const exited = waitExit(child);

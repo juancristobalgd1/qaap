@@ -17,6 +17,7 @@ import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget
 import { QaapPreviewWidgetKey, QaapProjectPreviewOpener } from './qaap-project-preview-opener';
 import {
     QaapProjectKind,
+    resolveQaapPreviewBuildTarget,
 } from './qaap-project-bootstrap-types';
 import {
     probeQaapDevPreviewPort,
@@ -29,6 +30,7 @@ import {
 import {
     describeDevProcessExit,
     diagnoseBootstrapFailure,
+    diagnoseBuildFirstPreviewFailure,
     extractDevOutputProbePorts,
     DEV_OUT_OF_MEMORY_NOTICE,
     extractTerminalFailureLine,
@@ -146,11 +148,16 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             }
         }
         const descriptor = ctx._descriptor;
-        const diagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
+        // An opted-in build chained before the server (`npm run build && npm run start`): every retry
+        // reruns the whole build (an OOM-killed build is killed again), so its failure is final.
+        const buildFirst = resolveQaapPreviewBuildTarget(descriptor, ctx._selectedApp)?.buildScript;
+        const baseDiagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
+        const diagnosis = buildFirst ? diagnoseBuildFirstPreviewFailure(baseDiagnosis, buildFirst) : baseDiagnosis;
         // A clean exit with nothing listening is the same exit next time: report it, don't retry.
         const exitedWithoutListening = options?.exitedWithoutListening === true
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
         const canAutoRetry = !portConflict
+            && !buildFirst
             && !exitedWithoutListening
             && !terminalOutputNeedsInstall(ctx.devOutputTail || message)
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown')
@@ -208,7 +215,11 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
                 ? `Port :${conflictPort} is already in use. Qaap exhausted ${DEV_PORT_RECOVERY_MAX_ATTEMPTS} alternate ports; stop stale dev servers, then retry.`
                 : exitedWithoutListening
                     ? message
-                    : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
+                    : buildFirst
+                        ? diagnoseBuildFirstPreviewFailure(
+                            diagnoseBootstrapFailure(failureOutput, ctx.toUserFacingDevError(message)), buildFirst,
+                        ).message
+                        : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
         ctx._error = ctx.enrichDevRunError(diagnosedError);
         ctx.releaseActivePreview();
         ctx.setPhase('run-failed');

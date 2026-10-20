@@ -497,7 +497,7 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         }));
     }
 
-    it('installs at the workspace root and builds before `theia start`', async () => {
+    it('installs at the workspace root and never builds `theia start` without an opt-in', async () => {
         const mock = new MockFileService();
         theiaMonorepo(mock);
         const detector = new QaapProjectBootstrapDetector();
@@ -508,9 +508,52 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(descriptor?.workspaceRootUri?.path.toString()).to.equal('/ws');
         const app = descriptor?.apps.find(candidate => candidate.relativePath === 'examples/browser');
         expect(app?.devScriptBinary).to.equal('theia');
+        expect(app?.buildScript).to.equal(undefined);
+        expect(app?.devCommand).to.equal('npm run start');
+        // `theia start` names no output folder: it is not a certain miss, so it is not blocked either.
+        expect(app?.buildRequired).to.equal(undefined);
+        expect(descriptor?.nodeModulesPresent).to.equal(false);
+    });
+
+    it('builds before `theia start` only when .qaap/preview.json opts in with "build": "auto"', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        mock.addFile('/ws/.qaap/preview.json', JSON.stringify({ build: 'auto' }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        const app = descriptor?.apps.find(candidate => candidate.relativePath === 'examples/browser');
         expect(app?.buildScript).to.equal('build');
         expect(app?.devCommand).to.equal('npm run build && npm run start');
-        expect(descriptor?.nodeModulesPresent).to.equal(false);
+
+        // The opt-in never rebuilds a member whose output already exists.
+        mock.addDir('/ws/examples/browser/lib');
+        const built = await detector.detect(URI.fromFilePath('/ws'));
+        const builtApp = built?.apps.find(candidate => candidate.relativePath === 'examples/browser');
+        expect(builtApp?.buildScript).to.equal(undefined);
+        expect(builtApp?.devCommand).to.equal('npm run start');
+    });
+
+    it('marks a member whose start script runs a missing output folder as build-required (no opt-in)', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true, workspaces: ['apps/*'] }));
+        mock.addFile('/ws/package-lock.json', '{}');
+        mock.addDir('/ws/apps');
+        mock.addFile('/ws/apps/api/package.json', JSON.stringify({
+            name: 'api', scripts: { build: 'tsc', start: 'node dist/server.js' },
+        }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        const app = descriptor?.apps.find(candidate => candidate.relativePath === 'apps/api');
+        expect(app?.buildRequired).to.equal(true);
+        expect(app?.buildOutputUri?.path.toString()).to.equal('/ws/apps/api/dist');
+        expect(app?.buildScript).to.equal(undefined);
+        expect(app?.devCommand).to.equal('npm run start');
     });
 
     it('does not trust a partial root node_modules that lacks the script bin', async () => {
