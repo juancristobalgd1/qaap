@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { QAAP_USER_REPOS_SEGMENT } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { parseQaapWorkspaceRepoRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { qaapProjectRemovalIdentity } from './qaap-project-removal-identity';
 
 /** The fields of a Work Hub project card that name the repository clone it stands for. */
@@ -47,23 +47,10 @@ export function qaapCloneRootIdentity(cwd: string | undefined): string | undefin
     return result;
 }
 
-/**
- * `github:owner/repo` when `cwd` is exactly `<owner>/<repo>` after the FIRST `repos/` segment, or
- * `users/<login>/<owner>/<repo>` after it. Anchoring on the first segment keeps a repo or owner that
- * is itself named `repos` resolvable, and `repos/users/<repo>` is the legacy flat layout with an
- * owner literally named `users`.
- */
+/** `github:owner/repo` of the clone whose root is exactly `cwd`, by the shared {@link parseQaapWorkspaceRepoRoot}. */
 function cloneRootIdentity(cwd: string): string | undefined {
-    const segments = cwd.replace(/^file:\/\//i, '').replace(/\\/g, '/').split('/').filter(Boolean);
-    const reposIndex = segments.indexOf('repos');
-    if (reposIndex < 0) {
-        return undefined;
-    }
-    const afterRepos = segments.slice(reposIndex + 1);
-    const pair = afterRepos.length === 2
-        ? afterRepos
-        : afterRepos[0] === QAAP_USER_REPOS_SEGMENT && afterRepos.length === 4 ? afterRepos.slice(2) : undefined;
-    return pair ? `github:${pair[0]}/${pair[1]}`.toLowerCase() : undefined;
+    const clone = parseQaapWorkspaceRepoRoot(cwd.replace(/^file:\/\//i, ''));
+    return clone ? `github:${clone.owner}/${clone.repo}`.toLowerCase() : undefined;
 }
 
 /**

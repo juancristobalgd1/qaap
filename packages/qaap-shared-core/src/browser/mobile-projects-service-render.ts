@@ -31,7 +31,7 @@ import { setLocalProjectRemoved } from './mobile-projects-session-cache';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QaapWorkspaceService } from './qaap-workspace-service';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { parseGithubFullNameFromWorkspacePath, QAAP_USER_REPOS_SEGMENT, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { parseQaapWorkspaceRepoRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     mobileProjectsUserStorageKey,
 } from './mobile-projects-user-storage';
@@ -309,14 +309,10 @@ function ownedGithubCloneUri(project: MobileProjectEntry): URI | undefined {
         if (!login || !project.github || project.uri?.scheme !== 'file') {
             return undefined;
         }
-        const clonePath = project.uri.path.toString();
-        const segments = clonePath.split('/').filter(Boolean);
-        const users = segments.lastIndexOf('repos') + 1;
-        const owned = users > 0
-            && segments.length === users + 4
-            && segments[users] === QAAP_USER_REPOS_SEGMENT
-            && segments[users + 1] === safeUserIdSegment(login)
-            && parseGithubFullNameFromWorkspacePath(clonePath) === `${project.github.owner}/${project.github.name}`.toLowerCase();
+        const clone = parseQaapWorkspaceRepoRoot(project.uri.path.toString());
+        const owned = !!clone
+            && clone.login === safeUserIdSegment(login)
+            && `${clone.owner}/${clone.repo}`.toLowerCase() === `${project.github.owner}/${project.github.name}`.toLowerCase();
         return owned ? project.uri : undefined;
 }
 

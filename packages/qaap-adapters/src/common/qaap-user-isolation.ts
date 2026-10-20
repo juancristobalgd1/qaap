@@ -461,31 +461,112 @@ export function isUserWorkspaceContainerPath(
 }
 
 /**
- * Parse `owner/repo` from a workspace URI path.
+ * A repository clone named by a workspace path. Case is preserved (clone folders keep GitHub's casing);
+ * `login` is set for the per-user layout `repos/users/{login}/{owner}/{repo}`, unset for the legacy
+ * flat `repos/{owner}/{repo}`.
+ */
+export interface QaapWorkspaceRepoClone {
+    readonly owner: string;
+    readonly repo: string;
+    readonly login?: string;
+}
+
+function workspacePathSegments(workspacePath: string): string[] {
+    // Separator-only normalize — do not host-resolve (Windows drive letters must stay parseable on any OS).
+    return workspacePath.trim().replace(/\\/g, '/').split('/').filter(Boolean);
+}
+
+/** The clone whose root is exactly `segments`, anchored on the `repos` segment at `reposIndex`. */
+function cloneRootAt(segments: readonly string[], reposIndex: number): QaapWorkspaceRepoClone | undefined {
+    const tail = segments.slice(reposIndex + 1);
+    if (tail.length === 2) {
+        // `repos/users/{repo}` lands here too: the legacy flat layout with an owner literally named `users`.
+        return { owner: tail[0], repo: tail[1] };
+    }
+    if (tail.length === 4 && tail[0] === QAAP_USER_REPOS_SEGMENT) {
+        return { owner: tail[2], repo: tail[3], login: tail[1] };
+    }
+    return undefined;
+}
+
+/** A flat `repos/users/{x}` reading: an owner literally named `users`, or the per-user container `repos/users/{login}`. */
+function isFlatUsersOwner(clone: QaapWorkspaceRepoClone): boolean {
+    return !clone.login && clone.owner === QAAP_USER_REPOS_SEGMENT;
+}
+
+/** First `repos` segment, first to last, whose tail is exactly a clone root of the wanted layout. */
+function exactCloneRoot(segments: readonly string[], perUser: boolean): QaapWorkspaceRepoClone | undefined {
+    for (let index = 0; index < segments.length; index++) {
+        const clone = segments[index] === 'repos' ? cloneRootAt(segments, index) : undefined;
+        if (clone && !!clone.login === perUser) {
+            return clone;
+        }
+    }
+    return undefined;
+}
+
+/** The per-user clone `repos/users/{login}/{owner}/{repo}` the path is strictly below, shortest leading part first. */
+function perUserCloneAbove(segments: readonly string[]): QaapWorkspaceRepoClone | undefined {
+    for (let end = 5; end < segments.length; end++) {
+        const clone = segments[end - 5] === 'repos' ? cloneRootAt(segments.slice(0, end), end - 5) : undefined;
+        if (clone?.login) {
+            return clone;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The clone whose ROOT is `workspacePath`: `.../repos/{owner}/{repo}` or `.../repos/users/{login}/{owner}/{repo}`,
+ * and nothing below it. Every `repos` segment is tried, first to last, and the first whose tail is exactly one of
+ * those layouts wins — so a repos root nested in another `repos` folder (`QAAP_REPOS_ROOT` is configurable) and an
+ * owner or repository itself named `repos` both resolve; `repos/users/{repo}` is the legacy flat layout with an owner
+ * named `users`. The per-user layout is preferred, and a path inside a per-user clone is never read as a flat clone
+ * under a nested root (`repos/users/me/repos/web/src` is the folder `src` of `repos/web`, not the clone `web/src`).
+ *
+ * This and {@link parseQaapWorkspaceRepoPath} are the single parser of workspace repo paths: card identities, clone
+ * roots and removal tracking must agree on it.
+ */
+export function parseQaapWorkspaceRepoRoot(workspacePath: string): QaapWorkspaceRepoClone | undefined {
+    const segments = workspacePathSegments(workspacePath);
+    return exactCloneRoot(segments, true)
+        ?? (perUserCloneAbove(segments) ? undefined : exactCloneRoot(segments, false));
+}
+
+/**
+ * The clone that CONTAINS `workspacePath` (its root or any folder below it). A clone root resolves as
+ * {@link parseQaapWorkspaceRepoRoot} does. Below a root the repos root is unknown: the shortest per-user clone the
+ * path is below wins (`repos/users/{login}/{owner}/{repo}/repos/a/b` is inside `owner/repo`), then a flat clone,
+ * anchored on the last `repos` segment as before. Unlike a clone root, `repos/users/{x}` is never read here as an
+ * owner named `users`: it is also the per-user container `repos/users/{login}` (and `repos/users/{login}/{repo}/…` a
+ * legacy per-user path without the owner), so it stays ambiguous rather than inventing `users/{login}`.
+ */
+export function parseQaapWorkspaceRepoPath(workspacePath: string): QaapWorkspaceRepoClone | undefined {
+    const segments = workspacePathSegments(workspacePath);
+    const perUser = exactCloneRoot(segments, true) ?? perUserCloneAbove(segments);
+    if (perUser) {
+        return perUser;
+    }
+    const flatRoot = exactCloneRoot(segments, false);
+    if (flatRoot && !isFlatUsersOwner(flatRoot)) {
+        return flatRoot;
+    }
+    for (let index = segments.length - 3; index >= 0; index--) {
+        const clone = segments[index] === 'repos' ? cloneRootAt(segments.slice(0, index + 3), index) : undefined;
+        if (clone && !isFlatUsersOwner(clone)) {
+            return clone;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Parse `owner/repo` (lower-cased) of the clone containing a workspace URI path; see {@link parseQaapWorkspaceRepoPath}.
  * Supports `.../repos/users/{login}/{owner}/{repo}` and legacy `.../repos/{owner}/{repo}`.
  */
 export function parseGithubFullNameFromWorkspacePath(workspacePath: string): string | undefined {
-    // Separator-only normalize — do not host-resolve (Windows drive letters must stay parseable on any OS).
-    const normalized = workspacePath.trim().replace(/\\/g, '/').replace(/\/+/g, '/');
-    const segments = normalized.split('/').filter(Boolean);
-    const reposIndex = segments.lastIndexOf('repos');
-    if (reposIndex < 0) {
-        return undefined;
-    }
-    const afterRepos = segments.slice(reposIndex + 1);
-    if (afterRepos[0] === QAAP_USER_REPOS_SEGMENT) {
-        if (afterRepos.length >= 4) {
-            return `${afterRepos[2]}/${afterRepos[3]}`.toLowerCase();
-        }
-        // Legacy per-user paths (`users/{login}/{repo}`) do not encode the
-        // repository owner. Treat them as ambiguous instead of falling through
-        // and incorrectly identifying every repo as `users/{login}`.
-        return undefined;
-    }
-    if (afterRepos.length >= 2) {
-        return `${afterRepos[0]}/${afterRepos[1]}`.toLowerCase();
-    }
-    return undefined;
+    const clone = parseQaapWorkspaceRepoPath(workspacePath);
+    return clone ? `${clone.owner}/${clone.repo}`.toLowerCase() : undefined;
 }
 
 /** Browser localStorage key suffix so caches never cross users on the same origin. */

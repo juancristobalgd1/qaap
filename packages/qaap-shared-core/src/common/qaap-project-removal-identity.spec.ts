@@ -36,6 +36,14 @@ describe('qaapProjectRemovalIdentity', () => {
         expect(qaapProjectRemovalIdentity('/tmp/qaap-worktrees/juancristobalgd1')).to.equal(undefined);
     });
 
+    it('resolves a repository named repos, below its root too, and a nested repos root', () => {
+        for (const key of ['ws:file:///workspace/repos/users/me/foo/repos', '/workspace/repos/users/me/foo/repos/src', 'github:Foo/repos']) {
+            expect(qaapProjectRemovalIdentity(key), key).to.equal('github:foo/repos');
+        }
+        expect(qaapProjectRemovalIdentity('ws:file:///home/u/repos/qaap-data/repos/users/me/acme/web')).to.equal('github:acme/web');
+        expect(qaapProjectRemovalIdentity('ws:file:///tmp/scratch/web')).to.equal(undefined);
+    });
+
     it('does not resolve paths outside the user repos root', () => {
         expect(qaapProjectRemovalIdentity('recent:file:///D:/other/acme/shop', 'C:\\repos\\users\\alice')).to.equal(undefined);
     });
