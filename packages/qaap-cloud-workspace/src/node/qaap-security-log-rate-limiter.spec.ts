@@ -34,7 +34,7 @@ describe('QaapSecurityLogRateLimiter', () => {
 
     it('uses X-Forwarded-For only behind a trusted proxy', () => {
         const limiter = new QaapSecurityLogRateLimiter();
-        expect(limiter.admit('e', request('127.0.0.1', '203.0.113.7, 10.0.0.1'), 0)).to.deep.equal({ client: '203.0.113.7' });
+        expect(limiter.admit('e', request('127.0.0.1', '203.0.113.7, 172.17.0.1'), 0)).to.deep.equal({ client: '203.0.113.7' });
         expect(limiter.admit('e', request('198.51.100.2', 'spoofed'), 0)).to.deep.equal({ client: '198.51.100.2' });
     });
 
@@ -46,11 +46,18 @@ describe('QaapSecurityLogRateLimiter', () => {
         expect(limiter.admit('e', request('172.18.0.5', '203.0.113.8'), 0)).to.not.equal(undefined);
     });
 
+    it('does not trust private-range peers outside the Docker bridge pool by default', () => {
+        const limiter = new QaapSecurityLogRateLimiter();
+        for (const peer of ['192.168.1.20', '10.8.0.4', 'fd00::5']) {
+            expect(limiter.admit('e', request(peer, '203.0.113.7'), 0)).to.deep.equal({ client: peer });
+        }
+    });
+
     it('takes the right-most untrusted hop so a client cannot spoof its key', () => {
         const limiter = new QaapSecurityLogRateLimiter();
         // The client sent "X-Forwarded-For: 1.2.3.4"; Caddy appended the real address.
         expect(limiter.admit('e', request('172.18.0.5', '1.2.3.4, 203.0.113.7'), 0)).to.deep.equal({ client: '203.0.113.7' });
-        expect(limiter.admit('e', request('172.18.0.5', '1.2.3.4, 203.0.113.9, 10.0.0.3'), 0)).to.deep.equal({ client: '203.0.113.9' });
+        expect(limiter.admit('e', request('172.18.0.5', '1.2.3.4, 203.0.113.9, 172.17.0.3'), 0)).to.deep.equal({ client: '203.0.113.9' });
         // An untrusted public peer cannot choose its key with a spoofed header.
         expect(limiter.admit('e', request('203.0.113.50', '172.18.0.9, 1.2.3.4'), 0)).to.deep.equal({ client: '203.0.113.50' });
     });

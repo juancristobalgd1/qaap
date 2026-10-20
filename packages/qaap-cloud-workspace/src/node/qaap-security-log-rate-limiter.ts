@@ -17,11 +17,13 @@ const MAX_TRACKED_KEYS = 10_000;
 
 /**
  * Peers whose `X-Forwarded-For` is believed when no `QAAP_TRUSTED_PROXY_CIDRS` is set: loopback
- * (Caddy on the host), the RFC 1918 ranges (Caddy over the Docker bridge, e.g. 172.18.0.0/16) and
- * IPv6 unique-local addresses.
+ * (Caddy on the host) and Docker's default bridge pool 172.16.0.0/12 (Caddy over the compose
+ * network, e.g. 172.18.0.0/16). 10/8, 192.168/16 and fc00::/7 are deliberately excluded: LAN/VPN
+ * clients or neighbour containers there could otherwise spoof X-Forwarded-For to scatter or
+ * misattribute sampled log lines. Operators on a different bridge range set the env var.
  */
 export const QAAP_DEFAULT_TRUSTED_PROXY_CIDRS: readonly string[] = [
-    '127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7',
+    '127.0.0.0/8', '::1/128', '172.16.0.0/12',
 ];
 
 /**
