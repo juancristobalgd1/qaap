@@ -15,6 +15,7 @@ import {
     QaapAgentTaskRunner,
     resolveAgentStopGraceTimeoutMs,
 } from './qaap-agent-task-runner';
+import { reapAgentProcessGroupOnExitExtracted } from './qaap-agent-task-runner-timeline2';
 
 interface KillOptions {
     readonly escalateAfterMs?: number;
@@ -120,6 +121,29 @@ describe('QaapAgentTaskRunner cancellation', () => {
         killOptions?.onGracePeriodElapsed?.();
         expect(stoppingTaskIds.has(task.id)).to.equal(false);
         expect(drains).to.equal(1);
+    });
+
+    it('leaves the process group alone on leader exit while a stop grace window is open', () => {
+        const child = { pid: 4321 } as ChildProcess;
+        const reaped: ChildProcess[] = [];
+        const reapContext = (state: QaapAgentTask['state'], stopping: boolean): Parameters<typeof reapAgentProcessGroupOnExitExtracted>[0] => {
+            const task: QaapAgentTask = { ...runningTask('task-1'), state };
+            return {
+                tasks: new Map([[task.id, task]]),
+                stoppingTaskIds: new Set(stopping ? [task.id] : []),
+                reapAgentProcessGroupAfterExit: (exited: ChildProcess) => { reaped.push(exited); },
+            };
+        };
+
+        // A turn-watchdog pause ends the task `interrupted` but still owns the grace window.
+        reapAgentProcessGroupOnExitExtracted(reapContext('interrupted', true), 'task-1', child);
+        reapAgentProcessGroupOnExitExtracted(reapContext('cancelled', true), 'task-1', child);
+        expect(reaped).to.deep.equal([]);
+
+        // A natural exit (or an interrupted task whose window already elapsed) is reaped.
+        reapAgentProcessGroupOnExitExtracted(reapContext('running', false), 'task-1', child);
+        reapAgentProcessGroupOnExitExtracted(reapContext('interrupted', false), 'task-1', child);
+        expect(reaped).to.deep.equal([child, child]);
     });
 
     it('counts stopping process groups against global and per-owner limits', () => {

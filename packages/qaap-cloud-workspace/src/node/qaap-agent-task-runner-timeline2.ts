@@ -308,6 +308,22 @@ export function clearQueuedApprovalTimersExtracted(ctx: QaapAgentTaskRunnerConte
         }
 }
 
+/**
+ * Leader-exit reap of the agent's process group. A stop (user cancel, or a turn-watchdog pause that
+ * ends the task `interrupted`) owns the longer `cancelExtracted` grace window so active tools can
+ * finish cleanup; reaping here would SIGKILL the group early and defeat it.
+ */
+export function reapAgentProcessGroupOnExitExtracted(
+    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'stoppingTaskIds' | 'reapAgentProcessGroupAfterExit'>,
+    taskId: string,
+    child: ChildProcess,
+): void {
+    if (ctx.tasks.get(taskId)?.state === 'cancelled' || ctx.stoppingTaskIds.has(taskId)) {
+        return;
+    }
+    ctx.reapAgentProcessGroupAfterExit(child);
+}
+
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
@@ -655,12 +671,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         child.on('error', error => {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);
         });
-        child.once('exit', () => {
-            // User cancellation owns a longer grace window so active tools can finish cleanup.
-            if (ctx.tasks.get(task.id)?.state !== 'cancelled') {
-                ctx.reapAgentProcessGroupAfterExit(child);
-            }
-        });
+        child.once('exit', () => reapAgentProcessGroupOnExitExtracted(ctx, task.id, child));
         child.on('close', code => {
             clearChangeScopeWatch();
             clearIdleTimer();
