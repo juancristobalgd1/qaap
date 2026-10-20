@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { isContainerIsolationEnabled } from './qaap-agent-spawn-identity';
 
 /**
@@ -48,6 +49,27 @@ export function isQaapHostedRuntime(env: NodeJS.ProcessEnv = process.env): boole
     const cloudMode = env.QAAP_CLOUD_MODE?.trim().toLowerCase();
     return env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
 }
+
+/**
+ * {@link isQaapHostedRuntime} or a per-tenant backend. The orchestrator starts tenant backends with
+ * `NODE_ENV=development` and `QAAP_CLOUD_MODE=local` (so they keep single-tenant local behaviour),
+ * which makes `isQaapHostedRuntime` false there. Security gates that must hold on every
+ * multi-tenant surface (authenticated handshake, terminal cwd ownership, dev-only billing switch)
+ * use this instead.
+ */
+export function isQaapHostedOrTenantBackendRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+    return isQaapHostedRuntime(env) || isQaapTenantBackendMode(env);
+}
+
+/**
+ * Bounded json-file logs for every container Qaap creates through the Docker API (tenant workers
+ * and backends, ingress relays, egress proxies, task sandboxes). Mirrors `x-qaap-logging` in
+ * docker-compose.yml: an unrotated container log once filled the VPS disk.
+ */
+export const QAAP_DOCKER_LOG_CONFIG: { readonly Type: 'json-file'; readonly Config: { readonly 'max-size': string; readonly 'max-file': string } } = {
+    Type: 'json-file',
+    Config: { 'max-size': '50m', 'max-file': '5' },
+};
 
 export function resolveDockerHost(env: NodeJS.ProcessEnv = process.env): string {
     return env.DOCKER_HOST?.trim() || (process.platform === 'win32'

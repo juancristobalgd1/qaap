@@ -16,13 +16,14 @@ import {
     resolveQaapWorktreesRoot,
     resolveTenantIsolationRoot,
     QAAP_USER_REPOS_SEGMENT,
-    safeUserIdSegment,
+    tenantSegmentKey,
     resolveQaapTenantUserRoot,
     resolveQaapTenantConfigRoot,
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     assertQaapDockerControlPlane,
+    QAAP_DOCKER_LOG_CONFIG,
     isQaapHostedRuntime,
     resolveQaapDockerNodes,
     type QaapDockerNodeConfig,
@@ -713,7 +714,7 @@ export class QaapDockerOrchestrator {
         if (!tenant) {
             throw new Error('A task sandbox needs a tenant login.');
         }
-        const segment = safeUserIdSegment(ownerLogin).toLowerCase();
+        const segment = tenantSegmentKey(ownerLogin);
         const mounts = this.tenantMountsForRoot(this.tenantRootForLogin(ownerLogin));
         const tenantDataRoot = this.normalizeHostPath(resolveQaapTenantUserRoot(ownerLogin));
         const networkMode = this.getTenantNetworkMode(ownerLogin);
@@ -1028,7 +1029,7 @@ export class QaapDockerOrchestrator {
         const name = this.containerNameForTenant(ownerLogin);
         const mounts = this.tenantMountsForRoot(tenantRootHostPath);
         if (ownerLogin?.trim()) {
-            const expectedSegment = safeUserIdSegment(ownerLogin.trim()).toLowerCase();
+            const expectedSegment = tenantSegmentKey(ownerLogin);
             const actualSegment = path.basename(mounts.reposRoot).toLowerCase();
             if (actualSegment !== expectedSegment) {
                 throw new Error(`Tenant identity ${ownerLogin} does not match the requested tenant root ${tenantRootHostPath}.`);
@@ -1157,6 +1158,7 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-login': (ownerLogin?.trim() || '__anonymous__').toLowerCase(),
                 },
                 HostConfig: {
+                    LogConfig: QAAP_DOCKER_LOG_CONFIG,
                     // Docker's tini as PID 1 reaps orphaned grandchildren (killed dev servers,
                     // detached shells); zombies otherwise count against PidsLimit.
                     Init: true,
@@ -1245,7 +1247,7 @@ export class QaapDockerOrchestrator {
         const name = this.backendContainerNameForTenant(ownerLogin);
         const mounts = this.tenantMountsForRoot(tenantRootHostPath);
         const dockerMounts = this.tenantMountsForDocker(mounts);
-        const expectedSegment = safeUserIdSegment(ownerLogin).toLowerCase();
+        const expectedSegment = tenantSegmentKey(ownerLogin);
         const actualSegment = path.basename(mounts.reposRoot).toLowerCase();
         if (actualSegment !== expectedSegment) {
             throw new Error(`Tenant identity ${ownerLogin} does not match the requested backend root ${tenantRootHostPath}.`);
@@ -1403,6 +1405,7 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-login': ownerLogin.toLowerCase(),
                 },
                 HostConfig: {
+                    LogConfig: QAAP_DOCKER_LOG_CONFIG,
                     // The backend (node) would otherwise be PID 1 and never reap orphaned
                     // grandchildren such as OOM-killed `next-server` processes; each zombie
                     // counts against PidsLimit. Same contract as `init: true` in docker-compose.yml.
@@ -1571,6 +1574,7 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-backend-name': backendName,
                 },
                 HostConfig: {
+                    LogConfig: QAAP_DOCKER_LOG_CONFIG,
                     Init: true,
                     PortBindings: {
                         [`${TENANT_BACKEND_PORT}/tcp`]: [{ HostIp: publishHostIp, HostPort: '' }],
@@ -1924,9 +1928,9 @@ export class QaapDockerOrchestrator {
             };
         };
         const expectedMounts = [
-            { source: this.dockerMountSource(mounts.reposRoot, 'repos'), destination: `${TENANT_BACKEND_REPOS_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
-            { source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'), destination: `${TENANT_BACKEND_WORKTREES_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
-            { source: this.dockerMountSource(mounts.parallelRoot, 'parallel'), destination: `${TENANT_BACKEND_PARALLEL_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
+            { source: this.dockerMountSource(mounts.reposRoot, 'repos'), destination: `${TENANT_BACKEND_REPOS_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
+            { source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'), destination: `${TENANT_BACKEND_WORKTREES_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
+            { source: this.dockerMountSource(mounts.parallelRoot, 'parallel'), destination: `${TENANT_BACKEND_PARALLEL_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
             { source: this.dockerMountSource(tenantDataRoot, 'tenant-config'), destination: TENANT_BACKEND_QAAP_HOME_MOUNT },
             { source: this.dockerMountSource(theiaHome, 'tenant-config'), destination: TENANT_BACKEND_THEIA_HOME_MOUNT },
         ];
@@ -2818,6 +2822,7 @@ export class QaapDockerOrchestrator {
                 'com.qaap.tenant-login': tenant.toLowerCase(),
             },
             HostConfig: {
+                LogConfig: QAAP_DOCKER_LOG_CONFIG,
                 // Attach the outbound network first so Squid keeps its default route there when
                 // the isolated tenant interface is added next.
                 NetworkMode: qaapDockerName(QAAP_TENANT_EGRESS_UPLINK),
