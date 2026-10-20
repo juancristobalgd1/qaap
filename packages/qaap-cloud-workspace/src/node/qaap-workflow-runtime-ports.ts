@@ -414,9 +414,11 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             return;
         }
         this.routedAgentByTask.delete(externalId);
+        // An interrupted run (backend restart, or the runner's no-output timer) says nothing about
+        // the harness's health either way.
         if (state === 'failed') {
             this.agentHealth.noteFailure(agentRef);
-        } else {
+        } else if (state !== 'interrupted') {
             this.agentHealth.noteSuccess(agentRef);
         }
     }

@@ -1057,6 +1057,24 @@ describe('QaapResearchRunner state machine', () => {
             expect(record.notes).to.contain('agent turn failed');
         });
 
+        it('treats a turn the no-output timer interrupted as a turn failure, not a no-op round', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callStartNewRound(goal, 1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, '[qaap] task timed out after 1200s without output.');
+            taskRunner.finishTask(taskRunner.createdTasks[0].id, 'interrupted');
+            await promise;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+            const [record] = store.readLedgerForGoal(goal);
+            expect(record.verdict).to.equal('failed');
+            expect(record.notes).to.contain('stopped producing output');
+        });
+
         it('consecutive agent-turn failures count toward infraFailureLimit and terminate as infra-broken, not budget-exhausted', async () => {
             const store = new FakeResearchStore();
             const taskRunner = new FakeTaskRunner();

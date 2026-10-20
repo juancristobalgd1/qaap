@@ -90,6 +90,34 @@ export function enforceAgentTaskChangeScopeLimitExtracted(
     return true;
 }
 
+/** What the no-output timer did when it fired: see {@link expireIdleAgentTask}. */
+export type QaapIdleAgentTaskExpiry = 'not-running' | 'waiting-for-user' | 'interrupted';
+
+/**
+ * The runner's no-output timer fired. A run waiting on a permission approval is waiting for the
+ * user, not hung, so it is kept. Otherwise the process is stopped and the task ends `interrupted`:
+ * the agent went quiet rather than failing, so it offers Continue (not Retry) and does not move
+ * the turn to a fallback model, whose retry contract only covers `failed` runs. The log line is
+ * what the turn's failure message reads ("Timed out after 20 minutes without output").
+ */
+export function expireIdleAgentTask(
+    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'pendingQaiqControlRequests' | 'killAgentProcessTree' | 'finishTask'>,
+    taskId: string,
+    child: ChildProcess,
+    logStream: Pick<fs.WriteStream, 'write'>,
+): QaapIdleAgentTaskExpiry {
+    if (ctx.tasks.get(taskId)?.state !== 'running') {
+        return 'not-running';
+    }
+    if (ctx.pendingQaiqControlRequests.get(taskId)?.length) {
+        return 'waiting-for-user';
+    }
+    logStream.write(`\n[qaap] task timed out after ${Math.round(IDLE_TASK_TIMEOUT_MS / 1000)}s without output.\n`);
+    ctx.killAgentProcessTree(child);
+    ctx.finishTask(taskId, 'interrupted', undefined);
+    return 'interrupted';
+}
+
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
         options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
@@ -480,18 +508,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         const bumpIdleTimer = (): void => {
             clearIdleTimer();
             idleTimer = setTimeout(() => {
-                if (ctx.tasks.get(task.id)?.state !== 'running') {
-                    return;
-                }
-                // A run paused on a permission approval is waiting for the user,
-                // not hung — keep it alive until someone responds.
-                if (ctx.pendingQaiqControlRequests.get(task.id)?.length) {
+                if (expireIdleAgentTask(ctx, task.id, child, logStream) === 'waiting-for-user') {
                     bumpIdleTimer();
-                    return;
                 }
-                logStream.write(`\n[qaap] task timed out after ${Math.round(IDLE_TASK_TIMEOUT_MS / 1000)}s without output.\n`);
-                ctx.killAgentProcessTree(child);
-                ctx.finishTask(task.id, 'failed', undefined);
             }, IDLE_TASK_TIMEOUT_MS);
         };
         bumpIdleTimer();

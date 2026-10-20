@@ -445,10 +445,14 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
             return;
         }
         const ok = task.state === 'completed';
+        // Only the no-output timer settles a task as `interrupted` here (restart recovery does not notify).
+        const paused = task.state === 'interrupted';
         try {
             await ctx.webPush.notify({
-                title: ok ? 'Task finished' : 'Task failed',
-                body: `${task.title}${ok ? ' completed.' : ` exited with code ${task.exitCode ?? 'unknown'}.`}`,
+                title: ok ? 'Task finished' : paused ? 'Task paused' : 'Task failed',
+                body: ok ? `${task.title} completed.`
+                    : paused ? `${task.title} timed out without output. Continue to pick up where it left off.`
+                        : `${task.title} exited with code ${task.exitCode ?? 'unknown'}.`,
                 tag: `qaap-agent-task-${task.id}`,
                 ...link,
             });
