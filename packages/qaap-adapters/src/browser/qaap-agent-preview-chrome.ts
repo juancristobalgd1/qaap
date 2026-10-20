@@ -410,7 +410,8 @@ export class QaapAgentPreviewChromeController implements Disposable {
         text.textContent = label;
         btn.append(icon, text);
         btn.addEventListener('click', () => {
-            void this.host.navigate(qaapPreviewWebSearchUrl(query));
+            // Search engines never allow framing: open the results in a real tab right away.
+            window.open(qaapPreviewWebSearchUrl(query), '_blank', 'noopener,noreferrer');
             this.toggleHistory(false);
         });
         return btn;
@@ -829,7 +830,14 @@ export function mountEmbeddedAgentPreviewChrome(
                 urlInput.blur();
                 syncUrlInput(sanitizePreviewDisplayUrl(currentUrl));
             };
-            if (!options.resolveTypedUrl || address.kind === 'search') {
+            if (address.kind === 'search') {
+                // Search engines never allow framing: open the results in a real tab right away.
+                openExternalUrl(typed);
+                urlInput.blur();
+                syncUrlInput(sanitizePreviewDisplayUrl(currentUrl));
+                return;
+            }
+            if (!options.resolveTypedUrl) {
                 go(typed);
                 return;
             }
