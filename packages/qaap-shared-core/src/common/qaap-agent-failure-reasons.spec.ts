@@ -211,6 +211,15 @@ describe('agent failure reasons (real logs)', () => {
             expect(localizeAgentFailureShortReason('Bash failed: Error: Request failed with status code 429')).to.equal('A command failed');
         });
 
+        it('the approval-wait pause round-trips through the stored copy as a continuable timeout', () => {
+            const stored = localizeAgentTurnTimeoutMessage('approval_wait', 24 * 60);
+            expect(stored).to.equal('Waited 24 hours for your approval. Continue runs it again from your original request.');
+            expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
+            expect(detectAgentFailureKind(stored)).to.equal('timeout');
+            expect(isAgentTurnInterruptedError(stored)).to.equal(true);
+            expect(localizeAgentFailureShortReason(stored)).to.equal('Timed out');
+        });
+
         it('reduces the raw production row texts and keeps them as the detail', () => {
             const bashExit = describeAgentTurnFailure(PRODUCTION_ROW_ERRORS.bashExitCode);
             expect(bashExit).to.deep.equal({

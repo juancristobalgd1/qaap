@@ -115,9 +115,12 @@ const RUNNER_IDLE_TIMEOUT_LINE = /\[qaap\] task timed out after (\d+)s without o
 /** Persisted (English, backend-locale) forms of {@link localizeAgentTurnTimeoutMessage}. */
 const STORED_IDLE_TIMEOUT = /^Timed out after (\d+) minutes without output\./;
 const STORED_MAX_DURATION = /^Timed out at the (\d+)-minute task limit\./;
+const STORED_APPROVAL_WAIT = /^Waited (\d+) hours for your approval\./;
 
 /** Only read in the CLI's error envelope: a test suite printing "timed out" is not the agent timing out. */
 const TIMEOUT_PATTERNS: readonly RegExp[] = [
+    // Our approval-wait pause copy does not say "timed out", but it is the same pause.
+    /^Waited \d+ hours for your approval\./m,
     /\btimeout\b/i,
     /\btimed\s+out\b/i,
     /\bETIMEDOUT\b/,
@@ -354,7 +357,8 @@ function agentFailureTimeoutText(evidence: AgentFailureEvidence): string {
             || CLI_PROVIDER_ERROR_LINE.test(line)
             || RUNNER_IDLE_TIMEOUT_LINE.test(line)
             || STORED_IDLE_TIMEOUT.test(line)
-            || STORED_MAX_DURATION.test(line));
+            || STORED_MAX_DURATION.test(line)
+            || STORED_APPROVAL_WAIT.test(line));
     return [evidence.envelope, ...evidence.errorRecords, ...plain]
         .filter((part): part is string => !!part)
         .join('\n');
@@ -588,16 +592,27 @@ export function localizeGenericAgentFailureMessage(
     }
 }
 
-/** Why the backend paused a turn that was still streaming: silence, or the absolute cap. */
-export type QaapAgentTurnTimeoutCause = 'idle' | 'max_duration';
+/**
+ * Why the backend paused a turn that was still streaming: silence, the absolute cap, or a
+ * permission approval left unanswered past its (much longer) wait cap.
+ */
+export type QaapAgentTurnTimeoutCause = 'idle' | 'max_duration' | 'approval_wait';
 
 /**
  * Reason recorded when the backend pauses a turn (turn watchdog or the task runner's idle
- * timer). The turn ends `interrupted`, so the copy points at Continue rather than Retry. It
- * starts with "Timed out" so that any reader of `TIMEOUT_PATTERNS` classifies it too.
+ * timer). The turn ends `interrupted`, so the copy points at Continue rather than Retry. The
+ * timer copies start with "Timed out"; every form is matched by `TIMEOUT_PATTERNS` and
+ * `isStoredAgentTurnTimeout`.
  */
 export function localizeAgentTurnTimeoutMessage(cause: QaapAgentTurnTimeoutCause, minutes: number): string {
     const rounded = String(Math.max(1, Math.round(minutes)));
+    if (cause === 'approval_wait') {
+        return nls.localize(
+            'qaap/agentFailure/approvalWaitTimeout',
+            'Waited {0} hours for your approval. Continue runs it again from your original request.',
+            String(Math.max(1, Math.round(minutes / 60))),
+        );
+    }
     if (cause === 'idle') {
         return nls.localize(
             'qaap/agentFailure/idleTimeout',
@@ -626,11 +641,16 @@ function formatStoredAgentTurnTimeout(error: string): string | undefined {
     if (max) {
         return localizeAgentTurnTimeoutMessage('max_duration', Number(max[1]));
     }
+    const approvalWait = STORED_APPROVAL_WAIT.exec(error);
+    if (approvalWait) {
+        return localizeAgentTurnTimeoutMessage('approval_wait', Number(approvalWait[1]) * 60);
+    }
     return undefined;
 }
 
 function isStoredAgentTurnTimeout(error: string): boolean {
-    return STORED_IDLE_TIMEOUT.test(error) || STORED_MAX_DURATION.test(error) || LEGACY_WATCHDOG_STOP.test(error);
+    return STORED_IDLE_TIMEOUT.test(error) || STORED_MAX_DURATION.test(error) || STORED_APPROVAL_WAIT.test(error)
+        || LEGACY_WATCHDOG_STOP.test(error);
 }
 
 /**

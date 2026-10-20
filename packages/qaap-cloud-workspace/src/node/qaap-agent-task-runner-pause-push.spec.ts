@@ -71,6 +71,17 @@ describe('agent task runner paused-task push copy', () => {
         expect(taskPauseCauses.size).to.equal(0);
     });
 
+    it('names the approval wait in hours for an approval-wait pause', () => {
+        const { ctx, pushes } = pauseHarness();
+
+        cancelExtracted(ctx, 'paused-task', { interrupt: true, pauseCause: { cause: 'approval_wait', limitMinutes: 24 * 60 } });
+
+        expect(pushes).to.have.length(1);
+        expect(pushes[0].body).to.equal(
+            'Refactor billing was paused. Waited 24 hours for your approval. Continue runs it again from your original request.',
+        );
+    });
+
     it('uses neutral copy when the pause cause is unknown', () => {
         const { ctx, pushes } = pauseHarness();
 

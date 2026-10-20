@@ -123,7 +123,7 @@ export function findExpiredStreamingTurns(
         const base = { conversationId: turn.conversationId, elapsedMs, idleMs };
         if (turn.awaitingApproval) {
             if (elapsedMs >= approvalWaitMinutes * 60 * 1000) {
-                expired.push({ ...base, cause: 'max_duration', limitMinutes: approvalWaitMinutes });
+                expired.push({ ...base, cause: 'approval_wait', limitMinutes: approvalWaitMinutes });
             }
         } else if (elapsedMs >= maxMs) {
             expired.push({ ...base, cause: 'max_duration', limitMinutes: Math.max(MIN_QAAP_MAX_TURN_MINUTES, limits.maxTurnMinutes) });
@@ -200,5 +200,8 @@ export function buildQaapTurnWatchdogMessage(
     limits: QaapTurnWatchdogLimits,
     limitMinutes?: number,
 ): string {
-    return localizeAgentTurnTimeoutMessage(cause, limitMinutes ?? (cause === 'idle' ? limits.idleMinutes : limits.maxTurnMinutes));
+    const fallbackMinutes = cause === 'idle' ? limits.idleMinutes
+        : cause === 'approval_wait' ? Math.max(limits.maxTurnMinutes, limits.approvalWaitMinutes ?? QAAP_APPROVAL_WAIT_MAX_MINUTES)
+            : limits.maxTurnMinutes;
+    return localizeAgentTurnTimeoutMessage(cause, limitMinutes ?? fallbackMinutes);
 }

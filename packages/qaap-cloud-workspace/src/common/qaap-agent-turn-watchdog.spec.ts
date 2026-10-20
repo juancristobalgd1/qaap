@@ -89,7 +89,16 @@ describe('findExpiredStreamingTurns', () => {
             { conversationId: 'deciding', streamingSinceMs: now - 200 * MINUTE, awaitingApproval: true },
             { conversationId: 'abandoned', streamingSinceMs: now - 24 * 60 * MINUTE, awaitingApproval: true },
         ], now, limits);
-        expect(expired.map(turn => [turn.conversationId, turn.cause, turn.limitMinutes])).to.deep.equal([['abandoned', 'max_duration', 24 * 60]]);
+        expect(expired.map(turn => [turn.conversationId, turn.cause, turn.limitMinutes])).to.deep.equal([['abandoned', 'approval_wait', 24 * 60]]);
+    });
+
+    it('names the approval-wait pause in hours, and it reads as a timeout the user can continue', () => {
+        const message = buildQaapTurnWatchdogMessage('approval_wait', limits, 24 * 60);
+        expect(message).to.equal('Waited 24 hours for your approval. Continue runs it again from your original request.');
+        expect(message).not.to.match(/task limit/);
+        expect(detectAgentFailureKind(message)).to.equal('timeout');
+        expect(isAgentTurnInterruptedError(message)).to.equal(true);
+        expect(describeAgentTurnFailure(message)).to.deep.include({ kind: 'timeout', label: 'Timed out', interrupted: true });
     });
 
     it('leaves inactivity of a live task to the runner, but still applies the absolute cap', () => {

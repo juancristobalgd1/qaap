@@ -237,7 +237,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         expect(store.sweep(now)).to.be.true;
         expect(runner.cancelledIds).to.deep.equal(['abandoned-task']);
         expect(store.get('abandoned')!.messages.find(m => m.role === 'agent')!.error)
-            .to.match(/^Timed out at the 1440-minute task limit\./);
+            .to.match(/^Waited 24 hours for your approval\./);
     });
 
     it('leaves a conversation streaming within the max duration untouched', () => {
