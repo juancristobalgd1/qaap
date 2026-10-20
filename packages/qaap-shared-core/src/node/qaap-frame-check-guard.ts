@@ -5,23 +5,63 @@
 
 import * as net from 'net';
 
-/** True for loopback, private, link-local, CGNAT, multicast, unspecified and cloud-metadata addresses (v4 and v6). */
+/**
+ * True for loopback, private, link-local, CGNAT, benchmark, multicast, unspecified and cloud-metadata
+ * addresses (v4 and v6). IPv6 forms that embed an IPv4 address (mapped `::ffff:a00:1`, compatible,
+ * 6to4) are judged by that IPv4 address; NAT64 and Teredo are refused outright since they can reach
+ * any IPv4 host. Anything that is not an IP literal is refused.
+ */
 export function isQaapBlockedFrameCheckIp(ip: string): boolean {
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
-    const address = mapped ? mapped[1] : ip;
-    if (net.isIPv4(address)) {
-        const [a, b] = address.split('.').map(Number);
-        return a === 0 || a === 10 || a === 127 || a >= 224
-            || (a === 100 && b >= 64 && b <= 127)
-            || (a === 169 && b === 254)
-            || (a === 172 && b >= 16 && b <= 31)
-            || (a === 192 && b === 168);
+    if (net.isIPv4(ip)) {
+        return isBlockedIpv4(ip.split('.').map(Number));
     }
-    if (net.isIPv6(address)) {
-        const h = address.toLowerCase();
-        return h === '::' || h === '::1' || /^fe[89ab]/.test(h) || /^f[cdf]/.test(h);
+    const hextets = net.isIPv6(ip) ? expandIpv6(ip) : undefined;
+    if (!hextets) {
+        return true;
     }
-    return true;
+    const [h0, h1, h2, h3, h4, h5, h6, h7] = hextets;
+    const embeddedTail = [h6 >> 8, h6 & 0xff, h7 >> 8, h7 & 0xff];
+    if (h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0 && (h5 === 0xffff || h5 === 0)) {
+        // `::`, `::1`, IPv4-mapped and IPv4-compatible.
+        return h5 === 0 && h6 === 0 ? true : isBlockedIpv4(embeddedTail);
+    }
+    if (h0 === 0x2002) {
+        return isBlockedIpv4([h1 >> 8, h1 & 0xff, h2 >> 8, h2 & 0xff]);
+    }
+    return h0 === 0x64 && h1 === 0xff9b // NAT64
+        || h0 === 0x2001 && h1 === 0 // Teredo
+        || (h0 & 0xffc0) === 0xfe80 // link-local
+        || (h0 & 0xfe00) === 0xfc00 // unique local
+        || (h0 & 0xff00) === 0xff00; // multicast
+}
+
+function isBlockedIpv4([a, b]: number[]): boolean {
+    return a === 0 || a === 10 || a === 127 || a >= 224
+        || (a === 100 && b >= 64 && b <= 127)
+        || (a === 169 && b === 254)
+        || (a === 172 && b >= 16 && b <= 31)
+        || (a === 192 && b === 0)
+        || (a === 192 && b === 168)
+        || (a === 198 && (b === 18 || b === 19));
+}
+
+/** Expands a valid IPv6 literal (optionally with a dotted IPv4 tail) to its eight 16-bit groups. */
+function expandIpv6(ip: string): number[] | undefined {
+    let text = ip.toLowerCase().replace(/%.*$/, '');
+    const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+    if (dotted) {
+        const [a, b, c, d] = dotted.slice(1).map(Number);
+        text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+    }
+    const [head, tail] = text.split('::');
+    const left = head ? head.split(':') : [];
+    const right = tail !== undefined && tail ? tail.split(':') : [];
+    const missing = 8 - left.length - right.length;
+    if (missing < 0 || (tail === undefined && missing !== 0)) {
+        return undefined;
+    }
+    const groups = [...left, ...new Array<string>(missing).fill('0'), ...right].map(group => parseInt(group, 16));
+    return groups.length === 8 && groups.every(group => group >= 0 && group <= 0xffff) ? groups : undefined;
 }
 
 /** Bounded insertion-ordered cache with a TTL; the oldest entry is evicted past `maxEntries`. */
@@ -57,5 +97,81 @@ export class QaapFrameCheckCache<T> {
             }
             this.entries.delete(oldest);
         }
+    }
+}
+
+/**
+ * True for Qaap's own hosts, which the frame check must never fetch: the public app origin's host
+ * and any `*.<previewBaseDomain>` isolated preview host (their `frame-ancestors` names Qaap anyway).
+ */
+export function isQaapInternalFrameCheckHost(url: URL, appOrigin: string | undefined, previewBaseDomain: string | undefined): boolean {
+    const hostname = url.hostname.toLowerCase();
+    const baseDomain = previewBaseDomain?.toLowerCase().replace(/:\d+$/, '');
+    if (baseDomain && (hostname === baseDomain || hostname.endsWith(`.${baseDomain}`))) {
+        return true;
+    }
+    if (!appOrigin) {
+        return false;
+    }
+    try {
+        return new URL(appOrigin).hostname.toLowerCase() === hostname;
+    } catch {
+        return false;
+    }
+}
+
+/** Per-key token bucket: `capacity` checks in a burst, refilled at `refillPerSecond`. Bounded by `maxKeys`. */
+export class QaapFrameCheckRateLimiter {
+
+    protected readonly buckets = new Map<string, { tokens: number; updated: number }>();
+
+    constructor(
+        protected readonly capacity = 20,
+        protected readonly refillPerSecond = 0.5,
+        protected readonly maxKeys = 1000,
+    ) { }
+
+    tryTake(key: string, now = Date.now()): boolean {
+        const bucket = this.buckets.get(key) ?? { tokens: this.capacity, updated: now };
+        bucket.tokens = Math.min(this.capacity, bucket.tokens + ((now - bucket.updated) / 1000) * this.refillPerSecond);
+        bucket.updated = now;
+        this.buckets.delete(key);
+        this.buckets.set(key, bucket);
+        while (this.buckets.size > this.maxKeys) {
+            const oldest = this.buckets.keys().next().value;
+            if (oldest === undefined) {
+                break;
+            }
+            this.buckets.delete(oldest);
+        }
+        if (bucket.tokens < 1) {
+            return false;
+        }
+        bucket.tokens -= 1;
+        return true;
+    }
+}
+
+/** Non-blocking counting semaphore: `tryAcquire` fails instead of queueing once `max` holders exist. */
+export class QaapFrameCheckSemaphore {
+
+    protected held = 0;
+
+    constructor(protected readonly max: number) { }
+
+    get inUse(): number {
+        return this.held;
+    }
+
+    tryAcquire(): boolean {
+        if (this.held >= this.max) {
+            return false;
+        }
+        this.held++;
+        return true;
+    }
+
+    release(): void {
+        this.held = Math.max(0, this.held - 1);
     }
 }
