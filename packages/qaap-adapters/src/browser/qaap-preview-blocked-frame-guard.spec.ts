@@ -114,18 +114,31 @@ describe('QaapPreviewBlockedFrameGuard', () => {
         guard.dispose();
     });
 
-    it('treats isolated Qaap preview hosts as internal: no preflight, no extra sandbox, no timeout card', async () => {
-        let checks = 0;
-        const guard = createGuard(async () => {
-            checks++;
-            return { embeddable: false };
-        }, 5);
+    it('treats isolated Qaap preview hosts as internal: no extra sandbox, no timeout card', async () => {
+        const guard = createGuard(async () => ({ embeddable: true, internal: true }), 5);
         guard.arm('https://0123456789abcdef0123456789abcdef.preview.qaap.dev/');
         await new Promise(resolve => setTimeout(resolve, 20));
-        expect(checks).to.equal(0);
         expect(card()).to.equal(null);
         expect(guard.blockedUrl).to.equal(undefined);
         expect(frame.sandbox.contains('allow-downloads')).to.equal(false);
+        guard.dispose();
+    });
+
+    it('keeps a slow isolated preview card-free when the preflight cannot answer', async () => {
+        const guard = createGuard(async () => undefined, 5);
+        guard.arm('https://0123456789abcdef0123456789abcdef.preview.qaap.dev/');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(card()).to.equal(null);
+        guard.dispose();
+    });
+
+    it('still shows the card for a look-alike <32 hex>.evil host the backend reports as blocked', async () => {
+        frame.sandbox.add('allow-popups-to-escape-sandbox');
+        const guard = createGuard(async () => ({ embeddable: false, reason: 'X-Frame-Options: deny' }));
+        guard.arm('https://0123456789abcdef0123456789abcdef.evil.example/');
+        await flush();
+        expect(card()).to.not.equal(null);
+        expect(frame.sandbox.contains('allow-popups-to-escape-sandbox')).to.equal(false);
         guard.dispose();
     });
 

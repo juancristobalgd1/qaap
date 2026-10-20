@@ -25,8 +25,8 @@ export interface QaapPreviewBlockedFrameGuardOptions {
     readonly timeoutMs?: number;
     /**
      * Qaap's own previews on another origin (isolated `https://<label>.<QAAP_PREVIEW_BASE_DOMAIN>`
-     * hosts) are treated like same-origin previews: no extra sandbox, no preflight, no timer.
-     * Defaults to the isolated-preview URL shape.
+     * hosts): no extra sandbox and no load-timeout card; the preflight still runs so a look-alike
+     * `<32 hex>.evil.example` that refuses framing gets the card. Defaults to the isolated-preview URL shape.
      */
     readonly isInternalPreviewUrl?: (url: string) => boolean;
 }
@@ -59,14 +59,19 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
 
     /**
      * Call right before (or right after) pointing the frame at `url`. Same-origin previews only reset
-     * the guard; external origins widen the sandbox and start detection.
+     * the guard; external origins widen the sandbox and start detection. URLs shaped like an isolated
+     * Qaap preview keep the default sandbox and get no load-timeout card (a cold preview may be slow);
+     * only a backend answer of "not embeddable" shows the card, because the frontend cannot know the
+     * configured preview base domain and the backend answers `internal` without fetching for it.
      */
     arm(url: string): void {
         this.clear();
         if (this.disposed) {
             return;
         }
-        const external = !!url && isQaapExternalPreviewUrl(url, this.ideOrigin()) && !this.isInternalPreviewUrl(url);
+        const crossOrigin = !!url && isQaapExternalPreviewUrl(url, this.ideOrigin());
+        const internalShape = crossOrigin && this.isInternalPreviewUrl(url);
+        const external = crossOrigin && !internalShape;
         for (const token of QAAP_EXTERNAL_FRAME_SANDBOX_TOKENS) {
             if (external) {
                 this.options.frame.sandbox.add(token);
@@ -74,13 +79,17 @@ export class QaapPreviewBlockedFrameGuard implements Disposable {
                 this.options.frame.sandbox.remove(token);
             }
         }
-        if (!external) {
+        if (!crossOrigin) {
             return;
         }
         for (const token of QAAP_EXTERNAL_FRAME_FORBIDDEN_SANDBOX_TOKENS) {
             this.options.frame.sandbox.remove(token);
         }
         this.armedUrl = url;
+        if (internalShape) {
+            void this.preflight(url);
+            return;
+        }
         if (isMixedContent(url, this.ideOrigin())) {
             // The browser refuses http:// frames inside an https:// page before any request is made.
             this.showCard(url, 'mixed-content');

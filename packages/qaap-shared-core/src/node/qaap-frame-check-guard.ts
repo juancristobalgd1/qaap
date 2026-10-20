@@ -151,3 +151,27 @@ export class QaapFrameCheckRateLimiter {
         return true;
     }
 }
+
+/** Non-blocking counting semaphore: `tryAcquire` fails instead of queueing once `max` holders exist. */
+export class QaapFrameCheckSemaphore {
+
+    protected held = 0;
+
+    constructor(protected readonly max: number) { }
+
+    get inUse(): number {
+        return this.held;
+    }
+
+    tryAcquire(): boolean {
+        if (this.held >= this.max) {
+            return false;
+        }
+        this.held++;
+        return true;
+    }
+
+    release(): void {
+        this.held = Math.max(0, this.held - 1);
+    }
+}

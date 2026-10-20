@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { evaluateQaapFrameHeaders } from '@theia/qaap-adapters/lib/common/qaap-frame-check';
-import { isQaapBlockedFrameCheckIp, isQaapInternalFrameCheckHost, QaapFrameCheckCache, QaapFrameCheckRateLimiter } from './qaap-frame-check-guard';
+import { isQaapBlockedFrameCheckIp, isQaapInternalFrameCheckHost, QaapFrameCheckCache, QaapFrameCheckRateLimiter, QaapFrameCheckSemaphore } from './qaap-frame-check-guard';
 
 describe('qaap frame check', () => {
 
@@ -36,6 +36,22 @@ describe('qaap frame check', () => {
                 .to.equal(false);
             expect(evaluateQaapFrameHeaders({ 'x-frame-options': 'DENY' }, 'https://qaap.example').embeddable).to.equal(false);
         });
+
+        it('matches host wildcards, scheme-less hosts and ports in frame-ancestors', () => {
+            const app = 'https://app.qaap.example';
+            const embeddable = (sources: string, origin = app): boolean =>
+                evaluateQaapFrameHeaders({ 'content-security-policy': `frame-ancestors ${sources}` }, origin).embeddable;
+            expect(embeddable('https://*.qaap.example')).to.equal(true);
+            expect(embeddable('*.qaap.example')).to.equal(true);
+            expect(embeddable('app.qaap.example')).to.equal(true);
+            expect(embeddable('https://app.qaap.example:443')).to.equal(true);
+            expect(embeddable('https://*.qaap.example:*', 'https://app.qaap.example:8443')).to.equal(true);
+            expect(embeddable('https://*.qaap.example', 'https://qaap.example')).to.equal(false);
+            expect(embeddable('https://*.qaap.example', 'https://app.qaap.example:8443')).to.equal(false);
+            expect(embeddable('https://*.evil-qaap.example')).to.equal(false);
+            expect(embeddable('https://*.example.qaap')).to.equal(false);
+            expect(embeddable("'self' 'none'")).to.equal(false);
+        });
     });
 
     describe('isQaapInternalFrameCheckHost', () => {
@@ -52,6 +68,18 @@ describe('qaap frame check', () => {
             expect(isQaapInternalFrameCheckHost(new URL('https://evilpreview.qaap.example/'), app, 'preview.qaap.example')).to.equal(false);
             expect(isQaapInternalFrameCheckHost(new URL('https://preview.qaap.example.evil.com/'), app, 'preview.qaap.example')).to.equal(false);
             expect(isQaapInternalFrameCheckHost(new URL('https://claude.ai/'), app, 'preview.qaap.example')).to.equal(false);
+        });
+    });
+
+    describe('QaapFrameCheckSemaphore', () => {
+        it('refuses past the cap without queueing and frees on release', () => {
+            const semaphore = new QaapFrameCheckSemaphore(2);
+            expect(semaphore.tryAcquire()).to.equal(true);
+            expect(semaphore.tryAcquire()).to.equal(true);
+            expect(semaphore.tryAcquire()).to.equal(false);
+            semaphore.release();
+            expect(semaphore.tryAcquire()).to.equal(true);
+            expect(semaphore.inUse).to.equal(2);
         });
     });
 

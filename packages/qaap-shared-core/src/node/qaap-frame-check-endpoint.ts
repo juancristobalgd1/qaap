@@ -14,12 +14,30 @@ import { evaluateQaapFrameHeaders, QAAP_FRAME_CHECK_API_PATH, QaapFrameCheckResu
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
-import { isQaapBlockedFrameCheckIp, isQaapInternalFrameCheckHost, QaapFrameCheckCache, QaapFrameCheckRateLimiter } from './qaap-frame-check-guard';
+import {
+    isQaapBlockedFrameCheckIp,
+    isQaapInternalFrameCheckHost,
+    QaapFrameCheckCache,
+    QaapFrameCheckRateLimiter,
+    QaapFrameCheckSemaphore,
+} from './qaap-frame-check-guard';
 
 const REQUEST_TIMEOUT_MS = 3000;
 /** Whole check (DNS + every hop) must finish within this, or the answer is "unknown". */
 const DEADLINE_MS = 5000;
 const MAX_REDIRECTS = 3;
+/** Per-query c-ares timeout; DNS never touches the libuv threadpool (fs/crypto stay responsive). */
+const DNS_TIMEOUT_MS = 1500;
+const DNS_TRIES = 2;
+/** Process-wide concurrent checks; extra requests answer "unknown" at once instead of queueing. */
+const MAX_CONCURRENT_CHECKS = 3;
+
+/** Minimal c-ares resolver surface (`dns.promises.Resolver`), injectable for tests. */
+export interface QaapFrameCheckResolver {
+    resolve4(hostname: string): Promise<string[]>;
+    resolve6(hostname: string): Promise<string[]>;
+    cancel(): void;
+}
 const INTERNAL: QaapFrameCheckResult = { embeddable: true, internal: true };
 /** No answer (refused, rate-limited, failed): the iframe still gets its attempt and the client keeps its load timeout. */
 const UNKNOWN: QaapFrameCheckResult = { embeddable: true, unknown: true };
@@ -46,6 +64,8 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
 
     protected readonly cache = new QaapFrameCheckCache<QaapFrameCheckResult>();
     protected readonly rateLimiter = new QaapFrameCheckRateLimiter();
+    protected readonly semaphore = new QaapFrameCheckSemaphore(MAX_CONCURRENT_CHECKS);
+    protected readonly deadlineMs: number = DEADLINE_MS;
 
     configure(app: Application): void {
         app.get(QAAP_FRAME_CHECK_API_PATH, (req, res) => this.handle(req, res));
@@ -67,8 +87,12 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
                 result = INTERNAL;
             } else if (cached) {
                 result = cached;
-            } else if (this.rateLimiter.tryTake(auth.userLogin)) {
-                result = await this.withDeadline(this.check(url, appOrigin));
+            } else if (this.rateLimiter.tryTake(auth.userLogin) && this.semaphore.tryAcquire()) {
+                try {
+                    result = await this.withDeadline(signal => this.check(url, appOrigin, signal));
+                } finally {
+                    this.semaphore.release();
+                }
                 if (!result.unknown) {
                     this.cache.set(cacheKey, result);
                 }
@@ -79,20 +103,30 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
         res.set('Cache-Control', 'no-store').json(result);
     }
 
-    protected withDeadline<T>(work: Promise<T>): Promise<T> {
+    /** Runs `work` with an abort signal that fires (and rejects) at the deadline, so DNS and sockets are torn down. */
+    protected async withDeadline<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+        const controller = new AbortController();
         let timer: NodeJS.Timeout | undefined;
         const deadline = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('deadline')), DEADLINE_MS);
+            timer = setTimeout(() => {
+                controller.abort();
+                reject(new Error('deadline'));
+            }, this.deadlineMs);
         });
-        return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+        try {
+            return await Promise.race([work(controller.signal), deadline]);
+        } finally {
+            clearTimeout(timer);
+            controller.abort();
+        }
     }
 
-    protected async check(start: URL, appOrigin: string): Promise<QaapFrameCheckResult> {
+    protected async check(start: URL, appOrigin: string, signal: AbortSignal): Promise<QaapFrameCheckResult> {
         let url = start;
         for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-            let response = await this.request(url, 'HEAD');
+            let response = await this.request(url, 'HEAD', signal);
             if (response.status === 405 || response.status === 501) {
-                response = await this.request(url, 'GET');
+                response = await this.request(url, 'GET', signal);
             }
             const location = response.headers.location;
             if (response.status >= 300 && response.status < 400 && location) {
@@ -104,7 +138,7 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
         return UNKNOWN;
     }
 
-    protected async request(url: URL, method: 'HEAD' | 'GET'): Promise<FrameCheckResponse> {
+    protected async request(url: URL, method: 'HEAD' | 'GET', signal: AbortSignal): Promise<FrameCheckResponse> {
         if (url.protocol !== 'http:' && url.protocol !== 'https:') {
             throw new Error('unsupported protocol');
         }
@@ -113,15 +147,14 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
             throw new Error('unsupported port');
         }
         const host = url.hostname.replace(/^\[|\]$/g, '');
-        const addresses = await dns.promises.lookup(host, { all: true });
-        if (addresses.length === 0 || addresses.some(a => isQaapBlockedFrameCheckIp(a.address))) {
-            throw new Error('blocked address');
-        }
+        // Connect to the validated IP itself (DNS-rebinding pin).
+        const address = await this.resolvePublicAddress(host, signal);
         const client = url.protocol === 'https:' ? https : http;
         return new Promise((resolve, reject) => {
             const req = client.request({
                 method,
-                host: addresses[0].address,
+                signal,
+                host: address,
                 port: url.port || undefined,
                 path: `${url.pathname}${url.search}`,
                 servername: net.isIP(host) ? undefined : host,
@@ -135,5 +168,43 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
             req.on('error', reject);
             req.end();
         });
+    }
+
+    /**
+     * Resolves `host` with c-ares (A + AAAA) and returns the address to connect to. Throws when any
+     * resolved address is private / loopback / link-local / metadata, or when nothing resolves.
+     */
+    protected async resolvePublicAddress(host: string, signal: AbortSignal): Promise<string> {
+        if (signal.aborted) {
+            throw new Error('aborted');
+        }
+        let addresses: string[];
+        if (net.isIP(host)) {
+            addresses = [host];
+        } else {
+            const resolver = this.createResolver();
+            const cancel = (): void => resolver.cancel();
+            signal.addEventListener('abort', cancel, { once: true });
+            try {
+                const [v4, v6] = await Promise.allSettled([resolver.resolve4(host), resolver.resolve6(host)]);
+                addresses = [
+                    ...(v4.status === 'fulfilled' ? v4.value : []),
+                    ...(v6.status === 'fulfilled' ? v6.value : []),
+                ];
+            } finally {
+                signal.removeEventListener('abort', cancel);
+            }
+        }
+        if (signal.aborted) {
+            throw new Error('aborted');
+        }
+        if (addresses.length === 0 || addresses.some(address => isQaapBlockedFrameCheckIp(address))) {
+            throw new Error('blocked address');
+        }
+        return addresses[0];
+    }
+
+    protected createResolver(): QaapFrameCheckResolver {
+        return new dns.promises.Resolver({ timeout: DNS_TIMEOUT_MS, tries: DNS_TRIES });
     }
 }
