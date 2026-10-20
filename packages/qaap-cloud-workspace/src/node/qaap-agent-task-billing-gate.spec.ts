@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import type { QaapBillingAccount, QaapBillingEntitlements } from '../common/qaap-billing-plans';
 import type { QaapBillingStore } from './qaap-billing-store';
-import { checkAgentTaskBillingGate, type QaapAgentTaskBillingGateContext } from './qaap-agent-task-billing-gate';
+import { checkAgentTaskBillingGate, resolveAgentTaskBillingRejection, type QaapAgentTaskBillingGateContext } from './qaap-agent-task-billing-gate';
 
 const HOSTED_MODEL = 'gpt-5.6-sol';
 const BYOK_MODEL = 'gpt-4o-mini';
@@ -102,5 +102,20 @@ describe('checkAgentTaskBillingGate', () => {
         const read = (): Promise<QaapBillingAccount> => ++attempts < 2 ? Promise.reject(new Error('busy')) : Promise.resolve(account('pro', 50));
         expect(await gate({ agentId: 'codex', modelId: HOSTED_MODEL, read })).to.equal(undefined);
         expect(attempts).to.equal(2);
+    });
+
+    it('applies a cached "cannot start" verdict when the account is unreadable', async () => {
+        const rejection = await gate({ agentId: 'claude', modelId: BYOK_MODEL, cached: { canStartAgent: false } });
+        expect(rejection).to.contain('runtime_exhausted');
+    });
+
+    it('lets a BYOK turn run when the cache says it can start', async () => {
+        expect(await gate({ agentId: 'claude', modelId: BYOK_MODEL, cached: { canStartAgent: true } })).to.equal(undefined);
+    });
+
+    it('turns an unexpected gate error into a rejection line instead of throwing', async () => {
+        const fixture: GateFixture = { agentId: 'codex', modelId: HOSTED_MODEL, resolveModel: () => { throw new Error('boom'); } };
+        const rejection = await resolveAgentTaskBillingRejection(context(fixture), task, request, { retryDelayMs: 0 });
+        expect(rejection).to.be.a('string').and.to.contain('entitlement check failed unexpectedly');
     });
 });
