@@ -16,6 +16,7 @@ import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/li
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { resolveQaapFailedRunAction } from '../common/qaap-failed-run-action';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 
 export interface MobileProjectsCardMenuItemOptions {
@@ -46,6 +47,7 @@ export interface MobileProjectsCardMenuHost {
     resolveConversationFlags(summary: QaapAgentConversationSummaryDTO): { priority: boolean; paused: boolean };
     openConversationSummary(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onRetryConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onContinueConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onArchiveConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onForkConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onRenameConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
@@ -199,6 +201,14 @@ export class MobileProjectsCardMenuUi {
         menu.hidden = true;
 
         if (isFailedRunSummary(summary) && summary.source !== 'theia-chat') {
+            // Same decision as the row chip: an interrupted turn keeps its work, so Continue comes first.
+            if (resolveQaapFailedRunAction(summary) === 'continue') {
+                this.appendCardMenuItem(menu, {
+                    label: nls.localize('qaap/mobileProjects/continueTask', 'Continue task'),
+                    iconClass: 'codicon-debug-continue',
+                    onSelect: () => { void this.host.onContinueConversation(project, summary); },
+                });
+            }
             this.appendCardMenuItem(menu, {
                 label: nls.localize('qaap/mobileProjects/retryTask', 'Retry task'),
                 iconClass: 'codicon-debug-restart',

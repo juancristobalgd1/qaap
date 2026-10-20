@@ -93,6 +93,7 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         readonly onArchive?: (summary: QaapAgentConversationSummaryDTO) => void;
         readonly latestSummary?: QaapAgentConversationSummaryDTO;
         readonly onRetry?: () => void;
+        readonly retryGate?: Promise<void>;
         readonly onContinue?: () => void;
     }): MobileProjectsProjectRowsUi {
         const host = {
@@ -121,6 +122,7 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
             },
             onRetryConversation: async () => {
                 options?.onRetry?.();
+                await options?.retryGate;
             },
             onContinueConversation: async () => {
                 options?.onContinue?.();
@@ -212,6 +214,54 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         expect(chip?.dataset.qaapFailedRunAction).to.equal('continue');
         chip!.click();
         expect(continued).to.equal(1);
+    });
+
+    it('does not recover a run twice: a second tap, or a re-rendered streaming row, never reaches the host again', async () => {
+        let retried = 0;
+        const failedSummary = summary({ id: 'failed-double', status: 'failed', lastMessageRole: 'agent', lastMessageError: 'Bash exited with code 1.' });
+        const latest = { ...failedSummary };
+        const failedTask = { ...task, id: failedSummary.id, state: 'failed' as const };
+        const ui = createUi({
+            latestSummary: latest,
+            onRetry: () => {
+                retried++;
+                // Retry flips the stored summary to streaming optimistically.
+                latest.status = 'streaming';
+            },
+        });
+        const row = ui.createTaskItem(project, failedTask, undefined, failedSummary, new Set(), { compact: true });
+        const chip = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-failed-run-chip');
+
+        chip!.click();
+        await Promise.resolve();
+        await Promise.resolve();
+        // The old chip is re-enabled once the request settles, but its run is streaming now.
+        chip!.click();
+        await Promise.resolve();
+        expect(retried).to.equal(1);
+
+        const rerendered = ui.createTaskItem(project, { ...failedTask, state: 'running' as const }, undefined, latest, new Set(), { compact: true });
+        expect(rerendered.querySelector('.theia-mobile-projects-failed-run-chip')).to.equal(null);
+    });
+
+    it('disables the chip while its recovery is in flight, so two quick taps make one call', async () => {
+        let retried = 0;
+        let release: (() => void) | undefined;
+        const retryGate = new Promise<void>(resolve => { release = resolve; });
+        const ui = createUi({ onRetry: () => { retried++; }, retryGate });
+        const failedSummary = summary({ id: 'failed-inflight', status: 'failed', lastMessageRole: 'agent', lastMessageError: 'Bash exited with code 1.' });
+        const row = ui.createTaskItem(project, { ...task, id: failedSummary.id, state: 'failed' as const }, undefined, failedSummary, new Set(), { compact: true });
+        const chip = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-failed-run-chip')!;
+
+        chip.click();
+        chip.click();
+        expect(chip.disabled).to.equal(true);
+        expect(retried).to.equal(1);
+        release?.();
+        await retryGate;
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(chip.disabled).to.equal(false);
     });
 
     it('keeps the chip off rows being picked for Clear failed runs', () => {

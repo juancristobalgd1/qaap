@@ -39,7 +39,7 @@ export function qaapCloneRootIdentity(cwd: string | undefined): string | undefin
         cloneRootIdentityCache.set(cwd, cached);
         return cached;
     }
-    const result = isCloneRootPath(cwd) ? githubIdentity(qaapProjectRemovalIdentity(cwd)) : undefined;
+    const result = cloneRootIdentity(cwd);
     if (cloneRootIdentityCache.size >= CLONE_ROOT_IDENTITY_CACHE_LIMIT) {
         cloneRootIdentityCache.delete(cloneRootIdentityCache.keys().next().value!);
     }
@@ -47,19 +47,23 @@ export function qaapCloneRootIdentity(cwd: string | undefined): string | undefin
     return result;
 }
 
-function githubIdentity(identity: string | undefined): string | undefined {
-    return identity?.startsWith('github:') ? identity : undefined;
-}
-
-/** Exactly `<owner>/<repo>` after the last `repos/` segment, or after `repos/users/<login>/`. */
-function isCloneRootPath(cwd: string): boolean {
+/**
+ * `github:owner/repo` when `cwd` is exactly `<owner>/<repo>` after the FIRST `repos/` segment, or
+ * `users/<login>/<owner>/<repo>` after it. Anchoring on the first segment keeps a repo or owner that
+ * is itself named `repos` resolvable, and `repos/users/<repo>` is the legacy flat layout with an
+ * owner literally named `users`.
+ */
+function cloneRootIdentity(cwd: string): string | undefined {
     const segments = cwd.replace(/^file:\/\//i, '').replace(/\\/g, '/').split('/').filter(Boolean);
-    const reposIndex = segments.lastIndexOf('repos');
+    const reposIndex = segments.indexOf('repos');
     if (reposIndex < 0) {
-        return false;
+        return undefined;
     }
     const afterRepos = segments.slice(reposIndex + 1);
-    return afterRepos[0] === QAAP_USER_REPOS_SEGMENT ? afterRepos.length === 4 : afterRepos.length === 2;
+    const pair = afterRepos.length === 2
+        ? afterRepos
+        : afterRepos[0] === QAAP_USER_REPOS_SEGMENT && afterRepos.length === 4 ? afterRepos.slice(2) : undefined;
+    return pair ? `github:${pair[0]}/${pair[1]}`.toLowerCase() : undefined;
 }
 
 /**

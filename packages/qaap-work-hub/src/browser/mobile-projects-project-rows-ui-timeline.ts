@@ -98,9 +98,13 @@ function createFailedRunChip(
         if (chip.disabled) {
             return;
         }
-        chip.disabled = true;
         const latestProject = ctx.host.projects?.find(candidate => candidate.id === project.id) ?? project;
         const latestSummary = ctx.host.conversations?.findSummaryById(summary.id) ?? summary;
+        // A first tap flips the summary to streaming optimistically: a stale chip must not recover it twice.
+        if (!isFailedRunSummary(latestSummary) || latestSummary.status === 'streaming') {
+            return;
+        }
+        chip.disabled = true;
         const run = action === 'continue'
             ? ctx.host.onContinueConversation(latestProject, latestSummary)
             : ctx.host.onRetryConversation(latestProject, latestSummary);
@@ -241,8 +245,11 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
         const failure = createTaskFailureHintElement(
             nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint),
         );
-        if (summary && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-') && !options?.selection) {
+        if (summary && summary.status !== 'streaming' && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-') && !options?.selection) {
             failure.append(createFailedRunChip(ctx, project, summary));
+            // Plain classes instead of `:has()`: they drive the chip wrap and hide the time label on touch.
+            failure.classList.add('theia-mod-has-recovery');
+            row.classList.add('theia-mod-has-recovery');
         }
         taskBody.append(failure);
     }

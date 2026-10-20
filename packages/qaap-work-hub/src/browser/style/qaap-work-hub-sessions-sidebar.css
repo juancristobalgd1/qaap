@@ -2580,12 +2580,12 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
 /* One-tap Retry / Continue next to a failed row's reason (the overflow menu keeps both). The
    reason keeps at least ~140px; on a narrow row the chip wraps below it instead of eating it. */
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-failure-hint:has(.theia-mobile-projects-failed-run-chip) {
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-failure-hint.theia-mod-has-recovery {
   flex-wrap: wrap;
   row-gap: 4px;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-failure-hint:has(.theia-mobile-projects-failed-run-chip) .theia-mobile-projects-task-failure-hint-label {
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-failure-hint.theia-mod-has-recovery .theia-mobile-projects-task-failure-hint-label {
   flex: 1 1 140px;
 }
 
@@ -2652,6 +2652,11 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     content: "";
     position: absolute;
     inset: -8px -4px;
+  }
+
+  /* The time label (right: 44px, z-index 3) would sit on the chip's 44px hit area. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-has-recovery .theia-mobile-projects-task-since {
+    display: none;
   }
 
   /* Scoped under the sidebar: `.theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-menu`

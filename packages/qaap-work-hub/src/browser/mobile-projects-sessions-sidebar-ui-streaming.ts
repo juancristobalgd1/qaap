@@ -126,11 +126,18 @@ export function createSessionsSidebarNoProjectsExtracted(ctx: MobileProjectsSess
     });
 }
 
+/** Longest query echoed back in the "No matches" hint. */
+const NO_MATCHES_QUERY_MAX_LENGTH = 40;
+
 export function createSessionsSidebarNoMatchesExtracted(query: string): HTMLElement {
+    const trimmed = query.trim();
+    const displayQuery = trimmed.length > NO_MATCHES_QUERY_MAX_LENGTH
+        ? `${trimmed.slice(0, NO_MATCHES_QUERY_MAX_LENGTH).trimEnd()}…`
+        : trimmed;
     return createSessionsSidebarEmptyState({
         icon: 'codicon-search',
         title: nls.localize('qaap/sessionsSidebar/noSearchResultsTitle', 'No matches'),
-        hint: nls.localize('qaap/sessionsSidebar/noSearchResultsHint', 'No projects or sessions match "{0}".', query),
+        hint: nls.localize('qaap/sessionsSidebar/noSearchResultsHint', 'No projects or sessions match "{0}".', displayQuery),
     });
 }
 
@@ -163,7 +170,8 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
         }
         const snapshotState = ctx.host.conversations?.snapshotState;
         const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
-        const query = (ctx.host.query ?? '').trim().toLowerCase();
+        const rawQuery = (ctx.host.query ?? '').trim();
+        const query = rawQuery.toLowerCase();
         if (snapshotState === 'loading' || snapshotState === 'reconnecting') {
             // A thin indeterminate bar on the separator under the nav instead of a text line:
             // loading / reconnecting is transient and should not take over the list.
@@ -199,7 +207,7 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
                 return;
             }
             host.append(query
-                ? createSessionsSidebarNoMatchesExtracted(query)
+                ? createSessionsSidebarNoMatchesExtracted(rawQuery)
                 : createSessionsSidebarNoProjectsExtracted(ctx));
             return;
         }
@@ -236,7 +244,7 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
         }
         if (visibleCount === 0 && pinnedGroups.length === 0) {
             host.append(sectionHead, query
-                ? createSessionsSidebarNoMatchesExtracted(query)
+                ? createSessionsSidebarNoMatchesExtracted(rawQuery)
                 : createSessionsSidebarNoProjectsExtracted(ctx));
             return;
         }
