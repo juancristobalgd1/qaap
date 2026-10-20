@@ -16,8 +16,21 @@ describe('qaapCloneRootIdentity', () => {
         }
     });
 
+    it('anchors on the first repos segment when the repo or owner is itself named repos', () => {
+        expect(qaapCloneRootIdentity('/workspace/repos/users/me/foo/repos')).to.equal('github:foo/repos');
+        expect(qaapCloneRootIdentity('/workspace/repos/repos/foo')).to.equal('github:repos/foo');
+    });
+
+    it('resolves a legacy flat clone whose owner is named users', () => {
+        expect(qaapCloneRootIdentity('/workspace/repos/users/web')).to.equal('github:users/web');
+    });
+
     it('does not resolve a folder below the clone root or a non-clone path', () => {
         expect(qaapCloneRootIdentity(`${CLONE}/packages/web`)).to.equal(undefined);
+        // A subfolder named like the repository is not the clone root, in either layout.
+        expect(qaapCloneRootIdentity('/workspace/repos/users/me/acme/web/apps/web')).to.equal(undefined);
+        expect(qaapCloneRootIdentity('/workspace/repos/acme/web/apps/web')).to.equal(undefined);
+        expect(qaapCloneRootIdentity('/workspace/repos/users/me/acme/web')).to.equal('github:acme/web');
         expect(qaapCloneRootIdentity('/tmp/scratch')).to.equal(undefined);
         expect(qaapCloneRootIdentity(undefined)).to.equal(undefined);
     });

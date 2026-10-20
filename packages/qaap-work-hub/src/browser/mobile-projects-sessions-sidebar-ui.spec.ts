@@ -44,7 +44,10 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
                 // Transient states show only a thin progress bar on the separator, no text line.
                 const progress = host.querySelector('.theia-mobile-work-hub-sessions-sidebar-progress[role="progressbar"]');
                 expect(progress).not.to.equal(null);
-                expect(host.textContent).to.equal('');
+                // Only the Projects head (so a repository can be added) and skeleton rows, no empty copy.
+                expect(host.textContent).to.equal('Projects');
+                expect(host.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar-skeleton-row').length).to.be.greaterThan(0);
+                expect(host.querySelector('.theia-mod-add-project')).not.to.equal(null);
                 expect(progress!.getAttribute('aria-label')).to.contain(snapshotState === 'loading' ? 'Loading' : 'Reconnecting');
             }
         }
@@ -440,10 +443,12 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(hostEl.textContent).to.include('qaap');
     });
 
-    it('keeps the empty-sessions copy when the user is signed in', () => {
+    it('offers Add repository under the Projects head when a signed-in user has no project', () => {
+        let addRepository = 0;
         const host = {
             projects: [] as MobileProjectEntry[],
             query: '',
+            onNewClick: async () => { addRepository++; },
         } as unknown as MobileProjectsSessionsSidebarHost;
         const ui = new MobileProjectsSessionsSidebarUi(host);
         ui.readQaapSignedIn = () => true;
@@ -452,7 +457,28 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         ui.renderWorkHubSessionsSidebarList(hostEl);
 
         expect(hostEl.querySelector('.theia-mobile-work-hub-sessions-sidebar-signin')).to.equal(null);
-        expect(hostEl.textContent).to.include('No agent sessions yet');
+        expect(hostEl.querySelector('.theia-mod-sessions-sidebar-projects-head .theia-mod-add-project')).to.not.equal(null);
+        const empty = hostEl.querySelector('.q-empty');
+        expect(empty?.textContent).to.include('No projects yet');
+        expect(hostEl.textContent).to.not.include('Start one from Agents');
+        empty!.querySelector<HTMLButtonElement>('.q-empty-action')!.click();
+        expect(addRepository).to.equal(1);
+    });
+
+    it('keeps the Projects head and explains an empty search without an action', () => {
+        const host = {
+            projects: [] as MobileProjectEntry[],
+            query: 'zzz',
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        ui.readQaapSignedIn = () => true;
+        const hostEl = document.createElement('div');
+
+        ui.renderWorkHubSessionsSidebarList(hostEl);
+
+        expect(hostEl.querySelector('.theia-mod-sessions-sidebar-projects-head')).to.not.equal(null);
+        expect(hostEl.querySelector('.q-empty')?.textContent).to.include('No projects or sessions match "zzz".');
+        expect(hostEl.querySelector('.q-empty-action')).to.equal(null);
     });
 
     it('does not render Clear failed runs in the sessions sidebar conversation list', () => {

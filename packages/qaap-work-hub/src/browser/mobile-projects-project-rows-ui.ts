@@ -41,6 +41,7 @@ export interface MobileProjectsProjectRowsHost {
     toggleRowExpanded(project: MobileProjectEntry): void | Promise<void>;
     renderList(): void;
     onRetryConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onContinueConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onArchiveConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onSetConversationPriority(summary: QaapAgentConversationSummaryDTO, priority: boolean): Promise<void>;
     onDeleteConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;

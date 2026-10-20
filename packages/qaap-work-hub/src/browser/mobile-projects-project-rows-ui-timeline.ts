@@ -23,6 +23,7 @@ import { createAgentIdentityElement } from '@theia/qaap-agents-ui/lib/browser/qa
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-shell/lib/browser/qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
+import { resolveQaapFailedRunAction } from '../common/qaap-failed-run-action';
 
 const TASK_FAILURE_HINT_MAX_LENGTH = 120;
 
@@ -62,6 +63,56 @@ function createTaskFailureHintElement(hint: string): HTMLElement {
     failure.setAttribute('aria-label', hint);
     failure.title = hint;
     return failure;
+}
+
+/**
+ * One-tap recovery chip next to the failure reason of a compact (sidebar) row: Continue for a turn
+ * that was interrupted (its work is kept, a follow-up resumes it), Retry for one that failed (re-run
+ * the turn). The overflow menu keeps both; this saves opening it for the most common next step.
+ */
+function createFailedRunChip(
+    ctx: MobileProjectsProjectRowsUiContext,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+): HTMLButtonElement {
+    const action = resolveQaapFailedRunAction(summary);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'theia-mobile-projects-failed-run-chip';
+    chip.dataset.qaapFailedRunAction = action;
+    const icon = document.createElement('span');
+    icon.className = `codicon ${action === 'continue' ? 'codicon-debug-continue' : 'codicon-debug-restart'}`;
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = action === 'continue'
+        ? nls.localize('qaap/mobileProjects/continueChip', 'Continue')
+        : nls.localize('qaap/mobileProjects/retryChip', 'Retry');
+    chip.append(icon, label);
+    chip.title = action === 'continue'
+        ? nls.localize('qaap/mobileProjects/continueTask', 'Continue task')
+        : nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
+    chip.setAttribute('aria-label', chip.title);
+    chip.addEventListener('click', event => {
+        // The row itself opens the conversation: the chip only recovers it.
+        event.stopPropagation();
+        if (chip.disabled) {
+            return;
+        }
+        const latestProject = ctx.host.projects?.find(candidate => candidate.id === project.id) ?? project;
+        const latestSummary = ctx.host.conversations?.findSummaryById(summary.id) ?? summary;
+        // A first tap flips the summary to streaming optimistically: a stale chip must not recover it twice.
+        if (!isFailedRunSummary(latestSummary) || latestSummary.status === 'streaming') {
+            return;
+        }
+        chip.disabled = true;
+        const run = action === 'continue'
+            ? ctx.host.onContinueConversation(latestProject, latestSummary)
+            : ctx.host.onRetryConversation(latestProject, latestSummary);
+        void Promise.resolve(run).finally(() => {
+            chip.disabled = false;
+        });
+    });
+    return chip;
 }
 
 export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry,
@@ -191,9 +242,16 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     taskBody.append(taskTitleRow);
 
     if (compact && failureHint) {
-        taskBody.append(createTaskFailureHintElement(
+        const failure = createTaskFailureHintElement(
             nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint),
-        ));
+        );
+        if (summary && summary.status !== 'streaming' && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-') && !options?.selection) {
+            failure.append(createFailedRunChip(ctx, project, summary));
+            // Plain classes instead of `:has()`: they drive the chip wrap and hide the time label on touch.
+            failure.classList.add('theia-mod-has-recovery');
+            row.classList.add('theia-mod-has-recovery');
+        }
+        taskBody.append(failure);
     }
 
     const sessionMeta = summary

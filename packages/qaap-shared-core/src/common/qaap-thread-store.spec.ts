@@ -53,6 +53,24 @@ describe('qaap-thread-store', () => {
         expect(sorted.map(entry => entry.id)).to.deep.equal(['live', 'idle']);
     });
 
+    it('indexes clone-root cwds by repository identity and keeps the index in step with the cwd set', () => {
+        const store = new QaapThreadStore();
+        const perUser = '/workspace/repos/users/me/acme/web';
+        const legacy = '/workspace/repos/acme/web';
+        store.upsertSummary(summary({ id: 'a', cwd: perUser }));
+        store.upsertSummary(summary({ id: 'other', cwd: '/workspace/repos/users/me/acme/web/apps/web' }));
+        expect(store.listCwdsForCloneIdentity('github:acme/web')).to.deep.equal([perUser]);
+
+        store.upsertSummary(summary({ id: 'b', cwd: legacy }));
+        expect([...store.listCwdsForCloneIdentity('github:acme/web')].sort()).to.deep.equal([legacy, perUser]);
+
+        store.removeSummary('b', legacy);
+        expect(store.listCwdsForCloneIdentity('github:acme/web')).to.deep.equal([perUser]);
+
+        store.applySummarySnapshot([]);
+        expect(store.listCwdsForCloneIdentity('github:acme/web')).to.deep.equal([]);
+    });
+
     it('applyWireDelta patches a cached document message', () => {
         const store = new QaapThreadStore();
         store.setDocument({

@@ -68,7 +68,20 @@ export function attachTaskTitleMarquee(row: HTMLElement, titleViewport: HTMLElem
     scheduleRefresh(false);
 }
 
-/** Updates a title while preserving the marquee's measurement hooks. */
+/** Whether the title's row is hovered or holds focus (the marquee then includes the hover reserve). */
+function isTitleRowInUse(titleViewport: HTMLElement): boolean {
+    const row = titleViewport.closest<HTMLElement>('.theia-mobile-projects-task-row') ?? titleViewport.parentElement;
+    if (!row) {
+        return false;
+    }
+    return row.matches(':hover') || row.contains(row.ownerDocument.activeElement);
+}
+
+/**
+ * Updates a title while preserving the marquee's measurement hooks, and re-measures it: a title
+ * renamed (or streamed) while its row is hovered keeps the hover reserve instead of dropping back
+ * to the resting measurement until the pointer leaves and re-enters.
+ */
 export function setTaskTitleText(titleViewport: HTMLElement, title: string): void {
     const titleText = titleViewport.querySelector<HTMLElement>(`.${TASK_TITLE_TEXT_CLASS}`);
     if (titleText) {
@@ -76,6 +89,5 @@ export function setTaskTitleText(titleViewport: HTMLElement, title: string): voi
     } else {
         titleViewport.textContent = title;
     }
-    titleViewport.classList.remove(TASK_TITLE_OVERFLOW_CLASS);
-    titleViewport.style.removeProperty('--qaap-task-title-overflow');
+    refreshTaskTitleMarquee(titleViewport, { interacting: isTitleRowInUse(titleViewport) });
 }
