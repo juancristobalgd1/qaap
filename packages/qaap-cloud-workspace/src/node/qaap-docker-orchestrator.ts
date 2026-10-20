@@ -16,7 +16,7 @@ import {
     resolveQaapWorktreesRoot,
     resolveTenantIsolationRoot,
     QAAP_USER_REPOS_SEGMENT,
-    safeUserIdSegment,
+    tenantSegmentKey,
     resolveQaapTenantUserRoot,
     resolveQaapTenantConfigRoot,
     resolveUserReposRoot,
@@ -714,7 +714,7 @@ export class QaapDockerOrchestrator {
         if (!tenant) {
             throw new Error('A task sandbox needs a tenant login.');
         }
-        const segment = safeUserIdSegment(ownerLogin).toLowerCase();
+        const segment = tenantSegmentKey(ownerLogin);
         const mounts = this.tenantMountsForRoot(this.tenantRootForLogin(ownerLogin));
         const tenantDataRoot = this.normalizeHostPath(resolveQaapTenantUserRoot(ownerLogin));
         const networkMode = this.getTenantNetworkMode(ownerLogin);
@@ -1029,7 +1029,7 @@ export class QaapDockerOrchestrator {
         const name = this.containerNameForTenant(ownerLogin);
         const mounts = this.tenantMountsForRoot(tenantRootHostPath);
         if (ownerLogin?.trim()) {
-            const expectedSegment = safeUserIdSegment(ownerLogin.trim()).toLowerCase();
+            const expectedSegment = tenantSegmentKey(ownerLogin);
             const actualSegment = path.basename(mounts.reposRoot).toLowerCase();
             if (actualSegment !== expectedSegment) {
                 throw new Error(`Tenant identity ${ownerLogin} does not match the requested tenant root ${tenantRootHostPath}.`);
@@ -1247,7 +1247,7 @@ export class QaapDockerOrchestrator {
         const name = this.backendContainerNameForTenant(ownerLogin);
         const mounts = this.tenantMountsForRoot(tenantRootHostPath);
         const dockerMounts = this.tenantMountsForDocker(mounts);
-        const expectedSegment = safeUserIdSegment(ownerLogin).toLowerCase();
+        const expectedSegment = tenantSegmentKey(ownerLogin);
         const actualSegment = path.basename(mounts.reposRoot).toLowerCase();
         if (actualSegment !== expectedSegment) {
             throw new Error(`Tenant identity ${ownerLogin} does not match the requested backend root ${tenantRootHostPath}.`);
@@ -1928,9 +1928,9 @@ export class QaapDockerOrchestrator {
             };
         };
         const expectedMounts = [
-            { source: this.dockerMountSource(mounts.reposRoot, 'repos'), destination: `${TENANT_BACKEND_REPOS_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
-            { source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'), destination: `${TENANT_BACKEND_WORKTREES_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
-            { source: this.dockerMountSource(mounts.parallelRoot, 'parallel'), destination: `${TENANT_BACKEND_PARALLEL_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
+            { source: this.dockerMountSource(mounts.reposRoot, 'repos'), destination: `${TENANT_BACKEND_REPOS_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
+            { source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'), destination: `${TENANT_BACKEND_WORKTREES_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
+            { source: this.dockerMountSource(mounts.parallelRoot, 'parallel'), destination: `${TENANT_BACKEND_PARALLEL_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
             { source: this.dockerMountSource(tenantDataRoot, 'tenant-config'), destination: TENANT_BACKEND_QAAP_HOME_MOUNT },
             { source: this.dockerMountSource(theiaHome, 'tenant-config'), destination: TENANT_BACKEND_THEIA_HOME_MOUNT },
         ];

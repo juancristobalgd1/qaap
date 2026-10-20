@@ -95,8 +95,36 @@ describe('QaapTerminalCwdGuard', () => {
         }
     });
 
-    it('compares tenant path segments case-sensitively, like the filesystem', () => {
-        expect(() => guard.resolveHostedTerminalCwd(aliceRepo, 'alice')).to.throw(/restricted/);
+    it('folds the case of the tenant segment (logins are case-insensitive) but never mixes tenants', () => {
+        expect(guard.resolveHostedTerminalCwd(aliceRepo, 'alice')).to.equal(aliceRepo);
+        expect(guard.resolveHostedTerminalCwd(aliceRepo, 'ALICE')).to.equal(aliceRepo);
+        expect(() => guard.resolveHostedTerminalCwd(bobRepo, 'Alice')).to.throw(/restricted/);
+        expect(() => guard.resolveHostedTerminalCwd(aliceRepo, 'Bob')).to.throw(/restricted/);
+        expect(() => guard.resolveHostedTerminalCwd(aliceRepo, 'Alice2')).to.throw(/restricted/);
+    });
+
+    it('hosted: a mixed-case login opens its own workspace (kept in its case on disk) and nobody else\'s', () => {
+        const ownRepo = path.join(reposRoot, 'users', 'JuanCristobal', 'acme', 'app');
+        fs.mkdirSync(ownRepo, { recursive: true });
+        expect(guard.resolveHostedTerminalCwd(ownRepo, 'JuanCristobal')).to.equal(ownRepo);
+        expect(guard.resolveHostedTerminalCwd(undefined, 'JuanCristobal')).to.equal(path.join(reposRoot, 'users', 'JuanCristobal'));
+        expect(() => guard.resolveHostedTerminalCwd(bobRepo, 'JuanCristobal')).to.throw(/restricted/);
+        expect(() => guard.resolveHostedTerminalCwd(ownRepo, 'bob')).to.throw(/restricted/);
+    });
+
+    it('tenant backend: a mixed-case login opens its trees mounted under the case-folded segment, and nobody else\'s', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_LOGIN = 'JuanCristobal';
+        // The orchestrator mounts the tenant trees at users/<tenantSegmentKey(login)>.
+        const ownRepo = path.join(reposRoot, 'users', 'juancristobal', 'acme', 'app');
+        fs.mkdirSync(ownRepo, { recursive: true });
+        expect(guard.resolveHostedTerminalCwd(ownRepo, 'JuanCristobal')).to.equal(ownRepo);
+        expect(guard.resolveHostedTerminalCwd(undefined, 'JuanCristobal')).to.equal(path.join(reposRoot, 'users', 'juancristobal'));
+        const worktree = path.join(resolveQaapWorktreesRoot(), 'juancristobal', 'conversation-1');
+        expect(guard.resolveHostedTerminalCwd(worktree, 'JuanCristobal')).to.equal(worktree);
+        expect(() => guard.resolveHostedTerminalCwd(bobRepo, 'JuanCristobal')).to.throw(/restricted/);
+        // Another tenant cannot use this backend at all, even with its own path.
+        expect(() => guard.resolveHostedTerminalCwd(bobRepo, 'bob')).to.throw(/tenant this backend serves/);
     });
 
     it('on a tenant backend only accepts the tenant pinned by QAAP_TENANT_LOGIN', () => {
