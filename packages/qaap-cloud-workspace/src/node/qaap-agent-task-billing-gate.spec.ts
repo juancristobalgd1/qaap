@@ -63,6 +63,19 @@ describe('checkAgentTaskBillingGate', () => {
         console.error = savedError;
     });
 
+    it("asks about the task owner's own Codex session, not an ownerless default", async () => {
+        const seen: Array<string | undefined> = [];
+        const ctx: QaapAgentTaskBillingGateContext = {
+            ...context({ agentId: 'codex', modelId: HOSTED_MODEL, read: () => Promise.resolve(account('pro', 10)) }),
+            isAgentConnectedFresh: (_agentId, ownerLogin) => {
+                seen.push(ownerLogin);
+                return Promise.resolve(true);
+            },
+        };
+        await checkAgentTaskBillingGate(ctx, task, request, { retryDelayMs: 0 });
+        expect(seen).to.deep.equal(['alice']);
+    });
+
     it('fails open for a BYOK turn when the billing store is down', async () => {
         expect(await gate({ agentId: 'claude', modelId: BYOK_MODEL })).to.equal(undefined);
     });

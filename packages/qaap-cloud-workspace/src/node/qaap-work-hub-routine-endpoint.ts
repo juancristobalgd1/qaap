@@ -46,7 +46,7 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
             res.json({
                 routines: this.filterRoutines(ctx, this.store.list()),
                 agentConfigured: this.taskRunner.isAgentConfigured(),
-                defaultAgent: this.taskRunner.defaultAgent(),
+                defaultAgent: this.taskRunner.defaultAgent(this.auth.resolveUserLogin(ctx)),
             } satisfies QaapWorkHubRoutineListResponse);
         });
         app.post(QAAP_WORK_HUB_ROUTINE_API_PATH, (req, res) => {
