@@ -277,7 +277,10 @@ export function tryPatchSessionsSidebarListExtracted(ctx: MobileProjectsSessions
             continue;
         }
         const task = ctx.host.conversationIndexUi.summaryToTaskView(entry.summary);
-        if (ctx.host.projectRowsUi.patchSidebarCompactTaskRow(existingRow, entry.project, task, entry.summary, {
+        // The in-place patch updates status and text, not the "+N failed" badge: recreate the row
+        // when the number of collapsed failed duplicates changed.
+        const failedDuplicatesChanged = (existingRow.dataset.qaapFailedDuplicates ?? '0') !== String(entry.failedDuplicateCount ?? 0);
+        if (!failedDuplicatesChanged && ctx.host.projectRowsUi.patchSidebarCompactTaskRow(existingRow, entry.project, task, entry.summary, {
             isCurrent: ctx.host.transcriptOpenSummaryId === entry.summary.id,
         })) {
             existingRow.setAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, nextFingerprint);
@@ -294,6 +297,7 @@ export function tryPatchSessionsSidebarListExtracted(ctx: MobileProjectsSessions
             parentIds,
             {
                 compact: true,
+                failedDuplicateCount: entry.failedDuplicateCount ?? 0,
                 onActivate: () => {
                     ctx.beginSessionsSidebarConversationActivation(entry.summary.id);
                     entry.onActivate?.();
@@ -338,6 +342,7 @@ export function buildSidebarRowFingerprintExtracted(ctx: MobileProjectsSessionsS
         isCurrent: ctx.host.transcriptOpenSummaryId === entry.summary.id,
         visualStatusId,
         unread: isQaapAgentTaskUnreadReply(entry.summary, unread),
+        failedDuplicateCount: entry.failedDuplicateCount ?? 0,
     });
 }
 
@@ -352,7 +357,8 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
     const pinnedGroups = ctx.collectSessionsSidebarPinnedGroups(projects, query);
     for (const { project, conversations: all } of pinnedGroups) {
         // Same rows as the renderer (see collapseSessionsSidebarFailedDuplicates).
-        const conversations = collapseSessionsSidebarFailedDuplicates(ctx, project, all).conversations;
+        const collapsed = collapseSessionsSidebarFailedDuplicates(ctx, project, all);
+        const conversations = collapsed.conversations;
         const parentIds = ctx.collectParentIds(conversations);
         const partitioned = partitionAgentConversations(conversations);
         const { visible } = ctx.resolveSessionsSidebarVisibleConversations(
@@ -361,7 +367,8 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
             bypassConversationLimit,
         );
         for (const summary of expandConversationSlots(visible, partitioned.forksByParentId)) {
-            entries.push({ project, summary, pinned: true, parentIds, onActivate });
+            const failedDuplicateCount = collapsed.hiddenFailedByKeptId.get(summary.id) ?? 0;
+            entries.push({ project, summary, pinned: true, parentIds, failedDuplicateCount, onActivate });
         }
     }
     for (const project of projects) {
@@ -376,7 +383,8 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
         } else if (conversations.length === 0) {
             continue;
         }
-        conversations = collapseSessionsSidebarFailedDuplicates(ctx, project, conversations).conversations;
+        const collapsed = collapseSessionsSidebarFailedDuplicates(ctx, project, conversations);
+        conversations = collapsed.conversations;
         const parentIds = ctx.collectParentIds(conversations);
         const partitioned = partitionAgentConversations(conversations);
         const { visible } = ctx.resolveSessionsSidebarVisibleConversations(
@@ -385,7 +393,8 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobilePr
             bypassConversationLimit,
         );
         for (const summary of expandConversationSlots(visible, partitioned.forksByParentId)) {
-            entries.push({ project, summary, pinned: false, parentIds, onActivate });
+            const failedDuplicateCount = collapsed.hiddenFailedByKeptId.get(summary.id) ?? 0;
+            entries.push({ project, summary, pinned: false, parentIds, failedDuplicateCount, onActivate });
         }
     }
     return entries;

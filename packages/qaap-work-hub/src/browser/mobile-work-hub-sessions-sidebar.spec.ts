@@ -534,6 +534,27 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"]')).to.equal(liveRow);
     });
 
+    it('replaces the list when only a conversation id suffix differs (not an icon id)', () => {
+        let render = 0;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                render++;
+                const row = document.createElement('div');
+                // Ids ending in `-<digits>` look like the per-render icon suffix, but are real data.
+                row.dataset.qaapConversationId = `conv-${render}`;
+                host.append(row);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+
+        sidebar.refreshList();
+
+        expect(sidebar.node.querySelector('[data-qaap-conversation-id="conv-2"]')).to.not.equal(null);
+    });
+
     it('does not touch DOM when refreshed markup is unchanged', () => {
         let renderCalls = 0;
         const sidebar = new MobileWorkHubSessionsSidebar({

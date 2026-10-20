@@ -46,8 +46,11 @@ const TASK_TITLE_OVERFLOW_STYLE_MARKUP = / style="(?:--qaap-task-title-overflow:
 const ROW_FINGERPRINT_MARKUP = / data-qaap-[a-z-]+-fp="[^"]*"/g;
 /** Sticky Projects heading tooltip, written by updateProjectsHeading on the live list only. */
 const PROJECTS_HEADING_TITLE_MARKUP = /(class="theia-mobile-tasks-inbox-section-label") title="[^"]*"/g;
-/** Per-instance suffix `uniquifySvgIds` appends to every agent icon's gradient ids on each render. */
-const SVG_INSTANCE_ID_SUFFIX_MARKUP = /(\bid="[^"]*?|url\(#[^)]*?)-\d+(?=[")])/g;
+/**
+ * Per-instance suffix `uniquifySvgIds` appends to every agent icon's gradient ids on each render.
+ * `(?<![\w-])` keeps it off `data-*-id="…"` attributes (a conversation id ending in `-<digits>`).
+ */
+const SVG_INSTANCE_ID_SUFFIX_MARKUP = /((?<![\w-])id="[^"]*?|url\(#[^)]*?)-\d+(?=[")])/g;
 const DESKTOP_SIDEBAR_MIN_WIDTH = 240;
 const DESKTOP_SIDEBAR_MAX_WIDTH = 460;
 const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
