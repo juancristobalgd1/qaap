@@ -1,7 +1,7 @@
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
-import { checkAgentTaskBillingGate } from './qaap-agent-task-billing-gate';
+import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -269,7 +269,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
             return;
         }
         // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
-        const billingRejection = await checkAgentTaskBillingGate(ctx, task, request);
+        const billingRejection = await resolveAgentTaskBillingRejection(ctx, task, request);
         if (billingRejection !== undefined) {
             fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
             fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');

@@ -88,11 +88,16 @@ export async function checkAgentTaskBillingGate(
         return denialReason ? QaapPlanLimit.tagged(denialReason, hostedDenial) : hostedDenial;
     }
     const message = billingError instanceof Error ? billingError.message : String(billingError);
+    const cached = billingStore.peekEntitlements?.(ownerLogin);
+    // The account is unreadable but a warm cache may still say the runtime allowance is gone.
+    if (cached?.canStartAgent === false) {
+        console.error(`[qaap-billing] Entitlement read failed for ${ownerLogin}; cached entitlements deny starting a turn. ${message}`);
+        return QaapPlanLimit.tagged('runtime_exhausted', 'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.');
+    }
     if (!hostedCodex) {
         console.error(`[qaap-billing] Entitlement read failed for ${ownerLogin}; BYOK turn runs (fail-open). ${message}`);
         return undefined;
     }
-    const cached = billingStore.peekEntitlements?.(ownerLogin);
     if (cached?.hostedModels === true && cached.creditsRemaining > 0) {
         console.error(`[qaap-billing] Entitlement read failed for ${ownerLogin}; hosted Codex turn allowed from cached entitlements. ${message}`);
         return undefined;
@@ -102,4 +107,23 @@ export async function checkAgentTaskBillingGate(
         'qaap/billing/hostedCodexUnavailable',
         'Billing is temporarily unavailable, so hosted Codex models cannot be started right now. Try again in a moment or pick a BYOK model.',
     );
+}
+
+/**
+ * {@link checkAgentTaskBillingGate} for callers that cannot let an exception escape (the spawn path is
+ * fire-and-forget): an unexpected error becomes a rejection line so the task is finished as failed
+ * instead of sitting in `running` until the watchdog.
+ */
+export async function resolveAgentTaskBillingRejection(
+    ctx: QaapAgentTaskBillingGateContext,
+    task: QaapAgentTask,
+    request: QaapCreateAgentTaskRequest,
+    options?: QaapAgentTaskBillingGateOptions,
+): Promise<string | undefined> {
+    try {
+        return await checkAgentTaskBillingGate(ctx, task, request, options);
+    } catch (error) {
+        console.error(`[qaap-billing] Entitlement gate crashed for task ${task.id}; failing the turn.`, error);
+        return nls.localize('qaap/billing/gateFailed', 'This turn could not be started because the entitlement check failed unexpectedly. Please try again.');
+    }
 }
