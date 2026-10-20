@@ -1,6 +1,7 @@
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
+import { checkAgentTaskBillingGate } from './qaap-agent-task-billing-gate';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -12,8 +13,6 @@ import {
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
-import { canStartNewAgentJob, hostedModelDenialPlanLimit, hostedModelDenialReason, isHostedCodexUsage } from '../common/qaap-billing-plans';
 import {
     buildQaiqControlResponseLine,
     buildQaiqStdioPromptLine,
@@ -257,25 +256,6 @@ export function clearQueuedApprovalTimersExtracted(ctx: QaapAgentTaskRunnerConte
         }
 }
 
-const BILLING_READ_ATTEMPTS = 3;
-const BILLING_READ_RETRY_DELAY_MS = 250;
-
-/** Retries a transient billing-store read before the caller falls back to failing open. */
-async function retryBillingRead<T>(read: () => Promise<T>): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= BILLING_READ_ATTEMPTS; attempt++) {
-        try {
-            return await read();
-        } catch (error) {
-            lastError = error;
-            if (attempt < BILLING_READ_ATTEMPTS) {
-                await new Promise<void>(resolve => setTimeout(resolve, BILLING_READ_RETRY_DELAY_MS * attempt));
-            }
-        }
-    }
-    throw lastError;
-}
-
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
@@ -288,45 +268,13 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         if (ctx.tasks.get(task.id)?.state !== 'running') {
             return;
         }
-        if (task.ownerLogin && ctx.billingStore) {
-            try {
-                const billingStore = ctx.billingStore;
-                const ownerLogin = task.ownerLogin;
-                const account = await retryBillingRead(() => billingStore.getOrCreateAccount(ownerLogin));
-                if (!canStartNewAgentJob(account)) {
-                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-                    fs.writeFileSync(
-                        ctx.logPath(task.id),
-                        `${QaapPlanLimit.tagged('runtime_exhausted', 'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.')}\n`,
-                        'utf8',
-                    );
-                    ctx.finishTask(task.id, 'failed', 1);
-                    return;
-                }
-                const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim(), task.ownerLogin);
-                const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-                const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent, task.ownerLogin) ?? request.agent ?? task.agentId;
-                const usesUserCodexSession = await ctx.isAgentConnectedFresh?.(agentId) === true;
-                const hostedDenial = isHostedCodexUsage(agentId, modelId) && !usesUserCodexSession
-                    ? hostedModelDenialReason(account, modelId)
-                    : undefined;
-                if (hostedDenial) {
-                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-                    const denialReason = hostedModelDenialPlanLimit(account, modelId);
-                    fs.writeFileSync(
-                        ctx.logPath(task.id),
-                        `${denialReason ? QaapPlanLimit.tagged(denialReason, hostedDenial) : hostedDenial}\n`,
-                        'utf8',
-                    );
-                    ctx.finishTask(task.id, 'failed', 1);
-                    return;
-                }
-            } catch (error) {
-                // Fail open: a billing outage must not fail the user's task. Quotas are still enforced
-                // on the next turn once the store answers again.
-                const message = error instanceof Error ? error.message : String(error);
-                console.warn(`[qaap-billing] Entitlement check failed for ${task.ownerLogin}; letting the turn run. ${message}`);
-            }
+        // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
+        const billingRejection = await checkAgentTaskBillingGate(ctx, task, request);
+        if (billingRejection !== undefined) {
+            fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
+            fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');
+            ctx.finishTask(task.id, 'failed', 1);
+            return;
         }
         const markedTask = ctx.tasks.get(task.id) ?? task;
         const baseline = ctx.captureWorktreeBaseline(task.cwd);

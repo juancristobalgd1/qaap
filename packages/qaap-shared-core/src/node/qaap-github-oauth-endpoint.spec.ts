@@ -888,4 +888,15 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
         expect(status).to.equal(302);
         expect(location).to.contain('qaap_oauth_error=1').and.to.contain('qaap_oauth_reason=not_configured');
     });
+
+    it('keeps the request base path when redirecting not_configured', () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        let location = '';
+        const res = { redirect: (_s: number, url: string) => { location = url; } };
+        (endpoint as unknown as { redirectOAuthNotConfigured(q: unknown, r: unknown): void })
+            .redirectOAuthNotConfigured({ baseUrl: '/tenant', path: '/api/auth/github/start' }, res);
+        // /tenant/api/auth/github/start → ../../../ resolves to /tenant/, never the host root.
+        expect(new URL(location, 'https://qaap.test/tenant/api/auth/github/start').pathname).to.equal('/tenant/');
+        expect(location.startsWith('/')).to.equal(false);
+    });
 });

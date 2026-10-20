@@ -505,11 +505,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         res.json({ session });
     }
 
-    protected handleOAuthStart(_req: Request, res: Response): void {
+    protected handleOAuthStart(req: Request, res: Response): void {
         const config = readQaapGithubOAuthConfig();
         if (!config) {
             console.error('[qaap-oauth] GitHub OAuth is not configured (QAAP_GITHUB_CLIENT_ID, QAAP_GITHUB_CLIENT_SECRET, QAAP_OAUTH_PUBLIC_URL).');
-            this.redirectOAuthNotConfigured(res);
+            this.redirectOAuthNotConfigured(req, res);
             return;
         }
         const state = this.sessions.createOAuthState();
@@ -525,7 +525,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const config = readQaapGithubOAuthConfig();
         if (!config) {
             console.error('[qaap-oauth] Callback hit but GitHub OAuth is not configured.');
-            this.redirectOAuthNotConfigured(res);
+            this.redirectOAuthNotConfigured(req, res);
             return;
         }
         const error = typeof req.query.error === 'string' ? req.query.error : undefined;
@@ -543,7 +543,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (!this.sessions.consumeOAuthState(state)) {
-            console.error('[qaap-oauth] OAuth state is unknown or expired (backend likely restarted between /start and /callback). state=', state);
+            console.error('[qaap-oauth] OAuth state is unknown or expired (backend likely restarted between /start and /callback).');
             this.redirectAfterOAuth(res, config.publicUrl, false, 'state_lost');
             return;
         }
@@ -2173,9 +2173,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         });
     }
 
-    /** Without OAuth credentials there is no configured public URL: send the user back to the app root with a reason code instead of a bare 503. */
-    protected redirectOAuthNotConfigured(res: Response): void {
-        res.redirect(302, `/?qaap_oauth_error=1&qaap_oauth_reason=not_configured#${THEIA_EMPTY_WINDOW_HASH}`);
+    /**
+     * Without OAuth credentials there is no configured public URL: send the user back to the app root with a
+     * reason code instead of a bare 503. The target is relative to the request path so an app served under a
+     * base path (router mount or reverse-proxy prefix) lands on its own root, not the host's `/`.
+     */
+    protected redirectOAuthNotConfigured(req: Request, res: Response): void {
+        const depth = Math.max(0, (req.path ?? '').split('/').filter(segment => segment.length > 0).length - 1);
+        const appRoot = depth > 0 ? '../'.repeat(depth) : './';
+        res.redirect(302, `${appRoot}?qaap_oauth_error=1&qaap_oauth_reason=not_configured#${THEIA_EMPTY_WINDOW_HASH}`);
     }
 
     protected redirectAfterOAuth(res: Response, publicUrl: string, success: boolean, reason?: string): void {
