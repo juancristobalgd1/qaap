@@ -199,6 +199,7 @@ export class QaapProjectBootstrapDetector {
         const rootBuild = enclosingWorkspaceRoot && devScriptKey && rootScript && packageManager !== 'native'
             ? await this.resolvePreviewBuildPlan(rootUri, devScriptKey, rootScript, scripts, kind, buildPolicy)
             : undefined;
+        const rootStartCommand = devCommand && rootBuild?.buildScript ? devCommand : undefined;
         if (devCommand && rootBuild?.buildScript) {
             devCommand = `${this.buildRunCommand(packageManager, rootBuild.buildScript)} && ${devCommand}`;
             devCommandLabel = devCommand;
@@ -242,7 +243,7 @@ export class QaapProjectBootstrapDetector {
             apps,
             workspaceRootUri,
             ...(rootBinary ? { devScriptBinary: rootBinary } : {}),
-            ...(rootBuild?.buildScript ? { buildScript: rootBuild.buildScript } : {}),
+            ...(rootBuild?.buildScript && rootStartCommand ? { buildScript: rootBuild.buildScript, previewStartCommand: rootStartCommand } : {}),
             ...(rootBuild?.missingOutputDir ? { buildRequired: true, buildOutputUri: rootUri.resolve(rootBuild.missingOutputDir) } : {}),
         };
     }
@@ -1126,7 +1127,10 @@ export class QaapProjectBootstrapDetector {
             devCommand,
             devCommandLabel: devCommand,
             expectedPort,
-            ...(build?.buildScript ? { buildScript: build.buildScript } : {}),
+            ...(build?.buildScript && rootPm !== 'native' ? {
+                buildScript: build.buildScript,
+                previewStartCommand: buildQaapWorkspaceScriptCommand({ packageManager: rootPm, packageName: pkgName, script: devScriptKey }),
+            } : {}),
             ...(build?.missingOutputDir ? { buildRequired: true, buildOutputUri: appUri.resolve(build.missingOutputDir) } : {}),
         };
     }

@@ -526,6 +526,7 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         const app = descriptor?.apps.find(candidate => candidate.relativePath === 'examples/browser');
         expect(app?.buildScript).to.equal('build');
         expect(app?.devCommand).to.equal('npm run build && npm run start');
+        expect(app?.previewStartCommand).to.equal('npm run start');
 
         // The opt-in never rebuilds a member whose output already exists.
         mock.addDir('/ws/examples/browser/lib');

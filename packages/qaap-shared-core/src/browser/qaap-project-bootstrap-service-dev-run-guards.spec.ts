@@ -348,6 +348,46 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(ctx._error).to.contain('`build` step that runs before the preview ran out of memory');
         });
 
+        it('recovers a port conflict of a chained build with the start command alone (no rebuild)', async () => {
+            const started: string[] = [];
+            const { ctx } = failingRunContext({
+                _descriptor: {
+                    name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build', previewStartCommand: 'npm run start',
+                },
+                _portConflictDetected: true,
+                _portConflictPort: 5173,
+                automaticPortRecoveryAttempts: 0,
+                attemptedDevPorts: new Set<number>([5173]),
+                startDevServer: async (plan: { command: string }) => { started.push(plan.command); },
+            });
+            await activity.failDevRunExtracted(ctx, 'Error: listen EADDRINUSE: address already in use :::5173',
+                { ...PLAN, command: 'npm run build && npm run start' }, 7);
+
+            expect(started).to.deep.equal(['npm run start']);
+            expect(ctx.automaticPortRecoveryAttempts).to.equal(1);
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+        });
+
+        it('reports a port conflict of a chained build instead of relaunching it when the start command is unknown', async () => {
+            const started: string[] = [];
+            const { ctx } = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build' },
+                _portConflictDetected: true,
+                _portConflictPort: 5173,
+                automaticPortRecoveryAttempts: 0,
+                attemptedDevPorts: new Set<number>([5173]),
+                startDevServer: async (plan: { command: string }) => { started.push(plan.command); },
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Error: listen EADDRINUSE: address already in use :::5173',
+                { ...PLAN, command: 'npm run build && npm run start' }, 7);
+
+            expect(started).to.deep.equal([]);
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx._error).to.contain('does not relaunch a preview that builds first');
+        });
+
         it('handles a later failure of the same run once the first one settled', async () => {
             const { ctx } = failingRunContext();
             await activity.failDevRunExtracted(ctx, 'Dev server exited with code 1.', PLAN, 7);

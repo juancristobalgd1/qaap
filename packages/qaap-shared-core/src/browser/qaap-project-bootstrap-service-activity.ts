@@ -150,7 +150,11 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         const descriptor = ctx._descriptor;
         // An opted-in build chained before the server (`npm run build && npm run start`): every retry
         // reruns the whole build (an OOM-killed build is killed again), so its failure is final.
-        const buildFirst = resolveQaapPreviewBuildTarget(descriptor, ctx._selectedApp)?.buildScript;
+        const buildTarget = resolveQaapPreviewBuildTarget(descriptor, ctx._selectedApp);
+        // A recovery relaunch runs only the start half, so this run's command is what decides.
+        const buildFirst = buildTarget?.buildScript && plan.command !== buildTarget.previewStartCommand
+            ? buildTarget.buildScript
+            : undefined;
         const baseDiagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
         const diagnosis = buildFirst ? diagnoseBuildFirstPreviewFailure(baseDiagnosis, buildFirst) : baseDiagnosis;
         // A clean exit with nothing listening is the same exit next time: report it, don't retry.
@@ -187,7 +191,11 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             }, DEV_PREVIEW_AUTO_RETRY_DELAY_MS * ctx.previewAutoRetryAttempts);
             return;
         }
-        if (portConflict && conflictPort !== undefined && descriptor && !nextLock
+        // A conflict while the chained server binds means `build &&` already exited 0: recover with
+        // the start command alone so the next port never reruns the build. Without a known start
+        // command the conflict is reported instead of relaunching the build.
+        const recoveryCommand = buildFirst ? buildTarget?.previewStartCommand : plan.command;
+        if (portConflict && conflictPort !== undefined && descriptor && !nextLock && recoveryCommand
             && ctx.automaticPortRecoveryAttempts < DEV_PORT_RECOVERY_MAX_ATTEMPTS) {
             const alternatePort = pickNextDevPort(conflictPort, [...ctx.attemptedDevPorts]);
             if (alternatePort !== undefined) {
@@ -198,7 +206,7 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
                 // startDevServer transitions to `starting` immediately; assigning directly avoids
                 // flashing a misleading ready-to-run banner between the two attempts.
                 ctx._phase = 'ready-to-run';
-                await ctx.startDevServer({ ...plan }, descriptor);
+                await ctx.startDevServer({ ...plan, command: recoveryCommand }, descriptor);
                 return;
             }
         }
@@ -211,7 +219,10 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         ctx._needsInstall = terminalOutputNeedsInstall(failureOutput);
         const diagnosedError = nextLock
             ? extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message))
-            : portConflict && conflictPort
+            : portConflict && conflictPort && !recoveryCommand
+                ? `Port :${conflictPort} is already in use. Qaap does not relaunch a preview that builds first on another port; `
+                    + 'free the port or stop the other server, then start the preview again.'
+                : portConflict && conflictPort
                 ? `Port :${conflictPort} is already in use. Qaap exhausted ${DEV_PORT_RECOVERY_MAX_ATTEMPTS} alternate ports; stop stale dev servers, then retry.`
                 : exitedWithoutListening
                     ? message
