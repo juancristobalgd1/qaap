@@ -35,6 +35,123 @@ export function createSessionsSidebarSignInHintExtracted(options?: { readonly co
         return hint;
 }
 
+/** The Projects section head (sort + add project), painted in every state of the list. */
+export function createSessionsSidebarProjectsHeadExtracted(ctx: MobileProjectsSessionsSidebarUiContext): HTMLElement {
+    const sectionHead = document.createElement('div');
+    sectionHead.className = 'theia-mobile-tasks-inbox-section-head theia-mod-sessions-sidebar-projects-head';
+    const sectionLabel = document.createElement('span');
+    sectionLabel.className = 'theia-mobile-tasks-inbox-section-label';
+    sectionLabel.textContent = nls.localize('qaap/sessionsSidebar/projectsSection', 'Projects');
+    sectionHead.append(sectionLabel);
+    const sectionActions = document.createElement('div');
+    sectionActions.className = 'theia-mobile-work-hub-sessions-sidebar-projects-head-actions';
+    const sortBtn = document.createElement('button');
+    sortBtn.type = 'button';
+    sortBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-sort';
+    const sortIcon = createLucideSortIcon();
+    sortBtn.append(sortIcon);
+    sortBtn.title = nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects');
+    sortBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects'));
+    sortBtn.setAttribute('aria-haspopup', 'menu');
+    sortBtn.setAttribute('aria-expanded', 'false');
+    sortBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        ctx.toggleSessionsSidebarProjectSortPopover(sortBtn);
+    });
+    const addProjectBtn = document.createElement('button');
+    addProjectBtn.type = 'button';
+    addProjectBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-add-project';
+    const addProjectIcon = document.createElement('span');
+    addProjectIcon.className = 'codicon codicon-new-folder';
+    addProjectIcon.setAttribute('aria-hidden', 'true');
+    addProjectBtn.append(addProjectIcon);
+    addProjectBtn.title = nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project');
+    addProjectBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project'));
+    addProjectBtn.setAttribute('aria-haspopup', 'menu');
+    addProjectBtn.setAttribute('aria-expanded', 'false');
+    addProjectBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        ctx.toggleSessionsSidebarAddProjectPopover(addProjectBtn);
+    });
+    // Status-legend control removed from the Projects head — it crowded the
+    // mobile action cluster; keep the popover helpers for possible reuse.
+    sectionActions.append(sortBtn, addProjectBtn);
+    sectionHead.append(sectionActions);
+    return sectionHead;
+}
+
+/** `q-empty` block of the sessions sidebar (design-system empty state). */
+function createSessionsSidebarEmptyState(options: {
+    readonly icon: string;
+    readonly title: string;
+    readonly hint: string;
+    readonly action?: { readonly label: string; readonly onClick: () => void };
+}): HTMLElement {
+    const empty = document.createElement('div');
+    empty.className = 'q-empty theia-mobile-work-hub-sessions-sidebar-empty-state';
+    const icon = document.createElement('span');
+    icon.className = `q-empty-icon codicon ${options.icon}`;
+    icon.setAttribute('aria-hidden', 'true');
+    const title = document.createElement('p');
+    title.className = 'q-empty-title';
+    title.textContent = options.title;
+    const hint = document.createElement('p');
+    hint.className = 'q-empty-hint';
+    hint.textContent = options.hint;
+    empty.append(icon, title, hint);
+    if (options.action) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'q-empty-action';
+        action.textContent = options.action.label;
+        action.addEventListener('click', options.action.onClick);
+        empty.append(action);
+    }
+    return empty;
+}
+
+/** No project yet: the button opens the same Add repository dialog as the head's folder+ menu. */
+export function createSessionsSidebarNoProjectsExtracted(ctx: MobileProjectsSessionsSidebarUiContext): HTMLElement {
+    return createSessionsSidebarEmptyState({
+        icon: 'codicon-repo',
+        title: nls.localize('qaap/sessionsSidebar/noProjectsTitle', 'No projects yet'),
+        hint: nls.localize('qaap/sessionsSidebar/noProjectsHint', 'Add a GitHub repository to start delegating tasks to agents.'),
+        action: {
+            label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
+            onClick: () => {
+                ctx.closeSessionsSidebarHeadPopovers?.();
+                void ctx.host.onNewClick();
+            },
+        },
+    });
+}
+
+export function createSessionsSidebarNoMatchesExtracted(query: string): HTMLElement {
+    return createSessionsSidebarEmptyState({
+        icon: 'codicon-search',
+        title: nls.localize('qaap/sessionsSidebar/noSearchResultsTitle', 'No matches'),
+        hint: nls.localize('qaap/sessionsSidebar/noSearchResultsHint', 'No projects or sessions match "{0}".', query),
+    });
+}
+
+/** Placeholder rows while the first session history snapshot loads. */
+export function createSessionsSidebarSkeletonExtracted(rows = 4): HTMLElement {
+    const skeleton = document.createElement('div');
+    skeleton.className = 'theia-mobile-work-hub-sessions-sidebar-skeleton';
+    skeleton.setAttribute('aria-hidden', 'true');
+    for (let index = 0; index < rows; index++) {
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-work-hub-sessions-sidebar-skeleton-row';
+        const icon = document.createElement('span');
+        icon.className = 'q-skeleton theia-mobile-work-hub-sessions-sidebar-skeleton-icon';
+        const text = document.createElement('span');
+        text.className = 'q-skeleton q-skeleton-text theia-mobile-work-hub-sessions-sidebar-skeleton-text';
+        row.append(icon, text);
+        skeleton.append(row);
+    }
+    return skeleton;
+}
+
 export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSessionsSidebarUiContext, host: HTMLElement): void {
         // Empty first paints need subscriptions too; otherwise the first snapshot
         // cannot replace the loading/empty state until a later navigation.
@@ -45,6 +162,8 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
             ctx.bindSessionsSidebarThreadStoreSubscriptions?.();
         }
         const snapshotState = ctx.host.conversations?.snapshotState;
+        const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
+        const query = (ctx.host.query ?? '').trim().toLowerCase();
         if (snapshotState === 'loading' || snapshotState === 'reconnecting') {
             // A thin indeterminate bar on the separator under the nav instead of a text line:
             // loading / reconnecting is transient and should not take over the list.
@@ -55,7 +174,9 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
                 ? nls.localize('qaap/sessionsSidebar/loadingHistory', 'Loading session history…')
                 : nls.localize('qaap/sessionsSidebar/historyReconnecting', 'Reconnecting to session history…'));
             host.append(progress);
-            if (ctx.host.projects.length === 0) {
+            if (projects.length === 0) {
+                // The Projects head stays reachable (add a repository) while rows load as skeletons.
+                host.append(createSessionsSidebarProjectsHeadExtracted(ctx), createSessionsSidebarSkeletonExtracted());
                 return;
             }
         } else if (snapshotState === 'error') {
@@ -64,24 +185,22 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
             status.setAttribute('role', 'status');
             status.textContent = nls.localize('qaap/sessionsSidebar/historyUnavailable', 'Session history unavailable. Reconnecting…');
             host.append(status);
-            if (ctx.host.projects.length === 0) {
+            if (projects.length === 0) {
+                host.append(createSessionsSidebarProjectsHeadExtracted(ctx));
                 return;
             }
         }
-        const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
-        const query = ctx.host.query.trim().toLowerCase();
         const signedIn = typeof ctx.readQaapSignedIn === 'function' ? ctx.readQaapSignedIn() : readQaapSignedIn();
         if (projects.length === 0) {
+            // Always paint the Projects head: its folder+ action is how a new user adds a first repository.
+            host.append(createSessionsSidebarProjectsHeadExtracted(ctx));
             if (!query && !signedIn) {
                 host.append(createSessionsSidebarSignInHintExtracted());
                 return;
             }
-            const empty = document.createElement('p');
-            empty.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
-            empty.textContent = query
-                ? nls.localize('qaap/sessionsSidebar/noSearchResults', 'No sessions match your search.')
-                : nls.localize('qaap/sessionsSidebar/noSessions', 'No agent sessions yet. Start one from Agents.');
-            host.append(empty);
+            host.append(query
+                ? createSessionsSidebarNoMatchesExtracted(query)
+                : createSessionsSidebarNoProjectsExtracted(ctx));
             return;
         }
         if (!query && !signedIn) {
@@ -97,46 +216,7 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
         if (pinnedGroups.length > 0) {
             host.append(ctx.createSessionsSidebarPinnedSection(pinnedGroups, onActivate, bypassConversationLimit));
         }
-        const sectionHead = document.createElement('div');
-        sectionHead.className = 'theia-mobile-tasks-inbox-section-head theia-mod-sessions-sidebar-projects-head';
-        const sectionLabel = document.createElement('span');
-        sectionLabel.className = 'theia-mobile-tasks-inbox-section-label';
-        sectionLabel.textContent = nls.localize('qaap/sessionsSidebar/projectsSection', 'Projects');
-        sectionHead.append(sectionLabel);
-        const sectionActions = document.createElement('div');
-        sectionActions.className = 'theia-mobile-work-hub-sessions-sidebar-projects-head-actions';
-        const sortBtn = document.createElement('button');
-        sortBtn.type = 'button';
-        sortBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-sort';
-        const sortIcon = createLucideSortIcon();
-        sortBtn.append(sortIcon);
-        sortBtn.title = nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects');
-        sortBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects'));
-        sortBtn.setAttribute('aria-haspopup', 'menu');
-        sortBtn.setAttribute('aria-expanded', 'false');
-        sortBtn.addEventListener('click', event => {
-            event.stopPropagation();
-            ctx.toggleSessionsSidebarProjectSortPopover(sortBtn);
-        });
-        const addProjectBtn = document.createElement('button');
-        addProjectBtn.type = 'button';
-        addProjectBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-add-project';
-        const addProjectIcon = document.createElement('span');
-        addProjectIcon.className = 'codicon codicon-new-folder';
-        addProjectIcon.setAttribute('aria-hidden', 'true');
-        addProjectBtn.append(addProjectIcon);
-        addProjectBtn.title = nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project');
-        addProjectBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project'));
-        addProjectBtn.setAttribute('aria-haspopup', 'menu');
-        addProjectBtn.setAttribute('aria-expanded', 'false');
-        addProjectBtn.addEventListener('click', event => {
-            event.stopPropagation();
-            ctx.toggleSessionsSidebarAddProjectPopover(addProjectBtn);
-        });
-        // Status-legend control removed from the Projects head — it crowded the
-        // mobile action cluster; keep the popover helpers for possible reuse.
-        sectionActions.append(sortBtn, addProjectBtn);
-        sectionHead.append(sectionActions);
+        const sectionHead = createSessionsSidebarProjectsHeadExtracted(ctx);
         const list = document.createElement('div');
         list.className = 'theia-mobile-work-hub-sessions-sidebar-projects-list';
         let visibleCount = 0;
@@ -155,12 +235,9 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
             visibleCount++;
         }
         if (visibleCount === 0 && pinnedGroups.length === 0) {
-            const empty = document.createElement('p');
-            empty.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
-            empty.textContent = query
-                ? nls.localize('qaap/sessionsSidebar/noSearchResults', 'No sessions match your search.')
-                : nls.localize('qaap/sessionsSidebar/noSessions', 'No agent sessions yet. Start one from Agents.');
-            host.append(empty);
+            host.append(sectionHead, query
+                ? createSessionsSidebarNoMatchesExtracted(query)
+                : createSessionsSidebarNoProjectsExtracted(ctx));
             return;
         }
         if (visibleCount > 0) {

@@ -14,6 +14,7 @@ import {
     deleteConversation,
     forkConversation,
     isConversationAutoApproveEnabled,
+    postConversationMessage,
     renameConversation,
     respondTaskPullRequestConsent,
     retryConversation,
@@ -21,6 +22,7 @@ import {
     updateConversation,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
@@ -388,6 +390,46 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/retryTaskFailed',
                 'Could not retry: {0}',
+                error instanceof Error ? error.message : String(error)
+            ));
+        }
+    }
+
+    /**
+     * Resume an interrupted turn (server restart, turn watchdog): its work is kept, so instead of
+     * re-running the turn like Retry, send the follow-up the failure copy asks for, with the agent
+     * model stored for the conversation (same as the verify report's follow-up).
+     */
+    async onContinueConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        const rollbackSnapshot = { ...summary };
+        const prompt = nls.localize('qaap/mobileProjects/continuePrompt', 'Continue where you left off.');
+        this.host.conversations?.recordSnapshot({ ...summary, status: 'streaming', updatedAt: Date.now() });
+        this.host.applyTaskStartedToProject(summary.cwd, prompt, summary.id);
+        this.refreshConversationLists();
+        try {
+            const agentModel = resolveStoredAgentModelForSubmit(summary.agentId, summary.cwd);
+            const continued = await postConversationMessage(summary.id, prompt, { agentModel });
+            this.host.conversations?.recordSnapshot(conversationToSummary(continued));
+            if (this.host.isWatchingOpenTranscript(summary.id)) {
+                const chatHost = this.host.resolveActiveTranscriptChatHost();
+                if (chatHost) {
+                    this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
+                }
+            }
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/taskContinued', 'Task continued'),
+                { kind: 'success', duration: 1400 }
+            );
+        } catch (error) {
+            this.host.conversations?.recordSnapshot(rollbackSnapshot);
+            this.refreshConversationLists();
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/continueTaskFailed',
+                'Could not continue: {0}',
                 error instanceof Error ? error.message : String(error)
             ));
         }

@@ -92,6 +92,8 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
     function createUi(options?: {
         readonly onArchive?: (summary: QaapAgentConversationSummaryDTO) => void;
         readonly latestSummary?: QaapAgentConversationSummaryDTO;
+        readonly onRetry?: () => void;
+        readonly onContinue?: () => void;
     }): MobileProjectsProjectRowsUi {
         const host = {
             homeMode: false,
@@ -117,7 +119,12 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
                 openConversationSummary: async () => undefined,
                 openTaskInAgent: async () => undefined,
             },
-            onRetryConversation: async () => undefined,
+            onRetryConversation: async () => {
+                options?.onRetry?.();
+            },
+            onContinueConversation: async () => {
+                options?.onContinue?.();
+            },
             onArchiveConversation: async (_project: MobileProjectEntry, archived: QaapAgentConversationSummaryDTO) => {
                 options?.onArchive?.(archived);
             },
@@ -163,25 +170,57 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         expect(row.querySelector('.theia-mobile-projects-conversation-archive-btn')).to.not.equal(null);
     });
 
-    it('keeps retry actions in the overflow menu instead of mounting direct row buttons', () => {
-        const ui = createUi();
+    it('offers a one-tap Retry chip on a failed row without opening the conversation', async () => {
+        let retried = 0;
+        let continued = 0;
+        let opened = 0;
+        const ui = createUi({ onRetry: () => { retried++; }, onContinue: () => { continued++; } });
         const failedSummary = summary({
             id: 'failed-conversation-1',
             status: 'failed',
+            lastMessageRole: 'agent',
+            lastMessageError: 'Bash exited with code 1.',
         });
         const failedTask = { ...task, id: failedSummary.id, state: 'failed' as const };
-        const row = ui.createTaskItem(project, failedTask, undefined, failedSummary, new Set(), { compact: true });
-        expect(row.querySelector('.theia-mobile-projects-conversation-retry-btn')).to.equal(null);
-
-        const executedSummary = summary({
-            id: 'failed-conversation-with-execution',
-            status: 'failed',
-            lastTurnAgentId: 'qaiq',
-            lastTurnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-luna' },
+        const row = ui.createTaskItem(project, failedTask, undefined, failedSummary, new Set(), {
+            compact: true,
+            onActivate: () => { opened++; },
         });
-        const executedTask = { ...task, id: executedSummary.id, state: 'failed' as const };
-        const executedRow = ui.createTaskItem(project, executedTask, undefined, executedSummary, new Set(), { compact: true });
-        expect(executedRow.querySelector('.theia-mobile-projects-conversation-retry-btn')).to.equal(null);
+
+        const chip = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-task-failure-hint .theia-mobile-projects-failed-run-chip');
+        expect(chip?.textContent).to.equal('Retry');
+        expect(chip?.getAttribute('aria-label')).to.equal('Retry task');
+        expect(row.querySelector('.theia-mobile-projects-conversation-retry-btn')).to.equal(null);
+        chip!.click();
+        await Promise.resolve();
+        expect([retried, continued, opened]).to.deep.equal([1, 0, 0]);
+    });
+
+    it('offers Continue instead of Retry when the turn was interrupted', () => {
+        let continued = 0;
+        const ui = createUi({ onContinue: () => { continued++; } });
+        const interrupted = summary({
+            id: 'interrupted-conversation',
+            status: 'failed',
+            lastMessageRole: 'agent',
+            lastMessageError: 'Stopped automatically after 46 min: the turn exceeded the maximum allowed time.',
+        });
+        const row = ui.createTaskItem(project, { ...task, id: interrupted.id, state: 'failed' as const }, undefined, interrupted, new Set(), { compact: true });
+
+        const chip = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-failed-run-chip');
+        expect(chip?.textContent).to.equal('Continue');
+        expect(chip?.dataset.qaapFailedRunAction).to.equal('continue');
+        chip!.click();
+        expect(continued).to.equal(1);
+    });
+
+    it('keeps the chip off rows being picked for Clear failed runs', () => {
+        const failedSummary = summary({ id: 'failed-selection', status: 'failed', lastMessageRole: 'agent', lastMessageError: 'Bash exited with code 1.' });
+        const row = createUi().createTaskItem(project, { ...task, id: failedSummary.id, state: 'failed' as const }, undefined, failedSummary, new Set(), {
+            compact: true,
+            selection: { selected: false, onToggle: () => undefined },
+        });
+        expect(row.querySelector('.theia-mobile-projects-failed-run-chip')).to.equal(null);
     });
 
     it('acts on the latest summary when the row outlived the render that created it', () => {

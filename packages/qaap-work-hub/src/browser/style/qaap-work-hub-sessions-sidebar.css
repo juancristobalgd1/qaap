@@ -2540,3 +2540,124 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     right: 52px;
   }
 }
+
+/* ── Launch polish (O2/E1/F4/E2) ───────────────────────────────────────────── */
+
+/* Empty states use the design-system `q-empty` block; only the sidebar spacing lives here. */
+.theia-mobile-work-hub-sessions-sidebar-empty-state {
+  margin: var(--q-space-4, 16px) var(--qaap-sessions-row-gutter, 8px);
+}
+
+/* First history load: placeholder rows under the Projects head instead of a blank list. */
+.theia-mobile-work-hub-sessions-sidebar-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-3, 12px);
+  padding: var(--q-space-2, 8px) calc(var(--qaap-sessions-row-gutter, 8px) + 8px);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-2, 8px);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-skeleton-icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-skeleton-text {
+  flex: 0 1 auto;
+  width: 62%;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-skeleton-row:nth-child(2n) .theia-mobile-work-hub-sessions-sidebar-skeleton-text {
+  width: 44%;
+}
+
+/* One-tap Retry / Continue next to a failed row's reason (the overflow menu keeps both). */
+.theia-mobile-projects-failed-run-chip {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 10%, transparent);
+  color: var(--theia-errorForeground, #f14c4c);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* An interrupted turn did not fail: its work is kept, so Continue reads neutral, not red. */
+.theia-mobile-projects-failed-run-chip[data-qaap-failed-run-action="continue"] {
+  border-color: color-mix(in srgb, var(--theia-foreground) 22%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-projects-failed-run-chip .codicon {
+  font-size: 12px;
+}
+
+.theia-mobile-projects-failed-run-chip:hover,
+.theia-mobile-projects-failed-run-chip:focus-visible {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.theia-mobile-projects-failed-run-chip:focus-visible {
+  outline: 2px solid var(--theia-focusBorder, var(--theia-foreground));
+  outline-offset: 1px;
+}
+
+.theia-mobile-projects-failed-run-chip:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* Touch: every sidebar control gets a ≥44px hit area. The visual size stays compact (an
+   invisible ::before extends the chip; negative margins keep the row height). */
+@media (pointer: coarse) {
+  .theia-mobile-projects-failed-run-chip {
+    height: 28px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .theia-mobile-projects-failed-run-chip::before {
+    content: "";
+    position: absolute;
+    inset: -8px -4px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-projects-row-menu {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    margin-block: -10px;
+    opacity: 0.8;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    right: 6px;
+    opacity: 0.85;
+  }
+}
