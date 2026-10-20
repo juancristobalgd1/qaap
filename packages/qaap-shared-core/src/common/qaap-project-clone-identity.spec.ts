@@ -18,6 +18,10 @@ describe('qaapCloneRootIdentity', () => {
 
     it('does not resolve a folder below the clone root or a non-clone path', () => {
         expect(qaapCloneRootIdentity(`${CLONE}/packages/web`)).to.equal(undefined);
+        // A subfolder named like the repository is not the clone root, in either layout.
+        expect(qaapCloneRootIdentity('/workspace/repos/users/me/acme/web/apps/web')).to.equal(undefined);
+        expect(qaapCloneRootIdentity('/workspace/repos/acme/web/apps/web')).to.equal(undefined);
+        expect(qaapCloneRootIdentity('/workspace/repos/users/me/acme/web')).to.equal('github:acme/web');
         expect(qaapCloneRootIdentity('/tmp/scratch')).to.equal(undefined);
         expect(qaapCloneRootIdentity(undefined)).to.equal(undefined);
     });

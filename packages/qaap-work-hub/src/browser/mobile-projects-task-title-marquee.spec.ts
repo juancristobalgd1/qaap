@@ -56,6 +56,7 @@ describe('task title marquee', () => {
         Object.defineProperty(text, 'scrollWidth', { configurable: true, value: 180 });
         refreshTaskTitleMarquee(viewport);
 
+        Object.defineProperty(text, 'scrollWidth', { configurable: true, value: 60 });
         setTaskTitleText(viewport, 'New title');
 
         expect(viewport.textContent).to.equal('New title');
@@ -97,5 +98,25 @@ describe('task title marquee', () => {
         refreshTaskTitleMarquee(viewport, { interacting: true });
         expect(viewport.classList.contains(TASK_TITLE_OVERFLOW_CLASS)).to.equal(true);
         expect(viewport.style.getPropertyValue('--qaap-task-title-overflow')).to.equal('26px');
+    });
+    it('keeps the hover reserve when the title changes while its row is in use', () => {
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-projects-task-row';
+        const viewport = document.createElement('span');
+        const text = createTaskTitleText('Short');
+        viewport.append(text);
+        viewport.style.setProperty('--qaap-task-title-hover-reserve', '36px');
+        const action = document.createElement('button');
+        row.append(viewport, action);
+        document.body.append(row);
+        Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 100 });
+        Object.defineProperty(text, 'scrollWidth', { configurable: true, value: 90 });
+        action.focus();
+
+        setTaskTitleText(viewport, 'Renamed while in use');
+
+        expect(viewport.classList.contains(TASK_TITLE_OVERFLOW_CLASS)).to.equal(true);
+        expect(viewport.style.getPropertyValue('--qaap-task-title-overflow')).to.equal('26px');
+        row.remove();
     });
 });
