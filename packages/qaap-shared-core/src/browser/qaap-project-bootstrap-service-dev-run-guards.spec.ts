@@ -193,9 +193,25 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
             await streaming.startDevServerExtracted(ctx, PLAN, descriptor);
             expect(phases).to.deep.equal(['run-failed']);
-            expect(ctx._error).to.contain('"build": "auto"');
+            // No Build and start command: neither the button nor the opt-in is named.
+            expect(ctx._error).to.contain('Run its build yourself');
+            expect(ctx._error).not.to.contain('Build and start');
+            expect(ctx._error).not.to.contain('"build": "auto"');
             expect(attachCalls).to.deep.equal([]);
             expect(reserved).to.deep.equal([]);
+        });
+
+        it('names Build and start in the fail-fast message only when the action exists', async () => {
+            const { ctx } = makeCtx(true);
+            (ctx as unknown as { setPhase: (phase: string) => void }).setPhase = () => { };
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => false };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+                buildAndStartCommand: 'npm run build && npm run start',
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, PLAN, descriptor);
+            expect(ctx._error).to.contain('Choose Build and start');
+            expect(ctx._error).to.contain('"build": "auto"');
         });
 
         it('starts when the user chose Build and start, even with the output still missing', async () => {
@@ -419,6 +435,31 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(ctx.previewAutoRetryAttempts).to.equal(0);
             expect(ctx.previewAutoRetryTimer).to.equal(undefined);
             expect(ctx._error).to.contain('does not retry builds');
+            expect(ctx._error).to.contain('started by Build and start failed');
+            expect(ctx._error).not.to.contain('.qaap/preview.json');
+        });
+
+        it('names Build and start for a runtime build-required failure only when the action exists', async () => {
+            const output = "Error: Cannot find module '/ws/dev-packages/cli/lib/theia'\n";
+            const withAction = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildAndStartCommand: 'npm run build && npm run start' },
+                devOutputTail: output,
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            }).ctx;
+            await activity.failDevRunExtracted(withAction, 'Dev server exited with code 1.', PLAN, 7);
+            expect(withAction._error).to.contain('Choose Build and start');
+
+            const single = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [] },
+                devOutputTail: output,
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            }).ctx;
+            await activity.failDevRunExtracted(single, 'Dev server exited with code 1.', PLAN, 7);
+            expect(single._error).to.contain('Run its build yourself');
+            expect(single._error).not.to.contain('Build and start');
+            expect(single.previewAutoRetryAttempts).to.equal(0);
         });
 
         it('handles a later failure of the same run once the first one settled', async () => {

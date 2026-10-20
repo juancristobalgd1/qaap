@@ -47,6 +47,7 @@ import {
     findQaapWorkspaceRoot,
     isQaapInstalledBinary,
     parseQaapPreviewBuildPolicy,
+    qaapTenantRepositoryCeiling,
     resolveQaapPreviewBuildPlan,
 } from '../common/qaap-workspace-root';
 import {
@@ -305,10 +306,13 @@ export class QaapProjectBootstrapDetector {
             return undefined;
         }
         // Open workspace roots that contain this folder are a ceiling too (next to the tenant's
-        // repository area): discovery stays inside what the user opened.
+        // repository area): discovery stays inside what the user opened. Off the hosted layout
+        // (a local checkout, no tenant area) the opened folder itself is the ceiling as well.
+        const rootPath = rootUri.path.toString();
+        const hosted = qaapTenantRepositoryCeiling(rootPath) !== undefined;
         const ceilingDirs = (this.workspaceService?.tryGetRoots() ?? [])
-            .map(root => root.resource.path.toString())
-            .filter(root => root !== rootUri.path.toString() && rootUri.path.toString().startsWith(`${root.replace(/\/+$/, '')}/`));
+            .map(root => root.resource.path.toString().replace(/\/+$/, ''))
+            .filter(root => rootPath.startsWith(`${root}/`) || (!hosted && root === rootPath));
         const match = await findQaapWorkspaceRoot(
             rootUri.path.toString(),
             dir => this.readWorkspaceManifests(rootUri.withPath(dir)),

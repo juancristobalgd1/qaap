@@ -39,6 +39,11 @@ function isMissingBuildOutputPath(specifier: string): boolean {
     if (!/^(?:\/|\.{1,2}\/|[A-Za-z]:\/)/.test(path) || /\/(?:node_modules|src)\//.test(path)) {
         return false;
     }
+    // Next.js's own `.next` cache (`./vendor-chunks/x.js` after a stale dev compile) is a framework
+    // cache problem fixed by restarting the dev server, not a project that was never built.
+    if (/(?:^|\/)\.next\//.test(path) || /(?:^|\/)vendor-chunks\//.test(path)) {
+        return false;
+    }
     return /\.(?:c|m)?js$/.test(path) || /\/(?:lib|dist|out|build)\//.test(path);
 }
 
@@ -98,9 +103,21 @@ export interface QaapBootstrapFailureDiagnosis {
  * Preview never builds a project on its own (a monorepo build can take tens of minutes and exhaust
  * the workspace memory): this tells the user how to build, or how to opt in explicitly.
  */
-export const QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE = 'The project has not been built yet: its start script needs compiled output that does not exist. '
-    + 'Choose Build and start to build it now (a large project can take several minutes), run the build yourself, '
-    + 'or opt in to building before every preview with {"build": "auto"} in .qaap/preview.json.';
+const QAAP_PREVIEW_BUILD_REQUIRED_LEAD = 'The project has not been built yet: its start script needs compiled output that does not exist.';
+
+/**
+ * The `build-required` copy. Build and start and the `.qaap/preview.json` opt-in exist only for
+ * workspace members with a declared build (`buildAndStartCommand`); elsewhere neither is named.
+ */
+export function formatQaapPreviewBuildRequiredMessage(canBuildAndStart: boolean): string {
+    return canBuildAndStart
+        ? `${QAAP_PREVIEW_BUILD_REQUIRED_LEAD} Choose Build and start to build it now (a large project can take several minutes), `
+            + 'run the build yourself, or opt in to building before every preview with {"build": "auto"} in .qaap/preview.json.'
+        : `${QAAP_PREVIEW_BUILD_REQUIRED_LEAD} Run its build yourself (for example npm run build), then start the preview again.`;
+}
+
+/** The `build-required` copy when no Build and start action is available. */
+export const QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE = formatQaapPreviewBuildRequiredMessage(false);
 
 /**
  * A preview whose command chains an opted-in build (`npm run build && npm run start`) failed.
@@ -108,20 +125,31 @@ export const QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE = 'The project has not been bui
  * build is reported as such, any other exit quotes the useful line. Diagnoses that are not about the
  * process itself (dependencies, environment, …) keep their own message.
  */
-export function diagnoseBuildFirstPreviewFailure(diagnosis: QaapBootstrapFailureDiagnosis, buildScript: string): QaapBootstrapFailureDiagnosis {
+export function diagnoseBuildFirstPreviewFailure(
+    diagnosis: QaapBootstrapFailureDiagnosis,
+    buildScript: string,
+    origin: 'preview-config' | 'build-and-start' = 'preview-config',
+): QaapBootstrapFailureDiagnosis {
     const noRetry = 'Qaap does not retry builds automatically.';
+    const userStarted = origin === 'build-and-start';
     if (diagnosis.kind === 'out-of-memory') {
         return {
             kind: 'out-of-memory',
-            message: `The \`${buildScript}\` step that runs before the preview ran out of memory and was stopped. ${noRetry} `
-                + 'Build with more memory or a narrower build in a terminal, or remove "build": "auto" from .qaap/preview.json, then start the preview again.',
+            message: userStarted
+                ? `The \`${buildScript}\` step started by Build and start ran out of memory and was stopped. ${noRetry} `
+                    + 'Build with more memory or a narrower build in a terminal, then start the preview again.'
+                : `The \`${buildScript}\` step that runs before the preview ran out of memory and was stopped. ${noRetry} `
+                    + 'Build with more memory or a narrower build in a terminal, or remove "build": "auto" from .qaap/preview.json, then start the preview again.',
         };
     }
     if (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown') {
         return {
             kind: 'build-failed',
-            message: `The preview runs \`${buildScript}\` first (opted in via .qaap/preview.json) and it failed: ${diagnosis.message} `
-                + `${noRetry} Fix the error, then start the preview again.`,
+            message: userStarted
+                ? `The \`${buildScript}\` step started by Build and start failed: ${diagnosis.message} `
+                    + `${noRetry} Fix the error, then choose Build and start again.`
+                : `The preview runs \`${buildScript}\` first (opted in via .qaap/preview.json) and it failed: ${diagnosis.message} `
+                    + `${noRetry} Fix the error, then start the preview again.`,
         };
     }
     return diagnosis;
@@ -149,7 +177,7 @@ export function isSystemBinary(binary: string): boolean {
 /** Whether the output shows the project's own compiled output is missing (needs a build, not an install). */
 export function terminalOutputNeedsBuild(output: string): boolean {
     const clean = output.replace(ANSI_REGEX, '');
-    if (clean.includes(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE)) {
+    if (clean.includes(QAAP_PREVIEW_BUILD_REQUIRED_LEAD)) {
         return true;
     }
     for (const match of clean.matchAll(CANNOT_FIND_MODULE_REGEX)) {

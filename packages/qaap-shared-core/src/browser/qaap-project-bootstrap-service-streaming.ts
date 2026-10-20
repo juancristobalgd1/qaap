@@ -21,7 +21,7 @@ import {
 import {
     describeDevProcessExit,
     extractTerminalFailureLine,
-    QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
+    formatQaapPreviewBuildRequiredMessage,
     terminalOutputNeedsInstall,
 } from './qaap-project-bootstrap-dev-errors';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
@@ -150,7 +150,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
         if (buildTarget?.buildRequired && plan.command !== buildTarget.buildAndStartCommand
             && !(buildTarget.buildOutputUri && await ctx.detector.pathExists(buildTarget.buildOutputUri))) {
             ctx._needsInstall = false;
-            ctx._error = QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE;
+            ctx._error = formatQaapPreviewBuildRequiredMessage(!!buildTarget.buildAndStartCommand);
             ctx.setPhase('run-failed');
             return;
         }

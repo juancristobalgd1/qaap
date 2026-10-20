@@ -31,6 +31,7 @@ import {
     describeDevProcessExit,
     diagnoseBootstrapFailure,
     diagnoseBuildFirstPreviewFailure,
+    formatQaapPreviewBuildRequiredMessage,
     extractDevOutputProbePorts,
     DEV_OUT_OF_MEMORY_NOTICE,
     extractTerminalFailureLine,
@@ -152,13 +153,13 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         // reruns the whole build (an OOM-killed build is killed again), so its failure is final.
         const buildTarget = resolveQaapPreviewBuildTarget(descriptor, ctx._selectedApp);
         // A recovery relaunch runs only the start half, so this run's command is what decides.
+        const startedByBuildAndStart = !!buildTarget?.buildAndStartCommand && plan.command === buildTarget.buildAndStartCommand;
         const buildFirst = buildTarget?.buildScript && plan.command !== buildTarget.previewStartCommand
             ? buildTarget.buildScript
-            : buildTarget?.buildAndStartCommand && plan.command === buildTarget.buildAndStartCommand
-                ? 'build'
-                : undefined;
+            : startedByBuildAndStart ? 'build' : undefined;
+        const buildOrigin = startedByBuildAndStart ? 'build-and-start' : 'preview-config';
         const baseDiagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
-        const diagnosis = buildFirst ? diagnoseBuildFirstPreviewFailure(baseDiagnosis, buildFirst) : baseDiagnosis;
+        const diagnosis = buildFirst ? diagnoseBuildFirstPreviewFailure(baseDiagnosis, buildFirst, buildOrigin) : baseDiagnosis;
         // A clean exit with nothing listening is the same exit next time: report it, don't retry.
         const exitedWithoutListening = options?.exitedWithoutListening === true
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
@@ -230,9 +231,12 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
                     ? message
                     : buildFirst
                         ? diagnoseBuildFirstPreviewFailure(
-                            diagnoseBootstrapFailure(failureOutput, ctx.toUserFacingDevError(message)), buildFirst,
+                            diagnoseBootstrapFailure(failureOutput, ctx.toUserFacingDevError(message)), buildFirst, buildOrigin,
                         ).message
-                        : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
+                        : diagnosis.kind === 'build-required'
+                            // Name Build and start only where the card actually offers it.
+                            ? formatQaapPreviewBuildRequiredMessage(!!buildTarget?.buildAndStartCommand)
+                            : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
         ctx._error = ctx.enrichDevRunError(diagnosedError);
         ctx.releaseActivePreview();
         ctx.setPhase('run-failed');

@@ -8,6 +8,8 @@ import {
     describeDevProcessExit,
     QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
     diagnoseBootstrapFailure,
+    diagnoseBuildFirstPreviewFailure,
+    formatQaapPreviewBuildRequiredMessage,
     extractDevOutputProbePorts,
     extractTerminalFailureLine,
     restoreEscapedLineBreaks,
@@ -107,9 +109,27 @@ describe('qaap-project-bootstrap-dev-errors', () => {
         expect(terminalOutputNeedsInstall('sh: 1: python3.12: not found')).to.equal(false);
     });
 
-    it('classifies the fail-fast build message as build-required and names the action', () => {
-        expect(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE).to.include('Build and start');
+    it('names Build and start and the opt-in only when the action exists; both copies are build-required', () => {
+        expect(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE).not.to.include('Build and start');
+        expect(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE).not.to.include('preview.json');
+        const withAction = formatQaapPreviewBuildRequiredMessage(true);
+        expect(withAction).to.include('Choose Build and start').and.include('"build": "auto"');
         expect(diagnoseBootstrapFailure(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE, 'fallback').kind).to.equal('build-required');
+        expect(diagnoseBootstrapFailure(withAction, 'fallback').kind).to.equal('build-required');
+    });
+
+    it('never reads a stale Next.js cache as a project that was never built', () => {
+        expect(terminalOutputNeedsBuild("Error: Cannot find module './vendor-chunks/next.js'")).to.equal(false);
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '/app/.next/server/webpack-runtime.js'")).to.equal(false);
+    });
+
+    it('words a failed Build and start as the user\'s action, not as the preview.json opt-in', () => {
+        const failed = { kind: 'process-exit' as const, message: 'npm error code 2' };
+        const userStarted = diagnoseBuildFirstPreviewFailure(failed, 'build', 'build-and-start');
+        expect(userStarted.message).to.include('started by Build and start failed').and.not.include('preview.json');
+        expect(diagnoseBuildFirstPreviewFailure(failed, 'build').message).to.include('opted in via .qaap/preview.json');
+        const oom = diagnoseBuildFirstPreviewFailure({ kind: 'out-of-memory', message: 'oom' }, 'build', 'build-and-start');
+        expect(oom.message).to.include('started by Build and start ran out of memory').and.not.include('preview.json');
     });
 
     it('asks for a build when the project\'s own compiled output is missing', () => {

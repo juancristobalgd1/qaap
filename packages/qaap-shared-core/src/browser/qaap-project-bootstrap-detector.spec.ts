@@ -630,6 +630,27 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(descriptor?.nodeModulesPresent).to.equal(true);
     });
 
+    it('uses the opened folder as the discovery ceiling off the hosted layout', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true, workspaces: ['apps/*'] }));
+        mock.addDir('/ws/apps');
+        mock.addFile('/ws/apps/web/package.json', JSON.stringify({ name: 'web', scripts: { dev: 'vite' }, devDependencies: { vite: '^6.0.0' } }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+        const withRoots = (roots: string[]): void => {
+            (detector as unknown as { workspaceService: object }).workspaceService = {
+                tryGetRoots: () => roots.map(root => ({ resource: URI.fromFilePath(root) })),
+            };
+        };
+
+        withRoots(['/ws/apps/web']);
+        expect((await detector.detect(URI.fromFilePath('/ws/apps/web')))?.workspaceRootUri).to.equal(undefined);
+        withRoots(['/ws']);
+        expect((await detector.detect(URI.fromFilePath('/ws/apps/web')))?.workspaceRootUri?.path.toString()).to.equal('/ws');
+    });
+
     it('offers the declared build as an explicit Build and start command, never as the dev command', async () => {
         const mock = new MockFileService();
         theiaMonorepo(mock);
