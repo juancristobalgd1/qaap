@@ -88,6 +88,7 @@ import { QaapRepositoryRemovalContribution } from '@theia/qaap-shared-core/lib/n
 import { bindQaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
 import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
 import { QaapAuthenticatedWsRequestValidator } from './qaap-authenticated-ws-request-validator';
+import { QaapControlPlaneRpcGuard } from './qaap-control-plane-rpc-guard';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contribution';
 import { QaapJobEndpoint } from './qaap-job-endpoint';
@@ -172,6 +173,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // Hosted runtimes refuse the Theia Socket.IO handshake of an unauthenticated caller.
     bind(QaapAuthenticatedWsRequestValidator).toSelf().inSingletonScope();
     bind(WsRequestValidatorContribution).toService(QaapAuthenticatedWsRequestValidator);
+    // Hosted control planes never serve Theia RPC themselves: that runs in per-tenant backends.
+    bind(QaapControlPlaneRpcGuard).toSelf().inSingletonScope();
+    bind(WsRequestValidatorContribution).toService(QaapControlPlaneRpcGuard);
     bind(QaapMessagingAuthContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapMessagingAuthContribution);
     onActivation<ProcessManager>(ProcessManager, (ctx, processManager) => {
