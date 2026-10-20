@@ -98,7 +98,11 @@ class FakeTaskRunner {
         return true;
     }
 
-    defaultAgent(): string {
+    /** Owner each `defaultAgent` lookup was made for. */
+    readonly defaultAgentOwners: Array<string | undefined> = [];
+
+    defaultAgent(ownerLogin?: string): string {
+        this.defaultAgentOwners.push(ownerLogin);
         return 'qaiq';
     }
 
@@ -326,6 +330,24 @@ describe('QaapResearchRunner state machine', () => {
         expect(taskRunner.createdTasks[0].ownerLogin).to.equal('alice');
         taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
         taskRunner.finishTask(taskRunner.createdTasks[0].id, 'failed');
+        await promise;
+    });
+
+    it('resolves the default agent for the goal owner in the preflight and the propose turn', async () => {
+        const store = new FakeResearchStore();
+        store.ownerLogin = 'alice';
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC] });
+        expect(goal.agentId).to.equal(undefined);
+        store.seedGoal(goal);
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callRunLoop(goal.id);
+        expect(taskRunner.defaultAgentOwners).to.deep.equal(['alice']); // preflight
+        await passPreflight(taskRunner);
+        expect(taskRunner.defaultAgentOwners).to.deep.equal(['alice', 'alice']); // round 1 propose
+        runner.callCancel(goal.id);
+        taskRunner.finishTask(taskRunner.createdTasks[1].id, 'cancelled');
         await promise;
     });
 

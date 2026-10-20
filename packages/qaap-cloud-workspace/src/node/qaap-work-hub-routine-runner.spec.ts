@@ -69,4 +69,65 @@ describe('QaapWorkHubRoutineRunner ownership', () => {
         runner.runNow(routine.id);
         expect(ownerLogin).to.equal('alice');
     });
+
+    it('resolves the default agent for the routine owner when the routine has no agent', () => {
+        const defaultAgentOwners: Array<string | undefined> = [];
+        let createdAgent: string | undefined;
+        const routine = { ...ROUTINE, agent: undefined };
+        const runner = Object.create(QaapWorkHubRoutineRunner.prototype) as QaapWorkHubRoutineRunner;
+        Object.assign(runner, {
+            taskToRoutine: new Map(),
+            store: {
+                get: () => routine,
+                markRunStarted: () => routine,
+            },
+            taskRunner: {
+                defaultAgent: (owner?: string) => {
+                    defaultAgentOwners.push(owner);
+                    return 'opencode';
+                },
+                create: (request: { agent?: string }) => {
+                    createdAgent = request.agent;
+                    return { id: 'task-1' };
+                },
+            },
+        });
+
+        runner.runNow(routine.id);
+        expect(defaultAgentOwners).to.deep.equal(['alice']);
+        expect(createdAgent).to.equal('opencode');
+    });
+
+    it('resolves the default agent for the routine owner in continuation mode', () => {
+        const defaultAgentOwners: Array<string | undefined> = [];
+        let createdAgent: string | undefined;
+        const routine = { ...ROUTINE, agent: undefined, runMode: 'continue' as const };
+        const runner = Object.create(QaapWorkHubRoutineRunner.prototype) as QaapWorkHubRoutineRunner;
+        Object.assign(runner, {
+            taskToRoutine: new Map(),
+            store: {
+                get: () => routine,
+                markRunStarted: () => routine,
+            },
+            taskRunner: {
+                defaultAgent: (owner?: string) => {
+                    defaultAgentOwners.push(owner);
+                    return 'opencode';
+                },
+            },
+            conversationStore: {
+                create: (request: { agent?: string }) => {
+                    createdAgent = request.agent;
+                    return {
+                        id: 'conversation-1',
+                        messages: [{ role: 'user', taskId: 'task-1' }],
+                    };
+                },
+            },
+        });
+
+        runner.runNow(routine.id);
+        expect(defaultAgentOwners).to.deep.equal(['alice']);
+        expect(createdAgent).to.equal('opencode');
+    });
 });

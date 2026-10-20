@@ -312,8 +312,16 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
-    /** Short-lived, per-tenant auth probe cache; Connect invalidates it through refreshAgentCatalog. */
-    protected readonly agentConnectionStates = new Map<string, { readonly state: QaapAgentDescriptor['connectionState']; readonly at: number }>();
+    /**
+     * Short-lived, per-tenant auth probe cache; Connect invalidates it through refreshAgentCatalog.
+     * `probeFailed` marks a probe that errored instead of answering: the UI still shows `unknown`,
+     * but default selection treats it as signed out (see {@link defaultSelectionConnectionState}).
+     */
+    protected readonly agentConnectionStates = new Map<string, {
+        readonly state: QaapAgentDescriptor['connectionState'];
+        readonly at: number;
+        readonly probeFailed?: boolean;
+    }>();
     /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
     protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
 
@@ -662,18 +670,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      */
     protected agentConnectionState(agentId: string, ownerLogin?: string): QaapAgentDescriptor['connectionState'] {
         const normalized = agentId.trim().toLowerCase();
-        const candidate = this.detectedAgents.get(normalized);
-        if (!candidate) {
+        const sources = this.agentAuthSources(normalized, ownerLogin);
+        if (!sources) {
             return 'unknown';
         }
-        const settingsConnected = hasAgentSettingsCredentialsHelper(
-            normalized,
-            this.preferenceReaderForOwner(ownerLogin),
-        );
-        if (typeof settingsConnected === 'boolean') {
-            return settingsConnected ? 'connected' : 'disconnected';
+        if (typeof sources.settingsConnected === 'boolean') {
+            return sources.settingsConnected ? 'connected' : 'disconnected';
         }
-        if (!resolveAgentConnectionProbeHelper(normalized, candidate.bin ?? normalized)) {
+        if (!sources.probeBin) {
             return 'unknown';
         }
         void this.refreshAgentConnectionState(normalized, ownerLogin);
@@ -689,11 +693,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         ownerLogin?: string,
     ): Promise<QaapAgentDescriptor['connectionState']> | undefined {
         const normalized = agentId.trim().toLowerCase();
-        const candidate = this.detectedAgents.get(normalized);
-        if (!candidate || !resolveAgentConnectionProbeHelper(normalized, candidate.bin ?? normalized)) {
-            return undefined;
-        }
-        if (typeof hasAgentSettingsCredentialsHelper(normalized, this.preferenceReaderForOwner(ownerLogin)) === 'boolean') {
+        const sources = this.agentAuthSources(normalized, ownerLogin);
+        if (!sources?.probeBin || typeof sources.settingsConnected === 'boolean') {
             return undefined;
         }
         const cacheKey = this.agentConnectionCacheKey(normalized, ownerLogin);
@@ -705,14 +706,19 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (inFlight) {
             return inFlight;
         }
-        const probe = this.probeAgentConnectionState(normalized, candidate.bin ?? normalized, ownerLogin)
-            .catch((): QaapAgentDescriptor['connectionState'] => 'unknown')
-            .then(state => {
+        const probe = this.probeAgentConnectionState(normalized, sources.probeBin, ownerLogin)
+            .then(
+                state => ({ state, probeFailed: false }),
+                // An error is not a pending answer: the chip keeps `unknown`, but default selection
+                // must not treat it like a sign-in that may still resolve.
+                () => ({ state: 'unknown' as const, probeFailed: true }),
+            )
+            .then(({ state, probeFailed }) => {
                 // refreshAgentCatalog() may have dropped this probe meanwhile; never let a
                 // pre-Connect answer overwrite the cache of the probe that replaced it.
                 if (this.agentConnectionProbes.get(cacheKey) === probe) {
                     this.agentConnectionProbes.delete(cacheKey);
-                    this.agentConnectionStates.set(cacheKey, { state, at: Date.now() });
+                    this.agentConnectionStates.set(cacheKey, { state, at: Date.now(), probeFailed });
                 }
                 return state;
             });
@@ -729,6 +735,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * shared and its own HOME is intentionally not allowed to answer a user's auth question: on the
      * VPS that always reports the operator container as logged out even after the tenant completed
      * device authentication.
+     *
+     * Rejects when the tenant probe cannot run: the wrapper failed, or a docker tenant has no repos
+     * root yet and therefore no tenant HOME that could hold a login. The caller records a failed probe.
      */
     protected async probeAgentConnectionState(
         agentId: string,
@@ -749,7 +758,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
         const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
         if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
-            return 'unknown';
+            throw new Error(`No tenant workspace for ${safeUserIdSegment(owner)} yet, so no CLI login can exist there.`);
         }
         try {
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
@@ -770,7 +779,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             });
         } catch (error) {
             console.warn(`[qaap] Unable to probe ${agentId} for tenant ${safeUserIdSegment(owner)}:`, error);
-            return 'unknown';
+            throw error;
         }
     }
 
@@ -796,7 +805,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             this,
             agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
             agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
-            agentId => this.hasAgentAuthSignal(agentId),
+            agentId => this.hasAgentAuthSignal(agentId, ownerLogin),
         );
     }
 
@@ -804,12 +813,32 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * Whether this harness's sign-in state can ever be known: Settings credentials (QAIQ) or an auth
      * probe. Without either it stays `unknown`, which must not make it the default.
      */
-    protected hasAgentAuthSignal(agentId: string): boolean {
+    protected hasAgentAuthSignal(agentId: string, ownerLogin?: string): boolean {
+        const sources = this.agentAuthSources(agentId, ownerLogin);
+        return !!sources && (sources.settingsConnected !== undefined || !!sources.probeBin);
+    }
+
+    /**
+     * How a detected harness's sign-in state can be known: `settingsConnected` is whether the owner's
+     * Settings hold a credential for it (undefined when the harness has no credential mapping), and
+     * `probeBin` the executable its auth probe runs (undefined without a probe). Undefined when the
+     * harness is not detected.
+     */
+    protected agentAuthSources(
+        agentId: string,
+        ownerLogin?: string,
+    ): { readonly settingsConnected: boolean | undefined; readonly probeBin: string | undefined } | undefined {
         const normalized = agentId.trim().toLowerCase();
         const candidate = this.detectedAgents.get(normalized);
-        return !!candidate
-            && (hasAgentSettingsCredentialsHelper(normalized, () => undefined) !== undefined
-                || !!resolveAgentConnectionProbeHelper(normalized, candidate.bin ?? normalized));
+        if (!candidate) {
+            return undefined;
+        }
+        const bin = candidate.bin ?? normalized;
+        return {
+            // Lazy reader: a harness without a credential mapping never reads the owner's preferences.
+            settingsConnected: hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
+            probeBin: resolveAgentConnectionProbeHelper(normalized, bin) ? bin : undefined,
+        };
     }
 
     /**
@@ -828,14 +857,30 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ? undefined
                 : this.refreshAgentConnectionState(agentId, ownerLogin),
             budgetMs,
-            agentId => this.hasAgentAuthSignal(agentId),
+            agentId => this.hasAgentAuthSignal(agentId, ownerLogin),
         );
     }
 
-    /** Enabled, and not known to be disconnected unless the plan still lets it run hosted (Codex on Pro/Team). */
+    /**
+     * Enabled, and not known to be disconnected unless it can still run without a sign-in (hosted
+     * Codex on Pro/Team, or a keyless hosted agent). A failed auth probe counts as disconnected here.
+     */
     protected isAgentSelectableAsDefault(agentId: string, ownerLogin?: string): boolean {
         return this.isAgentEnabled(agentId, ownerLogin)
-            && (this.agentConnectionState(agentId, ownerLogin) !== 'disconnected' || this.isAgentUsableAsDefault(agentId, ownerLogin));
+            && (this.defaultSelectionConnectionState(agentId, ownerLogin) !== 'disconnected' || this.isAgentUsableAsDefault(agentId, ownerLogin));
+    }
+
+    /**
+     * {@link agentConnectionState} as default selection reads it: a probe that errored (as opposed to
+     * one still pending or never run) is `disconnected`, so a broken probe never wins the "unknown"
+     * pass as if it might be a sign-in. The UI connection chip keeps showing `unknown` for it.
+     */
+    protected defaultSelectionConnectionState(agentId: string, ownerLogin?: string): QaapAgentDescriptor['connectionState'] {
+        const state = this.agentConnectionState(agentId, ownerLogin);
+        if (state === 'unknown' && this.agentConnectionStates.get(this.agentConnectionCacheKey(agentId, ownerLogin))?.probeFailed) {
+            return 'disconnected';
+        }
+        return state;
     }
 
     /**
