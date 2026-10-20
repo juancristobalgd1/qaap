@@ -2578,7 +2578,17 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   width: 44%;
 }
 
-/* One-tap Retry / Continue next to a failed row's reason (the overflow menu keeps both). */
+/* One-tap Retry / Continue next to a failed row's reason (the overflow menu keeps both). The
+   reason keeps at least ~140px; on a narrow row the chip wraps below it instead of eating it. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-failure-hint:has(.theia-mobile-projects-failed-run-chip) {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-failure-hint:has(.theia-mobile-projects-failed-run-chip) .theia-mobile-projects-task-failure-hint-label {
+  flex: 1 1 140px;
+}
+
 .theia-mobile-projects-failed-run-chip {
   position: relative;
   z-index: 3;
@@ -2644,7 +2654,9 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     inset: -8px -4px;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-projects-row-menu {
+  /* Scoped under the sidebar: `.theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-menu`
+     (the Work Hub landing that hosts it) would otherwise keep the 0.45 resting opacity. */
+  .theia-mobile-work-hub-sessions-sidebar .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-projects-row-menu {
     flex: 0 0 44px;
     width: 44px;
     height: 44px;
