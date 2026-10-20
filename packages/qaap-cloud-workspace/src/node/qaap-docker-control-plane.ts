@@ -61,6 +61,16 @@ export function isQaapHostedOrTenantBackendRuntime(env: NodeJS.ProcessEnv = proc
     return isQaapHostedRuntime(env) || isQaapTenantBackendMode(env);
 }
 
+/**
+ * Bounded json-file logs for every container Qaap creates through the Docker API (tenant workers
+ * and backends, ingress relays, egress proxies, task sandboxes). Mirrors `x-qaap-logging` in
+ * docker-compose.yml: an unrotated container log once filled the VPS disk.
+ */
+export const QAAP_DOCKER_LOG_CONFIG: { readonly Type: 'json-file'; readonly Config: { readonly 'max-size': string; readonly 'max-file': string } } = {
+    Type: 'json-file',
+    Config: { 'max-size': '50m', 'max-file': '5' },
+};
+
 export function resolveDockerHost(env: NodeJS.ProcessEnv = process.env): string {
     return env.DOCKER_HOST?.trim() || (process.platform === 'win32'
         ? 'npipe:////./pipe/docker_engine'

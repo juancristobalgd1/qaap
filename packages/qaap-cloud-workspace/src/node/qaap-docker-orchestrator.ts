@@ -23,6 +23,7 @@ import {
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     assertQaapDockerControlPlane,
+    QAAP_DOCKER_LOG_CONFIG,
     isQaapHostedRuntime,
     resolveQaapDockerNodes,
     type QaapDockerNodeConfig,
@@ -1157,6 +1158,7 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-login': (ownerLogin?.trim() || '__anonymous__').toLowerCase(),
                 },
                 HostConfig: {
+                    LogConfig: QAAP_DOCKER_LOG_CONFIG,
                     // Docker's tini as PID 1 reaps orphaned grandchildren (killed dev servers,
                     // detached shells); zombies otherwise count against PidsLimit.
                     Init: true,
@@ -1403,6 +1405,7 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-login': ownerLogin.toLowerCase(),
                 },
                 HostConfig: {
+                    LogConfig: QAAP_DOCKER_LOG_CONFIG,
                     // The backend (node) would otherwise be PID 1 and never reap orphaned
                     // grandchildren such as OOM-killed `next-server` processes; each zombie
                     // counts against PidsLimit. Same contract as `init: true` in docker-compose.yml.
@@ -1571,6 +1574,7 @@ export class QaapDockerOrchestrator {
                     'com.qaap.tenant-backend-name': backendName,
                 },
                 HostConfig: {
+                    LogConfig: QAAP_DOCKER_LOG_CONFIG,
                     Init: true,
                     PortBindings: {
                         [`${TENANT_BACKEND_PORT}/tcp`]: [{ HostIp: publishHostIp, HostPort: '' }],
@@ -2818,6 +2822,7 @@ export class QaapDockerOrchestrator {
                 'com.qaap.tenant-login': tenant.toLowerCase(),
             },
             HostConfig: {
+                LogConfig: QAAP_DOCKER_LOG_CONFIG,
                 // Attach the outbound network first so Squid keeps its default route there when
                 // the isolated tenant interface is added next.
                 NetworkMode: qaapDockerName(QAAP_TENANT_EGRESS_UPLINK),
