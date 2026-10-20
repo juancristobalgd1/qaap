@@ -104,7 +104,6 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
         res.set('Cache-Control', 'no-store').json(result);
     }
 
-    /** Runs `work` with an abort signal that fires (and rejects) at the deadline, so DNS and sockets are torn down. */
     /** Takes a concurrency slot first, so a rate-limit token is only spent on a check that really runs. */
     protected tryStartCheck(userLogin: string): boolean {
         if (!this.concurrency.tryAcquire(userLogin)) {
@@ -117,6 +116,7 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
         return true;
     }
 
+    /** Runs `work` with an abort signal that fires (and rejects) at the deadline, so DNS and sockets are torn down. */
     protected async withDeadline<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
         const controller = new AbortController();
         let timer: NodeJS.Timeout | undefined;

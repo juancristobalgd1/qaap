@@ -111,7 +111,7 @@ describe('qaap frame check', () => {
             for (const ip of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.1', '192.168.0.1', '169.254.169.254', '0.0.0.0', '100.64.0.1',
                 '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', 'not-an-ip',
                 // IPv6 spellings of private IPv4 targets (the hex mapped form is what DNS lookup returns for `[::ffff:10.0.0.1]`).
-                '::ffff:a00:1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '::a00:1', '2002:a00:1::1', '64:ff9b::a00:1', '2001:0:4136:e378::1',
+                '::ffff:a00:1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '::a00:1', '2002:a00:1::1', '64:ff9b::a00:1', '64:ff9b:1::a00:1', '::1:0:0:1', '2001:0:4136:e378::1',
                 'ff02::1', '198.18.0.1', '192.0.0.170',
                 // Allowlist gaps of the old denylist: mapped/translated, site-local, discard, documentation, reserved.
                 '::ffff:0:a00:1', 'fec0::1', '100::1', '2001:db8::1', '3fff::1', '192.0.2.1', '198.51.100.1', '203.0.113.1',

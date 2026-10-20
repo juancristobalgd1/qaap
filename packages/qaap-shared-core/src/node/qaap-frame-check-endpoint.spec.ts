@@ -17,6 +17,10 @@ class TestQaapFrameCheckEndpoint extends QaapFrameCheckEndpoint {
     override readonly deadlineMs: number = 50;
     login = 'tester';
 
+    get slotsInUse(): number {
+        return this.concurrency.inUse;
+    }
+
     constructor() {
         super();
         (this as unknown as { auth: Partial<QaapGithubAuthGuard> }).auth = {
@@ -120,6 +124,9 @@ describe('QaapFrameCheckEndpoint', () => {
         endpoint.next = async () => ({ embeddable: true });
         expect(await endpoint.run('https://other.example/'), 'another user still gets a check').to.deep.equal({ embeddable: true });
         await Promise.all(pending);
+        expect(endpoint.slotsInUse, 'no slot leaked').to.equal(0);
+        endpoint.login = 'tester';
+        expect(await endpoint.run('https://again.example/'), 'same user can start a new check').to.deep.equal({ embeddable: true });
     });
 
     it('does not spend a rate-limit token when no concurrency slot is free', async () => {
@@ -137,6 +144,7 @@ describe('QaapFrameCheckEndpoint', () => {
         }
         expect(left).to.equal(18);
         await Promise.all(pending);
+        expect(endpoint.slotsInUse, 'no slot leaked').to.equal(0);
     });
 
     describe('resolvePublicAddress', () => {

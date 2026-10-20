@@ -9,10 +9,11 @@ import * as ipaddr from 'ipaddr.js';
  * Extra ranges `ipaddr.js` 1.x still labels `unicast` but that must never be fetched: IPv4-compatible
  * IPv6 (`::/96`, embeds any IPv4), deprecated site-local (`fec0::/10`), discard-only (`100::/64`),
  * the IETF protocol block (`2001::/23`: Teredo, ORCHID, benchmarking…), documentation (`3fff::/20`)
- * and IPv4 benchmarking (`198.18.0.0/15`).
+ * IPv4 benchmarking (`198.18.0.0/15`), the NAT64 well-known prefix (`64:ff9b::/32`, covers the RFC 8215
+ * local-use `64:ff9b:1::/48`) and the whole `::/8` block (non-loopback addresses ipaddr.js still labels unicast).
  */
 const EXTRA_BLOCKED_CIDRS: ReadonlyArray<[ipaddr.IPv4 | ipaddr.IPv6, number]> = [
-    '::/96', 'fec0::/10', '100::/64', '2001::/23', '2001:db8::/32', '3fff::/20', '198.18.0.0/15',
+    '::/96', 'fec0::/10', '100::/64', '2001::/23', '2001:db8::/32', '3fff::/20', '198.18.0.0/15', '64:ff9b::/32', '::/8',
 ].map(cidr => ipaddr.parseCIDR(cidr));
 
 /**
