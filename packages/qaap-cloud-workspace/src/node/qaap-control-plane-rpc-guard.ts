@@ -31,6 +31,8 @@ const ROUTED_TO_TENANT_BACKEND = Symbol('qaapRoutedToTenantBackend');
  *
  * Exception: `QAAP_TENANT_PROXY_EARLY_ROUTING=0` (operator fallback) leaves Socket.IO polling on
  * the control plane, so the guard lets authenticated handshakes through there and warns once.
+ * `evaluateQaapProductionAuthReadiness` refuses to boot a hosted control plane in that state
+ * unless the operator sets `QAAP_ACK_EARLY_ROUTING_DISABLED=1`.
  * Local mode and tenant backends are unaffected.
  */
 @injectable()

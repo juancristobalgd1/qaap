@@ -587,7 +587,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             try {
                 checks[contribution.id] = contribution.check();
             } catch (error) {
-                checks[contribution.id] = { healthy: false, detail: { error: error instanceof Error ? error.message : String(error) } };
+                // The endpoint is public: keep exception text (paths, driver errors) in the server log.
+                console.warn(`[qaap-oauth] Health check "${contribution.id}" threw:`, error instanceof Error ? error.message : String(error));
+                checks[contribution.id] = { healthy: false };
             }
         }
         const healthy = Object.values(checks).every(check => check.healthy);

@@ -48,10 +48,19 @@ describe('GET /qaap/api/health', () => {
         expect(reply.body.ok).to.equal(false);
     });
 
-    it('treats a throwing check as unhealthy', () => {
-        const reply = health([{ id: 'broken', check: () => { throw new Error('SQLITE_IOERR'); } }]);
-        expect(reply.status).to.equal(503);
-        expect(reply.body.checks).to.deep.equal({ broken: { healthy: false, detail: { error: 'SQLITE_IOERR' } } });
+    it('treats a throwing check as unhealthy and logs the error instead of returning it', () => {
+        const originalWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (...args: unknown[]) => { warnings.push(args.join(' ')); };
+        try {
+            const reply = health([{ id: 'broken', check: () => { throw new Error('SQLITE_IOERR: /data/agents.db'); } }]);
+            expect(reply.status).to.equal(503);
+            expect(reply.body.checks).to.deep.equal({ broken: { healthy: false } });
+            expect(JSON.stringify(reply.body)).to.not.contain('SQLITE_IOERR');
+            expect(warnings.join('\n')).to.contain('SQLITE_IOERR: /data/agents.db');
+        } finally {
+            console.warn = originalWarn;
+        }
     });
 
     it('keeps the liveness probe (tenant wake-up) at 200 regardless of storage', () => {

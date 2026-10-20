@@ -76,6 +76,14 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
     are physically stored below `~/.qaap/agent-tasks/owners/{login}/`.
     With the flag disabled, Qaap remains the hardened private hybrid mode and
     must not be advertised as public third-party isolation.
+    `QAAP_TENANT_PROXY_EARLY_ROUTING=0` is an operator fallback that leaves
+    Socket.IO polling (and the control plane's untenanted RPC services) reachable
+    by every signed-in user; a hosted runtime refuses to boot with it unless
+    `QAAP_ACK_EARLY_ROUTING_DISABLED=1` acknowledges the risk.
+    Sampled security logs key clients by the right-most `X-Forwarded-For` hop not
+    in `QAAP_TRUSTED_PROXY_CIDRS` (default: loopback, RFC 1918 and `fc00::/7`, so
+    Caddy over the Docker bridge is trusted). That address is used for log
+    sampling only, never for authorization or rate limiting.
     Browser-visible filesystem/RPC boundaries are owner-scoped, and tenant
     containers receive only a short-lived tenant-bound HMAC assertion plus the
     user's GitHub token—not the shared session store, Docker socket, OAuth

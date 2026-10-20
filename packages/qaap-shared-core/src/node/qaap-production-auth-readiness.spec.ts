@@ -49,6 +49,42 @@ describe('evaluateQaapProductionAuthReadiness', () => {
         expect(result.backendIsolationReady).to.equal(true);
     });
 
+    describe('QAAP_TENANT_PROXY_EARLY_ROUTING=0', () => {
+        const hosted = {
+            NODE_ENV: 'production',
+            QAAP_CLOUD_MODE: 'docker',
+            QAAP_GITHUB_CLIENT_ID: 'client',
+            QAAP_GITHUB_CLIENT_SECRET: 'secret',
+            QAAP_OAUTH_PUBLIC_URL: 'https://qaap.example',
+        };
+
+        it('is fatal on a hosted control plane', () => {
+            for (const value of ['0', 'false', 'off', 'no']) {
+                const result = evaluateQaapProductionAuthReadiness({ ...hosted, QAAP_TENANT_PROXY_EARLY_ROUTING: value });
+                expect(result.ready, value).to.equal(false);
+                expect(result.fatalReason).to.match(/early tenant routing disabled/i);
+                expect(result.fatalReason).to.match(/QAAP_ACK_EARLY_ROUTING_DISABLED=1/);
+            }
+        });
+
+        it('is accepted when the operator acknowledges the fallback', () => {
+            const result = evaluateQaapProductionAuthReadiness({
+                ...hosted, QAAP_TENANT_PROXY_EARLY_ROUTING: '0', QAAP_ACK_EARLY_ROUTING_DISABLED: '1',
+            });
+            expect(result.ready).to.equal(true);
+        });
+
+        it('does not affect early routing left on, local mode, or tenant backends', () => {
+            expect(evaluateQaapProductionAuthReadiness({ ...hosted, QAAP_TENANT_PROXY_EARLY_ROUTING: '1' }).ready).to.equal(true);
+            expect(evaluateQaapProductionAuthReadiness({
+                NODE_ENV: 'development', QAAP_CLOUD_MODE: 'local', QAAP_TENANT_PROXY_EARLY_ROUTING: '0',
+            }).ready).to.equal(true);
+            expect(evaluateQaapProductionAuthReadiness({
+                ...hosted, QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_PROXY_EARLY_ROUTING: '0',
+            }).ready).to.equal(true);
+        });
+    });
+
     it('refuses an invited public tenant list while the backend is shared', () => {
         const result = evaluateQaapProductionAuthReadiness({
             NODE_ENV: 'production',
