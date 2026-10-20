@@ -325,9 +325,17 @@ function agentFailureEvidenceText(evidence: AgentFailureEvidence): string {
         .join('\n');
 }
 
-/** Only the CLI's own error envelope — where a bare 401/403/"forbidden" really means auth. */
+/**
+ * Only the CLI's own error envelope — where a bare 401/403/"forbidden" really means auth. A
+ * plain-text log interleaves tool output (`Error: Request failed with status code 403`) with the
+ * CLI's stderr, so there only its last line or a provider error line counts, as for timeouts.
+ */
 function agentFailureEnvelopeText(evidence: AgentFailureEvidence): string {
-    return [evidence.envelope, ...evidence.errorRecords, ...evidence.plainLines.filter(line => CLI_ERROR_ENVELOPE_LINE.test(line))]
+    const interleaved = !evidence.structured && evidence.plainLines.length > STANDALONE_ERROR_MAX_LINES;
+    const lastIndex = evidence.plainLines.length - 1;
+    const plain = evidence.plainLines.filter((line, index) => CLI_ERROR_ENVELOPE_LINE.test(line)
+        && (!interleaved || index === lastIndex || CLI_PROVIDER_ERROR_LINE.test(line)));
+    return [evidence.envelope, ...evidence.errorRecords, ...plain]
         .filter((part): part is string => !!part)
         .join('\n');
 }

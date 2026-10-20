@@ -133,6 +133,29 @@ describe('agent failure reasons (real logs)', () => {
             expect(detectAgentFailureKind(gitPush)).to.equal(undefined);
         });
 
+        it('a tool\'s `Error: … 403` line in a plain-text CLI log is not auth', () => {
+            const plainTextRun = [
+                '> Fetching the release notes',
+                'Error: Request failed with status code 403',
+                '    at settle (node_modules/axios/lib/core/settle.js:19:12)',
+                'Retrying with the cached copy instead.',
+                'Agent exited: tool loop aborted',
+            ].join('\n');
+            expect(detectAgentFailureKind(plainTextRun)).to.equal(undefined);
+            const persisted = resolveAgentTurnFailureMessage(plainTextRun, { state: 'failed', exitCode: 1 });
+            expect(persisted).not.to.equal(localizeAgentAuthFailureMessage({ mode: 'session' }));
+            expect(localizeAgentFailureShortReason(persisted)).not.to.match(/^Sign in/);
+        });
+
+        it('the last line of a plain-text CLI log still reads as auth', () => {
+            const plainTextRun = [
+                '> Fetching the release notes',
+                'Done reading 3 files.',
+                'Error: 401 Unauthorized',
+            ].join('\n');
+            expect(detectAgentFailureKind(plainTextRun)).to.equal('auth');
+        });
+
         it('a 401 in the CLI\'s own error line still is', () => {
             expect(detectAgentFailureKind('unexpected status 401 Unauthorized: missing bearer token')).to.equal('auth');
             expect(detectAgentFailureKind('API Error: 403 {"error":{"type":"forbidden"}}')).to.equal('auth');
