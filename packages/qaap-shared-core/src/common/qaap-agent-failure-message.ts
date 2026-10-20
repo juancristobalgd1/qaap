@@ -97,12 +97,26 @@ const AUTH_ENVELOPE_ONLY_PATTERNS: readonly RegExp[] = [
     /\baccess\s+denied\b/i,
 ];
 
-/** A plain-text line the agent CLI itself prints for a provider/API failure. */
-const CLI_ERROR_ENVELOPE_LINE = /^(?:error\b|api\s+error\b|fatal\b|unexpected\s+status\b|http\/?[\d.]*\s+\d{3}\b|status(?:\s+code)?:?\s*\d{3}\b)/i;
+/**
+ * A plain-text line the agent CLI itself prints for a provider/API failure. Not `fatal:`: that is
+ * git's prefix, and a `git push` 403 is a repository permission, not an expired agent session.
+ */
+const CLI_ERROR_ENVELOPE_LINE = /^(?:error\b|api\s+error\b|unexpected\s+status\b|http\/?[\d.]*\s+\d{3}\b|status(?:\s+code)?:?\s*\d{3}\b)/i;
+
+/**
+ * The provider/API subset of {@link CLI_ERROR_ENVELOPE_LINE}, without a bare `Error:`: test
+ * runners print "Error: Test timed out" too, so that prefix alone cannot carry a timeout.
+ */
+const CLI_PROVIDER_ERROR_LINE = /^(?:api\s+error\b|unexpected\s+status\b|http\/?[\d.]*\s+\d{3}\b|status(?:\s+code)?:?\s*\d{3}\b)/i;
 
 /** Line the task runner writes when it kills a run that stopped producing output. */
 const RUNNER_IDLE_TIMEOUT_LINE = /\[qaap\] task timed out after (\d+)s without output\./;
 
+/** Persisted (English, backend-locale) forms of {@link localizeAgentTurnTimeoutMessage}. */
+const STORED_IDLE_TIMEOUT = /^Timed out after (\d+) minutes without output\./;
+const STORED_MAX_DURATION = /^Timed out at the (\d+)-minute task limit\./;
+
+/** Only read in the CLI's error envelope: a test suite printing "timed out" is not the agent timing out. */
 const TIMEOUT_PATTERNS: readonly RegExp[] = [
     /\btimeout\b/i,
     /\btimed\s+out\b/i,
@@ -211,7 +225,12 @@ interface AgentFailureEvidence {
     readonly errorRecords: readonly string[];
     /** Lines outside the JSON stream (CLI stderr/stdout, runner notes), in log order. */
     readonly plainLines: readonly string[];
+    /** The input had a JSON event stream, i.e. it is an agent log rather than a bare error string. */
+    readonly structured: boolean;
 }
+
+/** At most this many plain lines and no JSON stream: the input is an error message, not a log. */
+const STANDALONE_ERROR_MAX_LINES = 2;
 
 const FINAL_ENVELOPE_SCAN_LINES = 200;
 const FINAL_ENVELOPE_LINE = /^\{\s*"type"\s*:\s*"(?:result|turn\.failed|turn\.completed)"/;
@@ -257,8 +276,9 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
     const full = (log ?? '').trim();
     const errorRecords: string[] = [];
     const plainLines: string[] = [];
+    let structured = false;
     if (!full) {
-        return { errorRecords, plainLines };
+        return { errorRecords, plainLines, structured };
     }
     for (const rawLine of tailOfAgentLog(full).replace(ANSI_REGEX, '').split('\n')) {
         const line = rawLine.trim();
@@ -267,7 +287,9 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
         }
         if (line.startsWith('{') || line.startsWith('[')) {
             try {
-                if (isTopLevelErrorRecord(JSON.parse(line))) {
+                const parsed = JSON.parse(line);
+                structured = true;
+                if (isTopLevelErrorRecord(parsed)) {
                     errorRecords.unshift(line);
                 }
                 continue;
@@ -277,7 +299,7 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
         }
         plainLines.push(line);
     }
-    return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines };
+    return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines, structured };
 }
 
 /** Everything the CLI said about the failure (envelope, error records, plain lines). */
@@ -290,6 +312,23 @@ function agentFailureEvidenceText(evidence: AgentFailureEvidence): string {
 /** Only the CLI's own error envelope — where a bare 401/403/"forbidden" really means auth. */
 function agentFailureEnvelopeText(evidence: AgentFailureEvidence): string {
     return [evidence.envelope, ...evidence.errorRecords, ...evidence.plainLines.filter(line => CLI_ERROR_ENVELOPE_LINE.test(line))]
+        .filter((part): part is string => !!part)
+        .join('\n');
+}
+
+/**
+ * Where a timeout can be read: the CLI's error envelope, the runner's own idle line, our stored
+ * timeout copy, or an input that is itself a short error message rather than a log.
+ */
+function agentFailureTimeoutText(evidence: AgentFailureEvidence): string {
+    const standalone = !evidence.structured && evidence.plainLines.length <= STANDALONE_ERROR_MAX_LINES;
+    const plain = standalone
+        ? evidence.plainLines
+        : evidence.plainLines.filter(line => CLI_PROVIDER_ERROR_LINE.test(line)
+            || RUNNER_IDLE_TIMEOUT_LINE.test(line)
+            || STORED_IDLE_TIMEOUT.test(line)
+            || STORED_MAX_DURATION.test(line));
+    return [evidence.envelope, ...evidence.errorRecords, ...plain]
         .filter((part): part is string => !!part)
         .join('\n');
 }
@@ -405,7 +444,7 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (matchesAny(sample, AUTH_PATTERNS) || matchesAny(agentFailureEnvelopeText(evidence), AUTH_ENVELOPE_ONLY_PATTERNS)) {
         return 'auth';
     }
-    if (matchesAny(sample, TIMEOUT_PATTERNS)) {
+    if (matchesAny(agentFailureTimeoutText(evidence), TIMEOUT_PATTERNS)) {
         return 'timeout';
     }
     if (matchesAny(sample, NETWORK_PATTERNS)) {
@@ -517,20 +556,17 @@ export function localizeAgentTurnTimeoutMessage(cause: QaapAgentTurnTimeoutCause
     if (cause === 'idle') {
         return nls.localize(
             'qaap/agentFailure/idleTimeout',
-            'Timed out after {0} minutes without output. Continue to pick up where it left off.',
+            'Timed out after {0} minutes without output. Continue runs it again from your original request.',
             rounded,
         );
     }
     return nls.localize(
         'qaap/agentFailure/maxDuration',
-        'Timed out at the {0}-minute task limit. Continue to pick up where it left off.',
+        'Timed out at the {0}-minute task limit. Continue runs it again from your original request.',
         rounded,
     );
 }
 
-/** Persisted (English, backend-locale) forms of {@link localizeAgentTurnTimeoutMessage}. */
-const STORED_IDLE_TIMEOUT = /^Timed out after (\d+) minutes without output\./;
-const STORED_MAX_DURATION = /^Timed out at the (\d+)-minute task limit\./;
 /** Watchdog copy persisted before the inactivity timeout existed. */
 const LEGACY_WATCHDOG_STOP = /^Stopped automatically after .+: the turn exceeded the maximum allowed time\.?$/;
 /** Copy recorded when a backend restart (or a failed restart resume) killed the turn. */

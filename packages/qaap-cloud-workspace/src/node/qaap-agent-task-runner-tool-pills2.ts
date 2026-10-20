@@ -451,7 +451,7 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
             await ctx.webPush.notify({
                 title: ok ? 'Task finished' : paused ? 'Task paused' : 'Task failed',
                 body: ok ? `${task.title} completed.`
-                    : paused ? `${task.title} timed out without output. Continue to pick up where it left off.`
+                    : paused ? `${task.title} timed out without output. Continue runs it again from your original request.`
                         : `${task.title} exited with code ${task.exitCode ?? 'unknown'}.`,
                 tag: `qaap-agent-task-${task.id}`,
                 ...link,

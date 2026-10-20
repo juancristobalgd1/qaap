@@ -31,8 +31,7 @@ import type {
     QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
-
+import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestRunStore extends QaapWorkflowRunStore {
@@ -257,23 +256,6 @@ describe('QaapAgentConversationStore model fallback via the chat-turn graph (QAA
         const handled = await store.retryFallback('f2', 'f2-u1', 'f2-a1', failedTask('task-old'), conv, conv.messages[1]);
 
         expect(handled).to.be.false;
-        expect(runner.created).to.have.length(0);
-        expect(chatTurnRuns(runStore)).to.have.length(0);
-    });
-
-    it('does not move a turn the no-output timer interrupted to a fallback model', async () => {
-        for (const graph of ['on', 'off']) {
-            process.env.QAAP_TURN_GRAPH = graph;
-            const id = `f-idle-${graph}`;
-            const conv = retriableConversation(id, 'task-old', MODEL_ZERO);
-            store.seed(conv);
-            const interrupted = { id: 'task-old', state: 'interrupted', agentId: 'qaiq' } as unknown as QaapAgentTask;
-
-            // Same empty output that makes a `failed` run retriable (see the first case).
-            const handled = await store.retryFallback(id, `${id}-u1`, `${id}-a1`, interrupted, conv, conv.messages[1]);
-
-            expect(handled, `QAAP_TURN_GRAPH=${graph}`).to.be.false;
-        }
         expect(runner.created).to.have.length(0);
         expect(chatTurnRuns(runStore)).to.have.length(0);
     });

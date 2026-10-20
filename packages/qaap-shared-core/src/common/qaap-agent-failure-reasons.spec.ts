@@ -121,6 +121,15 @@ describe('agent failure reasons (real logs)', () => {
             expect(detectAgentFailureKind('Wrote src/pages/unauthorized.tsx and the access denied banner.')).to.equal(undefined);
         });
 
+        it('a git push 403 (`fatal:`) is a repository permission, not an expired agent session', () => {
+            const gitPush = [
+                'To https://github.com/acme/app.git',
+                'remote: Permission to acme/app.git denied to qaap-bot.',
+                'fatal: unable to access \'https://github.com/acme/app.git/\': The requested URL returned error: 403',
+            ].join('\n');
+            expect(detectAgentFailureKind(gitPush)).to.equal(undefined);
+        });
+
         it('a 401 in the CLI\'s own error line still is', () => {
             expect(detectAgentFailureKind('unexpected status 401 Unauthorized: missing bearer token')).to.equal('auth');
             expect(detectAgentFailureKind('API Error: 403 {"error":{"type":"forbidden"}}')).to.equal('auth');
@@ -136,10 +145,24 @@ describe('agent failure reasons (real logs)', () => {
             expect(repeated.label).to.equal('A command failed');
         });
 
+        it('test output that mentions a timeout is not the agent timing out', () => {
+            const testRun = [
+                '> app@1.0.0 test',
+                '> vitest run',
+                ' FAIL  src/api.spec.ts > fetches the profile',
+                'Error: Test timed out in 5000ms.',
+                ' Tests  1 failed | 41 passed (42)',
+                'Process exited with code 1',
+            ].join('\n');
+            expect(detectAgentFailureKind(testRun)).to.equal(undefined);
+            expect(detectAgentFailureKind('[qaap] task timed out after 1200s without output.')).to.equal('timeout');
+            expect(detectAgentFailureKind('API Error: Request timed out.')).to.equal('timeout');
+        });
+
         it('the runner idle timer becomes a timeout pause the user can continue', () => {
             const { persisted, label } = persistAndDescribe(RUNNER_IDLE_TIMEOUT_LOG, { state: 'interrupted' });
             expect(persisted).to.equal(localizeAgentTurnTimeoutMessage('idle', 20));
-            expect(persisted).to.equal('Timed out after 20 minutes without output. Continue to pick up where it left off.');
+            expect(persisted).to.equal('Timed out after 20 minutes without output. Continue runs it again from your original request.');
             expect(detectAgentFailureKind(persisted)).to.equal('timeout');
             expect(label).to.equal('Timed out');
             expect(isAgentTurnInterruptedError(persisted)).to.equal(true);
@@ -171,7 +194,7 @@ describe('agent failure reasons (real logs)', () => {
 
         it('localizes the persisted timeout copy and keeps it stable', () => {
             const cap = localizeAgentTurnTimeoutMessage('max_duration', 180);
-            expect(cap).to.equal('Timed out at the 180-minute task limit. Continue to pick up where it left off.');
+            expect(cap).to.equal('Timed out at the 180-minute task limit. Continue runs it again from your original request.');
             expect(formatStoredAgentFailureMessage(cap)).to.equal(cap);
             expect(describeAgentTurnFailure(cap)).to.deep.equal({ kind: 'timeout', label: 'Timed out', detail: cap, interrupted: true });
         });
