@@ -7,6 +7,8 @@ import { expect } from 'chai';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { QaapThreadStore } from '@theia/qaap-shared-core/lib/common/qaap-thread-store';
+import { MobileProjectsConversationIndexUi, type MobileProjectsConversationIndexHost } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
 import { conversationCwdProjectId, mergeConversationCwdProjects } from './mobile-projects-sessions-sidebar-conversation-projects';
 
 const BASE = '/workspace/repos/alice/claude-of-duty';
@@ -174,6 +176,76 @@ describe('mergeConversationCwdProjects canonical project identity', () => {
         const merged = mergeConversationCwdProjects([githubCard(), ...stale], [summary('a', CLONE, 1)]);
 
         expect(merged.map(project => project.id)).to.deep.equal(['github:juancristobalgd1/OpenDots']);
+    });
+
+    /** Conversation ids each sidebar card lists, through the real per-card query over a real thread store. */
+    const listedSummariesByCard = (
+        projects: readonly MobileProjectEntry[],
+        summaries: readonly QaapAgentConversationSummaryDTO[],
+    ): Map<string, QaapAgentConversationSummaryDTO[]> => {
+        const threadStore = new QaapThreadStore();
+        for (const entry of summaries) {
+            threadStore.upsertSummary(entry);
+        }
+        const index = new MobileProjectsConversationIndexUi({
+            chatService: undefined,
+            conversationFlags: undefined,
+            preparedCwdByProjectId: new Map(),
+            projectsService: { getProjectCwd: (project: MobileProjectEntry) => project.uri?.path.toString() },
+            conversations: {
+                threadStore,
+                getConversationsForCwd: (cwd: string) => threadStore.getSummariesForCwd(cwd),
+                findConversationsForProject: () => [],
+            },
+            activeTasks: undefined,
+            chatServiceSessionSummariesByProjectId: new Map(),
+            chatServiceSummariesUi: { isChatSessionWorking: () => false, isChatSessionWaitingForInput: () => false },
+        } as unknown as MobileProjectsConversationIndexHost);
+        const merged = mergeConversationCwdProjects(projects, summaries);
+        return new Map(merged.map(project => [project.id, index.conversationsForProject(project)]));
+    };
+    const listedByCard = (projects: readonly MobileProjectEntry[], summaries: readonly QaapAgentConversationSummaryDTO[]): Map<string, string[]> =>
+        new Map([...listedSummariesByCard(projects, summaries)].map(([id, listed]) => [id, listed.map(entry => entry.id).sort()]));
+
+    it('lists conversations of a legacy, trailing-slash or re-cased cwd under the canonical card, each exactly once', () => {
+        const summaries = [
+            summary('new', CLONE, 1),
+            summary('old', LEGACY_CLONE, 2),
+            summary('slash', `${CLONE}/`, 3),
+            summary('case', CLONE.toLowerCase(), 4),
+        ];
+
+        const listed = listedByCard([githubCard(CLONE)], summaries);
+
+        expect([...listed.keys()]).to.deep.equal(['github:juancristobalgd1/OpenDots']);
+        expect(listed.get('github:juancristobalgd1/OpenDots')).to.deep.equal(['case', 'new', 'old', 'slash']);
+    });
+
+    it('lists every clone path under a github card that has no clone URI yet', () => {
+        const listed = listedByCard([githubCard()], [summary('new', CLONE, 1), summary('old', LEGACY_CLONE, 2)]);
+
+        expect([...listed.entries()]).to.deep.equal([['github:juancristobalgd1/OpenDots', ['new', 'old']]]);
+    });
+
+    it('keeps the conversations of a fork and of a folder below the root on their own cards only', () => {
+        const fork = '/workspace/repos/users/jcristgd/someone-else/OpenDots';
+        const subfolder = `${CLONE}/packages/web`;
+
+        const listed = listedByCard([githubCard(CLONE)], [summary('new', CLONE, 1), summary('fork', fork, 2), summary('sub', subfolder, 3)]);
+
+        expect([...listed.entries()]).to.deep.equal([
+            ['github:juancristobalgd1/OpenDots', ['new']],
+            [conversationCwdProjectId(fork), ['fork']],
+            [conversationCwdProjectId(subfolder), ['sub']],
+        ]);
+    });
+
+    it('keeps the real cwd on a conversation listed under the canonical card (open / retry / delete act on it)', () => {
+        const listed = listedSummariesByCard([githubCard(CLONE)], [summary('new', CLONE, 1), summary('old', LEGACY_CLONE, 2)]);
+
+        const cwdById = new Map(listed.get('github:juancristobalgd1/OpenDots')!.map(entry => [entry.id, entry.cwd]));
+        expect(cwdById.get('old')).to.equal(LEGACY_CLONE);
+        expect(cwdById.get('new')).to.equal(CLONE);
     });
 
     it('keeps a same-named repository of another owner and a folder below the clone root', () => {

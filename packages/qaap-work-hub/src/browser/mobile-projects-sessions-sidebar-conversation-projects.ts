@@ -8,33 +8,13 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { resolveQaapWorktreeLabelsByCwd } from '@theia/qaap-shared-core/lib/common/qaap-worktree-label';
 import { qaapProjectRemovalIdentity } from '@theia/qaap-shared-core/lib/common/qaap-project-removal-identity';
+import { qaapCloneRootIdentity, qaapProjectCloneIdentities } from '@theia/qaap-shared-core/lib/common/qaap-project-clone-identity';
 
 /** Id of the synthetic sidebar project that stands for a conversation cwd. */
 export const conversationCwdProjectId = (cwd: string): string => `ws:${FileUri.create(cwd).toString()}`;
 
 // Trailing separators are dropped: `…/repo/` and `…/repo` are the same folder.
 const uriKey = (uri: { toString(): string } | undefined): string | undefined => uri?.toString().toLowerCase().replace(/\/+$/, '');
-
-/**
- * `github:owner/repo` of a repository clone ROOT at `cwd` (a folder below the root does not count:
- * the clone's card only lists the conversations run at its root), whatever layout the clone path uses.
- */
-const cloneRootIdentity = (cwd: string | undefined): string | undefined => {
-    const identity = qaapProjectRemovalIdentity(cwd);
-    if (!cwd || !identity?.startsWith('github:')) {
-        return undefined;
-    }
-    const base = cwd.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase();
-    return base === identity.slice(identity.indexOf('/') + 1) ? identity : undefined;
-};
-
-/** Every `github:owner/repo` identity a catalog card answers to (its repository, id or clone URI). */
-const projectCloneIdentities = (project: MobileProjectEntry): string[] => [
-    project.github ? `github:${project.github.owner}/${project.github.name}` : undefined,
-    project.id,
-    project.uri?.toString(),
-].map(key => qaapProjectRemovalIdentity(key))
-    .filter((identity): identity is string => !!identity?.startsWith('github:'));
 
 /**
  * Source clone (`parallelBaseCwd`) of the task worktree at `uri`, from the conversations run in it, or
@@ -86,11 +66,11 @@ export const mergeConversationCwdProjects = (
     };
     // Synthetic `ws:` cards (from an earlier merge) never claim: the deduplicated catalog keeps a `ws:`
     // card next to a github card of the same repo only when the `ws:` one was synthesized here.
-    const catalogIdentities = new Set(projects
-        .filter(project => project.isCurrent || !project.id.startsWith('ws:'))
-        .flatMap(projectCloneIdentities));
+    // `MobileProjectsConversationIndexUi.conversationsForProject` lists a claimed cwd's conversations
+    // under the claiming card through the same `qaapProjectCloneIdentities` rule, so none is hidden.
+    const catalogIdentities = new Set(projects.flatMap(qaapProjectCloneIdentities));
     const coveredByCatalog = (cwd: string | undefined): boolean => {
-        const identity = cloneRootIdentity(cwd);
+        const identity = qaapCloneRootIdentity(cwd);
         return !!identity && catalogIdentities.has(identity);
     };
     const byUri = new Map<string, MobileProjectEntry>();
