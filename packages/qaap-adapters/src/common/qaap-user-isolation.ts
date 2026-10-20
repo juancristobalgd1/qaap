@@ -85,6 +85,16 @@ export function safeUserIdSegment(login: string): string {
 }
 
 /**
+ * Case-folded {@link safeUserIdSegment}: the tenant identity key. GitHub (and GitLab) logins are
+ * case-insensitive, so `Alice` and `alice` are one account, and the Docker orchestrator names a
+ * tenant's containers and mounts its trees inside a tenant backend under this key
+ * (`/workspace/repos/users/{key}`). Compare tenant path segments with it, never with the raw login.
+ */
+export function tenantSegmentKey(loginOrSegment: string): string {
+    return safeUserIdSegment(loginOrSegment).toLowerCase();
+}
+
+/**
  * Local skip-auth / anonymous buckets may still read the shared `~/.theia/settings.json`.
  * Authenticated GitHub/GitLab logins must never fall back to that file — it is one backend
  * process and would leak User A's API keys into User B's agent spawn.

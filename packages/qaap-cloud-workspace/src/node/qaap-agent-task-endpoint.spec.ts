@@ -51,6 +51,7 @@ describe('QaapAgentTaskEndpoint install capability', () => {
                     isQaiqInstalled: () => false,
                     listAgentsFresh: async () => [],
                     defaultAgent: () => 'shell',
+                    defaultAgentFresh: async () => 'shell',
                     listQaiqModels: () => [],
                 },
                 cliUpdates: { isInstallSupported: () => installSupported },
@@ -86,6 +87,7 @@ describe('QaapAgentTaskEndpoint catalog refresh', () => {
                 refreshAgentCatalog: () => { refreshed++; },
                 listAgentsFresh: async (_owner: string, budgetMs?: number) => { budgets.push(budgetMs); return []; },
                 defaultAgent: () => 'shell',
+                defaultAgentFresh: async () => 'shell',
                 listQaiqModels: () => [],
             },
             cliUpdates: { isInstallSupported: () => false },
@@ -289,7 +291,7 @@ describe('QaapAgentTaskEndpoint queue admission', () => {
                     authenticate: () => ({ kind: 'authenticated', userLogin: 'alice' }),
                     resolveOwnedRepositoryCwd: () => ({ kind: 'ok', cwd: '/repo' })
                 },
-                runner: { create: () => { throw error; } }
+                runner: { defaultAgentFresh: async () => 'shell', create: () => { throw error; } }
             });
             let status = 0;
             let payload: unknown;
@@ -391,7 +393,7 @@ describe('QaapAgentTaskEndpoint project clone missing from disk', () => {
                 denyForbidden: (res: Response) => { res.status(403).json({ error: 'Forbidden' }); return false; },
             },
             cloneRecovery: { resolveOwnedRepositoryCwd: async () => recovered },
-            runner: { create: (request: unknown) => { created.push(request); return { id: 't1' }; } },
+            runner: { defaultAgentFresh: async () => 'shell', create: (request: unknown) => { created.push(request); return { id: 't1' }; } },
         });
         let status = 0;
         let payload: unknown;

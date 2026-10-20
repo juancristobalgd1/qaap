@@ -7,6 +7,7 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
+import { WsRequestValidatorContribution } from '@theia/core/lib/node/ws-request-validators';
 import { NodeFileUploadService } from '@theia/filesystem/lib/node/upload/node-file-upload-service';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { DefaultWorkspaceServer } from '@theia/workspace/lib/node/default-workspace-server';
@@ -86,6 +87,7 @@ import { QaapRemovedRepositoryCleanup } from './qaap-removed-repository-cleanup'
 import { QaapRepositoryRemovalContribution } from '@theia/qaap-shared-core/lib/node/qaap-repository-removal-contribution';
 import { bindQaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
 import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
+import { QaapAuthenticatedWsRequestValidator } from './qaap-authenticated-ws-request-validator';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contribution';
 import { QaapJobEndpoint } from './qaap-job-endpoint';
@@ -111,6 +113,7 @@ import {
 import { QaapWorkflowService } from './qaap-workflow-service';
 import { ProcessManager } from '@theia/process/lib/node';
 import { QaapTerminalOwnership, installQaapTerminalOwnership } from './qaap-terminal-ownership';
+import { QaapTerminalCwdGuard } from './qaap-terminal-cwd-guard';
 import { QaapDockerControlPlaneContribution } from './qaap-docker-control-plane-contribution';
 import { QaapTenantActivityContribution } from './qaap-tenant-activity-contribution';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
@@ -124,7 +127,7 @@ import { QaapTenantPreviewRouteTable } from './qaap-tenant-preview-route-table';
 import { QaapDockerDevPreviewUpstreamTunnel } from './qaap-docker-dev-preview-upstream-tunnel';
 import { QaapDevPreviewUpstreamTunnel } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-upstream-tunnel';
 import { QaapObservability } from './qaap-observability';
-import { isQaapHostedRuntime } from './qaap-docker-control-plane';
+import { isQaapHostedOrTenantBackendRuntime, isQaapHostedRuntime } from './qaap-docker-control-plane';
 import { QaapTenantProcessExecutor } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import {
     rememberQaapSharedTheiaConfigDir,
@@ -141,6 +144,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     rebind(NodeFileUploadService).toService(QaapNodeFileUploadService);
     bind(QaapWebsocketAuthRegistry).toSelf().inSingletonScope();
     bind(QaapTerminalOwnership).toSelf().inSingletonScope();
+    bind(QaapTerminalCwdGuard).toSelf().inSingletonScope();
     bind(QaapDockerControlPlaneContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapDockerControlPlaneContribution);
     bind(QaapTenantRuntimeStore).toSelf().inSingletonScope();
@@ -165,6 +169,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapTenantBackendProxyContribution);
     bind(QaapWebsocketAuthListener).toSelf().inSingletonScope();
     bind(MessagingListenerContribution).toService(QaapWebsocketAuthListener);
+    // Hosted runtimes refuse the Theia Socket.IO handshake of an unauthenticated caller.
+    bind(QaapAuthenticatedWsRequestValidator).toSelf().inSingletonScope();
+    bind(WsRequestValidatorContribution).toService(QaapAuthenticatedWsRequestValidator);
     bind(QaapMessagingAuthContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapMessagingAuthContribution);
     onActivation<ProcessManager>(ProcessManager, (ctx, processManager) => {
@@ -377,6 +384,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
         const taskRunner = ctx.container.get(QaapAgentTaskRunner);
         const tenantSpawn = ctx.container.get(QaapTenantSpawnService);
         const registry = ctx.container.get(QaapWebsocketAuthRegistry);
+        const cwdGuard = ctx.container.get(QaapTerminalCwdGuard);
         const shellServer = server as IShellTerminalServer & {
             collections: MultiKeyMap<string, unknown>;
             applyToProcessEnvironment(cwdUri: URI, env: { [key: string]: string | null }): void;
@@ -427,6 +435,12 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             withTenantCollections(() => originalGetEnvVarCollectionDescriptions(...args));
         const originalCreate = server.create.bind(server);
         server.create = async (options: IShellTerminalServerOptions) => {
+            // S2: the rootURI comes from the browser and decides which tenant the shell runs as
+            // (uid / worker container below). In hosted mode (tenant backends included) it must
+            // belong to the caller.
+            const cwd = isQaapHostedOrTenantBackendRuntime(process.env)
+                ? cwdGuard.resolveHostedTerminalCwd(options.rootURI ? getRootPath(options.rootURI) : undefined, registry.getCurrentLogin())
+                : normalizeIsolationPath(getRootPath(options.rootURI));
             if (options.strictEnv !== true) {
                 // Under a PTY, corepack's interactive download prompt blocks stdin forever (no
                 // packageManager pin ⇒ latest-resolve too); explicit incoming env still wins below.
@@ -462,7 +476,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             //
             // Windows browsers often send FileUri.fsPath as "/\workspace\repos\..." — normalize and
             // rewrite rootURI so ShellProcess.getRootPath also gets a real Linux cwd for the PTY.
-            const cwd = normalizeIsolationPath(getRootPath(options.rootURI));
             options.rootURI = FileUri.create(cwd).toString(true);
             const shell = options.shell || ShellProcess.getShellExecutablePath();
             const shellArgs = options.args === undefined

@@ -250,6 +250,50 @@ describe('QaapTenantBackendProxyContribution public preview routing', () => {
         expect(reply).to.equal('alice:ping');
     });
 
+    function upgrade(path: string, host?: string): Promise<{ status?: number; upgraded: boolean }> {
+        return new Promise((resolve, reject) => {
+            const req = http.request({
+                host: '127.0.0.1', port: frontPort, path,
+                headers: { ...(host ? { host } : {}), connection: 'Upgrade', upgrade: 'websocket' },
+            });
+            req.on('upgrade', (_res, socket) => {
+                // Round-trip once so both hops are torn down by the backend's `end`.
+                socket.once('data', () => {
+                    socket.destroy();
+                    resolve({ status: 101, upgraded: true });
+                });
+                socket.write('ping');
+            });
+            req.on('response', res => {
+                res.resume();
+                resolve({ status: res.statusCode, upgraded: false });
+            });
+            req.on('error', error => (error as NodeJS.ErrnoException).code === 'ECONNRESET'
+                ? resolve({ upgraded: false })
+                : reject(error));
+            req.end();
+        });
+    }
+
+    it('refuses an anonymous Theia Socket.IO upgrade instead of handing it to the control plane', async () => {
+        const reply = await upgrade('/socket.io/?EIO=4&transport=websocket');
+        expect(reply).to.deep.equal({ status: 401, upgraded: false });
+        expect(originalHits).to.deep.equal([]);
+    });
+
+    it('still gives anonymous non-Socket.IO upgrades to the listeners that authenticate them', async () => {
+        await upgrade('/qaap/api/agent/conversations/ws');
+        expect(originalHits).to.deep.equal(['upgrade']);
+    });
+
+    it('keeps the Socket.IO path of a public preview routed to its owner', async () => {
+        routes.record({ kind: 'preview', id: ALICE_PREVIEW }, 'alice');
+        const reply = await upgrade('/socket.io/?EIO=4&transport=websocket', `${ALICE_PREVIEW}.${BASE_DOMAIN}`);
+        expect(reply.upgraded).to.equal(true);
+        expect(seen.map(entry => entry.tenant)).to.deep.equal(['alice']);
+        expect(originalHits).to.deep.equal([]);
+    });
+
     it('is disabled by QAAP_TENANT_PREVIEW_ROUTING=0', async () => {
         routes.record({ kind: 'share', id: SHARE }, 'alice');
         setEnv('QAAP_TENANT_PREVIEW_ROUTING', '0');

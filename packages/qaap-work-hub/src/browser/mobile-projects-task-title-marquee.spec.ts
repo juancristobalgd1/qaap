@@ -81,4 +81,21 @@ describe('task title marquee', () => {
 
         expect(viewport.classList.contains(TASK_TITLE_OVERFLOW_CLASS)).to.equal(true);
     });
+    it('travels past the width the hover actions cover only while the row is in use', () => {
+        const viewport = document.createElement('span');
+        const text = createTaskTitleText('A title that fits until the actions cover its end');
+        viewport.append(text);
+        viewport.style.setProperty('--qaap-task-title-hover-reserve', '36px');
+        document.body.append(viewport);
+        Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 100 });
+        Object.defineProperty(text, 'scrollWidth', { configurable: true, value: 90 });
+
+        // At rest the title fits: no fade, no marquee.
+        refreshTaskTitleMarquee(viewport);
+        expect(viewport.classList.contains(TASK_TITLE_OVERFLOW_CLASS)).to.equal(false);
+
+        refreshTaskTitleMarquee(viewport, { interacting: true });
+        expect(viewport.classList.contains(TASK_TITLE_OVERFLOW_CLASS)).to.equal(true);
+        expect(viewport.style.getPropertyValue('--qaap-task-title-overflow')).to.equal('26px');
+    });
 });

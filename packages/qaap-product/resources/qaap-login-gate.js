@@ -1538,6 +1538,7 @@
             if (label) {
                 label.textContent = 'Authorizing…';
             }
+            oauthErrorNotice = '';
             var status = host.querySelector('#qaap-login-status');
             if (status) {
                 status.textContent = 'Opening GitHub sign-in…';
@@ -1615,6 +1616,15 @@
 
         // If GitHub OAuth is not configured, keep the user on this page with an actionable hint.
         reflectGithubAvailability(host);
+        showOAuthErrorNotice(host);
+    }
+
+    /** Shows the mapped OAuth failure in the gate status line (config-probe results may overwrite it, never blank it). */
+    function showOAuthErrorNotice(host) {
+        var status = host.querySelector('#qaap-login-status');
+        if (status && oauthErrorNotice) {
+            status.textContent = oauthErrorNotice;
+        }
     }
 
     function showGateAndLoadBundle() {
@@ -1690,7 +1700,7 @@
                 // A failed or slow config probe does not prove the server is down. Leave GitHub
                 // sign-in enabled; an unavailable capabilities probe is not a liveness check.
                 if (status) {
-                    status.textContent = '';
+                    status.textContent = oauthErrorNotice;
                 }
                 if (retry) {
                     retry.hidden = true;
@@ -1754,6 +1764,25 @@
         });
     }
 
+    /** Mirrors QaapOAuthErrorMessages (qaap-adapters/common/qaap-oauth-error-reason.ts); keys are the backend `qaap_oauth_reason` codes. */
+    var OAUTH_ERROR_MESSAGES = {
+        access_denied: 'GitHub sign-in was cancelled. Choose "Sign in with GitHub" to try again.',
+        state_lost: 'Your sign-in session expired before GitHub responded. Please try again.',
+        missing_code: 'GitHub did not complete the sign-in. Please try again.',
+        not_configured: 'GitHub sign-in isn’t configured on this server yet. Ask the administrator to set the GitHub OAuth credentials.',
+        exchange_failed: 'We could not finish signing you in with GitHub. Please try again in a moment.',
+        github_error: 'GitHub sign-in failed. Please try again.'
+    };
+
+    /** Set when the page was opened by a failed OAuth callback; written into the gate status line. */
+    var oauthErrorNotice = '';
+
+    function describeOAuthError(reason) {
+        return Object.prototype.hasOwnProperty.call(OAUTH_ERROR_MESSAGES, reason || '')
+            ? OAUTH_ERROR_MESSAGES[reason]
+            : OAUTH_ERROR_MESSAGES.github_error;
+    }
+
     function stripOAuthQueryParams() {
         try {
             var next = new URL(window.location.href);
@@ -1788,6 +1817,7 @@
                 var errParams = new URLSearchParams(window.location.search);
                 var reason = errParams.get('qaap_oauth_reason');
                 console.error('[Qaap] GitHub OAuth callback failed.', reason ? 'Reason: ' + reason : '(no reason provided by backend)');
+                oauthErrorNotice = describeOAuthError(reason);
             } catch (e) { /* ignore */ }
         }
         if (window.location.search.indexOf('qaap_oauth=github') !== -1) {

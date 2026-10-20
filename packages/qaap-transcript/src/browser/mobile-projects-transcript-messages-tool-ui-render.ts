@@ -8,6 +8,7 @@ import {
     localizeAddApiKeyInSettingsCta,
     type QaapAgentAuthLoginChallenge,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage, summarizeCollapsedAgentFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
@@ -65,6 +66,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             readonly agentLabel?: string;
             readonly agentId?: string;
             readonly onOpenAiFeaturesSettings?: () => void | Promise<void>;
+            /** Opens the billing sheet; backs the Upgrade / Top up button on plan-limit failures. */
+            readonly onOpenBilling?: () => void | Promise<void>;
             readonly agentMessage?: Pick<QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>;
         },): HTMLElement {
         const persisted = formatStoredAgentFailureMessage(error);
@@ -73,10 +76,13 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             agentMessage: options?.agentMessage,
         });
         const generic = localizeGenericAgentFailureMessage('failed');
-        const formatted = resolved && resolved !== generic
-            ? resolved
-            : (persisted || resolved || generic);
         const authSample = [error, technicalContent].filter(Boolean).join('\n');
+        const planLimit = QaapPlanLimit.parse(authSample);
+        const formatted = planLimit
+            ? QaapPlanLimit.describe(planLimit)
+            : resolved && resolved !== generic
+                ? resolved
+                : (persisted || resolved || generic);
         const failureKind = detectAgentFailureKind(authSample);
         const extractedChallenge = extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
         const authChallenge = extractedChallenge
@@ -84,7 +90,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
                 ? { mode: 'session' as const }
                 : undefined);
-        const isQuotaFailure = !authChallenge && (failureKind === 'quota' || failureKind === 'rate_limit');
+        const isQuotaFailure = !authChallenge && !planLimit && (failureKind === 'quota' || failureKind === 'rate_limit');
         const isCliMissing = !authChallenge && failureKind === 'cli_missing';
         const details = document.createElement('details');
         details.className = 'theia-mobile-agent-shell-window theia-mod-failed theia-mod-turn-failure';
@@ -97,10 +103,13 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         if (isCliMissing) {
             details.classList.add('theia-mod-cli-missing');
         }
+        if (planLimit) {
+            details.classList.add('theia-mod-quota-limit', 'theia-mod-plan-limit');
+        }
         // Keep ordinary failures compact so a noisy backend error does not
         // dominate the transcript. Authentication, quota, and missing-CLI
         // failures expose their next-step guidance immediately.
-        details.open = !!authChallenge || isQuotaFailure || isCliMissing;
+        details.open = !!authChallenge || isQuotaFailure || isCliMissing || !!planLimit;
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head';
@@ -120,7 +129,9 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         label.className = 'theia-mobile-agent-shell-title';
         label.textContent = authChallenge
             ? nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required')
-            : isQuotaFailure
+            : planLimit
+              ? nls.localize('qaap/mobileProjects/transcriptPlanLimitReached', 'Plan limit reached')
+              : isQuotaFailure
                 ? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached')
                 : isCliMissing
                     ? nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing')
@@ -133,7 +144,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             toolLine.textContent = failedToolName;
             titleWrap.append(toolLine);
         }
-        if (!authChallenge && !isQuotaFailure && !isCliMissing) {
+        if (!authChallenge && !isQuotaFailure && !isCliMissing && !planLimit) {
             const reason = summarizeCollapsedAgentFailure({
                 formatted,
                 generic,
@@ -157,7 +168,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             failed: true,
             copyFrom: () => {
                 const technical = technicalContent?.trim();
-                return technical && technical !== formatted
+                return technical && !planLimit && technical !== formatted
                     ? `${formatted}\n\n${ctx.contentUi.cleanTranscriptDisplayText(technical)}`
                     : formatted;
             },
@@ -183,7 +194,19 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         message.textContent = formatted;
         body.append(message);
 
-        if (authChallenge) {
+        if (planLimit) {
+            if (options?.onOpenBilling) {
+                const cta = document.createElement('button');
+                cta.type = 'button';
+                cta.className = 'theia-mobile-agent-turn-failure-plan-cta';
+                cta.textContent = QaapPlanLimit.ctaLabel(planLimit);
+                cta.addEventListener('click', event => {
+                    event.preventDefault();
+                    void Promise.resolve(options.onOpenBilling!());
+                });
+                body.append(cta);
+            }
+        } else if (authChallenge) {
             body.append(ctx.createTranscriptAgentAuthLoginCard(authChallenge, options));
         } else if (isQuotaFailure) {
             const hint = document.createElement('p');
@@ -196,7 +219,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         }
 
         const technical = technicalContent?.trim();
-        if (technical && technical !== formatted && technical !== error.trim()) {
+        if (technical && !planLimit && technical !== formatted && technical !== error.trim()) {
             // Hide raw URL/code lines already shown in the sign-in card.
             const cleanedTechnical = ctx.contentUi.cleanTranscriptDisplayText(technical);
             const hideTechnical = !!authChallenge?.url

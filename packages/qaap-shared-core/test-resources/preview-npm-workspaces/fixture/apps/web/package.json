@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/web",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node -e \"require('fs').mkdirSync('lib',{recursive:true});require('fs').copyFileSync('src/index.html','lib/index.html')\"",
+    "start": "fixture-serve lib"
+  },
+  "devDependencies": { "fixture-serve-cli": "1.0.0" }
+}

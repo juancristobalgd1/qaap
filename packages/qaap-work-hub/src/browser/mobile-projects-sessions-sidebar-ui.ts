@@ -118,6 +118,8 @@ export interface SessionsSidebarConversationEntry {
     readonly summary: QaapAgentConversationSummaryDTO;
     readonly pinned: boolean;
     readonly parentIds: ReadonlySet<string>;
+    /** Older failed runs with the same title collapsed into this row (its "+N" badge). */
+    readonly failedDuplicateCount?: number;
     readonly onActivate?: () => void;
 }
 

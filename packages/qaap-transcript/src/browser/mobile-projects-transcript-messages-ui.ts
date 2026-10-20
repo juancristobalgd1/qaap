@@ -90,6 +90,8 @@ export interface MobileProjectsTranscriptMessagesHost {
      */
     openAgentSignInTerminal?(agentId?: string): void | Promise<void>;
     openPreferencesSheet?(query?: string): Promise<void>;
+    /** Opens the billing sheet (Upgrade / Top up call to action on plan-limit failures). */
+    openBillingSheet?(): Promise<void>;
 }
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */

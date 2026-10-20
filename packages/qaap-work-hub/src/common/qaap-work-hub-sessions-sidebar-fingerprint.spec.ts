@@ -69,6 +69,17 @@ describe('qaap-work-hub-sessions-sidebar-fingerprint', () => {
         expect(afterTitle).to.not.equal(before);
     });
 
+    it('changes row fingerprint when the number of collapsed failed duplicates changes', () => {
+        const summary = { id: 'conv-1', status: 'failed' as const, title: 'Fix login', updatedAt: 100, messageCount: 3 };
+        const options = { pinned: false, isCurrent: false, visualStatusId: 'failed' };
+        const one = buildWorkHubSessionsSidebarRowFingerprint(summary, { ...options, failedDuplicateCount: 1 });
+        const two = buildWorkHubSessionsSidebarRowFingerprint(summary, { ...options, failedDuplicateCount: 2 });
+        // The row's "+N" badge must repaint, or it kept showing the older count.
+        expect(two).to.not.equal(one);
+        expect(buildWorkHubSessionsSidebarRowFingerprint(summary, options)).to.equal(
+            buildWorkHubSessionsSidebarRowFingerprint(summary, { ...options, failedDuplicateCount: 0 }));
+    });
+
     it('visible structure ignores hidden conversations outside pagination window', () => {
         const visibleSlot = {
             projectId: 'proj-a',

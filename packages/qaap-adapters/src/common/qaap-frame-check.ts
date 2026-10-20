@@ -9,13 +9,27 @@ export const QAAP_FRAME_CHECK_API_PATH = '/qaap/api/frame-check';
 export interface QaapFrameCheckResult {
     readonly embeddable: boolean;
     readonly reason?: string;
+    /** Qaap's own preview host / origin: never preflighted, always framed like a same-origin preview. */
+    readonly internal?: boolean;
+    /** The check could not run (refused, rate-limited, failed): `embeddable` is only a default. */
+    readonly unknown?: boolean;
 }
 
 /**
  * Decides embeddability from response headers (lower-case names).
- * Not embeddable: `X-Frame-Options` DENY / SAMEORIGIN, or a CSP `frame-ancestors` directive other than `*`.
+ * Not embeddable: `X-Frame-Options` DENY / SAMEORIGIN, or a CSP `frame-ancestors` directive that
+ * allows neither `*` nor the embedding Qaap origin (`appOrigin`, e.g. `https://qaap.example`).
  */
-export function evaluateQaapFrameHeaders(headers: Readonly<Record<string, string | string[] | undefined>>): QaapFrameCheckResult {
+export function evaluateQaapFrameHeaders(
+    headers: Readonly<Record<string, string | string[] | undefined>>,
+    appOrigin?: string,
+): QaapFrameCheckResult {
+    let app: URL | undefined;
+    try {
+        app = appOrigin ? new URL(appOrigin) : undefined;
+    } catch {
+        // No usable app origin: only `*` allows framing.
+    }
     const joined = (name: string): string => {
         const value = headers[name];
         return (Array.isArray(value) ? value.join(',') : value ?? '').trim();
@@ -28,10 +42,60 @@ export function evaluateQaapFrameHeaders(headers: Readonly<Record<string, string
     for (const policy of csp.split(',')) {
         for (const directive of policy.split(';')) {
             const parts = directive.trim().split(/\s+/);
-            if (parts[0]?.toLowerCase() === 'frame-ancestors' && !parts.slice(1).includes('*')) {
+            if (parts[0]?.toLowerCase() === 'frame-ancestors'
+                && !parts.slice(1).some(source => frameAncestorSourceMatches(source, app))) {
                 return { embeddable: false, reason: 'Content-Security-Policy: frame-ancestors' };
             }
         }
     }
     return { embeddable: true };
+}
+
+const DEFAULT_PORTS: Readonly<Record<string, string>> = { 'http:': '80', 'https:': '443' };
+const FRAME_ANCESTOR_SOURCE = /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*|(?:\*\.)?[a-z0-9.-]+)(?::(\*|\d+))?(?:\/.*)?$/;
+
+/**
+ * CSP host-source / scheme-source match of one `frame-ancestors` source against the embedding app
+ * origin: `*`, `https:`, `https://qaap.example`, `qaap.example`, `https://*.example` (subdomains only),
+ * with optional port (`:*` = any). Keywords (`'self'`, `'none'`) never match a cross-origin embedder.
+ */
+function frameAncestorSourceMatches(rawSource: string, app: URL | undefined): boolean {
+    const source = rawSource.toLowerCase();
+    if (source === '*') {
+        return true;
+    }
+    if (!app) {
+        return false;
+    }
+    if (/^[a-z][a-z0-9+.-]*:$/.test(source)) {
+        return source === app.protocol || (source === 'http:' && app.protocol === 'https:');
+    }
+    const match = FRAME_ANCESTOR_SOURCE.exec(source);
+    if (!match) {
+        return false;
+    }
+    const [, scheme, host, port] = match;
+    if (scheme) {
+        const schemeOk = `${scheme}:` === app.protocol || (scheme === 'http' && app.protocol === 'https:');
+        if (!schemeOk) {
+            return false;
+        }
+    } else if (app.protocol !== 'http:' && app.protocol !== 'https:') {
+        return false;
+    }
+    const appHost = app.hostname.toLowerCase();
+    const hostOk = host === '*'
+        || (host.startsWith('*.') ? appHost.endsWith(host.slice(1)) : appHost === host);
+    if (!hostOk) {
+        return false;
+    }
+    if (port === '*') {
+        return true;
+    }
+    const appPort = app.port || DEFAULT_PORTS[app.protocol];
+    if (port) {
+        return port === appPort;
+    }
+    // No port: the scheme's default port (an upgraded http source also allows 443).
+    return appPort === DEFAULT_PORTS[app.protocol] || (!!scheme && appPort === DEFAULT_PORTS[`${scheme}:`]);
 }

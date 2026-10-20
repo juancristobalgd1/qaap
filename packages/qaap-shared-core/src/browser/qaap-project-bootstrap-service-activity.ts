@@ -17,6 +17,7 @@ import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget
 import { QaapPreviewWidgetKey, QaapProjectPreviewOpener } from './qaap-project-preview-opener';
 import {
     QaapProjectKind,
+    resolveQaapPreviewBuildTarget,
 } from './qaap-project-bootstrap-types';
 import {
     probeQaapDevPreviewPort,
@@ -29,6 +30,8 @@ import {
 import {
     describeDevProcessExit,
     diagnoseBootstrapFailure,
+    diagnoseBuildFirstPreviewFailure,
+    formatQaapPreviewBuildRequiredMessage,
     extractDevOutputProbePorts,
     DEV_OUT_OF_MEMORY_NOTICE,
     extractTerminalFailureLine,
@@ -146,13 +149,24 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             }
         }
         const descriptor = ctx._descriptor;
-        const diagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
+        // An opted-in build chained before the server (`npm run build && npm run start`): every retry
+        // reruns the whole build (an OOM-killed build is killed again), so its failure is final.
+        const buildTarget = resolveQaapPreviewBuildTarget(descriptor, ctx._selectedApp);
+        // A recovery relaunch runs only the start half, so this run's command is what decides.
+        const startedByBuildAndStart = !!buildTarget?.buildAndStartCommand && plan.command === buildTarget.buildAndStartCommand;
+        const buildFirst = buildTarget?.buildScript && plan.command !== buildTarget.previewStartCommand
+            ? buildTarget.buildScript
+            : startedByBuildAndStart ? 'build' : undefined;
+        const buildOrigin = startedByBuildAndStart ? 'build-and-start' : 'preview-config';
+        const baseDiagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
+        const diagnosis = buildFirst ? diagnoseBuildFirstPreviewFailure(baseDiagnosis, buildFirst, buildOrigin) : baseDiagnosis;
         // A clean exit with nothing listening is the same exit next time: report it, don't retry.
         const exitedWithoutListening = options?.exitedWithoutListening === true
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
         const canAutoRetry = !portConflict
+            && !buildFirst
             && !exitedWithoutListening
-            && !terminalOutputNeedsInstall(ctx.devOutputTail)
+            && !terminalOutputNeedsInstall(ctx.devOutputTail || message)
             && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown')
             && ctx.previewAutoRetryAttempts < DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS
             && typeof window !== 'undefined';
@@ -180,7 +194,11 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
             }, DEV_PREVIEW_AUTO_RETRY_DELAY_MS * ctx.previewAutoRetryAttempts);
             return;
         }
-        if (portConflict && conflictPort !== undefined && descriptor && !nextLock
+        // A conflict while the chained server binds means `build &&` already exited 0: recover with
+        // the start command alone so the next port never reruns the build. Without a known start
+        // command the conflict is reported instead of relaunching the build.
+        const recoveryCommand = buildFirst ? buildTarget?.previewStartCommand : plan.command;
+        if (portConflict && conflictPort !== undefined && descriptor && !nextLock && recoveryCommand
             && ctx.automaticPortRecoveryAttempts < DEV_PORT_RECOVERY_MAX_ATTEMPTS) {
             const alternatePort = pickNextDevPort(conflictPort, [...ctx.attemptedDevPorts]);
             if (alternatePort !== undefined) {
@@ -191,21 +209,34 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
                 // startDevServer transitions to `starting` immediately; assigning directly avoids
                 // flashing a misleading ready-to-run banner between the two attempts.
                 ctx._phase = 'ready-to-run';
-                await ctx.startDevServer({ ...plan }, descriptor);
+                await ctx.startDevServer({ ...plan, command: recoveryCommand }, descriptor);
                 return;
             }
         }
         if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
             return;
         }
-        ctx._needsInstall = terminalOutputNeedsInstall(ctx.devOutputTail);
+        // The output listener can miss a fast exit (restored or attached terminals): the exit
+        // message then carries the only copy of the output, so diagnose it instead of quoting it raw.
+        const failureOutput = ctx.devOutputTail || message;
+        ctx._needsInstall = terminalOutputNeedsInstall(failureOutput);
         const diagnosedError = nextLock
             ? extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message))
-            : portConflict && conflictPort
+            : portConflict && conflictPort && !recoveryCommand
+                ? `Port :${conflictPort} is already in use. Qaap does not relaunch a preview that builds first on another port; `
+                    + 'free the port or stop the other server, then start the preview again.'
+                : portConflict && conflictPort
                 ? `Port :${conflictPort} is already in use. Qaap exhausted ${DEV_PORT_RECOVERY_MAX_ATTEMPTS} alternate ports; stop stale dev servers, then retry.`
                 : exitedWithoutListening
                     ? message
-                    : extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message));
+                    : buildFirst
+                        ? diagnoseBuildFirstPreviewFailure(
+                            diagnoseBootstrapFailure(failureOutput, ctx.toUserFacingDevError(message)), buildFirst, buildOrigin,
+                        ).message
+                        : diagnosis.kind === 'build-required'
+                            // Name Build and start only where the card actually offers it.
+                            ? formatQaapPreviewBuildRequiredMessage(!!buildTarget?.buildAndStartCommand)
+                            : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
         ctx._error = ctx.enrichDevRunError(diagnosedError);
         ctx.releaseActivePreview();
         ctx.setPhase('run-failed');

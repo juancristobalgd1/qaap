@@ -14,14 +14,23 @@ export function createTaskTitleText(title: string): HTMLSpanElement {
     return text;
 }
 
-/** Re-measures a title after its row is laid out or its content changes. */
-export function refreshTaskTitleMarquee(titleViewport: HTMLElement): void {
+/**
+ * Re-measures a title after its row is laid out or its content changes. At rest the title only
+ * counts as overflowing when it really is clipped. While the row is hovered or focused, its actions
+ * cover the end of the title instead of narrowing it (`--qaap-task-title-hover-reserve` in the
+ * sessions sidebar CSS), so the marquee also travels past that patch.
+ */
+export function refreshTaskTitleMarquee(titleViewport: HTMLElement, options?: { readonly interacting?: boolean }): void {
     const titleText = titleViewport.querySelector<HTMLElement>(`.${TASK_TITLE_TEXT_CLASS}`);
     if (!titleText) {
         return;
     }
 
-    const overflow = Math.max(0, titleText.scrollWidth - titleViewport.clientWidth);
+    const view = titleViewport.ownerDocument.defaultView;
+    const reserve = options?.interacting && view
+        ? parseFloat(view.getComputedStyle(titleViewport).getPropertyValue('--qaap-task-title-hover-reserve')) || 0
+        : 0;
+    const overflow = Math.max(0, titleText.scrollWidth - titleViewport.clientWidth + reserve);
     if (overflow > 1) {
         titleViewport.classList.add(TASK_TITLE_OVERFLOW_CLASS);
         titleViewport.style.setProperty('--qaap-task-title-overflow', `${Math.ceil(overflow)}px`);
@@ -33,20 +42,30 @@ export function refreshTaskTitleMarquee(titleViewport: HTMLElement): void {
 
 /** Installs the hover/focus measurement used by the sidebar's title marquee. */
 export function attachTaskTitleMarquee(row: HTMLElement, titleViewport: HTMLElement): void {
-    const scheduleRefresh = (): void => {
+    const scheduleRefresh = (interacting: boolean): void => {
         // Update immediately for interaction-driven callers, then measure again after layout settles.
-        refreshTaskTitleMarquee(titleViewport);
+        refreshTaskTitleMarquee(titleViewport, { interacting });
         const view = row.ownerDocument.defaultView;
         if (view?.requestAnimationFrame) {
-            view.requestAnimationFrame(() => refreshTaskTitleMarquee(titleViewport));
+            view.requestAnimationFrame(() => refreshTaskTitleMarquee(titleViewport, { interacting }));
         } else {
-            refreshTaskTitleMarquee(titleViewport);
+            refreshTaskTitleMarquee(titleViewport, { interacting });
         }
     };
 
-    row.addEventListener('mouseenter', scheduleRefresh);
-    row.addEventListener('focusin', scheduleRefresh);
-    scheduleRefresh();
+    row.addEventListener('mouseenter', () => scheduleRefresh(true));
+    row.addEventListener('focusin', () => scheduleRefresh(true));
+    row.addEventListener('mouseleave', () => {
+        if (!row.contains(row.ownerDocument.activeElement)) {
+            refreshTaskTitleMarquee(titleViewport);
+        }
+    });
+    row.addEventListener('focusout', event => {
+        if (!row.contains(event.relatedTarget as Node | null) && !row.matches(':hover')) {
+            refreshTaskTitleMarquee(titleViewport);
+        }
+    });
+    scheduleRefresh(false);
 }
 
 /** Updates a title while preserving the marquee's measurement hooks. */

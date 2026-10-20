@@ -6,6 +6,8 @@
 /** Minimal shape for install/dev cwd resolution (orphan scaffolds vs workspace root). */
 export interface QaapBootstrapInstallTarget {
     readonly rootKey: string;
+    /** Package-manager workspace root that owns `node_modules`; install always runs there. */
+    readonly workspaceRootKey?: string;
     readonly devCommand?: string;
     readonly installCommand: string;
     readonly expectedPort?: number;
@@ -37,12 +39,19 @@ export function formatBootstrapScaffoldDetectedNotice(relativePath: string): str
     return `App created in ${relativePath}/. Qaap runs install and preview from that folder, not the workspace root.`;
 }
 
-/** Orphan scaffolds install inside the child app folder; monorepos with a root manifest install at root. */
+/**
+ * Orphan scaffolds install inside the child app folder; package-manager workspaces install at their
+ * workspace root, whatever member is previewed (npm/yarn/pnpm hoist dependencies and bins there,
+ * so an install inside `examples/browser` leaves `theia` missing from the root `.bin`).
+ */
 export function resolveBootstrapInstallTarget(
     descriptor: QaapBootstrapInstallTarget,
     selectedApp: QaapBootstrapAppTarget | undefined,
     fallbackApp: QaapBootstrapAppTarget | undefined,
 ): { readonly cwdKey: string; readonly command: string } {
+    if (descriptor.workspaceRootKey) {
+        return { cwdKey: descriptor.workspaceRootKey, command: descriptor.installCommand };
+    }
     const targetApp = selectedApp ?? fallbackApp;
     if (targetApp && !descriptor.devCommand) {
         return { cwdKey: targetApp.rootKey, command: descriptor.installCommand };

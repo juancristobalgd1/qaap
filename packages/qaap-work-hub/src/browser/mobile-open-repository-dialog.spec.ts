@@ -79,7 +79,7 @@ describe('MobileOpenRepositoryDialog clone flow', () => {
         poll(): Promise<void>;
     }
 
-    function createHarness(api: Partial<QaapRepositoryImportApi>): DialogHarness {
+    function createHarness(api: Partial<QaapRepositoryImportApi>, openBillingSheet?: () => Promise<void>): DialogHarness {
         const queue: Array<() => void> = [];
         const running = { id: 'job-1', kind: 'clone', label: 'octocat/Hello-World', startedAt: 0, updatedAt: 0 } as const;
         const tracker = new QaapRepositoryImportTracker({
@@ -120,6 +120,7 @@ describe('MobileOpenRepositoryDialog clone flow', () => {
         harness.dialog = new MobileOpenRepositoryDialog(service, {
             onProjectsChanged: () => harness.events.push('projectsChanged'),
             onWorkspaceOpened: () => harness.events.push('workspaceOpened'),
+            openBillingSheet,
         });
         document.body.append(harness.dialog.node);
         return harness;
@@ -191,6 +192,34 @@ describe('MobileOpenRepositoryDialog clone flow', () => {
         expect(harness.background).to.equal(0);
         await harness.dialog.show();
         expect(progress(harness.dialog).hidden).to.equal(true, 'a failed import is not shown again after closing');
+    });
+
+    it('turns a plan_limit failure into a localized message with an Upgrade plan button that opens billing', async () => {
+        let billingOpened = 0;
+        const harness = createHarness({
+            start: async () => {
+                throw Object.assign(new Error('Your starter plan allows 3 active repositories.'), { code: 'plan_limit' });
+            },
+        }, async () => { billingOpened++; });
+        await harness.dialog.show();
+        await submitClone(harness.dialog, 'octocat/one-too-many');
+
+        const error = harness.dialog.node.querySelector<HTMLElement>('.theia-mobile-open-repo-progress-error')!;
+        expect(error.textContent).to.contain('active repositories your plan allows');
+        expect(error.textContent).not.to.contain('starter');
+        const upgrade = harness.dialog.node.querySelector<HTMLButtonElement>('.theia-mobile-open-repo-progress-upgrade')!;
+        expect(upgrade.hidden).to.equal(false);
+        expect(upgrade.textContent).to.equal('Upgrade plan');
+        upgrade.click();
+        expect(billingOpened).to.equal(1);
+        expect(harness.dialog.isVisible()).to.equal(false);
+    });
+
+    it('does not offer Upgrade plan for an ordinary failure', async () => {
+        const harness = createHarness({ start: async () => { throw new Error('boom'); } }, async () => undefined);
+        await harness.dialog.show();
+        await submitClone(harness.dialog, 'octocat/boom');
+        expect(harness.dialog.node.querySelector<HTMLButtonElement>('.theia-mobile-open-repo-progress-upgrade')!.hidden).to.equal(true);
     });
 
     it('rejects a repository subpath before making a clone request', async () => {

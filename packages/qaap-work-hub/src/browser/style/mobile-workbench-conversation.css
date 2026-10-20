@@ -9424,6 +9424,18 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   color: var(--theia-descriptionForeground);
 }
 
+.theia-mobile-agent-turn-failure-plan-cta {
+  align-self: flex-start;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--theia-foreground);
+  border-radius: 8px;
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .theia-mobile-agent-auth-login-code-row {
   display: flex;
   flex-wrap: wrap;

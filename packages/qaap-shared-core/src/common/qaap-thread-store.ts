@@ -219,6 +219,11 @@ export class QaapThreadStore {
         return sortConversationSummaries(variants);
     }
 
+    /** Every (normalized) cwd that has at least one conversation; cheap: one entry per folder, not per conversation. */
+    listCwds(): string[] {
+        return [...this.idsByCwd.keys()];
+    }
+
     listAllSummaries(): QaapAgentConversationSummaryDTO[] {
         return sortConversationSummaries([...this.summariesById.values()]);
     }

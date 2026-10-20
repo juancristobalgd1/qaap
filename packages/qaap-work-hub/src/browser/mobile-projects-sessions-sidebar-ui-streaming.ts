@@ -323,16 +323,34 @@ export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: MobileP
         return { visible, hiddenCount, showLess };
 }
 
+function isSessionsSidebarClearFailedModeProject(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): boolean {
+    return ctx.isClearFailedModeForProject?.(project.id) === true || ctx.clearFailedModeProjectId === project.id;
+}
+
+/**
+ * The conversations a project group lists as rows: older failed runs that repeat a title collapse
+ * into the newest one, except while the user is picking failed runs to clear. The row renderer and
+ * the live patch (`collectSessionsSidebarConversationEntries`) must agree on this list: a hidden
+ * duplicate counted as an entry has no row to patch, so every refresh fell back to rebuilding the
+ * whole list (the hovered row was destroyed and recreated about once a second).
+ */
+export function collapseSessionsSidebarFailedDuplicates(
+    ctx: MobileProjectsSessionsSidebarUiContext,
+    project: MobileProjectEntry,
+    conversations: readonly QaapAgentConversationSummaryDTO[],
+): ReturnType<typeof collapseOlderFailedDuplicateTitles> {
+    return isSessionsSidebarClearFailedModeProject(ctx, project)
+        ? { conversations: [...conversations], hiddenFailedByKeptId: new Map<string, number>() }
+        : collapseOlderFailedDuplicateTitles(conversations);
+}
+
 export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, listHost: HTMLElement,
         project: MobileProjectEntry,
         conversations: readonly QaapAgentConversationSummaryDTO[],
         onActivate: () => void,
         bypassLimit: boolean,): void {
-        const clearMode = ctx.isClearFailedModeForProject?.(project.id) === true
-            || ctx.clearFailedModeProjectId === project.id;
-        const collapsed = clearMode
-            ? { conversations: [...conversations], hiddenFailedByKeptId: new Map<string, number>() }
-            : collapseOlderFailedDuplicateTitles(conversations);
+        const clearMode = isSessionsSidebarClearFailedModeProject(ctx, project);
+        const collapsed = collapseSessionsSidebarFailedDuplicates(ctx, project, conversations);
         const partitioned = partitionAgentConversations(collapsed.conversations);
         const { visible, hiddenCount, showLess } = ctx.resolveSessionsSidebarVisibleConversations(
             project,

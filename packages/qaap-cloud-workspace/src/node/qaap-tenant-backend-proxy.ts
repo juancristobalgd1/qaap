@@ -529,6 +529,13 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             }
             const context = this.auth.authenticate(request as Request);
             if (context.kind !== 'authenticated') {
+                if (this.isSocketIoPath(request.url)) {
+                    // Never hand an anonymous Theia RPC handshake to the control plane's own
+                    // Socket.IO server. The other upgrade listeners (agent streams, preview
+                    // shares, dev previews) authenticate their callers themselves.
+                    this.rejectUpgrade(socket, 401, 'Unauthorized');
+                    return;
+                }
                 this.dispatchOriginalUpgrade(originalListeners, request, socket, head, server);
                 return;
             }
@@ -597,6 +604,11 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         } catch {
             socket.destroy();
         }
+    }
+
+    protected rejectUpgrade(socket: Duplex, status: number, reason: string): void {
+        socket.on('error', () => socket.destroy());
+        socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
     }
 
     protected dispatchOriginalUpgrade(

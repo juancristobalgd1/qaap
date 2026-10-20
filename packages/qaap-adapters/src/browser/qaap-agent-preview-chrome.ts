@@ -12,6 +12,8 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { MiniBrowserProps } from '@theia/mini-browser/lib/browser/mini-browser-content';
 import { normalizeMiniBrowserOpenUrl } from '@theia/mini-browser/lib/browser/mini-browser-url-utils';
 import { QaapAgentPreviewChromeStyle as Style } from './qaap-agent-preview-chrome-style';
+import { isQaapPreviewNavigableUrl, qaapPreviewWebSearchUrl, resolveQaapPreviewAddressInput } from './qaap-preview-address-input';
+import { QaapPreviewBlockedFrameGuard } from './qaap-preview-blocked-frame-guard';
 import {
     QAAP_DEV_PREVIEW_PATH_PREFIX,
     QAAP_IDENTITY_PREVIEW_PATH_PREFIX,
@@ -408,7 +410,8 @@ export class QaapAgentPreviewChromeController implements Disposable {
         text.textContent = label;
         btn.append(icon, text);
         btn.addEventListener('click', () => {
-            void this.host.navigate(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
+            // Search engines never allow framing: open the results in a real tab right away.
+            window.open(qaapPreviewWebSearchUrl(query), '_blank', 'noopener,noreferrer');
             this.toggleHistory(false);
         });
         return btn;
@@ -645,6 +648,19 @@ export function mountEmbeddedAgentPreviewChrome(
     let currentUrl = normalizePreviewNavigateUrl(options.url);
     let previewController: QaapAgentPreviewChromeController | undefined;
     const frameHistory = new QaapPreviewFrameHistory();
+    const openExternalUrl = (target: string): void => {
+        if (options.openExternal) {
+            options.openExternal(target);
+        } else {
+            window.open(target, '_blank', 'noopener,noreferrer');
+        }
+    };
+    const blockedFrameGuard = new QaapPreviewBlockedFrameGuard({
+        frame,
+        getCardHost: () => frameSlot,
+        openExternal: openExternalUrl,
+    });
+    disposables.push(blockedFrameGuard);
 
     // The dev-server holding page reloads itself every couple of seconds, and each iframe load
     // used to rewrite the URL field — wiping whatever the user was typing mid-load. Never touch
@@ -674,6 +690,18 @@ export function mountEmbeddedAgentPreviewChrome(
         },
         navigate: (url, navOptions) => {
             const next = normalizePreviewNavigateUrl(url);
+            if (!isQaapPreviewNavigableUrl(next, window.location.href)) {
+                if (frameHistory.isApplyingHistoryNav) {
+                    frameHistory.finishHistoryNav();
+                    syncHistoryButtons();
+                }
+                previewNotify(
+                    { messageService: options.messageService, notify: options.notify },
+                    nls.localize('qaap/preview/unsupportedScheme', 'The preview only opens http and https addresses.'),
+                    'warn',
+                );
+                return;
+            }
             if (isQaapIdeShellUrl(next)) {
                 if (frameHistory.isApplyingHistoryNav) {
                     frameHistory.finishHistoryNav();
@@ -695,6 +723,8 @@ export function mountEmbeddedAgentPreviewChrome(
                 frameHistory.record(sanitizePreviewDisplayUrl(next));
                 syncHistoryButtons();
             }
+            // Before `src`: sandbox changes only apply to the next navigation.
+            blockedFrameGuard.arm(next);
             if (navOptions?.hard) {
                 const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
                 frame.src = bust;
@@ -730,14 +760,7 @@ export function mountEmbeddedAgentPreviewChrome(
                 frame.src = bust;
             }
         },
-        openExternal: () => {
-            const target = currentUrl;
-            if (options.openExternal) {
-                options.openExternal(target);
-            } else {
-                window.open(target, '_blank', 'noopener,noreferrer');
-            }
-        },
+        openExternal: () => openExternalUrl(currentUrl),
         copyCurrentUrl: async () => {
             if (options.clipboard) {
                 await options.clipboard.writeText(currentUrl);
@@ -787,15 +810,40 @@ export function mountEmbeddedAgentPreviewChrome(
     }));
     disposables.push(addEventListener(urlInput, 'keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
-            const typed = urlInput.value;
+            const address = resolveQaapPreviewAddressInput(urlInput.value);
             controller.toggleHistory(false);
+            if (address.kind === 'empty') {
+                return;
+            }
+            if (address.kind === 'rejected') {
+                previewNotify(
+                    { messageService: options.messageService, notify: options.notify },
+                    nls.localize('qaap/preview/unsupportedScheme', 'The preview only opens http and https addresses.'),
+                    'warn',
+                );
+                return;
+            }
+            const typed = address.url;
+            // Then leave the field so it shows the URL actually loaded (it never syncs while focused).
+            const go = (target: string): void => {
+                void adapter.navigate(target);
+                urlInput.blur();
+                syncUrlInput(sanitizePreviewDisplayUrl(currentUrl));
+            };
+            if (address.kind === 'search') {
+                // Search engines never allow framing: open the results in a real tab right away.
+                openExternalUrl(typed);
+                urlInput.blur();
+                syncUrlInput(sanitizePreviewDisplayUrl(currentUrl));
+                return;
+            }
             if (!options.resolveTypedUrl) {
-                void adapter.navigate(typed);
+                go(typed);
                 return;
             }
             void options.resolveTypedUrl(normalizePreviewNavigateUrl(typed))
                 .catch(() => undefined)
-                .then(target => adapter.navigate(target ?? typed));
+                .then(target => go(target ?? typed));
         }
     }));
     controller.setHistoryCombobox(urlInput);

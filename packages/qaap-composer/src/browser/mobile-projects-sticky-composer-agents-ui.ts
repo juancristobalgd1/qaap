@@ -54,7 +54,26 @@ export class MobileProjectsStickyComposerAgentsUi {
     /** Whether the first agent catalog refresh answered (successfully or not). */
     protected stickyComposerAgentCatalogSettled = false;
 
+    /** Catalog labels (`Big Pickle`, `GPT-5.1`…) of every native/BYOK model list seen so far, by model id. */
+    protected readonly modelLabelsById = new Map<string, string>();
+
     constructor(protected readonly host: MobileProjectsStickyComposerAgentsHost) { }
+
+    /** Remember the labels of a freshly resolved model catalog so the toolbar chip can show them. */
+    rememberModelLabels(models: readonly QaapQaiqModelOption[]): void {
+        for (const model of models) {
+            const label = model.label?.trim();
+            if (label) {
+                this.modelLabelsById.set(model.modelId, label);
+            }
+        }
+    }
+
+    /** Live-catalog label for a model id, or undefined until a catalog containing it has loaded. */
+    resolveModelLabel(modelId: string): string | undefined {
+        return this.modelLabelsById.get(modelId)
+            ?? this.host.stickyComposerQaiqModels.find(model => model.modelId === modelId)?.label?.trim();
+    }
 
     /**
      * The local Theia Coder agent runs in the browser tab and stops when the mobile app is closed,
@@ -331,6 +350,22 @@ export class MobileProjectsStickyComposerAgentsUi {
             candidate => candidate.id.trim().toLowerCase() === normalizedAgentId,
         );
         return agent?.available === true && agent.connectionState === 'connected';
+    }
+
+    /**
+     * True only when the catalog says the harness is signed out and not runnable otherwise. `unknown` (probe pending) is not
+     * flagged, so the chip never shows a false "Connect" while the auth probe is still running.
+     */
+    isAgentDisconnected(agentId: string | undefined): boolean {
+        const normalizedAgentId = agentId?.trim().toLowerCase();
+        if (!normalizedAgentId) {
+            return false;
+        }
+        const agent = this.host.stickyComposerBackendAgents.find(
+            candidate => candidate.id.trim().toLowerCase() === normalizedAgentId,
+        );
+        // `available: true` while signed out means the plan runs it hosted (Codex on Pro/Team): no cue.
+        return agent?.connectionState === 'disconnected' && agent.available !== true;
     }
 
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {

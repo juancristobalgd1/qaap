@@ -124,6 +124,35 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         });
     });
 
+    it('flags only signed-out harnesses as disconnected, not ones still being probed', () => {
+        const host = createHost();
+        host.stickyComposerBackendAgents = [
+            { id: 'codex', label: 'Codex', available: true, connectionState: 'connected' },
+            { id: 'opencode', label: 'OpenCode', available: false, connectionState: 'disconnected' },
+            { id: 'claude', label: 'Claude Code', available: true, connectionState: 'unknown' },
+            { id: 'codex-hosted', label: 'Codex', available: true, connectionState: 'disconnected' },
+        ];
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        // Signed out but still runnable (hosted on Pro/Team): no Connect cue.
+        expect(ui.isAgentDisconnected('codex-hosted')).to.equal(false);
+        expect(ui.isAgentDisconnected('OpenCode')).to.equal(true);
+        expect(ui.isAgentDisconnected('codex')).to.equal(false);
+        expect(ui.isAgentDisconnected('claude')).to.equal(false);
+        expect(ui.isAgentDisconnected('missing')).to.equal(false);
+    });
+
+    it('resolves chip labels from catalogs seen by the picker or the QAIQ workspace list', () => {
+        const host = createHost();
+        host.stickyComposerQaiqModels = [{ provider: 'openai', vendor: 'openai', modelId: 'gpt-byok', label: 'GPT BYOK' }];
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        expect(ui.resolveModelLabel('gpt-5.1-codex')).to.equal(undefined);
+        ui.rememberModelLabels([{ provider: 'openai', vendor: 'codex', modelId: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' }]);
+        expect(ui.resolveModelLabel('gpt-5.1-codex')).to.equal('GPT-5.1 Codex');
+        expect(ui.resolveModelLabel('gpt-byok')).to.equal('GPT BYOK');
+    });
+
     it('recognizes a harness as connected after the backend catalog refreshes', () => {
         const host = createHost();
         host.stickyComposerBackendAgents = [

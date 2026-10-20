@@ -25,6 +25,7 @@ import {
     QaapPreviewReadiness,
     QaapProjectDescriptor,
     QaapProjectKind,
+    resolveQaapPreviewBuildTarget,
 } from './qaap-project-bootstrap-types';
 import {
     fetchQaapDevPreviewOomKillCount,
@@ -32,6 +33,7 @@ import {
 } from './qaap-dev-preview-client';
 import {
     type QaapBootstrapFailureKind,
+    diagnoseBootstrapFailure,
 } from './qaap-project-bootstrap-dev-errors';
 import { MobileProjectsService } from './mobile-projects-service';
 import {
@@ -53,7 +55,7 @@ import {
 } from './qaap-project-bootstrap-helpers';
 import { type QaapDevRunFailureOptions, buildShellInvocationExtracted, disposeRestoredPreviewTerminalsExtracted, failDevRunExtracted, openPreviewExtracted, openPreviewWidgetExtracted, previewWidgetKeyExtracted, reconcileRestoredPreviewTerminalsExtracted, refreshDescriptorAfterInstallExtracted, spawnCommandExtracted, spawnCommandWithRetryExtracted, syncMiniBrowserPreviewSuspensionAfterOpenExtracted, toUserFacingDevErrorExtracted, watchAttachedDevTerminalExtracted } from './qaap-project-bootstrap-service-activity';
 import { adoptSupersedingPreviewClaimExtracted, bindPreviewConversationExtracted, buildDevSpawnPlanExtracted, claimPreviewExecutionExtracted, describeRunnableAppExtracted, ensurePreviewProcessIdForConversationExtracted, getBootstrapFailureDetailExtracted, getMissingDescriptorHintExtracted, initExtracted, reconcileSupersededPreviewClaimExtracted, refreshFromProjectRootExtracted, rememberActivePreviewClaimExtracted, reserveActivePreviewExtracted, resolveDevPlanExtracted, resolveInstallPlanExtracted, selectMonorepoAppExtracted, stopManagedDevServerForAppSwitchExtracted, switchMonorepoAppExtracted } from './qaap-project-bootstrap-service-render';
-import { cancelActivePreviewLaunchExtracted, focusPreviewExtracted, openExistingPreviewExtracted, refreshFromCurrentWorkspaceExtracted, refreshFromRootExtracted, resetExtracted, runDevServerExtracted, runInstallExtracted, scheduleRefreshFromCurrentWorkspaceExtracted, skipExtracted, startDevServerExtracted } from './qaap-project-bootstrap-service-streaming';
+import { buildAndStartPreviewExtracted, cancelActivePreviewLaunchExtracted, focusPreviewExtracted, openExistingPreviewExtracted, refreshFromCurrentWorkspaceExtracted, refreshFromRootExtracted, resetExtracted, runDevServerExtracted, runInstallExtracted, scheduleRefreshFromCurrentWorkspaceExtracted, skipExtracted, startDevServerExtracted } from './qaap-project-bootstrap-service-streaming';
 import { adoptExistingPreviewIdentityExtracted, attachTerminalOsProcessIdExtracted, claimDevPreviewPortExtracted, collectProbePortsExtracted, extractPortExtracted, healPreviewClaimToListeningPortExtracted, markPortOpenedExtracted, mayAutoOpenPreviewNowExtracted, monitorPreviewProcessLifetimeExtracted, openPrimaryPreviewWhenReadyExtracted, probeBelongsToActiveProjectExtracted, recordForwardedPortExtracted, resolvePrimaryPreviewTargetExtracted, scanDevOutputExtracted, scanForDevUrlExtracted, scheduleDevPreviewFallbackExtracted, tryAttachToExistingServerExtracted } from './qaap-project-bootstrap-service-timeline';
 import { beginDevRunExtracted, buildStateChangeExtracted, cancelDevPreviewFallbacksExtracted, cancelDevPreviewHealthMonitorExtracted, cancelDevPreviewWarmupExtracted, cleanupDevTerminalExtracted, clearForwardedPortsExtracted, persistPhaseExtracted, readAllPersistedExtracted, registerDevTerminalForConversationExtracted, releaseActivePreviewExtracted, releaseDevTerminalForConversationExtracted, releasePreviewForConversationExtracted, resetBootstrapSessionForWorkspaceExtracted, scheduleDevPreviewWarmupExtracted, setPhaseExtracted, startDevPreviewHealthMonitorExtracted, syncHubSessionExtracted, waitForExitExtracted, warmupDevPreviewExtracted } from './qaap-project-bootstrap-service-tool-pills';
 
@@ -538,6 +540,18 @@ export class QaapProjectBootstrapService {
 
     async runDevServer(options?: { conversationId?: string }): Promise<void> {
         return runDevServerExtracted(this, options);
+    }
+
+    /** "Build and start": the user's explicit opt-in to build once after a `build-required` failure. */
+    async buildAndStartPreview(options?: { conversationId?: string }): Promise<void> {
+        return buildAndStartPreviewExtracted(this, options);
+    }
+
+    /** Whether the failed preview can be fixed with "Build and start". */
+    canBuildAndStartPreview(): boolean {
+        return this._phase === 'run-failed'
+            && diagnoseBootstrapFailure(this.devOutputTail || this._error || '', '').kind === 'build-required'
+            && !!resolveQaapPreviewBuildTarget(this._descriptor, this._selectedApp)?.buildAndStartCommand;
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

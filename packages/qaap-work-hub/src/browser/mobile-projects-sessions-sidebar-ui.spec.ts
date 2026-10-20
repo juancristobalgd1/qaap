@@ -659,6 +659,46 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(listHost.querySelector('.theia-mobile-work-hub-sessions-sidebar-clear-failed')).to.equal(null);
     });
 
+    it('lists for the live patch exactly the rows the renderer paints (older failed duplicates collapse)', () => {
+        const project = { id: 'proj-1', name: 'Mockup', status: 'working' } as MobileProjectEntry;
+        const conversation = (id: string, status: string, at: number): Record<string, unknown> => ({
+            id, title: 'Same title', status, createdAt: at, updatedAt: at, messageCount: 1, agentId: 'qaiq', cwd: '/repo', source: 'agent',
+        });
+        const conversations = [conversation('ok', 'idle', 40), conversation('new', 'failed', 30), conversation('old', 'failed', 10)];
+        const host = {
+            projects: [project],
+            query: '',
+            sessionsSidebarVisibleConversationCountByProjectId: new Map<string, number>(),
+            hubQueryUi: { projectsForCurrentHubList: () => [project] },
+            conversationIndexUi: {
+                conversationsForProject: () => conversations,
+                compareConversationOrder: (a: { updatedAt: number }, b: { updatedAt: number }) => b.updatedAt - a.updatedAt,
+                activeInfoForProject: () => undefined,
+                summaryToTaskView: (summary: { id: string; title: string }) => ({ id: summary.id, title: summary.title }),
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            projectRowsUi: {
+                createTaskItem: (_project: MobileProjectEntry, _task: unknown, _active: unknown, summary: { id: string }) => {
+                    const el = document.createElement('div');
+                    el.className = 'theia-mobile-projects-task-row';
+                    el.dataset.qaapConversationId = summary.id;
+                    return el;
+                },
+            },
+            ensureOverlayUi: () => undefined,
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        const listHost = document.createElement('div');
+        ui.appendSessionsSidebarConversationItems(listHost, project, conversations as never, () => undefined, false);
+        const rendered = [...listHost.querySelectorAll<HTMLElement>('[data-qaap-conversation-id]')].map(row => row.dataset.qaapConversationId);
+
+        const listed = ui.collectSessionsSidebarConversationEntries().map(entry => entry.summary.id);
+
+        // A listed entry without a row made every patch bail out into a full list rebuild.
+        expect(rendered).to.not.include('old');
+        expect(listed).to.deep.equal(rendered);
+    });
+
     it('clear-mode footer Cancel exits mode and Clear selected stays disabled at k=0', () => {
         const project = { id: 'proj-1', name: 'Mockup', status: 'working' } as MobileProjectEntry;
         const host = {

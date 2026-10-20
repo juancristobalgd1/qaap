@@ -556,9 +556,28 @@ body.qaap-mod-history-resizing * {
   background: var(--theia-editor-background);
 }
 
+.qaap-preview-blocked-frame-title {
+  margin: 0;
+  max-width: 360px;
+  font-size: var(--theia-ui-font-size2);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .qaap-preview-blocked-frame-text {
   margin: 0;
+  max-width: 360px;
   font-size: var(--theia-ui-font-size1);
+  color: var(--theia-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+/* Same pill as the Work Hub preview "Try again" action. */
+.qaap-preview-blocked-frame-open {
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 600;
 }
 
 .qaap-preview-inspector-slot {

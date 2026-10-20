@@ -11,6 +11,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import { filterVpsTaskSummaries } from '../common/qaap-work-hub-surfaces';
+import { qaapCloneRootIdentity, qaapProjectCloneIdentities } from '../common/qaap-project-clone-identity';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -127,10 +128,36 @@ export class MobileProjectsConversationIndexUi {
         }
         // Parallel-run variants live in a tmpdir worktree but belong to this repo (parallelBaseCwd).
         const variants = cwd ? threadStore.getVariantsForBaseCwd(cwd) : [];
-        const merged = this.mergeConversationSummaries(directChatSessions, [...list, ...variants]);
+        const sameClone = this.conversationsInSameClone(project, cwd);
+        const merged = this.mergeConversationSummaries(directChatSessions, [...list, ...sameClone, ...variants]);
         // Hide archived conversations from the main list. They remain in the thread store
         // and can be restored via the kebab menu's "Unarchive" action.
         return merged.filter(summary => !summary.archived);
+    }
+
+    /**
+     * Conversations recorded under another path of the clone this card stands for: the legacy flat
+     * clone path (`repos/<owner>/<repo>`) next to the per-user one (`repos/users/<login>/<owner>/<repo>`),
+     * a trailing slash, another casing, or any clone path at all for a github card without a clone URI.
+     * The sessions sidebar gives such a cwd no card of its own (`mergeConversationCwdProjects`, same
+     * `qaapProjectCloneIdentities` rule), so it must be listed here or it would vanish. Each summary keeps
+     * its real `cwd`, which is what open / retry / delete act on.
+     */
+    protected conversationsInSameClone(project: MobileProjectEntry, projectCwd: string | undefined): QaapAgentConversationSummaryDTO[] {
+        const conversations = this.host.conversations;
+        const identities = conversations ? qaapProjectCloneIdentities(project) : [];
+        if (!conversations || identities.length === 0) {
+            return [];
+        }
+        const own = projectCwd?.replace(/\\/g, '/').replace(/\/+$/, '');
+        const found: QaapAgentConversationSummaryDTO[] = [];
+        for (const cwd of conversations.threadStore.listCwds()) {
+            const identity = cwd !== own ? qaapCloneRootIdentity(cwd) : undefined;
+            if (identity && identities.includes(identity)) {
+                found.push(...conversations.getConversationsForCwd(cwd));
+            }
+        }
+        return found;
     }
 
     mergeConversationSummaries(

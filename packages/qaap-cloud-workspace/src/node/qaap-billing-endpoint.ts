@@ -8,6 +8,7 @@ import { Application, Request, Response } from '@theia/core/shared/express';
 import { json, raw } from 'body-parser';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 import { QaapExpressRouteOrder } from '@theia/qaap-shared-core/lib/node/qaap-express-route-order';
 import {
     QAAP_BILLING_API_PATH,
@@ -49,15 +50,15 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         app.post(
             QAAP_BILLING_WEBHOOK_API_PATH,
             raw({ type: 'application/json' }),
-            (req, res) => void this.handleWebhook(req, res),
+            QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleWebhook(req, res)),
         );
         // An earlier global `json()` (upstream `@theia/filesystem`) would consume the stream before `raw()` runs.
         QaapExpressRouteOrder.moveLastRouteFirst(app, 'qaap-billing-webhook');
         app.use(json());
-        app.get(QAAP_BILLING_API_PATH, (req, res) => void this.handleGet(req, res));
-        app.post(QAAP_BILLING_CHECKOUT_API_PATH, (req, res) => void this.handleCheckout(req, res));
-        app.post(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, (req, res) => void this.handleConfirmCheckout(req, res));
-        app.post(QAAP_BILLING_DEV_ACTIVATE_API_PATH, (req, res) => void this.handleDevActivate(req, res));
+        app.get(QAAP_BILLING_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleGet(req, res)));
+        app.post(QAAP_BILLING_CHECKOUT_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleCheckout(req, res)));
+        app.post(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleConfirmCheckout(req, res)));
+        app.post(QAAP_BILLING_DEV_ACTIVATE_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleDevActivate(req, res)));
     }
 
     protected billingSnapshot(login: string, account: Awaited<ReturnType<QaapBillingStore['getOrCreateAccount']>>): object {
@@ -71,7 +72,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             },
             checkout: {
                 stripeEnabled: isStripeBillingConfigured(),
-                devActivateEnabled: !isStripeBillingConfigured() && isBillingDevActivateEnabled(),
+                devActivateEnabled: !isStripeBillingConfigured() && isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
                 payablePlanIds: ['pro', 'team'],
             },
         };
@@ -100,7 +101,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             res.status(503).json({
                 error: 'stripe_not_configured',
                 message: 'Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_*_MONTHLY.',
-                devActivateEnabled: isBillingDevActivateEnabled(),
+                devActivateEnabled: isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
             });
             return;
         }
@@ -176,7 +177,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         if (!login) {
             return;
         }
-        if (isStripeBillingConfigured() || !isBillingDevActivateEnabled()) {
+        if (isStripeBillingConfigured() || !isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled())) {
             res.status(403).json({ error: 'dev_activate_disabled' });
             return;
         }

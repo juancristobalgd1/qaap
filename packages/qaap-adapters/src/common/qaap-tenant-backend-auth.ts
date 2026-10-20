@@ -12,6 +12,11 @@ export const QAAP_TENANT_BACKEND_MODE_ENV = 'QAAP_TENANT_BACKEND_MODE';
 export const QAAP_TENANT_BACKEND_SECRET_ENV = 'QAAP_TENANT_BACKEND_SECRET';
 export const QAAP_TENANT_LOGIN_ENV = 'QAAP_TENANT_LOGIN';
 
+/** Whether this process is a per-tenant backend started by the Docker orchestrator (`QAAP_TENANT_BACKEND_MODE=1|true`). */
+export function isQaapTenantBackendMode(env: NodeJS.ProcessEnv = process.env): boolean {
+    return /^(1|true)$/i.test(env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '');
+}
+
 const ASSERTION_VERSION = 1;
 const DEFAULT_TTL_MS = 30_000;
 const MAX_CLOCK_SKEW_MS = 5_000;

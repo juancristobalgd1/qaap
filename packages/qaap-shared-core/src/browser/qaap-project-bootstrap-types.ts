@@ -61,6 +61,48 @@ export interface QaapMonorepoAppCandidate {
     readonly devCommandLabel: string;
     /** Default port hint for this framework, used when stdout parsing fails. */
     readonly expectedPort?: number;
+    /**
+     * `node_modules/.bin` executable the dev script starts with (`theia`, `vite`, …). Set for members
+     * of a package-manager workspace, whose bins are hoisted to the workspace root.
+     */
+    readonly devScriptBinary?: string;
+    /**
+     * Script chained before the preview script in {@link devCommand} (`npm run build && npm run
+     * start`). Only set when the project opted in with `"build": "auto"` in `.qaap/preview.json`.
+     */
+    readonly buildScript?: string;
+    /**
+     * With {@link buildScript}: the start half of {@link devCommand} alone. Port-conflict recovery
+     * relaunches only this, since the server could only bind after `build &&` exited 0.
+     */
+    readonly previewStartCommand?: string;
+    /** The preview script runs build output that does not exist and no build is chained (fail fast). */
+    readonly buildRequired?: boolean;
+    /** The missing output folder behind {@link buildRequired}; a manual build creates it. */
+    readonly buildOutputUri?: URI;
+    /**
+     * The package's declared build chained before its preview script, run only when the user picks
+     * "Build and start" after a `build-required` failure. Never run implicitly or retried.
+     */
+    readonly buildAndStartCommand?: string;
+}
+
+/** Build state shared by monorepo apps and a workspace member opened directly. */
+export type QaapPreviewBuildTarget = Pick<QaapMonorepoAppCandidate,
+    'buildScript' | 'previewStartCommand' | 'buildRequired' | 'buildOutputUri' | 'buildAndStartCommand'>;
+
+/**
+ * The package whose dev command Preview runs: the selected app, the only app, or the project
+ * itself (same choice as the dev plan).
+ */
+export function resolveQaapPreviewBuildTarget(
+    descriptor: QaapProjectDescriptor | undefined,
+    selectedApp: QaapMonorepoAppCandidate | undefined,
+): QaapPreviewBuildTarget | undefined {
+    if (!descriptor) {
+        return undefined;
+    }
+    return selectedApp ?? (descriptor.apps?.length === 1 ? descriptor.apps[0] : undefined) ?? descriptor;
 }
 
 /** Default HTTP port for `@theia/*` example apps (`theia start`). */
@@ -109,10 +151,28 @@ export interface QaapProjectDescriptor {
     /** Sub-apps with a runnable dev script, empty unless the project is a monorepo. */
     readonly apps: QaapMonorepoAppCandidate[];
     /**
+     * Package-manager workspace root that owns `node_modules` (npm/yarn/pnpm/bun workspaces, Lerna,
+     * Turborepo, Nx). Install runs there, never inside a member. Equal to {@link rootUri} for a
+     * monorepo opened at its root; an ancestor when the inspected folder is itself a member.
+     */
+    readonly workspaceRootUri?: URI;
+    /**
      * When preview/install targets a child folder (e.g. `create-vite` scaffold) while the workspace
      * root has no `package.json`, the relative path from the workspace root to that app.
      */
     readonly scaffoldRelativePath?: string;
+    /** {@link QaapMonorepoAppCandidate.devScriptBinary} for a workspace member opened directly. */
+    readonly devScriptBinary?: string;
+    /** {@link QaapMonorepoAppCandidate.buildScript} for a workspace member opened directly. */
+    readonly buildScript?: string;
+    /** {@link QaapMonorepoAppCandidate.previewStartCommand} for a workspace member opened directly. */
+    readonly previewStartCommand?: string;
+    /** {@link QaapMonorepoAppCandidate.buildAndStartCommand} for a workspace member opened directly. */
+    readonly buildAndStartCommand?: string;
+    /** {@link QaapMonorepoAppCandidate.buildRequired} for a workspace member opened directly. */
+    readonly buildRequired?: boolean;
+    /** {@link QaapMonorepoAppCandidate.buildOutputUri} for a workspace member opened directly. */
+    readonly buildOutputUri?: URI;
 }
 
 /** True when a managed preview stop closed the dev terminal on purpose. */

@@ -7,6 +7,8 @@ import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@the
 
 import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 
+import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
+
 import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
 import { resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
@@ -272,7 +274,10 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             // the old run terminally failed. Either way, a remaining claim must not say success.
             return 'fail';
         }
-        const reason = completedAuthFailureReason ?? resolveAgentTurnFailureMessage(log, {
+        // A billing/plan denial is written to the log with a machine-readable tag; keep it verbatim so the
+        // transcript card can offer Upgrade/Top up instead of a generic quota message.
+        const planLimitReason = log && QaapPlanLimit.parse(log) ? log.trim().split('\n')[0] : undefined;
+        const reason = completedAuthFailureReason ?? planLimitReason ?? resolveAgentTurnFailureMessage(log, {
             state: task.state === 'interrupted' ? 'interrupted' : 'failed',
             exitCode: task.exitCode,
             agentMessage: agentMessageForFailure,

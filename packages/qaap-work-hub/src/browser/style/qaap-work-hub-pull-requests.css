@@ -1,29 +1,5 @@
 /* Pull-request navigator and detail surface for the Work Hub. */
 
-.theia-mobile-work-hub-sessions-sidebar-back {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--theia-descriptionForeground, var(--qaap-muted, #8a847c));
-  cursor: pointer;
-  font-size: 16px;
-}
-
-.theia-mobile-work-hub-sessions-sidebar-back:hover,
-.theia-mobile-work-hub-sessions-sidebar-close:hover {
-  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-  color: var(--theia-foreground);
-}
-
-/* Codicon's display rule can override the browser's default [hidden] rule. */
-.theia-mobile-work-hub-sessions-sidebar-back[hidden] {
-  display: none !important;
-}
-
-.theia-mobile-work-hub-sessions-sidebar-nav[hidden],
 .theia-mobile-work-hub-pull-requests-status-state[hidden] {
   display: none !important;
 }
