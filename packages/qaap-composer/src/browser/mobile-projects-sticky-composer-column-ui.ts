@@ -227,10 +227,13 @@ export class MobileProjectsStickyComposerColumnUi {
             )
             : nls.localize('qaap/mobileProjects/stickyComposerAgent', 'Agent: {0}', agentLabel);
         agentBtn.setAttribute('aria-label', agentBtn.title);
+        const catalogLabel = agentModel
+            ? this.host.stickyComposerAgentsUi.resolveModelLabel(agentModel.modelId)
+            : undefined;
         populateAgentToolbarButton(agentBtn, {
             agentId,
             label: agentLabel,
-            agentModel,
+            agentModel: agentModel && catalogLabel ? { ...agentModel, label: catalogLabel } : agentModel,
             connectionState: this.host.stickyComposerAgentsUi.isAgentDisconnected(agentId) ? 'disconnected' : undefined,
         });
         if (options.agentLocked) {

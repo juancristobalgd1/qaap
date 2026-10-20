@@ -670,7 +670,7 @@ export function populateAgentToolbarButton(
         const connect = document.createElement('span');
         connect.className = 'theia-qaap-agent-connect-chip';
         connect.textContent = nls.localize('qaap/agentPicker/connect', 'Connect');
-        button.insertBefore(warning, button.firstChild);
+        (button.querySelector('.theia-qaap-agent-identity-avatar') ?? button).prepend(warning);
         chevron.before(connect);
     }
 }
