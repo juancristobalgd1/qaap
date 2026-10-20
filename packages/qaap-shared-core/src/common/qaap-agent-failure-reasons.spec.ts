@@ -11,6 +11,7 @@ import {
     extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
     isAgentTurnInterruptedError,
+    localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
     localizeAgentTurnTimeoutMessage,
     localizeGenericAgentFailureMessage,
@@ -22,7 +23,9 @@ import {
     CREDITS_DEPLETED_LOG,
     MODEL_UNAVAILABLE_LOG,
     PRODUCTION_ROW_ERRORS,
+    RATE_LIMIT_RETRY_LOOP_IDLE_LOG,
     RECOVERED_AGENT_MESSAGE,
+    RECOVERED_RETRY_THEN_IDLE_LOG,
     RECOVERED_THEN_KILLED_LOG,
     RECOVERED_THEN_PROVIDER_TERMINATED_LOG,
     REPEATED_TOOL_FAILURES_LOG,
@@ -166,6 +169,18 @@ describe('agent failure reasons (real logs)', () => {
             expect(detectAgentFailureKind(persisted)).to.equal('timeout');
             expect(label).to.equal('Timed out');
             expect(isAgentTurnInterruptedError(persisted)).to.equal(true);
+        });
+
+        it('a CLI killed while still retrying a rate limit reports the rate limit, not the idle timer', () => {
+            const { persisted, label } = persistAndDescribe(RATE_LIMIT_RETRY_LOOP_IDLE_LOG, { state: 'interrupted' });
+            expect(persisted).to.equal(localizeAgentFailureMessage('rate_limit'));
+            expect(label).to.equal('Quota reached');
+        });
+
+        it('a recovered retry before the run went quiet keeps the idle timeout', () => {
+            const { persisted, label } = persistAndDescribe(RECOVERED_RETRY_THEN_IDLE_LOG, { state: 'interrupted' });
+            expect(persisted).to.equal(localizeAgentTurnTimeoutMessage('idle', 20));
+            expect(label).to.equal('Timed out');
         });
 
         it('reduces the raw production row texts and keeps them as the detail', () => {

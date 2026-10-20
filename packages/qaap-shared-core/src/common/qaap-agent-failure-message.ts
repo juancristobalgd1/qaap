@@ -227,6 +227,12 @@ interface AgentFailureEvidence {
     readonly plainLines: readonly string[];
     /** The input had a JSON event stream, i.e. it is an agent log rather than a bare error string. */
     readonly structured: boolean;
+    /**
+     * Provider retry records (`system/api_retry`) after the CLI's last other JSON record: the CLI was
+     * still retrying when the log ended. Not evidence on their own (a recovered retry is noise); they
+     * only explain why the runner's idle timer killed the run.
+     */
+    readonly trailingRetryRecords: readonly string[];
 }
 
 /** At most this many plain lines and no JSON stream: the input is an error message, not a log. */
@@ -272,13 +278,22 @@ function isTopLevelErrorRecord(value: unknown): boolean {
     return record.type === undefined && record.error !== undefined && record.error !== null;
 }
 
+function isProviderRetryRecord(value: unknown): boolean {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return record.type === 'system' && record.subtype === 'api_retry';
+}
+
 function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvidence {
     const full = (log ?? '').trim();
     const errorRecords: string[] = [];
     const plainLines: string[] = [];
+    let trailingRetryRecords: string[] = [];
     let structured = false;
     if (!full) {
-        return { errorRecords, plainLines, structured };
+        return { errorRecords, plainLines, structured, trailingRetryRecords };
     }
     for (const rawLine of tailOfAgentLog(full).replace(ANSI_REGEX, '').split('\n')) {
         const line = rawLine.trim();
@@ -292,6 +307,7 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
                 if (isTopLevelErrorRecord(parsed)) {
                     errorRecords.unshift(line);
                 }
+                trailingRetryRecords = isProviderRetryRecord(parsed) ? [...trailingRetryRecords, line] : [];
                 continue;
             } catch {
                 /* not JSON: CLI text that happens to start with a brace */
@@ -299,7 +315,7 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
         }
         plainLines.push(line);
     }
-    return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines, structured };
+    return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines, structured, trailingRetryRecords };
 }
 
 /** Everything the CLI said about the failure (envelope, error records, plain lines). */
@@ -421,6 +437,24 @@ export function summarizeCollapsedAgentFailure(input: {
 /** Classify agent CLI/API stderr or transcript text for user-facing failure copy. */
 export function detectAgentFailureKind(log: string | undefined): QaapAgentFailureKind | undefined {
     return classifyAgentFailureEvidence(collectAgentFailureEvidence(log));
+}
+
+/**
+ * The usage limit behind a run the idle timer killed, read only from the CLI's own error records
+ * and the retries it was still making (see {@link AgentFailureEvidence.trailingRetryRecords}):
+ * a 429 printed by a workspace command earlier in the log did not silence the agent.
+ */
+function classifyIdleUsageLimitEvidence(evidence: AgentFailureEvidence): 'quota' | 'rate_limit' | undefined {
+    const records = [evidence.envelope, ...evidence.errorRecords, ...evidence.trailingRetryRecords]
+        .filter((part): part is string => !!part)
+        .join('\n');
+    if (!records) {
+        return undefined;
+    }
+    if (matchesAny(records, QUOTA_PATTERNS)) {
+        return 'quota';
+    }
+    return matchesAny(records, RATE_LIMIT_PATTERNS) ? 'rate_limit' : undefined;
 }
 
 function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgentFailureKind | undefined {
@@ -732,11 +766,18 @@ export function resolveAgentTurnFailureMessage(
         ? { state: 'failed' }
         : (options ?? { state: 'failed' });
     const evidence = collectAgentFailureEvidence(log);
+    let kind: QaapAgentFailureKind | undefined;
     const idleTimeout = RUNNER_IDLE_TIMEOUT_LINE.exec(evidence.plainLines.join('\n'));
     if (idleTimeout) {
-        return localizeAgentTurnTimeoutMessage('idle', Number(idleTimeout[1]) / 60);
+        // A CLI stuck retrying a rate limit or an exhausted quota goes quiet too: name the provider
+        // limit, not the timer that stopped it. Otherwise the idle line is the reason.
+        kind = classifyIdleUsageLimitEvidence(evidence);
+        if (!kind) {
+            return localizeAgentTurnTimeoutMessage('idle', Number(idleTimeout[1]) / 60);
+        }
+    } else {
+        kind = classifyAgentFailureEvidence(evidence);
     }
-    const kind = classifyAgentFailureEvidence(evidence);
     const challengeOptions = resolvedOptions.agentId ? { agentId: resolvedOptions.agentId } : undefined;
     if (kind === 'auth') {
         return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(agentFailureEvidenceText(evidence), challengeOptions));
