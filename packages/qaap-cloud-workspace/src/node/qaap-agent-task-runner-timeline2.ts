@@ -322,6 +322,11 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         }
         // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
         const billingRejection = await resolveAgentTaskBillingRejection(ctx, task, request);
+        // The billing read is async: a stop that landed meanwhile already settled the task as
+        // `cancelled`. Neither fail it (that would overwrite `cancelled`) nor spawn it.
+        if (ctx.tasks.get(task.id)?.state !== 'running') {
+            return;
+        }
         if (billingRejection !== undefined) {
             fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
             fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');

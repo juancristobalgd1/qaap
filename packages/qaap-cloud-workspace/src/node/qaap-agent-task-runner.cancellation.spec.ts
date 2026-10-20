@@ -227,6 +227,37 @@ describe('QaapAgentTaskRunner cancellation', () => {
         expect(spawns).to.equal(0);
     });
 
+    it('keeps a task cancelled while its billing check is in flight cancelled (no failure, no spawn)', async () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const task = runningTask('task-billing');
+        const tasks = new Map([[task.id, task]]);
+        let releaseBilling!: () => void;
+        const billingRead = new Promise<void>(resolve => { releaseBilling = resolve; });
+        const finished: string[] = [];
+        let spawns = 0;
+        let logReads = 0;
+        Object.assign(runner, {
+            tasks,
+            billingStore: { getOrCreateAccount: async () => { await billingRead; return {}; } },
+            // The settled read crashes the gate, which used to fail the turn as `failed`.
+            resolveAgentModelForRequest: () => { throw new Error('model resolution exploded'); },
+            logPath: () => { logReads++; return path.join('/nonexistent', 'task.log'); },
+            finishTask: (id: string, state: string) => { finished.push(`${id}:${state}`); return undefined; },
+            spawnProcess: () => { spawns++; },
+        });
+
+        const pending = runner.exposeSpawnProcessWhenReady(task, { prompt: '', cwd: task.cwd });
+        await new Promise(resolve => setImmediate(resolve));
+        tasks.set(task.id, { ...task, state: 'cancelled', finishedAt: Date.now() });
+        releaseBilling();
+        await pending;
+
+        expect(tasks.get(task.id)?.state).to.equal('cancelled');
+        expect(finished).to.deep.equal([]);
+        expect(logReads).to.equal(0);
+        expect(spawns).to.equal(0);
+    });
+
     it('does not drain from finishTask while a cancelled process is stopping', () => {
         const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
         const task = runningTask('task-1');
