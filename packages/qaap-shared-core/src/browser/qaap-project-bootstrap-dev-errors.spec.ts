@@ -6,9 +6,15 @@
 import { expect } from 'chai';
 import {
     describeDevProcessExit,
+    QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
     diagnoseBootstrapFailure,
+    diagnoseBuildFirstPreviewFailure,
+    formatQaapPreviewBuildRequiredMessage,
     extractDevOutputProbePorts,
     extractTerminalFailureLine,
+    restoreEscapedLineBreaks,
+    terminalOutputMissingBinary,
+    terminalOutputNeedsBuild,
     terminalOutputNeedsInstall,
     terminalOutputNextDevLock,
     terminalOutputOutOfMemory,
@@ -54,6 +60,84 @@ describe('qaap-project-bootstrap-dev-errors', () => {
 
     it('terminalOutputNeedsInstall detects missing modules', () => {
         expect(terminalOutputNeedsInstall('Cannot find package \'@foo/bar\'')).to.equal(true);
+    });
+
+    // Production report: Theia monorepo previewed from examples/browser before any root install.
+    const THEIA_NOT_FOUND = [
+        '> @theia/example-browser@1.73.0 start',
+        '> theia start --log-level=warn --plugins=local-dir:../../plugins',
+        'sh: 1: theia: not found',
+        'npm error Lifecycle script `start` failed with error:',
+        'npm error code 127',
+        'npm error path /workspace/repos/users/jcristgd/juancristobalgd1/qaap/examples/browser',
+    ].join('\n');
+
+    it('names the missing script bin instead of dumping npm output', () => {
+        expect(terminalOutputMissingBinary(THEIA_NOT_FOUND)).to.equal('theia');
+        expect(terminalOutputMissingBinary('bash: line 1: vite: command not found')).to.equal('vite');
+        expect(terminalOutputMissingBinary('sh: 1: npm: not found')).to.equal(undefined);
+        expect(terminalOutputNeedsInstall(THEIA_NOT_FOUND)).to.equal(true);
+        const diagnosis = diagnoseBootstrapFailure(THEIA_NOT_FOUND, 'fallback');
+        expect(diagnosis.kind).to.equal('dependencies');
+        expect(diagnosis.message).to.include('`theia`').and.include('workspace root');
+        expect(diagnosis.message).not.to.include('npm error');
+    });
+
+    it('reads output whose line breaks arrived as literal \\n escapes', () => {
+        const escaped = THEIA_NOT_FOUND.replace(/\n/g, '\\n');
+        expect(restoreEscapedLineBreaks(escaped)).to.equal(THEIA_NOT_FOUND);
+        expect(restoreEscapedLineBreaks('C:\\new\\app\nnext line')).to.equal('C:\\new\\app\nnext line');
+        expect(diagnoseBootstrapFailure('npm error code 1\\nError: boom', 'fallback').message).to.equal('Error: boom');
+    });
+
+    it('never reads a source import or a path alias as a missing build', () => {
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '/app/src/lib/utils'")).to.equal(false);
+        expect(terminalOutputNeedsBuild("error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.")).to.equal(false);
+        expect(terminalOutputNeedsBuild("Cannot find module 'lib/helpers'")).to.equal(false);
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '/repo/scripts/generated.js'")).to.equal(true);
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '../dist/server'")).to.equal(true);
+        expect(diagnoseBootstrapFailure("Error: Cannot find module '/app/src/lib/utils'", 'fallback').kind).not.to.equal('build-required');
+    });
+
+    it('never sends a missing system tool to Install', () => {
+        const output = 'sh: 1: python3: not found\nnpm error code 127';
+        expect(terminalOutputNeedsInstall(output)).to.equal(false);
+        const diagnosis = diagnoseBootstrapFailure(output, 'fallback');
+        expect(diagnosis.kind).to.equal('runtime-version');
+        expect(diagnosis.message).to.include('`python3`').and.not.include('Install there');
+        expect(terminalOutputNeedsInstall('bash: line 1: docker: command not found')).to.equal(false);
+        expect(terminalOutputNeedsInstall('sh: 1: python3.12: not found')).to.equal(false);
+    });
+
+    it('names Build and start and the opt-in only when the action exists; both copies are build-required', () => {
+        expect(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE).not.to.include('Build and start');
+        expect(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE).not.to.include('preview.json');
+        const withAction = formatQaapPreviewBuildRequiredMessage(true);
+        expect(withAction).to.include('Choose Build and start').and.include('"build": "auto"');
+        expect(diagnoseBootstrapFailure(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE, 'fallback').kind).to.equal('build-required');
+        expect(diagnoseBootstrapFailure(withAction, 'fallback').kind).to.equal('build-required');
+    });
+
+    it('never reads a stale Next.js cache as a project that was never built', () => {
+        expect(terminalOutputNeedsBuild("Error: Cannot find module './vendor-chunks/next.js'")).to.equal(false);
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '/app/.next/server/webpack-runtime.js'")).to.equal(false);
+    });
+
+    it('words a failed Build and start as the user\'s action, not as the preview.json opt-in', () => {
+        const failed = { kind: 'process-exit' as const, message: 'npm error code 2' };
+        const userStarted = diagnoseBuildFirstPreviewFailure(failed, 'build', 'build-and-start');
+        expect(userStarted.message).to.include('started by Build and start failed').and.not.include('preview.json');
+        expect(diagnoseBuildFirstPreviewFailure(failed, 'build').message).to.include('opted in via .qaap/preview.json');
+        const oom = diagnoseBuildFirstPreviewFailure({ kind: 'out-of-memory', message: 'oom' }, 'build', 'build-and-start');
+        expect(oom.message).to.include('started by Build and start ran out of memory').and.not.include('preview.json');
+    });
+
+    it('asks for a build when the project\'s own compiled output is missing', () => {
+        const output = "Error: Cannot find module '/workspace/repo/dev-packages/cli/lib/theia'\nRequire stack:";
+        expect(terminalOutputNeedsBuild(output)).to.equal(true);
+        expect(terminalOutputNeedsInstall(output)).to.equal(false);
+        expect(diagnoseBootstrapFailure(output, 'fallback').kind).to.equal('build-required');
+        expect(terminalOutputNeedsBuild("Cannot find module '/repo/node_modules/vite/dist/node/cli.js'")).to.equal(false);
     });
 
     it('terminalOutputPortInUse detects EADDRINUSE', () => {

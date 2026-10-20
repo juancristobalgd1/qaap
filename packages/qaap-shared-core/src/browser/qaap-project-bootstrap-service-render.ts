@@ -262,6 +262,7 @@ export function resolveInstallPlanExtracted(ctx: QaapProjectBootstrapServiceCont
         const plan = resolveBootstrapInstallTarget(
             {
                 rootKey: descriptor.rootUri.toString(),
+                workspaceRootKey: descriptor.workspaceRootUri?.toString(),
                 devCommand: descriptor.devCommand,
                 installCommand: descriptor.installCommand,
             },

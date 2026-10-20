@@ -272,17 +272,26 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
         const retry = document.createElement('button');
         retry.type = 'button';
         retry.className = 'theia-mobile-transcript-preview-launch-retry';
-        retry.textContent = nls.localize('qaap/mobileProjects/previewLaunchRetry', 'Try again');
-        retry.addEventListener('click', () => {
-            const project = ctx.host.transcriptOpenProject;
-            const summary = ctx.host.transcriptOpenSummary;
-            if (project && summary) {
-                void ctx.requestTranscriptPreview(project, summary, {
-                    revealPreviewTab: true,
-                    allowAgentFallback: false,
-                });
-            }
-        });
+        if (ctx.host.projectBootstrap?.canBuildAndStartPreview()) {
+            // A missing build is never built implicitly (it can take minutes and the workspace's
+            // memory): retrying would fail the same way, so the action is the explicit build.
+            retry.textContent = nls.localize('qaap/mobileProjects/previewLaunchBuildAndStart', 'Build and start');
+            retry.addEventListener('click', () => {
+                void ctx.host.projectBootstrap?.buildAndStartPreview();
+            });
+        } else {
+            retry.textContent = nls.localize('qaap/mobileProjects/previewLaunchRetry', 'Try again');
+            retry.addEventListener('click', () => {
+                const project = ctx.host.transcriptOpenProject;
+                const summary = ctx.host.transcriptOpenSummary;
+                if (project && summary) {
+                    void ctx.requestTranscriptPreview(project, summary, {
+                        revealPreviewTab: true,
+                        allowAgentFallback: false,
+                    });
+                }
+            });
+        }
         status.append(retry);
     } else {
         const phase = bootstrapState?.phase;
