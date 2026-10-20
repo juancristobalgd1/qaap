@@ -897,8 +897,12 @@ export interface QaapAgentFailureReasonOptions {
     readonly agentLabel?: string;
 }
 
-/** Persisted copy that names a tool which was the turn's last, failed step. */
-const STORED_TOOL_FAILURE = /^(?!(?:Process|Agent)\b)[\w.:/-]+ (?:failed: |exited with code -?\d+\.?$|did not complete successfully\.?$)/;
+/**
+ * Persisted copy that names a tool which was the turn's last, failed step. Provider lines in the
+ * same shape (`Request failed: 429 quota exceeded`, persisted verbatim as a usage-limit hint) name
+ * an HTTP step, not a tool, so those words are excluded.
+ */
+const STORED_TOOL_FAILURE = /^(?!(?:Process|Agent|Request|Fetch|Connection|Upload|Download|Authentication|Login)\b)[\w.:/-]+ (?:failed: |exited with code -?\d+\.?$|did not complete successfully\.?$)/;
 /** CLI envelopes that end a run after repeated tool failures. */
 const REPEATED_TOOL_FAILURE = /\brepeated tool failures\b|\bfailed \d+ times with\b/i;
 

@@ -206,6 +206,11 @@ describe('agent failure reasons (real logs)', () => {
             expect(label).to.equal('Timed out');
         });
 
+        it('a provider `Request failed:` usage line is a usage limit, not a failed tool', () => {
+            expect(localizeAgentFailureShortReason('Request failed: 429 quota exceeded')).to.equal('Quota reached');
+            expect(localizeAgentFailureShortReason('Bash failed: Error: Request failed with status code 429')).to.equal('A command failed');
+        });
+
         it('reduces the raw production row texts and keeps them as the detail', () => {
             const bashExit = describeAgentTurnFailure(PRODUCTION_ROW_ERRORS.bashExitCode);
             expect(bashExit).to.deep.equal({
