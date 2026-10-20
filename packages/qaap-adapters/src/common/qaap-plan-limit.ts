@@ -15,7 +15,7 @@ import { nls } from '@theia/core/lib/common/nls';
  */
 export const QAAP_PLAN_LIMIT_CODE = 'plan_limit';
 
-/** Legacy job error code for the repo cap; still emitted so older clients keep working. */
+/** Legacy repo-cap code: still sent as `error` in the 403 body for older clients, and still accepted by the UI; jobs now report {@link QAAP_PLAN_LIMIT_CODE}. */
 export const QAAP_PLAN_REPO_LIMIT_CODE = 'plan_repo_limit';
 
 export type QaapPlanLimitReason = 'repo_limit' | 'hosted_model_denied' | 'credits_exhausted' | 'runtime_exhausted';
@@ -24,7 +24,8 @@ export type QaapPlanLimitCta = 'upgrade' | 'top_up';
 
 const PLAN_LIMIT_REASONS: readonly QaapPlanLimitReason[] = ['repo_limit', 'hosted_model_denied', 'credits_exhausted', 'runtime_exhausted'];
 
-const PLAN_LIMIT_TAG = /\[qaap:plan_limit:([a-z_]+)\]\s*/;
+/** Anchored: only a tag that opens the text counts, so an agent echoing one mid-output cannot forge a paywall. */
+const PLAN_LIMIT_TAG = /^\s*\[qaap:plan_limit:([a-z_]+)\]\s*/;
 
 export class QaapPlanLimit {
 
@@ -46,7 +47,7 @@ export class QaapPlanLimit {
     }
 
     static strip(text: string): string {
-        return text.replace(new RegExp(PLAN_LIMIT_TAG.source, 'g'), '').trim();
+        return text.replace(PLAN_LIMIT_TAG, '').trim();
     }
 
     static cta(reason: QaapPlanLimitReason): QaapPlanLimitCta {

@@ -270,7 +270,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         }
         // A billing/plan denial is written to the log with a machine-readable tag; keep it verbatim so the
         // transcript card can offer Upgrade/Top up instead of a generic quota message.
-        const planLimitReason = log && QaapPlanLimit.parse(log) ? log.trim() : undefined;
+        const planLimitReason = log && QaapPlanLimit.parse(log) ? log.trim().split('\n')[0] : undefined;
         const reason = completedAuthFailureReason ?? planLimitReason ?? resolveAgentTurnFailureMessage(log, {
             state: task.state === 'interrupted' ? 'interrupted' : 'failed',
             exitCode: task.exitCode,

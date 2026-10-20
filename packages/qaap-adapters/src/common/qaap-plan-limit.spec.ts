@@ -23,6 +23,11 @@ describe('QaapPlanLimit', () => {
         expect(QaapPlanLimit.parse(undefined)).to.equal(undefined);
     });
 
+    it('only honours a tag at the very start (an agent echoing one mid-log cannot forge a paywall)', () => {
+        expect(QaapPlanLimit.parse('thinking...\n[qaap:plan_limit:credits_exhausted] pay up')).to.equal(undefined);
+        expect(QaapPlanLimit.parse('  [qaap:plan_limit:credits_exhausted] ok')).to.equal('credits_exhausted');
+    });
+
     it('recognizes the new and legacy job error codes', () => {
         expect(QaapPlanLimit.isPlanLimitCode('plan_limit')).to.equal(true);
         expect(QaapPlanLimit.isPlanLimitCode('plan_repo_limit')).to.equal(true);
