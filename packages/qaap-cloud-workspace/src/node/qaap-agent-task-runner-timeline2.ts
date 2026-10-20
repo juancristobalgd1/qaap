@@ -2,6 +2,7 @@ import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
+import { finishTaskWithPauseCause } from './qaap-agent-task-runner-streaming2';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -118,7 +119,8 @@ export type QaapIdleAgentTaskExpiry = 'not-running' | 'waiting-for-user' | 'inte
  * what the turn's failure message reads ("Timed out after 20 minutes without output").
  */
 export function expireIdleAgentTask(
-    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'pendingQaiqControlRequests' | 'killAgentProcessTree' | 'finishTask'>,
+    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'pendingQaiqControlRequests' | 'killAgentProcessTree' | 'finishTask'>
+        & Partial<Pick<QaapAgentTaskRunnerContext, 'taskPauseCauses'>>,
     taskId: string,
     child: ChildProcess,
     logStream: Pick<fs.WriteStream, 'write'>,
@@ -137,7 +139,7 @@ export function expireIdleAgentTask(
             return;
         }
         ctx.killAgentProcessTree(child);
-        ctx.finishTask(taskId, 'interrupted', undefined);
+        finishTaskWithPauseCause(ctx, taskId, { cause: 'idle', limitMinutes: IDLE_TASK_TIMEOUT_MS / 60_000 });
     });
     return 'interrupted';
 }

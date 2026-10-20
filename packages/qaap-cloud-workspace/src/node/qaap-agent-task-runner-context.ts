@@ -45,7 +45,7 @@ import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentHookService } from './qaap-agent-hook-service';
 import type { QaapAgentStdinPrompt } from './qaap-agent-task-runner-utils';
 import type { AgentCandidate, QaapGenericCommandResult } from './qaap-agent-task-runner-constants';
-import type { QaapAgentTaskCancelOptions } from './qaap-agent-task-runner-streaming2';
+import type { QaapAgentTaskCancelOptions, QaapAgentTaskPauseCause } from './qaap-agent-task-runner-streaming2';
 
 /** Result of {@link QaapAgentTaskRunnerContext.buildAgentCommand}. */
 export interface QaapAgentCommandBuildResult {
@@ -96,6 +96,8 @@ export interface QaapAgentTaskRunnerContext {
     readonly processes: Map<string, ChildProcess>;
     readonly deletedTaskIds: Set<string>;
     readonly stoppingTaskIds: Set<string>;
+    /** Why a task is being paused, set only while its `interrupted` settle runs (completion push copy). */
+    readonly taskPauseCauses: Map<string, QaapAgentTaskPauseCause>;
     readonly stdinInteractiveTasks: Set<string>;
     readonly stdinPrompts: Map<string, QaapAgentStdinPrompt>;
     readonly promptTempDirs: Map<string, string>;

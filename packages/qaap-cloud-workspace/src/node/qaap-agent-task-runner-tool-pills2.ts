@@ -3,6 +3,9 @@ import {
     type PersistedAgentTaskIndex, type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import type { QaapAgentTaskPauseCause } from './qaap-agent-task-runner-streaming2';
+import { nls } from '@theia/core/lib/common/nls';
+import { localizeAgentTurnTimeoutMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { OLLAMA_DEFAULT_HOST } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 // Extracted from qaap-agent-task-runner.ts
 
@@ -424,6 +427,8 @@ export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string,
 }
 
 export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): Promise<void> {
+        // Read before any await: the pause cause is only set while the `interrupted` settle runs.
+        const pauseCause = task.state === 'interrupted' ? ctx.taskPauseCauses?.get(task.id) : undefined;
         // Deep-link target: the Work Hub session that spawned this task (when known),
         // so tapping the notification lands on the agent conversation, not a generic surface.
         const conversationId = ctx.conversationIdForTask?.(task.id);
@@ -445,13 +450,14 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
             return;
         }
         const ok = task.state === 'completed';
-        // Only the no-output timer settles a task as `interrupted` here (restart recovery does not notify).
+        // The runner's no-output timer and the turn watchdog (idle, task cap, approval-wait cap) settle
+        // `interrupted` here (restart recovery does not notify); name the cause only when it is known.
         const paused = task.state === 'interrupted';
         try {
             await ctx.webPush.notify({
                 title: ok ? 'Task finished' : paused ? 'Task paused' : 'Task failed',
                 body: ok ? `${task.title} completed.`
-                    : paused ? `${task.title} timed out without output. Continue runs it again from your original request.`
+                    : paused ? describePausedTaskForPush(task.title, pauseCause)
                         : `${task.title} exited with code ${task.exitCode ?? 'unknown'}.`,
                 tag: `qaap-agent-task-${task.id}`,
                 ...link,
@@ -459,6 +465,19 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
         } catch {
             /* push failure must not crash the runner */
         }
+}
+
+/** Push body for a paused (`interrupted`) task: cause-specific when known, neutral otherwise. */
+export function describePausedTaskForPush(title: string, pauseCause: QaapAgentTaskPauseCause | undefined): string {
+    if (!pauseCause) {
+        return nls.localize('qaap/agentTask/pausedPush', '{0} was paused. Continue runs it again from your original request.', title);
+    }
+    return nls.localize(
+        'qaap/agentTask/pausedPushWithReason',
+        '{0} was paused. {1}',
+        title,
+        localizeAgentTurnTimeoutMessage(pauseCause.cause, pauseCause.limitMinutes),
+    );
 }
 
 export async function readLogExtracted(ctx: QaapAgentTaskRunnerContext, id: string): Promise<string> {
