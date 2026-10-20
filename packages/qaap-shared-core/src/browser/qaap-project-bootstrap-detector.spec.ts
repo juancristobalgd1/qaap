@@ -557,6 +557,30 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(app?.devCommand).to.equal('npm run start');
     });
 
+    it('scans workspace bins only when the app script bin is not a declared dependency', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true, workspaces: ['apps/*', 'tools/*'] }));
+        mock.addFile('/ws/package-lock.json', '{}');
+        mock.addDir('/ws/apps');
+        mock.addDir('/ws/tools');
+        mock.addFile('/ws/apps/web/package.json', JSON.stringify({ name: 'web', scripts: { start: 'fixture-serve src' } }));
+        mock.addFile('/ws/apps/site/package.json', JSON.stringify({ name: 'site', scripts: { dev: 'vite' }, devDependencies: { vite: '6' } }));
+        mock.addFile('/ws/tools/serve-cli/package.json', JSON.stringify({ name: 'serve-cli', bin: { 'fixture-serve': 'bin.js' } }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+        const reads: string[] = [];
+        const read = mock.read.bind(mock);
+        (mock as unknown as { read: typeof read }).read = (async (uri: URI) => { reads.push(uri.path.toString()); return read(uri); }) as typeof read;
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.apps.find(app => app.name === 'web')?.devScriptBinary).to.equal('fixture-serve');
+        expect(descriptor?.apps.find(app => app.name === 'site')?.devScriptBinary).to.equal('vite');
+        // The bin scan read the tool's manifest once even though two apps were resolved.
+        expect(reads.filter(path => path === '/ws/tools/serve-cli/package.json').length).to.be.at.most(2);
+    });
+
     it('does not trust a partial root node_modules that lacks the script bin', async () => {
         const mock = new MockFileService();
         theiaMonorepo(mock);

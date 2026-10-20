@@ -235,26 +235,27 @@ export const QAAP_BUILD_OUTPUT_DIRS: readonly string[] = ['lib', 'dist', 'build'
 /** Dev-server scripts that build on the fly; only `start`/`serve` may need a prior build. */
 const SCRIPTS_THAT_MAY_NEED_BUILD = new Set(['start', 'serve']);
 
-/** Tokens after which a word names a script or a package, never a folder (`npm run build`). */
-const SCRIPT_NAME_PREFIXES = new Set(['run', 'npm', 'yarn', 'pnpm', 'bun', 'npx', '--filter', '-w', '--workspace']);
+/** Commands whose first positional argument is the file or folder they run or serve. */
+const OUTPUT_RUNNER_COMMANDS = new Set(['node', 'nodemon', 'serve', 'http-server', 'live-server', 'sirv', 'cd']);
 
 /**
  * The build-output folder a script runs from (`dist` for `node dist/server.js`, `build` for
- * `serve -s build`), or `undefined` when the script does not name one. The command word of each
- * segment and script names (`npm run build`) are never folders.
+ * `serve -s build`, `lib` for `cd lib && …`), or `undefined` when the script does not name one.
+ *
+ * Only the first positional argument of a runner command counts: later arguments and flag values
+ * are often folders the script itself creates (`node server.js --out dist`), and package-manager
+ * commands name scripts, not folders (`npm run build`, `yarn build`).
  */
 export function scriptBuildOutputDir(script: string): string | undefined {
     for (const segment of script.split(/&&|\|\||;|\|/)) {
         const tokens = segment.trim().split(/\s+/).filter(token => token.length > 0 && !/^\w+=/.test(token));
-        for (let index = 1; index < tokens.length; index++) {
-            if (SCRIPT_NAME_PREFIXES.has(tokens[index - 1])) {
-                continue;
-            }
-            const value = tokens[index].replace(/^--?[\w-]+=/, '').replace(/^["']|["']$/g, '').replace(/^\.\//, '');
-            const first = value.split('/')[0];
-            if (first && QAAP_BUILD_OUTPUT_DIRS.includes(first)) {
-                return first;
-            }
+        if (!OUTPUT_RUNNER_COMMANDS.has(tokens[0] ?? '')) {
+            continue;
+        }
+        const positional = tokens.slice(1).find(token => !token.startsWith('-'));
+        const first = positional?.replace(/^["']|["']$/g, '').replace(/^\.\//, '').split('/')[0];
+        if (first && QAAP_BUILD_OUTPUT_DIRS.includes(first)) {
+            return first;
         }
     }
     return undefined;

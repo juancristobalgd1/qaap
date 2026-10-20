@@ -150,6 +150,11 @@ describe('qaap-workspace-root', () => {
                 .to.deep.equal({ buildRequired: false });
         });
 
+        it('does not report build-required for a script that creates its output folder itself', () => {
+            expect(resolveQaapPreviewBuildPlan({ ...base, script: 'node server.js --out dist', policy: 'manual' }))
+                .to.deep.equal({ buildRequired: false });
+        });
+
         it('never builds dev scripts, framework dev servers or packages without a build script', () => {
             expect(resolveQaapPreviewBuildPlan({ ...base, scriptKey: 'dev', policy: 'auto' }).buildScript).to.equal(undefined);
             expect(resolveQaapPreviewBuildPlan({ ...base, genericKind: false, policy: 'auto' }).buildScript).to.equal(undefined);
@@ -162,7 +167,8 @@ describe('qaap-workspace-root', () => {
             expect(scriptBuildOutputDir('node dist/server.js')).to.equal('dist');
             expect(scriptBuildOutputDir('serve -s build')).to.equal('build');
             expect(scriptBuildOutputDir('NODE_ENV=production node ./lib/main.js')).to.equal('lib');
-            expect(scriptBuildOutputDir('http-server --root=out')).to.equal('out');
+            expect(scriptBuildOutputDir('http-server out -p 8080')).to.equal('out');
+            expect(scriptBuildOutputDir('cd lib && node main.js')).to.equal('lib');
         });
 
         it('never mistakes a command or a script name for a folder', () => {
@@ -170,6 +176,10 @@ describe('qaap-workspace-root', () => {
             expect(scriptBuildOutputDir('npm run build && node server.js')).to.equal(undefined);
             expect(scriptBuildOutputDir('yarn build && serve')).to.equal(undefined);
             expect(scriptBuildOutputDir('build')).to.equal(undefined);
+            // Later arguments and flag values are folders the script may create itself.
+            expect(scriptBuildOutputDir('node server.js --out dist')).to.equal(undefined);
+            expect(scriptBuildOutputDir('node server.js --out=dist')).to.equal(undefined);
+            expect(scriptBuildOutputDir('webpack --output-path dist && serve -s public')).to.equal(undefined);
         });
     });
 

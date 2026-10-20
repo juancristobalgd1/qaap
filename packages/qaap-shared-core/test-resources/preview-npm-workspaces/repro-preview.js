@@ -70,10 +70,11 @@ function run(label, command, cwdUri, env = {}) {
     return spawn(shellPath, shellArgs, { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+let devOutput = '';
 function waitExit(child) {
     return new Promise(resolve => {
-        child.stdout.on('data', d => process.stdout.write(d));
-        child.stderr.on('data', d => process.stdout.write(d));
+        child.stdout.on('data', d => { devOutput += d; process.stdout.write(d); });
+        child.stderr.on('data', d => { devOutput += d; process.stdout.write(d); });
         child.on('exit', code => resolve(code));
     });
 }
@@ -123,6 +124,8 @@ async function probe() {
         const raced = await Promise.race([exited.then(code => ({ code })), new Promise(r => setTimeout(() => r(undefined), 250))]);
         if (raced) {
             console.log(`\n[dev] exited with code ${raced.code} before listening`);
+            const { diagnoseBootstrapFailure } = require(path.join(libDir, 'browser/qaap-project-bootstrap-dev-errors'));
+            console.log('[diagnosis]', diagnoseBootstrapFailure(devOutput, 'exit').kind);
             console.log('RESULT: PREVIEW FAILED');
             process.exit(1);
         }

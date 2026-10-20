@@ -877,36 +877,51 @@ export class QaapProjectBootstrapDetector {
         const candidateUris = await this.resolveWorkspacePatterns(rootUri, patterns);
         const workspaceMember = flavor !== undefined && PACKAGE_MANAGER_WORKSPACE_FLAVORS.has(flavor);
         const apps: QaapMonorepoAppCandidate[] = [];
-        const memberManifests = new Map<string, PackageJsonShape>();
-        const workspaceBins = new Set<string>();
         for (const appUri of candidateUris) {
-            if (!workspaceMember && apps.length >= MAX_MONOREPO_APPS) {
-                break;
-            }
-            const member = workspaceMember ? await this.readPackageJson(appUri) : undefined;
-            if (member) {
-                // Workspace packages' bins (Theia's `theia` from dev-packages/cli) are install output too.
-                declaredPackageBins(member.name, member.bin).forEach(bin => workspaceBins.add(bin));
-            }
             if (apps.length >= MAX_MONOREPO_APPS) {
-                continue;
+                break;
             }
             const candidate = await this.toAppCandidate(rootUri, appUri, pm, workspaceMember, buildPolicy);
             if (candidate) {
                 apps.push(candidate);
-                if (member) {
-                    memberManifests.set(candidate.rootUri.toString(), member);
-                }
             }
         }
         if (workspaceMember) {
+            // Manifests are memoized for this detection only, so a later detection (after an install
+            // or an edit) always reads fresh files. The workspace-wide bin scan (Theia has ~100
+            // members) runs only when an app's script bin is not a declared dependency.
+            const manifests = new Map<string, Promise<PackageJsonShape | undefined>>();
+            const readMember = (uri: URI): Promise<PackageJsonShape | undefined> => {
+                const key = uri.toString();
+                let manifest = manifests.get(key);
+                if (!manifest) {
+                    manifest = this.readPackageJson(uri);
+                    manifests.set(key, manifest);
+                }
+                return manifest;
+            };
+            let workspaceBins: Promise<ReadonlySet<string>> | undefined;
+            const scanWorkspaceBins = async (): Promise<ReadonlySet<string>> => {
+                const bins = new Set<string>();
+                for (const memberUri of candidateUris) {
+                    const member = await readMember(memberUri);
+                    // Workspace packages' bins (a `fixture-serve` tool package) are install output too.
+                    declaredPackageBins(member?.name, member?.bin).forEach(bin => bins.add(bin));
+                }
+                return bins;
+            };
             for (let index = 0; index < apps.length; index++) {
                 const app = apps[index];
-                const manifest = memberManifests.get(app.rootUri.toString()) ?? {};
+                const manifest = await readMember(app.rootUri) ?? {};
                 const script = manifest.scripts?.[this.pickDevScript(manifest.scripts ?? {}) ?? ''];
-                const devScriptBinary = typeof script === 'string'
-                    ? this.installedScriptBinary(script, [manifest, pkg], workspaceBins)
-                    : undefined;
+                if (typeof script !== 'string') {
+                    continue;
+                }
+                let devScriptBinary = this.installedScriptBinary(script, [manifest, pkg]);
+                if (!devScriptBinary && extractScriptBinary(script)) {
+                    workspaceBins ??= scanWorkspaceBins();
+                    devScriptBinary = this.installedScriptBinary(script, [manifest, pkg], await workspaceBins);
+                }
                 apps[index] = devScriptBinary ? { ...app, devScriptBinary } : app;
             }
         }
