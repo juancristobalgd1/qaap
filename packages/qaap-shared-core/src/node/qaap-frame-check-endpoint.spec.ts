@@ -15,11 +15,12 @@ class TestQaapFrameCheckEndpoint extends QaapFrameCheckEndpoint {
     next: () => Promise<QaapFrameCheckResult> = async () => ({ embeddable: false, reason: 'X-Frame-Options: deny' });
     resolver: QaapFrameCheckResolver | undefined;
     override readonly deadlineMs: number = 50;
+    login = 'tester';
 
     constructor() {
         super();
         (this as unknown as { auth: Partial<QaapGithubAuthGuard> }).auth = {
-            authenticate: () => ({ kind: 'skip', userLogin: 'tester' }),
+            authenticate: () => ({ kind: 'skip', userLogin: this.login }),
         } as Partial<QaapGithubAuthGuard>;
     }
 
@@ -35,6 +36,10 @@ class TestQaapFrameCheckEndpoint extends QaapFrameCheckEndpoint {
         };
         await this.handle({ query: { url }, headers: {} } as unknown as Request, res as unknown as Response);
         return body!;
+    }
+
+    tokensLeft(login: string): boolean {
+        return this.rateLimiter.tryTake(login);
     }
 
     protected override check(start: URL, appOrigin: string, signal: AbortSignal): Promise<QaapFrameCheckResult> {
@@ -104,13 +109,33 @@ describe('QaapFrameCheckEndpoint', () => {
         expect(await endpoint.run('https://ok.example/')).to.deep.equal({ embeddable: true });
     });
 
-    it('caps concurrent checks process-wide and answers unknown without checking past the cap', async () => {
+    it('caps concurrent checks per user and answers unknown without checking past the cap', async () => {
         const endpoint = new TestQaapFrameCheckEndpoint();
         endpoint.next = () => new Promise(() => undefined);
-        const pending = [1, 2, 3].map(i => endpoint.run(`https://slow${i}.example/`));
+        const pending = [1, 2].map(i => endpoint.run(`https://slow${i}.example/`));
         const extra = await endpoint.run('https://extra.example/');
         expect(extra).to.deep.equal({ embeddable: true, unknown: true });
         expect(endpoint.checked).to.not.include('https://extra.example/');
+        endpoint.login = 'someone-else';
+        endpoint.next = async () => ({ embeddable: true });
+        expect(await endpoint.run('https://other.example/'), 'another user still gets a check').to.deep.equal({ embeddable: true });
+        await Promise.all(pending);
+    });
+
+    it('does not spend a rate-limit token when no concurrency slot is free', async () => {
+        const endpoint = new TestQaapFrameCheckEndpoint();
+        endpoint.login = 'busy';
+        endpoint.next = () => new Promise(() => undefined);
+        const pending = [1, 2].map(i => endpoint.run(`https://slow${i}.example/`));
+        for (let i = 0; i < 30; i++) {
+            await endpoint.run(`https://refused${i}.example/`);
+        }
+        // 20-token bucket: 2 spent by the running checks, none by the 30 refused requests.
+        let left = 0;
+        while (endpoint.tokensLeft('busy')) {
+            left++;
+        }
+        expect(left).to.equal(18);
         await Promise.all(pending);
     });
 

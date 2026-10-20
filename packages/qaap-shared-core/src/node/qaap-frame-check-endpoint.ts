@@ -19,7 +19,7 @@ import {
     isQaapInternalFrameCheckHost,
     QaapFrameCheckCache,
     QaapFrameCheckRateLimiter,
-    QaapFrameCheckSemaphore,
+    QaapFrameCheckConcurrency,
 } from './qaap-frame-check-guard';
 
 const REQUEST_TIMEOUT_MS = 3000;
@@ -29,8 +29,9 @@ const MAX_REDIRECTS = 3;
 /** Per-query c-ares timeout; DNS never touches the libuv threadpool (fs/crypto stay responsive). */
 const DNS_TIMEOUT_MS = 1500;
 const DNS_TRIES = 2;
-/** Process-wide concurrent checks; extra requests answer "unknown" at once instead of queueing. */
-const MAX_CONCURRENT_CHECKS = 3;
+/** Concurrent checks, process-wide and per user; extra requests answer "unknown" at once instead of queueing. */
+const MAX_CONCURRENT_CHECKS = 16;
+const MAX_CONCURRENT_CHECKS_PER_USER = 2;
 
 /** Minimal c-ares resolver surface (`dns.promises.Resolver`), injectable for tests. */
 export interface QaapFrameCheckResolver {
@@ -64,7 +65,7 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
 
     protected readonly cache = new QaapFrameCheckCache<QaapFrameCheckResult>();
     protected readonly rateLimiter = new QaapFrameCheckRateLimiter();
-    protected readonly semaphore = new QaapFrameCheckSemaphore(MAX_CONCURRENT_CHECKS);
+    protected readonly concurrency = new QaapFrameCheckConcurrency(MAX_CONCURRENT_CHECKS, MAX_CONCURRENT_CHECKS_PER_USER);
     protected readonly deadlineMs: number = DEADLINE_MS;
 
     configure(app: Application): void {
@@ -87,11 +88,11 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
                 result = INTERNAL;
             } else if (cached) {
                 result = cached;
-            } else if (this.rateLimiter.tryTake(auth.userLogin) && this.semaphore.tryAcquire()) {
+            } else if (this.tryStartCheck(auth.userLogin)) {
                 try {
                     result = await this.withDeadline(signal => this.check(url, appOrigin, signal));
                 } finally {
-                    this.semaphore.release();
+                    this.concurrency.release(auth.userLogin);
                 }
                 if (!result.unknown) {
                     this.cache.set(cacheKey, result);
@@ -104,6 +105,18 @@ export class QaapFrameCheckEndpoint implements BackendApplicationContribution {
     }
 
     /** Runs `work` with an abort signal that fires (and rejects) at the deadline, so DNS and sockets are torn down. */
+    /** Takes a concurrency slot first, so a rate-limit token is only spent on a check that really runs. */
+    protected tryStartCheck(userLogin: string): boolean {
+        if (!this.concurrency.tryAcquire(userLogin)) {
+            return false;
+        }
+        if (!this.rateLimiter.tryTake(userLogin)) {
+            this.concurrency.release(userLogin);
+            return false;
+        }
+        return true;
+    }
+
     protected async withDeadline<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
         const controller = new AbortController();
         let timer: NodeJS.Timeout | undefined;
