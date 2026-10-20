@@ -52,6 +52,7 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
             clientRequestInFlight: new Set<string>(),
             repoClaims: new Map<string, number>(),
             store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 create: (_req: unknown, owner?: string) => {
                     createCalls += 1;
                     owners.push(owner);
@@ -182,6 +183,7 @@ describe('QaapAgentConversationEndpoint create isolation', () => {
             clientRequestInFlight: new Set<string>(),
             repoClaims: new Map<string, number>(),
             store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 conversations,
                 get: (id: string) => conversations.get(id),
                 getActiveTaskIdsForConversation: (id: string) => activeIds.has(id) ? ['task'] : [],
@@ -297,6 +299,7 @@ describe('QaapAgentConversationEndpoint message correlation', () => {
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
             store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 get: () => undefined,
                 getActiveTaskIdsForConversation: () => [],
                 postUserMessage: (...args: unknown[]) => {
@@ -323,6 +326,7 @@ describe('QaapAgentConversationEndpoint message correlation', () => {
             const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
             Object.assign(endpoint, {
                 store: {
+                    taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                     get: () => ({ id: 'conv-1', ownerLogin: 'owner' }),
                     getActiveTaskIdsForConversation: () => [],
                     postUserMessage: () => ({ id: 'conv-1', messages: [] }),
@@ -367,6 +371,7 @@ describe('QaapAgentConversationEndpoint same-conversation parallel delivery', ()
             clientRequestDedup: new Map<string, string>(),
             clientRequestInFlight: new Set<string>(),
             store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 get: (id: string) => conversations.get(id),
                 getActiveTaskIdsForConversation: (id: string) => id === 'c1' ? ['task-1'] : [],
                 postUserMessage: (...args: unknown[]) => {
@@ -472,6 +477,7 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
         Object.assign(endpoint, {
             repoClaims: new Map(),
             store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 conversations: new Map([[conv.id, conv], [other.id, other]]),
                 get: (id: string) => id === conv.id ? conv : id === 'c1' ? { id: 'c1', cwd: '/tmp/project' } : undefined,
                 getActiveTaskIdsForConversation: (id: string) => id === other.id ? ['task-2'] : overrides.live ? ['task-1'] : [],
@@ -590,6 +596,7 @@ describe('QaapAgentConversationEndpoint live feed resume', () => {
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
             store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 eventLog: log,
                 sseBatcher: { flush: () => { flushes.count++; } },
                 onDidChangeStamped: (listener: (entry: Entry) => void) => {
@@ -691,6 +698,7 @@ describe('QaapAgentConversationEndpoint project clone missing from disk', () => 
             clientRequestInFlight: new Set<string>(),
             repoClaims: new Map<string, number>(),
             store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 conversations: new Map(),
                 create: (request: unknown) => { created.push(request); return { id: 'conv-1', cwd }; },
                 get: () => ({ id: 'conv-1', cwd, ownerLogin: 'alice' }),

@@ -624,8 +624,10 @@ export function listModelsForAgentExtracted(
 /**
  * Default agent for an owner. Order: the operator's `QAAP_DEFAULT_AGENT`; then the first agent in
  * {@link DEFAULT_AGENT_PREFERENCE} that is actually usable right now (`isAgentUsable`: connected, or a
- * hosted agent the owner's plan allows); then `HOSTED_KEYLESS_DEFAULT_AGENTS`; and only then the
- * pre-existing "installed and not known to be disconnected" fallback.
+ * hosted agent the owner's plan allows); then the pre-existing "installed and not known to be
+ * disconnected" preference (an agent whose auth probe has not answered yet, e.g. right after a
+ * backend restart, keeps the pre-keyless behaviour instead of losing to the keyless agent); only
+ * when every preferred agent is explicitly disconnected, `HOSTED_KEYLESS_DEFAULT_AGENTS`.
  */
 export function defaultAgentExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -637,13 +639,20 @@ export function defaultAgentExtracted(
             return configured;
         }
         const selectable = (id: string): boolean => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id);
-        for (const id of [...DEFAULT_AGENT_PREFERENCE, ...HOSTED_KEYLESS_DEFAULT_AGENTS]) {
+        for (const id of DEFAULT_AGENT_PREFERENCE) {
             if (selectable(id) && isAgentUsable(id)) {
                 return id;
             }
         }
+        // `isAgentEnabled` already drops a known-disconnected harness, so what is left here is one
+        // whose connection state is still `unknown`: keep the pre-keyless default for it.
         for (const id of DEFAULT_AGENT_PREFERENCE) {
             if (selectable(id)) {
+                return id;
+            }
+        }
+        for (const id of HOSTED_KEYLESS_DEFAULT_AGENTS) {
+            if (selectable(id) && isAgentUsable(id)) {
                 return id;
             }
         }
@@ -660,6 +669,36 @@ export function defaultAgentExtracted(
             return ENV_AGENT_ID;
         }
         return SHELL_AGENT_ID;
+}
+
+/**
+ * {@link defaultAgentExtracted} after giving the auth probes of the preferred agents up to
+ * `budgetMs` to settle (`refreshConnectionState` starts or joins a probe; undefined when the cached
+ * state is fresh). A probe still pending at the deadline leaves that agent `unknown`, which
+ * keeps the pre-keyless default for it rather than falling through to the keyless agent.
+ */
+export async function defaultAgentFreshExtracted(
+    ctx: QaapAgentTaskRunnerContext,
+    isAgentEnabled: (agentId: string) => boolean,
+    isAgentUsable: (agentId: string) => boolean,
+    refreshConnectionState: (agentId: string) => Promise<unknown> | undefined,
+    budgetMs: number,
+): Promise<string> {
+    const pending = DEFAULT_AGENT_PREFERENCE
+        .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id))
+        .map(id => refreshConnectionState(id))
+        .filter((probe): probe is Promise<unknown> => !!probe);
+    if (pending.length > 0) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+            Promise.all(pending.map(probe => probe.catch(() => undefined))),
+            new Promise<void>(resolve => {
+                timer = setTimeout(resolve, budgetMs);
+            }),
+        ]);
+        clearTimeout(timer);
+    }
+    return defaultAgentExtracted(ctx, isAgentEnabled, isAgentUsable);
 }
 
 export function normalizeAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, token: string | undefined): string | undefined {

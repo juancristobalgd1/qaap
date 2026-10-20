@@ -661,9 +661,14 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
             const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
             await this.warmBilling(ownerLogin);
+            if (!(body.agent ?? '').trim()) {
+                // Settle the preferred agents' auth probes so the default below is not the keyless
+                // fallback merely because the probes have not answered yet (fresh backend start).
+                await this.store.taskRunner.defaultAgentFresh(ownerLogin);
+            }
             const planTask = !!this.taskPlans && this.taskPlans.shouldPlan(
                 { message: body.message, interactionModeId: body.interactionModeId, fanOut: typeof body.fanOut === 'boolean' ? body.fanOut : undefined },
-                this.resolveCreateAgentId(cwd, body),
+                this.resolveCreateAgentId(cwd, body, ownerLogin),
                 cwd,
             );
             const conv = this.store.create({
@@ -706,9 +711,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     /** The agent the first turn of a create request will run (mirrors the store's resolution). */
-    protected resolveCreateAgentId(cwd: string, body: Partial<QaapCreateAgentConversationRequest>): string | undefined {
+    protected resolveCreateAgentId(cwd: string, body: Partial<QaapCreateAgentConversationRequest>, ownerLogin?: string): string | undefined {
         try {
-            const seed = (body.agent ?? '').trim() || this.store.taskRunner.defaultAgent();
+            const seed = (body.agent ?? '').trim() || this.store.taskRunner.defaultAgent(ownerLogin);
             return this.store.resolveTurnAgent({ id: '', cwd, agentId: seed, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, (body.message ?? '').trim(), body.agent);
         } catch {
             return undefined;

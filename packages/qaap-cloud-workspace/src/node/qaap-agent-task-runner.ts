@@ -93,7 +93,7 @@ import {
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
-import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
+import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
 import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
@@ -582,9 +582,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
             .map(agent => {
                 const connectionState = this.agentConnectionState(agent.id, ownerLogin);
-                const hostedCodexAvailable = agent.id.toLowerCase() === 'codex'
-                    && !!ownerLogin?.trim()
-                    && this.billingStore?.peekEntitlements?.(ownerLogin)?.hostedModels === true;
+                const hostedCodexAvailable = agent.id.toLowerCase() === 'codex' && this.hostedCodexAllowed(ownerLogin);
                 return {
                     ...agent,
                     // A disconnected Codex is still usable through Qaap-hosted access on Pro/Team.
@@ -796,11 +794,34 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     defaultAgent(ownerLogin?: string): string {
         return defaultAgentExtracted(
             this,
-            // A disconnected harness is skipped unless the plan still lets it run hosted (Codex on Pro/Team).
-            agentId => this.isAgentEnabled(agentId, ownerLogin)
-                && (this.agentConnectionState(agentId, ownerLogin) !== 'disconnected' || this.isAgentUsableAsDefault(agentId, ownerLogin)),
+            agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
             agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
         );
+    }
+
+    /**
+     * {@link defaultAgent} after giving the preferred agents' auth probes up to `budgetMs` to settle.
+     * Right after a backend start every CLI-login probe is still `unknown`; awaiting them here keeps a
+     * signed-in user on their agent instead of the keyless fallback.
+     */
+    defaultAgentFresh(ownerLogin?: string, budgetMs = QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS): Promise<string> {
+        return defaultAgentFreshExtracted(
+            this,
+            agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
+            agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
+            // Only a never-probed agent is worth waiting for; a stale entry keeps its last known
+            // state while it refreshes in the background, so warm requests pay no latency.
+            agentId => this.agentConnectionStates.has(this.agentConnectionCacheKey(agentId, ownerLogin))
+                ? undefined
+                : this.refreshAgentConnectionState(agentId, ownerLogin),
+            budgetMs,
+        );
+    }
+
+    /** Enabled, and not known to be disconnected unless the plan still lets it run hosted (Codex on Pro/Team). */
+    protected isAgentSelectableAsDefault(agentId: string, ownerLogin?: string): boolean {
+        return this.isAgentEnabled(agentId, ownerLogin)
+            && (this.agentConnectionState(agentId, ownerLogin) !== 'disconnected' || this.isAgentUsableAsDefault(agentId, ownerLogin));
     }
 
     /**
@@ -815,9 +836,16 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (HOSTED_KEYLESS_DEFAULT_AGENTS.includes(normalized)) {
             return this.agentConnectionState(normalized, ownerLogin) !== 'disconnected';
         }
-        return normalized === 'codex'
-            && !!ownerLogin?.trim()
-            && this.billingStore?.peekEntitlements?.(ownerLogin)?.hostedModels === true;
+        return normalized === 'codex' && this.hostedCodexAllowed(ownerLogin);
+    }
+
+    /** Qaap-hosted Codex needs a plan with hosted models and credits left (same gate as turn start). */
+    protected hostedCodexAllowed(ownerLogin?: string): boolean {
+        if (!ownerLogin?.trim()) {
+            return false;
+        }
+        const entitlements = this.billingStore?.peekEntitlements?.(ownerLogin);
+        return entitlements?.hostedModels === true && entitlements.creditsRemaining > 0;
     }
 
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean {
