@@ -127,7 +127,7 @@ import { QaapTenantPreviewRouteTable } from './qaap-tenant-preview-route-table';
 import { QaapDockerDevPreviewUpstreamTunnel } from './qaap-docker-dev-preview-upstream-tunnel';
 import { QaapDevPreviewUpstreamTunnel } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-upstream-tunnel';
 import { QaapObservability } from './qaap-observability';
-import { isQaapHostedRuntime } from './qaap-docker-control-plane';
+import { isQaapHostedOrTenantBackendRuntime, isQaapHostedRuntime } from './qaap-docker-control-plane';
 import { QaapTenantProcessExecutor } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import {
     rememberQaapSharedTheiaConfigDir,
@@ -436,8 +436,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
         const originalCreate = server.create.bind(server);
         server.create = async (options: IShellTerminalServerOptions) => {
             // S2: the rootURI comes from the browser and decides which tenant the shell runs as
-            // (uid / worker container below). In hosted mode it must belong to the caller.
-            const cwd = isQaapHostedRuntime(process.env)
+            // (uid / worker container below). In hosted mode (tenant backends included) it must
+            // belong to the caller.
+            const cwd = isQaapHostedOrTenantBackendRuntime(process.env)
                 ? cwdGuard.resolveHostedTerminalCwd(options.rootURI ? getRootPath(options.rootURI) : undefined, registry.getCurrentLogin())
                 : normalizeIsolationPath(getRootPath(options.rootURI));
             if (options.strictEnv !== true) {

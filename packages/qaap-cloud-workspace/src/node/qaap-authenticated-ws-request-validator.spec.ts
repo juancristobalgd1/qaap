@@ -9,7 +9,11 @@ import type { QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaa
 import { QaapAuthenticatedWsRequestValidator } from './qaap-authenticated-ws-request-validator';
 
 describe('QaapAuthenticatedWsRequestValidator', () => {
-    const savedEnv = { NODE_ENV: process.env.NODE_ENV, QAAP_CLOUD_MODE: process.env.QAAP_CLOUD_MODE };
+    const savedEnv = {
+        NODE_ENV: process.env.NODE_ENV,
+        QAAP_CLOUD_MODE: process.env.QAAP_CLOUD_MODE,
+        QAAP_TENANT_BACKEND_MODE: process.env.QAAP_TENANT_BACKEND_MODE,
+    };
 
     afterEach(() => {
         for (const [key, value] of Object.entries(savedEnv)) {
@@ -36,6 +40,7 @@ describe('QaapAuthenticatedWsRequestValidator', () => {
 
     function setHosted(hosted: boolean): void {
         delete process.env.NODE_ENV;
+        delete process.env.QAAP_TENANT_BACKEND_MODE;
         if (hosted) {
             process.env.QAAP_CLOUD_MODE = 'docker';
         } else {
@@ -62,6 +67,14 @@ describe('QaapAuthenticatedWsRequestValidator', () => {
     it('treats NODE_ENV=production as hosted', () => {
         setHosted(false);
         process.env.NODE_ENV = 'production';
+        expect(createValidator({ kind: 'unauthorized' }).allowWsUpgrade(handshake())).to.equal(false);
+    });
+
+    it('treats a tenant backend as hosted although it runs with NODE_ENV=development and QAAP_CLOUD_MODE=local', () => {
+        setHosted(false);
+        process.env.NODE_ENV = 'development';
+        process.env.QAAP_CLOUD_MODE = 'local';
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
         expect(createValidator({ kind: 'unauthorized' }).allowWsUpgrade(handshake())).to.equal(false);
     });
 

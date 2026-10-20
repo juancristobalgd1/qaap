@@ -7,7 +7,7 @@ import * as http from 'http';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { WsRequestValidatorContribution } from '@theia/core/lib/node/ws-request-validators';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
-import { isQaapHostedRuntime } from './qaap-docker-control-plane';
+import { isQaapHostedOrTenantBackendRuntime } from './qaap-docker-control-plane';
 
 /**
  * Refuses the Theia Socket.IO handshake (both the polling request and the WebSocket upgrade) of
@@ -15,9 +15,11 @@ import { isQaapHostedRuntime } from './qaap-docker-control-plane';
  *
  * Theia's own validators only check the Origin header and the `theia-connection-token` cookie,
  * which the backend hands to anyone who loads `/`. Without this check an anonymous visitor reaches
- * every RPC service (tasks, search, debug, terminals) of the control plane. On a tenant backend
- * `authenticate` only accepts the control-plane proxy's signed assertion, so the same rule holds
- * there too.
+ * every RPC service (tasks, search, debug, terminals) of the control plane. A tenant backend counts
+ * as hosted even though the orchestrator starts it with `NODE_ENV=development` and
+ * `QAAP_CLOUD_MODE=local`: there `authenticate` only accepts the control-plane proxy's signed
+ * assertion (sent on both the polling requests and the WebSocket upgrade), so only proxied traffic
+ * gets through.
  *
  * Local mode keeps Theia's single-user behaviour (with or without `QAAP_SKIP_AUTH`), so the e2e
  * suites and `npm run start:browser` are unchanged. Public previews never use this Socket.IO
@@ -45,6 +47,6 @@ export class QaapAuthenticatedWsRequestValidator implements WsRequestValidatorCo
     }
 
     protected isHostedRuntime(): boolean {
-        return isQaapHostedRuntime(process.env);
+        return isQaapHostedOrTenantBackendRuntime(process.env);
     }
 }

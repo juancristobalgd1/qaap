@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { isContainerIsolationEnabled } from './qaap-agent-spawn-identity';
 
 /**
@@ -47,6 +48,17 @@ function isTruthy(value: string | undefined): boolean {
 export function isQaapHostedRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
     const cloudMode = env.QAAP_CLOUD_MODE?.trim().toLowerCase();
     return env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
+}
+
+/**
+ * {@link isQaapHostedRuntime} or a per-tenant backend. The orchestrator starts tenant backends with
+ * `NODE_ENV=development` and `QAAP_CLOUD_MODE=local` (so they keep single-tenant local behaviour),
+ * which makes `isQaapHostedRuntime` false there. Security gates that must hold on every
+ * multi-tenant surface (authenticated handshake, terminal cwd ownership, dev-only billing switch)
+ * use this instead.
+ */
+export function isQaapHostedOrTenantBackendRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+    return isQaapHostedRuntime(env) || isQaapTenantBackendMode(env);
 }
 
 export function resolveDockerHost(env: NodeJS.ProcessEnv = process.env): string {

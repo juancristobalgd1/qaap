@@ -74,6 +74,31 @@ describe('QaapTerminalCwdGuard', () => {
         expect(() => guard.resolveHostedTerminalCwd(link, 'Alice')).to.throw(/restricted/);
     });
 
+    it('refuses a worktree symlink whose lexical tenant is another user, even when it resolves into the caller tree', () => {
+        // The spawn wrapper derives the tenant (uid, worker) from the lexical path, so a link under
+        // bob's worktrees that points into alice's must not give alice a shell running as bob.
+        const suffix = path.basename(reposRoot);
+        const aliceLogin = `spec-alice-${suffix}`;
+        const bobLogin = `spec-bob-${suffix}`;
+        const aliceWorktree = path.join(resolveQaapWorktreesRoot(), aliceLogin, 'conversation-1');
+        const bobWorktrees = path.join(resolveQaapWorktreesRoot(), bobLogin);
+        fs.mkdirSync(aliceWorktree, { recursive: true });
+        fs.mkdirSync(bobWorktrees, { recursive: true });
+        try {
+            const link = path.join(bobWorktrees, 'link');
+            fs.symlinkSync(aliceWorktree, link);
+            expect(guard.resolveHostedTerminalCwd(aliceWorktree, aliceLogin)).to.equal(aliceWorktree);
+            expect(() => guard.resolveHostedTerminalCwd(link, aliceLogin)).to.throw(/restricted/);
+        } finally {
+            fs.rmSync(path.join(resolveQaapWorktreesRoot(), aliceLogin), { recursive: true, force: true });
+            fs.rmSync(bobWorktrees, { recursive: true, force: true });
+        }
+    });
+
+    it('compares tenant path segments case-sensitively, like the filesystem', () => {
+        expect(() => guard.resolveHostedTerminalCwd(aliceRepo, 'alice')).to.throw(/restricted/);
+    });
+
     it('on a tenant backend only accepts the tenant pinned by QAAP_TENANT_LOGIN', () => {
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
         process.env.QAAP_TENANT_LOGIN = 'alice';

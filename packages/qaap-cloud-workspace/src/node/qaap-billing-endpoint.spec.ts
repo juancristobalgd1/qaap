@@ -47,7 +47,9 @@ describe('QaapBillingEndpoint auth gate', () => {
     });
 
     describe('dev-activate', () => {
-        const ENV_KEYS = ['NODE_ENV', 'QAAP_CLOUD_MODE', 'QAAP_SKIP_AUTH', 'QAAP_BILLING_DEV_CHECKOUT', 'STRIPE_SECRET_KEY'] as const;
+        const ENV_KEYS = [
+            'NODE_ENV', 'QAAP_CLOUD_MODE', 'QAAP_SKIP_AUTH', 'QAAP_BILLING_DEV_CHECKOUT', 'STRIPE_SECRET_KEY', 'QAAP_TENANT_BACKEND_MODE',
+        ] as const;
         const savedEnv = new Map<string, string | undefined>(ENV_KEYS.map(key => [key, process.env[key]]));
 
         beforeEach(() => {
@@ -98,6 +100,14 @@ describe('QaapBillingEndpoint auth gate', () => {
         it('is refused in a hosted cloud mode with the dev-checkout flag', async () => {
             process.env.QAAP_CLOUD_MODE = 'docker';
             process.env.QAAP_BILLING_DEV_CHECKOUT = 'true';
+            expect(await devActivate(true)).to.deep.equal({ statusCode: 403, plans: [] });
+        });
+
+        it('is refused on a tenant backend, which runs with NODE_ENV=development and QAAP_CLOUD_MODE=local', async () => {
+            process.env.NODE_ENV = 'development';
+            process.env.QAAP_CLOUD_MODE = 'local';
+            process.env.QAAP_TENANT_BACKEND_MODE = '1';
+            process.env.QAAP_BILLING_DEV_CHECKOUT = '1';
             expect(await devActivate(true)).to.deep.equal({ statusCode: 403, plans: [] });
         });
 

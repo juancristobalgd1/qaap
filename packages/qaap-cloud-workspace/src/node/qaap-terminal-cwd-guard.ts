@@ -11,10 +11,11 @@ import {
     resolveQaapParallelRoot,
     resolveQaapReposRoot,
     resolveQaapWorktreesRoot,
+    resolveTenantIsolationRoot,
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { isQaapTenantBackendMode, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { isRealPathUnder } from '@theia/qaap-shared-core/lib/node/qaap-realpath-guard';
 
 /**
@@ -32,7 +33,9 @@ export class QaapTerminalCwdGuard {
 
     /** Returns the canonical cwd for a terminal of `ownerLogin`, or throws when it is not theirs. */
     resolveHostedTerminalCwd(requestedCwd: string | undefined, ownerLogin: string | undefined): string {
-        // Paths use the login as the auth guard does (`resolveUserReposRoot`); only comparisons fold case.
+        // Paths use the login verbatim, as the auth guard does (`resolveUserReposRoot` /
+        // `safeUserIdSegment`), and path comparisons are case-sensitive. Only the tenant-backend pin
+        // below folds case.
         const owner = ownerLogin?.trim();
         if (!owner) {
             throw new Error('Opening a terminal requires an authenticated tenant.');
@@ -53,16 +56,23 @@ export class QaapTerminalCwdGuard {
 
     protected isOwnedTerminalCwd(cwd: string, owner: string): boolean {
         const reposRoot = resolveQaapReposRoot();
+        const segment = safeUserIdSegment(owner);
+        // The spawn wrapper picks the tenant (uid, worker container) from the LEXICAL path
+        // (`QaapTenantSpawnService.resolveTenantSegment`), so the lexical tenant segment must be the
+        // caller's too — not only the realpath. Otherwise `/worktrees/bob/link -> /worktrees/alice/x`
+        // passes the realpath check for alice and yields a shell running as bob.
+        if (resolveTenantIsolationRoot(reposRoot, resolveQaapWorktreesRoot(), cwd)?.segment !== segment) {
+            return false;
+        }
         if (isPathUnderUserWorkspace(cwd, reposRoot, owner)) {
             return isRealPathUnder(cwd, resolveUserReposRoot(reposRoot, owner));
         }
-        const segment = safeUserIdSegment(owner);
         return [resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]
             .map(root => path.join(root, segment))
             .some(root => isRealPathUnder(cwd, root));
     }
 
     protected isTenantBackendMode(): boolean {
-        return /^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '');
+        return isQaapTenantBackendMode(process.env);
     }
 }
