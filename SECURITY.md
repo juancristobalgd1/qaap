@@ -81,9 +81,13 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
     by every signed-in user; a hosted runtime refuses to boot with it unless
     `QAAP_ACK_EARLY_ROUTING_DISABLED=1` acknowledges the risk.
     Sampled security logs key clients by the right-most `X-Forwarded-For` hop not
-    in `QAAP_TRUSTED_PROXY_CIDRS` (default: loopback, RFC 1918 and `fc00::/7`, so
-    Caddy over the Docker bridge is trusted). That address is used for log
-    sampling only, never for authorization or rate limiting.
+    in `QAAP_TRUSTED_PROXY_CIDRS` (default: loopback plus the subnets of the
+    container's own network interfaces, so Caddy over the compose network is
+    trusted whatever Docker address pool is used, but other LAN/VPN ranges are
+    not; on a bare-metal non-Docker install the host's LAN subnet is trusted). That address is used for log
+    sampling only, never for authorization or rate limiting. The three
+    variables above are passed through `docker-compose.yml` to the `theia`
+    service, so setting them in `.env` takes effect.
     Browser-visible filesystem/RPC boundaries are owner-scoped, and tenant
     containers receive only a short-lived tenant-bound HMAC assertion plus the
     user's GitHub token—not the shared session store, Docker socket, OAuth

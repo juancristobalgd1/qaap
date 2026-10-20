@@ -5,6 +5,7 @@
 
 import * as http from 'http';
 import * as net from 'net';
+import * as os from 'os';
 import { injectable } from '@theia/core/shared/inversify';
 
 interface QaapSecurityLogWindow {
@@ -14,15 +15,15 @@ interface QaapSecurityLogWindow {
 
 const LOG_WINDOW_MS = 60_000;
 const MAX_TRACKED_KEYS = 10_000;
+const MAX_FORWARDED_HOPS = 10;
 
 /**
- * Peers whose `X-Forwarded-For` is believed when no `QAAP_TRUSTED_PROXY_CIDRS` is set: loopback
- * (Caddy on the host), the RFC 1918 ranges (Caddy over the Docker bridge, e.g. 172.18.0.0/16) and
- * IPv6 unique-local addresses.
+ * Loopback peers (Caddy on the host) are always trusted when no `QAAP_TRUSTED_PROXY_CIDRS` is set.
+ * The subnets of the process's own non-internal network interfaces are added at runtime (see
+ * `ownInterfaceCidrs`), so Caddy on the compose network is trusted whatever address pool Docker
+ * uses (e.g. `default-address-pools` 10.200.0.0/16), while other LAN/VPN ranges stay untrusted.
  */
-export const QAAP_DEFAULT_TRUSTED_PROXY_CIDRS: readonly string[] = [
-    '127.0.0.0/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7',
-];
+export const QAAP_DEFAULT_TRUSTED_PROXY_CIDRS: readonly string[] = ['127.0.0.0/8', '::1/128'];
 
 /**
  * Per-client sampling for high-volume security events (refused Socket.IO handshakes). A browser
@@ -78,8 +79,9 @@ export class QaapSecurityLogRateLimiter {
         const header = request.headers['x-forwarded-for'];
         const hops = (Array.isArray(header) ? header.join(',') : header ?? '')
             .split(',')
+            .slice(-MAX_FORWARDED_HOPS)
             .map(hop => normalizeAddress(hop.trim()))
-            .filter(hop => hop.length > 0);
+            .filter(hop => net.isIP(hop) !== 0);
         for (let i = hops.length - 1; i >= 0; i--) {
             if (!this.isTrustedProxy(hops[i])) {
                 return hops[i];
@@ -93,15 +95,40 @@ export class QaapSecurityLogRateLimiter {
         if (family === 0) {
             return false;
         }
-        this.trustedProxies ??= this.createTrustedProxyList(process.env.QAAP_TRUSTED_PROXY_CIDRS);
+        this.trustedProxies ??= this.createTrustedProxyList(process.env.QAAP_TRUSTED_PROXY_CIDRS, this.ownInterfaceCidrs());
         return this.trustedProxies.check(address, family === 4 ? 'ipv4' : 'ipv6');
     }
 
-    /** Comma-separated CIDRs or bare addresses; unset or blank keeps the defaults, bad entries are skipped. */
-    protected createTrustedProxyList(configured: string | undefined): net.BlockList {
+    /**
+     * CIDRs of this process's own non-internal, non-link-local interfaces. In the theia container
+     * these are the compose network(s) shared with Caddy. If the control plane is ever attached to
+     * a tenant bridge, its tenants become trusted for log keying only (the orchestrator does not
+     * do this today). On a bare-metal, non-Docker install the host's LAN subnet becomes trusted.
+     */
+    protected networkInterfaces(): NodeJS.Dict<os.NetworkInterfaceInfo[]> {
+        return os.networkInterfaces();
+    }
+
+    protected ownInterfaceCidrs(): string[] {
+        const cidrs: string[] = [];
+        for (const entries of Object.values(this.networkInterfaces())) {
+            for (const entry of entries ?? []) {
+                if (!entry.internal && entry.cidr && !entry.address.toLowerCase().startsWith('fe80:') && !entry.scopeid) {
+                    cidrs.push(entry.cidr);
+                }
+            }
+        }
+        return cidrs;
+    }
+
+    /**
+     * Comma-separated CIDRs or bare addresses; unset or blank keeps the defaults plus
+     * `ownCidrs`, bad entries are skipped. A configured list replaces both.
+     */
+    protected createTrustedProxyList(configured: string | undefined, ownCidrs: readonly string[] = []): net.BlockList {
         const entries = configured?.trim()
             ? configured.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
-            : QAAP_DEFAULT_TRUSTED_PROXY_CIDRS;
+            : [...QAAP_DEFAULT_TRUSTED_PROXY_CIDRS, ...ownCidrs];
         const list = new net.BlockList();
         for (const entry of entries) {
             const [address, prefixText] = entry.split('/', 2);
