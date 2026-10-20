@@ -12,6 +12,7 @@ import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia
 import { autoContinueAllowedForInteraction } from '@theia/qaap-transcript/lib/common/qaap-agent-turn-completion';
 
 import { buildConversationAgentPrompt } from '../common/qaap-agent-conversation-prompt';
+import type { QaapExpiredStreamingTurn, QaapTurnWatchdogLimits } from '../common/qaap-agent-turn-watchdog';
 import { deriveConversationTitle, isComposerAttachmentPreambleTitle } from '../common/qaap-conversation-title';
 
 import { isTeamSynthesisUserMessage } from '../common/qaap-team-mailbox';
@@ -357,15 +358,15 @@ export function sweepZombieStreamingTurnsExtracted(ctx: QaapAgentConversationSto
     return sweepZombieStreamingTurnsHelper(nowMs, options, {
         conversations: ctx.conversations,
         turnHasPendingApproval: c => ctx.turnHasPendingApproval(c),
-        forceStopZombieTurn: (id, elapsed, max) => ctx.forceStopZombieTurn(id, elapsed, max),
+        forceStopZombieTurn: (turn, limits) => ctx.forceStopZombieTurn(turn, limits),
         getActiveTaskIdsForConversation: id => ctx.getActiveTaskIdsForConversation(id),
         interruptStreamingTurnForRestart: (id, t) => ctx.interruptStreamingTurnForRestart(id, t),
         flushPersist: () => ctx.flushPersist(),
     });
 }
 
-export function forceStopZombieTurnExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean {
-    return forceStopZombieTurnHelper(conversationId, elapsedMs, maxTurnMinutes, {
+export function forceStopZombieTurnExtracted(ctx: QaapAgentConversationStoreContext, turn: QaapExpiredStreamingTurn, limits: QaapTurnWatchdogLimits): boolean {
+    return forceStopZombieTurnHelper(turn, limits, {
         conversations: ctx.conversations,
         taskToConversation: ctx.taskToConversation,
         taskRunner: ctx.taskRunner,

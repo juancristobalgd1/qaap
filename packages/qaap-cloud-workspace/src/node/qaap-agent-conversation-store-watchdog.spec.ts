@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
-import { QAAP_MAX_TURN_MINUTES_ENV } from '../common/qaap-agent-turn-watchdog';
+import { QAAP_MAX_TURN_MINUTES_ENV, QAAP_TURN_IDLE_MINUTES_ENV } from '../common/qaap-agent-turn-watchdog';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
@@ -54,12 +54,19 @@ class TestConversationStore extends QaapAgentConversationStore {
         (this as unknown as { conversations: Map<string, QaapAgentConversation> }).conversations.set(conv.id, conv);
     }
 
-    sweep(nowMs: number): boolean {
-        return (this as unknown as { sweepZombieStreamingTurns: (n: number) => boolean }).sweepZombieStreamingTurns(nowMs);
+    sweep(nowMs: number, options?: { readonly resetSurvivorsToIdle?: boolean }): boolean {
+        return this.sweepZombieStreamingTurns(nowMs, options);
+    }
+
+    trackTask(taskId: string, conversationId: string): void {
+        this.taskToConversation.set(taskId, { conversationId, userMessageId: `${conversationId}-u1`, turnAgentId: 'qaiq', agentMessageId: `${conversationId}-a1` });
     }
 }
 
-function streamingConversation(id: string, streamingSinceMs: number): QaapAgentConversation {
+const MINUTE = 60 * 1000;
+
+/** A streaming turn that started at `streamingSinceMs` and last streamed output at `lastActivityMs`. */
+function streamingConversation(id: string, streamingSinceMs: number, lastActivityMs = streamingSinceMs): QaapAgentConversation {
     return {
         id,
         cwd: '/tmp/project',
@@ -67,7 +74,7 @@ function streamingConversation(id: string, streamingSinceMs: number): QaapAgentC
         title: 'Zombie turn',
         status: 'streaming',
         createdAt: streamingSinceMs,
-        updatedAt: streamingSinceMs,
+        updatedAt: lastActivityMs,
         messages: [
             { id: `${id}-u1`, role: 'user', content: 'do the thing', createdAt: streamingSinceMs, taskId: `${id}-task` },
             { id: `${id}-a1`, role: 'agent', content: 'working…', createdAt: streamingSinceMs + 1000 },
@@ -76,17 +83,26 @@ function streamingConversation(id: string, streamingSinceMs: number): QaapAgentC
 }
 
 describe('QaapAgentConversationStore turn watchdog', () => {
-    const originalEnv = process.env[QAAP_MAX_TURN_MINUTES_ENV];
+    const originalEnv = {
+        [QAAP_MAX_TURN_MINUTES_ENV]: process.env[QAAP_MAX_TURN_MINUTES_ENV],
+        [QAAP_TURN_IDLE_MINUTES_ENV]: process.env[QAAP_TURN_IDLE_MINUTES_ENV],
+    };
+
+    beforeEach(() => {
+        delete process.env[QAAP_TURN_IDLE_MINUTES_ENV];
+    });
 
     afterEach(() => {
-        if (originalEnv === undefined) {
-            delete process.env[QAAP_MAX_TURN_MINUTES_ENV];
-        } else {
-            process.env[QAAP_MAX_TURN_MINUTES_ENV] = originalEnv;
+        for (const [key, value] of Object.entries(originalEnv)) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
         }
     });
 
-    it('force-stops a conversation whose turn exceeded the default max duration', () => {
+    it('pauses a conversation whose turn exceeded the absolute cap, as a timeout the user can continue', () => {
         delete process.env[QAAP_MAX_TURN_MINUTES_ENV];
         const runner = new TestTaskRunner();
         const store = new TestConversationStore();
@@ -102,7 +118,57 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         const settled = store.get('zombie')!;
         expect(settled.status).to.equal('failed');
         const agentMessage = settled.messages.find(m => m.role === 'agent')!;
-        expect(agentMessage.error).to.equal('Stopped automatically after 50 hours: the turn exceeded the maximum allowed time.');
+        expect(agentMessage.error).to.equal('Timed out at the 180-minute task limit. Continue to pick up where it left off.');
+    });
+
+    it('keeps a 46-minute turn that is still streaming output alive', () => {
+        delete process.env[QAAP_MAX_TURN_MINUTES_ENV];
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('busy', now - 46 * MINUTE, now - 20 * 1000));
+
+        expect(store.sweep(now)).to.be.false;
+        expect(runner.cancelledIds).to.deep.equal([]);
+        expect(store.get('busy')!.status).to.equal('streaming');
+    });
+
+    it('pauses a turn with no output for 15 minutes', () => {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('quiet', now - 30 * MINUTE, now - 16 * MINUTE));
+
+        expect(store.sweep(now)).to.be.true;
+        expect(runner.cancelledIds).to.deep.equal(['quiet-task']);
+        const agentMessage = store.get('quiet')!.messages.find(m => m.role === 'agent')!;
+        expect(agentMessage.error).to.equal('Timed out after 15 minutes without output. Continue to pick up where it left off.');
+    });
+
+    it('leaves inactivity of a turn whose task is still live to the runner\'s own output timer', () => {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('live', now - 30 * MINUTE, now - 16 * MINUTE));
+        store.trackTask('live-task', 'live');
+
+        expect(store.sweep(now)).to.be.false;
+        expect(runner.cancelledIds).to.deep.equal([]);
+    });
+
+    it('keeps the restart copy for a quiet turn found at startup', () => {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('restarted', now - 30 * MINUTE, now - 20 * MINUTE));
+
+        expect(store.sweep(now, { resetSurvivorsToIdle: true })).to.be.true;
+        const agentMessage = store.get('restarted')!.messages.find(m => m.role === 'agent')!;
+        expect(agentMessage.error).to.match(/^The backend restarted while this turn was in progress/);
     });
 
     it('spares an expired turn that is paused on a pending approval (REL-5)', () => {
@@ -114,7 +180,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         const store = new TestConversationStore();
         store.configureForTest(runner);
         const now = Date.now();
-        store.seed(streamingConversation('paused', now - 50 * 60 * 1000)); // 50m > 45m default
+        store.seed(streamingConversation('paused', now - 200 * MINUTE)); // past both the idle limit and the 180m cap
 
         const changed = store.sweep(now);
 
