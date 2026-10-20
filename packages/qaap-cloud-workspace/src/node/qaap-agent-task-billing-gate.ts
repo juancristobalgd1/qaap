@@ -78,7 +78,7 @@ export async function checkAgentTaskBillingGate(
     const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim(), ownerLogin);
     const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
     const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent, ownerLogin) ?? request.agent ?? task.agentId;
-    const hostedCodex = isHostedCodexUsage(agentId, modelId) && await ctx.isAgentConnectedFresh?.(agentId ?? '') !== true;
+    const hostedCodex = isHostedCodexUsage(agentId, modelId) && await ctx.isAgentConnectedFresh?.(agentId ?? '', ownerLogin) !== true;
     if (account) {
         const hostedDenial = hostedCodex ? hostedModelDenialReason(account, modelId) : undefined;
         if (!hostedDenial) {

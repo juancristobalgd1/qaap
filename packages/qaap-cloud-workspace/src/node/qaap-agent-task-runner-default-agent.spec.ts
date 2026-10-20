@@ -95,6 +95,35 @@ describe('defaultAgentExtracted', () => {
     });
 });
 
+describe('defaultAgentExtracted without an auth signal', () => {
+    const saved = process.env.QAAP_DEFAULT_AGENT;
+    beforeEach(() => { delete process.env.QAAP_DEFAULT_AGENT; });
+    afterEach(() => {
+        if (saved === undefined) {
+            delete process.env.QAAP_DEFAULT_AGENT;
+        } else {
+            process.env.QAAP_DEFAULT_AGENT = saved;
+        }
+    });
+
+    it('never lets a harness whose sign-in state can never be known (grok) win with a permanent unknown', () => {
+        const [ctx, enabled, usable] = pickDefaultArgs({
+            detected: ['grok', 'claude', 'opencode'],
+            states: { grok: 'unknown', claude: 'unknown', opencode: 'unknown' },
+        });
+        const hasAuthSignal = (id: string): boolean => id !== 'grok';
+        expect(defaultAgentExtracted(ctx, enabled, usable, hasAuthSignal)).to.equal('claude');
+    });
+
+    it('falls to keyless OpenCode when the only installed preferred agent has no auth signal', () => {
+        const [ctx, enabled, usable] = pickDefaultArgs({
+            detected: ['grok', 'opencode'],
+            states: { grok: 'unknown', opencode: 'unknown' },
+        });
+        expect(defaultAgentExtracted(ctx, enabled, usable, id => id !== 'grok')).to.equal('opencode');
+    });
+});
+
 describe('defaultAgentFreshExtracted', () => {
     const saved = process.env.QAAP_DEFAULT_AGENT;
     beforeEach(() => { delete process.env.QAAP_DEFAULT_AGENT; });
@@ -155,11 +184,12 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
     function runnerWith(options: {
         readonly states: Readonly<Record<string, ConnectionState>>;
         readonly entitlements?: { readonly hostedModels: boolean; readonly creditsRemaining: number };
+        readonly extraDetected?: readonly string[];
     }): QaapAgentTaskRunner {
         const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
         Object.assign(runner, {
             detectedAgents: new Map<string, AgentCandidate>(
-                ['qaiq', 'codex', 'opencode'].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
+                ['qaiq', 'codex', 'opencode', ...(options.extraDetected ?? [])].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
             ),
             isAgentEnabled: () => true,
             agentConnectionState: (id: string) => options.states[id] ?? 'unknown',
@@ -182,6 +212,11 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
 
     it('Pro with the hosted credits spent does not get a Codex that turn start would deny', () => {
         const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 0 } });
+        expect(runner.defaultAgent('alice')).to.equal('opencode');
+    });
+
+    it('an installed grok (no auth probe, never connected) does not beat keyless OpenCode', () => {
+        const runner = runnerWith({ states: signedOut, entitlements: undefined, extraDetected: ['grok'] });
         expect(runner.defaultAgent('alice')).to.equal('opencode');
     });
 
