@@ -127,8 +127,9 @@ export async function ensurePreflightPassedExtracted(ctx: QaapResearchRunnerCont
         // non-zero exit AND a stream-json `result` event with `is_error: true` while exiting 0
         // (e.g. an expired OAuth session) both mean the CLI itself is broken.
         const turnError = extractAgentTurnError(stdout);
-        if (finished.state === 'failed' || turnError) {
+        if (finished.state === 'failed' || finished.state === 'interrupted' || turnError) {
             const reason = turnError
+                ?? (finished.state === 'interrupted' ? 'agent task stopped producing output and was interrupted.' : undefined)
                 ?? `agent task exited with a non-zero status${finished.exitCode !== undefined ? ` (exit code ${finished.exitCode})` : ''}.`;
             await ctx.recordPreflightResult(goal, `preflight failed: ${reason}`);
             ctx.terminate(goal, 'infra-broken');
@@ -259,8 +260,9 @@ export async function runProposeExtracted(ctx: QaapResearchRunnerContext, goal: 
         // (mirrors how qaap-agent-task-runner.ts marks a spawn/process failure) and the stream-json
         // `result` event's `is_error` flag (catches a CLI that exits 0 having done nothing).
         const turnError = extractAgentTurnError(stdout);
-        if (finished.state === 'failed' || turnError) {
+        if (finished.state === 'failed' || finished.state === 'interrupted' || turnError) {
             const reason = turnError
+                ?? (finished.state === 'interrupted' ? 'agent task stopped producing output and was interrupted.' : undefined)
                 ?? `agent task exited with a non-zero status${finished.exitCode !== undefined ? ` (exit code ${finished.exitCode})` : ''}.`;
             await ctx.finishAsInfraFailure(goal, record, `agent turn failed: ${reason}`, record.runAttempts);
             return;

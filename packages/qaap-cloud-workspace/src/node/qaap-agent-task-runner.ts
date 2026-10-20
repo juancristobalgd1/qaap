@@ -94,7 +94,7 @@ import {
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
-import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
+import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
@@ -1091,8 +1091,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return shellQuoteHelper(value);
     }
 
-    cancel(id: string): QaapAgentTask | undefined {
-        const task = cancelExtracted(this, id);
+    cancel(id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined {
+        const task = cancelExtracted(this, id, options);
         this.releaseTenantOperation(id);
         return task;
     }

@@ -50,6 +50,6 @@ describe('resolveMissionControlFailure', () => {
             cwd: '/repo',
         });
         expect(result?.kind).to.equal(undefined);
-        expect(result?.preview).to.include('task');
+        expect(result?.preview).to.include('stopped unexpectedly');
     });
 });

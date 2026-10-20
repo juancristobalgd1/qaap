@@ -685,7 +685,13 @@ export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, a
         );
 }
 
-export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string): QaapAgentTask | undefined {
+/** How {@link cancelExtracted} stops a run: a user cancel, or a pause the user can Continue. */
+export interface QaapAgentTaskCancelOptions {
+    /** End the task `interrupted` instead of `cancelled` (turn watchdog pause), so it offers Continue. */
+    readonly interrupt?: boolean;
+}
+
+export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined {
         const child = ctx.processes.get(id);
         ctx.queuedCreateRequests.delete(id);
         const task = ctx.tasks.get(id);
@@ -693,7 +699,7 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string): Qa
             if (child) {
                 ctx.stoppingTaskIds.add(id);
             }
-            const finished = ctx.finishTask(id, 'cancelled', undefined);
+            const finished = ctx.finishTask(id, options?.interrupt ? 'interrupted' : 'cancelled', undefined);
             if (child) {
                 // Cancellation is visible immediately, but retain the concurrency slot until the
                 // process group has had time to finish an in-flight workspace write safely.

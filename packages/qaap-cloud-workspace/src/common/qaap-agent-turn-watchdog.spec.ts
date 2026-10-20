@@ -7,13 +7,23 @@ import { expect } from 'chai';
 import type { QaapAgentConversation } from './qaap-agent-conversation';
 import {
     DEFAULT_QAAP_MAX_TURN_MINUTES,
+    DEFAULT_QAAP_TURN_IDLE_MINUTES,
     MIN_QAAP_MAX_TURN_MINUTES,
+    MIN_QAAP_TURN_IDLE_MINUTES,
     buildQaapTurnWatchdogMessage,
     findExpiredStreamingTurns,
-    formatQaapTurnWatchdogDuration,
+    resolveLastTurnActivityMs,
     resolveQaapMaxTurnMinutes,
+    resolveQaapTurnIdleMinutes,
     resolveStreamingSinceMs,
 } from './qaap-agent-turn-watchdog';
+import {
+    describeAgentTurnFailure,
+    detectAgentFailureKind,
+    isAgentTurnInterruptedError,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+
+const MINUTE = 60 * 1000;
 
 describe('resolveQaapMaxTurnMinutes', () => {
     it('falls back to the default when unset', () => {
@@ -40,38 +50,73 @@ describe('resolveQaapMaxTurnMinutes', () => {
     });
 });
 
+describe('resolveQaapTurnIdleMinutes', () => {
+    it('defaults to 15 minutes and clamps tiny values up to the floor', () => {
+        expect(DEFAULT_QAAP_TURN_IDLE_MINUTES).to.equal(15);
+        expect(resolveQaapTurnIdleMinutes(undefined)).to.equal(DEFAULT_QAAP_TURN_IDLE_MINUTES);
+        expect(resolveQaapTurnIdleMinutes('abc')).to.equal(DEFAULT_QAAP_TURN_IDLE_MINUTES);
+        expect(resolveQaapTurnIdleMinutes('1')).to.equal(MIN_QAAP_TURN_IDLE_MINUTES);
+        expect(resolveQaapTurnIdleMinutes('30')).to.equal(30);
+    });
+});
+
 describe('findExpiredStreamingTurns', () => {
-    const maxMinutes = 45;
+    const limits = { idleMinutes: 15, maxTurnMinutes: 180 };
     const now = Date.parse('2026-07-02T12:00:00Z');
 
-    it('returns ids whose turn has run at least the max duration', () => {
+    it('keeps a long turn alive while it makes progress (the 46-minute task)', () => {
+        expect(DEFAULT_QAAP_MAX_TURN_MINUTES).to.equal(180);
         const ids = findExpiredStreamingTurns([
-            { conversationId: 'fresh', streamingSinceMs: now - 5 * 60 * 1000 },
-            { conversationId: 'exactly-at-limit', streamingSinceMs: now - 45 * 60 * 1000 },
-            { conversationId: 'zombie-50h', streamingSinceMs: now - 50 * 60 * 60 * 1000 },
-        ], now, maxMinutes);
-        expect(ids).to.deep.equal(['exactly-at-limit', 'zombie-50h']);
-    });
-
-    it('returns an empty list when nothing has expired', () => {
-        const ids = findExpiredStreamingTurns([
-            { conversationId: 'a', streamingSinceMs: now - 1000 },
-            { conversationId: 'b', streamingSinceMs: now - 44 * 60 * 1000 },
-        ], now, maxMinutes);
+            { conversationId: 'busy-46m', streamingSinceMs: now - 46 * MINUTE, lastActivityMs: now - 30 * 1000 },
+            { conversationId: 'busy-2h', streamingSinceMs: now - 120 * MINUTE, lastActivityMs: now - 14 * MINUTE },
+        ], now, limits);
         expect(ids).to.deep.equal([]);
     });
 
-    it('never uses a threshold below the configured floor even if a caller passes a smaller value', () => {
-        // 1 minute is below MIN_QAAP_MAX_TURN_MINUTES (5) and must be clamped up to the floor, so a
-        // 3-minute-old turn should not be reported as expired even though 3 > 1.
+    it('pauses a turn that produced no output for the idle limit', () => {
+        const expired = findExpiredStreamingTurns([
+            { conversationId: 'silent', streamingSinceMs: now - 40 * MINUTE, lastActivityMs: now - 15 * MINUTE },
+            { conversationId: 'never-spoke', streamingSinceMs: now - 16 * MINUTE },
+        ], now, limits);
+        expect(expired).to.deep.equal([
+            { conversationId: 'silent', cause: 'idle', elapsedMs: 40 * MINUTE, idleMs: 15 * MINUTE, limitMinutes: 15 },
+            { conversationId: 'never-spoke', cause: 'idle', elapsedMs: 16 * MINUTE, idleMs: 16 * MINUTE, limitMinutes: 15 },
+        ]);
+    });
+
+    it('spares a turn waiting on an approval up to the 24-hour approval cap, then pauses it', () => {
+        const expired = findExpiredStreamingTurns([
+            { conversationId: 'deciding', streamingSinceMs: now - 200 * MINUTE, awaitingApproval: true },
+            { conversationId: 'abandoned', streamingSinceMs: now - 24 * 60 * MINUTE, awaitingApproval: true },
+        ], now, limits);
+        expect(expired.map(turn => [turn.conversationId, turn.cause, turn.limitMinutes])).to.deep.equal([['abandoned', 'max_duration', 24 * 60]]);
+    });
+
+    it('leaves inactivity of a live task to the runner, but still applies the absolute cap', () => {
+        const expired = findExpiredStreamingTurns([
+            { conversationId: 'live-silent', streamingSinceMs: now - 40 * MINUTE, lastActivityMs: now - 30 * MINUTE, hasLiveTask: true },
+            { conversationId: 'live-capped', streamingSinceMs: now - 180 * MINUTE, lastActivityMs: now - 1000, hasLiveTask: true },
+        ], now, limits);
+        expect(expired.map(turn => [turn.conversationId, turn.cause])).to.deep.equal([['live-capped', 'max_duration']]);
+    });
+
+    it('reports the absolute cap before inactivity (the 50-hour zombie)', () => {
+        const expired = findExpiredStreamingTurns([
+            { conversationId: 'zombie-50h', streamingSinceMs: now - 50 * 60 * MINUTE },
+        ], now, limits);
+        expect(expired.map(turn => turn.cause)).to.deep.equal(['max_duration']);
+    });
+
+    it('never uses thresholds below the floors even if a caller passes smaller values', () => {
         const ids = findExpiredStreamingTurns([
-            { conversationId: 'short-lived', streamingSinceMs: now - 3 * 60 * 1000 },
-        ], now, 1);
+            { conversationId: 'short-lived', streamingSinceMs: now - 3 * MINUTE },
+        ], now, { idleMinutes: 1, maxTurnMinutes: 1 });
         expect(ids).to.deep.equal([]);
+        expect(MIN_QAAP_MAX_TURN_MINUTES).to.equal(5);
     });
 
     it('handles an empty input without error', () => {
-        expect(findExpiredStreamingTurns([], now, maxMinutes)).to.deep.equal([]);
+        expect(findExpiredStreamingTurns([], now, limits)).to.deep.equal([]);
     });
 });
 
@@ -112,33 +157,40 @@ describe('resolveStreamingSinceMs', () => {
     });
 });
 
-describe('formatQaapTurnWatchdogDuration', () => {
-    it('formats sub-hour durations as minutes only', () => {
-        expect(formatQaapTurnWatchdogDuration(47 * 60 * 1000)).to.equal('47 minutes');
-        expect(formatQaapTurnWatchdogDuration(1 * 60 * 1000)).to.equal('1 minute');
+describe('resolveLastTurnActivityMs', () => {
+    it('uses the conversation updatedAt that every streamed event rewrites', () => {
+        expect(resolveLastTurnActivityMs({
+            status: 'streaming',
+            updatedAt: 5000,
+            messages: [
+                { id: 'u1', role: 'user', content: 'go', createdAt: 100, taskId: 't1' },
+                { id: 'a1', role: 'agent', content: '…', createdAt: 200 },
+            ],
+        })).to.equal(5000);
     });
 
-    it('formats multi-hour durations with both units', () => {
-        expect(formatQaapTurnWatchdogDuration(2 * 60 * 60 * 1000 + 5 * 60 * 1000)).to.equal('2 hours 5 minutes');
-    });
-
-    it('omits minutes when the duration is an exact number of hours', () => {
-        expect(formatQaapTurnWatchdogDuration(3 * 60 * 60 * 1000)).to.equal('3 hours');
-    });
-
-    it('renders the reported 50-hour zombie duration', () => {
-        expect(formatQaapTurnWatchdogDuration(50 * 60 * 60 * 1000)).to.equal('50 hours');
-    });
-
-    it('never reports zero minutes for a sub-minute duration', () => {
-        expect(formatQaapTurnWatchdogDuration(500)).to.equal('1 minute');
+    it('never reports activity before the turn started', () => {
+        expect(resolveLastTurnActivityMs({
+            status: 'streaming',
+            updatedAt: 50,
+            messages: [{ id: 'u1', role: 'user', content: 'go', createdAt: 100, taskId: 't1' }],
+        })).to.equal(100);
+        expect(resolveLastTurnActivityMs({ status: 'idle', updatedAt: 50, messages: [] })).to.equal(undefined);
     });
 });
 
 describe('buildQaapTurnWatchdogMessage', () => {
-    it('embeds the formatted duration in the standard sentence', () => {
-        expect(buildQaapTurnWatchdogMessage(50 * 60 * 60 * 1000)).to.equal(
-            'Stopped automatically after 50 hours: the turn exceeded the maximum allowed time.',
-        );
+    const limits = { idleMinutes: 15, maxTurnMinutes: 180 };
+
+    it('records a short timeout the failure copy reads as an interruption (Continue, not Retry)', () => {
+        const idle = buildQaapTurnWatchdogMessage('idle', limits);
+        expect(idle).to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
+        const cap = buildQaapTurnWatchdogMessage('max_duration', limits);
+        expect(cap).to.equal('Timed out at the 180-minute task limit. Continue runs it again from your original request.');
+        for (const message of [idle, cap]) {
+            expect(detectAgentFailureKind(message)).to.equal('timeout');
+            expect(isAgentTurnInterruptedError(message)).to.equal(true);
+            expect(describeAgentTurnFailure(message)?.label).to.equal('Timed out');
+        }
     });
 });

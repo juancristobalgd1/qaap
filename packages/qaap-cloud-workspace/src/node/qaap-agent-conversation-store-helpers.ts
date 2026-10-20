@@ -84,11 +84,16 @@ import {
 import type { QaapContextCompaction } from '../common/qaap-agent-conversation';
 import {
     QAAP_MAX_TURN_MINUTES_ENV,
+    QAAP_TURN_IDLE_MINUTES_ENV,
     buildQaapTurnWatchdogMessage,
     findExpiredStreamingTurns,
+    resolveLastTurnActivityMs,
     resolveQaapMaxTurnMinutes,
+    resolveQaapTurnIdleMinutes,
     resolveStreamingSinceMs,
+    type QaapExpiredStreamingTurn,
     type QaapStreamingTurnSnapshot,
+    type QaapTurnWatchdogLimits,
 } from '../common/qaap-agent-turn-watchdog';
 import { collectSubtasksForLeader } from '../common/qaap-team-mailbox';
 
@@ -614,7 +619,7 @@ export function prepareContextCompactionForTurn(
 export interface SweepZombieStreamingTurnsDeps {
     conversations: Map<string, QaapAgentConversation>;
     turnHasPendingApproval(conv: QaapAgentConversation): boolean;
-    forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean;
+    forceStopZombieTurn(turn: QaapExpiredStreamingTurn, limits: QaapTurnWatchdogLimits): boolean;
     getActiveTaskIdsForConversation(conversationId: string): readonly string[];
     interruptStreamingTurnForRestart(conversationId: string, nowMs: number): boolean;
     flushPersist(): void;
@@ -625,30 +630,42 @@ export function sweepZombieStreamingTurns(
     options: { readonly resetSurvivorsToIdle?: boolean } | undefined,
     deps: SweepZombieStreamingTurnsDeps,
 ): boolean {
-    const maxTurnMinutes = resolveQaapMaxTurnMinutes(process.env[QAAP_MAX_TURN_MINUTES_ENV]);
+    const limits: QaapTurnWatchdogLimits = {
+        idleMinutes: resolveQaapTurnIdleMinutes(process.env[QAAP_TURN_IDLE_MINUTES_ENV]),
+        maxTurnMinutes: resolveQaapMaxTurnMinutes(process.env[QAAP_MAX_TURN_MINUTES_ENV]),
+    };
     const streaming: QaapStreamingTurnSnapshot[] = [];
     for (const conv of deps.conversations.values()) {
         if (conv.status !== 'streaming') {
             continue;
         }
         // A turn paused on a pending approval is NOT a zombie — the user is being asked to
-        // approve a tool. Force-failing it at the watchdog with a misleading "exceeded max time"
+        // approve a tool. Pausing it at the watchdog with a misleading timeout
         // message punishes a present user who simply took a while to decide; the task idle-timer
         // already makes the same exception. Pending requests only exist while the runner is up,
         // so a stale post-restart turn (runner empty) is still reset/finalized normally. (REL-5)
-        if (deps.turnHasPendingApproval(conv)) {
-            continue;
-        }
+        // It is still capped (QAAP_APPROVAL_WAIT_MAX_MINUTES) so an abandoned approval cannot hold
+        // a run and its slot forever.
+        const awaitingApproval = deps.turnHasPendingApproval(conv);
         const streamingSinceMs = resolveStreamingSinceMs(conv);
         if (streamingSinceMs !== undefined) {
-            streaming.push({ conversationId: conv.id, streamingSinceMs });
+            streaming.push({
+                conversationId: conv.id,
+                streamingSinceMs,
+                lastActivityMs: resolveLastTurnActivityMs(conv),
+                hasLiveTask: deps.getActiveTaskIdsForConversation(conv.id).length > 0,
+                ...(awaitingApproval ? { awaitingApproval } : {}),
+            });
         }
     }
-    const expiredIds = new Set(findExpiredStreamingTurns(streaming, nowMs, maxTurnMinutes));
+    const expiredById = new Map(findExpiredStreamingTurns(streaming, nowMs, limits).map(turn => [turn.conversationId, turn]));
     let changed = false;
     for (const turn of streaming) {
-        if (expiredIds.has(turn.conversationId)) {
-            if (deps.forceStopZombieTurn(turn.conversationId, nowMs - turn.streamingSinceMs, maxTurnMinutes)) {
+        const expired = expiredById.get(turn.conversationId);
+        // At startup every surviving turn went quiet because the backend was down: the restart,
+        // not the agent's silence, is why it stopped — keep the restart copy for those.
+        if (expired && !(options?.resetSurvivorsToIdle && expired.cause === 'idle')) {
+            if (deps.forceStopZombieTurn(expired, limits)) {
                 changed = true;
             }
         } else if (options?.resetSurvivorsToIdle) {
@@ -672,7 +689,9 @@ export function sweepZombieStreamingTurns(
 export interface ForceStopZombieTurnDeps {
     conversations: Map<string, QaapAgentConversation>;
     taskToConversation: Map<string, { agentMessageId?: string }>;
-    taskRunner: { cancel(taskId: string): void; list(): readonly QaapAgentTask[] };
+    taskRunner: { cancel(taskId: string, options?: { readonly interrupt?: boolean }): void; list(): readonly QaapAgentTask[] };
+    /** See {@link QaapAgentConversationStoreContext.turnWatchdogPausedTaskIds}. */
+    turnWatchdogPausedTaskIds: Set<string>;
     appendRunCancelledTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string): QaapAgentConversation;
     finalizeStreamingAgentMessage(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string): QaapAgentConversation;
     markTurnFailed(conv: QaapAgentConversation, info: { userMessageId: string; agentMessageId: string | undefined; reason: string }): { conv: QaapAgentConversation; agentMessageId?: string };
@@ -680,30 +699,42 @@ export interface ForceStopZombieTurnDeps {
     fire(event: QaapAgentConversationEvent): void;
 }
 
+/**
+ * Pause a turn the watchdog found silent for too long or past the absolute cap: stop its task and
+ * record the shared timeout reason, which reads as "Timed out" and offers Continue rather than Retry.
+ */
 export function forceStopZombieTurn(
-    conversationId: string,
-    elapsedMs: number,
-    maxTurnMinutes: number,
+    turn: QaapExpiredStreamingTurn,
+    limits: QaapTurnWatchdogLimits,
     deps: ForceStopZombieTurnDeps,
 ): boolean {
+    const { conversationId } = turn;
     const conv = deps.conversations.get(conversationId);
     if (!conv || conv.status !== 'streaming') {
         return false;
     }
-    const reason = buildQaapTurnWatchdogMessage(elapsedMs);
+    const reason = buildQaapTurnWatchdogMessage(turn.cause, limits, turn.limitMinutes);
     const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
     const turnRef = lastUser?.taskId ? deps.taskToConversation.get(lastUser.taskId) : undefined;
     if (lastUser?.taskId) {
-        deps.taskRunner.cancel(lastUser.taskId);
-        for (const subtask of collectSubtasksForLeader(lastUser.taskId, deps.taskRunner.list())) {
-            if (subtask.state === 'running') {
-                deps.taskRunner.cancel(subtask.id);
+        // Stop the run as `interrupted`, not `cancelled`: the user did not cancel it, and an
+        // interrupted task offers Continue. The marker tells the synchronous settle below that
+        // the watchdog owns the reason (it skips the user-cancel trace and model fallback).
+        const pausedTaskIds = [lastUser.taskId, ...collectSubtasksForLeader(lastUser.taskId, deps.taskRunner.list())
+            .filter(subtask => subtask.state === 'running')
+            .map(subtask => subtask.id)];
+        for (const taskId of pausedTaskIds) {
+            deps.turnWatchdogPausedTaskIds.add(taskId);
+            try {
+                deps.taskRunner.cancel(taskId, { interrupt: true });
+            } finally {
+                deps.turnWatchdogPausedTaskIds.delete(taskId);
             }
         }
     }
-    // Re-read: cancelling the task above can synchronously settle it through the normal
-    // task-outcome path first (generic "Turn cancelled." reason) — our watchdog message
-    // below is the one that should stick, so it must be layered on top of the latest state.
+    // Re-read: stopping the task above can synchronously settle it through the normal
+    // task-outcome path first — our watchdog message below is the one that should stick,
+    // so it must be layered on top of the latest state.
     const latest = deps.conversations.get(conversationId) ?? conv;
     const agentMessageId = turnRef?.agentMessageId
         ?? (latest.messages[latest.messages.length - 1]?.role === 'agent'
@@ -722,8 +753,9 @@ export function forceStopZombieTurn(
     deps.publishFinalizedAgentMessage(conversationId, next, resolvedAgentMessageId);
     deps.fire({ type: 'updated', conversation: toConversationSummary(next) });
     console.warn(
-        `[qaap-agent-conversation-watchdog] auto-stopped conversation ${conversationId} `
-        + `after ${elapsedMs}ms streaming (max ${maxTurnMinutes}m).`,
+        `[qaap-agent-conversation-watchdog] paused conversation ${conversationId} (${turn.cause}): `
+        + `${turn.elapsedMs}ms streaming, ${turn.idleMs}ms without output `
+        + `(idle limit ${limits.idleMinutes}m, max ${limits.maxTurnMinutes}m).`,
     );
     return true;
 }

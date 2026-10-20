@@ -58,7 +58,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 import { type QaapPreviewVisualValidationResult } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import { type ComposerGitActionDisplayMetadata, } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
-import { QAAP_MAX_TURN_MINUTES_ENV, resolveQaapMaxTurnMinutes, } from '../common/qaap-agent-turn-watchdog';
+import type { QaapExpiredStreamingTurn, QaapTurnWatchdogLimits } from '../common/qaap-agent-turn-watchdog';
 import {
     visualEvidenceDirectory as visualEvidenceDirectoryHelper,
     countVisualRepairAttempts as countVisualRepairAttemptsHelper,
@@ -211,9 +211,11 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     public persistTimer: ReturnType<typeof setTimeout> | undefined;
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public sqliteStore: QaapSqliteStore | undefined;
-    /** Periodic sweep that force-stops turns stuck 'streaming' past {@link QAAP_MAX_TURN_MINUTES_ENV}. */
+    /** Periodic sweep that pauses turns silent past `QAAP_TURN_IDLE_MINUTES` or running past `QAAP_MAX_TURN_MINUTES`. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly turnWatchdogPausedTaskIds = new Set<string>();
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public readonly streamMetrics = new QaapConversationStreamMetricsCollector('server');
     /** Uncompressed wire payloads keyed by `conversationId:messageId` for compression savings. */
@@ -894,8 +896,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /**
-     * Force-stop every 'streaming' conversation whose turn has run at least
-     * {@link resolveQaapMaxTurnMinutes}. Returns whether anything changed, so callers can decide
+     * Pause every 'streaming' conversation whose turn went silent past the inactivity timeout or
+     * ran past the absolute cap (see `findExpiredStreamingTurns`). Returns whether anything changed, so callers can decide
      * whether to persist.
      *
      * @param resetSurvivorsToIdle Also reset still-within-budget 'streaming' conversations to
@@ -915,8 +917,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean {
-        return forceStopZombieTurnExtracted(this, conversationId, elapsedMs, maxTurnMinutes);
+    public forceStopZombieTurn(turn: QaapExpiredStreamingTurn, limits: QaapTurnWatchdogLimits): boolean {
+        return forceStopZombieTurnExtracted(this, turn, limits);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

@@ -43,6 +43,8 @@ export function maybeRetryTurnWithFallbackModelExtracted(ctx: QaapAgentConversat
         // ("Gemini 3.5 Flash (High)" → "(Low)"), so silent fallback looks like the
         // product changed effort without the user asking. Surface the quota dialog
         // and let them pick another model/effort in the composer.
+        // Only `failed`: a run the no-output timer stopped ends `interrupted` — the model went
+        // quiet rather than failing, so the user gets Continue instead of a silent model swap.
         const retryableFailedState = task.state === 'failed'
             && (agentTurnHasRetryableEmptyOutput(agentMessage)
                 || agentTurnHasRetryableModelFailure(agentMessage));
