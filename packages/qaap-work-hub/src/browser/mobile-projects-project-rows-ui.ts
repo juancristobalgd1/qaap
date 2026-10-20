@@ -30,6 +30,9 @@ export interface MobileProjectsProjectRowsHost {
     activeTasks: MobileProjectsActiveTasks | undefined;
     projectsService: MobileProjectsService;
     delegate: { onProjectOpen(project: MobileProjectEntry): void };
+    /** Latest project cards and conversation summaries: a row kept across refreshes resolves them by id. */
+    projects?: readonly MobileProjectEntry[];
+    conversations?: { findSummaryById(id: string): QaapAgentConversationSummaryDTO | undefined };
 
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;

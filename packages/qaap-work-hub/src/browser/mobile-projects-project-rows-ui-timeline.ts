@@ -77,6 +77,8 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     row.className = 'theia-mobile-projects-task-row';
     if (compact) {
         row.classList.add('theia-mod-sidebar-compact');
+        // Read by the sessions sidebar live patch, which cannot update the "+N" badge in place.
+        row.dataset.qaapFailedDuplicates = String(failedDuplicateCount);
     }
     if (selection) {
         row.classList.add('theia-mod-clear-failed-select');
@@ -279,6 +281,12 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
             ctx.host.conversationOpenUi.prefetchConversationDocument(summary.id);
         }, { passive: true });
     }
+    // A row survives refreshes whose markup did not change (the sessions sidebar keeps the live
+    // DOM), so handlers act on the latest project and summary for its ids, not on the objects of
+    // the render that created it.
+    const latestProject = (): MobileProjectEntry => ctx.host.projects?.find(candidate => candidate.id === project.id) ?? project;
+    const latestSummary = (current: QaapAgentConversationSummaryDTO): QaapAgentConversationSummaryDTO =>
+        ctx.host.conversations?.findSummaryById(current.id) ?? current;
     item.addEventListener('click', ev => {
         ev.stopPropagation();
         if (selection) {
@@ -287,9 +295,9 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
         }
         options?.onActivate?.();
         if (summary) {
-            void ctx.host.conversationOpenUi.openConversationSummary(project, summary);
+            void ctx.host.conversationOpenUi.openConversationSummary(latestProject(), latestSummary(summary));
         } else {
-            void ctx.host.conversationOpenUi.openTaskInAgent(project, task);
+            void ctx.host.conversationOpenUi.openTaskInAgent(latestProject(), task);
         }
     });
     row.append(item);
@@ -349,7 +357,7 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
             archiveBtn.append(archiveIcon);
             archiveBtn.addEventListener('click', ev => {
                 ev.stopPropagation();
-                void ctx.host.onArchiveConversation(project, summary);
+                void ctx.host.onArchiveConversation(latestProject(), latestSummary(summary));
             });
             row.append(archiveBtn);
         }
@@ -364,9 +372,15 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
         icon.className = 'codicon codicon-kebab-vertical';
         icon.setAttribute('aria-hidden', 'true');
         menuBtn.append(icon);
-        const menu = ctx.host.cardMenuUi.buildConversationMenu(project, summary);
+        let menu = ctx.host.cardMenuUi.buildConversationMenu(project, summary);
         menuBtn.addEventListener('click', ev => {
             ev.stopPropagation();
+            if (menu.hidden) {
+                // Items and their actions follow the conversation's latest state (priority, pause, PR…).
+                const fresh = ctx.host.cardMenuUi.buildConversationMenu(latestProject(), latestSummary(summary));
+                menu.replaceWith(fresh);
+                menu = fresh;
+            }
             ctx.host.cardMenuUi.toggleCardMenu(row, menu, menuBtn);
         });
         row.append(menuBtn, menu);
@@ -392,7 +406,7 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     // kebab → Delete path remains on desktop and as a fallback.
     if (summary && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-')) {
         attachSwipeToDelete(row, {
-            onDelete: () => { void ctx.host.onDeleteConversation(project, summary); },
+            onDelete: () => { void ctx.host.onDeleteConversation(latestProject(), latestSummary(summary)); },
         });
     }
 

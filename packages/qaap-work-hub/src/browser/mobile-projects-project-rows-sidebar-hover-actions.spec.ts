@@ -90,7 +90,8 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
     }
 
     function createUi(options?: {
-        readonly onArchive?: () => void;
+        readonly onArchive?: (summary: QaapAgentConversationSummaryDTO) => void;
+        readonly latestSummary?: QaapAgentConversationSummaryDTO;
     }): MobileProjectsProjectRowsUi {
         const host = {
             homeMode: false,
@@ -117,9 +118,12 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
                 openTaskInAgent: async () => undefined,
             },
             onRetryConversation: async () => undefined,
-            onArchiveConversation: async () => {
-                options?.onArchive?.();
+            onArchiveConversation: async (_project: MobileProjectEntry, archived: QaapAgentConversationSummaryDTO) => {
+                options?.onArchive?.(archived);
             },
+            conversations: options?.latestSummary
+                ? { findSummaryById: (id: string) => id === options.latestSummary!.id ? options.latestSummary : undefined }
+                : undefined,
             onSetConversationPriority: async (_summary: QaapAgentConversationSummaryDTO, _priority: boolean) => undefined,
             onDeleteConversation: async () => undefined,
             openTaskInAgent: async () => undefined,
@@ -178,6 +182,18 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         const executedTask = { ...task, id: executedSummary.id, state: 'failed' as const };
         const executedRow = ui.createTaskItem(project, executedTask, undefined, executedSummary, new Set(), { compact: true });
         expect(executedRow.querySelector('.theia-mobile-projects-conversation-retry-btn')).to.equal(null);
+    });
+
+    it('acts on the latest summary when the row outlived the render that created it', () => {
+        const rendered = summary({ title: 'Before rename' });
+        const latest = summary({ title: 'After rename', priority: true });
+        const archived: QaapAgentConversationSummaryDTO[] = [];
+        const row = createUi({ onArchive: value => archived.push(value), latestSummary: latest })
+            .createTaskItem(project, task, undefined, rendered, undefined, { compact: true });
+
+        row.querySelector<HTMLButtonElement>('.theia-mobile-projects-conversation-archive-btn')!.click();
+
+        expect(archived).to.deep.equal([latest]);
     });
 
     it('shows a compact failure reason only when the latest message came from the agent', () => {

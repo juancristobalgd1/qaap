@@ -42,6 +42,8 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
         readonly visualStatusId: string;
         /** Unread agent reply: shown as a dot next to the status glyph, so it must repaint the row. */
         readonly unread?: boolean;
+        /** Collapsed older failed runs: the row's "+N" badge. */
+        readonly failedDuplicateCount?: number;
     },
 ): string {
     const title = conversation.status === 'streaming' ? '' : conversation.title;
@@ -58,6 +60,7 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
         options.unread ? 1 : 0,
         turnCurrent,
         turnTotal,
+        options.failedDuplicateCount ?? 0,
         title,
     ].join(':');
 }
