@@ -14,9 +14,14 @@ import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 /** Records cancel() calls instead of touching real child processes or ~/.qaap/agent-tasks. */
 class TestTaskRunner extends QaapAgentTaskRunner {
     readonly cancelledIds: string[] = [];
+    readonly cancelOptions: Array<{ readonly interrupt?: boolean } | undefined> = [];
+    /** Runs inside cancel(), where the real runner settles the task synchronously. */
+    onCancel?: (id: string) => void;
 
-    override cancel(id: string): QaapAgentTask | undefined {
+    override cancel(id: string, options?: { readonly interrupt?: boolean }): QaapAgentTask | undefined {
         this.cancelledIds.push(id);
+        this.cancelOptions.push(options);
+        this.onCancel?.(id);
         return undefined;
     }
 
@@ -118,7 +123,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         const settled = store.get('zombie')!;
         expect(settled.status).to.equal('failed');
         const agentMessage = settled.messages.find(m => m.role === 'agent')!;
-        expect(agentMessage.error).to.equal('Timed out at the 180-minute task limit. Continue to pick up where it left off.');
+        expect(agentMessage.error).to.equal('Timed out at the 180-minute task limit. Continue runs it again from your original request.');
     });
 
     it('keeps a 46-minute turn that is still streaming output alive', () => {
@@ -143,8 +148,10 @@ describe('QaapAgentConversationStore turn watchdog', () => {
 
         expect(store.sweep(now)).to.be.true;
         expect(runner.cancelledIds).to.deep.equal(['quiet-task']);
+        // The task ends `interrupted` (Continue), not `cancelled` as a user stop would.
+        expect(runner.cancelOptions).to.deep.equal([{ interrupt: true }]);
         const agentMessage = store.get('quiet')!.messages.find(m => m.role === 'agent')!;
-        expect(agentMessage.error).to.equal('Timed out after 15 minutes without output. Continue to pick up where it left off.');
+        expect(agentMessage.error).to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
     });
 
     it('leaves inactivity of a turn whose task is still live to the runner\'s own output timer', () => {
@@ -187,6 +194,50 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         expect(changed).to.be.false;
         expect(runner.cancelledIds).to.deep.equal([]);
         expect(store.get('paused')!.status).to.equal('streaming');
+    });
+
+    it('marks the task as paused by the watchdog while its settle runs, and the timeout reason sticks', async () => {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('settling', now - 30 * MINUTE, now - 16 * MINUTE));
+        const markedDuringCancel: boolean[] = [];
+        let settle: Promise<unknown> | undefined;
+        runner.onCancel = id => {
+            const paused = (store as unknown as { turnWatchdogPausedTaskIds: Set<string> }).turnWatchdogPausedTaskIds;
+            markedDuringCancel.push(paused.has(id));
+            settle = store.applyTaskOutcome(
+                { conversationId: 'settling', userMessageId: 'settling-u1', turnAgentId: 'qaiq', agentMessageId: 'settling-a1' },
+                { id, title: 'x', command: 'do the thing', cwd: '/tmp/project', state: 'interrupted', createdAt: now - 30 * MINUTE } as QaapAgentTask,
+            );
+        };
+
+        expect(store.sweep(now)).to.be.true;
+        expect(await settle).to.equal('blocked');
+
+        expect(markedDuringCancel).to.deep.equal([true]);
+        expect((store as unknown as { turnWatchdogPausedTaskIds: Set<string> }).turnWatchdogPausedTaskIds.size).to.equal(0);
+        const settled = store.get('settling')!;
+        expect(settled.status).to.equal('failed');
+        expect(settled.messages.find(m => m.role === 'agent')!.error)
+            .to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
+    });
+
+    it('still pauses a turn left waiting on an approval for more than 24 hours', () => {
+        delete process.env[QAAP_MAX_TURN_MINUTES_ENV];
+        const runner = new TestTaskRunner();
+        (runner as unknown as { pendingQaiqControlRequests: Map<string, unknown[]> })
+            .pendingQaiqControlRequests.set('abandoned-task', [{ id: 'req' }]);
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('abandoned', now - 25 * 60 * MINUTE));
+
+        expect(store.sweep(now)).to.be.true;
+        expect(runner.cancelledIds).to.deep.equal(['abandoned-task']);
+        expect(store.get('abandoned')!.messages.find(m => m.role === 'agent')!.error)
+            .to.match(/^Timed out at the 1440-minute task limit\./);
     });
 
     it('leaves a conversation streaming within the max duration untouched', () => {

@@ -90,6 +90,23 @@ export function enforceAgentTaskChangeScopeLimitExtracted(
     return true;
 }
 
+/** A stream-json housekeeping record (`api_retry`, hook, status): the CLI is alive, the agent is not working. */
+const AGENT_SYSTEM_RECORD_LINE = /^\{\s*"type"\s*:\s*"system"/;
+
+/**
+ * Whether an output chunk is agent progress for the no-output timer. Chunks made only of
+ * stream-json `system` records do not count: a CLI looping on provider retries is not working.
+ * Anything else counts — including a line split across chunks — so plain-text agents and
+ * unknown formats keep the old "any output" behaviour.
+ */
+export function isAgentProgressChunk(chunk: unknown): boolean {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+    return text.split('\n').some(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !AGENT_SYSTEM_RECORD_LINE.test(trimmed);
+    });
+}
+
 /** What the no-output timer did when it fired: see {@link expireIdleAgentTask}. */
 export type QaapIdleAgentTaskExpiry = 'not-running' | 'waiting-for-user' | 'interrupted';
 
@@ -112,9 +129,16 @@ export function expireIdleAgentTask(
     if (ctx.pendingQaiqControlRequests.get(taskId)?.length) {
         return 'waiting-for-user';
     }
-    logStream.write(`\n[qaap] task timed out after ${Math.round(IDLE_TASK_TIMEOUT_MS / 1000)}s without output.\n`);
-    ctx.killAgentProcessTree(child);
-    ctx.finishTask(taskId, 'interrupted', undefined);
+    // Settle only once the line is flushed: the settle reads the log right away to build the turn
+    // reason, and a read racing the buffered write would miss the timeout line. The process is
+    // killed in the same callback, so its `close` cannot settle the task first as `failed`.
+    logStream.write(`\n[qaap] task timed out after ${Math.round(IDLE_TASK_TIMEOUT_MS / 1000)}s without output.\n`, () => {
+        if (ctx.tasks.get(taskId)?.state !== 'running') {
+            return;
+        }
+        ctx.killAgentProcessTree(child);
+        ctx.finishTask(taskId, 'interrupted', undefined);
+    });
     return 'interrupted';
 }
 
@@ -638,7 +662,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
         };
         child.stdout?.on('data', chunk => {
-            bumpIdleTimer();
+            if (isAgentProgressChunk(chunk)) {
+                bumpIdleTimer();
+            }
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);

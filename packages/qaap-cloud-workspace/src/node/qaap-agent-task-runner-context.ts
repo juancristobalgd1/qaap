@@ -45,6 +45,7 @@ import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentHookService } from './qaap-agent-hook-service';
 import type { QaapAgentStdinPrompt } from './qaap-agent-task-runner-utils';
 import type { AgentCandidate, QaapGenericCommandResult } from './qaap-agent-task-runner-constants';
+import type { QaapAgentTaskCancelOptions } from './qaap-agent-task-runner-streaming2';
 
 /** Result of {@link QaapAgentTaskRunnerContext.buildAgentCommand}. */
 export interface QaapAgentCommandBuildResult {
@@ -179,7 +180,7 @@ export interface QaapAgentTaskRunnerContext {
     drainQueuedTasks(): void;
     list(): QaapAgentTask[];
     create(request: QaapCreateAgentTaskRequest, ownerLogin?: string, options?: import('./qaap-agent-task-spawn-gate').QaapAgentTaskCreateOptions): QaapAgentTask;
-    cancel(id: string): QaapAgentTask | undefined;
+    cancel(id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined;
 
     // ─── Prompt / command construction ──────────────────────────────────────
     resolveAgentModelForRequest(request: QaapCreateAgentTaskRequest, prompt: string, ownerLogin?: string): QaapCreateAgentTaskQaiqModel | undefined;

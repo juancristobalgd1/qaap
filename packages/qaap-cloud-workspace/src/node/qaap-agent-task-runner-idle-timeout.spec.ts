@@ -10,7 +10,7 @@ import type { QaapAgentTask, QaapAgentTaskState } from '../common/qaap-agent-tas
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { resumeExtracted } from './qaap-agent-task-runner-streaming2';
 import { notifyCompletionExtracted } from './qaap-agent-task-runner-tool-pills2';
-import { expireIdleAgentTask } from './qaap-agent-task-runner-timeline2';
+import { expireIdleAgentTask, isAgentProgressChunk } from './qaap-agent-task-runner-timeline2';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -55,23 +55,34 @@ function idleHarness(state: QaapAgentTaskState, pendingApprovals = 0): {
 
 const child = { pid: 42 } as unknown as ChildProcess;
 
+/** A log stream that flushes each write before calling back, like `fs.WriteStream`. */
+function flushingLog(log: string[]): any {
+    return {
+        write: (chunk: string, callback?: () => void) => {
+            log.push(chunk);
+            callback?.();
+            return true;
+        },
+    };
+}
+
 describe('agent task runner no-output timeout', () => {
     it('stops a silent run as interrupted, not failed, with the log line the turn reason reads', () => {
         const { ctx, log, killed } = idleHarness('running');
 
-        const outcome = expireIdleAgentTask(ctx, 'quiet-task', child, { write: (chunk: string) => log.push(chunk) > 0 });
+        const outcome = expireIdleAgentTask(ctx, 'quiet-task', child, flushingLog(log));
 
         expect(outcome).to.equal('interrupted');
         expect(killed).to.deep.equal([child]);
         expect(ctx.tasks.get('quiet-task').state).to.equal('interrupted');
         expect(ctx.tasks.get('quiet-task').exitCode).to.equal(undefined);
         expect(resolveAgentTurnFailureMessage(log.join(''), { state: 'interrupted' }))
-            .to.equal('Timed out after 20 minutes without output. Continue to pick up where it left off.');
+            .to.equal('Timed out after 20 minutes without output. Continue runs it again from your original request.');
     });
 
     it('Continue resumes the timed-out task from its durable request', () => {
         const { ctx, created } = idleHarness('running');
-        expireIdleAgentTask(ctx, 'quiet-task', child, { write: () => true });
+        expireIdleAgentTask(ctx, 'quiet-task', child, flushingLog([]));
 
         const resumed = resumeExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'quiet-task');
 
@@ -80,10 +91,27 @@ describe('agent task runner no-output timeout', () => {
         expect(created[0]).to.deep.include({ prompt: 'add tests for the store', cwd: '/workspace/repo', resumedFromTaskId: 'quiet-task' });
     });
 
+    it('settles only after the timeout line is flushed, so the settle reads it', () => {
+        const { ctx, killed } = idleHarness('running');
+        const pending: Array<() => void> = [];
+        const log: string[] = [];
+
+        expect(expireIdleAgentTask(ctx, 'quiet-task', child, {
+            write: (chunk: string, callback: () => void) => { log.push(chunk); pending.push(callback); return true; },
+        } as any)).to.equal('interrupted');
+        expect(ctx.tasks.get('quiet-task').state).to.equal('running');
+        expect(killed).to.deep.equal([]);
+
+        pending.forEach(flush => flush());
+        expect(ctx.tasks.get('quiet-task').state).to.equal('interrupted');
+        expect(killed).to.deep.equal([child]);
+        expect(log.join('')).to.contain('[qaap] task timed out after 1200s without output.');
+    });
+
     it('keeps a run that is waiting on a permission approval', () => {
         const { ctx, killed } = idleHarness('running', 1);
 
-        expect(expireIdleAgentTask(ctx, 'quiet-task', child, { write: () => true })).to.equal('waiting-for-user');
+        expect(expireIdleAgentTask(ctx, 'quiet-task', child, flushingLog([]))).to.equal('waiting-for-user');
         expect(killed).to.deep.equal([]);
         expect(ctx.tasks.get('quiet-task').state).to.equal('running');
     });
@@ -91,7 +119,7 @@ describe('agent task runner no-output timeout', () => {
     it('leaves a task that already settled alone', () => {
         const { ctx, killed } = idleHarness('completed');
 
-        expect(expireIdleAgentTask(ctx, 'quiet-task', child, { write: () => true })).to.equal('not-running');
+        expect(expireIdleAgentTask(ctx, 'quiet-task', child, flushingLog([]))).to.equal('not-running');
         expect(killed).to.deep.equal([]);
         expect(ctx.tasks.get('quiet-task').state).to.equal('completed');
     });
@@ -105,6 +133,17 @@ describe('agent task runner no-output timeout', () => {
 
         expect(sent).to.have.length(1);
         expect(sent[0].title).to.equal('Task paused');
-        expect(sent[0].body).to.equal('Add tests timed out without output. Continue to pick up where it left off.');
+        expect(sent[0].body).to.equal('Add tests timed out without output. Continue runs it again from your original request.');
+    });
+
+    it('counts agent events as progress, not provider retries or hook records', () => {
+        const retry = '{"type":"system","subtype":"api_retry","attempt":1,"max_retries":10,"retry_delay_ms":549.3,"error_status":429,"error":"rate_limit","session_id":"s1"}\n';
+        const hook = '{"type":"system","subtype":"hook_response","hook_name":"SessionStart:startup","exit_code":0,"session_id":"s1"}\n';
+        expect(isAgentProgressChunk(Buffer.from(retry))).to.equal(false);
+        expect(isAgentProgressChunk(`${retry}${hook}\n`)).to.equal(false);
+        expect(isAgentProgressChunk(`${retry}{"type":"assistant","message":{"content":[{"type":"text","text":"Running the tests"}]}}\n`)).to.equal(true);
+        expect(isAgentProgressChunk('npm test\n> vitest run\n')).to.equal(true);
+        // A record split across chunks still counts: the timer errs on keeping the run alive.
+        expect(isAgentProgressChunk('rate_limit","session_id":"s1"}\n')).to.equal(true);
     });
 });

@@ -79,9 +79,17 @@ describe('findExpiredStreamingTurns', () => {
             { conversationId: 'never-spoke', streamingSinceMs: now - 16 * MINUTE },
         ], now, limits);
         expect(expired).to.deep.equal([
-            { conversationId: 'silent', cause: 'idle', elapsedMs: 40 * MINUTE, idleMs: 15 * MINUTE },
-            { conversationId: 'never-spoke', cause: 'idle', elapsedMs: 16 * MINUTE, idleMs: 16 * MINUTE },
+            { conversationId: 'silent', cause: 'idle', elapsedMs: 40 * MINUTE, idleMs: 15 * MINUTE, limitMinutes: 15 },
+            { conversationId: 'never-spoke', cause: 'idle', elapsedMs: 16 * MINUTE, idleMs: 16 * MINUTE, limitMinutes: 15 },
         ]);
+    });
+
+    it('spares a turn waiting on an approval up to the 24-hour approval cap, then pauses it', () => {
+        const expired = findExpiredStreamingTurns([
+            { conversationId: 'deciding', streamingSinceMs: now - 200 * MINUTE, awaitingApproval: true },
+            { conversationId: 'abandoned', streamingSinceMs: now - 24 * 60 * MINUTE, awaitingApproval: true },
+        ], now, limits);
+        expect(expired.map(turn => [turn.conversationId, turn.cause, turn.limitMinutes])).to.deep.equal([['abandoned', 'max_duration', 24 * 60]]);
     });
 
     it('leaves inactivity of a live task to the runner, but still applies the absolute cap', () => {
@@ -176,9 +184,9 @@ describe('buildQaapTurnWatchdogMessage', () => {
 
     it('records a short timeout the failure copy reads as an interruption (Continue, not Retry)', () => {
         const idle = buildQaapTurnWatchdogMessage('idle', limits);
-        expect(idle).to.equal('Timed out after 15 minutes without output. Continue to pick up where it left off.');
+        expect(idle).to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
         const cap = buildQaapTurnWatchdogMessage('max_duration', limits);
-        expect(cap).to.equal('Timed out at the 180-minute task limit. Continue to pick up where it left off.');
+        expect(cap).to.equal('Timed out at the 180-minute task limit. Continue runs it again from your original request.');
         for (const message of [idle, cap]) {
             expect(detectAgentFailureKind(message)).to.equal('timeout');
             expect(isAgentTurnInterruptedError(message)).to.equal(true);

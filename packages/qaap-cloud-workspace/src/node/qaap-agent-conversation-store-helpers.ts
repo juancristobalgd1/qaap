@@ -644,9 +644,9 @@ export function sweepZombieStreamingTurns(
         // message punishes a present user who simply took a while to decide; the task idle-timer
         // already makes the same exception. Pending requests only exist while the runner is up,
         // so a stale post-restart turn (runner empty) is still reset/finalized normally. (REL-5)
-        if (deps.turnHasPendingApproval(conv)) {
-            continue;
-        }
+        // It is still capped (QAAP_APPROVAL_WAIT_MAX_MINUTES) so an abandoned approval cannot hold
+        // a run and its slot forever.
+        const awaitingApproval = deps.turnHasPendingApproval(conv);
         const streamingSinceMs = resolveStreamingSinceMs(conv);
         if (streamingSinceMs !== undefined) {
             streaming.push({
@@ -654,6 +654,7 @@ export function sweepZombieStreamingTurns(
                 streamingSinceMs,
                 lastActivityMs: resolveLastTurnActivityMs(conv),
                 hasLiveTask: deps.getActiveTaskIdsForConversation(conv.id).length > 0,
+                ...(awaitingApproval ? { awaitingApproval } : {}),
             });
         }
     }
@@ -688,7 +689,9 @@ export function sweepZombieStreamingTurns(
 export interface ForceStopZombieTurnDeps {
     conversations: Map<string, QaapAgentConversation>;
     taskToConversation: Map<string, { agentMessageId?: string }>;
-    taskRunner: { cancel(taskId: string): void; list(): readonly QaapAgentTask[] };
+    taskRunner: { cancel(taskId: string, options?: { readonly interrupt?: boolean }): void; list(): readonly QaapAgentTask[] };
+    /** See {@link QaapAgentConversationStoreContext.turnWatchdogPausedTaskIds}. */
+    turnWatchdogPausedTaskIds: Set<string>;
     appendRunCancelledTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string): QaapAgentConversation;
     finalizeStreamingAgentMessage(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string): QaapAgentConversation;
     markTurnFailed(conv: QaapAgentConversation, info: { userMessageId: string; agentMessageId: string | undefined; reason: string }): { conv: QaapAgentConversation; agentMessageId?: string };
@@ -710,20 +713,28 @@ export function forceStopZombieTurn(
     if (!conv || conv.status !== 'streaming') {
         return false;
     }
-    const reason = buildQaapTurnWatchdogMessage(turn.cause, limits);
+    const reason = buildQaapTurnWatchdogMessage(turn.cause, limits, turn.limitMinutes);
     const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
     const turnRef = lastUser?.taskId ? deps.taskToConversation.get(lastUser.taskId) : undefined;
     if (lastUser?.taskId) {
-        deps.taskRunner.cancel(lastUser.taskId);
-        for (const subtask of collectSubtasksForLeader(lastUser.taskId, deps.taskRunner.list())) {
-            if (subtask.state === 'running') {
-                deps.taskRunner.cancel(subtask.id);
+        // Stop the run as `interrupted`, not `cancelled`: the user did not cancel it, and an
+        // interrupted task offers Continue. The marker tells the synchronous settle below that
+        // the watchdog owns the reason (it skips the user-cancel trace and model fallback).
+        const pausedTaskIds = [lastUser.taskId, ...collectSubtasksForLeader(lastUser.taskId, deps.taskRunner.list())
+            .filter(subtask => subtask.state === 'running')
+            .map(subtask => subtask.id)];
+        for (const taskId of pausedTaskIds) {
+            deps.turnWatchdogPausedTaskIds.add(taskId);
+            try {
+                deps.taskRunner.cancel(taskId, { interrupt: true });
+            } finally {
+                deps.turnWatchdogPausedTaskIds.delete(taskId);
             }
         }
     }
-    // Re-read: cancelling the task above can synchronously settle it through the normal
-    // task-outcome path first (generic "Turn cancelled." reason) — our watchdog message
-    // below is the one that should stick, so it must be layered on top of the latest state.
+    // Re-read: stopping the task above can synchronously settle it through the normal
+    // task-outcome path first — our watchdog message below is the one that should stick,
+    // so it must be layered on top of the latest state.
     const latest = deps.conversations.get(conversationId) ?? conv;
     const agentMessageId = turnRef?.agentMessageId
         ?? (latest.messages[latest.messages.length - 1]?.role === 'agent'

@@ -87,6 +87,8 @@ export interface QaapAgentConversationStoreContext {
     persistTimer: ReturnType<typeof setTimeout> | undefined;
     sqliteStore: QaapSqliteStore | undefined;
     turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
+    /** Tasks the turn watchdog is stopping as `interrupted`; their settle keeps the watchdog's reason. */
+    readonly turnWatchdogPausedTaskIds: Set<string>;
     persistFailureLoggedAtMs: number;
     persistChain: Promise<void>;
 

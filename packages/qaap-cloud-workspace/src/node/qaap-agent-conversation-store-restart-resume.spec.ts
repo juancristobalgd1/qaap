@@ -143,6 +143,22 @@ describe('QaapAgentConversationStore restart auto-resume', () => {
         expect(runner.created).to.have.length(0);
     });
 
+    it('does not relaunch a turn already past the absolute cap; the startup sweep records the cap reason', async () => {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('over-cap', now - 4 * 60 * 60 * 1000)); // 4 h > default 180 min
+
+        const handled = await store.resume('over-cap', now);
+
+        expect(handled).to.be.false;
+        expect(runner.created).to.have.length(0);
+        expect(store.sweepReset(now)).to.be.true;
+        const agentMessage = store.get('over-cap')!.messages.find(m => m.role === 'agent')!;
+        expect(agentMessage.error).to.match(/^Timed out at the 180-minute task limit\./);
+    });
+
     it('does NOT auto-resume a turn paused on a human decision (request-approval)', async () => {
         const runner = new TestTaskRunner();
         const store = new TestConversationStore();

@@ -215,6 +215,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly turnWatchdogPausedTaskIds = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public readonly streamMetrics = new QaapConversationStreamMetricsCollector('server');
     /** Uncompressed wire payloads keyed by `conversationId:messageId` for compression savings. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

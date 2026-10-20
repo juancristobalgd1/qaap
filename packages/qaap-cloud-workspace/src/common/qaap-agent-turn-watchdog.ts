@@ -27,6 +27,12 @@ export const DEFAULT_QAAP_TURN_IDLE_MINUTES = 15;
 /** Floor for the inactivity timeout: a slow tool call can legitimately stay quiet for minutes. */
 export const MIN_QAAP_TURN_IDLE_MINUTES = 5;
 
+/**
+ * A turn paused on a pending approval is waiting for the user, so neither the inactivity rule nor
+ * the regular cap applies — but it is not kept forever: after this long the run is paused too.
+ */
+export const QAAP_APPROVAL_WAIT_MAX_MINUTES = 24 * 60;
+
 function resolveMinutesFromEnv(rawEnvValue: string | undefined, fallback: number, floor: number): number {
     const trimmed = rawEnvValue?.trim();
     if (!trimmed) {
@@ -63,6 +69,8 @@ export interface QaapTurnWatchdogLimits {
     readonly idleMinutes: number;
     /** Pause any turn that has been running this long, even with progress. */
     readonly maxTurnMinutes: number;
+    /** Cap for a turn waiting on an approval (default {@link QAAP_APPROVAL_WAIT_MAX_MINUTES}). */
+    readonly approvalWaitMinutes?: number;
 }
 
 /** One `'streaming'` conversation as seen by a watchdog sweep. */
@@ -78,6 +86,8 @@ export interface QaapStreamingTurnSnapshot {
      * the absolute cap; the inactivity rule here catches turns whose process is gone.
      */
     readonly hasLiveTask?: boolean;
+    /** The turn is paused on a pending approval: only the approval-wait cap applies. */
+    readonly awaitingApproval?: boolean;
 }
 
 /** A turn the watchdog must pause, and why. */
@@ -88,6 +98,8 @@ export interface QaapExpiredStreamingTurn {
     readonly elapsedMs: number;
     /** How long the turn has been silent. */
     readonly idleMs: number;
+    /** The limit (minutes) the turn hit, named in the recorded reason. */
+    readonly limitMinutes: number;
 }
 
 /**
@@ -101,18 +113,38 @@ export function findExpiredStreamingTurns(
     limits: QaapTurnWatchdogLimits,
 ): QaapExpiredStreamingTurn[] {
     const maxMs = Math.max(MIN_QAAP_MAX_TURN_MINUTES, limits.maxTurnMinutes) * 60 * 1000;
-    const idleLimitMs = Math.max(MIN_QAAP_TURN_IDLE_MINUTES, limits.idleMinutes) * 60 * 1000;
+    const idleMinutes = Math.max(MIN_QAAP_TURN_IDLE_MINUTES, limits.idleMinutes);
+    const idleLimitMs = idleMinutes * 60 * 1000;
+    const approvalWaitMinutes = Math.max(limits.maxTurnMinutes, limits.approvalWaitMinutes ?? QAAP_APPROVAL_WAIT_MAX_MINUTES);
     const expired: QaapExpiredStreamingTurn[] = [];
     for (const turn of streaming) {
         const elapsedMs = nowMs - turn.streamingSinceMs;
         const idleMs = nowMs - Math.max(turn.streamingSinceMs, turn.lastActivityMs ?? turn.streamingSinceMs);
-        if (elapsedMs >= maxMs) {
-            expired.push({ conversationId: turn.conversationId, cause: 'max_duration', elapsedMs, idleMs });
+        const base = { conversationId: turn.conversationId, elapsedMs, idleMs };
+        if (turn.awaitingApproval) {
+            if (elapsedMs >= approvalWaitMinutes * 60 * 1000) {
+                expired.push({ ...base, cause: 'max_duration', limitMinutes: approvalWaitMinutes });
+            }
+        } else if (elapsedMs >= maxMs) {
+            expired.push({ ...base, cause: 'max_duration', limitMinutes: Math.max(MIN_QAAP_MAX_TURN_MINUTES, limits.maxTurnMinutes) });
         } else if (!turn.hasLiveTask && idleMs >= idleLimitMs) {
-            expired.push({ conversationId: turn.conversationId, cause: 'idle', elapsedMs, idleMs });
+            expired.push({ ...base, cause: 'idle', limitMinutes: idleMinutes });
         }
     }
     return expired;
+}
+
+/**
+ * True when a `'streaming'` turn has already run past the absolute cap. Restart auto-resume checks
+ * this so it never relaunches a turn the watchdog would pause on its next sweep.
+ */
+export function hasStreamingTurnReachedCap(
+    conv: Pick<QaapAgentConversation, 'status' | 'messages' | 'updatedAt'>,
+    nowMs: number,
+    maxTurnMinutes: number,
+): boolean {
+    const since = resolveStreamingSinceMs(conv);
+    return since !== undefined && nowMs - since >= Math.max(MIN_QAAP_MAX_TURN_MINUTES, maxTurnMinutes) * 60 * 1000;
 }
 
 /**
@@ -139,6 +171,12 @@ export function resolveStreamingSinceMs(
 /**
  * Last time a streaming turn made progress. Every streamed event (text, tool call, trace)
  * rewrites the conversation's `updatedAt`, which is persisted, so this survives restarts.
+ *
+ * This is deliberately coarse: `updatedAt` also moves for non-agent writes (usage, phase, title).
+ * It only drives the idle rule for turns with no live task (orphans, where nothing writes any
+ * more). While a task is live the runner's no-output timer decides, and that one counts only
+ * agent output — stream-json `system` records such as provider retries do not reset it
+ * (`isAgentProgressChunk`).
  */
 export function resolveLastTurnActivityMs(
     conv: Pick<QaapAgentConversation, 'status' | 'messages' | 'updatedAt'>,
@@ -157,6 +195,10 @@ export function resolveLastTurnActivityMs(
  * locale; the frontend re-localizes it from the stored English form. It names the configured
  * limit, not the measured time: a turn found hours after it went quiet still reads "15 minutes".
  */
-export function buildQaapTurnWatchdogMessage(cause: QaapAgentTurnTimeoutCause, limits: QaapTurnWatchdogLimits): string {
-    return localizeAgentTurnTimeoutMessage(cause, cause === 'idle' ? limits.idleMinutes : limits.maxTurnMinutes);
+export function buildQaapTurnWatchdogMessage(
+    cause: QaapAgentTurnTimeoutCause,
+    limits: QaapTurnWatchdogLimits,
+    limitMinutes?: number,
+): string {
+    return localizeAgentTurnTimeoutMessage(cause, limitMinutes ?? (cause === 'idle' ? limits.idleMinutes : limits.maxTurnMinutes));
 }
