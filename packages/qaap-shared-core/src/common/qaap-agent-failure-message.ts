@@ -5,12 +5,12 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import {
-    detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
 } from './qaap-agent-auth-login';
 import { localizeHostedMissingCodingAgentMessage, readQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import { extractAgentTurnError } from './qaap-research-agent-log';
 import { isAgentToolResultFailure, isTranscriptErrorOutput } from './qaap-transcript-content-display';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
@@ -38,6 +38,8 @@ const QUOTA_PATTERNS: readonly RegExp[] = [
     /\bfree[_\s-]?credits?\b/i,
     /\bcredits?\s+(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
     /\bout\s+of\s+credits?\b/i,
+    // Hugging Face router: "You have depleted your monthly included credits."
+    /\bdepleted\s+your\b[^.\n]{0,40}\bcredits?\b/i,
     /\bbilling\b/i,
     /\bresource[_\s-]?exhausted\b/i,
 ];
@@ -66,9 +68,12 @@ const TOOL_UNSUPPORTED_PATTERNS: readonly RegExp[] = [
     /\bfunction[_\s-]?calling\s+(?:is\s+)?not\s+supported\b/i,
 ];
 
+/** Auth declarations unambiguous enough to trust wherever the CLI printed them. */
 const AUTH_PATTERNS: readonly RegExp[] = [
     /\binvalid[_\s-]?api[_\s-]?key\b/i,
+    /\bincorrect\s+api\s+key\b/i,
     /\bauthentication_failed\b/i,
+    /\bauthentication\s+failed\b/i,
     /\bfailed\s+to\s+authenticate\b/i,
     /\boauth\s+session\b/i,
     /\bnot\s+logged\s+in\b/i,
@@ -77,6 +82,13 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bauth(?:entication)?\s+is\s+required\b/i,
     /\bcodex\s+auth\b/i,
     /\bCODEX_API_KEY\b/,
+];
+
+/**
+ * Bare status words that also show up in tool output (a `curl` 403, a file named
+ * `unauthorized.tsx`). They only mean "sign in" inside the CLI's own error envelope.
+ */
+const AUTH_ENVELOPE_ONLY_PATTERNS: readonly RegExp[] = [
     /\bauthentication\b/i,
     /\bunauthorized\b/i,
     /\b401\b/,
@@ -84,6 +96,12 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bforbidden\b/i,
     /\baccess\s+denied\b/i,
 ];
+
+/** A plain-text line the agent CLI itself prints for a provider/API failure. */
+const CLI_ERROR_ENVELOPE_LINE = /^(?:error\b|api\s+error\b|fatal\b|unexpected\s+status\b|http\/?[\d.]*\s+\d{3}\b|status(?:\s+code)?:?\s*\d{3}\b)/i;
+
+/** Line the task runner writes when it kills a run that stopped producing output. */
+const RUNNER_IDLE_TIMEOUT_LINE = /\[qaap\] task timed out after (\d+)s without output\./;
 
 const TIMEOUT_PATTERNS: readonly RegExp[] = [
     /\btimeout\b/i,
@@ -152,25 +170,6 @@ function firstMeaningfulFailureLine(text: string | undefined): string | undefine
     return undefined;
 }
 
-function extractJsonFailureHint(sample: string): string | undefined {
-    for (const line of sample.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-            continue;
-        }
-        try {
-            const parsed = JSON.parse(trimmed) as unknown;
-            const hint = readJsonFailureHint(parsed);
-            if (hint) {
-                return hint;
-            }
-        } catch {
-            /* not JSON */
-        }
-    }
-    return undefined;
-}
-
 function readJsonFailureHint(value: unknown): string | undefined {
     if (!value || typeof value !== 'object') {
         return undefined;
@@ -201,43 +200,150 @@ function readJsonFailureHint(value: unknown): string | undefined {
     return undefined;
 }
 
-/** Pull a short, readable hint from agent stderr/stdout when no known kind matches. */
-export function extractAgentLogFailureHint(log: string | undefined): string | undefined {
-    const sample = (log ?? '').trim().slice(0, AGENT_FAILURE_SCAN_LIMIT);
-    if (!sample) {
-        return undefined;
+/**
+ * What the agent CLI itself said about a failure, kept apart from the tool output it streamed:
+ * a `curl` 403 or an `npm error` the agent recovered from is not why the turn died.
+ */
+interface AgentFailureEvidence {
+    /** Error text of the CLI's final result envelope (`is_error` result, Codex `turn.failed`). */
+    readonly envelope?: string;
+    /** Raw top-level error records (`{"type":"error"}`, provider error bodies), newest first. */
+    readonly errorRecords: readonly string[];
+    /** Lines outside the JSON stream (CLI stderr/stdout, runner notes), in log order. */
+    readonly plainLines: readonly string[];
+}
+
+const FINAL_ENVELOPE_SCAN_LINES = 200;
+const FINAL_ENVELOPE_LINE = /^\{\s*"type"\s*:\s*"(?:result|turn\.failed|turn\.completed)"/;
+
+/** The last {@link AGENT_FAILURE_SCAN_LIMIT} characters, starting on a whole line: the death is at the end. */
+function tailOfAgentLog(log: string): string {
+    if (log.length <= AGENT_FAILURE_SCAN_LIMIT) {
+        return log;
     }
-    const jsonHint = extractJsonFailureHint(sample);
-    if (jsonHint) {
-        return jsonHint;
-    }
-    const clean = sample.replace(ANSI_REGEX, '');
-    const lines = clean.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i];
-        if (/^(Error|error|npm error|failed to|Cannot find|fatal:)/i.test(line)) {
-            return truncateAgentFailureHint(line);
-        }
-        // Windows cmd.exe: "FIND: formato de parámetros incorrecto"
-        if (WINDOWS_CMD_ERROR_LINE.test(line)) {
-            return truncateAgentFailureHint(line);
-        }
-        if (/\bis not recognized as an internal or external command\b/i.test(line)) {
-            return truncateAgentFailureHint(line);
-        }
-        if (/^The system cannot find (?:the )?(?:path|file) specified/i.test(line)) {
-            return truncateAgentFailureHint(line);
-        }
-        if (/command line is too long|l[ií\uFFFD]?nea de comandos es demasiado larga/i.test(line)) {
-            return truncateAgentFailureHint(line);
-        }
-        // QAIQ/Codex often emit a bare credential line without an `Error:` prefix
-        // ("Codex auth is required for gpt-5.5. Set CODEX_API_KEY…").
-        if (/\b(?:auth(?:entication)?\s+is\s+required|CODEX_API_KEY|invalid[_\s-]?api[_\s-]?key)\b/i.test(line)) {
-            return truncateAgentFailureHint(line);
+    const tail = log.slice(-AGENT_FAILURE_SCAN_LIMIT);
+    const lineStart = tail.indexOf('\n');
+    return lineStart >= 0 ? tail.slice(lineStart + 1) : tail;
+}
+
+/** Error of the newest final envelope; `undefined` when that envelope reports success or none exists. */
+function findFinalErrorEnvelope(log: string): string | undefined {
+    let end = log.length;
+    for (let scanned = 0; end > 0 && scanned < FINAL_ENVELOPE_SCAN_LINES; scanned++) {
+        const start = log.lastIndexOf('\n', end - 1) + 1;
+        const line = log.slice(start, end).trim();
+        end = start - 1;
+        if (FINAL_ENVELOPE_LINE.test(line)) {
+            return extractAgentTurnError(line);
         }
     }
     return undefined;
+}
+
+function isTopLevelErrorRecord(value: unknown): boolean {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.type === 'error') {
+        return true;
+    }
+    // Raw provider bodies (`{"error":{…}}`) have no stream type; typed stream records such as
+    // `{"type":"system","subtype":"api_retry","error":"rate_limit"}` are retries, not the death.
+    return record.type === undefined && record.error !== undefined && record.error !== null;
+}
+
+function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvidence {
+    const full = (log ?? '').trim();
+    const errorRecords: string[] = [];
+    const plainLines: string[] = [];
+    if (!full) {
+        return { errorRecords, plainLines };
+    }
+    for (const rawLine of tailOfAgentLog(full).replace(ANSI_REGEX, '').split('\n')) {
+        const line = rawLine.trim();
+        if (!line) {
+            continue;
+        }
+        if (line.startsWith('{') || line.startsWith('[')) {
+            try {
+                if (isTopLevelErrorRecord(JSON.parse(line))) {
+                    errorRecords.unshift(line);
+                }
+                continue;
+            } catch {
+                /* not JSON: CLI text that happens to start with a brace */
+            }
+        }
+        plainLines.push(line);
+    }
+    return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines };
+}
+
+/** Everything the CLI said about the failure (envelope, error records, plain lines). */
+function agentFailureEvidenceText(evidence: AgentFailureEvidence): string {
+    return [evidence.envelope, ...evidence.errorRecords, ...evidence.plainLines]
+        .filter((part): part is string => !!part)
+        .join('\n');
+}
+
+/** Only the CLI's own error envelope — where a bare 401/403/"forbidden" really means auth. */
+function agentFailureEnvelopeText(evidence: AgentFailureEvidence): string {
+    return [evidence.envelope, ...evidence.errorRecords, ...evidence.plainLines.filter(line => CLI_ERROR_ENVELOPE_LINE.test(line))]
+        .filter((part): part is string => !!part)
+        .join('\n');
+}
+
+function isPlainFailureHintLine(line: string): boolean {
+    return /^(Error|error|npm error|failed to|Cannot find|fatal:)/i.test(line)
+        // Windows cmd.exe: "FIND: formato de parámetros incorrecto"
+        || WINDOWS_CMD_ERROR_LINE.test(line)
+        || /\bis not recognized as an internal or external command\b/i.test(line)
+        || /^The system cannot find (?:the )?(?:path|file) specified/i.test(line)
+        || /command line is too long|l[ií\uFFFD]?nea de comandos es demasiado larga/i.test(line)
+        // QAIQ/Codex often emit a bare credential line without an `Error:` prefix
+        // ("Codex auth is required for gpt-5.5. Set CODEX_API_KEY…").
+        || /\b(?:auth(?:entication)?\s+is\s+required|CODEX_API_KEY|invalid[_\s-]?api[_\s-]?key)\b/i.test(line);
+}
+
+/** npm closes every failure with the same footer; the cause is the first line of its block. */
+const NPM_ERROR_PREFIX = /^npm error\b/i;
+const NPM_ERROR_BOILERPLATE = /^npm error\s*(?:$|A complete log of this run|To see a list of|\s+npm run\b)/i;
+
+function extractPlainFailureHint(lines: readonly string[]): string | undefined {
+    for (let index = lines.length - 1; index >= 0; index--) {
+        if (!isPlainFailureHintLine(lines[index])) {
+            continue;
+        }
+        if (NPM_ERROR_PREFIX.test(lines[index])) {
+            let blockStart = index;
+            while (blockStart > 0 && NPM_ERROR_PREFIX.test(lines[blockStart - 1])) {
+                blockStart--;
+            }
+            const cause = lines.slice(blockStart, index + 1).find(line => !NPM_ERROR_BOILERPLATE.test(line));
+            return truncateAgentFailureHint(cause ?? lines[index]);
+        }
+        return truncateAgentFailureHint(lines[index]);
+    }
+    return undefined;
+}
+
+/**
+ * Pull a short, readable hint from agent stderr/stdout when no known kind matches. Reads the end
+ * of the log and prefers the CLI's final error envelope over anything streamed before it.
+ */
+export function extractAgentLogFailureHint(log: string | undefined): string | undefined {
+    const evidence = collectAgentFailureEvidence(log);
+    if (evidence.envelope) {
+        return truncateAgentFailureHint(evidence.envelope.replace(/\s+/g, ' '));
+    }
+    for (const record of evidence.errorRecords) {
+        const hint = readJsonFailureHint(JSON.parse(record));
+        if (hint) {
+            return hint;
+        }
+    }
+    return extractPlainFailureHint(evidence.plainLines);
 }
 
 /**
@@ -272,7 +378,11 @@ export function summarizeCollapsedAgentFailure(input: {
 
 /** Classify agent CLI/API stderr or transcript text for user-facing failure copy. */
 export function detectAgentFailureKind(log: string | undefined): QaapAgentFailureKind | undefined {
-    const sample = (log ?? '').trim().slice(0, AGENT_FAILURE_SCAN_LIMIT);
+    return classifyAgentFailureEvidence(collectAgentFailureEvidence(log));
+}
+
+function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgentFailureKind | undefined {
+    const sample = agentFailureEvidenceText(evidence);
     if (!sample) {
         return undefined;
     }
@@ -292,7 +402,7 @@ export function detectAgentFailureKind(log: string | undefined): QaapAgentFailur
     if (matchesAny(sample, MODEL_UNAVAILABLE_PATTERNS)) {
         return 'model_unavailable';
     }
-    if (matchesAny(sample, AUTH_PATTERNS)) {
+    if (matchesAny(sample, AUTH_PATTERNS) || matchesAny(agentFailureEnvelopeText(evidence), AUTH_ENVELOPE_ONLY_PATTERNS)) {
         return 'auth';
     }
     if (matchesAny(sample, TIMEOUT_PATTERNS)) {
@@ -388,10 +498,74 @@ export function localizeGenericAgentFailureMessage(
                 );
             }
             return nls.localize(
-                'qaap/agentFailure/failed',
-                'We could not finish this task. Edit your prompt, switch model or agent, or send a follow-up.',
+                'qaap/agentFailure/stoppedUnexpectedly',
+                'The agent stopped unexpectedly. Retry, or send a follow-up to continue.',
             );
     }
+}
+
+/** Why the backend paused a turn that was still streaming: silence, or the absolute cap. */
+export type QaapAgentTurnTimeoutCause = 'idle' | 'max_duration';
+
+/**
+ * Reason recorded when the backend pauses a turn (turn watchdog or the task runner's idle
+ * timer). The turn ends `interrupted`, so the copy points at Continue rather than Retry. It
+ * starts with "Timed out" so that any reader of `TIMEOUT_PATTERNS` classifies it too.
+ */
+export function localizeAgentTurnTimeoutMessage(cause: QaapAgentTurnTimeoutCause, minutes: number): string {
+    const rounded = String(Math.max(1, Math.round(minutes)));
+    if (cause === 'idle') {
+        return nls.localize(
+            'qaap/agentFailure/idleTimeout',
+            'Timed out after {0} minutes without output. Continue to pick up where it left off.',
+            rounded,
+        );
+    }
+    return nls.localize(
+        'qaap/agentFailure/maxDuration',
+        'Timed out at the {0}-minute task limit. Continue to pick up where it left off.',
+        rounded,
+    );
+}
+
+/** Persisted (English, backend-locale) forms of {@link localizeAgentTurnTimeoutMessage}. */
+const STORED_IDLE_TIMEOUT = /^Timed out after (\d+) minutes without output\./;
+const STORED_MAX_DURATION = /^Timed out at the (\d+)-minute task limit\./;
+/** Watchdog copy persisted before the inactivity timeout existed. */
+const LEGACY_WATCHDOG_STOP = /^Stopped automatically after .+: the turn exceeded the maximum allowed time\.?$/;
+/** Copy recorded when a backend restart (or a failed restart resume) killed the turn. */
+const RESTART_INTERRUPTED = /^The backend restarted while this turn was in progress\b/;
+
+function formatStoredAgentTurnTimeout(error: string): string | undefined {
+    const idle = STORED_IDLE_TIMEOUT.exec(error);
+    if (idle) {
+        return localizeAgentTurnTimeoutMessage('idle', Number(idle[1]));
+    }
+    const max = STORED_MAX_DURATION.exec(error);
+    if (max) {
+        return localizeAgentTurnTimeoutMessage('max_duration', Number(max[1]));
+    }
+    return undefined;
+}
+
+function isStoredAgentTurnTimeout(error: string): boolean {
+    return STORED_IDLE_TIMEOUT.test(error) || STORED_MAX_DURATION.test(error) || LEGACY_WATCHDOG_STOP.test(error);
+}
+
+/**
+ * True when a persisted turn error means the turn was cut short (timeout pause, backend
+ * restart) rather than failing on its own — the row and card should offer Continue, not Retry.
+ */
+export function isAgentTurnInterruptedError(error: string | undefined): boolean {
+    const trimmed = error?.trim() ?? '';
+    if (!trimmed) {
+        return false;
+    }
+    if (isStoredAgentTurnTimeout(trimmed) || RESTART_INTERRUPTED.test(trimmed)) {
+        return true;
+    }
+    const legacy = LEGACY_AGENT_FAILURE_REGEX.exec(trimmed);
+    return legacy?.[1].toLowerCase() === 'interrupted' || trimmed === localizeGenericAgentFailureMessage('interrupted');
 }
 
 /** Normalize legacy technical copy persisted on older conversations. */
@@ -405,6 +579,10 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
         const state = legacy[1].toLowerCase() as QaapAgentTurnFailureState;
         const exitCode = legacy[2] ? Number(legacy[2]) : undefined;
         return localizeGenericAgentFailureMessage(state, exitCode);
+    }
+    const timeout = formatStoredAgentTurnTimeout(trimmed);
+    if (timeout) {
+        return timeout;
     }
     const kind = detectAgentFailureKind(trimmed);
     if (kind) {
@@ -448,14 +626,18 @@ function isFailedToolSegment(
     if (!segment.finished) {
         return false;
     }
+    // A tool that finished without a result told us nothing; it is not evidence of failure.
     const result = segment.result?.trim() ?? '';
     if (!result) {
-        return true;
+        return false;
     }
     return isAgentToolResultFailure(result, { toolName: segment.name }) || isTranscriptErrorOutput(result);
 }
 
-/** Last tool call that likely caused the turn failure — prefers traceEvents/segments on the agent message. */
+/**
+ * The tool to blame for a turn failure — only when a failed tool call was the agent's LAST step
+ * before it died. A failure the agent moved past (another tool, or a reply) is not the cause.
+ */
 export function extractLastFailedToolFromMessage(
     message: Pick<QaapAgentMessageDTO, 'segments' | 'traceEvents' | 'role' | 'content'> | undefined,
 ): QaapAgentFailedToolContext | undefined {
@@ -465,8 +647,11 @@ export function extractLastFailedToolFromMessage(
     const segments = resolveAgentMessageSegments(message);
     for (let index = segments.length - 1; index >= 0; index--) {
         const segment = segments[index];
-        if (segment.type !== 'tool' || !isFailedToolSegment(segment)) {
+        if (segment.type === 'thinking' || (segment.type === 'text' && !segment.content.trim())) {
             continue;
+        }
+        if (segment.type !== 'tool' || !isFailedToolSegment(segment)) {
+            return undefined;
         }
         const result = segment.result?.trim() ?? '';
         return {
@@ -507,10 +692,15 @@ export function resolveAgentTurnFailureMessage(
     const resolvedOptions: QaapAgentTurnFailureOptions = typeof options === 'string'
         ? { state: 'failed' }
         : (options ?? { state: 'failed' });
-    const kind = detectAgentFailureKind(log);
+    const evidence = collectAgentFailureEvidence(log);
+    const idleTimeout = RUNNER_IDLE_TIMEOUT_LINE.exec(evidence.plainLines.join('\n'));
+    if (idleTimeout) {
+        return localizeAgentTurnTimeoutMessage('idle', Number(idleTimeout[1]) / 60);
+    }
+    const kind = classifyAgentFailureEvidence(evidence);
     const challengeOptions = resolvedOptions.agentId ? { agentId: resolvedOptions.agentId } : undefined;
     if (kind === 'auth') {
-        return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(log, challengeOptions));
+        return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(agentFailureEvidenceText(evidence), challengeOptions));
     }
     if (kind === 'quota' || kind === 'rate_limit') {
         // Prefer the provider's concrete line (incl. "Resets in …") over generic copy.
@@ -523,23 +713,22 @@ export function resolveAgentTurnFailureMessage(
     if (kind) {
         return localizeAgentFailureMessage(kind);
     }
+    const failedTool = extractLastFailedToolFromMessage(resolvedOptions.agentMessage);
     const logHint = extractAgentLogFailureHint(log);
-    if (logHint) {
+    if (logHint && !isHintFromRecoveredTool(logHint, resolvedOptions.agentMessage, failedTool)) {
         return nls.localize(
             'qaap/agentFailure/logHint',
             'The agent hit an error: {0}',
             logHint,
         );
     }
-    const failedTool = extractLastFailedToolFromMessage(resolvedOptions.agentMessage);
     if (failedTool) {
-        const toolLog = failedTool.result ?? log;
-        const toolKind = detectAgentFailureKind(toolLog);
-        if (toolKind === 'auth') {
-            return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(toolLog, challengeOptions));
-        }
-        if (toolKind) {
-            return localizeAgentFailureMessage(toolKind);
+        const toolLog = failedTool.result;
+        // Tool output is the workspace talking, not the agent CLI: a 403 from `curl` or a 429
+        // from the npm registry is a failed command, not a sign-in or model quota problem.
+        // Only a missing agent CLI (the agent shelling out to itself) keeps its setup copy.
+        if (detectAgentFailureKind(toolLog) === 'cli_missing') {
+            return localizeAgentFailureMessage('cli_missing');
         }
         const toolHint = extractAgentLogFailureHint(toolLog);
         if (toolHint) {
@@ -575,24 +764,143 @@ export function resolveAgentTurnFailureMessage(
 }
 
 /**
- * Short, user-facing cause for a persisted turn failure (`message.error`) when it falls into a
- * category the transcript failure card already names — e.g. "Sign in required". Returns
- * `undefined` for unclassified failures so callers can fall back to the formatted message.
+ * Plain-text CLIs interleave tool output with their own stderr, so an `npm error` line in the log
+ * may be from a command the agent already moved past. Such a hint is not why the turn died.
  */
-export function localizeAgentFailureShortReason(error: string | undefined): string | undefined {
+function isHintFromRecoveredTool(
+    hint: string,
+    message: Pick<QaapAgentMessageDTO, 'segments' | 'traceEvents' | 'role' | 'content'> | undefined,
+    terminalFailedTool: QaapAgentFailedToolContext | undefined,
+): boolean {
+    if (!message || message.role !== 'agent') {
+        return false;
+    }
+    const needle = hint.replace(/…$/, '').slice(0, 80);
+    if (!needle || terminalFailedTool?.result?.includes(needle)) {
+        return false;
+    }
+    return resolveAgentMessageSegments(message)
+        .some(segment => segment.type === 'tool' && !!segment.result?.includes(needle));
+}
+
+/** The short reasons a failed turn is reduced to in rows and card titles. */
+export type QaapAgentFailureReasonKind =
+    | 'stopped'
+    | 'timeout'
+    | 'sign_in'
+    | 'command_failed'
+    | 'usage_limit'
+    | 'model'
+    | 'agent_setup'
+    | 'network';
+
+export interface QaapAgentFailureReason {
+    readonly kind: QaapAgentFailureReasonKind;
+    /** Short localized reason, e.g. "Timed out" or "A command failed". */
+    readonly label: string;
+    /** The full persisted message (localized where we own the copy) for a "Details" affordance. */
+    readonly detail?: string;
+    /** The turn was cut short (timeout pause, restart): offer Continue rather than Retry. */
+    readonly interrupted: boolean;
+}
+
+export interface QaapAgentFailureReasonOptions {
+    /** Agent display name for "Sign in to {agent}"; without it the label reads "Sign in required". */
+    readonly agentLabel?: string;
+}
+
+/** Persisted copy that names a tool which was the turn's last, failed step. */
+const STORED_TOOL_FAILURE = /^(?!(?:Process|Agent)\b)[\w.:/-]+ (?:failed: |exited with code -?\d+\.?$|did not complete successfully\.?$)/;
+/** CLI envelopes that end a run after repeated tool failures. */
+const REPEATED_TOOL_FAILURE = /\brepeated tool failures\b|\bfailed \d+ times with\b/i;
+
+function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
+    if (isStoredAgentTurnTimeout(error)) {
+        return 'timeout';
+    }
+    if (STORED_TOOL_FAILURE.test(error) || REPEATED_TOOL_FAILURE.test(error)) {
+        return 'command_failed';
+    }
+    if (/needs you to sign in|sign in required/i.test(error)) {
+        return 'sign_in';
+    }
+    switch (detectAgentFailureKind(error)) {
+        case 'auth':
+            return 'sign_in';
+        case 'quota':
+        case 'rate_limit':
+            return 'usage_limit';
+        case 'model_unavailable':
+        case 'tool_unsupported':
+            return 'model';
+        case 'cli_missing':
+            return 'agent_setup';
+        case 'timeout':
+            return 'timeout';
+        case 'network':
+            return 'network';
+        default:
+            return 'stopped';
+    }
+}
+
+function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, options?: QaapAgentFailureReasonOptions): string {
+    switch (kind) {
+        case 'timeout':
+            return nls.localize('qaap/agentFailure/reasonTimeout', 'Timed out');
+        case 'sign_in': {
+            const agentLabel = options?.agentLabel?.trim();
+            return agentLabel
+                ? nls.localize('qaap/agentFailure/reasonSignInTo', 'Sign in to {0}', agentLabel)
+                : nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required');
+        }
+        case 'command_failed':
+            return nls.localize('qaap/agentFailure/reasonCommandFailed', 'A command failed');
+        case 'usage_limit':
+            return nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached');
+        case 'model':
+            return nls.localize('qaap/agentFailure/reasonModelUnavailable', 'Model unavailable');
+        case 'agent_setup':
+            return nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing');
+        case 'network':
+            return nls.localize('qaap/agentFailure/reasonNetwork', 'Could not reach the model provider');
+        case 'stopped':
+        default:
+            return nls.localize('qaap/agentFailure/reasonStopped', 'The agent stopped unexpectedly');
+    }
+}
+
+/**
+ * Reduce a persisted turn failure (`message.error`) to one short localized reason, keeping the
+ * full message as {@link QaapAgentFailureReason.detail}. `undefined` only for an empty error.
+ */
+export function describeAgentTurnFailure(
+    error: string | undefined,
+    options?: QaapAgentFailureReasonOptions,
+): QaapAgentFailureReason | undefined {
     const sample = error?.trim();
     if (!sample) {
         return undefined;
     }
-    const kind = detectAgentFailureKind(sample);
-    if (kind === 'auth' || detectAgentAuthFailureMode(sample) || /needs you to sign in|sign in required/i.test(sample)) {
-        return nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required');
-    }
-    if (kind === 'quota' || kind === 'rate_limit') {
-        return nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached');
-    }
-    if (kind === 'cli_missing') {
-        return nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing');
-    }
-    return undefined;
+    const kind = classifyStoredAgentFailure(sample);
+    const label = localizeAgentFailureReasonLabel(kind, options);
+    const formatted = formatStoredAgentFailureMessage(sample);
+    return {
+        kind,
+        label,
+        ...(formatted && formatted !== label ? { detail: formatted } : {}),
+        interrupted: isAgentTurnInterruptedError(sample),
+    };
+}
+
+/**
+ * Short, user-facing cause for a persisted turn failure (`message.error`): one of the reasons in
+ * {@link QaapAgentFailureReasonKind}, e.g. "Sign in required" or "A command failed". Returns
+ * `undefined` only when there is no error. Use {@link describeAgentTurnFailure} for the detail.
+ */
+export function localizeAgentFailureShortReason(
+    error: string | undefined,
+    options?: QaapAgentFailureReasonOptions,
+): string | undefined {
+    return describeAgentTurnFailure(error, options)?.label;
 }
