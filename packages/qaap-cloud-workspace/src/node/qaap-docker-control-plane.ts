@@ -61,15 +61,33 @@ export function isQaapHostedOrTenantBackendRuntime(env: NodeJS.ProcessEnv = proc
     return isQaapHostedRuntime(env) || isQaapTenantBackendMode(env);
 }
 
+/** Docker `HostConfig.LogConfig` for the containers Qaap creates through the Docker API. */
+export interface QaapDockerLogConfig {
+    readonly Type: 'json-file';
+    readonly Config: { readonly 'max-size': string; readonly 'max-file': string };
+}
+
+const QAAP_DOCKER_LOG_MAX_SIZE_PATTERN = /^[1-9][0-9]{0,5}[kmg]$/;
+const QAAP_DOCKER_LOG_MAX_FILE_PATTERN = /^[1-9][0-9]{0,2}$/;
+
 /**
  * Bounded json-file logs for every container Qaap creates through the Docker API (tenant workers
- * and backends, ingress relays, egress proxies, task sandboxes). Mirrors `x-qaap-logging` in
- * docker-compose.yml: an unrotated container log once filled the VPS disk.
+ * and backends, ingress relays, egress proxies, task sandboxes). Reads the same
+ * `QAAP_LOG_MAX_SIZE` / `QAAP_LOG_MAX_FILE` as `x-qaap-logging` in docker-compose.yml (default
+ * 5 x 50m): an unrotated container log once filled the VPS disk. An invalid value falls back to the
+ * default, so a typo can never turn rotation off.
  */
-export const QAAP_DOCKER_LOG_CONFIG: { readonly Type: 'json-file'; readonly Config: { readonly 'max-size': string; readonly 'max-file': string } } = {
-    Type: 'json-file',
-    Config: { 'max-size': '50m', 'max-file': '5' },
-};
+export function resolveQaapDockerLogConfig(env: NodeJS.ProcessEnv = process.env): QaapDockerLogConfig {
+    const maxSize = env.QAAP_LOG_MAX_SIZE?.trim().toLowerCase() ?? '';
+    const maxFile = env.QAAP_LOG_MAX_FILE?.trim() ?? '';
+    return {
+        Type: 'json-file',
+        Config: {
+            'max-size': QAAP_DOCKER_LOG_MAX_SIZE_PATTERN.test(maxSize) ? maxSize : '50m',
+            'max-file': QAAP_DOCKER_LOG_MAX_FILE_PATTERN.test(maxFile) ? maxFile : '5',
+        },
+    };
+}
 
 export function resolveDockerHost(env: NodeJS.ProcessEnv = process.env): string {
     return env.DOCKER_HOST?.trim() || (process.platform === 'win32'

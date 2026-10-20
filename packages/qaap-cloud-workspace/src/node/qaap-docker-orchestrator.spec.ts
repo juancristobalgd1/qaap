@@ -7,7 +7,6 @@ import { expect } from 'chai';
 import * as os from 'os';
 import * as path from 'path';
 import type * as Dockerode from 'dockerode';
-import { QAAP_DOCKER_LOG_CONFIG } from './qaap-docker-control-plane';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
@@ -952,7 +951,7 @@ describe('QaapDockerOrchestrator', () => {
             const options = backends[0].options as { User?: string; Env?: string[]; HostConfig?: Record<string, unknown> };
             expect(options.User).to.equal('0:0');
             expect(options.HostConfig?.Init).to.equal(true);
-            expect(options.HostConfig?.LogConfig).to.deep.equal(QAAP_DOCKER_LOG_CONFIG);
+            expect(options.HostConfig?.LogConfig).to.deep.equal({ Type: 'json-file', Config: { 'max-size': '50m', 'max-file': '5' } });
             expect(options.HostConfig?.CapDrop).to.deep.equal(['ALL']);
             expect(options.HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
             expect(options.Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
@@ -1067,7 +1066,7 @@ describe('QaapDockerOrchestrator', () => {
             expect(fakeDocker.createdNetworks.some(network => network.Name.startsWith('qaap-egress-v1-'))).to.equal(false);
             // Every container created through the Docker API gets bounded json-file logs.
             for (const container of [backend, worker, proxy]) {
-                expect((container?.options.HostConfig as Record<string, unknown> | undefined)?.LogConfig).to.deep.equal(QAAP_DOCKER_LOG_CONFIG);
+                expect((container?.options.HostConfig as Record<string, unknown> | undefined)?.LogConfig).to.deep.equal({ Type: 'json-file', Config: { 'max-size': '50m', 'max-file': '5' } });
             }
         });
 
@@ -1219,7 +1218,7 @@ describe('QaapDockerOrchestrator', () => {
             ]);
             expect(target).to.deep.include({ containerId: 'backend-id', port: 43123, host: '127.0.0.1', tenantLogin: 'alice' });
             const relayHostConfig = relay?.options.HostConfig as Record<string, unknown> | undefined;
-            expect(relayHostConfig?.LogConfig).to.deep.equal(QAAP_DOCKER_LOG_CONFIG);
+            expect(relayHostConfig?.LogConfig).to.deep.equal({ Type: 'json-file', Config: { 'max-size': '50m', 'max-file': '5' } });
             expect(relayHostConfig?.CapDrop).to.deep.equal(['ALL']);
             expect(relayHostConfig?.SecurityOpt).to.deep.equal(['no-new-privileges:true']);
             expect(relayHostConfig?.ReadonlyRootfs).to.equal(true);

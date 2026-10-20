@@ -79,6 +79,7 @@ import { QaapHostedWorktreeRegistry } from './qaap-hosted-worktree-registry';
 import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
+import { QaapHealthCheckContribution, type QaapHealthCheckResult } from './qaap-health-check-contribution';
 import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
 import { qaapMobileEntryProbeFields } from './qaap-mobile-entry-flag';
 import {
@@ -189,6 +190,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     /** Higher layers forget their state of a removed clone (terminals, conversations, recent workspaces). */
     @inject(ContributionProvider) @named(QaapRepositoryRemovalContribution) @optional()
     protected readonly removalContributions: ContributionProvider<QaapRepositoryRemovalContribution> | undefined;
+
+    @inject(ContributionProvider) @named(QaapHealthCheckContribution) @optional()
+    protected readonly healthChecks: ContributionProvider<QaapHealthCheckContribution> | undefined;
 
     @inject(QaapHostedWorktreeRegistry) @optional()
     protected readonly worktreeRegistry: QaapHostedWorktreeRegistry | undefined;
@@ -565,12 +569,31 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
     }
 
-    protected handleHealth(_req: Request, res: Response): void {
+    protected handleHealth(req: Request, res: Response): void {
         const readiness = evaluateQaapProductionAuthReadiness();
-        res.json(buildQaapLaunchHealthPayload(readiness, {
+        const payload = buildQaapLaunchHealthPayload(readiness, {
             skipAuth: this.auth.isSkipAuthEnabled(),
             build: process.env.QAAP_BUILD_SHA,
-        }));
+        });
+        // The orchestrator wakes tenant backends with the liveness probe: a storage problem must
+        // not lock a tenant out of the IDE. Everything else (Docker HEALTHCHECK, smoke, deploy
+        // gates) gets a 503 while a dependency is unhealthy.
+        if (req.query?.probe === 'liveness') {
+            res.json(payload);
+            return;
+        }
+        const checks: Record<string, QaapHealthCheckResult> = {};
+        for (const contribution of this.healthChecks?.getContributions() ?? []) {
+            try {
+                checks[contribution.id] = contribution.check();
+            } catch (error) {
+                // The endpoint is public: keep exception text (paths, driver errors) in the server log.
+                console.warn(`[qaap-oauth] Health check "${contribution.id}" threw:`, error instanceof Error ? error.message : String(error));
+                checks[contribution.id] = { healthy: false };
+            }
+        }
+        const healthy = Object.values(checks).every(check => check.healthy);
+        res.status(healthy ? 200 : 503).json({ ...payload, ok: healthy, checks });
     }
 
     protected handleAuthConfig(_req: Request, res: Response): void {
