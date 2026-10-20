@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { evaluateQaapFrameHeaders } from '@theia/qaap-adapters/lib/common/qaap-frame-check';
-import { isQaapBlockedFrameCheckIp, isQaapInternalFrameCheckHost, QaapFrameCheckCache, QaapFrameCheckRateLimiter, QaapFrameCheckSemaphore } from './qaap-frame-check-guard';
+import { isQaapBlockedFrameCheckIp, isQaapInternalFrameCheckHost, QaapFrameCheckCache, QaapFrameCheckRateLimiter, QaapFrameCheckConcurrency } from './qaap-frame-check-guard';
 
 describe('qaap frame check', () => {
 
@@ -25,6 +25,14 @@ describe('qaap frame check', () => {
             expect(evaluateQaapFrameHeaders({ 'content-security-policy': "default-src 'self'" }).embeddable).to.equal(true);
             expect(evaluateQaapFrameHeaders({ 'x-frame-options': 'ALLOW-FROM https://a.com' }).embeddable).to.equal(true);
             expect(evaluateQaapFrameHeaders({}).embeddable).to.equal(true);
+        });
+
+        it('ignores X-Frame-Options when frame-ancestors is present, like browsers', () => {
+            const app = 'https://qaap.example';
+            expect(evaluateQaapFrameHeaders({ 'x-frame-options': 'SAMEORIGIN', 'content-security-policy': `frame-ancestors ${app}` }, app).embeddable).to.equal(true);
+            expect(evaluateQaapFrameHeaders({ 'x-frame-options': 'DENY', 'content-security-policy': 'frame-ancestors *' }, app).embeddable).to.equal(true);
+            expect(evaluateQaapFrameHeaders({ 'x-frame-options': 'DENY', 'content-security-policy': "default-src 'self'" }, app).embeddable).to.equal(false);
+            expect(evaluateQaapFrameHeaders({ 'content-security-policy': `frame-ancestors ${app}, frame-ancestors 'self'` }, app).embeddable, 'every policy must allow').to.equal(false);
         });
 
         it('allows frame-ancestors that name the Qaap app origin (isolated previews)', () => {
@@ -71,15 +79,19 @@ describe('qaap frame check', () => {
         });
     });
 
-    describe('QaapFrameCheckSemaphore', () => {
-        it('refuses past the cap without queueing and frees on release', () => {
-            const semaphore = new QaapFrameCheckSemaphore(2);
-            expect(semaphore.tryAcquire()).to.equal(true);
-            expect(semaphore.tryAcquire()).to.equal(true);
-            expect(semaphore.tryAcquire()).to.equal(false);
-            semaphore.release();
-            expect(semaphore.tryAcquire()).to.equal(true);
-            expect(semaphore.inUse).to.equal(2);
+    describe('QaapFrameCheckConcurrency', () => {
+        it('caps checks per user and globally, without queueing', () => {
+            const limiter = new QaapFrameCheckConcurrency(3, 2);
+            expect(limiter.tryAcquire('a')).to.equal(true);
+            expect(limiter.tryAcquire('a')).to.equal(true);
+            expect(limiter.tryAcquire('a'), 'per-user cap').to.equal(false);
+            expect(limiter.tryAcquire('b')).to.equal(true);
+            expect(limiter.tryAcquire('c'), 'global cap').to.equal(false);
+            limiter.release('a');
+            expect(limiter.tryAcquire('c')).to.equal(true);
+            expect(limiter.inUse).to.equal(3);
+            limiter.release('nobody');
+            expect(limiter.inUse, 'releasing an unknown key is a no-op').to.equal(3);
         });
     });
 
@@ -99,14 +111,17 @@ describe('qaap frame check', () => {
             for (const ip of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.1', '192.168.0.1', '169.254.169.254', '0.0.0.0', '100.64.0.1',
                 '::1', '::', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1', 'not-an-ip',
                 // IPv6 spellings of private IPv4 targets (the hex mapped form is what DNS lookup returns for `[::ffff:10.0.0.1]`).
-                '::ffff:a00:1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '::a00:1', '2002:a00:1::1', '64:ff9b::a00:1', '2001:0:4136:e378::1',
-                'ff02::1', '198.18.0.1', '192.0.0.170']) {
+                '::ffff:a00:1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '::a00:1', '2002:a00:1::1', '64:ff9b::a00:1', '64:ff9b:1::a00:1', '::1:0:0:1', '2001:0:4136:e378::1',
+                'ff02::1', '198.18.0.1', '192.0.0.170',
+                // Allowlist gaps of the old denylist: mapped/translated, site-local, discard, documentation, reserved.
+                '::ffff:0:a00:1', 'fec0::1', '100::1', '2001:db8::1', '3fff::1', '192.0.2.1', '198.51.100.1', '203.0.113.1',
+                '240.0.0.1', '255.255.255.255', '2002:808:808::1', 'fe80::1%en0']) {
                 expect(isQaapBlockedFrameCheckIp(ip), ip).to.equal(true);
             }
         });
 
         it('allows public addresses', () => {
-            for (const ip of ['8.8.8.8', '172.32.0.1', '1.1.1.1', '2606:4700:4700::1111', '::ffff:808:808', '2002:808:808::1', '2a00:1450:4003:80e::200e']) {
+            for (const ip of ['8.8.8.8', '172.32.0.1', '1.1.1.1', '2606:4700:4700::1111', '::ffff:808:808', '2a00:1450:4003:80e::200e']) {
                 expect(isQaapBlockedFrameCheckIp(ip), ip).to.equal(false);
             }
         });

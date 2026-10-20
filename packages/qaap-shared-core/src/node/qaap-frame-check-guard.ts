@@ -3,65 +3,46 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as net from 'net';
+import * as ipaddr from 'ipaddr.js';
 
 /**
- * True for loopback, private, link-local, CGNAT, benchmark, multicast, unspecified and cloud-metadata
- * addresses (v4 and v6). IPv6 forms that embed an IPv4 address (mapped `::ffff:a00:1`, compatible,
- * 6to4) are judged by that IPv4 address; NAT64 and Teredo are refused outright since they can reach
- * any IPv4 host. Anything that is not an IP literal is refused.
+ * Extra ranges `ipaddr.js` 1.x still labels `unicast` but that must never be fetched: IPv4-compatible
+ * IPv6 (`::/96`, embeds any IPv4), deprecated site-local (`fec0::/10`), discard-only (`100::/64`),
+ * the IETF protocol block (`2001::/23`: Teredo, ORCHID, benchmarking…), documentation (`3fff::/20`)
+ * IPv4 benchmarking (`198.18.0.0/15`), the NAT64 well-known prefix (`64:ff9b::/32`, covers the RFC 8215
+ * local-use `64:ff9b:1::/48`) and the whole `::/8` block (non-loopback addresses ipaddr.js still labels unicast).
+ */
+const EXTRA_BLOCKED_CIDRS: ReadonlyArray<[ipaddr.IPv4 | ipaddr.IPv6, number]> = [
+    '::/96', 'fec0::/10', '100::/64', '2001::/23', '2001:db8::/32', '3fff::/20', '198.18.0.0/15', '64:ff9b::/32', '::/8',
+].map(cidr => ipaddr.parseCIDR(cidr));
+
+/**
+ * Allowlist: true unless `ip` is a plain public unicast address. `ipaddr.process` unwraps IPv4-mapped
+ * IPv6 (`::ffff:a00:1` → `10.0.0.1`), then anything whose range is not `unicast` (private, loopback,
+ * link-local, CGNAT, metadata, multicast, reserved, 6to4, NAT64, Teredo…) is refused, as are the
+ * {@link EXTRA_BLOCKED_CIDRS} and anything that is not an IP literal.
  */
 export function isQaapBlockedFrameCheckIp(ip: string): boolean {
-    if (net.isIPv4(ip)) {
-        return isBlockedIpv4(ip.split('.').map(Number));
-    }
-    const hextets = net.isIPv6(ip) ? expandIpv6(ip) : undefined;
-    if (!hextets) {
+    let address: ipaddr.IPv4 | ipaddr.IPv6;
+    try {
+        address = ipaddr.process(ip.replace(/%.*$/, ''));
+    } catch {
         return true;
     }
-    const [h0, h1, h2, h3, h4, h5, h6, h7] = hextets;
-    const embeddedTail = [h6 >> 8, h6 & 0xff, h7 >> 8, h7 & 0xff];
-    if (h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0 && (h5 === 0xffff || h5 === 0)) {
-        // `::`, `::1`, IPv4-mapped and IPv4-compatible.
-        return h5 === 0 && h6 === 0 ? true : isBlockedIpv4(embeddedTail);
+    if (address.range() !== 'unicast') {
+        return true;
     }
-    if (h0 === 0x2002) {
-        return isBlockedIpv4([h1 >> 8, h1 & 0xff, h2 >> 8, h2 & 0xff]);
-    }
-    return h0 === 0x64 && h1 === 0xff9b // NAT64
-        || h0 === 0x2001 && h1 === 0 // Teredo
-        || (h0 & 0xffc0) === 0xfe80 // link-local
-        || (h0 & 0xfe00) === 0xfc00 // unique local
-        || (h0 & 0xff00) === 0xff00; // multicast
+    return EXTRA_BLOCKED_CIDRS.some(([range, bits]) => matchesCidr(address, range, bits));
 }
 
-function isBlockedIpv4([a, b]: number[]): boolean {
-    return a === 0 || a === 10 || a === 127 || a >= 224
-        || (a === 100 && b >= 64 && b <= 127)
-        || (a === 169 && b === 254)
-        || (a === 172 && b >= 16 && b <= 31)
-        || (a === 192 && b === 0)
-        || (a === 192 && b === 168)
-        || (a === 198 && (b === 18 || b === 19));
-}
-
-/** Expands a valid IPv6 literal (optionally with a dotted IPv4 tail) to its eight 16-bit groups. */
-function expandIpv6(ip: string): number[] | undefined {
-    let text = ip.toLowerCase().replace(/%.*$/, '');
-    const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
-    if (dotted) {
-        const [a, b, c, d] = dotted.slice(1).map(Number);
-        text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+function matchesCidr(address: ipaddr.IPv4 | ipaddr.IPv6, range: ipaddr.IPv4 | ipaddr.IPv6, bits: number): boolean {
+    if (address.kind() === 'ipv4' && range.kind() === 'ipv4') {
+        return (address as ipaddr.IPv4).match(range as ipaddr.IPv4, bits);
     }
-    const [head, tail] = text.split('::');
-    const left = head ? head.split(':') : [];
-    const right = tail !== undefined && tail ? tail.split(':') : [];
-    const missing = 8 - left.length - right.length;
-    if (missing < 0 || (tail === undefined && missing !== 0)) {
-        return undefined;
+    if (address.kind() === 'ipv6' && range.kind() === 'ipv6') {
+        return (address as ipaddr.IPv6).match(range as ipaddr.IPv6, bits);
     }
-    const groups = [...left, ...new Array<string>(missing).fill('0'), ...right].map(group => parseInt(group, 16));
-    return groups.length === 8 && groups.every(group => group >= 0 && group <= 0xffff) ? groups : undefined;
+    return false;
 }
 
 /** Bounded insertion-ordered cache with a TTL; the oldest entry is evicted past `maxEntries`. */
@@ -152,26 +133,41 @@ export class QaapFrameCheckRateLimiter {
     }
 }
 
-/** Non-blocking counting semaphore: `tryAcquire` fails instead of queueing once `max` holders exist. */
-export class QaapFrameCheckSemaphore {
+/**
+ * Non-blocking concurrency cap: at most `perKey` checks per user and `global` in total. `tryAcquire`
+ * fails instead of queueing, so one user cannot starve everyone else's checks.
+ */
+export class QaapFrameCheckConcurrency {
 
     protected held = 0;
+    protected readonly heldByKey = new Map<string, number>();
 
-    constructor(protected readonly max: number) { }
+    constructor(protected readonly global: number, protected readonly perKey: number) { }
 
     get inUse(): number {
         return this.held;
     }
 
-    tryAcquire(): boolean {
-        if (this.held >= this.max) {
+    tryAcquire(key: string): boolean {
+        const mine = this.heldByKey.get(key) ?? 0;
+        if (this.held >= this.global || mine >= this.perKey) {
             return false;
         }
         this.held++;
+        this.heldByKey.set(key, mine + 1);
         return true;
     }
 
-    release(): void {
+    release(key: string): void {
+        const mine = this.heldByKey.get(key) ?? 0;
+        if (mine <= 0) {
+            return;
+        }
         this.held = Math.max(0, this.held - 1);
+        if (mine === 1) {
+            this.heldByKey.delete(key);
+        } else {
+            this.heldByKey.set(key, mine - 1);
+        }
     }
 }
