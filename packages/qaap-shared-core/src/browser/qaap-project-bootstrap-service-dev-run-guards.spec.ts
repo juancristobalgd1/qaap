@@ -198,6 +198,17 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(reserved).to.deep.equal([]);
         });
 
+        it('starts when the user chose Build and start, even with the output still missing', async () => {
+            const { ctx, attachCalls } = makeCtx(true);
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => false };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+                buildAndStartCommand: 'npm run build && npm run start',
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, { ...PLAN, command: 'npm run build && npm run start' }, descriptor);
+            expect(attachCalls).to.deep.equal([[5173]]);
+        });
+
         it('starts normally once the user built the missing output by hand', async () => {
             const { ctx, attachCalls } = makeCtx(true);
             (ctx as unknown as { detector: object }).detector = { pathExists: async () => true };
@@ -386,6 +397,28 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(started).to.deep.equal([]);
             expect(ctx._phase).to.equal('run-failed');
             expect(ctx._error).to.contain('does not relaunch a preview that builds first');
+        });
+
+        it('reports a failed Build and start once, without retrying the build', async () => {
+            const started: string[] = [];
+            const { ctx } = failingRunContext({
+                _descriptor: {
+                    name: 'app', nodeModulesPresent: true, apps: [],
+                    buildAndStartCommand: 'npm run build && npm run start', previewStartCommand: 'npm run start',
+                },
+                devOutputTail: 'src/index.ts(1,1): error TS1005: ; expected.\nnpm error code 2\n',
+                startDevServer: async (plan: { command: string }) => { started.push(plan.command); },
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 2.',
+                { ...PLAN, command: 'npm run build && npm run start' }, 7);
+
+            expect(started).to.deep.equal([]);
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            expect(ctx._error).to.contain('does not retry builds');
         });
 
         it('handles a later failure of the same run once the first one settled', async () => {

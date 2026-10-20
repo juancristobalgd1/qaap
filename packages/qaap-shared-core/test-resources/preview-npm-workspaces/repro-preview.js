@@ -13,6 +13,7 @@
 //           or `fresh` (no node_modules). libDir defaults to packages/qaap-shared-core/lib.
 // QAAP_REPRO_BUILD_AUTO=1 adds `.qaap/preview.json` with `"build": "auto"` (the explicit opt-in);
 // without it the app's missing `lib/` is reported as build-required and nothing is started.
+// QAAP_REPRO_BUILD_AND_START=1 runs the app's buildAndStartCommand, as the "Build and start" action does.
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -96,7 +97,7 @@ async function probe() {
     console.log('[detect]', JSON.stringify({
         flavor: descriptor.monorepoFlavor, nodeModulesPresent: descriptor.nodeModulesPresent,
         workspaceRoot: descriptor.workspaceRootUri ? (path.relative(workspace, descriptor.workspaceRootUri.path.fsPath()) || '.') : undefined,
-        app: app && { path: app.relativePath, devCommand: app.devCommand, bin: app.devScriptBinary, build: app.buildScript, buildRequired: app.buildRequired },
+        app: app && { path: app.relativePath, devCommand: app.devCommand, bin: app.devScriptBinary, build: app.buildScript, buildRequired: app.buildRequired, buildAndStart: app.buildAndStartCommand },
     }));
     // Same arguments as resolveInstallPlanExtracted / resolveDevPlanExtracted in the bootstrap service.
     const install = plan.resolveBootstrapInstallTarget(
@@ -117,7 +118,8 @@ async function probe() {
         console.log('RESULT: BUILD REQUIRED');
         process.exit(3);
     }
-    const child = run('dev', dev.command, new URI(dev.cwdKey), { PORT: String(port) });
+    const buildAndStart = process.env.QAAP_REPRO_BUILD_AND_START === '1' && app.buildAndStartCommand;
+    const child = run(buildAndStart ? 'build-and-start' : 'dev', buildAndStart || dev.command, new URI(dev.cwdKey), { PORT: String(port) });
     const exited = waitExit(child);
     let result;
     for (let i = 0; i < 40 && !result; i++) {

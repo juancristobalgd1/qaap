@@ -12,19 +12,35 @@ import { nls } from '@theia/core/lib/common/nls';
  */
 const MISSING_SCRIPT_BINARY_REGEX = /\b(?:sh|bash|zsh)(?::\s*(?:line\s*)?\d+)?:\s*(?!(?:npm|npx|pnpm|yarn|bun|node|corepack|git):)([\w@.\/-]+): (?:command )?not found/i;
 
+/**
+ * System executables a script may call. Install never provides them, so `python3: not found` is an
+ * image problem: it must not be reported as missing dependencies or trigger a reinstall.
+ */
+const SYSTEM_BINARIES: ReadonlySet<string> = new Set([
+    'python', 'python3', 'pip', 'pip3', 'uv', 'poetry', 'docker', 'docker-compose', 'podman', 'make', 'cmake',
+    'go', 'cargo', 'rustc', 'java', 'javac', 'mvn', 'gradle', 'ruby', 'gem', 'bundle', 'php', 'composer',
+    'dotnet', 'deno', 'curl', 'wget', 'gcc', 'g++', 'cc', 'clang', 'psql', 'mysql', 'redis-server', 'sqlite3',
+]);
+
 /** Dev/install output that usually means dependencies were not installed (or only production deps). */
-export const DEV_INSTALL_NEEDED_REGEX = new RegExp(
-    '(?:ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|Missing script:|npm error code ENOENT)|'
-    + MISSING_SCRIPT_BINARY_REGEX.source,
-    'i',
-);
+export const DEV_INSTALL_NEEDED_REGEX = /ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|Missing script:|npm error code ENOENT/i;
 
 /**
- * `Cannot find module` pointing at compiled output (`lib/`, `dist/`, `out/`, `build/`) of a package
- * in the repository itself, not under `node_modules`: the monorepo was installed but never built
- * (`theia start` before `npm run build`). Reinstalling cannot fix it.
+ * `Cannot find module` naming the repository's own compiled output, not a dependency and not a
+ * source import: an absolute or relative path (never a bare or `@/` alias specifier), outside
+ * `node_modules` and `src/`, that is a JavaScript file or sits in an output folder
+ * (`/repo/dev-packages/cli/lib/theia` when `theia start` runs before `npm run build`).
+ * Reinstalling cannot fix it.
  */
-const BUILD_OUTPUT_MISSING_REGEX = /Cannot find module '((?:(?!node_modules)[^'])*\/(?:lib|dist|out|build)\/[^']*)'/i;
+const CANNOT_FIND_MODULE_REGEX = /Cannot find module '([^']+)'/gi;
+
+function isMissingBuildOutputPath(specifier: string): boolean {
+    const path = specifier.replace(/\\/g, '/');
+    if (!/^(?:\/|\.{1,2}\/|[A-Za-z]:\/)/.test(path) || /\/(?:node_modules|src)\//.test(path)) {
+        return false;
+    }
+    return /\.(?:c|m)?js$/.test(path) || /\/(?:lib|dist|out|build)\//.test(path);
+}
 
 /**
  * A dev port bound by another process. Node prints `EADDRINUSE` / `address already in use`, but
@@ -83,8 +99,8 @@ export interface QaapBootstrapFailureDiagnosis {
  * the workspace memory): this tells the user how to build, or how to opt in explicitly.
  */
 export const QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE = 'The project has not been built yet: its start script needs compiled output that does not exist. '
-    + 'Run the build yourself (for example npm run build from the workspace root), or opt in to building before preview '
-    + 'with {"build": "auto"} in .qaap/preview.json, then start the preview again.';
+    + 'Choose Build and start to build it now (a large project can take several minutes), run the build yourself, '
+    + 'or opt in to building before every preview with {"build": "auto"} in .qaap/preview.json.';
 
 /**
  * A preview whose command chains an opted-in build (`npm run build && npm run start`) failed.
@@ -112,7 +128,11 @@ export function diagnoseBuildFirstPreviewFailure(diagnosis: QaapBootstrapFailure
 }
 
 export function terminalOutputNeedsInstall(output: string): boolean {
-    return DEV_INSTALL_NEEDED_REGEX.test(output) && !terminalOutputNeedsBuild(output);
+    if (terminalOutputNeedsBuild(output)) {
+        return false;
+    }
+    const missingBinary = terminalOutputMissingBinary(output);
+    return (missingBinary !== undefined && !isSystemBinary(missingBinary)) || DEV_INSTALL_NEEDED_REGEX.test(output);
 }
 
 /** The executable a script could not find (`theia` for `sh: 1: theia: not found`). */
@@ -120,9 +140,24 @@ export function terminalOutputMissingBinary(output: string): string | undefined 
     return MISSING_SCRIPT_BINARY_REGEX.exec(output.replace(ANSI_REGEX, ''))?.[1];
 }
 
+/** Whether a missing executable is a system tool that install cannot provide. */
+export function isSystemBinary(binary: string): boolean {
+    // `python3.12` is `python3`'s versioned alias.
+    return SYSTEM_BINARIES.has(binary) || SYSTEM_BINARIES.has(binary.replace(/\.[\d.]+$/, ''));
+}
+
 /** Whether the output shows the project's own compiled output is missing (needs a build, not an install). */
 export function terminalOutputNeedsBuild(output: string): boolean {
-    return BUILD_OUTPUT_MISSING_REGEX.test(output.replace(ANSI_REGEX, ''));
+    const clean = output.replace(ANSI_REGEX, '');
+    if (clean.includes(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE)) {
+        return true;
+    }
+    for (const match of clean.matchAll(CANNOT_FIND_MODULE_REGEX)) {
+        if (isMissingBuildOutputPath(match[1])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 export function terminalOutputOutOfMemory(output: string): boolean {
@@ -199,6 +234,13 @@ export function diagnoseBootstrapFailure(output: string, fallback: string): Qaap
         };
     }
     const missingBinary = terminalOutputMissingBinary(output);
+    if (missingBinary && isSystemBinary(missingBinary)) {
+        return {
+            kind: 'runtime-version',
+            message: `\`${missingBinary}\` is not available in the workspace environment. Installing dependencies cannot add it: `
+                + 'install it in the workspace image or change the script to use an available executable.',
+        };
+    }
     if (missingBinary) {
         return {
             kind: 'dependencies',

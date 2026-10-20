@@ -80,10 +80,16 @@ export interface QaapMonorepoAppCandidate {
     readonly buildRequired?: boolean;
     /** The missing output folder behind {@link buildRequired}; a manual build creates it. */
     readonly buildOutputUri?: URI;
+    /**
+     * The package's declared build chained before its preview script, run only when the user picks
+     * "Build and start" after a `build-required` failure. Never run implicitly or retried.
+     */
+    readonly buildAndStartCommand?: string;
 }
 
 /** Build state shared by monorepo apps and a workspace member opened directly. */
-export type QaapPreviewBuildTarget = Pick<QaapMonorepoAppCandidate, 'buildScript' | 'previewStartCommand' | 'buildRequired' | 'buildOutputUri'>;
+export type QaapPreviewBuildTarget = Pick<QaapMonorepoAppCandidate,
+    'buildScript' | 'previewStartCommand' | 'buildRequired' | 'buildOutputUri' | 'buildAndStartCommand'>;
 
 /**
  * The package whose dev command Preview runs: the selected app, the only app, or the project
@@ -161,6 +167,8 @@ export interface QaapProjectDescriptor {
     readonly buildScript?: string;
     /** {@link QaapMonorepoAppCandidate.previewStartCommand} for a workspace member opened directly. */
     readonly previewStartCommand?: string;
+    /** {@link QaapMonorepoAppCandidate.buildAndStartCommand} for a workspace member opened directly. */
+    readonly buildAndStartCommand?: string;
     /** {@link QaapMonorepoAppCandidate.buildRequired} for a workspace member opened directly. */
     readonly buildRequired?: boolean;
     /** {@link QaapMonorepoAppCandidate.buildOutputUri} for a workspace member opened directly. */

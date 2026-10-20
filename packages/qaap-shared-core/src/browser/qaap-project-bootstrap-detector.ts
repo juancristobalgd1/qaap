@@ -245,6 +245,10 @@ export class QaapProjectBootstrapDetector {
             ...(rootBinary ? { devScriptBinary: rootBinary } : {}),
             ...(rootBuild?.buildScript && rootStartCommand ? { buildScript: rootBuild.buildScript, previewStartCommand: rootStartCommand } : {}),
             ...(rootBuild?.missingOutputDir ? { buildRequired: true, buildOutputUri: rootUri.resolve(rootBuild.missingOutputDir) } : {}),
+            ...(rootBuild && !rootBuild.buildScript && devCommand && typeof scripts.build === 'string' ? {
+                buildAndStartCommand: `${this.buildRunCommand(packageManager, 'build')} && ${devCommand}`,
+                previewStartCommand: devCommand,
+            } : {}),
         };
     }
 
@@ -1147,6 +1151,13 @@ export class QaapProjectBootstrapDetector {
                 previewStartCommand: buildQaapWorkspaceScriptCommand({ packageManager: rootPm, packageName: pkgName, script: devScriptKey }),
             } : {}),
             ...(build?.missingOutputDir ? { buildRequired: true, buildOutputUri: appUri.resolve(build.missingOutputDir) } : {}),
+            // Not opted in but a build exists: offered as the explicit "Build and start" action.
+            ...(workspaceMember && rootPm !== 'native' && !build?.buildScript && typeof scripts.build === 'string' ? {
+                buildAndStartCommand: buildQaapWorkspaceScriptCommand({
+                    packageManager: rootPm, packageName: pkgName, script: devScriptKey, buildScript: 'build',
+                }),
+                previewStartCommand: devCommand,
+            } : {}),
         };
     }
 

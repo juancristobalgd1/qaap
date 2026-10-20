@@ -154,7 +154,9 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         // A recovery relaunch runs only the start half, so this run's command is what decides.
         const buildFirst = buildTarget?.buildScript && plan.command !== buildTarget.previewStartCommand
             ? buildTarget.buildScript
-            : undefined;
+            : buildTarget?.buildAndStartCommand && plan.command === buildTarget.buildAndStartCommand
+                ? 'build'
+                : undefined;
         const baseDiagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
         const diagnosis = buildFirst ? diagnoseBuildFirstPreviewFailure(baseDiagnosis, buildFirst) : baseDiagnosis;
         // A clean exit with nothing listening is the same exit next time: report it, don't retry.

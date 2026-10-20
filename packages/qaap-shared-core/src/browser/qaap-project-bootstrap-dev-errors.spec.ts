@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     describeDevProcessExit,
+    QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
     diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
     extractTerminalFailureLine,
@@ -85,6 +86,30 @@ describe('qaap-project-bootstrap-dev-errors', () => {
         expect(restoreEscapedLineBreaks(escaped)).to.equal(THEIA_NOT_FOUND);
         expect(restoreEscapedLineBreaks('C:\\new\\app\nnext line')).to.equal('C:\\new\\app\nnext line');
         expect(diagnoseBootstrapFailure('npm error code 1\\nError: boom', 'fallback').message).to.equal('Error: boom');
+    });
+
+    it('never reads a source import or a path alias as a missing build', () => {
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '/app/src/lib/utils'")).to.equal(false);
+        expect(terminalOutputNeedsBuild("error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.")).to.equal(false);
+        expect(terminalOutputNeedsBuild("Cannot find module 'lib/helpers'")).to.equal(false);
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '/repo/scripts/generated.js'")).to.equal(true);
+        expect(terminalOutputNeedsBuild("Error: Cannot find module '../dist/server'")).to.equal(true);
+        expect(diagnoseBootstrapFailure("Error: Cannot find module '/app/src/lib/utils'", 'fallback').kind).not.to.equal('build-required');
+    });
+
+    it('never sends a missing system tool to Install', () => {
+        const output = 'sh: 1: python3: not found\nnpm error code 127';
+        expect(terminalOutputNeedsInstall(output)).to.equal(false);
+        const diagnosis = diagnoseBootstrapFailure(output, 'fallback');
+        expect(diagnosis.kind).to.equal('runtime-version');
+        expect(diagnosis.message).to.include('`python3`').and.not.include('Install there');
+        expect(terminalOutputNeedsInstall('bash: line 1: docker: command not found')).to.equal(false);
+        expect(terminalOutputNeedsInstall('sh: 1: python3.12: not found')).to.equal(false);
+    });
+
+    it('classifies the fail-fast build message as build-required and names the action', () => {
+        expect(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE).to.include('Build and start');
+        expect(diagnoseBootstrapFailure(QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE, 'fallback').kind).to.equal('build-required');
     });
 
     it('asks for a build when the project\'s own compiled output is missing', () => {

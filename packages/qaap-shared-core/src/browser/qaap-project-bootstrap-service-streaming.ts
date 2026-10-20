@@ -103,11 +103,22 @@ export async function runInstallExtracted(ctx: QaapProjectBootstrapServiceContex
         }
 }
 
-export async function runDevServerExtracted(ctx: QaapProjectBootstrapServiceContext, options?: { conversationId?: string }): Promise<void> {
+/**
+ * The explicit "Build and start" after a `build-required` failure: runs the package's declared
+ * build, then its preview script, once. A failure is reported, never retried (see failDevRun).
+ */
+export async function buildAndStartPreviewExtracted(ctx: QaapProjectBootstrapServiceContext, options?: { conversationId?: string }): Promise<void> {
+        const command = resolveQaapPreviewBuildTarget(ctx._descriptor, ctx._selectedApp)?.buildAndStartCommand;
+        await runDevServerExtracted(ctx, options, command);
+}
+
+export async function runDevServerExtracted(ctx: QaapProjectBootstrapServiceContext, options?: { conversationId?: string },
+        commandOverride?: string): Promise<void> {
         if (options?.conversationId !== undefined) {
             ctx.bindPreviewConversation(options.conversationId);
         }
-        const plan = ctx.resolveDevPlan();
+        const resolved = ctx.resolveDevPlan();
+        const plan = resolved && commandOverride ? { ...resolved, command: commandOverride } : resolved;
         const descriptor = ctx._descriptor;
         if (!plan || !descriptor) {
             return;
@@ -136,7 +147,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
         // implicit build that can exhaust the workspace memory).
         // The folder is re-checked so a build the user ran by hand since detection is honoured.
         const buildTarget = resolveQaapPreviewBuildTarget(descriptor, ctx._selectedApp);
-        if (buildTarget?.buildRequired
+        if (buildTarget?.buildRequired && plan.command !== buildTarget.buildAndStartCommand
             && !(buildTarget.buildOutputUri && await ctx.detector.pathExists(buildTarget.buildOutputUri))) {
             ctx._needsInstall = false;
             ctx._error = QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE;

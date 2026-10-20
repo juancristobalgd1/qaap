@@ -630,6 +630,79 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(descriptor?.nodeModulesPresent).to.equal(true);
     });
 
+    it('offers the declared build as an explicit Build and start command, never as the dev command', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const app = (await detector.detect(URI.fromFilePath('/ws')))?.apps.find(candidate => candidate.relativePath === 'examples/browser');
+        expect(app?.devCommand).to.equal('npm run start');
+        expect(app?.buildAndStartCommand).to.equal('npm run build && npm run start');
+        expect(app?.previewStartCommand).to.equal('npm run start');
+
+        mock.addFile('/ws/.qaap/preview.json', JSON.stringify({ build: 'auto' }));
+        const optedIn = (await detector.detect(URI.fromFilePath('/ws')))?.apps.find(candidate => candidate.relativePath === 'examples/browser');
+        expect(optedIn?.buildAndStartCommand).to.equal(undefined);
+    });
+
+    it('does not trust a pnpm store when the app script bin is missing', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true }));
+        mock.addFile('/ws/pnpm-workspace.yaml', 'packages:\n  - apps/*\n');
+        mock.addFile('/ws/pnpm-lock.yaml', '');
+        mock.addDir('/ws/apps');
+        mock.addFile('/ws/apps/web/package.json', JSON.stringify({
+            name: 'web', scripts: { start: 'serve-site public' }, devDependencies: { 'serve-site': '1.0.0' },
+        }));
+        // Interrupted install: the store exists, the bin was never linked.
+        mock.addDir('/ws/node_modules');
+        mock.addDir('/ws/node_modules/.pnpm');
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        expect((await detector.detect(URI.fromFilePath('/ws')))?.nodeModulesPresent).to.equal(false);
+        mock.addFile('/ws/node_modules/.bin/serve-site', '');
+        expect((await detector.detect(URI.fromFilePath('/ws')))?.nodeModulesPresent).to.equal(true);
+    });
+
+    it('does not trust an interrupted install for a member folder opened directly', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true, workspaces: ['apps/*'] }));
+        mock.addDir('/ws/apps');
+        mock.addFile('/ws/apps/api/package.json', JSON.stringify({
+            name: 'api', scripts: { start: 'fastify start app.js' }, dependencies: { fastify: '5.0.0' },
+        }));
+        mock.addDir('/ws/node_modules');
+        mock.addFile('/ws/node_modules/.bin/tsc', '');
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws/apps/api'));
+        expect(descriptor?.devScriptBinary).to.equal('fastify');
+        expect(descriptor?.nodeModulesPresent).to.equal(false);
+    });
+
+    it('never requires a system tool the script calls (docker) as an installed bin', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/.git');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true, workspaces: ['apps/*'] }));
+        mock.addDir('/ws/apps');
+        mock.addFile('/ws/apps/db/package.json', JSON.stringify({ name: 'db', scripts: { start: 'docker compose up' } }));
+        mock.addDir('/ws/node_modules');
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.apps[0]?.devScriptBinary).to.equal(undefined);
+        expect(descriptor?.nodeModulesPresent).to.equal(true);
+    });
+
     it('keeps standalone projects and implicit app folders on their own install root', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');
