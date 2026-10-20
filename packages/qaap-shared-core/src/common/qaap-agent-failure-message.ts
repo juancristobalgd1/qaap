@@ -317,14 +317,17 @@ function agentFailureEnvelopeText(evidence: AgentFailureEvidence): string {
 }
 
 /**
- * Where a timeout can be read: the CLI's error envelope, the runner's own idle line, our stored
- * timeout copy, or an input that is itself a short error message rather than a log.
+ * Where a timeout can be read: the CLI's error envelope, the last line it printed, the runner's own
+ * idle line, our stored timeout copy, or an input that is itself a short error message, not a log.
  */
 function agentFailureTimeoutText(evidence: AgentFailureEvidence): string {
     const standalone = !evidence.structured && evidence.plainLines.length <= STANDALONE_ERROR_MAX_LINES;
+    const lastIndex = evidence.plainLines.length - 1;
     const plain = standalone
         ? evidence.plainLines
-        : evidence.plainLines.filter(line => CLI_PROVIDER_ERROR_LINE.test(line)
+        // The last plain line is what the CLI printed as it died; earlier lines may be test output.
+        : evidence.plainLines.filter((line, index) => index === lastIndex
+            || CLI_PROVIDER_ERROR_LINE.test(line)
             || RUNNER_IDLE_TIMEOUT_LINE.test(line)
             || STORED_IDLE_TIMEOUT.test(line)
             || STORED_MAX_DURATION.test(line));
