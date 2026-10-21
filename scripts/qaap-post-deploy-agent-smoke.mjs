@@ -115,6 +115,51 @@ export function findProviderCredentialRejection(detail) {
 export { redactSecrets };
 
 /**
+ * The model that ran the task, `vendor/modelId`: the runner's resolved pick on the task, else the
+ * model the agent CLI reported in its `system`/`init` record. `undefined` when neither is known.
+ */
+export function taskModel(detail) {
+    const model = detail?.agentModel ?? detail?.qaiqModel;
+    const modelId = typeof model?.modelId === 'string' ? model.modelId.trim() : '';
+    if (modelId) {
+        const vendor = typeof model.vendor === 'string' && model.vendor.trim() ? `${model.vendor.trim()}/` : '';
+        return redactSecrets(`${vendor}${modelId}`);
+    }
+    const log = typeof detail?.log === 'string' ? detail.log : '';
+    for (const line of log.split('\n')) {
+        if (!line.trimStart().startsWith('{')) {
+            continue;
+        }
+        try {
+            const record = JSON.parse(line);
+            if (record?.type === 'system' && typeof record.model === 'string' && record.model.trim()) {
+                return redactSecrets(record.model.trim());
+            }
+        } catch {
+            // Not a JSON record.
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Provider wording for "this model has no live endpoint / no longer exists": OpenRouter's
+ * "No endpoints found for <model>", Nvidia's "Function '…': Not found for account" (Oct 21 2026: the
+ * default `nvidia/nemotron-3-super-120b-a12b:free` died this way), "is not a valid model ID". The QAIQ
+ * CLI's own "issue with the selected model" is NOT here: it also covers a rejected key.
+ */
+const MODEL_UNAVAILABLE = /No endpoints found for|Not found for account|is not a valid model ID/i;
+
+/**
+ * Whether a failed task died because its model is unavailable on the provider. Standalone tasks
+ * (`POST /agent-tasks`, what this smoke creates) get no fallback-model retry — only conversation
+ * turns do — so a dead default model fails the smoke here with a pointer to the fix.
+ */
+export function isModelUnavailableFailure(detail) {
+    return detail?.state === 'failed' && typeof detail.log === 'string' && MODEL_UNAVAILABLE.test(detail.log);
+}
+
+/**
  * Pass/fail verdict for a finished task detail. A `failed` turn whose provider refused the smoke
  * user's key is `inconclusive`: the release ran the turn, the account's credentials stopped it.
  */
@@ -127,7 +172,16 @@ export function judgeTask(detail, token) {
         if (rejection) {
             return { ok: false, inconclusive: true, reason: `the model provider rejected the smoke user's credentials: ${rejection}` };
         }
-        return { ok: false, reason: `task ended in state ${state ?? '<missing>'} (exit ${detail?.exitCode ?? '-'})` };
+        const model = taskModel(detail);
+        const reason = `task ended in state ${state ?? '<missing>'}${model ? ` on ${model}` : ''} (exit ${detail?.exitCode ?? '-'})`;
+        if (isModelUnavailableFailure(detail)) {
+            return {
+                ok: false,
+                reason: `${reason}: the model has no live endpoint on its provider. Replace the default (OPENROUTER_DEFAULT_FREE_MODELS) `
+                    + 'or the smoke user\'s model pick; `node scripts/qaap-openrouter-free-model-health.mjs` lists live free models',
+            };
+        }
+        return { ok: false, reason };
     }
     if (token && !(typeof detail.log === 'string' && detail.log.includes(token))) {
         return { ok: false, reason: `task ${state} but its log does not contain the token ${token}` };
@@ -275,7 +329,9 @@ async function main(argv, env) {
     if (verdict.warning) {
         console.log(`::warning::Post-deploy agent smoke: task ${taskId} completed with warnings (repository checks red).`);
     }
-    console.log(`OK: agent turn ${taskId} completed in ${Math.round((Date.now() - started) / 1000)}s${expectToken ? ' with the expected reply' : ''}.`);
+    const model = taskModel(detail);
+    console.log(`OK: agent turn ${taskId} completed in ${Math.round((Date.now() - started) / 1000)}s${expectToken ? ' with the expected reply' : ''}`
+        + `${model ? `; answered by ${model}` : ''}.`);
     return 0;
 }
 

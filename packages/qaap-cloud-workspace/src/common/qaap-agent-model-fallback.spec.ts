@@ -24,10 +24,39 @@ describe('qaap-agent-model-fallback', () => {
         const chain = buildAgentModelFallbackChain('qaiq', current);
         expect(chain.map(agentModelKey)).to.deep.equal([
             'openrouter/moonshotai/kimi-k2.6:free',
-            'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+            'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
+            'openrouter/minimax/minimax-m3.1-flash:free',
             'openrouter/google/gemma-4-31b-it:free',
-            'openrouter/qwen/qwen3.8-27b:free',
         ]);
+    });
+
+    it('falls back from the default across different upstream providers', () => {
+        // Oct 21 2026 incident: the old default's only (Nvidia) endpoint died. The default's
+        // chain must not stay with one upstream provider, or one outage kills every retry.
+        const current = {
+            provider: 'openai' as const,
+            vendor: 'openrouter',
+            modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        };
+        const chain = buildAgentModelFallbackChain('qaiq', current);
+        expect(chain.map(agentModelKey)).to.deep.equal([
+            'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
+            'openrouter/minimax/minimax-m3.1-flash:free',
+            'openrouter/google/gemma-4-31b-it:free',
+            'openrouter/poolside/laguna-s-2.1:free',
+        ]);
+        const orgs = new Set(chain.map(model => model.modelId.split('/')[0]));
+        expect(orgs.size).to.equal(chain.length);
+    });
+
+    it('moves a stored pick of the dead old default onto live models', () => {
+        const current = {
+            provider: 'openai' as const,
+            vendor: 'openrouter',
+            modelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+        };
+        const next = resolveNextFallbackAgentModel('qaiq', current, new Set(['openrouter/nvidia/nemotron-3-super-120b-a12b:free']));
+        expect(agentModelKey(next)).to.equal('openrouter/nvidia/nemotron-3-ultra-550b-a55b:free');
     });
 
     it('skips models already tried', () => {
@@ -38,10 +67,10 @@ describe('qaap-agent-model-fallback', () => {
         };
         const tried = new Set([
             'openrouter/moonshotai/kimi-k2.6:free',
-            'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+            'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
         ]);
         const next = resolveNextFallbackAgentModel('qaiq', current, tried);
-        expect(agentModelKey(next)).to.equal('openrouter/google/gemma-4-31b-it:free');
+        expect(agentModelKey(next)).to.equal('openrouter/minimax/minimax-m3.1-flash:free');
     });
 
     it('treats empty agent output as retryable', () => {
