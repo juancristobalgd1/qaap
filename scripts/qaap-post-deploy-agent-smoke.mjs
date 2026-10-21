@@ -71,13 +71,81 @@ export function pickSmokeAgent(list, requested) {
     return { agent: preferred.id, note };
 }
 
+const FAILURE_REASON_MAX_CHARS = 400;
+/** Credential-shaped substrings never reach the deploy log, even if a CLI echoed one. */
+const SECRET_PATTERNS = [
+    /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}/g,
+    /\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{8,}/g,
+    /\bAIza[A-Za-z0-9_-]{20,}/g,
+    /\b(Bearer|token|api[_-]?key)(\s*[:=]?\s*)[A-Za-z0-9._~+/=-]{12,}/gi,
+];
+
+function redactSecrets(text) {
+    let redacted = text;
+    for (const pattern of SECRET_PATTERNS) {
+        redacted = redacted.replace(pattern, (match, label, separator) => typeof label === 'string' ? `${label}${separator}[redacted]` : '[redacted]');
+    }
+    return redacted;
+}
+
+function errorText(value) {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value && typeof value === 'object') {
+        return errorText(value.message) || errorText(value.error) || errorText(value.data);
+    }
+    return '';
+}
+
+/**
+ * Why a task failed, from its stored log, for the deploy log: the CLI's final `is_error` result,
+ * else its last error record, else the last plain line (e.g. the runner's own refusal "Add your
+ * OpenRouter API key in Settings → AI Features to use QAIQ, …"). Redacted and truncated; undefined
+ * when the log is empty. Provider keys are BYOK: the smoke account needs its own key in its Settings.
+ */
+export function describeTaskFailure(detail) {
+    const log = typeof detail?.log === 'string' ? detail.log : '';
+    let result;
+    let errorRecord;
+    let plain;
+    for (const raw of log.split('\n')) {
+        const line = raw.trim();
+        if (!line) {
+            continue;
+        }
+        if (line.startsWith('{')) {
+            try {
+                const record = JSON.parse(line);
+                if (record?.type === 'result' && record.is_error) {
+                    result = errorText(record.result) || errorText(record.error)
+                        || (Array.isArray(record.errors) ? record.errors.map(errorText).join('; ') : '');
+                } else if (record?.type === 'error' || (record?.type === undefined && record?.error)) {
+                    errorRecord = errorText(record.error) || errorText(record.message) || errorRecord;
+                }
+                continue;
+            } catch {
+                // Not JSON: a plain line.
+            }
+        }
+        plain = line;
+    }
+    const reason = (result || errorRecord || plain || '').replace(/\s+/g, ' ').trim();
+    if (!reason) {
+        return undefined;
+    }
+    const safe = redactSecrets(reason);
+    return safe.length > FAILURE_REASON_MAX_CHARS ? `${safe.slice(0, FAILURE_REASON_MAX_CHARS - 1)}…` : safe;
+}
+
 /** Pass/fail verdict for a finished task detail. */
 // `completed_with_warnings` = the turn finished but the repository's own checks were red: that is the
 // project's state, not the release's, so it passes with a warning.
 export function judgeTask(detail, token) {
     const state = detail?.state;
     if (state !== 'completed' && state !== 'completed_with_warnings') {
-        return { ok: false, reason: `task ended in state ${state ?? '<missing>'} (exit ${detail?.exitCode ?? '-'})` };
+        const why = describeTaskFailure(detail);
+        return { ok: false, reason: `task ended in state ${state ?? '<missing>'} (exit ${detail?.exitCode ?? '-'})${why ? `: ${why}` : ''}` };
     }
     if (token && !(typeof detail.log === 'string' && detail.log.includes(token))) {
         return { ok: false, reason: `task ${state} but its log does not contain the token ${token}` };

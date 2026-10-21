@@ -94,7 +94,7 @@ import {
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
-import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
+import { assertQaiqConfiguredExtracted, checkQaiqProviderCredentialForOwner as checkQaiqProviderCredentialForOwnerExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
@@ -840,7 +840,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const bin = candidate.bin ?? normalized;
         return {
             // Lazy reader: a harness without a credential mapping never reads the owner's preferences.
-            settingsConnected: hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
+            settingsConnected: normalized === QAIQ_AGENT_ID
+                // QAIQ is ready only when the provider its turns route to has a key for this owner (an
+                // OpenAI key does not run an OpenRouter model): the same check that gates its spawn.
+                ? !checkQaiqProviderCredentialForOwnerExtracted(this, ownerLogin)
+                : hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
             probeBin: resolveAgentConnectionProbeHelper(normalized, bin) ? bin : undefined,
         };
     }
@@ -1120,8 +1124,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public assertQaiqConfigured(agentId: string, ownerLogin?: string): void {
-        assertQaiqConfiguredExtracted(this, agentId, ownerLogin);
+    public assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void {
+        assertQaiqConfiguredExtracted(this, agentId, ownerLogin, agentModel);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

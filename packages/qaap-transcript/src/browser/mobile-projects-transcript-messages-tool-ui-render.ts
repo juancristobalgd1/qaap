@@ -9,7 +9,14 @@ import {
     type QaapAgentAuthLoginChallenge,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
-import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage, summarizeCollapsedAgentFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import {
+    detectAgentFailureKind,
+    formatStoredAgentFailureMessage,
+    isQaiqProviderKeyMissingFailure,
+    localizeGenericAgentFailureMessage,
+    resolveAgentTurnFailureMessage,
+    summarizeCollapsedAgentFailure,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 import {
@@ -85,7 +92,10 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                 : (persisted || resolved || generic);
         const failureKind = detectAgentFailureKind(authSample);
         const extractedChallenge = extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
-        const authChallenge = extractedChallenge
+        // QAIQ refused before running: no provider key for this user. Only a key in Settings fixes it
+        // (BYOK), so the card offers "Add API key in Settings" and no sign-in.
+        const authChallenge = (isQaiqProviderKeyMissingFailure(authSample) ? { mode: 'api_key' as const } : undefined)
+            ?? extractedChallenge
             ?? (failureKind === 'auth' ? { mode: 'session' as const } : undefined)
             ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
                 ? { mode: 'session' as const }
@@ -127,8 +137,11 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         titleWrap.className = 'theia-mobile-agent-turn-failure-title-wrap';
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-shell-title';
+        const authTitle = isQaiqProviderKeyMissingFailure(authSample)
+            ? nls.localize('qaap/agentFailure/reasonApiKeyMissing', 'API key needed')
+            : nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required');
         label.textContent = authChallenge
-            ? nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required')
+            ? authTitle
             : planLimit
               ? nls.localize('qaap/mobileProjects/transcriptPlanLimitReached', 'Plan limit reached')
               : isQuotaFailure

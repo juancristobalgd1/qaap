@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
-import { main, judgeTask, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
+import { describeTaskFailure, main, judgeTask, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
 
 const SESSIONS = {
     sessions: [
@@ -104,6 +104,25 @@ test('verdict: completed (+ token), warnings pass, anything else fails', () => {
     for (const state of ['failed', 'blocked', 'interrupted', 'cancelled']) {
         assert.equal(judgeTask({ state, log: 'TOKEN' }, 'TOKEN').ok, false, state);
     }
+});
+
+test('a failed task names its stored failure reason, without secrets', () => {
+    const cliText = "There's an issue with the selected model (nvidia/nemotron-3-super-120b-a12b:free). It may not exist or you may not have access to it.";
+    const streamLog = [
+        JSON.stringify({ type: 'system', subtype: 'init', model: 'nvidia/nemotron-3-super-120b-a12b:free', apiKeySource: 'none' }),
+        JSON.stringify({ type: 'assistant', error: 'invalid_request', message: { content: [{ type: 'text', text: cliText }] } }),
+        JSON.stringify({ type: 'result', is_error: true, result: cliText }),
+    ].join('\n');
+    assert.equal(describeTaskFailure({ state: 'failed', log: streamLog }), cliText);
+    assert.equal(
+        judgeTask({ state: 'failed', exitCode: 1, log: streamLog }, 'TOKEN').reason,
+        `task ended in state failed (exit 1): ${cliText}`,
+    );
+    const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip.';
+    assert.equal(describeTaskFailure({ log: `${refusal}\n` }), refusal);
+    assert.equal(describeTaskFailure({ log: 'Error: 401 Incorrect API key provided: sk-or-v1-abcdef0123456789' }), 'Error: 401 Incorrect API key provided: [redacted]');
+    assert.equal(describeTaskFailure({ log: '' }), undefined);
+    assert.equal(judgeTask({ state: 'failed', exitCode: 1 }, undefined).reason, 'task ended in state failed (exit 1)');
 });
 
 test('happy path: read-only turn in the first cloned project, token echoed', async () => {

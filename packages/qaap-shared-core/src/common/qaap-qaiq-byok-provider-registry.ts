@@ -300,6 +300,58 @@ export function providerHasByokCredentialOrEnv(
     return descriptor.credentialEnv.some(mapping => !!readEnv(mapping.env)?.trim());
 }
 
+/**
+ * Env variables that hold this vendor's own credential. The OpenAI-compatible aliases
+ * (`OPENAI_API_KEY`, `OPENAI_BASE_URL`) that OpenRouter / NVIDIA / Hugging Face are mapped onto at
+ * spawn time are excluded: an OpenAI key in the env is not an OpenRouter key.
+ */
+export function listByokVendorCredentialEnv(descriptor: QaapQaiqByokProviderDescriptor): string[] {
+    return (descriptor.credentialEnv ?? [])
+        .filter(mapping => mapping.defaultValue === undefined)
+        .filter(mapping => descriptor.vendor === 'openai' || !mapping.env.startsWith('OPENAI_'))
+        .map(mapping => mapping.env);
+}
+
+/**
+ * Like {@link vendorHasByokCredential}, but only the vendor's own credential counts (see
+ * {@link listByokVendorCredentialEnv}). Use it to decide whether a turn routed to `vendor` can
+ * authenticate at all. `undefined` for a vendor outside the BYOK registry (nothing to check).
+ */
+export function vendorHasDedicatedByokCredential(
+    readPref: QaapPreferenceReader,
+    vendor: string,
+    readEnv?: (key: string) => string | undefined,
+): boolean | undefined {
+    if (vendor.trim().toLowerCase() === QAAP_CUSTOM_OPENAI_VENDOR) {
+        return vendorHasByokCredential(readPref, vendor, readEnv);
+    }
+    const descriptor = findQaiqByokProvider(vendor);
+    if (!descriptor) {
+        return undefined;
+    }
+    if (providerHasByokCredential(readPref, descriptor)) {
+        return true;
+    }
+    if (!readEnv) {
+        return false;
+    }
+    if (listByokVendorCredentialEnv(descriptor).some(env => !!readEnv(env)?.trim())) {
+        return true;
+    }
+    // A local `OPENAI_API_KEY` explicitly pointed at this vendor's OpenAI-compatible endpoint is its key.
+    const vendorBaseUrl = descriptor.credentialEnv?.find(mapping => mapping.env === 'OPENAI_BASE_URL')?.defaultValue;
+    const baseUrl = readEnv('OPENAI_BASE_URL')?.trim();
+    return !!vendorBaseUrl && !!baseUrl && !!readEnv('OPENAI_API_KEY')?.trim() && sameUrlHost(baseUrl, vendorBaseUrl);
+}
+
+function sameUrlHost(left: string, right: string): boolean {
+    try {
+        return new URL(left).host.toLowerCase() === new URL(right).host.toLowerCase();
+    } catch {
+        return false;
+    }
+}
+
 export function hasAnyConfiguredByokCredential(
     readPref: QaapPreferenceReader,
     readEnv?: (key: string) => string | undefined,
