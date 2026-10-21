@@ -4,14 +4,28 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { localizeGenericAgentFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { localizeAgentTurnTimeoutMessage, localizeGenericAgentFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { resolveQaapFailedRunAction } from './qaap-failed-run-action';
 
 describe('resolveQaapFailedRunAction', () => {
-    it('continues turns that were interrupted rather than failed', () => {
+    it('offers Continue on a turn the watchdog paused, whose reason itself says Continue', () => {
         for (const lastMessageError of [
-            'Agent interrupted',
+            // Exact copy the turn watchdog records (`buildQaapTurnWatchdogMessage`).
+            'Timed out after 15 minutes without output. Continue runs it again from your original request.',
+            'Timed out at the 120-minute task limit. Continue runs it again from your original request.',
+            'Waited 24 hours for your approval. Continue runs it again from your original request.',
+            localizeAgentTurnTimeoutMessage('idle', 15),
+            localizeAgentTurnTimeoutMessage('max_duration', 120),
+        ]) {
+            expect(resolveQaapFailedRunAction({ lastMessageError }), lastMessageError).to.equal('continue');
+        }
+    });
+
+    it('continues the other interrupted turns: restart, legacy watchdog stop, legacy interrupted copy', () => {
+        for (const lastMessageError of [
+            'The backend restarted while this turn was in progress, so it was interrupted. Retry to continue.',
             'Stopped automatically after 46 min: the turn exceeded the maximum allowed time.',
+            'Agent interrupted',
             localizeGenericAgentFailureMessage('interrupted'),
         ]) {
             expect(resolveQaapFailedRunAction({ lastMessageError }), lastMessageError).to.equal('continue');
