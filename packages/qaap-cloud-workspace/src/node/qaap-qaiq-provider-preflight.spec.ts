@@ -162,7 +162,8 @@ describe('QAIQ provider preflight', () => {
         it('refuses a keyless owner before spawn with the BYOK copy, and runs the owner who has a key', () => {
             const runner = createRunner();
             expect(() => runner.assertQaiqConfigured('qaiq', 'bob', NEMOTRON))
-                .to.throw('Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip.');
+                .to.throw('Add your OpenRouter API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, '
+                    + 'or pick another agent from the agent chip.');
             expect(() => runner.assertQaiqConfigured('qaiq', 'alice', NEMOTRON)).to.not.throw();
         });
 

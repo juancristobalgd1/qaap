@@ -44,20 +44,27 @@ describe('QAIQ provider key failures', () => {
         it('names the model and the key/credits/privacy causes instead of a generic error', () => {
             const message = resolveAgentTurnFailureMessage(NO_KEY_LOG, { state: 'failed', exitCode: 1, agentId: 'qaiq' });
             expect(message).to.equal(
-                `The model provider rejected access to ${MODEL}. Its API key may be missing or invalid, the account may be out of credits, `
-                + 'or (for free OpenRouter models) your OpenRouter privacy settings may block it. '
-                + 'Check the key in Settings → AI Features, or pick another model or agent.',
+                `The model provider refused ${MODEL}. The model may be unavailable or retired at the provider right now, `
+                + 'its API key may be missing or invalid, the account may be out of credits, '
+                + 'or (for free OpenRouter models) your privacy settings may block it. '
+                + 'Pick another model, or check the key in Settings → AI Features.',
             );
             expect(message).to.not.match(/--model/);
         });
 
         it('rewrites the raw CLI text persisted by older turns and labels it "Model access denied"', () => {
-            expect(formatStoredAgentFailureMessage(CLI_TEXT)).to.match(new RegExp(`^The model provider rejected access to ${MODEL.replace(/[.]/g, '\\.')}\\.`));
+            expect(formatStoredAgentFailureMessage(CLI_TEXT)).to.match(new RegExp(`^The model provider refused ${MODEL.replace(/[.]/g, '\\.')}\\.`));
             const reason = describeAgentTurnFailure(CLI_TEXT);
             expect(reason?.kind).to.equal('model_access');
             expect(reason?.label).to.equal('Model access denied');
             const persisted = resolveAgentTurnFailureMessage(NO_KEY_LOG, { state: 'failed' });
             expect(describeAgentTurnFailure(persisted)?.label).to.equal('Model access denied');
+            // Stored English copy re-localizes as itself; the earlier wording keeps its label too.
+            expect(formatStoredAgentFailureMessage(persisted)).to.equal(persisted);
+            // Its "out of credits" / "API key" wording must not re-classify it as quota or auth.
+            expect(detectAgentFailureKind(persisted)).to.equal('model_unavailable');
+            expect(describeAgentTurnFailure(`The model provider rejected access to ${MODEL}. Its API key may be missing.`)?.label)
+                .to.equal('Model access denied');
         });
 
         it('extracts the model only from that sentence', () => {
@@ -71,7 +78,8 @@ describe('QAIQ provider key failures', () => {
 
         it('leads with the BYOK fix and offers another agent, never an administrator or a sign-in', () => {
             expect(refusal).to.equal(
-                'Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip. '
+                'Add your OpenRouter API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, '
+                + 'or pick another agent from the agent chip. '
                 + 'Keys are personal: each account adds its own.',
             );
             expect(refusal).to.not.match(/administrator|sign in/i);

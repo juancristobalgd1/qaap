@@ -118,7 +118,7 @@ test('a failed task names its stored failure reason, without secrets', () => {
         judgeTask({ state: 'failed', exitCode: 1, log: streamLog }, 'TOKEN').reason,
         `task ended in state failed (exit 1): ${cliText}`,
     );
-    const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip.';
+    const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, or pick another agent from the agent chip.';
     assert.equal(describeTaskFailure({ log: `${refusal}\n` }), refusal);
     assert.equal(describeTaskFailure({ log: 'Error: 401 Incorrect API key provided: sk-or-v1-abcdef0123456789' }), 'Error: 401 Incorrect API key provided: [redacted]');
     assert.equal(describeTaskFailure({ log: '' }), undefined);

@@ -156,7 +156,7 @@ const SELECTED_MODEL_ACCESS_FAILURE = /\bissue\s+with\s+the\s+selected\s+model\s
 /** Persisted (English, backend-locale) form of {@link localizeQaiqProviderKeyMissingMessage}. */
 const STORED_PROVIDER_KEY_MISSING = /^Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b/m;
 /** Persisted (English, backend-locale) form of {@link localizeProviderModelAccessMessage}. */
-const STORED_MODEL_ACCESS_DENIED = /^The model provider rejected access to /;
+const STORED_MODEL_ACCESS_DENIED = /^The model provider (?:refused|rejected access to) /m;
 
 const LEGACY_AGENT_FAILURE_REGEX = /^Agent\s+(failed|interrupted|cancelled)(?:\s+\(exit\s+(\d+)\))?\.?$/i;
 
@@ -484,6 +484,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (!sample) {
         return undefined;
     }
+    // Our own persisted model-access copy names credits and keys as possible causes; it must keep
+    // reading as the model failure it is, not as a quota or auth error, when classified again.
+    if (STORED_MODEL_ACCESS_DENIED.test(sample)) {
+        return 'model_unavailable';
+    }
     if (matchesAny(sample, CLI_MISSING_PATTERNS)) {
         return 'cli_missing';
     }
@@ -582,27 +587,30 @@ export function localizeQaiqProviderKeyMissingMessage(providerLabel?: string): s
     if (label) {
         return nls.localize(
             'qaap/agentFailure/qaiqProviderKeyMissing',
-            'Add your {0} API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip. Keys are personal: each account adds its own.',
+            'Add your {0} API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, '
+            + 'or pick another agent from the agent chip. Keys are personal: each account adds its own.',
             label,
         );
     }
     return nls.localize(
         'qaap/agentFailure/qaiqAnyProviderKeyMissing',
-        'Add an AI provider API key (for example OpenRouter) in Settings → AI Features to use QAIQ, or pick another agent from the agent chip.',
+        'Add an AI provider API key (for example OpenRouter) in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, '
+        + 'or pick another agent from the agent chip.',
     );
 }
 
 /**
  * The provider answered "no such model / no access" for `model`. On QAIQ's OpenAI-compatible
- * providers (OpenRouter above all) that one 404 covers a missing or invalid key, an account
- * without credits and a free model blocked by the account's privacy settings, so name all three.
+ * providers (OpenRouter above all) that one 404 covers a model unavailable or retired at its
+ * endpoint (most common: a free model whose only endpoint is down), a missing or invalid key, an
+ * account without credits and a free model blocked by privacy settings, so name all of them.
  */
 export function localizeProviderModelAccessMessage(model: string): string {
     return nls.localize(
         'qaap/agentFailure/providerModelAccessDenied',
-        'The model provider rejected access to {0}. Its API key may be missing or invalid, the account may be out of credits, '
-        + 'or (for free OpenRouter models) your OpenRouter privacy settings may block it. '
-        + 'Check the key in Settings → AI Features, or pick another model or agent.',
+        'The model provider refused {0}. The model may be unavailable or retired at the provider right now, its API key may be missing or invalid, '
+        + 'the account may be out of credits, or (for free OpenRouter models) your privacy settings may block it. '
+        + 'Pick another model, or check the key in Settings → AI Features.',
         model,
     );
 }
@@ -743,6 +751,10 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
     const timeout = formatStoredAgentTurnTimeout(trimmed);
     if (timeout) {
         return timeout;
+    }
+    // Already our product copy (model access / missing key): keep it, model name included.
+    if (STORED_MODEL_ACCESS_DENIED.test(trimmed) || STORED_PROVIDER_KEY_MISSING.test(trimmed)) {
+        return trimmed;
     }
     const kind = detectAgentFailureKind(trimmed);
     if (kind === 'model_unavailable') {

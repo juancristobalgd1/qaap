@@ -83,7 +83,7 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
     });
 
     describe('QAIQ missing-provider-key failure card', () => {
-        const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip. '
+        const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, or pick another agent from the agent chip. '
             + 'Keys are personal: each account adds its own.';
         const ctx = {
             appendTranscriptShellSummaryTail: () => undefined,
