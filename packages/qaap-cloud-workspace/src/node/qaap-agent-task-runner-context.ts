@@ -226,7 +226,7 @@ export interface QaapAgentTaskRunnerContext {
     /** Provider env an agent spawned for `ownerLogin` would see (operator keys withheld where required). */
     previewProviderEnv(ownerLogin?: string): NodeJS.ProcessEnv;
     resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string;
-    assertQaiqConfigured(agentId: string, ownerLogin?: string): void;
+    assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void;
     applyTemplate(template: string, prompt: string, vars?: Record<string, string>): string;
     applyTemplateWithoutPrompt(template: string, vars?: Record<string, string>): string;
     shellQuote(value: string): string;

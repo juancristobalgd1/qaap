@@ -76,6 +76,12 @@ export interface QaapAgentTask {
      */
     readonly readOnlyEnforcement?: QaapAgentReadOnlyEnforcement;
     /**
+     * Set when the runner refused the task before spawning its agent because the provider the turn
+     * routes to has no API key for the owner. Nothing a retry on another model of the same agent
+     * could fix: model fallback must not re-spawn it.
+     */
+    readonly preflightFailure?: 'provider_key_missing';
+    /**
      * Set when an orchestrator (a workflow run) owns the adversarial review for this turn, so the
      * runner must not also run its own. Without it a workflow-driven turn is reviewed twice — once
      * by the runner and once by the workflow's judge node — at double the latency and cost.

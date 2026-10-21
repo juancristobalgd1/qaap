@@ -95,7 +95,9 @@ function redactSecrets(text) {
         .replace(/\b(?:sk|pk|rk)-[\w-]{4,}/g, '<redacted>')
         .replace(/\b(?:hf_|nvapi-|gsk_|xai-)[\w-]{4,}/g, '<redacted>')
         .replace(/\bAIza[\w-]{8,}/g, '<redacted>')
-        .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>');
+        .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>')
+        .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[\w]{8,}/g, '<redacted>')
+        .replace(/\b(token|api[_-]?key)(\s*[:=]\s*)[\w.~+/=-]{12,}/gi, '$1$2<redacted>');
 }
 
 /**
@@ -113,6 +115,58 @@ export function findProviderCredentialRejection(detail) {
 }
 
 export { redactSecrets };
+
+const FAILURE_REASON_MAX_CHARS = 400;
+
+function errorText(value) {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value && typeof value === 'object') {
+        return errorText(value.message) || errorText(value.error) || errorText(value.data);
+    }
+    return '';
+}
+
+/**
+ * Why a task failed, from its stored log, for the deploy log: the CLI's final `is_error` result,
+ * else its last error record, else the last plain line (e.g. the runner's own refusal "Add your
+ * OpenRouter API key in Settings → BYOK to use QAIQ, …"). Redacted and truncated; undefined
+ * when the log is empty. Provider keys are BYOK: the smoke account needs its own key in its Settings.
+ */
+export function describeTaskFailure(detail) {
+    const log = typeof detail?.log === 'string' ? detail.log : '';
+    let result;
+    let errorRecord;
+    let plain;
+    for (const raw of log.split('\n')) {
+        const line = raw.trim();
+        if (!line) {
+            continue;
+        }
+        if (line.startsWith('{')) {
+            try {
+                const record = JSON.parse(line);
+                if (record?.type === 'result' && record.is_error) {
+                    result = errorText(record.result) || errorText(record.error)
+                        || (Array.isArray(record.errors) ? record.errors.map(errorText).join('; ') : '');
+                } else if (record?.type === 'error' || (record?.type === undefined && record?.error)) {
+                    errorRecord = errorText(record.error) || errorText(record.message) || errorRecord;
+                }
+                continue;
+            } catch {
+                // Not JSON: a plain line.
+            }
+        }
+        plain = line;
+    }
+    const reason = (result || errorRecord || plain || '').replace(/\s+/g, ' ').trim();
+    if (!reason) {
+        return undefined;
+    }
+    const safe = redactSecrets(reason);
+    return safe.length > FAILURE_REASON_MAX_CHARS ? `${safe.slice(0, FAILURE_REASON_MAX_CHARS - 1)}…` : safe;
+}
 
 /**
  * The model that ran the task, `vendor/modelId`: the runner's resolved pick on the task, else the
@@ -174,14 +228,16 @@ export function judgeTask(detail, token) {
         }
         const model = taskModel(detail);
         const reason = `task ended in state ${state ?? '<missing>'}${model ? ` on ${model}` : ''} (exit ${detail?.exitCode ?? '-'})`;
+        const why = describeTaskFailure(detail);
         if (isModelUnavailableFailure(detail)) {
             return {
                 ok: false,
                 reason: `${reason}: the model has no live endpoint on its provider. Replace the default (OPENROUTER_DEFAULT_FREE_MODELS) `
-                    + 'or the smoke user\'s model pick; `node scripts/qaap-openrouter-free-model-health.mjs` lists live free models',
+                    + 'or the smoke user\'s model pick; `node scripts/qaap-openrouter-free-model-health.mjs` lists live free models'
+                    + `${why ? `. Provider said: ${why}` : ''}`,
             };
         }
-        return { ok: false, reason };
+        return { ok: false, reason: `${reason}${why ? `: ${why}` : ''}` };
     }
     if (token && !(typeof detail.log === 'string' && detail.log.includes(token))) {
         return { ok: false, reason: `task ${state} but its log does not contain the token ${token}` };

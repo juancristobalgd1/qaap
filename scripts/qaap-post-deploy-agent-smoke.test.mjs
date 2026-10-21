@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
 import {
-    main, findProviderCredentialRejection, isModelUnavailableFailure, judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie, taskModel,
+    describeTaskFailure, main, findProviderCredentialRejection, isModelUnavailableFailure, judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent,
+    smokeCookie, taskModel,
 } from './qaap-post-deploy-agent-smoke.mjs';
 
 const SESSIONS = {
@@ -106,6 +107,26 @@ test('verdict: completed (+ token), warnings pass, anything else fails', () => {
     for (const state of ['failed', 'blocked', 'interrupted', 'cancelled']) {
         assert.equal(judgeTask({ state, log: 'TOKEN' }, 'TOKEN').ok, false, state);
     }
+});
+
+test('a failed task names its stored failure reason, without secrets', () => {
+    const cliText = "There's an issue with the selected model (nvidia/nemotron-3-super-120b-a12b:free). It may not exist or you may not have access to it.";
+    const streamLog = [
+        JSON.stringify({ type: 'system', subtype: 'init', model: 'nvidia/nemotron-3-super-120b-a12b:free', apiKeySource: 'none' }),
+        JSON.stringify({ type: 'assistant', error: 'invalid_request', message: { content: [{ type: 'text', text: cliText }] } }),
+        JSON.stringify({ type: 'result', is_error: true, result: cliText }),
+    ].join('\n');
+    assert.equal(describeTaskFailure({ state: 'failed', log: streamLog }), cliText);
+    assert.equal(
+        judgeTask({ state: 'failed', exitCode: 1, log: streamLog }, 'TOKEN').reason,
+        `task ended in state failed on nvidia/nemotron-3-super-120b-a12b:free (exit 1): ${cliText}`,
+    );
+    const refusal = 'Add your OpenRouter API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
+        + 'or pick another agent from the agent chip.';
+    assert.equal(describeTaskFailure({ log: `${refusal}\n` }), refusal);
+    assert.equal(describeTaskFailure({ log: 'Error: 401 Incorrect API key provided: sk-or-v1-abcdef0123456789' }), 'Error: 401 Incorrect API key provided: <redacted>');
+    assert.equal(describeTaskFailure({ log: '' }), undefined);
+    assert.equal(judgeTask({ state: 'failed', exitCode: 1 }, undefined).reason, 'task ended in state failed (exit 1)');
 });
 
 test('happy path: read-only turn in the first cloned project, token echoed', async () => {
@@ -327,6 +348,10 @@ test('a dead model is named as such; the ambiguous QAIQ model message is not', (
     assert.equal(verdict.ok, false);
     assert.equal(verdict.inconclusive, undefined);
     assert.match(verdict.reason, /state failed on nvidia\/nemotron-3-super-120b-a12b:free \(exit 1\): the model has no live endpoint/);
+    assert.match(verdict.reason, /free-model-health\.mjs.*Provider said: .*Not found for account/);
+    // Any other failure keeps #316's reason suffix and still names the model.
+    const other = judgeTask({ state: 'failed', exitCode: 1, agentModel: { vendor: 'openrouter', modelId: 'a/b:free' }, log: 'Error: spawn qaiq ENOENT' }, 'TOKEN');
+    assert.equal(other.reason, 'task ended in state failed on openrouter/a/b:free (exit 1): Error: spawn qaiq ENOENT');
 });
 
 test('a dead default model fails the smoke with the model and the fix in the error', async () => {
