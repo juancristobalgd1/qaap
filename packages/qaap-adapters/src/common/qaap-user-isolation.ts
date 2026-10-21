@@ -553,8 +553,9 @@ export function parseQaapWorkspaceRepoPath(workspacePath: string): QaapWorkspace
     }
     for (let index = segments.length - 3; index >= 0; index--) {
         const clone = segments[index] === 'repos' ? cloneRootAt(segments.slice(0, index + 3), index) : undefined;
-        if (clone && !isFlatUsersOwner(clone)) {
-            return clone;
+        if (clone) {
+            // `repos/users/{x}` anchors here (the per-user container): ambiguous, never an outer `repos` reading.
+            return isFlatUsersOwner(clone) ? undefined : clone;
         }
     }
     return undefined;

@@ -154,6 +154,10 @@ describe('parseGithubFullNameFromWorkspacePath', () => {
         expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice/site'))
             .to.equal(undefined);
         expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice')).to.equal(undefined);
+        // The inner `repos/users/…` is the anchor under a nested root: never fall back to an outer `x/repos` reading.
+        expect(parseGithubFullNameFromWorkspacePath('/home/repos/x/repos/users/me/web')).to.equal(undefined);
+        expect(parseGithubFullNameFromWorkspacePath('/home/repos/x/repos/users/me/acme')).to.equal(undefined);
+        expect(parseGithubFullNameFromWorkspacePath('/home/repos/x/repos/users/me')).to.equal(undefined);
     });
 
     it('resolves folders below a clone root to that clone', () => {
