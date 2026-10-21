@@ -22,7 +22,14 @@ export type QaapAgentFailureKind =
     | 'auth'
     | 'timeout'
     | 'network'
-    | 'cli_missing';
+    | 'cli_missing'
+    | 'provider_key_rejected'
+    | 'provider_credits'
+    | 'provider_data_policy'
+    | 'provider_free_limit';
+
+/** What the runner's provider preflight learned about a BYOK key after an ambiguous CLI error. */
+export type QaapProviderKeyVerdict = 'key_rejected' | 'no_credits' | 'free_model_refused';
 
 export type QaapAgentTurnFailureState = 'failed' | 'interrupted' | 'cancelled';
 
@@ -149,6 +156,107 @@ const NETWORK_PATTERNS: readonly RegExp[] = [
     /\bfetch\s+failed\b/i,
     /\bconnection\s+(?:refused|reset)\b/i,
 ];
+
+/**
+ * Note the task runner appends after probing the user's BYOK key with the provider, when the CLI's
+ * own error was ambiguous (QAIQ reports any OpenRouter 4xx as "an issue with the selected model").
+ */
+const PROVIDER_PREFLIGHT_LINE = /^\[qaap\] provider check: ([\w .-]+?) (key_rejected|no_credits|free_model_refused)\b/m;
+
+/** Line written by {@link formatProviderPreflightNote}; never contains the key or the response body. */
+export function formatProviderPreflightNote(providerLabel: string, verdict: QaapProviderKeyVerdict, httpStatus?: number): string {
+    return `[qaap] provider check: ${providerLabel} ${verdict}${httpStatus !== undefined ? ` (HTTP ${httpStatus})` : ''}.`;
+}
+
+const PROVIDER_PREFLIGHT_KIND: Readonly<Record<QaapProviderKeyVerdict, QaapAgentFailureKind>> = {
+    key_rejected: 'provider_key_rejected',
+    no_credits: 'provider_credits',
+    free_model_refused: 'provider_data_policy',
+};
+
+/**
+ * Provider error bodies that are about the user's own key or account, not about Qaap or the model.
+ * OpenRouter answers 401 "No auth credentials found" / "User not found." for a bad or revoked key,
+ * 402 for a key without credits, 404 for a free model the account's privacy settings exclude and
+ * 429 "free-models-per-day" for the daily free-model cap. Our own copy is listed too, so a
+ * persisted reason classifies back to the same kind.
+ */
+const PROVIDER_KEY_REJECTED_PATTERNS: readonly RegExp[] = [
+    /\bno\s+auth\s+credentials\s+found\b/i,
+    /\bkey\s+was\s+rejected\b/i,
+];
+/** A disabled/revoked/expired key, only on a line that also names a BYOK provider. */
+const PROVIDER_KEY_REVOKED_LINE = /\b(?:api\s+)?key\s+(?:is\s+|has\s+been\s+)?(?:disabled|revoked|expired)\b/i;
+/** Only with the provider named: "User not found." alone could be any tool's output. */
+const OPENROUTER_KEY_REJECTED_PATTERNS: readonly RegExp[] = [
+    /\buser\s+not\s+found\b/i,
+    /\binvalid[_\s-]?api[_\s-]?key\b/i,
+];
+const PROVIDER_CREDITS_PATTERNS: readonly RegExp[] = [
+    /\binsufficient\s+credits\b/i,
+    /\brequires\s+more\s+credits\b/i,
+    /\bkey\s+limit\s+exceeded\b/i,
+    /\bkey\s+is\s+out\s+of\s+credits\b/i,
+];
+const PROVIDER_DATA_POLICY_PATTERNS: readonly RegExp[] = [
+    /\bno\s+endpoints\s+found\s+matching\s+your\s+data\s+policy\b/i,
+    /\bfree\s+model\s+may\s+be\s+unavailable\s+right\s+now\b/i,
+];
+const PROVIDER_FREE_LIMIT_PATTERNS: readonly RegExp[] = [
+    /\bfree[_\s-]?models?[_\s-]?per[_\s-]?(?:day|min)\b/i,
+    /\bfree-model\s+limit\s+reached\b/i,
+];
+
+const PROVIDER_LABELS: ReadonlyArray<readonly [RegExp, string]> = [
+    [/\bopen\s?router\b/i, 'OpenRouter'],
+    [/\bhugging\s?face\b/i, 'Hugging Face'],
+    [/\bnvidia\b(?!\/)/i, 'NVIDIA'],
+    [/\banthropic\b/i, 'Anthropic'],
+    [/\bopenai\b/i, 'OpenAI'],
+    [/\b(?:google|gemini)\b/i, 'Google'],
+];
+
+/** Provider named in the failure (preflight note first), for "Your {provider} key was rejected". */
+export function detectAgentFailureProviderLabel(log: string | undefined): string | undefined {
+    const sample = log ?? '';
+    const preflight = PROVIDER_PREFLIGHT_LINE.exec(sample);
+    if (preflight) {
+        return preflight[1];
+    }
+    return PROVIDER_LABELS.find(([pattern]) => pattern.test(sample))?.[1];
+}
+
+function classifyProviderKeyEvidence(sample: string, envelope: string): QaapAgentFailureKind | undefined {
+    const preflight = PROVIDER_PREFLIGHT_LINE.exec(sample);
+    if (preflight) {
+        return PROVIDER_PREFLIGHT_KIND[preflight[2] as QaapProviderKeyVerdict];
+    }
+    if (matchesAny(sample, PROVIDER_DATA_POLICY_PATTERNS)) {
+        return 'provider_data_policy';
+    }
+    if (matchesAny(sample, PROVIDER_FREE_LIMIT_PATTERNS)) {
+        return 'provider_free_limit';
+    }
+    if (matchesAny(sample, PROVIDER_CREDITS_PATTERNS) || (/\b402\b/.test(envelope) && /\bcredits?\b/i.test(envelope))) {
+        return 'provider_credits';
+    }
+    if (matchesAny(sample, PROVIDER_KEY_REJECTED_PATTERNS)
+        || sample.split('\n').some(line => PROVIDER_KEY_REVOKED_LINE.test(line) && PROVIDER_LABELS.some(([pattern]) => pattern.test(line)))) {
+        return 'provider_key_rejected';
+    }
+    // A bare 401/403 is only the BYOK key when the provider's own error envelope says so.
+    if (/\bopen\s?router\b/i.test(envelope)
+        && (matchesAny(envelope, OPENROUTER_KEY_REJECTED_PATTERNS) || /\b(?:401|403)\b|\bunauthorized\b|\bforbidden\b/i.test(envelope))) {
+        return 'provider_key_rejected';
+    }
+    return undefined;
+}
+
+/** Failure kinds caused by the user's own provider key or account (BYOK), fixed in Settings → BYOK. */
+export function isProviderKeyFailureKind(kind: QaapAgentFailureKind | undefined): boolean {
+    return kind === 'provider_key_rejected' || kind === 'provider_credits'
+        || kind === 'provider_data_policy' || kind === 'provider_free_limit';
+}
 
 const LEGACY_AGENT_FAILURE_REGEX = /^Agent\s+(failed|interrupted|cancelled)(?:\s+\(exit\s+(\d+)\))?\.?$/i;
 
@@ -479,6 +587,12 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (matchesAny(sample, CLI_MISSING_PATTERNS)) {
         return 'cli_missing';
     }
+    // Before quota/rate limit/model: an OpenRouter "free-models-per-day" 429 or a rejected key
+    // behind QAIQ's "issue with the selected model" is the user's key, not the model or Qaap.
+    const providerKind = classifyProviderKeyEvidence(sample, agentFailureEnvelopeText(evidence));
+    if (providerKind) {
+        return providerKind;
+    }
     if (matchesAny(sample, QUOTA_PATTERNS)) {
         return 'quota';
     }
@@ -504,8 +618,33 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     return undefined;
 }
 
-export function localizeAgentFailureMessage(kind: QaapAgentFailureKind): string {
+export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, providerLabel?: string): string {
+    const provider = providerLabel?.trim() || nls.localize('qaap/agentFailure/providerFallback', 'provider');
     switch (kind) {
+        case 'provider_key_rejected':
+            return nls.localize(
+                'qaap/agentFailure/providerKeyRejected',
+                'Your {0} key was rejected. Update it in Settings → BYOK, then retry.',
+                provider,
+            );
+        case 'provider_credits':
+            return nls.localize(
+                'qaap/agentFailure/providerCredits',
+                'Your {0} key is out of credits. Add credits with {0}, or update the key in Settings → BYOK.',
+                provider,
+            );
+        case 'provider_data_policy':
+            return nls.localize(
+                'qaap/agentFailure/providerDataPolicy',
+                'This {0} free model may be unavailable right now, or your {0} privacy settings block free endpoints. Pick another model, or allow free endpoints in your {0} privacy settings.',
+                provider,
+            );
+        case 'provider_free_limit':
+            return nls.localize(
+                'qaap/agentFailure/providerFreeLimit',
+                '{0} free-model limit reached. Wait for the daily reset, add credits with {0}, or pick another model.',
+                provider,
+            );
         case 'quota':
             return nls.localize(
                 'qaap/agentFailure/quotaReached',
@@ -689,7 +828,7 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
     }
     const kind = detectAgentFailureKind(trimmed);
     if (kind) {
-        return localizeAgentFailureMessage(kind);
+        return localizeAgentFailureMessage(kind, detectAgentFailureProviderLabel(trimmed));
     }
     return trimmed;
 }
@@ -812,6 +951,9 @@ export function resolveAgentTurnFailureMessage(
     if (kind === 'auth') {
         return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(agentFailureEvidenceText(evidence), challengeOptions));
     }
+    if (isProviderKeyFailureKind(kind)) {
+        return localizeAgentFailureMessage(kind!, detectAgentFailureProviderLabel(agentFailureEvidenceText(evidence)));
+    }
     if (kind === 'quota' || kind === 'rate_limit') {
         // Prefer the provider's concrete line (incl. "Resets in …") over generic copy.
         const hint = extractAgentLogFailureHint(log);
@@ -902,7 +1044,9 @@ export type QaapAgentFailureReasonKind =
     | 'usage_limit'
     | 'model'
     | 'agent_setup'
-    | 'network';
+    | 'network'
+    | 'provider_key'
+    | 'provider_policy';
 
 export interface QaapAgentFailureReason {
     readonly kind: QaapAgentFailureReasonKind;
@@ -943,7 +1087,13 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
             return 'sign_in';
         case 'quota':
         case 'rate_limit':
+        case 'provider_credits':
+        case 'provider_free_limit':
             return 'usage_limit';
+        case 'provider_key_rejected':
+            return 'provider_key';
+        case 'provider_data_policy':
+            return 'provider_policy';
         case 'model_unavailable':
         case 'tool_unsupported':
             return 'model';
@@ -978,6 +1128,10 @@ function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, optio
             return nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing');
         case 'network':
             return nls.localize('qaap/agentFailure/reasonNetwork', 'Could not reach the model provider');
+        case 'provider_key':
+            return nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected');
+        case 'provider_policy':
+            return nls.localize('qaap/agentFailure/reasonProviderPolicy', 'Blocked by provider settings');
         case 'stopped':
         default:
             return nls.localize('qaap/agentFailure/reasonStopped', 'The agent stopped unexpectedly');
