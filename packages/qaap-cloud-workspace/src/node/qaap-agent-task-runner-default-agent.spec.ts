@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as os from 'os';
+import * as path from 'path';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
@@ -193,6 +195,8 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
             ),
             isAgentEnabled: () => true,
             agentConnectionState: (id: string) => options.states[id] ?? 'unknown',
+            agentConnectionStates: new Map(),
+            preferenceReaderForOwner: () => () => undefined,
             billingStore: { peekEntitlements: () => options.entitlements },
         });
         return runner;
@@ -236,5 +240,183 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
         const codexOf = (runner: QaapAgentTaskRunner) => runner.listAgents('alice').find(agent => agent.id === 'codex');
         expect(codexOf(withCredits)?.available).to.equal(true);
         expect(codexOf(spent)?.available).to.equal(false);
+    });
+});
+
+describe('defaultAgentExtracted fallbacks past the preferred agents', () => {
+    const savedDefault = process.env.QAAP_DEFAULT_AGENT;
+    const savedCommand = process.env.QAAP_AGENT_COMMAND;
+    beforeEach(() => {
+        delete process.env.QAAP_DEFAULT_AGENT;
+        delete process.env.QAAP_AGENT_COMMAND;
+    });
+    afterEach(() => {
+        for (const [key, value] of [['QAAP_DEFAULT_AGENT', savedDefault], ['QAAP_AGENT_COMMAND', savedCommand]] as const) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    });
+
+    it('with no agents detected at all falls back to the shell', () => {
+        expect(pickDefault({ detected: [], states: {} })).to.equal('shell');
+    });
+
+    it('with no agents detected but QAAP_AGENT_COMMAND set uses the operator command', () => {
+        process.env.QAAP_AGENT_COMMAND = 'my-agent {prompt}';
+        expect(pickDefault({ detected: [], states: {} })).to.equal('env');
+    });
+
+    it('when every preferred agent is disconnected and opencode is not installed, falls to the shell or operator command', () => {
+        const input: PickDefaultOptions = {
+            detected: ['qaiq', 'codex', 'claude'],
+            states: { qaiq: 'disconnected', codex: 'disconnected', claude: 'disconnected' },
+            hostedModels: false,
+        };
+        expect(pickDefault(input)).to.equal('shell');
+        process.env.QAAP_AGENT_COMMAND = 'my-agent {prompt}';
+        expect(pickDefault(input)).to.equal('env');
+    });
+
+    it('when every preferred agent is disconnected and opencode is not installed, prefers a custom detected agent', () => {
+        expect(pickDefault({
+            detected: ['qaiq', 'claude', 'my-custom-cli'],
+            states: { qaiq: 'disconnected', claude: 'disconnected' },
+        })).to.equal('my-custom-cli');
+    });
+});
+
+describe('defaultAgentFreshExtracted with grok and a pending vs failed probe', () => {
+    const saved = process.env.QAAP_DEFAULT_AGENT;
+    beforeEach(() => { delete process.env.QAAP_DEFAULT_AGENT; });
+    afterEach(() => {
+        if (saved === undefined) {
+            delete process.env.QAAP_DEFAULT_AGENT;
+        } else {
+            process.env.QAAP_DEFAULT_AGENT = saved;
+        }
+    });
+
+    /**
+     * `claude`'s probe either never settles (`pending`) or rejects (`failed`); as in the runner, a failed
+     * probe makes the agent count as disconnected for default selection. grok has no auth signal.
+     */
+    function pickFreshWithGrok(probe: 'pending' | 'failed'): Promise<string> {
+        const failed = new Set<string>();
+        const [ctx, , usable] = pickDefaultArgs({
+            detected: ['grok', 'claude', 'opencode'],
+            states: { grok: 'unknown', claude: 'unknown', opencode: 'unknown' },
+        });
+        const enabled = (id: string): boolean => !failed.has(id) || usable(id);
+        const refresh = (id: string): Promise<unknown> | undefined => {
+            if (id !== 'claude') {
+                return undefined;
+            }
+            if (probe === 'pending') {
+                return new Promise(() => undefined);
+            }
+            failed.add(id);
+            return Promise.reject(new Error('probe crashed'));
+        };
+        return defaultAgentFreshExtracted(ctx, enabled, usable, refresh, 30, id => id !== 'grok');
+    }
+
+    it('keeps the agent whose probe is still pending', async () => {
+        expect(await pickFreshWithGrok('pending')).to.equal('claude');
+    });
+
+    it('falls to keyless OpenCode, never grok, once the probe failed', async () => {
+        expect(await pickFreshWithGrok('failed')).to.equal('opencode');
+    });
+});
+
+describe('QaapAgentTaskRunner.defaultAgentFresh with failing auth probes (real runner)', () => {
+    const savedEnv: Record<string, string | undefined> = {
+        QAAP_DEFAULT_AGENT: process.env.QAAP_DEFAULT_AGENT,
+        QAAP_CLOUD_MODE: process.env.QAAP_CLOUD_MODE,
+        QAAP_REPOS_ROOT: process.env.QAAP_REPOS_ROOT,
+    };
+    beforeEach(() => { delete process.env.QAAP_DEFAULT_AGENT; });
+    afterEach(() => {
+        for (const [key, value] of Object.entries(savedEnv)) {
+            if (value === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+    });
+
+    /** Detects grok, claude and opencode. `probeClaude` answers claude's probe (opencode's resolves `unknown`); omit it to run the real probe. */
+    function runnerWithProbe(probeClaude?: () => Promise<ConnectionState>): QaapAgentTaskRunner {
+        const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+        Object.assign(runner, {
+            detectedAgents: new Map<string, AgentCandidate>(
+                ['grok', 'claude', 'opencode'].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
+            ),
+            agentConnectionStates: new Map(),
+            agentConnectionProbes: new Map(),
+            isAgentEnabled: () => true,
+            preferenceReaderForOwner: () => () => undefined,
+            billingStore: undefined,
+        });
+        if (probeClaude) {
+            Object.assign(runner, {
+                probeAgentConnectionState: (agentId: string): Promise<ConnectionState> => agentId === 'claude' ? probeClaude() : Promise.resolve('unknown'),
+            });
+        }
+        return runner;
+    }
+
+    const claudeChip = (runner: QaapAgentTaskRunner): string | undefined => runner.listAgents('alice').find(agent => agent.id === 'claude')?.connectionState;
+
+    it('a probe that throws makes the default fall to keyless OpenCode, while the chip still says unknown', async () => {
+        const runner = runnerWithProbe(() => Promise.reject(new Error('tenant wrapper failed')));
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('opencode');
+        expect(runner.defaultAgent('alice')).to.equal('opencode');
+        expect(claudeChip(runner)).to.equal('unknown');
+    });
+
+    it('a probe still pending at the deadline keeps the pre-keyless default', async () => {
+        const runner = runnerWithProbe(() => new Promise<ConnectionState>(() => undefined));
+        expect(await runner.defaultAgentFresh('alice', 30)).to.equal('claude');
+    });
+
+    it('an inconclusive probe answer (e.g. a timeout) is not a failure and keeps the pre-keyless default', async () => {
+        const runner = runnerWithProbe(() => Promise.resolve('unknown'));
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('claude');
+    });
+
+    it('a stale failed probe is re-probed within the budget, so a now signed-in agent wins again', async () => {
+        const runner = runnerWithProbe(() => Promise.resolve('connected'));
+        const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number; probeFailed?: boolean }> })
+            .agentConnectionStates;
+        states.set('claude:alice', { state: 'unknown', at: 0, probeFailed: true });
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('claude');
+        expect(claudeChip(runner)).to.equal('connected');
+    });
+
+    it('a fresh failed probe is not re-probed and keeps the keyless default', async () => {
+        let probes = 0;
+        const runner = runnerWithProbe(() => {
+            probes++;
+            return Promise.resolve('connected');
+        });
+        const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number; probeFailed?: boolean }> })
+            .agentConnectionStates;
+        states.set('claude:alice', { state: 'unknown', at: Date.now(), probeFailed: true });
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('opencode');
+        expect(probes).to.equal(0);
+    });
+
+    it('a docker tenant without a repos root yet (the probe cannot run without its tenant cwd) defaults to keyless OpenCode', async () => {
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        process.env.QAAP_REPOS_ROOT = path.join(os.tmpdir(), `qaap-default-agent-missing-${process.pid}-${Date.now()}`);
+        const runner = runnerWithProbe();
+        // OpenCode's real probe fails here too; it stays selectable because it runs keyless.
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('opencode');
+        expect(claudeChip(runner)).to.equal('unknown');
     });
 });

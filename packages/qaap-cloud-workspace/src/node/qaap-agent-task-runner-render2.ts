@@ -628,6 +628,7 @@ export function listModelsForAgentExtracted(
  * disconnected" preference (an agent whose auth probe has not answered yet, e.g. right after a
  * backend restart, keeps the pre-keyless behaviour instead of losing to the keyless agent); only
  * when every preferred agent is explicitly disconnected, `HOSTED_KEYLESS_DEFAULT_AGENTS`.
+ * An agent with no auth probe and no credential mapping (e.g. grok) never wins automatically; `QAAP_DEFAULT_AGENT` overrides.
  */
 export function defaultAgentExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -678,7 +679,10 @@ export function defaultAgentExtracted(
  * {@link defaultAgentExtracted} after giving the auth probes of the preferred agents up to
  * `budgetMs` to settle (`refreshConnectionState` starts or joins a probe; undefined when the cached
  * state is fresh). A probe still pending at the deadline leaves that agent `unknown`, which
- * keeps the pre-keyless default for it rather than falling through to the keyless agent.
+ * keeps the pre-keyless default for it rather than falling through to the keyless agent; a probe
+ * that failed is expected to make `isAgentEnabled` false for it (the runner treats it as signed out).
+ * `isProbeWorthAwaiting` (default `isAgentEnabled`) picks the probes to await, so a caller can still
+ * re-probe an agent that an earlier failed probe made unselectable.
  */
 export async function defaultAgentFreshExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -687,9 +691,10 @@ export async function defaultAgentFreshExtracted(
     refreshConnectionState: (agentId: string) => Promise<unknown> | undefined,
     budgetMs: number,
     hasAuthSignal: (agentId: string) => boolean = () => true,
+    isProbeWorthAwaiting: (agentId: string) => boolean = isAgentEnabled,
 ): Promise<string> {
     const pending = DEFAULT_AGENT_PREFERENCE
-        .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id))
+        .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isProbeWorthAwaiting(id))
         .map(id => refreshConnectionState(id))
         .filter((probe): probe is Promise<unknown> => !!probe);
     if (pending.length > 0) {
