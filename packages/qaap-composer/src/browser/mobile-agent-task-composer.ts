@@ -234,7 +234,7 @@ export class MobileAgentTaskComposer {
                 { kind: 'success', duration: 1400 }
             );
         } catch (error) {
-            this.errorEl.textContent = QaapUserFacingErrors.toMessage(error);
+            this.errorEl.textContent = QaapUserFacingErrors.toMessageAndLog(error);
         } finally {
             this.busy = false;
             this.renderState();

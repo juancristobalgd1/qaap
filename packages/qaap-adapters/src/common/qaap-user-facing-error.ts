@@ -98,10 +98,17 @@ export namespace QaapUserFacingErrors {
 
     /** Full text for a "Details" section / console, when {@link toMessage} dropped something. */
     export function toDetails(error: unknown): string | undefined {
-        if (error instanceof QaapUserFacingError) {
-            return error.details;
+        const details = (error as { details?: unknown } | undefined)?.details;
+        if (typeof details === 'string' && details) {
+            return details;
         }
         return error instanceof Error && error.message !== toMessage(error) ? error.message : undefined;
+    }
+
+    /** {@link toMessage} for a UI `catch`: also leaves the untouched detail (raw body, git stderr, …) in the console. */
+    export function toMessageAndLog(error: unknown, fallback?: string): string {
+        console.debug('[qaap] request failed', toDetails(error) ?? error);
+        return toMessage(error, fallback);
     }
 
     function parseJsonObject(text: string): Record<string, unknown> | undefined {
