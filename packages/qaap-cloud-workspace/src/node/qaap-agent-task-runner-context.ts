@@ -127,6 +127,7 @@ export interface QaapAgentTaskRunnerContext {
     verificationPassWaiters: Array<() => void>;
     conversationIdForTask?: (taskId: string) => string | undefined;
     suppressCompletionPushForConversation?: (conversationId: string) => boolean;
+    suppressCompletionPushForTask?: (task: QaapAgentTask) => boolean | Promise<boolean>;
 
     // ─── Lifecycle / persistence / helper CLI ───────────────────────────────
     ensureHelperCli(): void;

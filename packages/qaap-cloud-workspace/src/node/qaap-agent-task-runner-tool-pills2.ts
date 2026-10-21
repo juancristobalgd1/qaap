@@ -435,6 +435,12 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
         if (conversationId && ctx.suppressCompletionPushForConversation?.(conversationId)) {
             return;
         }
+        // A model-fallback retry replaced this attempt: only the chain's final task notifies. Awaited
+        // only while a decision is pending, so every other push still goes out without a tick of delay.
+        const suppressed = ctx.suppressCompletionPushForTask?.(task);
+        if (suppressed === true || (suppressed instanceof Promise && await suppressed)) {
+            return;
+        }
         const link = { route: 'conversation' as const, conversationId, cwd: task.cwd, userLogin: task.ownerLogin };
         if (task.state === 'completed_with_warnings') {
             try {

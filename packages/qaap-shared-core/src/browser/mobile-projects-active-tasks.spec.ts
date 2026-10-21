@@ -52,7 +52,7 @@ class TestActiveTasks extends MobileProjectsActiveTasks {
         });
     }
 
-    fireEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted', task: { id: string; cwd: string; state: string; title?: string; createdAt?: number }): void {
+    fireEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'updated', task: Parameters<MobileProjectsActiveTasks['recordTaskCreated']>[0]): void {
         this.applyEvent(type, task);
     }
 }
@@ -320,3 +320,44 @@ describe('MobileProjectsActiveTasks', () => {
         expect(activeTasks.getTaskLogTail('keep')?.text).to.equal('done\n');
     });
 });
+
+describe('MobileProjectsActiveTasks model fallback chain', () => {
+    const cwd = '/repo/mobile';
+
+    it('shows the fallback retry in place of the failed attempt it replaced', () => {
+        const activeTasks = new TestActiveTasks();
+        activeTasks.fireEvent('created', { id: 't1', cwd, state: 'running', title: 'Smoke', createdAt: 1 });
+        activeTasks.fireEvent('completed', { id: 't1', cwd, state: 'failed', title: 'Smoke', createdAt: 1 });
+        activeTasks.fireEvent('created', {
+            id: 't2', cwd, state: 'running', title: 'Smoke', createdAt: 2,
+            fallbackFromTaskId: 't1', agentModel: { vendor: 'openrouter', modelId: 'google/gemma-4-31b-it:free' },
+        });
+        activeTasks.fireEvent('updated', { id: 't1', cwd, state: 'failed', title: 'Smoke', createdAt: 1, modelFallbackTaskId: 't2' });
+
+        const tasks = activeTasks.getTasksForCwd(cwd);
+        expect(tasks.map(task => task.id)).to.deep.equal(['t2']);
+        expect(tasks[0].fallbackFromTaskId).to.equal('t1');
+        expect(tasks[0].fallbackModelLabel).to.equal('google/gemma-4-31b-it:free');
+    });
+
+    it('drops replaced attempts from a snapshot', () => {
+        const activeTasks = new TestActiveTasks();
+        (activeTasks as unknown as { applySnapshot(payload: unknown): void }).applySnapshot({
+            groups: [{
+                cwd,
+                activeCount: 0,
+                tasks: [
+                    { id: 't1', cwd, state: 'failed', createdAt: 1, modelFallbackTaskId: 't2' },
+                    { id: 't2', cwd, state: 'completed', createdAt: 2, fallbackFromTaskId: 't1' },
+                ],
+            }],
+        });
+
+        expect(activeTasks.getTasksForCwd(cwd).map(task => task.id)).to.deep.equal(['t2']);
+    });
+
+    it('does not label a task that is not a fallback retry', () => {
+        expect(toTaskView({ id: 't1', cwd, state: 'completed', agentModel: { modelId: 'x' } }).fallbackModelLabel).to.equal(undefined);
+    });
+});
+
