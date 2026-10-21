@@ -109,7 +109,7 @@ export class MobileProjectsWorkHubInboxUi {
         } else if (hasGithubRepos && this.host.inboxGithubSignedIn === false) {
             const host = document.createElement('div');
             host.className = 'theia-mobile-review-hub-root';
-            host.append(this.createInboxGithubSignInHint(), this.createReviewEmptyState());
+            host.append(this.createInboxGithubSignInHint(), this.createReviewEmptyState(false));
             this.host.scroll.append(host);
         } else {
             this.host.scroll.append(this.createReviewEmptyState());
@@ -333,7 +333,8 @@ export class MobileProjectsWorkHubInboxUi {
         return section;
     }
 
-    createReviewEmptyState(): HTMLElement {
+    /** `withAction` is false next to the GitHub sign-in hint so two competing calls to action never stack. */
+    createReviewEmptyState(withAction = true): HTMLElement {
         const searching = !!this.host.query;
         return HubEmptyStateDom.createEmptyState({
             icon: 'codicon-git-pull-request',
@@ -347,7 +348,7 @@ export class MobileProjectsWorkHubInboxUi {
                     'qaap/mobileProjects/noReviewBody',
                     'When agents open PRs on your linked repos, they show up here for swipe review.',
                 ),
-            action: searching ? undefined : {
+            action: searching || !withAction ? undefined : {
                 label: nls.localize('qaap/mobileProjects/reviewStartTask', 'Start a task'),
                 onClick: () => { void this.host.onHomeQuickAction('delegate-task'); },
             },

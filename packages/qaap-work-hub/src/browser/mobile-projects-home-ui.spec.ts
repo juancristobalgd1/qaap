@@ -123,6 +123,41 @@ describe('MobileProjectsHomeUi', () => {
         expect(done.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
     });
 
+    it('keeps the checklist hidden after completion even when counters drop back', () => {
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedCompleted');
+        const ui = new MobileProjectsHomeUi(createDeps());
+        const done = document.createElement('div');
+        ui.renderDashboard(done, snapshot({ projectCount: 1, runningTasks: 1, openPullRequests: 1 }));
+        const later = document.createElement('div');
+        ui.renderDashboard(later, snapshot({ projectCount: 1, openPullRequests: 0 }));
+        expect(later.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedCompleted');
+    });
+
+    it('does not paint the checklist until the stats have settled', () => {
+        const ui = new MobileProjectsHomeUi(createDeps());
+        const host = document.createElement('div');
+        ui.renderDashboard(host, { ...snapshot(), statsSettled: false });
+        expect(host.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
+        const settled = document.createElement('div');
+        ui.renderDashboard(settled, { ...snapshot(), statsSettled: true });
+        expect(settled.querySelector('.theia-mobile-work-hub-home-getting-started')).to.not.equal(null);
+    });
+
+    it('scopes the dismissed flag to the signed-in account', () => {
+        const ui = new MobileProjectsHomeUi(createDeps());
+        const host = document.createElement('div');
+        ui.renderDashboard(host, { ...snapshot(), accountKey: 'alice' });
+        [...host.querySelectorAll('button')].find(button => button.textContent === 'Dismiss')?.click();
+        const bob = document.createElement('div');
+        ui.renderDashboard(bob, { ...snapshot(), accountKey: 'bob' });
+        expect(bob.querySelector('.theia-mobile-work-hub-home-getting-started')).to.not.equal(null);
+        const alice = document.createElement('div');
+        ui.renderDashboard(alice, { ...snapshot(), accountKey: 'alice' });
+        expect(alice.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed.alice');
+    });
+
     it('shows attention, workspaces, and continue sections once work exists', () => {
         const demo = project('demo', 'Demo');
         const deps = createDeps([demo]);

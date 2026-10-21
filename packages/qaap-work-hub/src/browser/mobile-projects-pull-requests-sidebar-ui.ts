@@ -229,6 +229,10 @@ export class MobileProjectsPullRequestsSidebarUi {
         this.activeTab = 'all';
         this.stateFilter = 'all';
         this.rerender();
+        if (this.searchQuickPick) {
+            this.searchQuickPick.value = '';
+            this.searchQuickPick.items = this.buildSearchPickItems();
+        }
     }
 
     /** Re-runs the first search page of the active chip; `force` bypasses the backend cache. */

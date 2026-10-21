@@ -78,5 +78,6 @@ describe('hub empty and loading states', () => {
         expect(empty.classList.contains('q-empty')).to.equal(true);
         empty.querySelector<HTMLButtonElement>('.q-empty-action')?.click();
         expect(actions).to.deep.equal(['delegate-task']);
+        expect(ui.createReviewEmptyState(false).querySelector('.q-empty-action')).to.equal(null);
     });
 });

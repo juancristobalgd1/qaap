@@ -1229,3 +1229,41 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
   justify-content: center;
   gap: 8px;
 }
+
+/* Loading placeholder rows shared by the Tasks hub, review inbox and PR sidebar (`q-skeleton` rows). */
+.theia-mobile-tasks-skeleton-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--q-space-2, 8px);
+    padding: var(--q-space-3, 12px) var(--q-space-4, 16px);
+}
+
+.theia-mobile-tasks-skeleton-row {
+    display: flex;
+    align-items: center;
+    gap: var(--q-space-3, 12px);
+    padding: var(--q-space-3, 12px);
+}
+
+.theia-mobile-tasks-skeleton-avatar {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+}
+
+.theia-mobile-tasks-skeleton-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--q-space-2, 8px);
+    min-width: 0;
+}
+
+.theia-mobile-tasks-skeleton-title {
+    width: 62%;
+}
+
+.theia-mobile-tasks-skeleton-meta {
+    width: 38%;
+}
