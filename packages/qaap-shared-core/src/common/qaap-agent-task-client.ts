@@ -148,6 +148,8 @@ export interface QaapAgentTaskCreated {
     readonly createdAt?: number;
     readonly startedAt?: number;
     readonly queuePosition?: number;
+    /** Failed task this one re-runs on a fallback model. */
+    readonly fallbackFromTaskId?: string;
 }
 
 /** A task plus its captured stdout/stderr log — returned by `GET /qaap/api/agent-tasks/:id`. */
@@ -164,6 +166,10 @@ export interface QaapAgentTaskDetailDTO {
     readonly exitCode?: number;
     readonly finishedAt?: number;
     readonly parentId?: string;
+    /** Failed task this one re-runs on a fallback model. */
+    readonly fallbackFromTaskId?: string;
+    /** Set once a model-fallback retry replaced this task: follow it to the attempt whose outcome counts. */
+    readonly modelFallbackTaskId?: string;
     readonly log: string;
     readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
 }

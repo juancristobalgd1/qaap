@@ -224,6 +224,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
                 : {}),
             ...(clientRequestId ? { clientRequestId } : {}),
             ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
+            ...(request.fallbackFromTaskId ? { fallbackFromTaskId: request.fallbackFromTaskId } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt || rawCommand, ownerLogin);

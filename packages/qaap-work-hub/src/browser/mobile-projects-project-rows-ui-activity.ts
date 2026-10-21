@@ -247,6 +247,17 @@ export function populateWorkHubTaskFootRowExtracted(ctx: MobileProjectsProjectRo
             footRow.append(verifyBadge);
         }
 
+        if (task.fallbackFromTaskId) {
+            // The backend re-ran this task on a fallback model after the first one failed.
+            ctx.appendTaskFootSeparator(footRow);
+            const fallbackChip = document.createElement('span');
+            fallbackChip.className = 'theia-mobile-projects-task-agent theia-mod-model-fallback';
+            fallbackChip.textContent = task.fallbackModelLabel
+                ? nls.localize('qaap/mobileProjects/taskModelFallback', 'Retried with {0}', task.fallbackModelLabel)
+                : nls.localize('qaap/mobileProjects/taskModelFallbackUnknown', 'Retried with another model');
+            footRow.append(fallbackChip);
+        }
+
         if (summary && summary.messageCount > 0 && !ctx.hasConversationDiffStats(summary)) {
             ctx.appendTaskFootSeparator(footRow);
             const msgCount = document.createElement('span');
@@ -274,6 +285,7 @@ export function computeTaskFootFingerprintExtracted(ctx: MobileProjectsProjectRo
             summary?.messageCount ?? '',
             summary?.agentId ?? '',
             task.verification?.status ?? '',
+            task.fallbackModelLabel ?? (task.fallbackFromTaskId ? '?' : ''),
         ].join('|');
 }
 

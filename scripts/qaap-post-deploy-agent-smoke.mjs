@@ -22,7 +22,9 @@
 //                               first cloned project of the smoke user
 //   QAAP_SMOKE_AGENT_CWD        run in this repository path instead (skips the project lookup)
 //   QAAP_SMOKE_AGENT            agent id (default: the user's default agent)
-//   QAAP_SMOKE_AGENT_TIMEOUT_SECONDS  hard limit for the turn (default 300)
+//   QAAP_SMOKE_AGENT_TIMEOUT_SECONDS  hard limit for the turn (default 300), model fallbacks included
+//   QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS  how long a failed task may still be replaced by a backend
+//                               model-fallback retry before it counts as final (default 15000)
 //   QAAP_SMOKE_AGENT_DRY_RUN=1  only the read-only checks (agent configured, project resolved)
 //   QAAP_SMOKE_AGENT_EXPECT_TOKEN=0  accept any completed turn (mock agents that ignore the prompt)
 //   QAAP_SMOKE_ARTIFACT_DIR     where the task detail is written on failure
@@ -206,11 +208,46 @@ const MODEL_UNAVAILABLE = /No endpoints found for|Not found for account|is not a
 
 /**
  * Whether a failed task died because its model is unavailable on the provider. Standalone tasks
- * (`POST /agent-tasks`, what this smoke creates) get no fallback-model retry — only conversation
- * turns do — so a dead default model fails the smoke here with a pointer to the fix.
+ * (`POST /agent-tasks`, what this smoke creates) are re-run by the backend on the agent's next
+ * fallback model (see `followModelFallback`), so this verdict means the whole chain ran out: every
+ * model it tried is dead, or the chain has a single model.
  */
 export function isModelUnavailableFailure(detail) {
     return detail?.state === 'failed' && typeof detail.log === 'string' && MODEL_UNAVAILABLE.test(detail.log);
+}
+
+/**
+ * Id of the task the backend started to replace this one on a fallback model (`modelFallbackTaskId`),
+ * or undefined when this task is the end of its chain.
+ */
+export function followModelFallback(detail) {
+    const next = detail?.modelFallbackTaskId;
+    return typeof next === 'string' && next.trim() ? next.trim() : undefined;
+}
+
+/**
+ * Whether a terminal task may still be replaced by a model-fallback retry: the backend decides after
+ * the task settles (it reads the log first), so a `failed` task without a link yet is given a short
+ * grace before the smoke calls it final.
+ */
+export function mayStillFallBack(detail) {
+    return detail?.state === 'failed' && !followModelFallback(detail);
+}
+
+const DEFAULT_FALLBACK_GRACE_MS = 15_000;
+
+/** QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS as a non-negative number of ms; anything else is the 15 s default. */
+export function parseFallbackGraceMs(raw) {
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return DEFAULT_FALLBACK_GRACE_MS;
+    }
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_FALLBACK_GRACE_MS;
+}
+
+/** Wording for the fallback count in the deploy log, empty when the first model answered. */
+export function describeFallbacks(count) {
+    return count > 0 ? ` after ${count} model fallback${count === 1 ? '' : 's'}` : '';
 }
 
 /**
@@ -344,12 +381,15 @@ async function main(argv, env) {
     if (created.status !== 201 || typeof created.json?.id !== 'string') {
         throw new SmokeError(`creating the agent task returned HTTP ${created.status}: ${created.text.slice(0, 300)}`);
     }
-    const taskId = created.json.id;
+    let taskId = created.json.id;
     console.log(`OK: task ${taskId} created (${created.json.state}).`);
 
     const started = Date.now();
+    const fallbackGraceMs = parseFallbackGraceMs(env.QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS);
     let detail;
     let lastState = '';
+    let fallbacks = 0;
+    let settledAt;
     for (;;) {
         const polled = await request('GET', `${TASKS_PATH}/${encodeURIComponent(taskId)}`, undefined, 30_000)
             .catch(error => ({ status: 0, json: undefined, text: String(error) }));
@@ -359,8 +399,21 @@ async function main(argv, env) {
                 lastState = detail.state;
                 console.log(`   ${Math.round((Date.now() - started) / 1000)}s: ${lastState}`);
             }
+            const next = followModelFallback(detail);
+            if (next) {
+                // The backend re-ran the turn on the agent's next model: follow the chain.
+                console.log(`   task ${taskId} failed on ${taskModel(detail) ?? 'its model'}; following model fallback ${next}.`);
+                taskId = next;
+                fallbacks++;
+                lastState = '';
+                settledAt = undefined;
+                continue;
+            }
             if (TERMINAL_STATES.has(detail.state)) {
-                break;
+                settledAt ??= Date.now();
+                if (!mayStillFallBack(detail) || Date.now() - settledAt >= fallbackGraceMs) {
+                    break;
+                }
             }
         }
         if (Date.now() - started > timeoutMs) {
@@ -374,20 +427,20 @@ async function main(argv, env) {
     const verdict = judgeTask(detail, expectToken ? token : undefined);
     if (verdict.inconclusive) {
         writeDiagnostics(artifactDir, detail);
-        console.log(`::warning::Post-deploy agent smoke inconclusive: task ${taskId} failed because ${verdict.reason}. `
+        console.log(`::warning::Post-deploy agent smoke inconclusive: task ${taskId} failed${describeFallbacks(fallbacks)} because ${verdict.reason}. `
             + 'Update the smoke account\'s provider key in Settings → BYOK, or use a dedicated smoke account (QAAP_SMOKE_SESSION, QAAP_SMOKE_AGENT).');
         return 0;
     }
     if (!verdict.ok) {
         writeDiagnostics(artifactDir, detail);
-        throw new SmokeError(verdict.reason);
+        throw new SmokeError(`${verdict.reason}${fallbacks > 0 ? ` (final task of the chain${describeFallbacks(fallbacks)})` : ''}`);
     }
     if (verdict.warning) {
         console.log(`::warning::Post-deploy agent smoke: task ${taskId} completed with warnings (repository checks red).`);
     }
     const model = taskModel(detail);
     console.log(`OK: agent turn ${taskId} completed in ${Math.round((Date.now() - started) / 1000)}s${expectToken ? ' with the expected reply' : ''}`
-        + `${model ? `; answered by ${model}` : ''}.`);
+        + `${model ? `; answered by ${model}` : ''}${describeFallbacks(fallbacks)}.`);
     return 0;
 }
 

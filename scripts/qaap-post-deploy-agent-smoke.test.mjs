@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
 import {
-    describeTaskFailure, main, findProviderCredentialRejection, isModelUnavailableFailure, judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent,
-    smokeCookie, taskModel,
+    describeFallbacks, describeTaskFailure, followModelFallback, main, mayStillFallBack, parseFallbackGraceMs, findProviderCredentialRejection, isModelUnavailableFailure,
+    judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie, taskModel,
 } from './qaap-post-deploy-agent-smoke.mjs';
 
 const SESSIONS = {
@@ -53,6 +53,13 @@ async function withServer(options, run) {
                 created = JSON.parse(body);
                 return send(201, { id: 't1', state: 'queued' });
             }
+            if (options.detail && req.method === 'GET' && req.url.startsWith('/qaap/api/agent-tasks/')) {
+                const id = decodeURIComponent(req.url.slice('/qaap/api/agent-tasks/'.length));
+                options.pollsById = options.pollsById ?? {};
+                options.pollsById[id] = (options.pollsById[id] ?? 0) + 1;
+                const detail = options.detail(id, options.pollsById[id], created.prompt);
+                return detail ? send(200, detail) : send(404, { error: 'Task not found.' });
+            }
             if (req.method === 'GET' && req.url === '/qaap/api/agent-tasks/t1') {
                 polls++;
                 const done = polls >= 2 ? options.finish?.(created.prompt) : undefined;
@@ -73,7 +80,11 @@ async function withServer(options, run) {
     }
 }
 
-const ENV = { QAAP_SMOKE_SESSION: 'abc', QAAP_SMOKE_AGENT_POLL_MS: '10', QAAP_SMOKE_AGENT_LIST_RETRY_MS: '10' };
+const ENV = {
+    QAAP_SMOKE_SESSION: 'abc', QAAP_SMOKE_AGENT_POLL_MS: '10', QAAP_SMOKE_AGENT_LIST_RETRY_MS: '10',
+    // A failed task is final at once unless a test exercises the model-fallback grace.
+    QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS: '0',
+};
 const echoToken = prompt => ({ id: 't1', state: 'completed', exitCode: 0, log: `assistant: ${prompt.split(': ').pop()}` });
 const quiet = async fn => {
     const log = console.log;
@@ -377,4 +388,84 @@ test('a passing turn prints which model answered', async () => {
         console.log = log;
     }
     assert.ok(lines.some(line => /^OK: agent turn t1 completed .*; answered by openrouter\/nvidia\/nemotron-3-ultra-550b-a55b:free\.$/.test(line)), lines.join('\n'));
+});
+
+const OPENROUTER = modelId => ({ provider: 'openai', vendor: 'openrouter', modelId });
+const tokenOf = prompt => prompt.split(': ').pop();
+
+test('model fallback: the chain link is followed, the end of the chain is final', () => {
+    assert.equal(followModelFallback({ state: 'failed', modelFallbackTaskId: ' t2 ' }), 't2');
+    assert.equal(followModelFallback({ state: 'failed' }), undefined);
+    assert.equal(followModelFallback({ state: 'failed', modelFallbackTaskId: '' }), undefined);
+    assert.equal(mayStillFallBack({ state: 'failed' }), true);
+    assert.equal(mayStillFallBack({ state: 'failed', modelFallbackTaskId: 't2' }), false);
+    assert.equal(mayStillFallBack({ state: 'completed' }), false);
+    assert.equal(mayStillFallBack({ state: 'cancelled' }), false);
+    assert.equal(describeFallbacks(0), '');
+    assert.equal(describeFallbacks(1), ' after 1 model fallback');
+    assert.equal(describeFallbacks(2), ' after 2 model fallbacks');
+});
+
+test('a dead first model followed by a fallback that answers passes and names the answering model', async () => {
+    const lines = [];
+    const log = console.log;
+    console.log = line => lines.push(line);
+    try {
+        await withServer({
+            detail: (id, polls, prompt) => {
+                if (id === 't1') {
+                    return { id: 't1', state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG, modelFallbackTaskId: 't2', agentModel: OPENROUTER('dead/model:free') };
+                }
+                if (id === 't2') {
+                    return polls < 2
+                        ? { id: 't2', state: 'running', log: '', fallbackFromTaskId: 't1' }
+                        : { id: 't2', state: 'completed', exitCode: 0, log: `assistant: ${tokenOf(prompt)}`, fallbackFromTaskId: 't1', agentModel: OPENROUTER('live/model:free') };
+                }
+                return undefined;
+            },
+        }, async (base, calls) => {
+            assert.equal(await main([base], ENV), 0);
+            assert.equal(calls.filter(call => call.method === 'POST' && call.url === '/qaap/api/agent-tasks').length, 1, 'the smoke never starts a second task itself');
+        });
+    } finally {
+        console.log = log;
+    }
+    assert.ok(lines.some(line => /^OK: agent turn t2 completed .*; answered by openrouter\/live\/model:free after 1 model fallback\.$/.test(line)), lines.join('\n'));
+});
+
+test('a failed task linked to its fallback only after it settled is still followed within the grace', async () => {
+    await withServer({
+        detail: (id, polls, prompt) => {
+            if (id === 't1') {
+                return polls < 3
+                    ? { id: 't1', state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG }
+                    : { id: 't1', state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG, modelFallbackTaskId: 't2' };
+            }
+            return id === 't2' ? { id: 't2', state: 'completed', exitCode: 0, log: `assistant: ${tokenOf(prompt)}` } : undefined;
+        },
+    }, async base => {
+        assert.equal(await quiet(() => main([base], { ...ENV, QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS: '5000' })), 0);
+    });
+});
+
+test('a chain whose last model also fails fails the smoke and says how many fallbacks ran', async () => {
+    await withServer({
+        detail: id => ({
+            t1: { id: 't1', state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG, modelFallbackTaskId: 't2' },
+            t2: { id: 't2', state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG, modelFallbackTaskId: 't3' },
+            t3: { id: 't3', state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG },
+        })[id],
+    }, async base => {
+        await assert.rejects(quiet(() => main([base], ENV)), /no live endpoint.*final task of the chain after 2 model fallbacks/);
+    });
+});
+
+test('a fallback grace that is not a finite number falls back to 15 s', () => {
+    assert.equal(parseFallbackGraceMs(undefined), 15_000);
+    assert.equal(parseFallbackGraceMs(''), 15_000);
+    assert.equal(parseFallbackGraceMs('soon'), 15_000);
+    assert.equal(parseFallbackGraceMs('Infinity'), 15_000);
+    assert.equal(parseFallbackGraceMs('-5'), 15_000);
+    assert.equal(parseFallbackGraceMs('0'), 0);
+    assert.equal(parseFallbackGraceMs('2500'), 2500);
 });

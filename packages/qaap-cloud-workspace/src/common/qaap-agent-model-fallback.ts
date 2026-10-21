@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     agentUsesNativeModelCatalog,
     agentUsesSettingsModelCatalog,
@@ -209,4 +210,60 @@ export function agentTurnHasRetryableToolSupportFailure(
         return agentTurnLooksLikeToolCallEmittedAsText(agentMessage.segments);
     }
     return looksLikeToolCallJsonText(agentMessage.content);
+}
+
+/** Agent output a fallback decision reads: a transcript message, or the parsed log of a task. */
+export interface QaapAgentModelFallbackEvidence {
+    readonly content?: string;
+    readonly segments?: readonly {
+        readonly type: string;
+        readonly content?: string;
+        readonly result?: string;
+        readonly finished?: boolean;
+    }[];
+}
+
+/**
+ * Gate shared by every fallback decision: the agent has a model chain at all, and nothing proved
+ * that the user's key (which every model of the agent shares) is what stopped the turn — a
+ * pre-spawn refusal for a missing key, or a preflight verdict of a rejected key / no credits.
+ */
+export function agentTurnMayFallBackToAnotherModel(
+    turnAgentId: string,
+    task: Pick<QaapAgentTask, 'providerKeyVerdict' | 'preflightFailure'>,
+): boolean {
+    if (!agentSupportsModelPicker(turnAgentId)) {
+        return false;
+    }
+    if (task.preflightFailure === 'provider_key_missing') {
+        return false;
+    }
+    return task.providerKeyVerdict !== 'key_rejected' && task.providerKeyVerdict !== 'no_credits';
+}
+
+/**
+ * Whether a settled agent turn should be re-run on the next model of its agent's fallback chain.
+ * One contract for every caller — conversation turns (imperative and turn-graph) and standalone
+ * tasks — so the paths cannot drift:
+ * - only agents with a model picker have a chain;
+ * - never after a pre-spawn refusal for a missing key, or a preflight proving the BYOK key is
+ *   rejected or out of credits: every model of the agent runs on the same key;
+ * - a tool-support failure qualifies in any state (it also arrives on clean exits);
+ * - otherwise only a `failed` turn with no usable output or a `model_unavailable` classification.
+ *   Quota is deliberately neither (see {@link agentTurnHasRetryableQuotaFailure}); an `interrupted`
+ *   turn went quiet rather than failing, so the user gets Continue instead of a silent model swap.
+ */
+export function agentTurnQualifiesForModelFallback(
+    turnAgentId: string,
+    task: Pick<QaapAgentTask, 'state' | 'providerKeyVerdict' | 'preflightFailure'>,
+    agentMessage: QaapAgentModelFallbackEvidence | undefined,
+): boolean {
+    if (!agentTurnMayFallBackToAnotherModel(turnAgentId, task)) {
+        return false;
+    }
+    if (agentTurnHasRetryableToolSupportFailure(agentMessage)) {
+        return true;
+    }
+    return task.state === 'failed'
+        && (agentTurnHasRetryableEmptyOutput(agentMessage) || agentTurnHasRetryableModelFailure(agentMessage));
 }

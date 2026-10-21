@@ -29,6 +29,7 @@ import {
     type QaapAgentTaskVerification,
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
+    isQaapAgentTaskFinished,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
@@ -1700,6 +1701,23 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return markTaskBlockedExtracted(this, id);
     }
 
+    /**
+     * Links a finished standalone task to the model-fallback retry that replaced it, so clients can
+     * follow the chain to the attempt whose outcome counts. Persisted with the task index and
+     * announced as an `updated` event. Returns the patched task, or `undefined` when it is gone.
+     */
+    recordModelFallback(failedTaskId: string, fallbackTaskId: string): QaapAgentTask | undefined {
+        const task = this.tasks.get(failedTaskId);
+        if (!task || !isQaapAgentTaskFinished(task.state)) {
+            return undefined;
+        }
+        const linked: QaapAgentTask = { ...task, modelFallbackTaskId: fallbackTaskId };
+        this.tasks.set(failedTaskId, linked);
+        void this.persist();
+        this.onDidChangeTaskEmitter.fire({ type: 'updated', task: linked });
+        return linked;
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const previousState = this.tasks.get(id)?.state;
@@ -1752,6 +1770,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * drives the conversation — the loop sends one push at its end instead of one per turn.
      */
     suppressCompletionPushForConversation?: (conversationId: string) => boolean;
+
+    /**
+     * Optional gate wired by the standalone model-fallback service: resolves `true` when the finished
+     * task was replaced by a fallback retry, so a chain of attempts sends one push (the final outcome).
+     */
+    suppressCompletionPushForTask?: (task: QaapAgentTask) => boolean | Promise<boolean>;
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public async notifyCompletion(task: QaapAgentTask): Promise<void> {
