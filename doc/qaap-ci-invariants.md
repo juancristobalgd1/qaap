@@ -270,3 +270,19 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
 - **Why:** the fan-out crosses the store, the worktree service, the pre-turn checkpoint gate and the
   PR service; `qaap-task-plan-fanout-service.spec.ts` fakes the store. Run it locally after
   `npm run build:browser`.
+
+## Scheduled health checks
+
+### 17. Default free OpenRouter models (`qaap-openrouter-model-health.yml`)
+
+- **What:** daily at 06:17 UTC (plus `workflow_dispatch`) it runs `node scripts/qaap-openrouter-free-model-health.mjs --policy launch`
+  against `OPENROUTER_DEFAULT_FREE_MODELS` (read from `packages/qaap-ai-openrouter/src/common/openrouter-models.ts`; public API, no key, no `npm ci`).
+  A model is healthy when one of its `/endpoints` has `status: 0` and supports `tools`.
+- **Policy:** the job **fails** when the head of the list (the env-fallback default) is unhealthy, or fewer than 3 of the
+  first 4 (`MAX_AGENT_MODEL_FALLBACK_ATTEMPTS`) are healthy. Any other unhealthy entry is a `::warning::` annotation. One retry on
+  network errors/5xx/429; an unreachable API is *inconclusive* (warning), never "model dead". The job summary has the per-model table.
+- **Alert channel:** Issues are disabled, so the failed scheduled run (GitHub emails the owner) is the alert, as in `qaap-vps-monitor.yml`.
+- **When it fails:** run the script locally (`node scripts/qaap-openrouter-free-model-health.mjs`; `--all` lists every healthy `:free` model),
+  then replace the dead head (or the dead entries thinning the first 4) in `OPENROUTER_DEFAULT_FREE_MODELS` with healthy tool-capable models,
+  keeping the first four on different providers. Update `scripts/qaap-openrouter-free-model-health.test.mjs` if it pins the head.
+  Tests: `node --test scripts/qaap-openrouter-free-model-health.test.mjs`.
