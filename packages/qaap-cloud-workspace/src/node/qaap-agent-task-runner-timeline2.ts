@@ -2,6 +2,7 @@ import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
+import { finishTaskWithPauseCause } from './qaap-agent-task-runner-streaming2';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -118,7 +119,8 @@ export type QaapIdleAgentTaskExpiry = 'not-running' | 'waiting-for-user' | 'inte
  * what the turn's failure message reads ("Timed out after 20 minutes without output").
  */
 export function expireIdleAgentTask(
-    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'pendingQaiqControlRequests' | 'killAgentProcessTree' | 'finishTask'>,
+    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'pendingQaiqControlRequests' | 'killAgentProcessTree' | 'finishTask'>
+        & Partial<Pick<QaapAgentTaskRunnerContext, 'taskPauseCauses'>>,
     taskId: string,
     child: ChildProcess,
     logStream: Pick<fs.WriteStream, 'write'>,
@@ -137,7 +139,7 @@ export function expireIdleAgentTask(
             return;
         }
         ctx.killAgentProcessTree(child);
-        ctx.finishTask(taskId, 'interrupted', undefined);
+        finishTaskWithPauseCause(ctx, taskId, { cause: 'idle', limitMinutes: IDLE_TASK_TIMEOUT_MS / 60_000 });
     });
     return 'interrupted';
 }
@@ -308,6 +310,22 @@ export function clearQueuedApprovalTimersExtracted(ctx: QaapAgentTaskRunnerConte
         }
 }
 
+/**
+ * Leader-exit reap of the agent's process group. A stop (user cancel, or a turn-watchdog pause that
+ * ends the task `interrupted`) owns the longer `cancelExtracted` grace window so active tools can
+ * finish cleanup; reaping here would SIGKILL the group early and defeat it.
+ */
+export function reapAgentProcessGroupOnExitExtracted(
+    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'stoppingTaskIds' | 'reapAgentProcessGroupAfterExit'>,
+    taskId: string,
+    child: ChildProcess,
+): void {
+    if (ctx.tasks.get(taskId)?.state === 'cancelled' || ctx.stoppingTaskIds.has(taskId)) {
+        return;
+    }
+    ctx.reapAgentProcessGroupAfterExit(child);
+}
+
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
@@ -322,6 +340,11 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         }
         // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
         const billingRejection = await resolveAgentTaskBillingRejection(ctx, task, request);
+        // The billing read is async: a stop that landed meanwhile already settled the task as
+        // `cancelled`. Neither fail it (that would overwrite `cancelled`) nor spawn it.
+        if (ctx.tasks.get(task.id)?.state !== 'running') {
+            return;
+        }
         if (billingRejection !== undefined) {
             fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
             fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');
@@ -650,12 +673,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         child.on('error', error => {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);
         });
-        child.once('exit', () => {
-            // User cancellation owns a longer grace window so active tools can finish cleanup.
-            if (ctx.tasks.get(task.id)?.state !== 'cancelled') {
-                ctx.reapAgentProcessGroupAfterExit(child);
-            }
-        });
+        child.once('exit', () => reapAgentProcessGroupOnExitExtracted(ctx, task.id, child));
         child.on('close', code => {
             clearChangeScopeWatch();
             clearIdleTimer();

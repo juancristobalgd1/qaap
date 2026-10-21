@@ -21,7 +21,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { localizeMissingCodingAgentMessage, type QaapAgentTurnTimeoutCause } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { resolveBackendInteractionModeSystemInstruction } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
@@ -685,10 +685,36 @@ export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, a
         );
 }
 
+/** Why a run was paused (ended `interrupted`), for cause-specific completion copy. */
+export interface QaapAgentTaskPauseCause {
+    readonly cause: QaapAgentTurnTimeoutCause;
+    /** The limit (minutes) the run hit. */
+    readonly limitMinutes: number;
+}
+
 /** How {@link cancelExtracted} stops a run: a user cancel, or a pause the user can Continue. */
 export interface QaapAgentTaskCancelOptions {
     /** End the task `interrupted` instead of `cancelled` (turn watchdog pause), so it offers Continue. */
     readonly interrupt?: boolean;
+    /** Why the run is paused; only read with {@link interrupt}. */
+    readonly pauseCause?: QaapAgentTaskPauseCause;
+}
+
+/** Settle a task while its pause cause is visible to the synchronous completion notification. */
+export function finishTaskWithPauseCause(
+    ctx: Pick<QaapAgentTaskRunnerContext, 'finishTask'> & Partial<Pick<QaapAgentTaskRunnerContext, 'taskPauseCauses'>>,
+    id: string,
+    pauseCause: QaapAgentTaskPauseCause | undefined,
+): QaapAgentTask | undefined {
+    if (!pauseCause || !ctx.taskPauseCauses) {
+        return ctx.finishTask(id, 'interrupted', undefined);
+    }
+    ctx.taskPauseCauses.set(id, pauseCause);
+    try {
+        return ctx.finishTask(id, 'interrupted', undefined);
+    } finally {
+        ctx.taskPauseCauses.delete(id);
+    }
 }
 
 export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined {
@@ -699,7 +725,9 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
             if (child) {
                 ctx.stoppingTaskIds.add(id);
             }
-            const finished = ctx.finishTask(id, options?.interrupt ? 'interrupted' : 'cancelled', undefined);
+            const finished = options?.interrupt
+                ? finishTaskWithPauseCause(ctx, id, options.pauseCause)
+                : ctx.finishTask(id, 'cancelled', undefined);
             if (child) {
                 // Cancellation is visible immediately, but retain the concurrency slot until the
                 // process group has had time to finish an in-flight workspace write safely.

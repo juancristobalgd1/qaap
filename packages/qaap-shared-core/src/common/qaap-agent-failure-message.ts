@@ -75,6 +75,8 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bauthentication_failed\b/i,
     /\bauthentication\s+failed\b/i,
     /\bfailed\s+to\s+authenticate\b/i,
+    // Copilot CLI's sign-out headline; it prints it to stdout, followed by login help, and exits 0.
+    /\bno\s+authentication\s+information\s+found\b/i,
     /\boauth\s+session\b/i,
     /\bnot\s+logged\s+in\b/i,
     /\bplease\s+run\s+\/login\b/i,
@@ -115,9 +117,12 @@ const RUNNER_IDLE_TIMEOUT_LINE = /\[qaap\] task timed out after (\d+)s without o
 /** Persisted (English, backend-locale) forms of {@link localizeAgentTurnTimeoutMessage}. */
 const STORED_IDLE_TIMEOUT = /^Timed out after (\d+) minutes without output\./;
 const STORED_MAX_DURATION = /^Timed out at the (\d+)-minute task limit\./;
+const STORED_APPROVAL_WAIT = /^Waited (\d+) hours for your approval\./;
 
 /** Only read in the CLI's error envelope: a test suite printing "timed out" is not the agent timing out. */
 const TIMEOUT_PATTERNS: readonly RegExp[] = [
+    // Our approval-wait pause copy does not say "timed out", but it is the same pause.
+    /^Waited \d+ hours for your approval\./m,
     /\btimeout\b/i,
     /\btimed\s+out\b/i,
     /\bETIMEDOUT\b/,
@@ -227,6 +232,12 @@ interface AgentFailureEvidence {
     readonly plainLines: readonly string[];
     /** The input had a JSON event stream, i.e. it is an agent log rather than a bare error string. */
     readonly structured: boolean;
+    /**
+     * Provider retry records (`system/api_retry`) after the CLI's last other JSON record: the CLI was
+     * still retrying when the log ended. Not evidence on their own (a recovered retry is noise); they
+     * only explain why the runner's idle timer killed the run.
+     */
+    readonly trailingRetryRecords: readonly string[];
 }
 
 /** At most this many plain lines and no JSON stream: the input is an error message, not a log. */
@@ -272,13 +283,22 @@ function isTopLevelErrorRecord(value: unknown): boolean {
     return record.type === undefined && record.error !== undefined && record.error !== null;
 }
 
+function isProviderRetryRecord(value: unknown): boolean {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return record.type === 'system' && record.subtype === 'api_retry';
+}
+
 function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvidence {
     const full = (log ?? '').trim();
     const errorRecords: string[] = [];
     const plainLines: string[] = [];
+    let trailingRetryRecords: string[] = [];
     let structured = false;
     if (!full) {
-        return { errorRecords, plainLines, structured };
+        return { errorRecords, plainLines, structured, trailingRetryRecords };
     }
     for (const rawLine of tailOfAgentLog(full).replace(ANSI_REGEX, '').split('\n')) {
         const line = rawLine.trim();
@@ -292,6 +312,7 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
                 if (isTopLevelErrorRecord(parsed)) {
                     errorRecords.unshift(line);
                 }
+                trailingRetryRecords = isProviderRetryRecord(parsed) ? [...trailingRetryRecords, line] : [];
                 continue;
             } catch {
                 /* not JSON: CLI text that happens to start with a brace */
@@ -299,7 +320,7 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
         }
         plainLines.push(line);
     }
-    return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines, structured };
+    return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines, structured, trailingRetryRecords };
 }
 
 /** Everything the CLI said about the failure (envelope, error records, plain lines). */
@@ -309,9 +330,17 @@ function agentFailureEvidenceText(evidence: AgentFailureEvidence): string {
         .join('\n');
 }
 
-/** Only the CLI's own error envelope — where a bare 401/403/"forbidden" really means auth. */
+/**
+ * Only the CLI's own error envelope — where a bare 401/403/"forbidden" really means auth. A
+ * plain-text log interleaves tool output (`Error: Request failed with status code 403`) with the
+ * CLI's stderr, so there only its last line or a provider error line counts, as for timeouts.
+ */
 function agentFailureEnvelopeText(evidence: AgentFailureEvidence): string {
-    return [evidence.envelope, ...evidence.errorRecords, ...evidence.plainLines.filter(line => CLI_ERROR_ENVELOPE_LINE.test(line))]
+    const interleaved = !evidence.structured && evidence.plainLines.length > STANDALONE_ERROR_MAX_LINES;
+    const lastIndex = evidence.plainLines.length - 1;
+    const plain = evidence.plainLines.filter((line, index) => CLI_ERROR_ENVELOPE_LINE.test(line)
+        && (!interleaved || index === lastIndex || CLI_PROVIDER_ERROR_LINE.test(line)));
+    return [evidence.envelope, ...evidence.errorRecords, ...plain]
         .filter((part): part is string => !!part)
         .join('\n');
 }
@@ -330,7 +359,8 @@ function agentFailureTimeoutText(evidence: AgentFailureEvidence): string {
             || CLI_PROVIDER_ERROR_LINE.test(line)
             || RUNNER_IDLE_TIMEOUT_LINE.test(line)
             || STORED_IDLE_TIMEOUT.test(line)
-            || STORED_MAX_DURATION.test(line));
+            || STORED_MAX_DURATION.test(line)
+            || STORED_APPROVAL_WAIT.test(line));
     return [evidence.envelope, ...evidence.errorRecords, ...plain]
         .filter((part): part is string => !!part)
         .join('\n');
@@ -421,6 +451,24 @@ export function summarizeCollapsedAgentFailure(input: {
 /** Classify agent CLI/API stderr or transcript text for user-facing failure copy. */
 export function detectAgentFailureKind(log: string | undefined): QaapAgentFailureKind | undefined {
     return classifyAgentFailureEvidence(collectAgentFailureEvidence(log));
+}
+
+/**
+ * The usage limit behind a run the idle timer killed, read only from the CLI's own error records
+ * and the retries it was still making (see {@link AgentFailureEvidence.trailingRetryRecords}):
+ * a 429 printed by a workspace command earlier in the log did not silence the agent.
+ */
+function classifyIdleUsageLimitEvidence(evidence: AgentFailureEvidence): 'quota' | 'rate_limit' | undefined {
+    const records = [evidence.envelope, ...evidence.errorRecords, ...evidence.trailingRetryRecords]
+        .filter((part): part is string => !!part)
+        .join('\n');
+    if (!records) {
+        return undefined;
+    }
+    if (matchesAny(records, QUOTA_PATTERNS)) {
+        return 'quota';
+    }
+    return matchesAny(records, RATE_LIMIT_PATTERNS) ? 'rate_limit' : undefined;
 }
 
 function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgentFailureKind | undefined {
@@ -546,16 +594,27 @@ export function localizeGenericAgentFailureMessage(
     }
 }
 
-/** Why the backend paused a turn that was still streaming: silence, or the absolute cap. */
-export type QaapAgentTurnTimeoutCause = 'idle' | 'max_duration';
+/**
+ * Why the backend paused a turn that was still streaming: silence, the absolute cap, or a
+ * permission approval left unanswered past its (much longer) wait cap.
+ */
+export type QaapAgentTurnTimeoutCause = 'idle' | 'max_duration' | 'approval_wait';
 
 /**
  * Reason recorded when the backend pauses a turn (turn watchdog or the task runner's idle
- * timer). The turn ends `interrupted`, so the copy points at Continue rather than Retry. It
- * starts with "Timed out" so that any reader of `TIMEOUT_PATTERNS` classifies it too.
+ * timer). The turn ends `interrupted`, so the copy points at Continue rather than Retry. The
+ * timer copies start with "Timed out"; every form is matched by `TIMEOUT_PATTERNS` and
+ * `isStoredAgentTurnTimeout`.
  */
 export function localizeAgentTurnTimeoutMessage(cause: QaapAgentTurnTimeoutCause, minutes: number): string {
     const rounded = String(Math.max(1, Math.round(minutes)));
+    if (cause === 'approval_wait') {
+        return nls.localize(
+            'qaap/agentFailure/approvalWaitTimeout',
+            'Waited {0} hours for your approval. Continue runs it again from your original request.',
+            String(Math.max(1, Math.round(minutes / 60))),
+        );
+    }
     if (cause === 'idle') {
         return nls.localize(
             'qaap/agentFailure/idleTimeout',
@@ -584,11 +643,16 @@ function formatStoredAgentTurnTimeout(error: string): string | undefined {
     if (max) {
         return localizeAgentTurnTimeoutMessage('max_duration', Number(max[1]));
     }
+    const approvalWait = STORED_APPROVAL_WAIT.exec(error);
+    if (approvalWait) {
+        return localizeAgentTurnTimeoutMessage('approval_wait', Number(approvalWait[1]) * 60);
+    }
     return undefined;
 }
 
 function isStoredAgentTurnTimeout(error: string): boolean {
-    return STORED_IDLE_TIMEOUT.test(error) || STORED_MAX_DURATION.test(error) || LEGACY_WATCHDOG_STOP.test(error);
+    return STORED_IDLE_TIMEOUT.test(error) || STORED_MAX_DURATION.test(error) || STORED_APPROVAL_WAIT.test(error)
+        || LEGACY_WATCHDOG_STOP.test(error);
 }
 
 /**
@@ -732,11 +796,18 @@ export function resolveAgentTurnFailureMessage(
         ? { state: 'failed' }
         : (options ?? { state: 'failed' });
     const evidence = collectAgentFailureEvidence(log);
+    let kind: QaapAgentFailureKind | undefined;
     const idleTimeout = RUNNER_IDLE_TIMEOUT_LINE.exec(evidence.plainLines.join('\n'));
     if (idleTimeout) {
-        return localizeAgentTurnTimeoutMessage('idle', Number(idleTimeout[1]) / 60);
+        // A CLI stuck retrying a rate limit or an exhausted quota goes quiet too: name the provider
+        // limit, not the timer that stopped it. Otherwise the idle line is the reason.
+        kind = classifyIdleUsageLimitEvidence(evidence);
+        if (!kind) {
+            return localizeAgentTurnTimeoutMessage('idle', Number(idleTimeout[1]) / 60);
+        }
+    } else {
+        kind = classifyAgentFailureEvidence(evidence);
     }
-    const kind = classifyAgentFailureEvidence(evidence);
     const challengeOptions = resolvedOptions.agentId ? { agentId: resolvedOptions.agentId } : undefined;
     if (kind === 'auth') {
         return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(agentFailureEvidenceText(evidence), challengeOptions));
@@ -848,8 +919,12 @@ export interface QaapAgentFailureReasonOptions {
     readonly agentLabel?: string;
 }
 
-/** Persisted copy that names a tool which was the turn's last, failed step. */
-const STORED_TOOL_FAILURE = /^(?!(?:Process|Agent)\b)[\w.:/-]+ (?:failed: |exited with code -?\d+\.?$|did not complete successfully\.?$)/;
+/**
+ * Persisted copy that names a tool which was the turn's last, failed step. Provider lines in the
+ * same shape (`Request failed: 429 quota exceeded`, persisted verbatim as a usage-limit hint) name
+ * an HTTP step, not a tool, so those words are excluded.
+ */
+const STORED_TOOL_FAILURE = /^(?!(?:Process|Agent|Request|Fetch|Connection|Upload|Download|Authentication|Login)\b)[\w.:/-]+ (?:failed: |exited with code -?\d+\.?$|did not complete successfully\.?$)/;
 /** CLI envelopes that end a run after repeated tool failures. */
 const REPEATED_TOOL_FAILURE = /\brepeated tool failures\b|\bfailed \d+ times with\b/i;
 

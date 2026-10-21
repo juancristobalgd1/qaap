@@ -149,7 +149,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         expect(store.sweep(now)).to.be.true;
         expect(runner.cancelledIds).to.deep.equal(['quiet-task']);
         // The task ends `interrupted` (Continue), not `cancelled` as a user stop would.
-        expect(runner.cancelOptions).to.deep.equal([{ interrupt: true }]);
+        expect(runner.cancelOptions).to.deep.equal([{ interrupt: true, pauseCause: { cause: 'idle', limitMinutes: 15 } }]);
         const agentMessage = store.get('quiet')!.messages.find(m => m.role === 'agent')!;
         expect(agentMessage.error).to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
     });
@@ -237,7 +237,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         expect(store.sweep(now)).to.be.true;
         expect(runner.cancelledIds).to.deep.equal(['abandoned-task']);
         expect(store.get('abandoned')!.messages.find(m => m.role === 'agent')!.error)
-            .to.match(/^Timed out at the 1440-minute task limit\./);
+            .to.match(/^Waited 24 hours for your approval\./);
     });
 
     it('leaves a conversation streaming within the max duration untouched', () => {

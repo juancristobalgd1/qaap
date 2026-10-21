@@ -11,6 +11,7 @@ import {
     extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
     isAgentTurnInterruptedError,
+    localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
     localizeAgentTurnTimeoutMessage,
     localizeGenericAgentFailureMessage,
@@ -22,7 +23,9 @@ import {
     CREDITS_DEPLETED_LOG,
     MODEL_UNAVAILABLE_LOG,
     PRODUCTION_ROW_ERRORS,
+    RATE_LIMIT_RETRY_LOOP_IDLE_LOG,
     RECOVERED_AGENT_MESSAGE,
+    RECOVERED_RETRY_THEN_IDLE_LOG,
     RECOVERED_THEN_KILLED_LOG,
     RECOVERED_THEN_PROVIDER_TERMINATED_LOG,
     REPEATED_TOOL_FAILURES_LOG,
@@ -130,6 +133,38 @@ describe('agent failure reasons (real logs)', () => {
             expect(detectAgentFailureKind(gitPush)).to.equal(undefined);
         });
 
+        it('a tool\'s `Error: … 403` line in a plain-text CLI log is not auth', () => {
+            const plainTextRun = [
+                '> Fetching the release notes',
+                'Error: Request failed with status code 403',
+                '    at settle (node_modules/axios/lib/core/settle.js:19:12)',
+                'Retrying with the cached copy instead.',
+                'Agent exited: tool loop aborted',
+            ].join('\n');
+            expect(detectAgentFailureKind(plainTextRun)).to.equal(undefined);
+            const persisted = resolveAgentTurnFailureMessage(plainTextRun, { state: 'failed', exitCode: 1 });
+            expect(persisted).not.to.equal(localizeAgentAuthFailureMessage({ mode: 'session' }));
+            expect(localizeAgentFailureShortReason(persisted)).not.to.match(/^Sign in/);
+        });
+
+        it('Copilot\'s sign-out headline is auth even when login help follows it', () => {
+            const copilotSignedOut = [
+                'Error: No authentication information found.',
+                'Copilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.',
+                'To authenticate, you can use any of the following methods: • Start \'copilot\' and run the \'/login\' command',
+            ].join('\n');
+            expect(detectAgentFailureKind(copilotSignedOut)).to.equal('auth');
+        });
+
+        it('the last line of a plain-text CLI log still reads as auth', () => {
+            const plainTextRun = [
+                '> Fetching the release notes',
+                'Done reading 3 files.',
+                'Error: 401 Unauthorized',
+            ].join('\n');
+            expect(detectAgentFailureKind(plainTextRun)).to.equal('auth');
+        });
+
         it('a 401 in the CLI\'s own error line still is', () => {
             expect(detectAgentFailureKind('unexpected status 401 Unauthorized: missing bearer token')).to.equal('auth');
             expect(detectAgentFailureKind('API Error: 403 {"error":{"type":"forbidden"}}')).to.equal('auth');
@@ -166,6 +201,32 @@ describe('agent failure reasons (real logs)', () => {
             expect(detectAgentFailureKind(persisted)).to.equal('timeout');
             expect(label).to.equal('Timed out');
             expect(isAgentTurnInterruptedError(persisted)).to.equal(true);
+        });
+
+        it('a CLI killed while still retrying a rate limit reports the rate limit, not the idle timer', () => {
+            const { persisted, label } = persistAndDescribe(RATE_LIMIT_RETRY_LOOP_IDLE_LOG, { state: 'interrupted' });
+            expect(persisted).to.equal(localizeAgentFailureMessage('rate_limit'));
+            expect(label).to.equal('Quota reached');
+        });
+
+        it('a recovered retry before the run went quiet keeps the idle timeout', () => {
+            const { persisted, label } = persistAndDescribe(RECOVERED_RETRY_THEN_IDLE_LOG, { state: 'interrupted' });
+            expect(persisted).to.equal(localizeAgentTurnTimeoutMessage('idle', 20));
+            expect(label).to.equal('Timed out');
+        });
+
+        it('a provider `Request failed:` usage line is a usage limit, not a failed tool', () => {
+            expect(localizeAgentFailureShortReason('Request failed: 429 quota exceeded')).to.equal('Quota reached');
+            expect(localizeAgentFailureShortReason('Bash failed: Error: Request failed with status code 429')).to.equal('A command failed');
+        });
+
+        it('the approval-wait pause round-trips through the stored copy as a continuable timeout', () => {
+            const stored = localizeAgentTurnTimeoutMessage('approval_wait', 24 * 60);
+            expect(stored).to.equal('Waited 24 hours for your approval. Continue runs it again from your original request.');
+            expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
+            expect(detectAgentFailureKind(stored)).to.equal('timeout');
+            expect(isAgentTurnInterruptedError(stored)).to.equal(true);
+            expect(localizeAgentFailureShortReason(stored)).to.equal('Timed out');
         });
 
         it('reduces the raw production row texts and keeps them as the detail', () => {

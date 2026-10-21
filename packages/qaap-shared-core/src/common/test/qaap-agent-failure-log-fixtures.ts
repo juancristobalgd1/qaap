@@ -145,6 +145,32 @@ export const RUNNER_IDLE_TIMEOUT_LOG = [
     '[qaap] task timed out after 1200s without output.',
 ].join('\n');
 
+const apiRetryRateLimit = (attempt: number): string => line({
+    type: 'system', subtype: 'api_retry', attempt, max_retries: 10, retry_delay_ms: 30000, error_status: 429, error: 'rate_limit', session_id: 's1',
+});
+
+/** The CLI kept retrying a 429 until the runner's idle timer killed it: the rate limit is the cause. */
+export const RATE_LIMIT_RETRY_LOOP_IDLE_LOG = [
+    SYSTEM_INIT,
+    READ_TOOL_RESULT,
+    MESSAGE_START,
+    apiRetryRateLimit(1),
+    apiRetryRateLimit(2),
+    apiRetryRateLimit(3),
+    '',
+    '[qaap] task timed out after 1200s without output.',
+].join('\n');
+
+/** A 429 retry the CLI recovered from, then the run went quiet: the idle timer is the cause. */
+export const RECOVERED_RETRY_THEN_IDLE_LOG = [
+    SYSTEM_INIT,
+    apiRetryRateLimit(1),
+    READ_TOOL_RESULT,
+    MESSAGE_START,
+    '',
+    '[qaap] task timed out after 1200s without output.',
+].join('\n');
+
 /** A clean success envelope followed by a non-zero exit (the CLI was killed while flushing). */
 export const SUCCESS_ENVELOPE_LOG = [
     SYSTEM_INIT,

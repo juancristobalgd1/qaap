@@ -51,6 +51,7 @@ import {
     totalTokensFromContextUsage,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
+import type { QaapAgentTaskCancelOptions } from './qaap-agent-task-runner-streaming2';
 import type { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
 import { mergeAccumulatorTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { preferTraceFirstAgentMessageStorage, materializeAgentMessageForApi } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
@@ -689,7 +690,7 @@ export function sweepZombieStreamingTurns(
 export interface ForceStopZombieTurnDeps {
     conversations: Map<string, QaapAgentConversation>;
     taskToConversation: Map<string, { agentMessageId?: string }>;
-    taskRunner: { cancel(taskId: string, options?: { readonly interrupt?: boolean }): void; list(): readonly QaapAgentTask[] };
+    taskRunner: { cancel(taskId: string, options?: QaapAgentTaskCancelOptions): void; list(): readonly QaapAgentTask[] };
     /** See {@link QaapAgentConversationStoreContext.turnWatchdogPausedTaskIds}. */
     turnWatchdogPausedTaskIds: Set<string>;
     appendRunCancelledTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string): QaapAgentConversation;
@@ -726,7 +727,7 @@ export function forceStopZombieTurn(
         for (const taskId of pausedTaskIds) {
             deps.turnWatchdogPausedTaskIds.add(taskId);
             try {
-                deps.taskRunner.cancel(taskId, { interrupt: true });
+                deps.taskRunner.cancel(taskId, { interrupt: true, pauseCause: { cause: turn.cause, limitMinutes: turn.limitMinutes } });
             } finally {
                 deps.turnWatchdogPausedTaskIds.delete(taskId);
             }

@@ -126,14 +126,17 @@ describe('agent task runner no-output timeout', () => {
 
     it('notifies a paused task, not a failed one', async () => {
         const sent: Array<{ title: string; body: string }> = [];
-        const ctx = { webPush: { notify: async (request: { title: string; body: string }) => { sent.push(request); } } };
+        const ctx = {
+            webPush: { notify: async (request: { title: string; body: string }) => { sent.push(request); } },
+            taskPauseCauses: new Map([['quiet-task', { cause: 'idle', limitMinutes: 20 }]]),
+        };
         const task = { id: 'quiet-task', title: 'Add tests', cwd: '/workspace/repo', state: 'interrupted' } as QaapAgentTask;
 
         await notifyCompletionExtracted(ctx as unknown as QaapAgentTaskRunnerContext, task);
 
         expect(sent).to.have.length(1);
         expect(sent[0].title).to.equal('Task paused');
-        expect(sent[0].body).to.equal('Add tests timed out without output. Continue runs it again from your original request.');
+        expect(sent[0].body).to.equal('Add tests was paused. Timed out after 20 minutes without output. Continue runs it again from your original request.');
     });
 
     it('counts agent events as progress, not provider retries or hook records', () => {
