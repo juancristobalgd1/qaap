@@ -70,6 +70,10 @@ export interface QaapBillingAccount {
     readonly updatedAt: string;
     readonly stripeCustomerId?: string;
     readonly stripeSubscriptionId?: string;
+    /** Last Stripe subscription status applied (`active`, `past_due`, …). */
+    readonly stripeSubscriptionStatus?: string;
+    /** Unix seconds of the newest Stripe event applied; older, out-of-order deliveries are ignored. */
+    readonly stripeEventCreated?: number;
 }
 
 export interface QaapBillingEntitlements {

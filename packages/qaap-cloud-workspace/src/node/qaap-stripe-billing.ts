@@ -42,8 +42,24 @@ export function stripePriceIdForPlan(planId: QaapPayablePlanId): string | undefi
     return priceId || undefined;
 }
 
-export function resolveBillingPublicOrigin(reqOrigin: string | undefined, reqReferer: string | undefined): string {
-    const configured = process.env.QAAP_PUBLIC_URL?.trim() || process.env.THEIA_HOST?.trim();
+/**
+ * Origin for the Checkout success/cancel URLs. A hosted or tenant runtime only trusts `QAAP_PUBLIC_URL`
+ * and answers `undefined` without it: the request's `Origin`/`Referer` are client-controlled and would
+ * let a caller send the paid redirect anywhere. Local development keeps the request fallbacks.
+ */
+export function resolveBillingPublicOrigin(
+    reqOrigin: string | undefined,
+    reqReferer: string | undefined,
+    env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+    const publicUrl = env.QAAP_PUBLIC_URL?.trim();
+    if (publicUrl) {
+        return publicUrl.replace(/\/$/, '');
+    }
+    if (isQaapHostedOrTenantBackendRuntime(env)) {
+        return undefined;
+    }
+    const configured = env.THEIA_HOST?.trim();
     if (configured) {
         return configured.replace(/\/$/, '');
     }
@@ -114,6 +130,8 @@ export async function createSubscriptionCheckoutSession(options: {
 
 export interface QaapStripeCheckoutSessionObject {
     readonly id?: string;
+    /** Unix seconds. */
+    readonly created?: number;
     readonly mode?: string;
     readonly status?: string | null;
     readonly payment_status?: string | null;
@@ -124,14 +142,65 @@ export interface QaapStripeCheckoutSessionObject {
 }
 
 export interface QaapStripeSubscriptionObject {
+    readonly id?: string;
+    readonly status?: string | null;
+    readonly customer?: string | { readonly id?: string } | null;
     readonly metadata?: Record<string, string> | null;
 }
 
+interface QaapStripeInvoiceSubscriptionDetails {
+    readonly subscription?: string | { readonly id?: string } | null;
+    readonly metadata?: Record<string, string> | null;
+}
+
+/** Invoice fields across API versions: `subscription` moved under `parent.subscription_details` in 2025. */
+export interface QaapStripeInvoiceObject {
+    readonly customer?: string | { readonly id?: string } | null;
+    readonly subscription?: string | { readonly id?: string } | null;
+    readonly subscription_details?: QaapStripeInvoiceSubscriptionDetails | null;
+    readonly parent?: { readonly subscription_details?: QaapStripeInvoiceSubscriptionDetails | null } | null;
+}
+
 export interface QaapStripeEvent {
+    readonly id?: string;
+    /** Unix seconds; orders deliveries, which Stripe does not guarantee to send in order. */
+    readonly created?: number;
     readonly type: string;
     readonly data: {
-        readonly object: QaapStripeCheckoutSessionObject | QaapStripeSubscriptionObject;
+        readonly object: QaapStripeCheckoutSessionObject | QaapStripeSubscriptionObject | QaapStripeInvoiceObject;
     };
+}
+
+/**
+ * Subscription statuses that keep the paid plan. Everything else (`past_due`, `unpaid`, `incomplete`,
+ * `paused`, `canceled`, `incomplete_expired`) drops the account to Starter until Stripe reports it active.
+ */
+export function isStripeSubscriptionEntitled(status: string | null | undefined): boolean {
+    return status === 'active' || status === 'trialing';
+}
+
+/** Statuses after which the subscription can never become active again, so its id is cleared. */
+export function isStripeSubscriptionEnded(status: string | null | undefined): boolean {
+    return status === 'canceled' || status === 'incomplete_expired';
+}
+
+function stripeObjectId(value: string | { readonly id?: string } | null | undefined): string | undefined {
+    return typeof value === 'string' ? value : value?.id ?? undefined;
+}
+
+export function stripeSubscriptionIdFromInvoice(invoice: QaapStripeInvoiceObject): string | undefined {
+    return stripeObjectId(invoice.subscription)
+        ?? stripeObjectId(invoice.parent?.subscription_details?.subscription)
+        ?? stripeObjectId(invoice.subscription_details?.subscription);
+}
+
+export function stripeLoginFromInvoice(invoice: QaapStripeInvoiceObject): string | undefined {
+    const metadata = invoice.parent?.subscription_details?.metadata ?? invoice.subscription_details?.metadata;
+    return metadata?.login?.trim() || undefined;
+}
+
+export function stripeCustomerIdFromObject(object: { readonly customer?: string | { readonly id?: string } | null }): string | undefined {
+    return stripeObjectId(object.customer);
 }
 
 /** True when Checkout finished successfully enough to grant entitlements. */

@@ -174,11 +174,18 @@ describe('QaapBillingEndpoint Stripe webhook', () => {
     };
 
     /** Mirrors production: upstream `@theia/filesystem` installs a global `json()` before Qaap contributions. */
-    const appWithEarlierJsonParser = (setPlanCalls: unknown[][]): express.Application => {
+    const appWithEarlierJsonParser = (applyCalls: unknown[][], processed: Set<string> = new Set(), subscriptions: Record<string, string> = {}): express.Application => {
         const app = express();
         app.use(json());
         const endpoint = new QaapBillingEndpoint();
-        Object.assign(endpoint, { store: { setPlan: async (...args: unknown[]) => { setPlanCalls.push(args); return {}; } } });
+        Object.assign(endpoint, {
+            store: {
+                applyStripeSubscription: async (...args: unknown[]) => { applyCalls.push(args); return { applied: true, account: {} }; },
+                findLoginByStripeSubscription: async (id: string) => subscriptions[id],
+                hasProcessedStripeEvent: async (id: string) => processed.has(id),
+                markStripeEventProcessed: async (id: string) => { processed.add(id); },
+            },
+        });
         endpoint.configure(app);
         return app;
     };
@@ -196,7 +203,53 @@ describe('QaapBillingEndpoint Stripe webhook', () => {
         expect(JSON.parse(response.body)).to.deep.equal({ received: true });
         expect(calls).to.have.length(1);
         expect(calls[0][0]).to.equal('octocat');
-        expect(calls[0][1]).to.equal('pro');
+        expect(calls[0][1]).to.include({ status: 'active', planId: 'pro', subscriptionId: 'sub_1' });
+    });
+
+    const deliver = async (app: express.Application, event: object): Promise<{ status: number; body: string }> => {
+        const payload = JSON.stringify(event);
+        const response = await post(app, payload, sign(payload));
+        await new Promise<void>(resolve => server ? server.close(() => resolve()) : resolve());
+        server = undefined;
+        return response;
+    };
+
+    it('suspends the plan when a subscription becomes past_due', async () => {
+        const calls: unknown[][] = [];
+        const response = await deliver(appWithEarlierJsonParser(calls), {
+            id: 'evt_past_due', created: 500, type: 'customer.subscription.updated',
+            data: { object: { id: 'sub_1', status: 'past_due', customer: 'cus_1', metadata: { login: 'octocat', planId: 'pro' } } },
+        });
+        expect(response.status).to.equal(200);
+        expect(calls).to.have.length(1);
+        expect(calls[0][0]).to.equal('octocat');
+        expect(calls[0][1]).to.deep.equal({ status: 'past_due', planId: 'pro', customerId: 'cus_1', subscriptionId: 'sub_1', eventCreated: 500 });
+    });
+
+    it('suspends the plan on invoice.payment_failed, finding the login by subscription id', async () => {
+        const calls: unknown[][] = [];
+        const response = await deliver(appWithEarlierJsonParser(calls, new Set(), { sub_9: 'octocat' }), {
+            id: 'evt_invoice', created: 600, type: 'invoice.payment_failed',
+            data: { object: { customer: 'cus_9', parent: { subscription_details: { subscription: 'sub_9' } } } },
+        });
+        expect(response.status).to.equal(200);
+        expect(calls).to.have.length(1);
+        expect(calls[0][0]).to.equal('octocat');
+        expect(calls[0][1]).to.include({ status: 'past_due', subscriptionId: 'sub_9', eventCreated: 600 });
+    });
+
+    it('applies a redelivered event id only once', async () => {
+        const calls: unknown[][] = [];
+        const processed = new Set<string>();
+        const event = {
+            id: 'evt_dup', created: 700, type: 'customer.subscription.deleted',
+            data: { object: { id: 'sub_1', status: 'canceled', metadata: { login: 'octocat' } } },
+        };
+        expect((await deliver(appWithEarlierJsonParser(calls, processed), event)).status).to.equal(200);
+        const second = await deliver(appWithEarlierJsonParser(calls, processed), event);
+        expect(JSON.parse(second.body)).to.deep.equal({ received: true, duplicate: true });
+        expect(calls).to.have.length(1);
+        expect(calls[0][1]).to.include({ status: 'canceled' });
     });
 
     it('rejects a payload signed with another secret', async () => {

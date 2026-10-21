@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { hoursToMinutes } from '../common/qaap-billing-plans';
-import { QaapBillingStore } from './qaap-billing-store';
+import { QaapBillingStore } from './qaap-billing-store';
+
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 function makeStore(filePath: string): QaapBillingStore {
@@ -171,5 +172,62 @@ describe('QaapBillingStore', () => {
             expect(leftover.creditsCharged).to.equal(2500 - 97);
             expect(leftover.account.includedCreditsRemaining).to.equal(0);
         }
+    });
+
+    describe('Stripe subscription lifecycle', () => {
+        const active = { status: 'active', planId: 'pro' as const, subscriptionId: 'sub_1', customerId: 'cus_1' };
+
+        it('drops a past_due subscription to Starter and restores Pro when it is active again', async () => {
+            const store = makeStore(filePath);
+            await store.applyStripeSubscription('alice', { ...active, eventCreated: 100 });
+            expect((await store.getEntitlements('alice')).planId).to.equal('pro');
+
+            const pastDue = await store.applyStripeSubscription('alice', { status: 'past_due', subscriptionId: 'sub_1', eventCreated: 200 });
+            expect(pastDue.applied).to.equal(true);
+            expect(pastDue.account.planId).to.equal('starter');
+            expect(pastDue.account.stripeSubscriptionId).to.equal('sub_1');
+            expect((await store.getEntitlements('alice')).hostedModels).to.equal(false);
+
+            const recovered = await store.applyStripeSubscription('alice', { status: 'active', subscriptionId: 'sub_1', eventCreated: 300 });
+            expect(recovered.account.planId).to.equal('starter', 'no planId in the event: an entitled status keeps the current plan');
+            const withPlan = await store.applyStripeSubscription('alice', { ...active, eventCreated: 301 });
+            expect(withPlan.account.planId).to.equal('pro');
+        });
+
+        it('ignores deliveries older than the newest applied event', async () => {
+            const store = makeStore(filePath);
+            await store.applyStripeSubscription('alice', { ...active, eventCreated: 100 });
+            await store.applyStripeSubscription('alice', { status: 'canceled', subscriptionId: 'sub_1', eventCreated: 300 });
+            const late = await store.applyStripeSubscription('alice', { ...active, eventCreated: 200 });
+            expect(late.applied).to.equal(false);
+            expect(late.account.planId).to.equal('starter');
+            expect(late.account.stripeSubscriptionId).to.equal(undefined);
+        });
+
+        it('does not let a non-entitled event of another subscription downgrade the current one', async () => {
+            const store = makeStore(filePath);
+            await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_new', eventCreated: 100 });
+            const old = await store.applyStripeSubscription('alice', { status: 'canceled', subscriptionId: 'sub_old', eventCreated: 200 });
+            expect(old.applied).to.equal(false);
+            expect(old.account.planId).to.equal('pro');
+        });
+
+        it('does not refill allowances when the plan is unchanged', async () => {
+            const store = makeStore(filePath);
+            await store.applyStripeSubscription('alice', { ...active, eventCreated: 100 });
+            await store.debitHostedUsage('alice', 'gpt-5.6-sol', 100_000, 8_000);
+            const before = (await store.getOrCreateAccount('alice')).includedCreditsRemaining;
+            const again = await store.applyStripeSubscription('alice', { ...active, eventCreated: 150 });
+            expect(again.account.includedCreditsRemaining).to.equal(before);
+        });
+
+        it('finds the login of a subscription and remembers handled event ids', async () => {
+            const store = makeStore(filePath);
+            await store.applyStripeSubscription('Alice', { ...active, eventCreated: 100 });
+            expect(await store.findLoginByStripeSubscription('sub_1')).to.equal('alice');
+            expect(await store.hasProcessedStripeEvent('evt_1')).to.equal(false);
+            await store.markStripeEventProcessed('evt_1');
+            expect(await store.hasProcessedStripeEvent('evt_1')).to.equal(true);
+        });
     });
 });
