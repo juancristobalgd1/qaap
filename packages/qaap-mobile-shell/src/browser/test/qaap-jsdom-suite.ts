@@ -83,3 +83,32 @@ export function useSuiteAnimationFrameStub(): void {
         restore = [];
     });
 }
+
+/**
+ * Snapshots the named own properties of `globalThis` and of the current `window` before each test
+ * of the enclosing `describe` and puts them back after it, so a mock a test installs there (a
+ * Map-backed `sessionStorage`, a partial `window`) never leaks into later spec files. Theia's
+ * `enableJSDOM()` copies a jsdom property onto `globalThis` only when it is missing, so a leaked
+ * `globalThis.sessionStorage` would outlive every later jsdom and desynchronize it from
+ * `window.sessionStorage`. Call it after {@link useSuiteJSDOM}.
+ */
+export function useSuiteGlobalsRestore(...keys: string[]): void {
+    let restore: Array<() => void> = [];
+    beforeEach(() => {
+        const targets: object[] = typeof window === 'undefined' || window === globalThis ? [globalThis] : [globalThis, window];
+        restore = targets.flatMap(target => keys.map(key => {
+            const previous = Object.getOwnPropertyDescriptor(target, key);
+            return (): void => {
+                if (previous) {
+                    Object.defineProperty(target, key, previous);
+                } else {
+                    delete (target as Record<string, unknown>)[key];
+                }
+            };
+        }));
+    });
+    afterEach(() => {
+        restore.reverse().forEach(undo => undo());
+        restore = [];
+    });
+}

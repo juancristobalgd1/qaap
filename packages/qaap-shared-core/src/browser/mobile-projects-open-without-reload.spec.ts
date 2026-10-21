@@ -102,6 +102,9 @@ describe('openProjectWithoutReloadExtracted', () => {
         expect(h.openedInPlace).to.deep.equal([OWN_CLONE.toString()]);
         // The repository open (fetch) is still requested, but nothing waits for it.
         expect(h.backendOpens).to.have.length(1);
+        // Settle the background fetch: left pending, its request timeout (210 s) keeps mocha alive without `--exit`.
+        h.answerBackend(OWN_CLONE);
+        await flush();
     });
 
     it("waits for the backend's clone path when the cached entry names another login's folder", async () => {

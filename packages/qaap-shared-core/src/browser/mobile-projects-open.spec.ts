@@ -35,13 +35,14 @@ import {
     resolveInitialLandingBodyClass,
     shouldMarkLandingLeftFromStorage,
 } from '../browser/mobile-shell-landing-state';
-import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { useSuiteGlobalsRestore, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
 describe('mobile-projects-open work hub bootstrap', () => {
 
     useSuiteJSDOM();
+    useSuiteGlobalsRestore('sessionStorage');
 
     const storage = new Map<string, string>();
 
@@ -151,6 +152,7 @@ describe('mobile-projects-open work hub bootstrap', () => {
 describe('work hub hide-ide-side-panels invariant', () => {
 
     useSuiteJSDOM();
+    useSuiteGlobalsRestore('sessionStorage');
 
     const HIDE_CLASS = 'theia-mobile-mod-workhub-hide-ide-side-panels';
     const storage = new Map<string, string>();
@@ -236,6 +238,7 @@ describe('work hub hide-ide-side-panels invariant', () => {
 describe('mobile-shell-landing-state', () => {
 
     useSuiteJSDOM();
+    useSuiteGlobalsRestore('sessionStorage');
 
     const storage = new Map<string, string>();
 

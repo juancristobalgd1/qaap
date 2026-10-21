@@ -25,8 +25,14 @@ import {
 describe('qaap-mobile-work-surface-preference', () => {
 
     const storage = new Map<string, string>();
+    // The mocks below replace `globalThis.sessionStorage` and `globalThis.window`; put the previous
+    // values back after each test. `enableJSDOM()` never overwrites a `sessionStorage` it finds on
+    // `globalThis`, so a leaked mock would desynchronize it from `window.sessionStorage` in every later suite.
+    const mockedGlobals = ['sessionStorage', 'window'] as const;
+    let previousGlobals: Array<PropertyDescriptor | undefined> = [];
 
     beforeEach(() => {
+        previousGlobals = mockedGlobals.map(key => Object.getOwnPropertyDescriptor(globalThis, key));
         storage.clear();
         const sessionStorage = {
             getItem: (key: string) => storage.get(key) ?? null,
@@ -40,6 +46,17 @@ describe('qaap-mobile-work-surface-preference', () => {
         (global as unknown as { window: Window }).window = { sessionStorage } as unknown as Window;
         clearPreferDesktopIde();
         clearPreferAgentsSurface();
+    });
+
+    afterEach(() => {
+        mockedGlobals.forEach((key, index) => {
+            const previous = previousGlobals[index];
+            if (previous) {
+                Object.defineProperty(globalThis, key, previous);
+            } else {
+                delete (globalThis as Record<string, unknown>)[key];
+            }
+        });
     });
 
     it('persists desktop IDE choice in sessionStorage for reload', () => {
