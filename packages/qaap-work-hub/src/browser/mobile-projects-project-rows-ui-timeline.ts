@@ -50,6 +50,16 @@ function resolveTaskFailureHint(summary: QaapAgentConversationSummaryDTO | undef
     return `${preview.slice(0, TASK_FAILURE_HINT_MAX_LENGTH - 1).trimEnd()}…`;
 }
 
+/**
+ * What a compact row's failure line shows: the reason and the recovery chip's action. The sessions
+ * sidebar's live patch cannot rewrite that line, so a row whose key changed (failed again with
+ * another error, Retry becoming Continue) is rebuilt instead of patched.
+ */
+export function sidebarRowFailureKey(summary: QaapAgentConversationSummaryDTO | undefined): string {
+    const hint = resolveTaskFailureHint(summary);
+    return hint && summary ? `${resolveQaapFailedRunAction(summary)}:${hint}` : '';
+}
+
 function createTaskFailureHintElement(hint: string): HTMLElement {
     const failure = document.createElement('div');
     failure.className = 'theia-mobile-projects-task-failure-hint';
@@ -128,8 +138,10 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     row.className = 'theia-mobile-projects-task-row';
     if (compact) {
         row.classList.add('theia-mod-sidebar-compact');
-        // Read by the sessions sidebar live patch, which cannot update the "+N" badge in place.
+        // Read by the sessions sidebar live patch, which cannot update the "+N" badge or the failure
+        // line (reason + Retry/Continue chip) in place.
         row.dataset.qaapFailedDuplicates = String(failedDuplicateCount);
+        row.dataset.qaapFailureKey = sidebarRowFailureKey(summary);
     }
     if (selection) {
         row.classList.add('theia-mod-clear-failed-select');

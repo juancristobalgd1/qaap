@@ -44,6 +44,8 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
         readonly unread?: boolean;
         /** Collapsed older failed runs: the row's "+N" badge. */
         readonly failedDuplicateCount?: number;
+        /** Failure reason and Retry/Continue action of a failed row (`sidebarRowFailureKey`). */
+        readonly failureKey?: string;
     },
 ): string {
     const title = conversation.status === 'streaming' ? '' : conversation.title;
@@ -61,6 +63,7 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
         turnCurrent,
         turnTotal,
         options.failedDuplicateCount ?? 0,
+        options.failureKey ?? '',
         title,
     ].join(':');
 }

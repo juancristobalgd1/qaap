@@ -80,6 +80,15 @@ describe('qaap-work-hub-sessions-sidebar-fingerprint', () => {
             buildWorkHubSessionsSidebarRowFingerprint(summary, { ...options, failedDuplicateCount: 0 }));
     });
 
+    it('changes row fingerprint when a failed row fails again with another reason or action', () => {
+        const summary = { id: 'conv-1', status: 'failed' as const, title: 'Fix login', updatedAt: 100, messageCount: 3 };
+        const options = { pinned: false, isCurrent: false, visualStatusId: 'failed' };
+        const retry = buildWorkHubSessionsSidebarRowFingerprint(summary, { ...options, failureKey: 'retry:Bash exited with code 1.' });
+        const otherError = buildWorkHubSessionsSidebarRowFingerprint(summary, { ...options, failureKey: 'retry:Network error.' });
+        const resume = buildWorkHubSessionsSidebarRowFingerprint(summary, { ...options, failureKey: 'continue:Timed out' });
+        expect(new Set([retry, otherError, resume]).size).to.equal(3);
+    });
+
     it('visible structure ignores hidden conversations outside pagination window', () => {
         const visibleSlot = {
             projectId: 'proj-a',
