@@ -9,7 +9,7 @@ import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 
-import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { isQaiqProviderKeyMissingFailure, localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
 import { resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 
@@ -261,7 +261,8 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
                     : message),
             };
         }
-        if (await ctx.maybeRetryTurnWithFallback(
+        // The task marker covers live refusals; the log line covers a task restored without it.
+        if (!isQaiqProviderKeyMissingFailure(log) && await ctx.maybeRetryTurnWithFallback(
             conversationId,
             userMessageId,
             agentMessageId,
@@ -492,6 +493,11 @@ export async function maybeRetryTurnWithFallbackExtracted(ctx: QaapAgentConversa
     agentMessage: QaapAgentMessage | undefined,
     turnAgentId: string,
     startSha?: string, ): Promise<boolean> {
+    // Refused before spawn for a missing provider key: every fallback model of the same agent would
+    // be refused the same way, each one a new task record, transcript churn and failure push.
+    if (task.preflightFailure === 'provider_key_missing') {
+        return false;
+    }
     if (ctx.isTurnGraphEnabled() && ctx.workflowRuns) {
         return ctx.maybeRetryTurnWithFallbackModelViaGraph(
             conversationId, userMessageId, agentMessageId, task, conv, agentMessage, turnAgentId, startSha,

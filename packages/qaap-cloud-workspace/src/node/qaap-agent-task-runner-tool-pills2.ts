@@ -557,7 +557,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         }
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
-        ctx.assertQaiqConfigured(agentId, options.ownerLogin);
+        ctx.assertQaiqConfigured(agentId, options.ownerLogin, options.agentModel);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
             throw new Error(`Agent "${agentId}" is not available for prompt improvement.`);
@@ -641,7 +641,6 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             throw new Error('Prompt is empty.');
         }
         const agentId = ctx.resolveAgentId(prompt, options.agentId, options.ownerLogin);
-        ctx.assertQaiqConfigured(agentId, options.ownerLogin);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
             throw new Error(`Agent "${agentId}" is not available.`);
@@ -653,6 +652,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             ...(options.agentModel ? { agentModel: options.agentModel } : {}),
             ...(options.taskKind ? { taskKind: options.taskKind } : {}),
         }, prompt, options.ownerLogin);
+        ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);
         const vars = ctx.buildTemplateVars(agentId, agentModel, {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',

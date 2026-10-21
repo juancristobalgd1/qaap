@@ -1,4 +1,5 @@
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
+import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
@@ -421,6 +422,13 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 const message = error instanceof Error ? error.message : String(error);
                 fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                 fs.writeFileSync(ctx.logPath(task.id), `${message}\n`, 'utf8');
+                if (error instanceof QaapQaiqProviderKeyMissingError) {
+                    // Refused before spawn for a missing key: no other model of this agent can fix it.
+                    const current = ctx.tasks.get(task.id);
+                    if (current) {
+                        ctx.tasks.set(task.id, { ...current, preflightFailure: 'provider_key_missing' });
+                    }
+                }
                 ctx.finishTask(task.id, 'failed', 1);
                 return;
             }

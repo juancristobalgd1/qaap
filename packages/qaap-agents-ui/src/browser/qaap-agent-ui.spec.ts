@@ -55,4 +55,15 @@ describe('model chip label', () => {
         expect(disconnected.querySelector('.theia-qaap-agent-connect-chip')?.textContent).to.equal('Connect');
         expect(disconnected.classList.contains('theia-mod-disconnected')).to.equal(true);
     });
+
+    it('a keyless QAIQ chip asks for an API key, not a sign-in', () => {
+        const qaiq = document.createElement('button');
+        populateAgentToolbarButton(qaiq, {
+            agentId: 'qaiq',
+            label: 'QAIQ',
+            agentModel: { vendor: 'openrouter', modelId: 'nvidia/nemotron-3-super-120b-a12b:free' },
+            connectionState: 'disconnected',
+        });
+        expect(qaiq.querySelector('.theia-qaap-agent-connect-chip')?.textContent).to.equal('Add API key');
+    });
 });
