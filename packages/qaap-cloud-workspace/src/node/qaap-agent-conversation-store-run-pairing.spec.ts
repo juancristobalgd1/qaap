@@ -414,3 +414,34 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
         });
     });
 });
+
+describe('QaapAgentConversationStore follow-up approval policy', () => {
+
+    // The Work Hub's one-tap Continue posts a follow-up with only the agent model: it relies on a
+    // post without policy fields keeping the policy stored on the conversation, never loosening it.
+    it('keeps the stored approval policy when a follow-up does not send one', () => {
+        const store = new TestConversationStore();
+        store.configureForTest(new TestTaskRunner());
+        store.seed({
+            ...idleConversation('c1'),
+            autoApprove: false,
+            interactionModeId: 'plan',
+            approvalPolicyId: 'ask',
+            toolApprovalRules: { shell: false, network: false },
+        });
+
+        const next = store.postUserMessage('c1', 'Continue where you left off.', PLAIN_AGENT_ID);
+
+        expect({
+            autoApprove: next.autoApprove,
+            interactionModeId: next.interactionModeId,
+            approvalPolicyId: next.approvalPolicyId,
+            toolApprovalRules: next.toolApprovalRules,
+        }).to.deep.equal({
+            autoApprove: false,
+            interactionModeId: 'plan',
+            approvalPolicyId: 'ask',
+            toolApprovalRules: { shell: false, network: false },
+        });
+    });
+});
