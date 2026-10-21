@@ -17,7 +17,9 @@ import {
 import {
     MAX_AGENT_MODEL_FALLBACK_ATTEMPTS,
     agentModelKey,
+    agentTurnHasRetryableEmptyOutput,
     agentTurnHasRetryableModelFailure,
+    agentTurnHasRetryableToolSupportFailure,
     agentTurnMayFallBackToAnotherModel,
     agentTurnQualifiesForModelFallback,
     resolveNextFallbackAgentModel,
@@ -185,10 +187,57 @@ export class QaapStandaloneTaskModelFallback {
         if (kind && ACCOUNT_LEVEL_FAILURE_KINDS.has(kind)) {
             return false;
         }
-        if (agentTurnQualifiesForModelFallback(agentId, task, this.parseEvidence(agentId, log))) {
+        if (this.hasPreSpawnFailure(log)) {
+            return false;
+        }
+        const evidence = this.parseEvidence(agentId, log);
+        if (!agentTurnQualifiesForModelFallback(agentId, task, evidence)) {
+            return false;
+        }
+        // No meaningful output (a provider error on stderr lands here) or a tool-support failure:
+        // nothing of value is lost by starting over on another model.
+        if (!evidence || agentTurnHasRetryableEmptyOutput(evidence) || agentTurnHasRetryableToolSupportFailure(evidence)) {
             return true;
         }
-        return task.state === 'failed' && agentTurnHasRetryableModelFailure({ content: log });
+        // The turn worked and the contract matched on `model_unavailable` somewhere in its transcript.
+        // For a plain-text CLI that transcript is every tool line too, and a standalone retry starts a
+        // long turn from scratch on a workspace the first attempt already changed: only the CLI's own
+        // failure (its error records, or the last line it printed) may name the model as the cause.
+        return agentTurnHasRetryableModelFailure({ content: this.cliFailureText(log) });
+    }
+
+    /** The CLI's own failure statement: top-level JSON error / `is_error` result records, then its last plain line. */
+    protected cliFailureText(log: string): string {
+        const records: string[] = [];
+        let lastPlainLine: string | undefined;
+        for (const raw of log.split('\n')) {
+            const line = raw.trim();
+            if (!line) {
+                continue;
+            }
+            if (line.startsWith('{')) {
+                try {
+                    const record = JSON.parse(line) as { readonly type?: unknown; readonly is_error?: unknown; readonly error?: unknown };
+                    if (record.type === 'error' || (record.type === 'result' && record.is_error === true)
+                        || (record.type === undefined && record.error !== undefined)) {
+                        records.push(line);
+                    }
+                    continue;
+                } catch {
+                    // Not JSON: a plain line.
+                }
+            }
+            lastPlainLine = line;
+        }
+        return [...records, ...(lastPlainLine ? [lastPlainLine] : [])].join('\n');
+    }
+
+    /**
+     * The runner could not spawn the agent at all (`Failed to start: …` — cwd ownership 403, sandbox,
+     * missing binary): deterministic and independent of the model, so another model fails the same way.
+     */
+    protected hasPreSpawnFailure(log: string): boolean {
+        return /^Failed to start:/m.test(log);
     }
 
     protected parseEvidence(agentId: string, log: string): QaapAgentModelFallbackEvidence | undefined {

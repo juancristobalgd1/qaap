@@ -234,6 +234,17 @@ export function mayStillFallBack(detail) {
     return detail?.state === 'failed' && !followModelFallback(detail);
 }
 
+const DEFAULT_FALLBACK_GRACE_MS = 15_000;
+
+/** QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS as a non-negative number of ms; anything else is the 15 s default. */
+export function parseFallbackGraceMs(raw) {
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return DEFAULT_FALLBACK_GRACE_MS;
+    }
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_FALLBACK_GRACE_MS;
+}
+
 /** Wording for the fallback count in the deploy log, empty when the first model answered. */
 export function describeFallbacks(count) {
     return count > 0 ? ` after ${count} model fallback${count === 1 ? '' : 's'}` : '';
@@ -374,7 +385,7 @@ async function main(argv, env) {
     console.log(`OK: task ${taskId} created (${created.json.state}).`);
 
     const started = Date.now();
-    const fallbackGraceMs = Number(env.QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS ?? 15_000);
+    const fallbackGraceMs = parseFallbackGraceMs(env.QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS);
     let detail;
     let lastState = '';
     let fallbacks = 0;

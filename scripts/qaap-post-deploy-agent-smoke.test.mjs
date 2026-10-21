@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
 import {
-    describeFallbacks, describeTaskFailure, followModelFallback, main, mayStillFallBack, findProviderCredentialRejection, isModelUnavailableFailure,
+    describeFallbacks, describeTaskFailure, followModelFallback, main, mayStillFallBack, parseFallbackGraceMs, findProviderCredentialRejection, isModelUnavailableFailure,
     judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie, taskModel,
 } from './qaap-post-deploy-agent-smoke.mjs';
 
@@ -458,4 +458,14 @@ test('a chain whose last model also fails fails the smoke and says how many fall
     }, async base => {
         await assert.rejects(quiet(() => main([base], ENV)), /no live endpoint.*final task of the chain after 2 model fallbacks/);
     });
+});
+
+test('a fallback grace that is not a finite number falls back to 15 s', () => {
+    assert.equal(parseFallbackGraceMs(undefined), 15_000);
+    assert.equal(parseFallbackGraceMs(''), 15_000);
+    assert.equal(parseFallbackGraceMs('soon'), 15_000);
+    assert.equal(parseFallbackGraceMs('Infinity'), 15_000);
+    assert.equal(parseFallbackGraceMs('-5'), 15_000);
+    assert.equal(parseFallbackGraceMs('0'), 0);
+    assert.equal(parseFallbackGraceMs('2500'), 2500);
 });

@@ -257,6 +257,54 @@ describe('QaapStandaloneTaskModelFallback', () => {
         expect(runner.created).to.have.length(1);
     });
 
+    it('does not retry a plain-text turn that worked just because a tool line mentions a missing model', async () => {
+        const runner = fakeRunner();
+        const service = fallbackService(runner);
+        const first = createStandalone(runner, service, { ...REQUEST, agent: 'gemini' });
+
+        runner.finish(first.id, 'failed', [
+            'Updated src/app.ts and src/model.ts.',
+            '$ npm test',
+            'Error: model not found: User (prisma schema)',
+            'Tests failed: 3 of 40.',
+        ].join('\n'));
+
+        expect(await settle(service, first.id)).to.equal(false);
+        expect(runner.created).to.have.length(1);
+    });
+
+    it('retries a plain-text turn whose CLI itself ends on an unavailable model', async () => {
+        const runner = fakeRunner();
+        const service = fallbackService(runner);
+        const first = createStandalone(runner, service, { ...REQUEST, agent: 'gemini' });
+
+        runner.finish(first.id, 'failed', 'Reading src/app.ts\nError: model not found: gemini-9-ultra\n');
+
+        expect(await settle(service, first.id)).to.equal(true);
+    });
+
+    it('retries a turn with no output whose provider error only reached stderr', async () => {
+        const runner = fakeRunner();
+        const service = fallbackService(runner);
+        const first = createStandalone(runner, service);
+
+        runner.finish(first.id, 'failed', 'API Error: 404 No endpoints found for dead/model:free.\n');
+
+        expect(await settle(service, first.id)).to.equal(true);
+        expect(runner.created).to.have.length(2);
+    });
+
+    it('does not retry a task the runner could not start (deterministic pre-spawn failure)', async () => {
+        const runner = fakeRunner();
+        const service = fallbackService(runner);
+        const first = createStandalone(runner, service);
+
+        runner.finish(first.id, 'failed', 'Failed to start: EACCES: permission denied, cwd outside the owner workspace (403)\n');
+
+        expect(await settle(service, first.id)).to.equal(false);
+        expect(runner.created).to.have.length(1);
+    });
+
     it('does not retry an agent without a model chain (shell)', async () => {
         const runner = fakeRunner();
         const service = fallbackService(runner);
