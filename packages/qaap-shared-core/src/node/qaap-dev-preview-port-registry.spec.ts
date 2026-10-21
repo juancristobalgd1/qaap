@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapPreviewIdentity } from '../common/qaap-preview-identity';
-import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
+import { QaapDevPreviewPortRegistry, resolveQaapPreviewMaxPerOwner } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewHostLabel } from './qaap-preview-host';
 
 class PersistentTestRegistry extends QaapDevPreviewPortRegistry {
@@ -225,3 +225,41 @@ describe('QaapDevPreviewPortRegistry sweepExpiredClaims', () => {
     });
 });
 
+describe('QaapDevPreviewPortRegistry per-owner preview cap', () => {
+    const register = (registry: QaapDevPreviewPortRegistry, owner: string, name: string, port: number): string => {
+        const identity = resolveQaapPreviewIdentity({
+            userId: owner,
+            workspaceId: `file:///workspace/${owner}/${name}`,
+            projectId: `file:///workspace/${owner}/${name}`,
+            conversationId: name,
+            processId: name,
+        });
+        registry.register({ ...identity, ownerLogin: owner, root: `/workspace/${owner}/${name}`, port });
+        return identity.previewId;
+    };
+
+    it('refuses a new preview once the owner holds the maximum, but not a re-claim or another owner', () => {
+        const previous = process.env.QAAP_PREVIEW_MAX_PER_OWNER;
+        process.env.QAAP_PREVIEW_MAX_PER_OWNER = '2';
+        try {
+            const registry = new QaapDevPreviewPortRegistry();
+            const first = register(registry, 'alice', 'a', 8201);
+            register(registry, 'alice', 'b', 8202);
+            expect(registry.isOwnerAtPreviewLimit('alice', 'p-new')).to.equal(true);
+            expect(registry.isOwnerAtPreviewLimit('alice', first)).to.equal(false);
+            expect(registry.isOwnerAtPreviewLimit('bob', 'p-new')).to.equal(false);
+        } finally {
+            if (previous === undefined) {
+                delete process.env.QAAP_PREVIEW_MAX_PER_OWNER;
+            } else {
+                process.env.QAAP_PREVIEW_MAX_PER_OWNER = previous;
+            }
+        }
+    });
+
+    it('defaults to a generous cap and treats 0 as unlimited', () => {
+        expect(resolveQaapPreviewMaxPerOwner({})).to.equal(20);
+        expect(resolveQaapPreviewMaxPerOwner({ QAAP_PREVIEW_MAX_PER_OWNER: '0' })).to.equal(undefined);
+        expect(resolveQaapPreviewMaxPerOwner({ QAAP_PREVIEW_MAX_PER_OWNER: 'nope' })).to.equal(20);
+    });
+});

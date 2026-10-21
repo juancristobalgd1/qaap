@@ -8,6 +8,7 @@ import { bindRootContributionProvider } from '@theia/core/lib/common/contributio
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QaapClientErrorEndpoint } from './qaap-client-error-endpoint';
 import { QaapFrameCheckEndpoint } from './qaap-frame-check-endpoint';
+import { QaapApiRateLimitContribution } from './qaap-api-rate-limit';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
@@ -63,6 +64,8 @@ export default new ContainerModule(bind => {
     bind(BackendApplicationContribution).toService(QaapDevPreviewEndpoint);
     bind(QaapFrameCheckEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapFrameCheckEndpoint);
+    bind(QaapApiRateLimitContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapApiRateLimitContribution);
     bind(QaapClientErrorEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapClientErrorEndpoint);
 });

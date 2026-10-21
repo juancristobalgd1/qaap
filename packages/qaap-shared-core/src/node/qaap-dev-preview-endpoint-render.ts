@@ -292,6 +292,10 @@ export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, r
             }
             const replaceExpired = expiredConflicts.length > 0
                 || (stalePortOwner !== undefined && stalePortOwner !== owner);
+            if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, registration.previewId)) {
+                res.status(429).type('text/plain').send('You have too many previews running. Stop one and try again.');
+                return;
+            }
             const record = ctx.portRegistry.register(registration, { replaceExpired });
             if (!record) {
                 res.status(409).type('text/plain').send('This preview identity or port is already in use.');
@@ -456,6 +460,10 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         conversationId,
     }, owner);
 
+    if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, identity.previewId)) {
+        res.status(429).type('text/plain').send('You have too many previews running. Stop one and try again.');
+        return;
+    }
     const allocated = await ctx.allocatePreviewPort({
         ...identity,
         ownerLogin: owner,

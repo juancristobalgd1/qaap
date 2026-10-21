@@ -65,6 +65,20 @@ function resolvePreviewRegistryPath(): string {
 }
 
 /**
+ * Most live previews one login may hold at once (`QAAP_PREVIEW_MAX_PER_OWNER`, default 20; `0`
+ * disables). Every preview is a dev server in the shared container, so one account must not be able
+ * to reserve ports and spawn servers without bound.
+ */
+export function resolveQaapPreviewMaxPerOwner(env: NodeJS.ProcessEnv = process.env): number | undefined {
+    const raw = env.QAAP_PREVIEW_MAX_PER_OWNER?.trim();
+    const value = raw ? Number(raw) : 20;
+    if (!Number.isFinite(value) || value < 0) {
+        return 20;
+    }
+    return value === 0 ? undefined : Math.floor(value);
+}
+
+/**
  * Maps a dev-preview port to the login that claimed it (having proven workspace ownership), so the
  * `/qaap-dev/:port` proxy can deny a signed-in user reaching another tenant's dev server on the
  * shared host. Claims are the only authoritative owner signal for frontend-started dev servers,
@@ -82,6 +96,7 @@ export class QaapDevPreviewPortRegistry {
     protected readonly previews = new Map<string, QaapDevPreviewRecord>();
     protected readonly previewIdByPort = new Map<number, string>();
     protected readonly storePath = resolvePreviewRegistryPath();
+    protected readonly maxPreviewsPerOwner = resolveQaapPreviewMaxPerOwner();
     protected persistTimer: NodeJS.Timeout | undefined;
     protected persistenceEnabled = false;
     protected readonly onDidReleasePortEmitter = new Emitter<number>();
@@ -366,6 +381,17 @@ export class QaapDevPreviewPortRegistry {
 
     records(): readonly QaapDevPreviewRecord[] {
         return [...this.previews.values()].filter(record => !this.isRecordExpired(record));
+    }
+
+    /**
+     * True when registering `previewId` for `ownerLogin` would exceed the per-owner cap: the
+     * identity is not already registered and the owner already holds the maximum of live previews.
+     */
+    isOwnerAtPreviewLimit(ownerLogin: string, previewId: string): boolean {
+        if (this.maxPreviewsPerOwner === undefined || this.previews.has(previewId)) {
+            return false;
+        }
+        return this.records().filter(record => record.ownerLogin === ownerLogin).length >= this.maxPreviewsPerOwner;
     }
 
     /** Live preview claims owned by `ownerLogin` whose workspace root is `root` or a child of it. */

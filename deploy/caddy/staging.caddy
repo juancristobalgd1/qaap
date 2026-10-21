@@ -7,5 +7,10 @@ staging.{$QAAP_PUBLIC_HOST:localhost} {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Robots-Tag "noindex, nofollow"
 	}
+	# Cap request bodies so one client cannot stream unbounded uploads into the shared backend.
+	# Generous by default (uploads, attachments); override with QAAP_REQUEST_BODY_MAX_SIZE.
+	request_body {
+		max_size {$QAAP_REQUEST_BODY_MAX_SIZE:512MB}
+	}
 	reverse_proxy qaap-staging-theia:4874
 }
