@@ -76,12 +76,9 @@
       "@theia/ai-mcp",
       "@theia/mini-browser",
       "@theia/scm",
-      "@theia/ai-llamafile",
       "@theia/ai-ollama",
       "@theia/messages",
       "@theia/ai-vercel-ai",
-      "@theia/toolbar",
-      "@theia/collaboration",
       "@theia/preview",
       "@theia/qaap-adapters",
       "@theia/qaap-agents-ui",
@@ -110,6 +107,10 @@
       "@theia/qaap-ai-config/lib/browser/qaap-ai-config-ide-frontend-module"
     ],
     "mobileOnly": [
+      {
+        "module": "@theia/qaap-shell/lib/browser/qaap-shell-mobile-frontend-module",
+        "after": "@theia/qaap-shell/lib/browser/qaap-shell-frontend-module"
+      },
       {
         "module": "@theia/qaap-work-hub/lib/browser/qaap-work-hub-mobile-frontend-module",
         "after": "@theia/qaap-work-hub/lib/browser/qaap-work-hub-frontend-module"

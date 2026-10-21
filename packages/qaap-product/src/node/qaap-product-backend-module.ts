@@ -13,6 +13,7 @@ import {
 import { QaapBackendStartupLogFilterContribution } from './qaap-backend-startup-log-filter';
 import { QaapLocalizationContribution } from './qaap-localization-contribution';
 import { QaapFrontendStaticServer } from './qaap-immutable-chunk-cache-contribution';
+import { QaapBrotliStaticContribution } from './qaap-brotli-static-contribution';
 import { SocketWriteBuffer } from '@theia/core/lib/common/messaging/socket-write-buffer';
 import { QaapSocketWriteBuffer } from './qaap-socket-write-buffer';
 import { QaapPluginDeployerSecurityParticipant } from './qaap-plugin-deployer-security-participant';
@@ -31,6 +32,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     // adds immutable caching for hashed esbuild chunks.
     bind(QaapFrontendStaticServer).toSelf().inSingletonScope();
     bind(BackendApplicationServer).toService(QaapFrontendStaticServer);
+    // Serves the pre-generated `.br` companions of frontend JS / CSS ahead of upstream's `.gz`.
+    bind(QaapBrotliStaticContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapBrotliStaticContribution);
 
     if (isBound(SocketWriteBuffer)) {
         rebind(SocketWriteBuffer).to(QaapSocketWriteBuffer);

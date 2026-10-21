@@ -11,11 +11,11 @@ import { BackendApplicationServer, BackendApplicationPath } from '@theia/core/li
 
 /**
  * esbuild emits content-addressed frontend chunks as `chunk-<hash>.(js|css)`, optionally followed
- * by a `.map` sourcemap suffix and/or a precompressed `.gz` suffix. Any file matching this pattern
+ * by a `.map` sourcemap suffix and/or a precompressed `.gz` / `.br` suffix. Any file matching this pattern
  * is safe to cache forever: a content change always produces a new hash, so the old URL is never
  * reused for different bytes.
  */
-const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(js|css)(\.map)?(\.gz)?$/;
+const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(js|css)(\.map)?(\.gz|\.br)?$/;
 
 /** @internal Exported for unit tests only. Accepts URL paths and filesystem paths alike. */
 export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {

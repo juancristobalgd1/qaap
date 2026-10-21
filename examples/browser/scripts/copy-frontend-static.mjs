@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createGzip } from 'node:zlib';
+import { constants as zlibConstants, createBrotliCompress, createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
 
@@ -217,6 +217,44 @@ if (compressed.length) {
     });
     console.log('[qaap] gzipped:', sizes.join(', '));
 }
+
+// Brotli companions for JS / CSS (~15-20% smaller than gzip -9 on these bundles), served ahead of
+// the .gz by @theia/qaap-product (QaapBrotliStaticContribution) to browsers that accept `br`.
+// Quality 11 only for production; development builds use a fast level.
+const BROTLI_EXTS = /\.(js|css)$/i;
+const BROTLI_QUALITY = PRODUCTION ? 11 : 5;
+
+async function brotliFile(filePath) {
+    const stat = fs.statSync(filePath);
+    if (stat.size < GZIP_MIN_BYTES) { return; }
+    const brPath = filePath + '.br';
+    if (fs.existsSync(brPath) && fs.statSync(brPath).mtimeMs >= stat.mtimeMs) { return; }
+    await pipeline(
+        fs.createReadStream(filePath),
+        createBrotliCompress({
+            params: {
+                [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
+                [zlibConstants.BROTLI_PARAM_SIZE_HINT]: stat.size,
+            },
+        }),
+        fs.createWriteStream(brPath)
+    );
+}
+
+const brotliTargets = gzipTargets.filter(f => BROTLI_EXTS.test(f));
+const brotliResults = await Promise.allSettled(brotliTargets.map(brotliFile));
+const brotliFailed = brotliResults.filter(r => r.status === 'rejected');
+if (brotliFailed.length) {
+    console.warn('[qaap] brotli failed for some files:', brotliFailed.map(r => r.reason).join(', '));
+}
+const brotliTotals = brotliTargets.reduce((totals, f) => {
+    if (fs.existsSync(f + '.br') && fs.existsSync(f + '.gz')) {
+        totals.gz += fs.statSync(f + '.gz').size;
+        totals.br += fs.statSync(f + '.br').size;
+    }
+    return totals;
+}, { gz: 0, br: 0 });
+console.log(`[qaap] brotli (q${BROTLI_QUALITY}): ${(brotliTotals.gz / 1e6).toFixed(1)} MB gzip → ${(brotliTotals.br / 1e6).toFixed(1)} MB br`);
 
 // Stale code-split chunks are pruned by esbuild.mjs (qaap-prune-stale-chunks) right after the
 // main build, from esbuild's metafile: it keeps this build's chunks plus the previous build's, so
