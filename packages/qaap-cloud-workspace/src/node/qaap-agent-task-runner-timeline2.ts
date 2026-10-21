@@ -47,6 +47,7 @@ import {
     removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
+import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -448,6 +449,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             restoreAntigravitySettings?.();
         };
         let child: ChildProcess;
+        let childEnv: NodeJS.ProcessEnv | undefined;
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -457,7 +459,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(task.command, {
                 cwd: task.cwd,
-                env: ctx.buildChildEnv(task),
+                env: childEnv = ctx.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
                 // On Windows, cmd.exe can keep a detached child waiting after its stdin is closed.
                 // Plain Codex stdin prompts therefore need a non-detached shell process.
@@ -700,8 +702,45 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 void ctx.finishSuccessfulTaskAfterVerification(task, code ?? undefined);
                 return;
             }
+            if (code !== 0 && childEnv && canProbeProviderKey(childEnv, agentModel?.modelId)) {
+                // QAIQ blames "the selected model" for any OpenRouter 4xx: ask OpenRouter about the
+                // BYOK key before settling, so the failure names the key instead of the model.
+                void explainProviderKeyFailure(ctx, task.id, logStream, childEnv, agentModel?.modelId)
+                    .finally(() => {
+                        if (ctx.tasks.get(task.id)?.state === 'running') {
+                            ctx.finishTask(task.id, 'failed', code ?? undefined);
+                        }
+                    });
+                return;
+            }
             ctx.finishTask(task.id, code === 0 ? 'completed' : 'failed', code ?? undefined);
         });
+}
+
+async function explainProviderKeyFailure(
+    ctx: QaapAgentTaskRunnerContext,
+    taskId: string,
+    logStream: fs.WriteStream,
+    env: NodeJS.ProcessEnv,
+    modelId: string | undefined,
+): Promise<void> {
+    try {
+        if (!logStream.writableFinished) {
+            await new Promise<void>(resolve => {
+                logStream.once('finish', resolve);
+                logStream.once('error', () => resolve());
+            });
+        }
+        const logPath = ctx.logPath(taskId);
+        const log = await fs.promises.readFile(logPath, 'utf8');
+        const note = await runProviderKeyPreflight({ log, env, modelId });
+        if (note) {
+            await fs.promises.appendFile(logPath, `\n${note}\n`, 'utf8');
+            ctx.fireOutput(taskId, `\n${note}\n`);
+        }
+    } catch {
+        /* best effort: the run already failed; keep its own reason */
+    }
 }
 
 export function maxConcurrentVerificationPassesExtracted(ctx: QaapAgentTaskRunnerContext): number {
