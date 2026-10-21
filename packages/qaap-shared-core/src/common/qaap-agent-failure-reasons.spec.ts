@@ -147,6 +147,15 @@ describe('agent failure reasons (real logs)', () => {
             expect(localizeAgentFailureShortReason(persisted)).not.to.match(/^Sign in/);
         });
 
+        it('Copilot\'s sign-out headline is auth even when login help follows it', () => {
+            const copilotSignedOut = [
+                'Error: No authentication information found.',
+                'Copilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.',
+                'To authenticate, you can use any of the following methods: • Start \'copilot\' and run the \'/login\' command',
+            ].join('\n');
+            expect(detectAgentFailureKind(copilotSignedOut)).to.equal('auth');
+        });
+
         it('the last line of a plain-text CLI log still reads as auth', () => {
             const plainTextRun = [
                 '> Fetching the release notes',

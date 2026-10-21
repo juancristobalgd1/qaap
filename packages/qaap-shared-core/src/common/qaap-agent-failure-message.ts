@@ -75,6 +75,8 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bauthentication_failed\b/i,
     /\bauthentication\s+failed\b/i,
     /\bfailed\s+to\s+authenticate\b/i,
+    // Copilot CLI's sign-out headline; it prints it to stdout, followed by login help, and exits 0.
+    /\bno\s+authentication\s+information\s+found\b/i,
     /\boauth\s+session\b/i,
     /\bnot\s+logged\s+in\b/i,
     /\bplease\s+run\s+\/login\b/i,
