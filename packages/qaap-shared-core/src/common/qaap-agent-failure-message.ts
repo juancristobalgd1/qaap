@@ -200,7 +200,7 @@ const PROVIDER_CREDITS_PATTERNS: readonly RegExp[] = [
 ];
 const PROVIDER_DATA_POLICY_PATTERNS: readonly RegExp[] = [
     /\bno\s+endpoints\s+found\s+matching\s+your\s+data\s+policy\b/i,
-    /\brefused\s+this\s+free\s+model\b/i,
+    /\bfree\s+model\s+may\s+be\s+unavailable\s+right\s+now\b/i,
 ];
 const PROVIDER_FREE_LIMIT_PATTERNS: readonly RegExp[] = [
     /\bfree[_\s-]?models?[_\s-]?per[_\s-]?(?:day|min)\b/i,
@@ -636,7 +636,7 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
         case 'provider_data_policy':
             return nls.localize(
                 'qaap/agentFailure/providerDataPolicy',
-                '{0} refused this free model for your key. Allow free-model endpoints in your {0} privacy settings, or pick another model.',
+                'This {0} free model may be unavailable right now, or your {0} privacy settings block free endpoints. Pick another model, or allow free endpoints in your {0} privacy settings.',
                 provider,
             );
         case 'provider_free_limit':

@@ -43,7 +43,7 @@ function fakeFetch(status: number, body?: unknown, endpoints: { status: number; 
 describe('qaap-provider-key-preflight', () => {
     it('turns the ambiguous QAIQ model error into a rejected-key note on a 401', async () => {
         const { fetchImpl, calls } = fakeFetch(401, { error: { message: 'User not found.', code: 401 } });
-        const result = await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL, fetchImpl });
+        const result = await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl });
         expect(calls).to.deep.equal([{ url: 'https://openrouter.ai/api/v1/key', auth: `Bearer ${KEY}`, redirect: 'error' }]);
         expect(result?.verdict).to.equal('key_rejected');
         const note = result?.note;
@@ -54,31 +54,31 @@ describe('qaap-provider-key-preflight', () => {
 
     it('reports no credits on a 402 or an exhausted key limit', async () => {
         expect((await runProviderKeyPreflight({
-            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL, fetchImpl: fakeFetch(402).fetchImpl,
+            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl: fakeFetch(402).fetchImpl,
         }))?.verdict).to.equal('no_credits');
         expect((await runProviderKeyPreflight({
-            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL,
+            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL,
             fetchImpl: fakeFetch(200, { data: { limit: 5, limit_remaining: 0 } }).fetchImpl,
         }))?.verdict).to.equal('no_credits');
     });
 
     it('blames the privacy setting when a valid key is refused a free model, and nothing for a paid one', async () => {
         const ok = fakeFetch(200, { data: { limit: undefined, limit_remaining: undefined, is_free_tier: true } });
-        expect((await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL, fetchImpl: ok.fetchImpl }))?.note)
+        expect((await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl: ok.fetchImpl }))?.note)
             .to.equal('[qaap] provider check: OpenRouter free_model_refused (HTTP 200).');
         // The catalogue lookup is public: same fixed host, no key, no redirects.
         expect(ok.calls[1]).to.deep.equal({
             url: 'https://openrouter.ai/api/v1/models/nvidia/nemotron-3-super-120b-a12b%3Afree/endpoints', auth: undefined, redirect: 'error',
         });
         expect(await runProviderKeyPreflight({
-            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: 'openai/gpt-5.5', fetchImpl: ok.fetchImpl,
+            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: 'openai/gpt-5.5', fetchImpl: ok.fetchImpl,
         })).to.equal(undefined);
     });
 
     it('writes no note when the free model is unknown or has no endpoints (Qaap routing or a retired model)', async () => {
         for (const endpoints of [{ status: 404, body: { error: { message: 'Model not found' } } }, { status: 200, body: { data: { endpoints: [] } } }]) {
             const fake = fakeFetch(200, { data: {} }, endpoints);
-            expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL, fetchImpl: fake.fetchImpl }))
+            expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl: fake.fetchImpl }))
                 .to.equal(undefined);
         }
     });
@@ -86,20 +86,30 @@ describe('qaap-provider-key-preflight', () => {
     it('never calls a custom base URL, and skips runs without a key or an OpenRouter route', async () => {
         const { fetchImpl, calls } = fakeFetch(401);
         expect(await runProviderKeyPreflight({
-            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: 'http://169.254.169.254/api/v1' }, modelId: FREE_MODEL, fetchImpl,
+            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: 'http://169.254.169.254/api/v1' }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl,
         })).to.equal(undefined);
-        expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: {}, modelId: FREE_MODEL, fetchImpl })).to.equal(undefined);
-        expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: 'gpt-5.5', fetchImpl })).to.equal(undefined);
+        expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: {}, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl })).to.equal(undefined);
+        expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: 'gpt-5.5', fetchImpl })).to.equal(undefined);
         expect(calls).to.have.length(0);
         expect(shouldProbeProviderKey({
-            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1' }, modelId: FREE_MODEL,
+            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1' }, vendor: 'openrouter', modelId: FREE_MODEL,
         })).to.equal(true);
+    });
+
+    it('never probes OpenRouter for a turn routed through another vendor, even with an OpenRouter key in the env', async () => {
+        const { fetchImpl, calls } = fakeFetch(401);
+        for (const vendor of ['nvidia', 'huggingface', undefined]) {
+            expect(await runProviderKeyPreflight({
+                log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor, modelId: 'nvidia/nemotron-3-super-120b-a12b', fetchImpl,
+            }), String(vendor)).to.equal(undefined);
+        }
+        expect(calls).to.have.length(0);
     });
 
     it('does not probe failures that are not about the model or the key', async () => {
         const { fetchImpl, calls } = fakeFetch(401);
         expect(await runProviderKeyPreflight({
-            log: 'Error: spawn qaiq ENOENT', env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL, fetchImpl,
+            log: 'Error: spawn qaiq ENOENT', env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl,
         })).to.equal(undefined);
         expect(calls).to.have.length(0);
     });
@@ -108,13 +118,13 @@ describe('qaap-provider-key-preflight', () => {
         const failing: QaapProviderKeyFetch = async () => {
             throw new Error('getaddrinfo ENOTFOUND openrouter.ai');
         };
-        expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL, fetchImpl: failing }))
+        expect(await runProviderKeyPreflight({ log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl: failing }))
             .to.equal(undefined);
         const hanging: QaapProviderKeyFetch = (_url, init) => new Promise((_resolve, reject) => {
             init.signal.addEventListener('abort', () => reject(new Error('aborted')));
         });
         expect(await runProviderKeyPreflight({
-            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, modelId: FREE_MODEL, fetchImpl: hanging, timeoutMs: 10,
+            log: QAIQ_MODEL_ISSUE, env: { OPENROUTER_API_KEY: KEY }, vendor: 'openrouter', modelId: FREE_MODEL, fetchImpl: hanging, timeoutMs: 10,
         })).to.equal(undefined);
     });
 });

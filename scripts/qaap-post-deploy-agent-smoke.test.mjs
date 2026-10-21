@@ -249,6 +249,16 @@ test('Qaap no longer injecting the key (401 No auth credentials found) fails the
     });
 });
 
+test('a NVIDIA-routed turn that fails gets no preflight note and fails the smoke, whatever OpenRouter key exists', async () => {
+    // The runner only probes OpenRouter for vendor=openrouter turns, so a Qaap regression on another
+    // vendor never carries `key_rejected` and must stay red.
+    const log = JSON.stringify({ type: 'result', is_error: true, result: 'API Error: 500 upstream error from integrate.api.nvidia.com' });
+    assert.equal(findProviderCredentialRejection({ log }), undefined);
+    await withServer({ finish: () => ({ id: 't1', state: 'failed', exitCode: 1, log }) }, async base => {
+        await assert.rejects(quiet(() => main([base], ENV)), /state failed/);
+    });
+});
+
 test('a retried provider 429 followed by a real Qaap failure fails the smoke', async () => {
     const log = [
         '{"type":"system","subtype":"api_retry","error":"rate_limit","status":429}',

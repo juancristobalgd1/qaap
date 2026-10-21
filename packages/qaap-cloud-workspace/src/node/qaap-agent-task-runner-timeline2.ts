@@ -702,13 +702,13 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 void ctx.finishSuccessfulTaskAfterVerification(task, code ?? undefined);
                 return;
             }
-            if (code !== 0 && childEnv && canProbeProviderKey(childEnv, agentModel?.modelId)) {
+            if (code !== 0 && childEnv && canProbeProviderKey(childEnv, agentModel?.vendor, agentModel?.modelId)) {
                 // QAIQ blames "the selected model" for any OpenRouter 4xx: ask OpenRouter about the
                 // BYOK key before settling, so the failure names the key instead of the model. A
                 // global cap keeps a stuck stream or probe from leaving the task `running`.
                 let capTimer: ReturnType<typeof setTimeout> | undefined;
                 void Promise.race([
-                    explainProviderKeyFailure(ctx, task.id, logStream, childEnv, agentModel?.modelId),
+                    explainProviderKeyFailure(ctx, task.id, logStream, childEnv, agentModel),
                     new Promise<void>(resolve => {
                         capTimer = setTimeout(resolve, PROVIDER_KEY_EXPLAIN_TIMEOUT_MS);
                     }),
@@ -733,7 +733,7 @@ async function explainProviderKeyFailure(
     taskId: string,
     logStream: fs.WriteStream,
     env: NodeJS.ProcessEnv,
-    modelId: string | undefined,
+    agentModel: { readonly vendor?: string; readonly modelId?: string } | undefined,
 ): Promise<void> {
     try {
         if (logStream.errored || logStream.destroyed) {
@@ -747,7 +747,7 @@ async function explainProviderKeyFailure(
         }
         const logPath = ctx.logPath(taskId);
         const log = await fs.promises.readFile(logPath, 'utf8');
-        const preflight = await runProviderKeyPreflight({ log, env, modelId });
+        const preflight = await runProviderKeyPreflight({ log, env, vendor: agentModel?.vendor, modelId: agentModel?.modelId });
         if (preflight) {
             const current = ctx.tasks.get(taskId);
             if (current?.state !== 'running') {

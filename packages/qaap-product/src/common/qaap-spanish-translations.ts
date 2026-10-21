@@ -50,7 +50,7 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/agentFailure/failedToStart': 'El agente no pudo iniciar este turno. Revisa la configuración del agente e inténtalo de nuevo.',
     'qaap/agentFailure/providerKeyRejected': 'Se rechazó tu clave de {0}. Actualízala en Ajustes → BYOK y vuelve a intentarlo.',
     'qaap/agentFailure/providerCredits': 'Tu clave de {0} no tiene créditos. Añade créditos en {0} o actualiza la clave en Ajustes → BYOK.',
-    'qaap/agentFailure/providerDataPolicy': '{0} rechazó este modelo gratuito para tu clave. Permite los endpoints de modelos gratuitos en los ajustes de privacidad de {0} o elige otro modelo.',
+    'qaap/agentFailure/providerDataPolicy': 'Puede que este modelo gratuito de {0} no esté disponible ahora, o que tus ajustes de privacidad de {0} bloqueen los endpoints gratuitos. Elige otro modelo o permite los endpoints gratuitos en los ajustes de privacidad de {0}.',
     'qaap/agentFailure/providerFreeLimit': 'Se alcanzó el límite de modelos gratuitos de {0}. Espera al reinicio diario, añade créditos en {0} o elige otro modelo.',
     'qaap/agentFailure/providerFallback': 'proveedor',
     'qaap/agentFailure/reasonProviderKey': 'Clave API rechazada',

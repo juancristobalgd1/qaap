@@ -46,6 +46,8 @@ export interface QaapProviderKeyPreflightInput {
     readonly env: NodeJS.ProcessEnv;
     /** Model id the task ran with, e.g. `nvidia/nemotron-3-super-120b-a12b:free`. */
     readonly modelId?: string;
+    /** Vendor of the task's model binding; only `openrouter` turns are probed. */
+    readonly vendor?: string;
     readonly fetchImpl?: QaapProviderKeyFetch;
     readonly timeoutMs?: number;
 }
@@ -63,17 +65,21 @@ function usesOfficialOpenRouterEndpoint(env: NodeJS.ProcessEnv): boolean {
     }
 }
 
-/** The run had an OpenRouter BYOK key on the official endpoint and an OpenRouter route (`vendor/model`). */
-export function canProbeProviderKey(env: NodeJS.ProcessEnv, modelId: string | undefined): boolean {
-    return !!env.OPENROUTER_API_KEY?.trim() && usesOfficialOpenRouterEndpoint(env) && !!modelId?.includes('/');
+/**
+ * The turn really went through OpenRouter (its model binding's vendor, not merely an OpenRouter key
+ * in the environment: a NVIDIA-routed turn must never blame an unrelated OpenRouter key), on the
+ * official endpoint, with an OpenRouter route (`author/model`).
+ */
+export function canProbeProviderKey(env: NodeJS.ProcessEnv, vendor: string | undefined, modelId: string | undefined): boolean {
+    return vendor === 'openrouter' && !!env.OPENROUTER_API_KEY?.trim() && usesOfficialOpenRouterEndpoint(env) && !!modelId?.includes('/');
 }
 
 /**
  * True when a failed run should be explained by asking OpenRouter about the user's key: on top of
  * {@link canProbeProviderKey}, the CLI blamed the model or printed a bare auth error.
  */
-export function shouldProbeProviderKey(input: Pick<QaapProviderKeyPreflightInput, 'log' | 'env' | 'modelId'>): boolean {
-    if (!canProbeProviderKey(input.env, input.modelId)) {
+export function shouldProbeProviderKey(input: Pick<QaapProviderKeyPreflightInput, 'log' | 'env' | 'modelId' | 'vendor'>): boolean {
+    if (!canProbeProviderKey(input.env, input.vendor, input.modelId)) {
         return false;
     }
     const kind = detectAgentFailureKind(input.log.slice(-PREFLIGHT_LOG_TAIL_CHARS));

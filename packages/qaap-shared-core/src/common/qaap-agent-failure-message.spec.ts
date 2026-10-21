@@ -358,7 +358,7 @@ describe('BYOK provider key failures', () => {
         const log = `${qaiqModelIssueLog}\n${formatProviderPreflightNote('OpenRouter', 'free_model_refused', 200)}`;
         expect(detectAgentFailureKind(log)).to.equal('provider_data_policy');
         expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' }))
-            .to.match(/^OpenRouter refused this free model for your key\. Allow free-model endpoints/);
+            .to.match(/^This OpenRouter free model may be unavailable right now, or your OpenRouter privacy settings block free endpoints\./);
     });
 
     it('classifies a raw OpenRouter 401 body as a rejected key, not a sign-in', () => {
