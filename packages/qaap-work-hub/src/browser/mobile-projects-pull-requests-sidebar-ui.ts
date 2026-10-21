@@ -385,7 +385,7 @@ export class MobileProjectsPullRequestsSidebarUi {
             if (this.searchLists.get(key) !== list) {
                 return;
             }
-            list.error = QaapUserFacingErrors.toMessage(err);
+            list.error = QaapUserFacingErrors.toMessageAndLog(err);
         } finally {
             if (this.searchLists.get(key) === list) {
                 list.loading = false;

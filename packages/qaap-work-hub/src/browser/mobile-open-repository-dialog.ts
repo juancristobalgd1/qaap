@@ -511,7 +511,7 @@ export class MobileOpenRepositoryDialog {
         try {
             next = await this.service.finishGithubRepositoryImport(result, true);
         } catch (err) {
-            this.progressError.textContent = QaapUserFacingErrors.toMessage(err);
+            this.progressError.textContent = QaapUserFacingErrors.toMessageAndLog(err);
             this.progressError.hidden = false;
             return;
         }
@@ -652,7 +652,7 @@ export class MobileOpenRepositoryDialog {
             this.repositories = await this.service.listGithubRepositories();
         } catch (err) {
             this.repositories = [];
-            this.loadError = QaapUserFacingErrors.toMessage(err);
+            this.loadError = QaapUserFacingErrors.toMessageAndLog(err);
         }
         this.loading = false;
         this.list.classList.remove('theia-mod-loading');
