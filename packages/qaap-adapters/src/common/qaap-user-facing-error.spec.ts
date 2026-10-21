@@ -86,4 +86,10 @@ describe('QaapUserFacingErrors', () => {
         expect(QaapUserFacingErrors.toDetails(new Error('{"error":"Nope"}'))).to.equal('{"error":"Nope"}');
         expect(QaapUserFacingErrors.toDetails(new Error('Nope'))).to.equal(undefined);
     });
+
+    it('toDetails reads `details` from wrapper errors and toMessageAndLog logs it', () => {
+        const wrapper = Object.assign(new Error('Short'), { details: 'full git stderr\nline 2' });
+        expect(QaapUserFacingErrors.toDetails(wrapper)).to.equal('full git stderr\nline 2');
+        expect(QaapUserFacingErrors.toMessageAndLog(wrapper)).to.equal('Short');
+    });
 });

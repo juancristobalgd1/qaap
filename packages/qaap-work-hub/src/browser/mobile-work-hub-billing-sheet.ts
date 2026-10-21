@@ -593,6 +593,7 @@ export class MobileWorkHubBillingSheet {
             return;
         }
         this.checkoutBusy = true;
+        this.ctaHost?.querySelector('.theia-mobile-work-hub-billing-cta-error')?.remove();
         const previous = button.textContent;
         button.disabled = true;
         button.textContent = nls.localize('qaap/billing/ctaRedirecting', 'Opening Stripe…');
@@ -613,7 +614,9 @@ export class MobileWorkHubBillingSheet {
                 await this.runDevActivate(planId, button);
                 return;
             }
-            button.textContent = QaapUserFacingErrors.toMessage(err) || nls.localize('qaap/billing/ctaFailed', 'Checkout failed');
+            // The button only ever carries a short label; the (possibly long) server message goes to its own line.
+            button.textContent = nls.localize('qaap/billing/ctaFailed', 'Checkout failed');
+            this.showCheckoutError(QaapUserFacingErrors.toMessageAndLog(err));
         } finally {
             this.checkoutBusy = false;
             if (this.visible && button.isConnected && button.textContent !== previous) {
@@ -625,6 +628,17 @@ export class MobileWorkHubBillingSheet {
                 }, 1800);
             }
         }
+    }
+
+    protected showCheckoutError(message: string): void {
+        if (!this.ctaHost) {
+            return;
+        }
+        const line = document.createElement('p');
+        line.className = 'theia-mobile-work-hub-billing-status theia-mobile-work-hub-billing-cta-error';
+        line.setAttribute('role', 'alert');
+        line.textContent = message;
+        this.ctaHost.append(line);
     }
 
     protected async runDevActivate(
