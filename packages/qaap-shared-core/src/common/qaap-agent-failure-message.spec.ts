@@ -373,6 +373,9 @@ describe('BYOK provider key failures', () => {
         expect(detectAgentFailureKind('unexpected status 401 Unauthorized: Incorrect API key provided: sk-***'))
             .to.equal('auth');
         expect(detectAgentFailureKind('Error: User not found.')).not.to.equal('provider_key_rejected');
+        // "key … revoked" only counts on a line that names a BYOK provider: a deploy key in tool output does not.
+        expect(detectAgentFailureKind('git: deploy key has been revoked')).not.to.equal('provider_key_rejected');
+        expect(detectAgentFailureKind('API Error: 403 OpenRouter: API key is disabled')).to.equal('provider_key_rejected');
     });
 
     it('classifies the OpenRouter free-model daily cap (429) as its own limit, not a generic rate limit', () => {

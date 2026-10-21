@@ -183,9 +183,10 @@ const PROVIDER_PREFLIGHT_KIND: Readonly<Record<QaapProviderKeyVerdict, QaapAgent
  */
 const PROVIDER_KEY_REJECTED_PATTERNS: readonly RegExp[] = [
     /\bno\s+auth\s+credentials\s+found\b/i,
-    /\b(?:api\s+)?key\s+(?:is\s+|has\s+been\s+)?(?:disabled|revoked|expired)\b/i,
     /\bkey\s+was\s+rejected\b/i,
 ];
+/** A disabled/revoked/expired key, only on a line that also names a BYOK provider. */
+const PROVIDER_KEY_REVOKED_LINE = /\b(?:api\s+)?key\s+(?:is\s+|has\s+been\s+)?(?:disabled|revoked|expired)\b/i;
 /** Only with the provider named: "User not found." alone could be any tool's output. */
 const OPENROUTER_KEY_REJECTED_PATTERNS: readonly RegExp[] = [
     /\buser\s+not\s+found\b/i,
@@ -239,7 +240,8 @@ function classifyProviderKeyEvidence(sample: string, envelope: string): QaapAgen
     if (matchesAny(sample, PROVIDER_CREDITS_PATTERNS) || (/\b402\b/.test(envelope) && /\bcredits?\b/i.test(envelope))) {
         return 'provider_credits';
     }
-    if (matchesAny(sample, PROVIDER_KEY_REJECTED_PATTERNS)) {
+    if (matchesAny(sample, PROVIDER_KEY_REJECTED_PATTERNS)
+        || sample.split('\n').some(line => PROVIDER_KEY_REVOKED_LINE.test(line) && PROVIDER_LABELS.some(([pattern]) => pattern.test(line)))) {
         return 'provider_key_rejected';
     }
     // A bare 401/403 is only the BYOK key when the provider's own error envelope says so.

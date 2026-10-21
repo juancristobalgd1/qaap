@@ -36,6 +36,11 @@ export function maybeRetryTurnWithFallbackModelExtracted(ctx: QaapAgentConversat
         if (!agentSupportsModelPicker(turnAgentId)) {
             return false;
         }
+        // The preflight proved the user's BYOK key is rejected or out of credits: another model
+        // of this agent uses the same key, so a fallback retry would only fail again.
+        if (task.providerKeyVerdict === 'key_rejected' || task.providerKeyVerdict === 'no_credits') {
+            return false;
+        }
         // Tool-support failures also arrive on clean exits (state 'completed'): the model
         // emitted its tool call as text and the CLI finished "successfully" with exit 0.
         const toolSupportFailure = agentTurnHasRetryableToolSupportFailure(agentMessage);

@@ -704,9 +704,17 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
             if (code !== 0 && childEnv && canProbeProviderKey(childEnv, agentModel?.modelId)) {
                 // QAIQ blames "the selected model" for any OpenRouter 4xx: ask OpenRouter about the
-                // BYOK key before settling, so the failure names the key instead of the model.
-                void explainProviderKeyFailure(ctx, task.id, logStream, childEnv, agentModel?.modelId)
+                // BYOK key before settling, so the failure names the key instead of the model. A
+                // global cap keeps a stuck stream or probe from leaving the task `running`.
+                let capTimer: ReturnType<typeof setTimeout> | undefined;
+                void Promise.race([
+                    explainProviderKeyFailure(ctx, task.id, logStream, childEnv, agentModel?.modelId),
+                    new Promise<void>(resolve => {
+                        capTimer = setTimeout(resolve, PROVIDER_KEY_EXPLAIN_TIMEOUT_MS);
+                    }),
+                ])
                     .finally(() => {
+                        clearTimeout(capTimer);
                         if (ctx.tasks.get(task.id)?.state === 'running') {
                             ctx.finishTask(task.id, 'failed', code ?? undefined);
                         }
@@ -717,6 +725,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         });
 }
 
+/** Upper bound on waiting for the log flush plus the provider preflight before settling. */
+const PROVIDER_KEY_EXPLAIN_TIMEOUT_MS = 10_000;
+
 async function explainProviderKeyFailure(
     ctx: QaapAgentTaskRunnerContext,
     taskId: string,
@@ -725,6 +736,9 @@ async function explainProviderKeyFailure(
     modelId: string | undefined,
 ): Promise<void> {
     try {
+        if (logStream.errored || logStream.destroyed) {
+            return;
+        }
         if (!logStream.writableFinished) {
             await new Promise<void>(resolve => {
                 logStream.once('finish', resolve);
@@ -733,10 +747,17 @@ async function explainProviderKeyFailure(
         }
         const logPath = ctx.logPath(taskId);
         const log = await fs.promises.readFile(logPath, 'utf8');
-        const note = await runProviderKeyPreflight({ log, env, modelId });
-        if (note) {
-            await fs.promises.appendFile(logPath, `\n${note}\n`, 'utf8');
-            ctx.fireOutput(taskId, `\n${note}\n`);
+        const preflight = await runProviderKeyPreflight({ log, env, modelId });
+        if (preflight) {
+            const current = ctx.tasks.get(taskId);
+            if (current?.state !== 'running') {
+                return;
+            }
+            // Recorded on the task so a rejected key or missing credits never triggers a silent
+            // fallback-model retry: every model of this agent runs on the same key.
+            ctx.tasks.set(taskId, { ...current, providerKeyVerdict: preflight.verdict });
+            await fs.promises.appendFile(logPath, `\n${preflight.note}\n`, 'utf8');
+            ctx.fireOutput(taskId, `\n${preflight.note}\n`);
         }
     } catch {
         /* best effort: the run already failed; keep its own reason */

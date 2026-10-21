@@ -504,8 +504,8 @@ jobs:
       # HTTP probes above passed while agents hung in production (cwd ownership 403, turns lost to a
       # backend restart). The release is already serving, so a red result flags it for a rollback
       # (`npm run qaap:vps:rollback`) rather than blocking it. The turn runs on the smoke user's own
-      # BYOK provider key: when the provider rejects it (invalid key, no credits, data policy, free
-      # cap) the step only warns ("inconclusive"); spawn, runner, timeout and Qaap errors still fail.
+      # BYOK provider key: when the runner's provider preflight proves the provider rejected that key
+      # or it has no credits, the step only warns ("inconclusive"); every other failure still fails.
       # A dedicated smoke account with its own key decouples it from a person's key: set
       # secrets.QAAP_SMOKE_SESSION to that account's session and vars.QAAP_SMOKE_AGENT to its agent.
       - name: Post-deploy agent smoke

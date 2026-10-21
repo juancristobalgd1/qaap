@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
-import { main, findProviderCredentialRejection, judgeTask, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
+import { main, findProviderCredentialRejection, judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
 
 const SESSIONS = {
     sessions: [
@@ -214,20 +214,51 @@ const QAIQ_MODEL_ISSUE = JSON.stringify({
     result: 'There\'s an issue with the selected model (nvidia/nemotron-3-super-120b-a12b:free). It may not exist or you may not have access to it. Run --model to pick a different model.',
 });
 
-test('provider credential rejections are recognised; Qaap failures are not', () => {
+test('only the runner preflight note proves rejected provider credentials', () => {
     assert.match(findProviderCredentialRejection({ log: `${QAIQ_MODEL_ISSUE}\n[qaap] provider check: OpenRouter key_rejected (HTTP 401).` }), /key_rejected/);
-    assert.ok(findProviderCredentialRejection({ error: 'Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.' }));
-    assert.ok(findProviderCredentialRejection({ log: 'API Error: 401 {"error":{"message":"No auth credentials found","code":401}}' }));
-    assert.ok(findProviderCredentialRejection({ log: 'API Error: 429 Rate limit exceeded: free-models-per-day' }));
-    assert.ok(findProviderCredentialRejection({ log: 'API Error: 404 No endpoints found matching your data policy (Free model publication)' }));
-    assert.ok(findProviderCredentialRejection({ log: 'API Error: 402 Insufficient credits' }));
-    assert.equal(findProviderCredentialRejection({ log: 'unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-abcdef123' }),
-        'unexpected status 401 Unauthorized: Incorrect API key provided: <redacted>');
-    // Without the preflight the model error alone is not proof: it could be Qaap routing a bad model id.
-    assert.equal(findProviderCredentialRejection({ log: QAIQ_MODEL_ISSUE }), undefined);
-    for (const log of ['Error: spawn qaiq ENOENT', '[qaap] task timed out after 300s without output.', 'boom', '[qaap] process error: EACCES']) {
+    assert.match(findProviderCredentialRejection({ log: '[qaap] provider check: OpenRouter no_credits (HTTP 402).' }), /no_credits/);
+    // A valid key refused a free model: could still be Qaap routing; not proof.
+    assert.equal(findProviderCredentialRejection({ log: '[qaap] provider check: OpenRouter free_model_refused (HTTP 200).' }), undefined);
+    // The persisted copy alone, or raw provider lines, are not proof either.
+    for (const log of [
+        'Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.',
+        'API Error: 402 Insufficient credits',
+        'API Error: 404 No endpoints found matching your data policy (Free model publication)',
+        'unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-abcdef123',
+        QAIQ_MODEL_ISSUE,
+        'Error: spawn qaiq ENOENT',
+        '[qaap] task timed out after 300s without output.',
+        'curl: (22) The requested URL returned error: 403 HTTP 403',
+    ]) {
         assert.equal(findProviderCredentialRejection({ log }), undefined, log);
     }
+});
+
+test('secrets of every BYOK provider are redacted', () => {
+    for (const secret of ['sk-or-v1-abcdef', 'hf_abcdefgh', 'nvapi-abcdefgh', 'AIzaSyAbcdefgh123', 'gsk_abcdefgh', 'xai-abcdefgh']) {
+        assert.equal(redactSecrets(`key ${secret} end`), 'key <redacted> end', secret);
+    }
+    assert.equal(redactSecrets('Authorization: Bearer abc.def'), 'Authorization: Bearer <redacted>');
+});
+
+test('Qaap no longer injecting the key (401 No auth credentials found) fails the smoke', async () => {
+    const log = `${QAIQ_MODEL_ISSUE}\nAPI Error: 401 {"error":{"message":"No auth credentials found","code":401}}`;
+    assert.equal(judgeTask({ state: 'failed', exitCode: 1, log }, 'TOKEN').inconclusive, undefined);
+    await withServer({ finish: () => ({ id: 't1', state: 'failed', exitCode: 1, log }) }, async base => {
+        await assert.rejects(quiet(() => main([base], ENV)), /state failed/);
+    });
+});
+
+test('a retried provider 429 followed by a real Qaap failure fails the smoke', async () => {
+    const log = [
+        '{"type":"system","subtype":"api_retry","error":"rate_limit","status":429}',
+        'API Error: 429 Rate limit exceeded: free-models-per-day',
+        '[qaap] process error: spawn EACCES',
+    ].join('\n');
+    assert.equal(judgeTask({ state: 'failed', exitCode: 1, log }, 'TOKEN').inconclusive, undefined);
+    await withServer({ finish: () => ({ id: 't1', state: 'failed', exitCode: 1, log }) }, async base => {
+        await assert.rejects(quiet(() => main([base], ENV)), /state failed/);
+    });
 });
 
 test('verdict: a failed turn on rejected provider credentials is inconclusive, other failures are not', () => {
@@ -236,7 +267,7 @@ test('verdict: a failed turn on rejected provider credentials is inconclusive, o
     assert.equal(rejected.inconclusive, true);
     assert.equal(judgeTask({ state: 'failed', exitCode: 1, log: 'Error: spawn qaiq ENOENT' }, 'TOKEN').inconclusive, undefined);
     // A turn cut short is the release's problem even if a 429 scrolled by.
-    assert.equal(judgeTask({ state: 'interrupted', log: 'API Error: 429 rate limit exceeded' }, 'TOKEN').inconclusive, undefined);
+    assert.equal(judgeTask({ state: 'interrupted', log: '[qaap] provider check: OpenRouter key_rejected (HTTP 401).' }, 'TOKEN').inconclusive, undefined);
 });
 
 test('rejected provider credentials warn without failing the deploy; a product failure still fails', async () => {

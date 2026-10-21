@@ -8,11 +8,11 @@
 // and asks the agent to answer with a random token: nothing is written to the repository, and the
 // token proves the reply came from this turn. One short turn per deploy.
 //
-// Provider keys are BYOK: the turn runs on the smoke user's own provider key. When that provider
-// rejects the key (invalid/revoked, no credits, OpenRouter data policy or free-model cap, a provider
-// 401/402/403/429) the result is inconclusive: a `::warning::` and exit 0, because the account is
-// broken, not the release (Oct 20 2026: an OpenRouter key refused `:free` models for every deploy).
-// Spawn, runner, timeout and Qaap errors still fail. To decouple the smoke from a person's key, point
+// Provider keys are BYOK: the turn runs on the smoke user's own provider key. When the runner's
+// provider preflight proves the provider rejected that key or it has no credits (`[qaap] provider
+// check: … key_rejected|no_credits`), the result is inconclusive: a `::warning::` and exit 0, because
+// the account is broken, not the release. Everything else still fails, raw provider 401/429 lines
+// included (they may be Qaap no longer injecting the key, or a retried hiccup before a real failure). To decouple the smoke from a person's key, point
 // QAAP_SMOKE_SESSION at a dedicated smoke account with its own provider key (and QAAP_SMOKE_AGENT).
 //
 // Usage: node scripts/qaap-post-deploy-agent-smoke.mjs <public-base-url>
@@ -80,46 +80,39 @@ export function pickSmokeAgent(list, requested) {
 }
 
 /**
- * What a provider prints when it refuses the user's own key or account, plus the reasons Qaap writes
- * for it: the runner's `[qaap] provider check:` note and the BYOK failure copy of qaap-shared-core
- * (`qaap-agent-failure-message.ts`). Keep both lists in sync.
+ * The runner's own provider preflight note (qaap-cloud-workspace `qaap-provider-key-preflight.ts`,
+ * written by `formatProviderPreflightNote` in qaap-shared-core). It is the only proof that the BYOK
+ * key reached the agent AND the provider itself refused it. Raw provider lines are not enough: a
+ * "No auth credentials found" also means Qaap stopped injecting the key, a 429 may have been retried
+ * before a real failure, and a `status 403` may come from a tool. `free_model_refused` is not proof
+ * of an account problem either, so only these two verdicts make the smoke inconclusive.
  */
-const PROVIDER_CREDENTIAL_PATTERNS = [
-    /\[qaap\] provider check: [\w .-]+? (?:key_rejected|no_credits|free_model_refused)\b/,
-    /\bkey was rejected\. Update it in Settings → BYOK\b/i,
-    /\bkey is out of credits\b/i,
-    /\brefused this free model\b/i,
-    /\bfree-model limit reached\b/i,
-    /\bno auth credentials found\b/i,
-    /\binsufficient credits\b/i,
-    /\brequires more credits\b/i,
-    /\bfree[-_ ]models?[-_ ]per[-_ ](?:day|min)\b/i,
-    /\bno endpoints found matching your data policy\b/i,
-    /\b(?:invalid|incorrect)[_ -]api[_ -]key\b/i,
-    /\b(?:api )?key (?:is |has been )?(?:disabled|revoked|expired)\b/i,
-    /\b(?:api error|unexpected status|status(?: code)?|http\/?[\d.]*)\s*:?\s*(?:401|402|403|429)\b/i,
-    /\brate[_ -]limit(?:ed| exceeded| reached)\b/i,
-];
+const PROVIDER_CREDENTIAL_NOTE = /^\[qaap\] provider check: [\w .-]+? (?:key_rejected|no_credits)\b.*$/m;
 
 /** Never echo a secret into the job log, even a masked one. */
 function redactSecrets(text) {
-    return text.replace(/\b(?:sk|pk|rk)-[\w-]{4,}/g, '<redacted>').replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>');
+    return text
+        .replace(/\b(?:sk|pk|rk)-[\w-]{4,}/g, '<redacted>')
+        .replace(/\b(?:hf_|nvapi-|gsk_|xai-)[\w-]{4,}/g, '<redacted>')
+        .replace(/\bAIza[\w-]{8,}/g, '<redacted>')
+        .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>');
 }
 
 /**
- * The line of a failed task that shows the model provider refused the smoke user's credentials, or
- * `undefined` when the failure is Qaap's own (spawn, runner, timeout, crash).
+ * The runner's preflight note on a failed task proving the model provider refused the smoke user's
+ * key, or `undefined` when the failure is Qaap's own (spawn, runner, timeout, crash, missing key).
  */
 export function findProviderCredentialRejection(detail) {
-    const text = [detail?.error, detail?.reason, detail?.log].filter(part => typeof part === 'string').join('\n');
-    for (const line of text.split('\n')) {
-        if (PROVIDER_CREDENTIAL_PATTERNS.some(pattern => pattern.test(line))) {
-            const trimmed = redactSecrets(line.trim());
-            return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
-        }
+    const log = typeof detail?.log === 'string' ? detail.log : '';
+    const note = PROVIDER_CREDENTIAL_NOTE.exec(log)?.[0];
+    if (!note) {
+        return undefined;
     }
-    return undefined;
+    const trimmed = redactSecrets(note.trim());
+    return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
 }
+
+export { redactSecrets };
 
 /**
  * Pass/fail verdict for a finished task detail. A `failed` turn whose provider refused the smoke
