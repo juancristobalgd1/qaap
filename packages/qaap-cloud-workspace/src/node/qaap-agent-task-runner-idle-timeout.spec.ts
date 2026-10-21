@@ -77,7 +77,7 @@ describe('agent task runner no-output timeout', () => {
         expect(ctx.tasks.get('quiet-task').state).to.equal('interrupted');
         expect(ctx.tasks.get('quiet-task').exitCode).to.equal(undefined);
         expect(resolveAgentTurnFailureMessage(log.join(''), { state: 'interrupted' }))
-            .to.equal('Timed out after 20 minutes without output. Continue runs it again from your original request.');
+            .to.equal('Timed out after 20 minutes without output. Continue picks it up again.');
     });
 
     it('Continue resumes the timed-out task from its durable request', () => {
@@ -136,7 +136,7 @@ describe('agent task runner no-output timeout', () => {
 
         expect(sent).to.have.length(1);
         expect(sent[0].title).to.equal('Task paused');
-        expect(sent[0].body).to.equal('Add tests was paused. Timed out after 20 minutes without output. Continue runs it again from your original request.');
+        expect(sent[0].body).to.equal('Add tests was paused. Timed out after 20 minutes without output. Continue picks it up again.');
     });
 
     it('counts agent events as progress, not provider retries or hook records', () => {

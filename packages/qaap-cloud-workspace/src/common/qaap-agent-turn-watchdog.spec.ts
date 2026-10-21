@@ -94,7 +94,7 @@ describe('findExpiredStreamingTurns', () => {
 
     it('names the approval-wait pause in hours, and it reads as a timeout the user can continue', () => {
         const message = buildQaapTurnWatchdogMessage('approval_wait', limits, 24 * 60);
-        expect(message).to.equal('Waited 24 hours for your approval. Continue runs it again from your original request.');
+        expect(message).to.equal('Waited 24 hours for your approval. Continue picks it up again.');
         expect(message).not.to.match(/task limit/);
         expect(detectAgentFailureKind(message)).to.equal('timeout');
         expect(isAgentTurnInterruptedError(message)).to.equal(true);
@@ -193,9 +193,9 @@ describe('buildQaapTurnWatchdogMessage', () => {
 
     it('records a short timeout the failure copy reads as an interruption (Continue, not Retry)', () => {
         const idle = buildQaapTurnWatchdogMessage('idle', limits);
-        expect(idle).to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
+        expect(idle).to.equal('Timed out after 15 minutes without output. Continue picks it up again.');
         const cap = buildQaapTurnWatchdogMessage('max_duration', limits);
-        expect(cap).to.equal('Timed out at the 180-minute task limit. Continue runs it again from your original request.');
+        expect(cap).to.equal('Timed out at the 180-minute task limit. Continue picks it up again.');
         for (const message of [idle, cap]) {
             expect(detectAgentFailureKind(message)).to.equal('timeout');
             expect(isAgentTurnInterruptedError(message)).to.equal(true);

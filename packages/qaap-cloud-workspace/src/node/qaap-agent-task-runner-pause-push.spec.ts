@@ -78,7 +78,7 @@ describe('agent task runner paused-task push copy', () => {
 
         expect(pushes).to.have.length(1);
         expect(pushes[0].body).to.equal(
-            'Refactor billing was paused. Waited 24 hours for your approval. Continue runs it again from your original request.',
+            'Refactor billing was paused. Waited 24 hours for your approval. Continue picks it up again.',
         );
     });
 
@@ -88,7 +88,7 @@ describe('agent task runner paused-task push copy', () => {
         cancelExtracted(ctx, 'paused-task', { interrupt: true });
 
         expect(pushes).to.have.length(1);
-        expect(pushes[0].body).to.equal('Refactor billing was paused. Continue runs it again from your original request.');
+        expect(pushes[0].body).to.equal('Refactor billing was paused. Continue picks it up again.');
     });
 
     it('keeps the no-output copy for the runner idle timer', () => {

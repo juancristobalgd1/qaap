@@ -13,6 +13,7 @@ import {
     isAgentTurnInterruptedError,
     localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
+    localizeAgentTurnRestartInterruptedMessage,
     localizeAgentTurnTimeoutMessage,
     localizeGenericAgentFailureMessage,
     resolveAgentTurnFailureMessage,
@@ -197,7 +198,7 @@ describe('agent failure reasons (real logs)', () => {
         it('the runner idle timer becomes a timeout pause the user can continue', () => {
             const { persisted, label } = persistAndDescribe(RUNNER_IDLE_TIMEOUT_LOG, { state: 'interrupted' });
             expect(persisted).to.equal(localizeAgentTurnTimeoutMessage('idle', 20));
-            expect(persisted).to.equal('Timed out after 20 minutes without output. Continue runs it again from your original request.');
+            expect(persisted).to.equal('Timed out after 20 minutes without output. Continue picks it up again.');
             expect(detectAgentFailureKind(persisted)).to.equal('timeout');
             expect(label).to.equal('Timed out');
             expect(isAgentTurnInterruptedError(persisted)).to.equal(true);
@@ -222,7 +223,7 @@ describe('agent failure reasons (real logs)', () => {
 
         it('the approval-wait pause round-trips through the stored copy as a continuable timeout', () => {
             const stored = localizeAgentTurnTimeoutMessage('approval_wait', 24 * 60);
-            expect(stored).to.equal('Waited 24 hours for your approval. Continue runs it again from your original request.');
+            expect(stored).to.equal('Waited 24 hours for your approval. Continue picks it up again.');
             expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
             expect(detectAgentFailureKind(stored)).to.equal('timeout');
             expect(isAgentTurnInterruptedError(stored)).to.equal(true);
@@ -255,9 +256,30 @@ describe('agent failure reasons (real logs)', () => {
 
         it('localizes the persisted timeout copy and keeps it stable', () => {
             const cap = localizeAgentTurnTimeoutMessage('max_duration', 180);
-            expect(cap).to.equal('Timed out at the 180-minute task limit. Continue runs it again from your original request.');
+            expect(cap).to.equal('Timed out at the 180-minute task limit. Continue picks it up again.');
             expect(formatStoredAgentFailureMessage(cap)).to.equal(cap);
             expect(describeAgentTurnFailure(cap)).to.deep.equal({ kind: 'timeout', label: 'Timed out', detail: cap, interrupted: true });
+        });
+    });
+    describe('copies aligned with the Continue recovery', () => {
+        it('point interrupted turns at Continue and are still recognised as interrupted', () => {
+            for (const copy of [
+                localizeAgentTurnTimeoutMessage('idle', 15),
+                localizeAgentTurnTimeoutMessage('max_duration', 180),
+                localizeAgentTurnTimeoutMessage('approval_wait', 24 * 60),
+                localizeAgentTurnRestartInterruptedMessage(),
+            ]) {
+                expect(copy, copy).to.match(/Continue picks it up again\.$/);
+                expect(isAgentTurnInterruptedError(copy), copy).to.equal(true);
+            }
+        });
+
+        it('re-words the restart reason persisted as "Retry to continue" on older rows', () => {
+            const persisted = 'The backend restarted while this turn was in progress, so it was interrupted. Retry to continue.';
+            expect(formatStoredAgentFailureMessage(persisted)).to.equal(localizeAgentTurnRestartInterruptedMessage());
+            expect(formatStoredAgentFailureMessage(
+                'Timed out after 15 minutes without output. Continue runs it again from your original request.',
+            )).to.equal(localizeAgentTurnTimeoutMessage('idle', 15));
         });
     });
 });
