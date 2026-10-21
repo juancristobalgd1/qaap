@@ -331,16 +331,17 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         const { id: agentId, label } = entry;
         const agentDescription = resolveAgentPickerDescription(agentId, label);
         if (entry.available === false) {
-            const agent = options.agents.find(candidate => candidate.id.toLowerCase() === agentId.toLowerCase());
             const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
                 && !!ctx.host.readPreference
                 && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference?.(key));
-            const needsApiKey = missingQaiqByok
-                || (agent?.available === true && agentNeedsSettingsApiKeyPath(agentId));
+            // A Settings-key agent (QAIQ) is unavailable only for lack of a provider key for the model it
+            // routes to (keys are BYOK). That includes an owner with *some* key but not that provider's,
+            // so it is never a CLI sign-in: always offer "Add API key" (Settings → AI Features).
+            const needsApiKey = missingQaiqByok || agentNeedsSettingsApiKeyPath(agentId);
             content.append(createUnavailableAgentSheetOption({
                 agentId,
                 label,
-                description: missingQaiqByok
+                description: needsApiKey
                     ? nls.localize(
                         'qaap/agentPicker/descriptionNeedsProviderKey',
                         '{0} · API key required',

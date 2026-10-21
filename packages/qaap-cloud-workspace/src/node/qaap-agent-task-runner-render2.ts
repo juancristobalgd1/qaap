@@ -621,6 +621,26 @@ export function listModelsForAgentExtracted(
         });
 }
 
+const loggedDefaultAgentOverrides = new Set<string>();
+
+/**
+ * Operator hint (once per agent id, no owner, no secrets) when `QAAP_DEFAULT_AGENT` is skipped for an
+ * owner it cannot serve, e.g. QAIQ for a user without their own provider key (keys are BYOK).
+ */
+export function logDefaultAgentOverriddenOnce(
+    agentId: string,
+    warn: (message: string) => void = message => console.warn(message),
+    logged: Set<string> = loggedDefaultAgentOverrides,
+): boolean {
+    if (logged.has(agentId)) {
+        return false;
+    }
+    logged.add(agentId);
+    warn(`[qaap-agent-tasks] QAAP_DEFAULT_AGENT=${agentId} is not usable for at least one user (disabled, signed out, or no API key of `
+        + 'their own in Settings → AI Features); they get the next usable agent instead.');
+    return true;
+}
+
 /**
  * Default agent for an owner. Order: the operator's `QAAP_DEFAULT_AGENT`; then the first agent in
  * {@link DEFAULT_AGENT_PREFERENCE} that is actually usable right now (`isAgentUsable`: connected, or a
@@ -637,8 +657,11 @@ export function defaultAgentExtracted(
     hasAuthSignal: (agentId: string) => boolean = () => true,
 ): string {
         const configured = ctx.normalizeAgentId(process.env.QAAP_DEFAULT_AGENT);
-        if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured) && isAgentEnabled(configured)) {
-            return configured;
+        if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured)) {
+            if (isAgentEnabled(configured)) {
+                return configured;
+            }
+            logDefaultAgentOverriddenOnce(configured);
         }
         const selectable = (id: string): boolean => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id);
         for (const id of DEFAULT_AGENT_PREFERENCE) {

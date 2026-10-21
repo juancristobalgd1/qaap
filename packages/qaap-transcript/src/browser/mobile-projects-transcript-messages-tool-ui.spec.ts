@@ -82,6 +82,41 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
         });
     });
 
+    describe('QAIQ missing-provider-key failure card', () => {
+        const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip. '
+            + 'Keys are personal: each account adds its own.';
+        const ctx = {
+            appendTranscriptShellSummaryTail: () => undefined,
+            contentUi: { cleanTranscriptDisplayText: (text: string) => text },
+        } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
+        (ctx as { createTranscriptAgentAuthLoginCard: unknown }).createTranscriptAgentAuthLoginCard = (
+            challenge: Parameters<typeof createTranscriptAgentAuthLoginCardExtracted>[1],
+            options: Parameters<typeof createTranscriptAgentAuthLoginCardExtracted>[2],
+        ) => createTranscriptAgentAuthLoginCardExtracted(ctx, challenge, options);
+
+        it('reads "API key needed", opens Settings → AI Features, and offers no sign-in', () => {
+            let openedSettings = 0;
+            let signIns = 0;
+            const card = createTranscriptAgentFailureDialogExtracted(ctx, refusal, refusal, {
+                agentId: 'qaiq',
+                agentLabel: 'QAIQ',
+                onOpenAiFeaturesSettings: () => { openedSettings++; },
+                onOpenAgentSignIn: () => { signIns++; },
+                onRetry: () => undefined,
+            });
+            expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('API key needed');
+            expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(refusal);
+            const settings = card.querySelector<HTMLButtonElement>('.codicon-settings-gear');
+            expect(settings?.textContent).to.equal('Add API key in Settings');
+            expect(card.querySelector('.codicon-terminal')).to.equal(null);
+            expect(card.querySelector('.codicon-link-external')).to.equal(null);
+            expect(card.textContent).to.not.match(/sign in/i);
+            settings!.click();
+            expect(openedSettings).to.equal(1);
+            expect(signIns).to.equal(0);
+        });
+    });
+
     describe('formatTranscriptExecutionTime', () => {
         it('formats sub-second durations as milliseconds', () => {
             expect(formatTranscriptExecutionTime(0)).to.equal('0ms');

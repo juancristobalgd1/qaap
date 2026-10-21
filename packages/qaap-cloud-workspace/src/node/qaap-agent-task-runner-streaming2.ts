@@ -26,6 +26,7 @@ import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/li
 import {
     checkQaiqProviderCredential,
     logQaiqProviderOperatorHintOnce,
+    QaapQaiqProviderKeyMissingError,
     type QaapQaiqProviderPreflightFailure,
 } from './qaap-qaiq-provider-preflight';
 import { resolveBackendInteractionModeSystemInstruction } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
@@ -38,7 +39,6 @@ import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/comm
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
 import { listNativeAgentModels } from './qaap-agent-native-models';
-import { vendorHasByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
@@ -628,16 +628,15 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
 }
 
 export function resolveQaiqProviderFlagsExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): string {
-        const env = ctx.previewProviderEnv(ownerLogin);
+        // Same binding as the spawn env (resolveAgentBindingForTaskExtracted) and the key preflight
+        // (checkQaiqProviderCredentialForOwner): the Settings alias whether or not its vendor has a key.
+        // Falling back to another vendor's flags here while the env is built for the alias vendor sent
+        // the CLI to a provider it had no key for; a keyless alias is refused before spawn instead.
         const binding = ctx.resolveQaapQaiqBinding(ownerLogin);
-        if (binding && vendorHasByokCredential(
-            ctx.preferenceReaderForOwner(ownerLogin),
-            binding.vendor,
-            key => env[key],
-        )) {
+        if (binding) {
             return formatQaiqProviderFlags(binding);
         }
-        return ctx.resolveQaiqProviderFlagsFromEnv(env);
+        return ctx.resolveQaiqProviderFlagsFromEnv(ctx.previewProviderEnv(ownerLogin));
 }
 
 export function resolveQaapQaiqBindingExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): QaapQaiqModelBinding | undefined {
@@ -685,7 +684,7 @@ export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, a
         // Refuse before spawning: a keyless provider call dies in the CLI as a misleading
         // "issue with the selected model" 404. The thrown copy becomes the failed turn's reason.
         logQaiqProviderOperatorHintOnce(failure, mustWithholdOperatorProviderCredentials(ownerLogin));
-        throw new Error(localizeQaiqProviderKeyMissingMessage(failure.providerLabel));
+        throw new QaapQaiqProviderKeyMissingError(localizeQaiqProviderKeyMissingMessage(failure.providerLabel), failure);
 }
 
 /**

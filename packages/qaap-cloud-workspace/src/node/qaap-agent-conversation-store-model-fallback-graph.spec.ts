@@ -31,7 +31,7 @@ import type {
     QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 class TestRunStore extends QaapWorkflowRunStore {
@@ -245,6 +245,39 @@ describe('QaapAgentConversationStore model fallback via the chat-turn graph (QAA
         const tried = JSON.parse(record.artifacts[QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT]);
         expect(tried).to.include(agentModelKey(MODEL_ZERO));
         expect(tried).to.include(agentModelKey(CHAIN[1]));
+    });
+
+    it('never retries a QAIQ turn refused for a missing provider key (graph and imperative)', async () => {
+        for (const graph of ['on', 'off']) {
+            process.env.QAAP_TURN_GRAPH = graph;
+            const id = `key-${graph}`;
+            const conv = retriableConversation(id, 'task-refused', MODEL_ZERO);
+            store.seed(conv);
+            const refused = { ...failedTask('task-refused'), preflightFailure: 'provider_key_missing' } as QaapAgentTask;
+            const handled = await store.retryFallback(id, `${id}-u1`, `${id}-a1`, refused, conv, conv.messages[1]);
+            expect(handled, graph).to.be.false;
+        }
+        expect(runner.created).to.have.length(0);
+        expect(chatTurnRuns(runStore)).to.have.length(0);
+    });
+
+    it('settles a key-missing refusal once, with its copy, and spawns no fallback task (one task → one push)', async () => {
+        const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip. '
+            + 'Keys are personal: each account adds its own.';
+        const conv = retriableConversation('key-settle', 'task-refused', MODEL_ZERO);
+        store.seed(conv);
+        // A task restored without the marker: the refusal line in its log alone must stop the fallback.
+        runner.detailLogs.set('task-refused', `${refusal}\n`);
+        store.terminal(
+            { id: 'task-refused', state: 'failed', exitCode: 1, agentId: 'qaiq' } as unknown as QaapAgentTask,
+            { conversationId: conv.id, userMessageId: 'key-settle-u1', agentMessageId: 'key-settle-a1', turnAgentId: 'qaiq' },
+        );
+        await flushAsyncWork();
+
+        expect(runner.created).to.have.length(0);
+        const settled = store.get('key-settle')!;
+        expect(settled.status).to.equal('failed');
+        expect(settled.messages.filter(message => message.error === refusal)).to.have.length.greaterThan(0);
     });
 
     it('does not retry a non-retriable failure and creates no run', async () => {

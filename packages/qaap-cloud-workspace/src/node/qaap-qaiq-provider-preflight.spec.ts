@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { logDefaultAgentOverriddenOnce } from './qaap-agent-task-runner-render2';
 import {
     checkQaiqProviderCredential,
     formatQaiqProviderOperatorHint,
@@ -52,11 +53,12 @@ describe('QAIQ provider preflight', () => {
             })).to.equal(undefined);
         });
 
-        it('without a pick, follows the Settings alias only when it has a key, else the env fallback', () => {
-            expect(checkQaiqProviderCredential({ readPref: noPrefs, env: { GEMINI_API_KEY: 'g' }, settingsBinding: OPENROUTER_BINDING }))
-                .to.equal(undefined);
+        it('without a pick, follows the Settings alias even when keyless (refused, never swapped), else the env fallback', () => {
+            expect(checkQaiqProviderCredential({ readPref: noPrefs, env: { GEMINI_API_KEY: 'g' }, settingsBinding: OPENROUTER_BINDING })?.vendor)
+                .to.equal('openrouter');
             expect(checkQaiqProviderCredential({ readPref: noPrefs, env: { OPENAI_API_KEY: 'sk-openai' }, settingsBinding: OPENROUTER_BINDING })?.vendor)
                 .to.equal('openrouter');
+            expect(checkQaiqProviderCredential({ readPref: noPrefs, env: { GEMINI_API_KEY: 'g' } })).to.equal(undefined);
         });
 
         it('reports a missing provider when nothing at all is configured, and leaves unknown vendors to the CLI', () => {
@@ -84,6 +86,16 @@ describe('QAIQ provider preflight', () => {
             const hint = formatQaiqProviderOperatorHint(failure, false);
             expect(hint).to.include('OPENROUTER_API_KEY');
             expect(hint).to.include('docker compose up -d theia');
+        });
+
+        it('names a skipped QAAP_DEFAULT_AGENT once, without owner or secrets', () => {
+            const lines: string[] = [];
+            const logged = new Set<string>();
+            expect(logDefaultAgentOverriddenOnce('qaiq', line => lines.push(line), logged)).to.equal(true);
+            expect(logDefaultAgentOverriddenOnce('qaiq', line => lines.push(line), logged)).to.equal(false);
+            expect(lines).to.have.length(1);
+            expect(lines[0]).to.contain('QAAP_DEFAULT_AGENT=qaiq');
+            expect(lines[0]).to.contain('Settings → AI Features');
         });
 
         it('logs once per provider and audience', () => {
@@ -152,6 +164,41 @@ describe('QAIQ provider preflight', () => {
             expect(() => runner.assertQaiqConfigured('qaiq', 'bob', NEMOTRON))
                 .to.throw('Add your OpenRouter API key in Settings → AI Features to use QAIQ, or pick another agent from the agent chip.');
             expect(() => runner.assertQaiqConfigured('qaiq', 'alice', NEMOTRON)).to.not.throw();
+        });
+
+        it('refuses a keyless Settings alias with that alias vendor\'s copy, even with another provider\'s key, and the flags agree', () => {
+            SETTINGS.carol = {
+                'ai-features.languageModelAliases': { 'default/code': { selectedModel: `openrouter/${NEMOTRON.modelId}` } },
+                'ai-features.google.apiKey': 'gemini-carol',
+            };
+            try {
+                const runner = createRunner();
+                expect(() => runner.assertQaiqConfigured('qaiq', 'carol'))
+                    .to.throw(/^Add your OpenRouter API key in Settings/);
+                // The command builder and the spawn env resolve the same (alias) vendor as the preflight.
+                expect(runner.resolveQaiqProviderFlags('carol')).to.contain(NEMOTRON.modelId);
+                expect(runner.resolveQaiqProviderFlags('carol')).to.not.contain('gemini');
+            } finally {
+                delete SETTINGS.carol;
+            }
+        });
+
+        it('logs one operator hint when QAAP_DEFAULT_AGENT=qaiq is skipped for a keyless owner', () => {
+            process.env.QAAP_DEFAULT_AGENT = 'qaiq';
+            const lines: string[] = [];
+            const original = console.warn;
+            console.warn = (message: string) => { lines.push(message); };
+            try {
+                const runner = createRunner();
+                expect(runner.defaultAgent('bob')).to.not.equal('qaiq');
+                runner.defaultAgent('bob');
+                expect(runner.defaultAgent('alice')).to.equal('qaiq');
+            } finally {
+                console.warn = original;
+            }
+            const hints = lines.filter(line => line.includes('QAAP_DEFAULT_AGENT=qaiq'));
+            expect(hints.length).to.be.at.most(1);
+            expect(hints.join('\n')).to.not.match(/sk-|bob|alice/);
         });
 
         it('reports QAIQ connected per owner, so a keyless owner never gets it as default', () => {

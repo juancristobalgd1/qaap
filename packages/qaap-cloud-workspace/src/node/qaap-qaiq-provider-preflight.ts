@@ -8,7 +8,6 @@ import {
     listByokVendorCredentialEnv,
     QAAP_CUSTOM_OPENAI_ENDPOINTS_PREF,
     QAAP_CUSTOM_OPENAI_VENDOR,
-    vendorHasByokCredential,
     vendorHasDedicatedByokCredential,
     type QaapPreferenceReader,
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
@@ -44,18 +43,14 @@ export interface QaapQaiqProviderPreflightFailure {
 }
 
 /**
- * The vendor a QAIQ turn would call, resolved like the command builder does: the turn's model pick,
- * else the Settings alias binding when it has a credential, else the env fallback model.
+ * The vendor a QAIQ turn would call, exactly as the command flags and the spawn env resolve it: the
+ * turn's model pick, else the Settings alias binding (with or without a key: a keyless alias must be
+ * refused, not swapped for another vendor), else the env fallback model.
  */
 export function resolveQaiqTurnVendor(input: QaapQaiqProviderPreflightInput): string | undefined {
-    if (input.selectedBinding) {
-        return input.selectedBinding.vendor;
-    }
-    const readEnv = (key: string): string | undefined => input.env[key];
-    if (input.settingsBinding && vendorHasByokCredential(input.readPref, input.settingsBinding.vendor, readEnv)) {
-        return input.settingsBinding.vendor;
-    }
-    return resolveQaiqEnvFallbackModel(input.env)?.vendor;
+    return input.selectedBinding?.vendor
+        ?? input.settingsBinding?.vendor
+        ?? resolveQaiqEnvFallbackModel(input.env)?.vendor;
 }
 
 /**
@@ -109,6 +104,14 @@ export function formatQaiqProviderOperatorHint(failure: QaapQaiqProviderPrefligh
     }
     return `${head} Set ${envName} in the server env (Docker: uncomment it in /opt/qaap/.env — docker-compose.yml passes it to the theia `
         + `service — then \`docker compose up -d theia\`), or add the key in Settings → AI Features (${pref}).`;
+}
+
+/** Thrown by the QAIQ key preflight; the runner marks the task so model fallback never re-spawns it. */
+export class QaapQaiqProviderKeyMissingError extends Error {
+    constructor(message: string, readonly failure: QaapQaiqProviderPreflightFailure) {
+        super(message);
+        this.name = 'QaapQaiqProviderKeyMissingError';
+    }
 }
 
 const loggedQaiqProviderHints = new Set<string>();
