@@ -168,6 +168,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
             hubIncrementalUi: {} as MobileProjectsTasksHubHost['hubIncrementalUi'],
             onNewClick: async () => undefined,
             onStartNewProject: async () => undefined,
+            onHomeQuickAction: async () => undefined,
         };
     }
 

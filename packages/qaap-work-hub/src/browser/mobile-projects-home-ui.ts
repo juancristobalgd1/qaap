@@ -31,6 +31,8 @@ export interface MobileProjectsHomeUiDeps {
     getWorkspaceStatus(project: MobileProjectEntry): WorkHubWorkspaceStatus;
     formatRelativeTime(updatedAt: number): string;
     onNavigate(target: WorkHubHomeNavigateTarget): void;
+    /** Opens the clone-a-project dialog directly instead of navigating to the project list. */
+    onCloneProject(): void;
     onOpenProject(project: MobileProjectEntry): void;
     onOpenRecent(item: WorkHubHomeRecentItem): void;
     onOpenAttention(item: WorkHubHomeAttentionItem): void;
@@ -45,6 +47,8 @@ interface HomeShortcutSpec {
 }
 
 export class MobileProjectsHomeUi {
+
+    protected static readonly GETTING_STARTED_DISMISSED_KEY = 'qaap.workHubHome.gettingStartedDismissed';
 
     protected static readonly SHORTCUTS: readonly HomeShortcutSpec[] = [
         {
@@ -68,8 +72,8 @@ export class MobileProjectsHomeUi {
         {
             action: 'all-projects',
             icon: 'codicon-folder',
-            label: 'Repos',
-            hint: 'GitHub workspaces',
+            label: 'Projects',
+            hint: 'GitHub projects',
         },
     ];
 
@@ -105,16 +109,40 @@ export class MobileProjectsHomeUi {
     }
 
     protected shouldShowGettingStarted(snapshot: WorkHubHomeSnapshot): boolean {
+        if (this.gettingStartedDismissed) {
+            return false;
+        }
         const hasTask = snapshot.recentItems.some(item => item.surface === 'task')
             || snapshot.stats.runningTasks > 0
             || snapshot.stats.needsYou > 0;
         return snapshot.stats.projectCount === 0 || !hasTask || snapshot.stats.openPullRequests === 0;
     }
 
+    protected get gettingStartedDismissed(): boolean {
+        try {
+            return window.localStorage.getItem(MobileProjectsHomeUi.GETTING_STARTED_DISMISSED_KEY) === '1';
+        } catch {
+            return false;
+        }
+    }
+
+    protected dismissGettingStarted(panel: HTMLElement): void {
+        try {
+            window.localStorage.setItem(MobileProjectsHomeUi.GETTING_STARTED_DISMISSED_KEY, '1');
+        } catch {
+            // Storage unavailable: hide for this render only.
+        }
+        panel.remove();
+    }
+
     protected createGettingStartedPanel(snapshot: WorkHubHomeSnapshot): HTMLElement {
         const panel = this.createPanel('theia-mobile-work-hub-home-getting-started');
         panel.append(this.createSectionHead(
             nls.localize('qaap/workHubHome/gettingStarted', 'Get started'),
+            {
+                label: nls.localize('qaap/workHubHome/dismissGettingStarted', 'Dismiss'),
+                onClick: () => this.dismissGettingStarted(panel),
+            },
         ));
 
         const hasRepository = snapshot.stats.projectCount > 0;
@@ -125,12 +153,12 @@ export class MobileProjectsHomeUi {
         const steps = [
             {
                 complete: hasRepository,
-                title: nls.localize('qaap/workHubHome/setupRepository', 'Connect a repository'),
+                title: nls.localize('qaap/workHubHome/setupRepository', 'Add a project'),
                 hint: hasRepository
-                    ? nls.localize('qaap/workHubHome/setupRepositoryDone', 'Repository ready')
-                    : nls.localize('qaap/workHubHome/setupRepositoryHint', 'Choose a GitHub repository to work on'),
-                action: hasRepository ? undefined : () => this.deps.onNavigate('repos'),
-                actionLabel: nls.localize('qaap/workHubHome/setupRepositoryAction', 'Add repository'),
+                    ? nls.localize('qaap/workHubHome/setupRepositoryDone', 'Project ready')
+                    : nls.localize('qaap/workHubHome/setupRepositoryHint', 'Clone a GitHub project to work on'),
+                action: hasRepository ? undefined : () => this.deps.onCloneProject(),
+                actionLabel: nls.localize('qaap/workHubHome/setupRepositoryAction', 'Add project'),
             },
             {
                 complete: hasTask,
@@ -525,7 +553,7 @@ export class MobileProjectsHomeUi {
     ): HTMLElement {
         const panel = this.createPanel('theia-mobile-work-hub-home-section-panel');
         const head = this.createSectionHead(
-            nls.localize('qaap/workHubHome/workspaces', 'Workspaces'),
+            nls.localize('qaap/workHubHome/workspaces', 'Projects'),
             projectCount > pinnedProjects.length
                 ? {
                     label: nls.localize('qaap/workHubHome/allProjects', 'View all'),
@@ -541,14 +569,14 @@ export class MobileProjectsHomeUi {
         if (pinnedProjects.length === 0) {
             panel.append(this.createEmptyState({
                 icon: 'codicon-repo',
-                title: nls.localize('qaap/workHubHome/noProjectsTitle', 'No workspaces yet'),
+                title: nls.localize('qaap/workHubHome/noProjectsTitle', 'No projects yet'),
                 hint: nls.localize(
                     'qaap/workHubHome/noProjects',
-                    'Add a GitHub repository to delegate agent work and review the resulting PR.',
+                    'Clone a GitHub project to delegate agent work and review the resulting PR.',
                 ),
                 action: {
-                    label: nls.localize('qaap/workHubHome/addRepository', 'Add repository'),
-                    onClick: () => this.deps.onNavigate('repos'),
+                    label: nls.localize('qaap/workHubHome/addRepository', 'Add project'),
+                    onClick: () => this.deps.onCloneProject(),
                 },
             }));
         } else {

@@ -310,7 +310,7 @@ export class MobileProjectsHomeHubUi {
                 );
         }
         if (stats.projectCount === 0) {
-            return nls.localize('qaap/workHubHome/subtitleNoProjects', 'Add a GitHub repository to start agent work');
+            return nls.localize('qaap/workHubHome/subtitleNoProjects', 'Add a GitHub project to start agent work');
         }
         return nls.localize('qaap/workHubHome/subtitleAllClear', 'Ready to capture the next task');
     }

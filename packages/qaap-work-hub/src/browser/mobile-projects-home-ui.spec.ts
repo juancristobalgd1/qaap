@@ -68,6 +68,7 @@ describe('MobileProjectsHomeUi', () => {
             getWorkspaceStatus: () => 'idle',
             formatRelativeTime: () => 'just now',
             onNavigate: target => navigations.push(target),
+            onCloneProject: () => { navigations.push('clone'); },
             onOpenProject: () => undefined,
             onOpenRecent: () => undefined,
             onOpenAttention: () => undefined,
@@ -88,13 +89,38 @@ describe('MobileProjectsHomeUi', () => {
         expect(host.querySelector('.theia-mobile-work-hub-home-getting-started')).to.not.equal(null);
         expect(host.querySelector('.theia-mobile-work-hub-home-shortcuts-panel')).to.not.equal(null);
         expect(host.textContent).to.contain('Get started');
-        expect(host.textContent).to.contain('Connect a repository');
+        expect(host.textContent).to.contain('Add a project');
         expect(host.textContent).to.contain('Activity');
 
         const addRepository = [...host.querySelectorAll('button')]
-            .find(button => button.textContent?.includes('Add repository'));
+            .find(button => button.textContent?.includes('Add project'));
         addRepository?.click();
-        expect(deps.navigations).to.deep.equal(['repos']);
+        expect(deps.navigations).to.deep.equal(['clone']);
+    });
+
+    it('can dismiss the checklist and keeps it hidden afterwards', () => {
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed');
+        const ui = new MobileProjectsHomeUi(createDeps());
+        const host = document.createElement('div');
+        ui.renderDashboard(host, snapshot());
+        const dismiss = [...host.querySelectorAll('button')].find(button => button.textContent === 'Dismiss');
+        dismiss?.click();
+        expect(host.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
+        const again = document.createElement('div');
+        ui.renderDashboard(again, snapshot());
+        expect(again.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed');
+    });
+
+    it('hides the checklist once every step is complete and uses a single "project" term', () => {
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed');
+        const ui = new MobileProjectsHomeUi(createDeps());
+        const fresh = document.createElement('div');
+        ui.renderDashboard(fresh, snapshot());
+        expect(fresh.textContent).to.not.match(/workspace|repositor/i);
+        const done = document.createElement('div');
+        ui.renderDashboard(done, snapshot({ projectCount: 1, runningTasks: 1, openPullRequests: 1 }));
+        expect(done.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
     });
 
     it('shows attention, workspaces, and continue sections once work exists', () => {
