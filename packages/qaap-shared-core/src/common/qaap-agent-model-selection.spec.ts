@@ -71,12 +71,17 @@ describe('qaap-agent-model-selection', () => {
         const cwd = '/repo/hermes-stale';
         const bad = {
             provider: 'openai' as const,
-            vendor: 'nvidia',
-            modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+            vendor: 'inclusionai',
+            modelId: 'inclusionai/ring-2.6-1t:free',
         };
         expect(isStoredAgentModelUsable(bad)).to.be.false;
         writeStoredAgentModel(cwd, 'hermes', bad);
         expect(readStoredAgentModel(cwd, 'hermes')).to.be.undefined;
+    });
+
+    it('keeps a stored pick of the QAIQ default Nemotron 3 Ultra free model (live again since Oct 21 2026)', () => {
+        const model = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free' };
+        expect(isStoredAgentModelUsable(model)).to.be.true;
     });
 
     it('rejects confirmed tool-less models and clears stale localStorage', () => {

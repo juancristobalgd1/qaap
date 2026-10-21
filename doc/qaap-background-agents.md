@@ -108,7 +108,7 @@ QAAP_AGENT_COMMANDS='[
     "id": "qaiq-openrouter",
     "label": "QAIQ OpenRouter",
     "bin": "qaiq",
-    "template": "OPENAI_API_KEY=$OPENROUTER_API_KEY OPENAI_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1} qaiq --print --provider openai --model nvidia/nemotron-3-super-120b-a12b:free {prompt}"
+    "template": "OPENAI_API_KEY=$OPENROUTER_API_KEY OPENAI_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1} qaiq --print --provider openai --model nvidia/nemotron-3-ultra-550b-a55b:free {prompt}"
   }
 ]'
 ```

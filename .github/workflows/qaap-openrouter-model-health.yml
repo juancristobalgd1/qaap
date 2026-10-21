@@ -1,0 +1,44 @@
+# Daily health check of QAIQ's default free OpenRouter models (OPENROUTER_DEFAULT_FREE_MODELS).
+# Oct 21 2026: the old default stayed in the catalog while its only endpoint was down, so every
+# default turn burnt a failed attempt. Policy (scripts/qaap-openrouter-free-model-health.mjs
+# --policy launch): FAIL when the head of the list is unhealthy or fewer than 3 of the first 4
+# (the fallback chain window) are healthy; any other unhealthy entry is a ::warning:: annotation.
+# An unreachable OpenRouter API is inconclusive (warning), never a failure.
+# Issues are disabled on this repo, so the failed scheduled run (GitHub emails the owner) is the
+# alert channel, as in qaap-vps-monitor.yml. See doc/qaap-ci-invariants.md for the runbook.
+name: Qaap OpenRouter model health
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qaap-openrouter-model-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.repository == 'juancristobalgd1/qaap'
+    steps:
+      - name: Checkout script and defaults
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            scripts/qaap-openrouter-free-model-health.mjs
+            packages/qaap-ai-openrouter/src/common/openrouter-models.ts
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '22.x'
+
+      # No npm install: the script uses only Node built-ins and the public, keyless OpenRouter API.
+      - name: Check default free models
+        run: node scripts/qaap-openrouter-free-model-health.mjs --policy launch

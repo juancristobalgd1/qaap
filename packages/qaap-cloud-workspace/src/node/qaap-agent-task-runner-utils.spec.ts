@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { findQaiqByokProvider } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -148,6 +149,16 @@ describe('resolveQaiqEnvFallbackModel', () => {
         expect(resolveQaiqEnvFallbackModel({ NVIDIA_API_KEY: 'nv' })?.vendor).to.equal('nvidia');
         expect(resolveQaiqEnvFallbackModel({ OLLAMA_HOST: 'http://127.0.0.1:11434' }))
             .to.deep.equal({ provider: 'ollama', vendor: 'ollama', modelId: 'qwen2.5-coder:7b' });
+    });
+
+    it('defaults an env-only OpenRouter key to the live head of the curated free list', () => {
+        // Oct 21 2026: the hardcoded `nvidia/nemotron-3-super-120b-a12b:free` went dead (404) and
+        // every default turn burnt a failed attempt. The default now follows the curated list.
+        const model = resolveQaiqEnvFallbackModel({ OPENROUTER_API_KEY: 'or' });
+        expect(model).to.deep.equal({ provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free' });
+        expect(model?.modelId).to.equal(findQaiqByokProvider('openrouter')?.fallbackModels?.[0]);
+        expect(resolveQaiqProviderFlagsFromEnv({ OPENROUTER_API_KEY: 'or' }))
+            .to.equal('--provider openai --model nvidia/nemotron-3-ultra-550b-a55b:free');
     });
 
     it('keeps OPENAI_API_KEY-only as flags without inventing a model id', () => {

@@ -2,7 +2,9 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
-import { main, findProviderCredentialRejection, judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
+import {
+    main, findProviderCredentialRejection, isModelUnavailableFailure, judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie, taskModel,
+} from './qaap-post-deploy-agent-smoke.mjs';
 
 const SESSIONS = {
     sessions: [
@@ -297,4 +299,57 @@ test('rejected provider credentials warn without failing the deploy; a product f
     await withServer({ finish: () => ({ id: 't1', state: 'failed', exitCode: 1, log: QAIQ_MODEL_ISSUE }) }, async base => {
         await assert.rejects(quiet(() => main([base], ENV)), /state failed/);
     });
+});
+
+// Oct 21 2026: the default `nvidia/nemotron-3-super-120b-a12b:free` lost its only endpoint. A standalone
+// task (what the smoke creates) gets no fallback-model retry, so the smoke must name the dead model.
+const DEAD_MODEL_LOG = [
+    '{"type":"system","subtype":"init","model":"nvidia/nemotron-3-super-120b-a12b:free","tools":[]}',
+    'API Error: 404 {"error":{"message":"Provider returned error","metadata":{"raw":"Function \'abc\': Not found for account \'xyz\'"}}}',
+].join('\n');
+
+test('the answering model comes from the task, else from the CLI init record', () => {
+    assert.equal(taskModel({ agentModel: { provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free' } }),
+        'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free');
+    assert.equal(taskModel({ qaiqModel: { modelId: 'google/gemma-4-31b-it:free' } }), 'google/gemma-4-31b-it:free');
+    assert.equal(taskModel({ log: DEAD_MODEL_LOG }), 'nvidia/nemotron-3-super-120b-a12b:free');
+    assert.equal(taskModel({ log: 'plain text' }), undefined);
+    assert.equal(taskModel(undefined), undefined);
+});
+
+test('a dead model is named as such; the ambiguous QAIQ model message is not', () => {
+    assert.equal(isModelUnavailableFailure({ state: 'failed', log: DEAD_MODEL_LOG }), true);
+    assert.equal(isModelUnavailableFailure({ state: 'failed', log: 'API Error: 404 No endpoints found for x/y:free.' }), true);
+    assert.equal(isModelUnavailableFailure({ state: 'completed', log: DEAD_MODEL_LOG }), false);
+    assert.equal(isModelUnavailableFailure({ state: 'failed', log: QAIQ_MODEL_ISSUE }), false);
+    assert.equal(isModelUnavailableFailure({ state: 'failed', log: 'API Error: 404 No endpoints found matching your data policy' }), false);
+    const verdict = judgeTask({ state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG }, 'TOKEN');
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.inconclusive, undefined);
+    assert.match(verdict.reason, /state failed on nvidia\/nemotron-3-super-120b-a12b:free \(exit 1\): the model has no live endpoint/);
+});
+
+test('a dead default model fails the smoke with the model and the fix in the error', async () => {
+    await withServer({ finish: () => ({ id: 't1', state: 'failed', exitCode: 1, log: DEAD_MODEL_LOG }) }, async base => {
+        await assert.rejects(quiet(() => main([base], ENV)), /nemotron-3-super-120b-a12b:free.*no live endpoint.*free-model-health/);
+    });
+});
+
+test('a passing turn prints which model answered', async () => {
+    const lines = [];
+    const log = console.log;
+    console.log = line => lines.push(line);
+    try {
+        await withServer({
+            finish: prompt => ({
+                ...echoToken(prompt),
+                agentModel: { provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free' },
+            }),
+        }, async base => {
+            assert.equal(await main([base], ENV), 0);
+        });
+    } finally {
+        console.log = log;
+    }
+    assert.ok(lines.some(line => /^OK: agent turn t1 completed .*; answered by openrouter\/nvidia\/nemotron-3-ultra-550b-a55b:free\.$/.test(line)), lines.join('\n'));
 });
