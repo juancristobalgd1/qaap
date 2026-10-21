@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
-import { main, judgeTask, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
+import { main, findProviderCredentialRejection, judgeTask, pickProjectCwd, pickSmokeAgent, smokeCookie } from './qaap-post-deploy-agent-smoke.mjs';
 
 const SESSIONS = {
     sessions: [
@@ -204,5 +204,56 @@ test('a cold probe that resolves on a retry runs the turn', async () => {
         assert.equal(await quiet(() => main([base], ENV)), 0);
         assert.equal(options.listCalls, 2);
         assert.ok(calls.some(call => call.method === 'POST' && call.url === '/qaap/api/agent-tasks'));
+    });
+});
+
+// Production, Oct 20 2026: QAIQ on an OpenRouter `:free` model died in 0.9 s with the ambiguous model
+// error; the runner's provider preflight then names the rejected key.
+const QAIQ_MODEL_ISSUE = JSON.stringify({
+    type: 'result', is_error: true, duration_api_ms: 0, error: 'invalid_request',
+    result: 'There\'s an issue with the selected model (nvidia/nemotron-3-super-120b-a12b:free). It may not exist or you may not have access to it. Run --model to pick a different model.',
+});
+
+test('provider credential rejections are recognised; Qaap failures are not', () => {
+    assert.match(findProviderCredentialRejection({ log: `${QAIQ_MODEL_ISSUE}\n[qaap] provider check: OpenRouter key_rejected (HTTP 401).` }), /key_rejected/);
+    assert.ok(findProviderCredentialRejection({ error: 'Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.' }));
+    assert.ok(findProviderCredentialRejection({ log: 'API Error: 401 {"error":{"message":"No auth credentials found","code":401}}' }));
+    assert.ok(findProviderCredentialRejection({ log: 'API Error: 429 Rate limit exceeded: free-models-per-day' }));
+    assert.ok(findProviderCredentialRejection({ log: 'API Error: 404 No endpoints found matching your data policy (Free model publication)' }));
+    assert.ok(findProviderCredentialRejection({ log: 'API Error: 402 Insufficient credits' }));
+    assert.equal(findProviderCredentialRejection({ log: 'unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-abcdef123' }),
+        'unexpected status 401 Unauthorized: Incorrect API key provided: <redacted>');
+    // Without the preflight the model error alone is not proof: it could be Qaap routing a bad model id.
+    assert.equal(findProviderCredentialRejection({ log: QAIQ_MODEL_ISSUE }), undefined);
+    for (const log of ['Error: spawn qaiq ENOENT', '[qaap] task timed out after 300s without output.', 'boom', '[qaap] process error: EACCES']) {
+        assert.equal(findProviderCredentialRejection({ log }), undefined, log);
+    }
+});
+
+test('verdict: a failed turn on rejected provider credentials is inconclusive, other failures are not', () => {
+    const rejected = judgeTask({ state: 'failed', exitCode: 1, log: '[qaap] provider check: OpenRouter no_credits (HTTP 402).' }, 'TOKEN');
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.inconclusive, true);
+    assert.equal(judgeTask({ state: 'failed', exitCode: 1, log: 'Error: spawn qaiq ENOENT' }, 'TOKEN').inconclusive, undefined);
+    // A turn cut short is the release's problem even if a 429 scrolled by.
+    assert.equal(judgeTask({ state: 'interrupted', log: 'API Error: 429 rate limit exceeded' }, 'TOKEN').inconclusive, undefined);
+});
+
+test('rejected provider credentials warn without failing the deploy; a product failure still fails', async () => {
+    const lines = [];
+    const log = console.log;
+    console.log = line => lines.push(line);
+    try {
+        await withServer({
+            finish: () => ({ id: 't1', state: 'failed', exitCode: 1, log: `${QAIQ_MODEL_ISSUE}\n[qaap] provider check: OpenRouter key_rejected (HTTP 401).` }),
+        }, async base => {
+            assert.equal(await main([base], ENV), 0);
+        });
+    } finally {
+        console.log = log;
+    }
+    assert.ok(lines.some(line => /^::warning::Post-deploy agent smoke inconclusive: .*rejected the smoke user's credentials.*key_rejected/.test(line)), lines.join('\n'));
+    await withServer({ finish: () => ({ id: 't1', state: 'failed', exitCode: 1, log: QAIQ_MODEL_ISSUE }) }, async base => {
+        await assert.rejects(quiet(() => main([base], ENV)), /state failed/);
     });
 });
