@@ -262,7 +262,7 @@ describe('QaapAgentConversationStore model fallback via the chat-turn graph (QAA
     });
 
     it('settles a key-missing refusal once, with its copy, and spawns no fallback task (one task → one push)', async () => {
-        const refusal = 'Add your OpenRouter API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, or pick another agent from the agent chip. '
+        const refusal = 'Add your OpenRouter API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, or pick another agent from the agent chip. '
             + 'Keys are personal: each account adds its own.';
         const conv = retriableConversation('key-settle', 'task-refused', MODEL_ZERO);
         store.seed(conv);

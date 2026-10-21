@@ -12,7 +12,9 @@ import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
     detectAgentFailureKind,
     formatStoredAgentFailureMessage,
+    isProviderKeyFailureKind,
     isQaiqProviderKeyMissingFailure,
+    localizeAgentFailureShortReason,
     localizeGenericAgentFailureMessage,
     resolveAgentTurnFailureMessage,
     summarizeCollapsedAgentFailure,
@@ -91,16 +93,21 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                 ? resolved
                 : (persisted || resolved || generic);
         const failureKind = detectAgentFailureKind(authSample);
-        const extractedChallenge = extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
         // QAIQ refused before running: no provider key for this user. Only a key in Settings fixes it
         // (BYOK), so the card offers "Add API key in Settings" and no sign-in.
-        const authChallenge = (isQaiqProviderKeyMissingFailure(authSample) ? { mode: 'api_key' as const } : undefined)
-            ?? extractedChallenge
+        const isQaiqKeyMissing = isQaiqProviderKeyMissingFailure(authSample);
+        // The user's own provider key (BYOK) was refused: fix it in BYOK settings, not by signing in.
+        const isProviderKeyFailure = !planLimit && !isQaiqKeyMissing && isProviderKeyFailureKind(failureKind);
+        const extractedChallenge = isProviderKeyFailure || isQaiqKeyMissing
+            ? undefined
+            : extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
+        const sessionChallenge = isProviderKeyFailure || isQaiqKeyMissing ? undefined : extractedChallenge
             ?? (failureKind === 'auth' ? { mode: 'session' as const } : undefined)
             ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
                 ? { mode: 'session' as const }
                 : undefined);
-        const isQuotaFailure = !authChallenge && !planLimit && (failureKind === 'quota' || failureKind === 'rate_limit');
+        const authChallenge = isQaiqKeyMissing ? { mode: 'api_key' as const } : sessionChallenge;
+        const isQuotaFailure = !authChallenge && !planLimit && !isProviderKeyFailure && (failureKind === 'quota' || failureKind === 'rate_limit');
         const isCliMissing = !authChallenge && failureKind === 'cli_missing';
         const details = document.createElement('details');
         details.className = 'theia-mobile-agent-shell-window theia-mod-failed theia-mod-turn-failure';
@@ -113,13 +120,16 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         if (isCliMissing) {
             details.classList.add('theia-mod-cli-missing');
         }
+        if (isProviderKeyFailure) {
+            details.classList.add('theia-mod-provider-key');
+        }
         if (planLimit) {
             details.classList.add('theia-mod-quota-limit', 'theia-mod-plan-limit');
         }
         // Keep ordinary failures compact so a noisy backend error does not
         // dominate the transcript. Authentication, quota, and missing-CLI
         // failures expose their next-step guidance immediately.
-        details.open = !!authChallenge || isQuotaFailure || isCliMissing || !!planLimit;
+        details.open = !!authChallenge || isQuotaFailure || isCliMissing || isProviderKeyFailure || !!planLimit;
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head';
@@ -130,19 +140,21 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         const iconWrap = document.createElement('span');
         iconWrap.className = 'theia-mobile-agent-shell-icon-wrap';
         const icon = document.createElement('span');
-        icon.className = `theia-mobile-agent-shell-icon codicon ${authChallenge ? 'codicon-key' : isCliMissing ? 'codicon-desktop-download' : 'codicon-warning'}`;
+        icon.className = `theia-mobile-agent-shell-icon codicon ${authChallenge || isProviderKeyFailure ? 'codicon-key' : isCliMissing ? 'codicon-desktop-download' : 'codicon-warning'}`;
         icon.setAttribute('aria-hidden', 'true');
         iconWrap.append(icon);
         const titleWrap = document.createElement('span');
         titleWrap.className = 'theia-mobile-agent-turn-failure-title-wrap';
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-shell-title';
-        const authTitle = isQaiqProviderKeyMissingFailure(authSample)
+        const authTitle = isQaiqKeyMissing
             ? nls.localize('qaap/agentFailure/reasonApiKeyMissing', 'API key needed')
             : nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required');
         label.textContent = authChallenge
             ? authTitle
-            : planLimit
+            : isProviderKeyFailure
+              ? (localizeAgentFailureShortReason(formatted) ?? nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected'))
+              : planLimit
               ? nls.localize('qaap/mobileProjects/transcriptPlanLimitReached', 'Plan limit reached')
               : isQuotaFailure
                 ? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached')
@@ -157,7 +169,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             toolLine.textContent = failedToolName;
             titleWrap.append(toolLine);
         }
-        if (!authChallenge && !isQuotaFailure && !isCliMissing && !planLimit) {
+        if (!authChallenge && !isQuotaFailure && !isCliMissing && !isProviderKeyFailure && !planLimit) {
             const reason = summarizeCollapsedAgentFailure({
                 formatted,
                 generic,
@@ -221,6 +233,17 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             }
         } else if (authChallenge) {
             body.append(ctx.createTranscriptAgentAuthLoginCard(authChallenge, options));
+        } else if (isProviderKeyFailure && options?.onOpenAiFeaturesSettings) {
+            const settingsBtn = document.createElement('button');
+            settingsBtn.type = 'button';
+            settingsBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-settings-gear';
+            settingsBtn.textContent = nls.localize('qaap/mobileProjects/openByokSettings', 'Open BYOK settings');
+            settingsBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void Promise.resolve(options.onOpenAiFeaturesSettings!());
+            });
+            body.append(settingsBtn);
         } else if (isQuotaFailure) {
             const hint = document.createElement('p');
             hint.className = 'theia-mobile-agent-auth-login-hint';

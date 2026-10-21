@@ -47,7 +47,7 @@ describe('QAIQ provider key failures', () => {
                 `The model provider refused ${MODEL}. The model may be unavailable or retired at the provider right now, `
                 + 'its API key may be missing or invalid, the account may be out of credits, '
                 + 'or (for free OpenRouter models) your privacy settings may block it. '
-                + 'Pick another model, or check the key in Settings → AI Features.',
+                + 'Pick another model, or check the key in Settings → BYOK.',
             );
             expect(message).to.not.match(/--model/);
         });
@@ -67,6 +67,12 @@ describe('QAIQ provider key failures', () => {
                 .to.equal('Model access denied');
         });
 
+        it('yields to a provider key check that explains the same 404 (rejected BYOK key)', () => {
+            const withPreflight = `${CLI_TEXT}\n[qaap] provider check: OpenRouter key_rejected (HTTP 401).`;
+            expect(detectAgentFailureKind(withPreflight)).to.equal('provider_key_rejected');
+            expect(describeAgentTurnFailure(withPreflight)?.kind).to.equal('provider_key');
+        });
+
         it('extracts the model only from that sentence', () => {
             expect(extractSelectedModelAccessFailure(CLI_TEXT)).to.equal(MODEL);
             expect(extractSelectedModelAccessFailure('There was an issue with the selected model.')).to.equal(undefined);
@@ -78,7 +84,7 @@ describe('QAIQ provider key failures', () => {
 
         it('leads with the BYOK fix and offers another agent, never an administrator or a sign-in', () => {
             expect(refusal).to.equal(
-                'Add your OpenRouter API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, '
+                'Add your OpenRouter API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
                 + 'or pick another agent from the agent chip. '
                 + 'Keys are personal: each account adds its own.',
             );

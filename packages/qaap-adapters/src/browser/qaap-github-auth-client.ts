@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingError, QaapUserFacingErrors } from '../common/qaap-user-facing-error';
 import {
     QAAP_AUTH_API_PATH,
     QAAP_BILLING_API_PATH,
@@ -266,11 +267,14 @@ export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositor
         // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
         // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
         clearQaapAuthSession();
-        throw new Error('GitHub session expired — please sign in again.');
+        throw new QaapUserFacingError(
+            nls.localize('qaap/githubRepositories/sessionExpired', 'Your GitHub session expired. Please sign in again.'),
+            401,
+            'session_expired',
+        );
     }
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to load GitHub repositories (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub repositories (${response.status})`);
     }
     return response.json() as Promise<QaapGithubRepositoriesResponse>;
 }
@@ -294,8 +298,7 @@ export async function fetchQaapGithubPullRequests(
         return { pullRequests: [], signedIn: false };
     }
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to load GitHub pull requests (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to load GitHub pull requests (${response.status})`);
     }
     const body = await response.json() as Partial<QaapGithubPullRequestsResponse>;
     return {
@@ -338,7 +341,7 @@ export async function searchQaapGithubPullRequests(request: QaapGithubPullReques
     }
     const body = await response.json().catch(() => ({})) as Partial<QaapGithubPullRequestSearchResponse> & { error?: string };
     if (!response.ok) {
-        throw new Error(body.error || `Failed to search GitHub pull requests (${response.status})`);
+        throw QaapUserFacingErrors.fromBody(JSON.stringify(body), response.status, undefined, `Failed to search GitHub pull requests (${response.status})`);
     }
     return {
         pullRequests: Array.isArray(body.pullRequests) ? body.pullRequests : [],
@@ -382,7 +385,7 @@ export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullReq
     ));
     const body = await response.json().catch(() => ({})) as Partial<QaapGithubMergePullRequestResponse> & { error?: string };
     if (!response.ok) {
-        throw new Error(body.error || `Failed to merge pull request (${response.status})`);
+        throw QaapUserFacingErrors.fromBody(JSON.stringify(body), response.status, undefined, `Failed to merge pull request (${response.status})`);
     }
     return body as QaapGithubMergePullRequestResponse;
 }
@@ -415,8 +418,7 @@ export async function openQaapGithubRepository(
         throw new Error(openTimedOut());
     }
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
-        throw new Error(body.message || body.error || `Failed to open GitHub repository (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to open GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
@@ -434,8 +436,7 @@ export async function deleteQaapGithubRepository(owner: string, name: string): P
         ),
     );
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to remove repository (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to remove repository (${response.status})`);
     }
 }
 
@@ -451,8 +452,7 @@ export async function deleteQaapWorktreeProject(slug: string): Promise<void> {
         ),
     );
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to remove the worktree (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to remove the worktree (${response.status})`);
     }
 }
 
@@ -471,8 +471,7 @@ export async function createQaapGithubRepository(request: QaapGithubCreateReposi
         throw new Error(createTimedOut());
     }
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
-        throw new Error(body.message || body.error || `Failed to create GitHub repository (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to create GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
@@ -497,8 +496,7 @@ export async function cloneQaapGithubRepository(repository: string): Promise<Qaa
         throw new Error(cloneTimedOut());
     }
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
-        throw new Error(body.message || body.error || `Failed to clone GitHub repository (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to clone GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
@@ -512,9 +510,8 @@ export class QaapApiRequestError extends Error {
 }
 
 async function readQaapApiError(response: Response, fallback: string): Promise<QaapApiRequestError> {
-    const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
-    const code = typeof body.error === 'string' && /^[a-z_]+$/.test(body.error) ? body.error : undefined;
-    return new QaapApiRequestError(body.message || body.error || fallback, response.status, code);
+    const error = await QaapUserFacingErrors.fromResponse(response, fallback);
+    return new QaapApiRequestError(error.message, response.status, error.code);
 }
 
 const workspaceJobTimedOut = (): string => nls.localize(
@@ -680,7 +677,10 @@ export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise
         devActivateEnabled?: boolean;
     };
     if (!response.ok || !body.url) {
-        const error = new Error(body.message || body.error || `Checkout failed (${response.status})`) as Error & {
+        const error = new QaapUserFacingError(
+            QaapUserFacingErrors.parse(JSON.stringify(body), response.status, undefined, `Checkout failed (${response.status})`).message,
+            response.status
+        ) as Error & {
             code?: string;
             devActivateEnabled?: boolean;
         };
@@ -699,8 +699,7 @@ export async function confirmQaapBillingCheckout(sessionId: string): Promise<Qaa
         body: JSON.stringify({ sessionId }),
     }), QAAP_BILLING_CHECKOUT_TIMEOUT_MS, billingTimedOut);
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
-        throw new Error(body.message || body.error || `Confirm checkout failed (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Confirm checkout failed (${response.status})`);
     }
     return response.json() as Promise<QaapBillingApiResponse>;
 }
@@ -714,8 +713,7 @@ export async function activateQaapBillingPlanDev(
         body: JSON.stringify({ planId }),
     }), QAAP_API_REQUEST_TIMEOUT_MS, billingTimedOut);
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Dev activate failed (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Dev activate failed (${response.status})`);
     }
     return fetchQaapBilling();
 }
@@ -727,8 +725,7 @@ export async function putQaapUserAiSettings(settings: Record<string, unknown>): 
         body: JSON.stringify({ settings }),
     }), QAAP_API_REQUEST_TIMEOUT_MS, userSettingsTimedOut);
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to save AI settings (${response.status})`);
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to save AI settings (${response.status})`);
     }
     const body = await response.json() as { settings?: Record<string, unknown> };
     return body.settings && typeof body.settings === 'object' ? body.settings : settings;

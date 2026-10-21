@@ -5,8 +5,11 @@
 
 import { expect } from 'chai';
 import {
+    describeAgentTurnFailure,
     detectAgentFailureKind,
+    detectAgentFailureProviderLabel,
     extractAgentLogFailureHint,
+    formatProviderPreflightNote,
     extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
     localizeAgentFailureMessage,
@@ -315,5 +318,89 @@ describe('localizeAgentFailureShortReason', () => {
 
     it('falls back to "stopped unexpectedly" for unclassified failures', () => {
         expect(localizeAgentFailureShortReason('Process exited with code 1')).to.equal('The agent stopped unexpectedly');
+    });
+});
+
+describe('BYOK provider key failures', () => {
+    // Production smoke, Oct 20 2026: QAIQ on `nvidia/nemotron-3-super-120b-a12b:free` (OpenRouter BYOK key)
+    // died in 0.9 s without reaching the API and blamed the model.
+    const qaiqModelIssueLog = [
+        '{"type":"system","subtype":"init","model":"nvidia/nemotron-3-super-120b-a12b:free","tools":[]}',
+        JSON.stringify({
+            type: 'result',
+            subtype: 'success',
+            is_error: true,
+            duration_ms: 912,
+            duration_api_ms: 0,
+            num_turns: 1,
+            error: 'invalid_request',
+            result: 'There\'s an issue with the selected model (nvidia/nemotron-3-super-120b-a12b:free). '
+                + 'It may not exist or you may not have access to it. Run --model to pick a different model.',
+        }),
+    ].join('\n');
+
+    it('leaves the ambiguous QAIQ model error as a model problem until the provider has been asked', () => {
+        expect(detectAgentFailureKind(qaiqModelIssueLog)).to.equal('model_unavailable');
+    });
+
+    it('names the rejected OpenRouter key once the runner preflight appended its note', () => {
+        const log = `${qaiqModelIssueLog}\n${formatProviderPreflightNote('OpenRouter', 'key_rejected', 401)}\n`;
+        expect(detectAgentFailureKind(log)).to.equal('provider_key_rejected');
+        const message = resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' });
+        expect(message).to.equal('Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.');
+        expect(message).not.to.match(/model/i);
+        const reason = describeAgentTurnFailure(message);
+        expect(reason?.kind).to.equal('provider_key');
+        expect(reason?.label).to.equal('API key rejected');
+    });
+
+    it('reads a valid key on a refused free model as the OpenRouter privacy setting', () => {
+        const log = `${qaiqModelIssueLog}\n${formatProviderPreflightNote('OpenRouter', 'free_model_refused', 200)}`;
+        expect(detectAgentFailureKind(log)).to.equal('provider_data_policy');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' }))
+            .to.match(/^This OpenRouter free model may be unavailable right now, or your OpenRouter privacy settings block free endpoints\./);
+    });
+
+    it('classifies a raw OpenRouter 401 body as a rejected key, not a sign-in', () => {
+        const log = 'API Error: 401 {"error":{"message":"No auth credentials found","code":401}} (openrouter.ai)';
+        expect(detectAgentFailureKind(log)).to.equal('provider_key_rejected');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' }))
+            .to.equal('Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.');
+        expect(detectAgentFailureKind('API Error: 401 OpenRouter: User not found.')).to.equal('provider_key_rejected');
+    });
+
+    it('does not turn a sign-in harness 401 or tool output into a BYOK key failure', () => {
+        expect(detectAgentFailureKind('unexpected status 401 Unauthorized: Incorrect API key provided: sk-***'))
+            .to.equal('auth');
+        expect(detectAgentFailureKind('Error: User not found.')).not.to.equal('provider_key_rejected');
+        // "key … revoked" only counts on a line that names a BYOK provider: a deploy key in tool output does not.
+        expect(detectAgentFailureKind('git: deploy key has been revoked')).not.to.equal('provider_key_rejected');
+        expect(detectAgentFailureKind('API Error: 403 OpenRouter: API key is disabled')).to.equal('provider_key_rejected');
+    });
+
+    it('classifies the OpenRouter free-model daily cap (429) as its own limit, not a generic rate limit', () => {
+        const log = 'API Error: 429 {"error":{"message":"Rate limit exceeded: free-models-per-day. '
+            + 'Add 10 credits to unlock 1000 free model requests per day","code":429}} openrouter';
+        expect(detectAgentFailureKind(log)).to.equal('provider_free_limit');
+        const message = resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' });
+        expect(message).to.match(/^OpenRouter free-model limit reached\./);
+        expect(describeAgentTurnFailure(message)?.kind).to.equal('usage_limit');
+    });
+
+    it('classifies the OpenRouter data-policy 404 and an out-of-credits 402', () => {
+        const policy = 'API Error: 404 {"error":{"message":"No endpoints found matching your data policy (Free model publication). '
+            + 'Configure: https://openrouter.ai/settings/privacy","code":404}}';
+        expect(detectAgentFailureKind(policy)).to.equal('provider_data_policy');
+        expect(describeAgentTurnFailure(resolveAgentTurnFailureMessage(policy))?.label).to.equal('Blocked by provider settings');
+        const credits = 'API Error: 402 {"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}';
+        expect(detectAgentFailureKind(credits)).to.equal('provider_credits');
+        expect(resolveAgentTurnFailureMessage(credits)).to.match(/^Your OpenRouter key is out of credits\./);
+    });
+
+    it('keeps the stored provider copy stable across a reload', () => {
+        const stored = localizeAgentFailureMessage('provider_key_rejected', 'OpenRouter');
+        expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
+        expect(detectAgentFailureProviderLabel(stored)).to.equal('OpenRouter');
+        expect(localizeAgentFailureMessage('provider_key_rejected')).to.equal('Your provider key was rejected. Update it in Settings → BYOK, then retry.');
     });
 });

@@ -91,6 +91,11 @@ export interface QaapAgentTask {
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     /** @deprecated Use {@link agentModel}. Kept for persisted tasks and older clients. */
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
+    /**
+     * What the runner's provider preflight confirmed after a failed run (`key_rejected`, `no_credits`,
+     * `free_model_refused`): the user's BYOK key, not the model, stopped the turn.
+     */
+    readonly providerKeyVerdict?: 'key_rejected' | 'no_credits' | 'free_model_refused';
     /** Login of the user who owns this task — used for multi-tenant isolation. */
     readonly ownerLogin?: string;
     /** Client-generated idempotency key for the create request that produced this task. */

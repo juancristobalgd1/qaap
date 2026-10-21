@@ -8,6 +8,13 @@
 // and asks the agent to answer with a random token: nothing is written to the repository, and the
 // token proves the reply came from this turn. One short turn per deploy.
 //
+// Provider keys are BYOK: the turn runs on the smoke user's own provider key. When the runner's
+// provider preflight proves the provider rejected that key or it has no credits (`[qaap] provider
+// check: … key_rejected|no_credits`), the result is inconclusive: a `::warning::` and exit 0, because
+// the account is broken, not the release. Everything else still fails, raw provider 401/429 lines
+// included (they may be Qaap no longer injecting the key, or a retried hiccup before a real failure). To decouple the smoke from a person's key, point
+// QAAP_SMOKE_SESSION at a dedicated smoke account with its own provider key (and QAAP_SMOKE_AGENT).
+//
 // Usage: node scripts/qaap-post-deploy-agent-smoke.mjs <public-base-url>
 // Env:
 //   QAAP_SMOKE_SESSION / QAAP_SMOKE_COOKIE  signed-in session (same as the user smoke)
@@ -19,7 +26,8 @@
 //   QAAP_SMOKE_AGENT_DRY_RUN=1  only the read-only checks (agent configured, project resolved)
 //   QAAP_SMOKE_AGENT_EXPECT_TOKEN=0  accept any completed turn (mock agents that ignore the prompt)
 //   QAAP_SMOKE_ARTIFACT_DIR     where the task detail is written on failure
-// Exit codes: 0 pass, 1 failure, 2 usage error.
+// Exit codes: 0 pass (or inconclusive: provider rejected the smoke user's credentials), 1 failure,
+// 2 usage error.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
@@ -71,22 +79,44 @@ export function pickSmokeAgent(list, requested) {
     return { agent: preferred.id, note };
 }
 
-const FAILURE_REASON_MAX_CHARS = 400;
-/** Credential-shaped substrings never reach the deploy log, even if a CLI echoed one. */
-const SECRET_PATTERNS = [
-    /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}/g,
-    /\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{8,}/g,
-    /\bAIza[A-Za-z0-9_-]{20,}/g,
-    /\b(Bearer|token|api[_-]?key)(\s*[:=]?\s*)[A-Za-z0-9._~+/=-]{12,}/gi,
-];
+/**
+ * The runner's own provider preflight note (qaap-cloud-workspace `qaap-provider-key-preflight.ts`,
+ * written by `formatProviderPreflightNote` in qaap-shared-core). It is the only proof that the BYOK
+ * key reached the agent AND the provider itself refused it. Raw provider lines are not enough: a
+ * "No auth credentials found" also means Qaap stopped injecting the key, a 429 may have been retried
+ * before a real failure, and a `status 403` may come from a tool. `free_model_refused` is not proof
+ * of an account problem either, so only these two verdicts make the smoke inconclusive.
+ */
+const PROVIDER_CREDENTIAL_NOTE = /^\[qaap\] provider check: [\w .-]+? (?:key_rejected|no_credits)\b.*$/m;
 
+/** Never echo a secret into the job log, even a masked one. */
 function redactSecrets(text) {
-    let redacted = text;
-    for (const pattern of SECRET_PATTERNS) {
-        redacted = redacted.replace(pattern, (match, label, separator) => typeof label === 'string' ? `${label}${separator}[redacted]` : '[redacted]');
-    }
-    return redacted;
+    return text
+        .replace(/\b(?:sk|pk|rk)-[\w-]{4,}/g, '<redacted>')
+        .replace(/\b(?:hf_|nvapi-|gsk_|xai-)[\w-]{4,}/g, '<redacted>')
+        .replace(/\bAIza[\w-]{8,}/g, '<redacted>')
+        .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>')
+        .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[\w]{8,}/g, '<redacted>')
+        .replace(/\b(token|api[_-]?key)(\s*[:=]\s*)[\w.~+/=-]{12,}/gi, '$1$2<redacted>');
 }
+
+/**
+ * The runner's preflight note on a failed task proving the model provider refused the smoke user's
+ * key, or `undefined` when the failure is Qaap's own (spawn, runner, timeout, crash, missing key).
+ */
+export function findProviderCredentialRejection(detail) {
+    const log = typeof detail?.log === 'string' ? detail.log : '';
+    const note = PROVIDER_CREDENTIAL_NOTE.exec(log)?.[0];
+    if (!note) {
+        return undefined;
+    }
+    const trimmed = redactSecrets(note.trim());
+    return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
+}
+
+export { redactSecrets };
+
+const FAILURE_REASON_MAX_CHARS = 400;
 
 function errorText(value) {
     if (typeof value === 'string') {
@@ -101,7 +131,7 @@ function errorText(value) {
 /**
  * Why a task failed, from its stored log, for the deploy log: the CLI's final `is_error` result,
  * else its last error record, else the last plain line (e.g. the runner's own refusal "Add your
- * OpenRouter API key in Settings → AI Features to use QAIQ, …"). Redacted and truncated; undefined
+ * OpenRouter API key in Settings → BYOK to use QAIQ, …"). Redacted and truncated; undefined
  * when the log is empty. Provider keys are BYOK: the smoke account needs its own key in its Settings.
  */
 export function describeTaskFailure(detail) {
@@ -138,12 +168,19 @@ export function describeTaskFailure(detail) {
     return safe.length > FAILURE_REASON_MAX_CHARS ? `${safe.slice(0, FAILURE_REASON_MAX_CHARS - 1)}…` : safe;
 }
 
-/** Pass/fail verdict for a finished task detail. */
+/**
+ * Pass/fail verdict for a finished task detail. A `failed` turn whose provider refused the smoke
+ * user's key is `inconclusive`: the release ran the turn, the account's credentials stopped it.
+ */
 // `completed_with_warnings` = the turn finished but the repository's own checks were red: that is the
 // project's state, not the release's, so it passes with a warning.
 export function judgeTask(detail, token) {
     const state = detail?.state;
     if (state !== 'completed' && state !== 'completed_with_warnings') {
+        const rejection = state === 'failed' ? findProviderCredentialRejection(detail) : undefined;
+        if (rejection) {
+            return { ok: false, inconclusive: true, reason: `the model provider rejected the smoke user's credentials: ${rejection}` };
+        }
         const why = describeTaskFailure(detail);
         return { ok: false, reason: `task ended in state ${state ?? '<missing>'} (exit ${detail?.exitCode ?? '-'})${why ? `: ${why}` : ''}` };
     }
@@ -280,6 +317,12 @@ async function main(argv, env) {
     }
 
     const verdict = judgeTask(detail, expectToken ? token : undefined);
+    if (verdict.inconclusive) {
+        writeDiagnostics(artifactDir, detail);
+        console.log(`::warning::Post-deploy agent smoke inconclusive: task ${taskId} failed because ${verdict.reason}. `
+            + 'Update the smoke account\'s provider key in Settings → BYOK, or use a dedicated smoke account (QAAP_SMOKE_SESSION, QAAP_SMOKE_AGENT).');
+        return 0;
+    }
     if (!verdict.ok) {
         writeDiagnostics(artifactDir, detail);
         throw new SmokeError(verdict.reason);

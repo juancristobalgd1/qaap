@@ -112,7 +112,7 @@ Edit `.env`:
 | `QAAP_PUBLIC_HOST` | `161.97.69.219.sslip.io` | Public hostname served by Caddy |
 | `QAAP_OAUTH_PUBLIC_URL` | `https://161.97.69.219.sslip.io` | Public HTTPS origin (OAuth + dev preview) |
 | `QAAP_GITHUB_CLIENT_ID` / `SECRET` | from GitHub OAuth app | Login (or `QAAP_SKIP_AUTH=true` for private labs) |
-| `OPENROUTER_API_KEY` | `sk-or-…` | Self-hosted / skip-auth only. Signed-in users never receive server provider keys: QAIQ provider keys are BYOK, each user adds their own in Settings → AI Features (production runs without this var) |
+| `OPENROUTER_API_KEY` | `sk-or-…` | Self-hosted / skip-auth only. Signed-in users never receive server provider keys: QAIQ provider keys are BYOK, each user adds their own in Settings → BYOK (production runs without this var) |
 | `QAAP_DEFAULT_AGENT` | `qaiq` | Default agent (already the image default) |
 | `QAAP_MOBILE_ENTRY` | unset (on) | Signed-in phones boot `bundle-mobile.js` (Work Hub without IDE code); a failure falls back to `bundle.js` for the tab. `0` is the kill switch: every phone loads `bundle.js` |
 | `CODEX_CLI_VERSION` | `0.144.5` | Codex CLI version for a source build |
@@ -318,10 +318,10 @@ Background jobs read credentials in this order:
 2. **Theia user preferences** under `/home/theia/.theia` (persisted via volume `qaap-theia-user`)
 
 On a hosted (signed-in) deployment QAIQ keys are BYOK: each user, including the post-deploy smoke
-account, adds their own provider key in Settings → AI Features; operator `.env` keys are withheld
+account, adds their own provider key in Settings → BYOK; operator `.env` keys are withheld
 from tenants by design. Until a user has a key, QAIQ shows as not connected, is never picked as their
 default agent, and a QAIQ turn is refused before spawning with "Add your OpenRouter API key in
-Settings → AI Features to use QAIQ, or pick another agent from the agent chip." For self-hosted /
+Settings → BYOK to use QAIQ, or pick another agent from the agent chip." For self-hosted /
 skip-auth runs, set at least one key in `.env` (then `docker compose up -d theia`).
 
 OpenRouter example in `.env`:

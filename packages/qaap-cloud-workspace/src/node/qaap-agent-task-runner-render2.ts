@@ -637,7 +637,7 @@ export function logDefaultAgentOverriddenOnce(
     }
     logged.add(agentId);
     warn(`[qaap-agent-tasks] QAAP_DEFAULT_AGENT=${agentId} is not usable for at least one user (disabled, signed out, or no API key of `
-        + 'their own in Settings → AI Features); they get the next usable agent instead.');
+        + 'their own in Settings → BYOK); they get the next usable agent instead.');
     return true;
 }
 

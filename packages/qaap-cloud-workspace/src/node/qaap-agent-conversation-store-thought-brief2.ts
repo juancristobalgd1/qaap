@@ -158,6 +158,11 @@ export async function maybeRetryTurnWithFallbackModelViaGraphExtracted(ctx: Qaap
         if (!agentSupportsModelPicker(turnAgentId)) {
             return false;
         }
+        // The preflight proved the user's BYOK key is rejected or out of credits: another model
+        // of this agent uses the same key, so a fallback retry would only fail again.
+        if (task.providerKeyVerdict === 'key_rejected' || task.providerKeyVerdict === 'no_credits') {
+            return false;
+        }
         // Same retriability contract as the imperative branch — including the quota exclusion,
         // which is neither of these classifications.
         const toolSupportFailure = agentTurnHasRetryableToolSupportFailure(agentMessage);

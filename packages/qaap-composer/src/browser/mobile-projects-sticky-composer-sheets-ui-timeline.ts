@@ -336,7 +336,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                 && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference?.(key));
             // A Settings-key agent (QAIQ) is unavailable only for lack of a provider key for the model it
             // routes to (keys are BYOK). That includes an owner with *some* key but not that provider's,
-            // so it is never a CLI sign-in: always offer "Add API key" (Settings → AI Features).
+            // so it is never a CLI sign-in: always offer "Add API key" (Settings → BYOK).
             // Mapping every unavailable QAIQ entry to needsApiKey is only correct because a missing
             // key is the sole way the backend makes QAIQ unavailable (its connection state comes
             // from the per-owner key preflight); revisit this if QAIQ gains another unavailable cause.

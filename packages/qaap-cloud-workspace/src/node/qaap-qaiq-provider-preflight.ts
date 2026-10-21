@@ -99,11 +99,11 @@ export function formatQaiqProviderOperatorHint(failure: QaapQaiqProviderPrefligh
         + (failure.vendor ? ` (the turn's model routes to ${failure.vendor}).` : ' (no model provider is configured).');
     if (withheldFromOwner) {
         return `${head} Signed-in users never receive the server's ${envName} (operator provider keys are withheld from tenants by design), `
-            + `so each user must add their own key in Settings → AI Features (${pref}). Setting ${envName} in /opt/qaap/.env only covers `
+            + `so each user must add their own key in Settings → BYOK (${pref}). Setting ${envName} in /opt/qaap/.env only covers `
             + 'local / skip-auth runs. Users can also pick another signed-in agent.';
     }
     return `${head} Set ${envName} in the server env (Docker: uncomment it in /opt/qaap/.env — docker-compose.yml passes it to the theia `
-        + `service — then \`docker compose up -d theia\`), or add the key in Settings → AI Features (${pref}).`;
+        + `service — then \`docker compose up -d theia\`), or add the key in Settings → BYOK (${pref}).`;
 }
 
 /** Thrown by the QAIQ key preflight; the runner marks the task so model fallback never re-spawns it. */

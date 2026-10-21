@@ -95,7 +95,7 @@ describe('QAIQ provider preflight', () => {
             expect(logDefaultAgentOverriddenOnce('qaiq', line => lines.push(line), logged)).to.equal(false);
             expect(lines).to.have.length(1);
             expect(lines[0]).to.contain('QAAP_DEFAULT_AGENT=qaiq');
-            expect(lines[0]).to.contain('Settings → AI Features');
+            expect(lines[0]).to.contain('Settings → BYOK');
         });
 
         it('logs once per provider and audience', () => {
@@ -162,7 +162,7 @@ describe('QAIQ provider preflight', () => {
         it('refuses a keyless owner before spawn with the BYOK copy, and runs the owner who has a key', () => {
             const runner = createRunner();
             expect(() => runner.assertQaiqConfigured('qaiq', 'bob', NEMOTRON))
-                .to.throw('Add your OpenRouter API key in Settings → AI Features to use QAIQ, pick a model from a provider you have a key for, '
+                .to.throw('Add your OpenRouter API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
                     + 'or pick another agent from the agent chip.');
             expect(() => runner.assertQaiqConfigured('qaiq', 'alice', NEMOTRON)).to.not.throw();
         });
