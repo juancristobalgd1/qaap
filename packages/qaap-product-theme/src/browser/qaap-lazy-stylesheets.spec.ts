@@ -40,4 +40,24 @@ describe('QaapLazyStylesheets.loadModules', () => {
         links.forEach(link => link.dispatchEvent(new window.Event('load')));
         await loading;
     });
+
+    it('reuses a stylesheet the login gate already attached and keeps later sheets after it', async () => {
+        const anchor = document.createElement('link');
+        anchor.rel = 'stylesheet';
+        anchor.href = 'bundle-mobile.css';
+        const preattached = document.createElement('link');
+        preattached.rel = 'stylesheet';
+        preattached.href = 'chunk-BOOT.css';
+        preattached.dataset.qaapLazy = '';
+        document.head.append(anchor, preattached);
+        const loading = QaapLazyStylesheets.loadModules(
+            Promise.resolve({ default: 'chunk-BOOT.css' }),
+            Promise.resolve({ default: 'chunk-LATER.css' }),
+        );
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(lazyHrefs().filter(href => href === 'chunk-BOOT.css')).to.have.length(1);
+        expect(preattached.nextElementSibling?.getAttribute('href')).to.equal('chunk-LATER.css');
+        Array.from(document.querySelectorAll('link[data-qaap-lazy]')).forEach(link => link.dispatchEvent(new window.Event('load')));
+        await loading;
+    });
 });

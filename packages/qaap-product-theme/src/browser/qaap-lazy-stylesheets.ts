@@ -57,6 +57,11 @@ export namespace QaapLazyStylesheets {
         if (typeof document === 'undefined') {
             return Promise.resolve();
         }
+        const attached = findAttached(url);
+        if (attached) {
+            lastInserted = attached;
+            return whenApplied(attached);
+        }
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = url;
@@ -78,5 +83,31 @@ export namespace QaapLazyStylesheets {
         }
         lastInserted = link;
         return loaded;
+    }
+
+    /**
+     * A `?qaap-lazy-boot` sheet the login gate already attached with the bundle stylesheet (same
+     * cascade position: directly after it, in import order). Reused instead of fetched again.
+     */
+    function findAttached(url: string): HTMLLinkElement | undefined {
+        for (const link of Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][data-qaap-lazy]'))) {
+            if (link.href === url || link.getAttribute('href') === url) {
+                return link;
+            }
+        }
+        return undefined;
+    }
+
+    function whenApplied(link: HTMLLinkElement): Promise<void> {
+        if (link.sheet) {
+            return Promise.resolve();
+        }
+        return new Promise<void>(resolve => {
+            link.addEventListener('load', () => resolve(), { once: true });
+            link.addEventListener('error', () => {
+                console.warn(`[qaap] lazy stylesheet failed to load: ${link.href}`);
+                resolve();
+            }, { once: true });
+        });
     }
 }

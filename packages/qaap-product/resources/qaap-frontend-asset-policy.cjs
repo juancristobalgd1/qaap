@@ -58,4 +58,21 @@ function patchIndexForFreshAssets(html, buildVersion) {
     return deferIdeAssetsOnPhones(patched);
 }
 
-module.exports = { deferIdeAssetsOnPhones, patchIndexForFreshAssets };
+const BOOT_STYLESHEETS_META = /[ \t]*<meta name="qaap-boot-stylesheets" content="[^"]*">\n?/g;
+const BOOT_STYLESHEET_FILE = /^chunk-[A-Z0-9]+\.css$/;
+
+/**
+ * Publish the `?qaap-lazy-boot` stylesheets (content-hashed file names, in cascade order) for the
+ * login gate, which attaches them with the bundle stylesheet when it boots into the Work Hub.
+ * Idempotent: a previous build's list is replaced.
+ */
+function injectBootStylesheets(html, files) {
+    const valid = (files || []).filter(file => typeof file === 'string' && BOOT_STYLESHEET_FILE.test(file));
+    const stripped = html.replace(BOOT_STYLESHEETS_META, '');
+    if (!valid.length) {
+        return stripped;
+    }
+    return stripped.replace('</head>', `<meta name="qaap-boot-stylesheets" content="${escapeAttribute(valid.join(' '))}">\n</head>`);
+}
+
+module.exports = { deferIdeAssetsOnPhones, injectBootStylesheets, patchIndexForFreshAssets };

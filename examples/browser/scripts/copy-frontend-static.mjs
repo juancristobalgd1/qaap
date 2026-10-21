@@ -16,7 +16,7 @@ import resolvePackagePath from 'resolve-package-path';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const qaapRoot = path.dirname(resolvePackagePath('@theia/qaap-product', root));
 const requireFromBrowserScript = createRequire(import.meta.url);
-const { patchIndexForFreshAssets: patchFreshAssets } = requireFromBrowserScript(
+const { injectBootStylesheets, patchIndexForFreshAssets: patchFreshAssets } = requireFromBrowserScript(
     path.join(qaapRoot, 'resources', 'qaap-frontend-asset-policy.cjs'),
 );
 const libFrontend = path.join(root, 'lib', 'frontend');
@@ -69,6 +69,17 @@ function patchIndexForFreshAssets(indexPath) {
     }
     const html = patchFreshAssets(fs.readFileSync(indexPath, 'utf8'), BUILD_VERSION);
     fs.writeFileSync(indexPath, html, 'utf8');
+}
+
+/** Lazy stylesheets the Work Hub landing needs at first paint (written by esbuild.mjs). */
+function patchIndexForBootStylesheets(indexPath) {
+    const listPath = path.join(root, 'lib', '.qaap-boot-stylesheets.json');
+    if (!fs.existsSync(indexPath) || !fs.existsSync(listPath)) {
+        return;
+    }
+    const files = JSON.parse(fs.readFileSync(listPath, 'utf8'))
+        .filter(file => fs.existsSync(path.join(libFrontend, file)));
+    fs.writeFileSync(indexPath, injectBootStylesheets(fs.readFileSync(indexPath, 'utf8'), files), 'utf8');
 }
 
 /**
@@ -132,11 +143,13 @@ patchIndexForLoginGate(libIndex);
 // visual contract is fetched as one coherent build. Chunks below the bundle are
 // content-hashed and need no stamp (see verifyFrontendChunkGraph).
 patchIndexForFreshAssets(libIndex);
+patchIndexForBootStylesheets(libIndex);
 // `theia start` serves the generated source index directly in development, while
 // the bundled/static server serves lib/frontend/index.html. Keep both entry points
 // versioned so a browser cannot bypass the fresh bundle through the dev server.
 patchIndexForLoginGate(srcIndex);
 patchIndexForFreshAssets(srcIndex);
+patchIndexForBootStylesheets(srcIndex);
 copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 // Service worker must sit at the same scope as index.html so it can control the whole app.
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));

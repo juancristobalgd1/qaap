@@ -224,11 +224,20 @@ const woff2OnlyFontsPlugin = {
  * and the import's default export is that file's absolute URL. Frontend code
  * attaches it with `<link rel="stylesheet">` when its surface first opens
  * (see `QaapLazyStylesheets` in @theia/qaap-product-theme).
+ *
+ * `?qaap-lazy-boot` is the same, for the few lazy sheets the Work Hub landing (the default
+ * surface) needs at first paint: they stay out of the entry stylesheet, but their file names are
+ * written in import order to `lib/.qaap-boot-stylesheets.json`; copy-frontend-static publishes
+ * them in index.html and the login gate attaches them together with the bundle stylesheet, so they
+ * have applied before the frontend modules even load.
  */
-const LAZY_CSS_SUFFIX = /\?qaap-lazy$/;
+const LAZY_CSS_SUFFIX = /\?qaap-lazy(-boot)?$/;
 const LAZY_CSS_NAMESPACE = 'qaap-lazy-css';
 /** Source stylesheet path → emitted file name; survives incremental (watch) rebuilds. */
 const lazyStylesheetOutputs = new Map();
+/** Source stylesheet path → `[importer, offset of the specifier in it]` of `?qaap-lazy-boot` imports. */
+const bootStylesheetOrder = new Map();
+const BOOT_STYLESHEETS_FILE = path.join(FRONTEND_OUT_DIR, '..', '.qaap-boot-stylesheets.json');
 
 function lazyCssHash(contents) {
     // Same alphabet as esbuild's `[hash]` so the file matches PRUNABLE_CHUNK and the
@@ -247,6 +256,10 @@ const lazyCssPlugin = {
             });
             if (resolved.errors.length) {
                 return { errors: resolved.errors };
+            }
+            if (args.path.endsWith('?qaap-lazy-boot')) {
+                const importerSource = fs.readFileSync(args.importer, 'utf8');
+                bootStylesheetOrder.set(resolved.path, [args.importer, importerSource.indexOf(args.path)]);
             }
             return { path: resolved.path, namespace: LAZY_CSS_NAMESPACE };
         });
@@ -279,6 +292,20 @@ const lazyCssPlugin = {
                 loader: 'js',
                 watchFiles: Object.keys(result.metafile.inputs).map(input => path.resolve(input)),
             };
+        });
+        build.onEnd(result => {
+            if (result.errors.length) {
+                return;
+            }
+            const bootStylesheets = [...bootStylesheetOrder.entries()]
+                .sort(([, [importerA, offsetA]], [, [importerB, offsetB]]) => importerA.localeCompare(importerB) || offsetA - offsetB)
+                .map(([source]) => lazyStylesheetOutputs.get(source))
+                .filter(Boolean);
+            try {
+                fs.writeFileSync(BOOT_STYLESHEETS_FILE, JSON.stringify(bootStylesheets) + '\n', 'utf8');
+            } catch (error) {
+                console.warn('[qaap] boot stylesheet list skipped:', error);
+            }
         });
     },
 };
