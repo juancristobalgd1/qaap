@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
+
 /** `GET` lists; `PUT` / `DELETE` `/:owner/:repo` turn GitHub issue tasks on / off (doc/qaap-external-task-inputs.md). */
 export const QAAP_EXTERNAL_TASK_GITHUB_OPT_IN_PATH = '/qaap/api/external-tasks/github/opt-in';
 
@@ -40,7 +42,7 @@ export class QaapExternalTaskOptInClient {
             credentials: 'include',
         });
         if (!response.ok) {
-            throw new Error((await response.text()) || response.statusText);
+            throw await QaapUserFacingErrors.fromResponse(response);
         }
         const key = `${owner}/${repo}`.toLowerCase();
         this.repositories ??= new Set();

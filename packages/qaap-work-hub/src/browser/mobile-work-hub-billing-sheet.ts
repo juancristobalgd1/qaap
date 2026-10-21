@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     activateQaapBillingPlanDev,
@@ -612,7 +613,7 @@ export class MobileWorkHubBillingSheet {
                 await this.runDevActivate(planId, button);
                 return;
             }
-            button.textContent = err.message || nls.localize('qaap/billing/ctaFailed', 'Checkout failed');
+            button.textContent = QaapUserFacingErrors.toMessage(err) || nls.localize('qaap/billing/ctaFailed', 'Checkout failed');
         } finally {
             this.checkoutBusy = false;
             if (this.visible && button.isConnected && button.textContent !== previous) {
