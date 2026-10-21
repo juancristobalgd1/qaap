@@ -389,7 +389,29 @@ describe('QaapAgentTaskRunner.defaultAgentFresh with failing auth probes (real r
         expect(await runner.defaultAgentFresh('alice', 500)).to.equal('claude');
     });
 
-    it('a docker tenant without a repos root yet (no tenant HOME, so no login) defaults to keyless OpenCode', async () => {
+    it('a stale failed probe is re-probed within the budget, so a now signed-in agent wins again', async () => {
+        const runner = runnerWithProbe(() => Promise.resolve('connected'));
+        const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number; probeFailed?: boolean }> })
+            .agentConnectionStates;
+        states.set('claude:alice', { state: 'unknown', at: 0, probeFailed: true });
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('claude');
+        expect(claudeChip(runner)).to.equal('connected');
+    });
+
+    it('a fresh failed probe is not re-probed and keeps the keyless default', async () => {
+        let probes = 0;
+        const runner = runnerWithProbe(() => {
+            probes++;
+            return Promise.resolve('connected');
+        });
+        const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number; probeFailed?: boolean }> })
+            .agentConnectionStates;
+        states.set('claude:alice', { state: 'unknown', at: Date.now(), probeFailed: true });
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('opencode');
+        expect(probes).to.equal(0);
+    });
+
+    it('a docker tenant without a repos root yet (the probe cannot run without its tenant cwd) defaults to keyless OpenCode', async () => {
         process.env.QAAP_CLOUD_MODE = 'docker';
         process.env.QAAP_REPOS_ROOT = path.join(os.tmpdir(), `qaap-default-agent-missing-${process.pid}-${Date.now()}`);
         const runner = runnerWithProbe();

@@ -681,6 +681,8 @@ export function defaultAgentExtracted(
  * state is fresh). A probe still pending at the deadline leaves that agent `unknown`, which
  * keeps the pre-keyless default for it rather than falling through to the keyless agent; a probe
  * that failed is expected to make `isAgentEnabled` false for it (the runner treats it as signed out).
+ * `isProbeWorthAwaiting` (default `isAgentEnabled`) picks the probes to await, so a caller can still
+ * re-probe an agent that an earlier failed probe made unselectable.
  */
 export async function defaultAgentFreshExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -689,9 +691,10 @@ export async function defaultAgentFreshExtracted(
     refreshConnectionState: (agentId: string) => Promise<unknown> | undefined,
     budgetMs: number,
     hasAuthSignal: (agentId: string) => boolean = () => true,
+    isProbeWorthAwaiting: (agentId: string) => boolean = isAgentEnabled,
 ): Promise<string> {
     const pending = DEFAULT_AGENT_PREFERENCE
-        .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id))
+        .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isProbeWorthAwaiting(id))
         .map(id => refreshConnectionState(id))
         .filter((probe): probe is Promise<unknown> => !!probe);
     if (pending.length > 0) {

@@ -737,7 +737,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * device authentication.
      *
      * Rejects when the tenant probe cannot run: the wrapper failed, or a docker tenant has no repos
-     * root yet and therefore no tenant HOME that could hold a login. The caller records a failed probe.
+     * root yet, which the probe needs as its tenant cwd (in tenant-backend mode HOME is
+     * QAAP_TENANT_BACKEND_HOME, not under the repos root). The caller records a failed probe.
      */
     protected async probeAgentConnectionState(
         agentId: string,
@@ -758,7 +759,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
         const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
         if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
-            throw new Error(`No tenant workspace for ${safeUserIdSegment(owner)} yet, so no CLI login can exist there.`);
+            // The probe runs in the tenant cwd; without it there is nothing to run it in.
+            throw new Error(`No tenant workspace for ${safeUserIdSegment(owner)} yet; the auth probe cannot run without its tenant cwd.`);
         }
         try {
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
@@ -851,13 +853,18 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             this,
             agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
             agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
-            // Only a never-probed agent is worth waiting for; a stale entry keeps its last known
-            // state while it refreshes in the background, so warm requests pay no latency.
-            agentId => this.agentConnectionStates.has(this.agentConnectionCacheKey(agentId, ownerLogin))
-                ? undefined
-                : this.refreshAgentConnectionState(agentId, ownerLogin),
+            // Only a never-probed agent, or one whose last probe failed, is worth waiting for: a stale
+            // answer keeps its last known state while it refreshes in the background, so warm requests
+            // pay no latency, but a stale failure (e.g. from before the tenant workspace existed) must
+            // not pin a new conversation to the keyless fallback. A fresh failure is not re-probed.
+            agentId => {
+                const cached = this.agentConnectionStates.get(this.agentConnectionCacheKey(agentId, ownerLogin));
+                return cached && !cached.probeFailed ? undefined : this.refreshAgentConnectionState(agentId, ownerLogin);
+            },
             budgetMs,
             agentId => this.hasAgentAuthSignal(agentId, ownerLogin),
+            // A failed probe makes the agent unselectable, yet a stale failure must still be re-probed.
+            agentId => this.isAgentEnabled(agentId, ownerLogin),
         );
     }
 
