@@ -194,11 +194,6 @@ export function stripeSubscriptionIdFromInvoice(invoice: QaapStripeInvoiceObject
         ?? stripeObjectId(invoice.subscription_details?.subscription);
 }
 
-export function stripeLoginFromInvoice(invoice: QaapStripeInvoiceObject): string | undefined {
-    const metadata = invoice.parent?.subscription_details?.metadata ?? invoice.subscription_details?.metadata;
-    return metadata?.login?.trim() || undefined;
-}
-
 export function stripeCustomerIdFromObject(object: { readonly customer?: string | { readonly id?: string } | null }): string | undefined {
     return stripeObjectId(object.customer);
 }

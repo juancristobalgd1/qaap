@@ -343,7 +343,7 @@ drain_request() {
     docker compose exec -T theia node -e '
         const [method, path, body] = process.argv.slice(1);
         const os = require("os");
-        const tokenFile = process.env.QAAP_DEPLOY_TOKEN_FILE || require("path").join(os.homedir(), ".qaap", "deploy-drain.token");
+        const tokenFile = process.env.QAAP_DEPLOY_TOKEN_FILE || require("path").join(os.homedir(), ".qaap", "deploy", "drain.token");
         let token = "";
         try { token = require("fs").readFileSync(tokenFile, "utf8").trim(); } catch { /* older image */ }
         const headers = { "content-type": "application/json" };
@@ -377,9 +377,14 @@ drain_agent_turns() {
 ')" ]]; then
         return 0
     fi
-    local answer running
-    if ! answer="$(drain_request POST drain '{"draining":true}')"; then
-        echo "[qaap-vps-update] serving container has no agent drain endpoint; switching without drain"
+    local answer running status=0
+    answer="$(drain_request POST drain '{"draining":true}')" || status=$?
+    if (( status == 2 )); then
+        echo "[qaap-vps-update] serving container refused the agent drain (an image without the endpoint," \
+            "or a missing/mismatched deploy token); switching without drain" >&2
+        return 0
+    elif (( status != 0 )); then
+        echo "[qaap-vps-update] serving container did not answer the agent drain request; switching without drain" >&2
         return 0
     fi
     DRAIN_ACTIVE=1

@@ -591,7 +591,12 @@ Work Hub → Billing upgrades Pro / Team via Stripe Checkout. The backend needs 
    - **Qaap Team** — recurring monthly **€79** → copy `price_…` → `STRIPE_PRICE_TEAM_MONTHLY`
 2. Developers → Webhooks → **Add endpoint**:
    - URL: `https://<QAAP_PUBLIC_HOST>/qaap/api/billing/webhook`
-   - Events: `checkout.session.completed`, `customer.subscription.deleted`
+   - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`
+   - Subscribe to all four on the same endpoint at once. The plan follows the subscription status: only
+     `active`/`trialing` keep Pro/Team, `past_due`/`unpaid`/`incomplete`/`paused` drop to Starter until
+     an `updated` event reports it active again, and `deleted` ends it. Without `customer.subscription.updated`
+     a past-due customer keeps the paid plan; `invoice.payment_failed` is only logged (a failed proration
+     leaves the subscription active). Events are deduplicated by id and applied in `created` order.
    - Copy the endpoint signing secret → `STRIPE_WEBHOOK_SECRET`
 3. On the VPS:
 

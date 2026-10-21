@@ -40,12 +40,13 @@ const DEFAULT_DEPLOY_DRAIN_MAX_MS = 45 * 60 * 1000;
 export const QAAP_DEPLOY_TOKEN_HEADER = 'x-qaap-deploy-token';
 
 /**
- * File holding the deploy token: `QAAP_DEPLOY_TOKEN_FILE`, else `~/.qaap/deploy-drain.token` of the
+ * File holding the deploy token: `QAAP_DEPLOY_TOKEN_FILE`, else `~/.qaap/deploy/drain.token` of the
  * backend user. `scripts/qaap-vps-update.sh` reads it through `docker compose exec theia`, which runs as
- * that same user; agents running under their own uid cannot read it (file 0600, directory 0700).
+ * that same user; agents running under their own uid cannot read it (file 0600). Its directory is made
+ * 0700, so it must be dedicated to the token: never `~/.qaap` itself, whose `bin/` is on the agents' PATH.
  */
 export function resolveQaapDeployTokenPath(env: NodeJS.ProcessEnv = process.env): string {
-    return env.QAAP_DEPLOY_TOKEN_FILE?.trim() || path.join(os.homedir(), '.qaap', 'deploy-drain.token');
+    return env.QAAP_DEPLOY_TOKEN_FILE?.trim() || path.join(os.homedir(), '.qaap', 'deploy', 'drain.token');
 }
 
 @injectable()

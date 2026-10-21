@@ -52,7 +52,7 @@ describe('QaapTenantRuntimeEndpoint deploy drain', () => {
 
     it('refuses a loopback request without the deploy token', () => {
         const endpoint = new TestRuntimeEndpoint();
-        endpoint.writeToken(path.join(tmpDir, 'qaap', 'deploy-drain.token'));
+        endpoint.writeToken(path.join(tmpDir, 'qaap', 'deploy', 'drain.token'));
         expect(endpoint.drain({})).to.equal(404);
         expect(endpoint.drain({ [QAAP_DEPLOY_TOKEN_HEADER]: 'wrong' })).to.equal(404);
         expect(endpoint.drains).to.deep.equal([]);
@@ -60,7 +60,7 @@ describe('QaapTenantRuntimeEndpoint deploy drain', () => {
 
     it('accepts the token read from the file, but only over loopback without forwarding headers', () => {
         const endpoint = new TestRuntimeEndpoint();
-        const tokenPath = path.join(tmpDir, 'qaap', 'deploy-drain.token');
+        const tokenPath = path.join(tmpDir, 'qaap', 'deploy', 'drain.token');
         endpoint.writeToken(tokenPath);
         const token = fs.readFileSync(tokenPath, 'utf8').trim();
         expect(endpoint.drain({ [QAAP_DEPLOY_TOKEN_HEADER]: token }, '10.0.0.5')).to.equal(404);
@@ -73,7 +73,7 @@ describe('QaapTenantRuntimeEndpoint deploy drain', () => {
         if (process.platform === 'win32') {
             this.skip();
         }
-        const tokenPath = path.join(tmpDir, 'qaap', 'deploy-drain.token');
+        const tokenPath = path.join(tmpDir, 'qaap', 'deploy', 'drain.token');
         fs.mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o755 });
         fs.writeFileSync(tokenPath, 'planted\n', { mode: 0o644 });
         const endpoint = new TestRuntimeEndpoint();
@@ -84,8 +84,21 @@ describe('QaapTenantRuntimeEndpoint deploy drain', () => {
         expect(fs.statSync(path.dirname(tokenPath)).mode & 0o777).to.equal(0o700);
     });
 
+    it('locks down only the token directory, never the shared ~/.qaap above it', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const qaapDir = path.join(tmpDir, 'qaap');
+        fs.mkdirSync(path.join(qaapDir, 'bin'), { recursive: true, mode: 0o755 });
+        fs.chmodSync(qaapDir, 0o755);
+        new TestRuntimeEndpoint().writeToken(path.join(qaapDir, 'deploy', 'drain.token'));
+        expect(fs.statSync(qaapDir).mode & 0o777).to.equal(0o755);
+        expect(fs.statSync(path.join(qaapDir, 'bin')).mode & 0o777).to.equal(0o755);
+        expect(fs.statSync(path.join(qaapDir, 'deploy')).mode & 0o777).to.equal(0o700);
+    });
+
     it('resolves the token path from QAAP_DEPLOY_TOKEN_FILE or the backend home', () => {
         expect(resolveQaapDeployTokenPath({ QAAP_DEPLOY_TOKEN_FILE: '/run/qaap/token' })).to.equal('/run/qaap/token');
-        expect(resolveQaapDeployTokenPath({})).to.equal(path.join(os.homedir(), '.qaap', 'deploy-drain.token'));
+        expect(resolveQaapDeployTokenPath({})).to.equal(path.join(os.homedir(), '.qaap', 'deploy', 'drain.token'));
     });
 });

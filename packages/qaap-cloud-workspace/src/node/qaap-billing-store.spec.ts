@@ -212,6 +212,21 @@ describe('QaapBillingStore', () => {
             expect(old.account.planId).to.equal('pro');
         });
 
+        it('never switches to another subscription on a plain update, only from a completed Checkout', async () => {
+            const store = makeStore(filePath);
+            await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_team', planId: 'team', eventCreated: 100 });
+            const oldActive = await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_old', planId: 'pro', eventCreated: 200 });
+            expect(oldActive.applied).to.equal(false);
+            expect(oldActive.account.planId).to.equal('team');
+            expect(oldActive.account.stripeSubscriptionId).to.equal('sub_team');
+            const checkout = await store.applyStripeSubscription('alice', {
+                ...active, subscriptionId: 'sub_new', planId: 'pro', eventCreated: 300, adoptSubscription: true,
+            });
+            expect(checkout.applied).to.equal(true);
+            expect(checkout.account.planId).to.equal('pro');
+            expect(checkout.account.stripeSubscriptionId).to.equal('sub_new');
+        });
+
         it('does not refill allowances when the plan is unchanged', async () => {
             const store = makeStore(filePath);
             await store.applyStripeSubscription('alice', { ...active, eventCreated: 100 });

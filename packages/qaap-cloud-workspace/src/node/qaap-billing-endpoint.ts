@@ -30,7 +30,6 @@ import {
     retrieveCheckoutSession,
     stripeCustomerIdFromObject,
     stripeCustomerIdFromSession,
-    stripeLoginFromInvoice,
     stripeSubscriptionIdFromInvoice,
     stripeSubscriptionIdFromSession,
     verifyStripeWebhookEvent,
@@ -184,6 +183,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                 customerId: stripeCustomerIdFromSession(session),
                 subscriptionId: stripeSubscriptionIdFromSession(session),
                 eventCreated: session.created ?? 0,
+                adoptSubscription: true,
             });
             res.json(this.billingSnapshot(login, account));
         } catch (error) {
@@ -242,7 +242,12 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         }
 
         const eventId = event.id;
-        if (eventId && (this.stripeEventsInFlight.has(eventId) || await this.store.hasProcessedStripeEvent(eventId))) {
+        if (eventId && this.stripeEventsInFlight.has(eventId)) {
+            // The first delivery may still fail: answer non-2xx so Stripe retries instead of dropping it.
+            res.status(409).json({ error: 'event_in_progress' });
+            return;
+        }
+        if (eventId && await this.store.hasProcessedStripeEvent(eventId)) {
             res.json({ received: true, duplicate: true });
             return;
         }
@@ -281,6 +286,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                     customerId: stripeCustomerIdFromSession(session),
                     subscriptionId: stripeSubscriptionIdFromSession(session),
                     eventCreated,
+                    adoptSubscription: true,
                 });
             }
         } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
@@ -299,20 +305,15 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                 eventCreated,
             });
         } else if (event.type === 'invoice.payment_failed') {
+            // Recorded only. The plan follows the subscription status: a failed renewal also sends
+            // customer.subscription.updated with past_due, while a failed proration or one-off invoice
+            // leaves the subscription active and must not suspend the plan.
             const invoice = event.data.object as QaapStripeInvoiceObject;
-            const subscriptionId = stripeSubscriptionIdFromInvoice(invoice);
-            if (!subscriptionId) {
-                return; // one-off invoice: no plan to suspend
-            }
-            const login = stripeLoginFromInvoice(invoice) ?? await this.store.findLoginByStripeSubscription(subscriptionId);
-            if (login) {
-                await this.store.applyStripeSubscription(login, {
-                    status: 'past_due',
-                    customerId: stripeCustomerIdFromObject(invoice),
-                    subscriptionId,
-                    eventCreated,
-                });
-            }
+            console.info('[qaap-billing] Stripe invoice payment failed', {
+                eventId: event.id,
+                subscriptionId: stripeSubscriptionIdFromInvoice(invoice),
+                customerId: stripeCustomerIdFromObject(invoice),
+            });
         }
     }
 

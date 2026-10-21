@@ -203,7 +203,7 @@ describe('QaapBillingEndpoint Stripe webhook', () => {
         expect(JSON.parse(response.body)).to.deep.equal({ received: true });
         expect(calls).to.have.length(1);
         expect(calls[0][0]).to.equal('octocat');
-        expect(calls[0][1]).to.include({ status: 'active', planId: 'pro', subscriptionId: 'sub_1' });
+        expect(calls[0][1]).to.include({ status: 'active', planId: 'pro', subscriptionId: 'sub_1', adoptSubscription: true });
     });
 
     const deliver = async (app: express.Application, event: object): Promise<{ status: number; body: string }> => {
@@ -226,16 +226,58 @@ describe('QaapBillingEndpoint Stripe webhook', () => {
         expect(calls[0][1]).to.deep.equal({ status: 'past_due', planId: 'pro', customerId: 'cus_1', subscriptionId: 'sub_1', eventCreated: 500 });
     });
 
-    it('suspends the plan on invoice.payment_failed, finding the login by subscription id', async () => {
+    it('only logs invoice.payment_failed: the plan follows the subscription status', async () => {
         const calls: unknown[][] = [];
-        const response = await deliver(appWithEarlierJsonParser(calls, new Set(), { sub_9: 'octocat' }), {
+        const processed = new Set<string>();
+        const response = await deliver(appWithEarlierJsonParser(calls, processed, { sub_9: 'octocat' }), {
             id: 'evt_invoice', created: 600, type: 'invoice.payment_failed',
-            data: { object: { customer: 'cus_9', parent: { subscription_details: { subscription: 'sub_9' } } } },
+            data: { object: { customer: 'cus_9', parent: { subscription_details: { subscription: 'sub_9', metadata: { login: 'octocat' } } } } },
         });
         expect(response.status).to.equal(200);
+        expect(calls).to.have.length(0);
+        expect(processed.has('evt_invoice')).to.equal(true);
+    });
+
+    it('answers 409 to a redelivery while the first attempt is still running, so Stripe retries', async () => {
+        const calls: unknown[][] = [];
+        const processed = new Set<string>();
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        let entered: () => void = () => undefined;
+        const started = new Promise<void>(resolve => { entered = resolve; });
+        const app = express();
+        app.use(json());
+        const endpoint = new QaapBillingEndpoint();
+        Object.assign(endpoint, {
+            store: {
+                applyStripeSubscription: async (...args: unknown[]) => { calls.push(args); entered(); await gate; return { applied: true, account: {} }; },
+                findLoginByStripeSubscription: async () => undefined,
+                hasProcessedStripeEvent: async (id: string) => processed.has(id),
+                markStripeEventProcessed: async (id: string) => { processed.add(id); },
+            },
+        });
+        endpoint.configure(app);
+        const payload = JSON.stringify({
+            id: 'evt_slow', created: 800, type: 'customer.subscription.updated',
+            data: { object: { id: 'sub_1', status: 'active', metadata: { login: 'octocat', planId: 'pro' } } },
+        });
+        const first = post(app, payload, sign(payload));
+        await started;
+        const port = (server!.address() as AddressInfo).port;
+        const second = await new Promise<number>((resolve, reject) => {
+            const request = http.request({
+                host: '127.0.0.1', port, method: 'POST', path: QAAP_BILLING_WEBHOOK_API_PATH,
+                headers: { 'content-type': 'application/json', 'stripe-signature': sign(payload) },
+            }, response => { response.resume(); response.on('end', () => resolve(response.statusCode ?? 0)); });
+            request.once('error', reject);
+            request.end(payload);
+        });
+        expect(second).to.equal(409);
+        expect(processed.has('evt_slow')).to.equal(false);
+        release();
+        expect((await first).status).to.equal(200);
+        expect(processed.has('evt_slow')).to.equal(true);
         expect(calls).to.have.length(1);
-        expect(calls[0][0]).to.equal('octocat');
-        expect(calls[0][1]).to.include({ status: 'past_due', subscriptionId: 'sub_9', eventCreated: 600 });
     });
 
     it('applies a redelivered event id only once', async () => {

@@ -56,6 +56,8 @@ export interface QaapStripeSubscriptionUpdate {
     readonly customerId?: string;
     /** Unix seconds of the event (or Checkout session) this state comes from. */
     readonly eventCreated: number;
+    /** Set by a completed Checkout: lets the account move to this subscription from another one. */
+    readonly adoptSubscription?: boolean;
 }
 
 @injectable()
@@ -396,8 +398,9 @@ export class QaapBillingStore {
      * Applies a Stripe subscription state (webhook event or confirmed Checkout session). Entitled
      * statuses grant `planId` (or keep the current paid plan); any other status drops to Starter while
      * keeping the subscription id, so a recovered `past_due` is upgraded again by its next event.
-     * Deliveries older than the newest applied one, and non-entitled events of a subscription other than
-     * the account's current one, are ignored. Allowances reset only when the plan actually changes.
+     * Deliveries older than the newest applied one, and events of a subscription other than the
+     * account's current one (unless `adoptSubscription`), are ignored. Allowances reset only when the
+     * plan actually changes.
      */
     async applyStripeSubscription(
         login: string,
@@ -415,7 +418,9 @@ export class QaapBillingStore {
             const stale = (current.stripeEventCreated ?? 0) > update.eventCreated;
             const otherSubscription = !!current.stripeSubscriptionId && !!update.subscriptionId
                 && current.stripeSubscriptionId !== update.subscriptionId;
-            if (stale || (otherSubscription && !entitled)) {
+            // Only a completed Checkout (webhook or confirm) may switch the account to another
+            // subscription; plain updates of an old one never change its plan or id.
+            if (stale || (otherSubscription && !update.adoptSubscription)) {
                 return { applied: false, account: current };
             }
             const planId: QaapBillingPlanId = entitled ? (update.planId ?? current.planId) : 'starter';
