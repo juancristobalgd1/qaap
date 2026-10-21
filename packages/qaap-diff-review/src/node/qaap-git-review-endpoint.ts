@@ -1010,7 +1010,16 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         });
     }
 
-    /** Disable hooks/config-driven execution even in local mode; hosted mode adds the worker boundary. */
+    /**
+     * Disable hooks/config-driven execution even in local mode; hosted mode adds the worker boundary.
+     *
+     * `filter.<driver>.clean/smudge/process` deliberately stay enabled. They are what Git LFS (and
+     * similar drivers) run: with them off, `git add -A` from a review commit would store the real
+     * binaries in Git instead of LFS pointers, and worktree diffs would compare a pointer with the
+     * file. They cannot be disabled generically anyway (`-c` needs each driver name). The commands
+     * they run come from the tenant's own repository config and, in hosted mode, execute inside
+     * that tenant's worker (`gitInTenant`), never as the shared backend uid.
+     */
     protected hardenedGitArgs(args: readonly string[]): string[] {
         return ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.pager=cat', ...args];
     }

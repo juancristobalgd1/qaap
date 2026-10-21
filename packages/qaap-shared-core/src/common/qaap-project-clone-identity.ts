@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QAAP_USER_REPOS_SEGMENT } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { qaapProjectRemovalIdentity } from './qaap-project-removal-identity';
 
 /** The fields of a Work Hub project card that name the repository clone it stands for. */
@@ -13,32 +14,56 @@ export interface QaapCloneIdentityProject {
     readonly isCurrent?: boolean;
 }
 
-// A cwd → identity parse costs a regex pass and a URI parse; the hub asks for the same few
-// cwds on every render, so remember them (bounded: a long session sees few distinct cwds).
+// A cwd → identity parse costs a regex pass and a URI parse; the hub asks for the same few cwds on
+// every render. Least-recently-used eviction, one entry at a time: a walk over more distinct cwds
+// than the limit keeps the hot ones instead of emptying the whole cache. The thread store also
+// indexes its own cwds by identity (`QaapThreadStore.listCwdsForCloneIdentity`), so the per-card
+// lookups never walk every cwd.
 const CLONE_ROOT_IDENTITY_CACHE_LIMIT = 512;
 const cloneRootIdentityCache = new Map<string, string | undefined>();
 
 /**
  * `github:owner/repo` of a repository clone ROOT at `cwd`, whatever layout the clone path uses
  * (legacy flat `repos/<owner>/<repo>`, per-user `repos/users/<login>/<owner>/<repo>`, a trailing
- * slash or another casing all resolve to the same identity). A folder below the clone root does
- * not count: it is its own project. `undefined` when `cwd` is not a clone root.
+ * slash or another casing all resolve to the same identity). Only the exact `<owner>/<repo>` pair
+ * after `repos/` (or `repos/users/<login>/`) is a root: a folder below it is its own project, even
+ * one named like the repository (`…/acme/web/apps/web`). `undefined` when `cwd` is not a clone root.
  */
 export function qaapCloneRootIdentity(cwd: string | undefined): string | undefined {
     if (!cwd) {
         return undefined;
     }
     if (cloneRootIdentityCache.has(cwd)) {
-        return cloneRootIdentityCache.get(cwd);
+        const cached = cloneRootIdentityCache.get(cwd);
+        cloneRootIdentityCache.delete(cwd);
+        cloneRootIdentityCache.set(cwd, cached);
+        return cached;
     }
-    const identity = qaapProjectRemovalIdentity(cwd);
-    const base = cwd.replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop()?.toLowerCase();
-    const result = identity?.startsWith('github:') && base === identity.slice(identity.indexOf('/') + 1) ? identity : undefined;
+    const result = cloneRootIdentity(cwd);
     if (cloneRootIdentityCache.size >= CLONE_ROOT_IDENTITY_CACHE_LIMIT) {
-        cloneRootIdentityCache.clear();
+        cloneRootIdentityCache.delete(cloneRootIdentityCache.keys().next().value!);
     }
     cloneRootIdentityCache.set(cwd, result);
     return result;
+}
+
+/**
+ * `github:owner/repo` when `cwd` is exactly `<owner>/<repo>` after the FIRST `repos/` segment, or
+ * `users/<login>/<owner>/<repo>` after it. Anchoring on the first segment keeps a repo or owner that
+ * is itself named `repos` resolvable, and `repos/users/<repo>` is the legacy flat layout with an
+ * owner literally named `users`.
+ */
+function cloneRootIdentity(cwd: string): string | undefined {
+    const segments = cwd.replace(/^file:\/\//i, '').replace(/\\/g, '/').split('/').filter(Boolean);
+    const reposIndex = segments.indexOf('repos');
+    if (reposIndex < 0) {
+        return undefined;
+    }
+    const afterRepos = segments.slice(reposIndex + 1);
+    const pair = afterRepos.length === 2
+        ? afterRepos
+        : afterRepos[0] === QAAP_USER_REPOS_SEGMENT && afterRepos.length === 4 ? afterRepos.slice(2) : undefined;
+    return pair ? `github:${pair[0]}/${pair[1]}`.toLowerCase() : undefined;
 }
 
 /**

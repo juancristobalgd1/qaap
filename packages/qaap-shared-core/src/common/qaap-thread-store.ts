@@ -11,6 +11,7 @@ import {
     type QaapAgentMessageDTO,
 } from './qaap-agent-conversation-client';
 import { applyAgentMessageWireDelta } from './qaap-agent-message-wire-delta';
+import { qaapCloneRootIdentity } from './qaap-project-clone-identity';
 import type { QaapAgentMessageWireDelta } from './qaap-agent-message-wire-delta';
 import {
     computeSummaryChangedFields,
@@ -56,6 +57,8 @@ interface QaapThreadSubscriber<T> {
 export class QaapThreadStore {
     protected readonly summariesById = new Map<string, QaapAgentConversationSummaryDTO>();
     protected readonly idsByCwd = new Map<string, string[]>();
+    /** `github:owner/repo` → the clone-root cwds with conversations; rebuilt lazily when a cwd appears or goes. */
+    protected cwdsByCloneIdentity: Map<string, string[]> | undefined;
     protected readonly documents = new Map<string, QaapAgentConversationDTO>();
     protected readonly liveReducers = new Map<string, QaapAgUiTraceReducerState>();
     protected readonly globalSubscribers = new Set<QaapThreadSubscriber<unknown>>();
@@ -67,6 +70,7 @@ export class QaapThreadStore {
     ): void {
         this.summariesById.clear();
         this.idsByCwd.clear();
+        this.cwdsByCloneIdentity = undefined;
         for (const group of groups) {
             const cwd = normalizeCwd(group.cwd);
             const sorted = sortConversationSummaries([...group.conversations]);
@@ -85,6 +89,9 @@ export class QaapThreadStore {
         const next = previous ? preferQaapConversationSummary(previous, summary) : summary;
         const cwd = normalizeCwd(next.cwd);
         const listOrderChanged = streamingSortOrderMayChange(previous, next);
+        if (!this.idsByCwd.has(cwd)) {
+            this.cwdsByCloneIdentity = undefined;
+        }
         const ids = [...(this.idsByCwd.get(cwd) ?? [])];
         const index = ids.indexOf(summary.id);
         if (index >= 0) {
@@ -180,6 +187,7 @@ export class QaapThreadStore {
         const ids = (this.idsByCwd.get(normalized) ?? []).filter(id => id !== conversationId);
         if (ids.length === 0) {
             this.idsByCwd.delete(normalized);
+            this.cwdsByCloneIdentity = undefined;
         } else {
             this.idsByCwd.set(normalized, ids);
         }
@@ -219,9 +227,23 @@ export class QaapThreadStore {
         return sortConversationSummaries(variants);
     }
 
-    /** Every (normalized) cwd that has at least one conversation; cheap: one entry per folder, not per conversation. */
-    listCwds(): string[] {
-        return [...this.idsByCwd.keys()];
+    /**
+     * The cwds with conversations that are the root of the clone `identity` (`github:owner/repo`, see
+     * `qaapCloneRootIdentity`). Indexed once per change of the cwd set, so a card lookup costs one map
+     * read instead of a parse of every cwd.
+     */
+    listCwdsForCloneIdentity(identity: string): readonly string[] {
+        if (!this.cwdsByCloneIdentity) {
+            const index = new Map<string, string[]>();
+            for (const cwd of this.idsByCwd.keys()) {
+                const cwdIdentity = qaapCloneRootIdentity(cwd);
+                if (cwdIdentity) {
+                    index.set(cwdIdentity, [...(index.get(cwdIdentity) ?? []), cwd]);
+                }
+            }
+            this.cwdsByCloneIdentity = index;
+        }
+        return this.cwdsByCloneIdentity.get(identity) ?? [];
     }
 
     listAllSummaries(): QaapAgentConversationSummaryDTO[] {

@@ -8,6 +8,7 @@ import {
     isQaapPublicMultiTenantRuntime,
     QAAP_BACKEND_ISOLATION_MODE,
 } from '@theia/qaap-adapters/lib/common/qaap-backend-isolation';
+import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 
 /**
  * Fail-closed production auth/readiness checks. Keep in sync with
@@ -113,6 +114,27 @@ export function qaapPreviewIsolationProblem(env: NodeJS.ProcessEnv = process.env
     return undefined;
 }
 
+/**
+ * Why a hosted control plane runs with tenant-proxy early routing disabled, or `undefined`.
+ *
+ * `QAAP_TENANT_PROXY_EARLY_ROUTING=0` keeps Socket.IO polling on the control plane, where
+ * `QaapControlPlaneRpcGuard` must then let authenticated handshakes through: every signed-in user
+ * reaches the control plane's untenanted RPC services again. That is only acceptable as an
+ * acknowledged, temporary operator fallback (`QAAP_ACK_EARLY_ROUTING_DISABLED=1`).
+ */
+export function qaapEarlyRoutingDisabledProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    if (!isQaapHostedProductionRuntime(env) || isQaapTenantBackendMode(env)) {
+        return undefined;
+    }
+    if (!/^(0|false|off|no)$/i.test(env.QAAP_TENANT_PROXY_EARLY_ROUTING?.trim() ?? '')) {
+        return undefined;
+    }
+    return isTruthyEnv(env.QAAP_ACK_EARLY_ROUTING_DISABLED)
+        ? undefined
+        : 'QAAP_TENANT_PROXY_EARLY_ROUTING=0 keeps Socket.IO polling on the control plane and exposes its '
+        + 'untenanted RPC services to every signed-in user.';
+}
+
 function parseLoginList(raw: string | undefined): string[] {
     return (raw ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
 }
@@ -152,6 +174,21 @@ export function evaluateQaapProductionAuthReadiness(
                 + 'Set QAAP_BACKEND_PER_TENANT=1 and a 32-character QAAP_TENANT_BACKEND_MASTER_SECRET '
                 + 'so each authenticated session is routed to its own hardened Theia container. '
                 + 'See MULTI_TENANCY_AUDIT.md.',
+        };
+    }
+    const earlyRoutingProblem = qaapEarlyRoutingDisabledProblem(env);
+    if (earlyRoutingProblem) {
+        return {
+            productionRuntime,
+            skipAuth,
+            oauthConfigured,
+            agentUidPerUser,
+            backendIsolationMode: QAAP_BACKEND_ISOLATION_MODE,
+            backendIsolationReady,
+            ready: false,
+            fatalReason: `Refusing to start a hosted control plane with early tenant routing disabled. ${earlyRoutingProblem} `
+                + 'Unset QAAP_TENANT_PROXY_EARLY_ROUTING, or set QAAP_ACK_EARLY_ROUTING_DISABLED=1 to accept the risk '
+                + 'as a temporary fallback. See SECURITY.md.',
         };
     }
     const previewIsolationProblem = isQaapPublicMultiTenantRuntime(env) && qaapAdmitsThirdPartyTenants(env)

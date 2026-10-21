@@ -1863,6 +1863,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return onRetryConversationExtracted(this, project, summary);
     }
 
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async onContinueConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void> {
+        return this.conversationActionsUi.onContinueConversation(project, summary);
+    }
+
     cancelOpenTranscriptStream(): void {
         cancelOpenTranscriptStreamExtracted(this);
     }

@@ -142,6 +142,50 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
         expect(retried).to.equal(true);
     });
 
+    it('offers Continue task next to Retry for an interrupted turn, and only Retry for a plain failure', () => {
+        const target = project({ id: 'alpha' });
+        let continued = 0;
+        const host = {
+            chatService: undefined,
+            conversations: undefined,
+            conversationIndexUi: {
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            conversationFlags: undefined,
+            ensureOverlayUi: () => ({ parallel: { openVariantChooseSheet: () => undefined } }),
+            onRetryConversation: async () => undefined,
+            onContinueConversation: async () => { continued++; },
+        } as unknown as MobileProjectsCardMenuHost;
+        const ui = new MobileProjectsCardMenuUi(host);
+        const failed = (lastMessageError: string): never => ({
+            id: 'c1',
+            title: 'Task',
+            status: 'failed',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+            agentId: 'qaiq',
+            cwd: '/repo',
+            source: 'vps',
+            lastMessageRole: 'agent',
+            lastMessageError,
+        } as never);
+        const labels = (menu: HTMLElement): string[] => [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .map(item => item.textContent ?? '');
+
+        const interrupted = ui.buildConversationMenu(target, failed('Stopped automatically after 46 min: the turn exceeded the maximum allowed time.'));
+        expect(labels(interrupted).some(label => label.includes('Continue task'))).to.equal(true);
+        expect(labels(interrupted).some(label => label.includes('Retry task'))).to.equal(true);
+        const item = [...interrupted.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .find(candidate => candidate.textContent?.includes('Continue task')) as HTMLElement;
+        item.click();
+        expect(continued).to.equal(1);
+
+        const plain = ui.buildConversationMenu(target, failed('Bash exited with code 1.'));
+        expect(labels(plain).some(label => label.includes('Continue task'))).to.equal(false);
+        expect(labels(plain).some(label => label.includes('Retry task'))).to.equal(true);
+    });
+
     it('uses pin icons for the high-priority (pin) action', () => {
         const target = project({ id: 'alpha' });
         const host = {

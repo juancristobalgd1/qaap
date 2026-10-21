@@ -11,7 +11,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import { filterVpsTaskSummaries } from '../common/qaap-work-hub-surfaces';
-import { qaapCloneRootIdentity, qaapProjectCloneIdentities } from '../common/qaap-project-clone-identity';
+import { qaapProjectCloneIdentities } from '../common/qaap-project-clone-identity';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -151,10 +151,11 @@ export class MobileProjectsConversationIndexUi {
         }
         const own = projectCwd?.replace(/\\/g, '/').replace(/\/+$/, '');
         const found: QaapAgentConversationSummaryDTO[] = [];
-        for (const cwd of conversations.threadStore.listCwds()) {
-            const identity = cwd !== own ? qaapCloneRootIdentity(cwd) : undefined;
-            if (identity && identities.includes(identity)) {
-                found.push(...conversations.getConversationsForCwd(cwd));
+        for (const identity of identities) {
+            for (const cwd of conversations.threadStore.listCwdsForCloneIdentity(identity)) {
+                if (cwd !== own) {
+                    found.push(...conversations.getConversationsForCwd(cwd));
+                }
             }
         }
         return found;

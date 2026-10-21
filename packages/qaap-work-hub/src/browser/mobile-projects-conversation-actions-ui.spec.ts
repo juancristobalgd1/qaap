@@ -14,6 +14,7 @@ import type {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import type {
     MobileProjectsConversationActionsHost,
     MobileProjectsConversationActionsUi,
@@ -34,6 +35,11 @@ describe('MobileProjectsConversationActionsUi optimistic actions', () => {
 
     afterEach(() => {
         globalThis.fetch = originalFetch;
+        try {
+            window.localStorage.clear();
+        } catch {
+            // jsdom storage may be unavailable; nothing to reset then.
+        }
     });
 
     after(() => disableJSDOM?.());
@@ -61,7 +67,7 @@ describe('MobileProjectsConversationActionsUi optimistic actions', () => {
         ...changes,
     });
 
-    function createActions(): {
+    function createActions(extraHost: Record<string, unknown> = {}): {
         readonly actions: MobileProjectsConversationActionsUi;
         readonly snapshots: QaapAgentConversationSummaryDTO[];
         readonly sidebarRefreshes: Array<{ readonly force?: boolean } | undefined>;
@@ -76,6 +82,7 @@ describe('MobileProjectsConversationActionsUi optimistic actions', () => {
                 isVisible: () => true,
                 refreshList: (options?: { readonly force?: boolean }) => sidebarRefreshes.push(options),
             },
+            ...extraHost,
         } as unknown as MobileProjectsConversationActionsHost;
         return { actions: new actionsCtor(host), snapshots, sidebarRefreshes };
     }
@@ -123,5 +130,52 @@ describe('MobileProjectsConversationActionsUi optimistic actions', () => {
         expect(snapshots[0]).to.include({ priority: true });
         expect(snapshots[snapshots.length - 1]).to.deep.equal(summary);
         expect(sidebarRefreshes.every(options => options?.force === true)).to.equal(true);
+    });
+
+    describe('onContinueConversation', () => {
+        const model = { provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'claude-sonnet-4-5', label: 'Sonnet' };
+        const failedSummary: QaapAgentConversationSummaryDTO = { ...summary, status: 'failed', lastMessageError: 'Agent interrupted' };
+        const continueHost = (errors: string[] = [], started: string[] = []): Record<string, unknown> => ({
+            applyTaskStartedToProject: (_cwd: string, prompt: string) => started.push(prompt),
+            isWatchingOpenTranscript: () => false,
+            messageService: { error: (message: string) => errors.push(message) },
+        });
+
+        it('shows the conversation as streaming and posts the follow-up with the stored model', async () => {
+            writeStoredAgentModel(failedSummary.cwd, failedSummary.agentId, model);
+            const bodies: Array<Record<string, unknown>> = [];
+            globalThis.fetch = (_url, init) => {
+                bodies.push(JSON.parse(String(init?.body)));
+                return Promise.resolve(new Response(JSON.stringify(fullConversation({ status: 'streaming' })), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' },
+                }));
+            };
+            const started: string[] = [];
+            const { actions, snapshots } = createActions(continueHost([], started));
+
+            const pending = actions.onContinueConversation({} as never, failedSummary);
+
+            expect(snapshots[0]).to.include({ id: failedSummary.id, status: 'streaming' });
+            expect(started).to.have.length(1);
+            await pending;
+            expect(bodies).to.have.length(1);
+            expect(bodies[0].content).to.equal(started[0]);
+            expect(bodies[0].agentModel).to.deep.equal({ provider: model.provider, vendor: model.vendor, modelId: model.modelId });
+            expect(snapshots[snapshots.length - 1]).to.include({ status: 'streaming' });
+        });
+
+        it('rolls the snapshot back and reports the error when the follow-up fails', async () => {
+            globalThis.fetch = () => Promise.reject(new Error('offline'));
+            const errors: string[] = [];
+            const { actions, snapshots } = createActions(continueHost(errors));
+
+            await actions.onContinueConversation({} as never, failedSummary);
+
+            expect(snapshots[0]).to.include({ status: 'streaming' });
+            expect(snapshots[snapshots.length - 1]).to.deep.equal(failedSummary);
+            expect(errors).to.have.length(1);
+            expect(errors[0]).to.contain('offline');
+        });
     });
 });

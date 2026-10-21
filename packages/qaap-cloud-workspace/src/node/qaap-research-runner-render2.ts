@@ -101,7 +101,7 @@ export async function ensurePreflightPassedExtracted(ctx: QaapResearchRunnerCont
         const task = ctx.taskRunner.create({
             cwd: goal.cwd,
             prompt: PREFLIGHT_PROMPT,
-            agent: goal.agentId ?? ctx.taskRunner.defaultAgent(),
+            agent: goal.agentId ?? ctx.taskRunner.defaultAgent(ctx.store.ownerOf(goal.id)),
             title: `Research preflight: ${goal.description}`,
             autoApprove: true,
             agentModel: toAgentTaskModel(goal.agentModel),
@@ -237,7 +237,7 @@ export async function runProposeExtracted(ctx: QaapResearchRunnerContext, goal: 
         const task = ctx.taskRunner.create({
             cwd: goal.cwd,
             prompt,
-            agent: goal.agentId ?? ctx.taskRunner.defaultAgent(),
+            agent: goal.agentId ?? ctx.taskRunner.defaultAgent(ctx.store.ownerOf(goal.id)),
             title: `Research round ${record.round}: ${goal.description}`,
             autoApprove: true,
             agentModel: toAgentTaskModel(goal.agentModel),

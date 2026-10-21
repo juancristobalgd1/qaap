@@ -56,7 +56,7 @@ export class QaapWorkHubRoutineRunner {
         const task = this.taskRunner.create({
             cwd: routine.cwd,
             prompt: routine.prompt,
-            agent: routine.agent ?? this.taskRunner.defaultAgent(),
+            agent: routine.agent ?? this.taskRunner.defaultAgent(routine.ownerLogin),
             title: routine.title,
             autoApprove: resolveRoutineAutoApprove(routine.autoApprove),
         }, routine.ownerLogin);
@@ -66,7 +66,7 @@ export class QaapWorkHubRoutineRunner {
     }
 
     protected runViaConversation(routine: QaapWorkHubRoutine): QaapWorkHubRoutine {
-        const agent = routine.agent ?? this.taskRunner.defaultAgent();
+        const agent = routine.agent ?? this.taskRunner.defaultAgent(routine.ownerLogin);
         let conversationId: string | undefined;
         let taskId: string | undefined;
 

@@ -152,7 +152,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         && !usageFinalized.contextUsageEstimated
     ) {
         const modelId = task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-        const usesUserCodexSession = ctx.taskRunner?.isAgentConnected?.(turnAgentId) === true;
+        const usesUserCodexSession = ctx.taskRunner?.isAgentConnected?.(turnAgentId, task.ownerLogin) === true;
         if (isHostedCodexUsage(turnAgentId, modelId) && !usesUserCodexSession) {
             void ctx.billingStore.debitHostedUsage(
                 task.ownerLogin,

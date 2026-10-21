@@ -798,7 +798,20 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             this,
             agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
             agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
+            agentId => this.hasAgentAuthSignal(agentId),
         );
+    }
+
+    /**
+     * Whether this harness's sign-in state can ever be known: Settings credentials (QAIQ) or an auth
+     * probe. Without either it stays `unknown`, which must not make it the default.
+     */
+    protected hasAgentAuthSignal(agentId: string): boolean {
+        const normalized = agentId.trim().toLowerCase();
+        const candidate = this.detectedAgents.get(normalized);
+        return !!candidate
+            && (hasAgentSettingsCredentialsHelper(normalized, () => undefined) !== undefined
+                || !!resolveAgentConnectionProbeHelper(normalized, candidate.bin ?? normalized));
     }
 
     /**
@@ -817,6 +830,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ? undefined
                 : this.refreshAgentConnectionState(agentId, ownerLogin),
             budgetMs,
+            agentId => this.hasAgentAuthSignal(agentId),
         );
     }
 

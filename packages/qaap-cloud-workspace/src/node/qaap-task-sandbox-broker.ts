@@ -11,7 +11,7 @@ import * as http from 'http';
 import * as path from 'path';
 import type * as Dockerode from 'dockerode';
 import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
-import { QAAP_DOCKER_LOG_CONFIG } from './qaap-docker-control-plane';
+import { resolveQaapDockerLogConfig } from './qaap-docker-control-plane';
 import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import { QaapDockerOrchestrator, type QaapTaskSandboxPlacement, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
 import {
@@ -584,7 +584,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             StdinOnce: true,
             AttachStdin: true,
             HostConfig: {
-                LogConfig: QAAP_DOCKER_LOG_CONFIG,
+                LogConfig: resolveQaapDockerLogConfig(),
                 Init: true,
                 CapDrop: ['ALL'],
                 SecurityOpt: ['no-new-privileges:true'],
@@ -673,7 +673,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             Env: [`QAAP_EXEC_SERVER_JS=${server}`],
             Labels: { 'com.qaap.managed': 'true', ...qaapDockerNamespaceLabels() },
             HostConfig: {
-                LogConfig: QAAP_DOCKER_LOG_CONFIG,
+                LogConfig: resolveQaapDockerLogConfig(),
                 Binds: [`${volume}:/out`],
                 NetworkMode: 'none',
                 CapDrop: ['ALL'],
