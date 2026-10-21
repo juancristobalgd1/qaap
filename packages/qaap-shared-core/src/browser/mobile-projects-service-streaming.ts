@@ -23,7 +23,7 @@ import {
     setLocalProjectRemoved,
 } from './mobile-projects-session-cache';
 import { deduplicateMobileProjectEntries, withoutRemovedMobileProjects } from './mobile-projects-dedup';
-import { QAAP_USER_REPOS_SEGMENT } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { parseQaapWorkspaceRepoRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { parseUserRepositoryCloneFromWorkspacePath } from '../common/qaap-user-repository-clone-path';
 import { qaapProjectRemovalIdentity } from '../common/qaap-project-removal-identity';
 
@@ -192,13 +192,11 @@ export function githubCloneOfProjectWorkspace(ctx: Pick<MobileProjectsServiceCon
         if (!cwd) {
             return undefined;
         }
-        const segments = cwd.replace(/\\/g, '/').split('/').filter(Boolean);
-        const reposIndex = segments.lastIndexOf('repos');
-        const clone = reposIndex >= 0 ? segments.slice(reposIndex + 1) : [];
-        if (clone.length !== 4 || clone[0] !== QAAP_USER_REPOS_SEGMENT) {
+        const clone = parseQaapWorkspaceRepoRoot(cwd);
+        if (!clone?.login) {
             return undefined;
         }
-        const [, , owner, name] = clone;
+        const { owner, repo: name } = clone;
         const segment = /^[A-Za-z0-9_.-]+$/;
         if (!segment.test(owner) || !segment.test(name) || /^\.+$/.test(owner) || /^\.+$/.test(name)) {
             return undefined;

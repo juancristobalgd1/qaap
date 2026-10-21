@@ -93,6 +93,21 @@ export class MobileProjectsCardMenuUi {
         void this.externalTaskOptIns.load();
     }
 
+    /**
+     * Continue / Retry from the conversation menu, with the row chip's guard: the menu can outlive the
+     * summary it was built for, and a first recovery flips it to streaming, so re-read it before acting.
+     */
+    protected recoverFailedConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,
+        action: 'continue' | 'retry'): void {
+        const latest = this.host.conversationIndexUi.findSummaryById(summary.id) ?? summary;
+        if (!isFailedRunSummary(latest) || latest.status === 'streaming') {
+            return;
+        }
+        void (action === 'continue'
+            ? this.host.onContinueConversation(project, latest)
+            : this.host.onRetryConversation(project, latest));
+    }
+
     handleDocumentPointerDown(ev: PointerEvent): void {
         if (!this.openMenu) {
             return;
@@ -206,13 +221,13 @@ export class MobileProjectsCardMenuUi {
                 this.appendCardMenuItem(menu, {
                     label: nls.localize('qaap/mobileProjects/continueTask', 'Continue task'),
                     iconClass: 'codicon-debug-continue',
-                    onSelect: () => { void this.host.onContinueConversation(project, summary); },
+                    onSelect: () => { this.recoverFailedConversation(project, summary, 'continue'); },
                 });
             }
             this.appendCardMenuItem(menu, {
                 label: nls.localize('qaap/mobileProjects/retryTask', 'Retry task'),
                 iconClass: 'codicon-debug-restart',
-                onSelect: () => { void this.host.onRetryConversation(project, summary); },
+                onSelect: () => { this.recoverFailedConversation(project, summary, 'retry'); },
             });
             const retrySep = document.createElement('div');
             retrySep.className = 'theia-mobile-projects-card-menu-separator';

@@ -21,6 +21,12 @@ describe('qaapCloneRootIdentity', () => {
         expect(qaapCloneRootIdentity('/workspace/repos/repos/foo')).to.equal('github:repos/foo');
     });
 
+    it('resolves a repos root nested inside another repos folder', () => {
+        expect(qaapCloneRootIdentity('/home/u/repos/qaap-data/repos/users/me/acme/web')).to.equal('github:acme/web');
+        expect(qaapCloneRootIdentity('file:///home/u/repos/qaap-data/repos/acme/web')).to.equal('github:acme/web');
+        expect(qaapCloneRootIdentity('/home/u/repos/qaap-data/repos/users/me/acme/web/src')).to.equal(undefined);
+    });
+
     it('resolves a legacy flat clone whose owner is named users', () => {
         expect(qaapCloneRootIdentity('/workspace/repos/users/web')).to.equal('github:users/web');
     });

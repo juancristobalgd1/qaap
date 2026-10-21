@@ -8,6 +8,7 @@ import * as path from 'path';
 import {
     normalizeIsolationPath,
     parseGithubFullNameFromWorkspacePath,
+    parseQaapWorkspaceRepoRoot,
     resolveTenantIsolationRoot,
     resolveTenantSegmentFromWorkspacePath,
     isQaapMultiUserBackend,
@@ -152,6 +153,51 @@ describe('parseGithubFullNameFromWorkspacePath', () => {
     it('does not invent an owner for ambiguous legacy per-user paths', () => {
         expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice/site'))
             .to.equal(undefined);
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice')).to.equal(undefined);
+        // The inner `repos/users/…` is the anchor under a nested root: never fall back to an outer `x/repos` reading.
+        expect(parseGithubFullNameFromWorkspacePath('/home/repos/x/repos/users/me/web')).to.equal(undefined);
+        expect(parseGithubFullNameFromWorkspacePath('/home/repos/x/repos/users/me/acme')).to.equal(undefined);
+        expect(parseGithubFullNameFromWorkspacePath('/home/repos/x/repos/users/me')).to.equal(undefined);
+    });
+
+    it('resolves folders below a clone root to that clone', () => {
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/acme/site/src/app')).to.equal('acme/site');
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice/acme/site/src')).to.equal('acme/site');
+        // A folder named `repos` inside a clone does not re-anchor the parse.
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice/acme/site/repos/a/b')).to.equal('acme/site');
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/acme/site/repos')).to.equal('acme/site');
+    });
+
+    it('resolves a repository or owner named repos, and a nested repos root', () => {
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/me/foo/repos')).to.equal('foo/repos');
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/me/foo/repos/src')).to.equal('foo/repos');
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/me/repos/web/src')).to.equal('repos/web');
+        expect(parseGithubFullNameFromWorkspacePath('/home/u/repos/qaap-data/repos/users/me/acme/web')).to.equal('acme/web');
+        expect(parseGithubFullNameFromWorkspacePath('/home/u/repos/qaap-data/repos/users/me/acme/web/src')).to.equal('acme/web');
+    });
+
+    it('returns undefined for a path outside any repos root', () => {
+        expect(parseGithubFullNameFromWorkspacePath('/tmp/scratch/acme/web')).to.equal(undefined);
+    });
+});
+
+describe('parseQaapWorkspaceRepoRoot', () => {
+    it('keeps casing and reports the per-user login', () => {
+        expect(parseQaapWorkspaceRepoRoot('/workspace/repos/users/me/Acme/Web')).to.deep.equal({ owner: 'Acme', repo: 'Web', login: 'me' });
+        expect(parseQaapWorkspaceRepoRoot('C:\\data\\repos\\Acme\\Web')).to.deep.equal({ owner: 'Acme', repo: 'Web' });
+    });
+
+    it('tries every repos segment, first to last, and accepts only an exact clone root', () => {
+        expect(parseQaapWorkspaceRepoRoot('/home/u/repos/qaap-data/repos/users/me/acme/web')).to.deep.equal({ owner: 'acme', repo: 'web', login: 'me' });
+        expect(parseQaapWorkspaceRepoRoot('/workspace/repos/users/me/foo/repos')).to.deep.equal({ owner: 'foo', repo: 'repos', login: 'me' });
+        expect(parseQaapWorkspaceRepoRoot('/workspace/repos/repos/web')).to.deep.equal({ owner: 'repos', repo: 'web' });
+        expect(parseQaapWorkspaceRepoRoot('/workspace/repos/users/web')).to.deep.equal({ owner: 'users', repo: 'web' });
+        expect(parseQaapWorkspaceRepoRoot('/workspace/repos/acme/web/apps/web')).to.equal(undefined);
+        expect(parseQaapWorkspaceRepoRoot('/workspace/repos/users/me/acme/web/src')).to.equal(undefined);
+        // Inside the per-user clone repos/web, not the flat clone web/src under a nested root.
+        expect(parseQaapWorkspaceRepoRoot('/workspace/repos/users/me/repos/web/src')).to.equal(undefined);
+        expect(parseQaapWorkspaceRepoRoot('/home/u/repos/data/repos/acme/web')).to.deep.equal({ owner: 'acme', repo: 'web' });
+        expect(parseQaapWorkspaceRepoRoot('/tmp/scratch/acme/web')).to.equal(undefined);
     });
 });
 

@@ -98,6 +98,17 @@ describe('mergeConversationCwdProjects for a removed project', () => {
         expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
     });
 
+    it('keeps a removed repository named repos removed, from its clone and from a folder below it', () => {
+        const FOO_REPOS = '/workspace/repos/users/me/foo/repos';
+        const merged = mergeConversationCwdProjects([], [
+            summary('root', FOO_REPOS, 1),
+            summary('sub', `${FOO_REPOS}/src`, 2),
+            summary('other', OTHER, 3),
+        ], () => false, new Set(['github:foo/repos']));
+
+        expect(merged.map(project => project.id)).to.deep.equal([conversationCwdProjectId(OTHER)]);
+    });
+
     // Same account: the archived conversation 5e9656ec of task worktree 733cf503 (checked out from vyyq,
     // ordinal 1) kept a cached `ws:` card labelled vyyq_1 alive; removing it brought it straight back.
     const LIVE_WT = '/tmp/qaap-worktrees/juancristobalgd1/733cf503';
