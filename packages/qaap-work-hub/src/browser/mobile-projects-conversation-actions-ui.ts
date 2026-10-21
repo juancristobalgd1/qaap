@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ConfirmDialog } from '@theia/core/lib/browser';
@@ -81,7 +82,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/forkTaskFailed',
                 'Could not fork task: {0}',
-                error instanceof Error ? error.message : String(error)
+                QaapUserFacingErrors.toMessage(error)
             ));
         }
     }
@@ -130,7 +131,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/renameTaskFailed',
                 'Could not rename task: {0}',
-                error instanceof Error ? error.message : String(error)
+                QaapUserFacingErrors.toMessage(error)
             ));
         }
     }
@@ -162,7 +163,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/priorityFailed',
                 'Could not update task priority: {0}',
-                error instanceof Error ? error.message : String(error)
+                QaapUserFacingErrors.toMessage(error)
             ));
         }
     }
@@ -207,7 +208,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/pauseFailed',
                 'Could not change task pause state: {0}',
-                error instanceof Error ? error.message : String(error)
+                QaapUserFacingErrors.toMessage(error)
             ));
         }
     }
@@ -244,7 +245,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskAutoApproveFailed',
                 'Could not update auto-approve: {0}',
-                error instanceof Error ? error.message : String(error),
+                QaapUserFacingErrors.toMessage(error),
             ));
         } finally {
             this.host.transcriptAutoApproveBusy = false;
@@ -267,7 +268,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskPrToggleFailed',
                 'Could not change "Create PR when done": {0}',
-                error instanceof Error ? error.message : String(error),
+                QaapUserFacingErrors.toMessage(error),
             ));
         }
     }
@@ -286,7 +287,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskPrConsentFailed',
                 'Could not answer the pull request question: {0}',
-                error instanceof Error ? error.message : String(error),
+                QaapUserFacingErrors.toMessage(error),
             ));
         }
     }
@@ -313,7 +314,7 @@ export class MobileProjectsConversationActionsUi {
                         this.host.messageService?.error(nls.localize(
                             'qaap/mobileProjects/cancelTaskFailed',
                             'Could not cancel run: {0}',
-                            err instanceof Error ? err.message : String(err)
+                            QaapUserFacingErrors.toMessage(err)
                         ));
                     });
                     return;
@@ -328,7 +329,7 @@ export class MobileProjectsConversationActionsUi {
                         this.host.messageService?.error(nls.localize(
                             'qaap/mobileProjects/cancelTaskFailed',
                             'Could not cancel run: {0}',
-                            err instanceof Error ? err.message : String(err)
+                            QaapUserFacingErrors.toMessage(err)
                         ));
                     });
                 }
@@ -339,7 +340,7 @@ export class MobileProjectsConversationActionsUi {
                 this.host.messageService?.error(nls.localize(
                     'qaap/mobileProjects/cancelTaskFailed',
                     'Could not cancel run: {0}',
-                    err instanceof Error ? err.message : String(err)
+                    QaapUserFacingErrors.toMessage(err)
                 ));
             });
         }
@@ -390,7 +391,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/retryTaskFailed',
                 'Could not retry: {0}',
-                error instanceof Error ? error.message : String(error)
+                QaapUserFacingErrors.toMessage(error)
             ));
         }
     }
@@ -430,7 +431,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/continueTaskFailed',
                 'Could not continue: {0}',
-                error instanceof Error ? error.message : String(error)
+                QaapUserFacingErrors.toMessage(error)
             ));
         }
     }
@@ -463,7 +464,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/archiveTaskFailed',
                 'Could not archive: {0}',
-                error instanceof Error ? error.message : String(error),
+                QaapUserFacingErrors.toMessage(error),
             ));
         }
     }
@@ -510,7 +511,7 @@ export class MobileProjectsConversationActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/deleteTaskFailed',
                 'Could not delete task: {0}',
-                error instanceof Error ? error.message : String(error)
+                QaapUserFacingErrors.toMessage(error)
             ));
         }
     }

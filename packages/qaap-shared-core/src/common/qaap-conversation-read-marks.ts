@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
+
 /**
  * Per-user "read up to" marks for agent conversations. The backend owns them (keyed by the
  * signed-in login + conversation id), so a task read on the desktop is read on the phone, after a
@@ -57,7 +59,7 @@ export function resolveQaapConversationAgentActivityAt(conv: {
 export async function fetchConversationReadMarks(): Promise<Record<string, number>> {
     const response = await fetch(QAAP_CONVERSATION_READ_MARKS_API_PATH, { credentials: 'include' });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     const body = await response.json() as Partial<QaapConversationReadMarksResponse>;
     return { ...(body.marks ?? {}) };
@@ -73,7 +75,7 @@ export async function putConversationReadMark(conversationId: string, readAt?: n
         body: JSON.stringify(request),
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return (await response.json() as QaapConversationReadMarkResponse).readAt;
 }
