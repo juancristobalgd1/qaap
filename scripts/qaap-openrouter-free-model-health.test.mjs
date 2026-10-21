@@ -61,6 +61,22 @@ test('launch policy: dead head fails, thin window fails, other dead entries only
     assert.match(thin.failures.join(), /Only 2 of the first 4/);
 });
 
+test('launch policy: degraded (-1/-2) head only warns; -5, no tools or zero endpoints still fail', () => {
+    const rest = ['b', 'c', 'd'].map(id => verdict(id, 'ok'));
+    for (const status of [-1, -2]) {
+        const degraded = judgeEndpoints('a', endpoints({ ...live, status }));
+        assert.equal(degraded.degraded, true);
+        const result = evaluateLaunchPolicy([degraded, ...rest]);
+        assert.deepEqual(result.failures, []);
+        assert.match(result.warnings.join(), /degraded/);
+    }
+    for (const payload of [endpoints({ ...live, status: -5 }), endpoints({ ...live, status: -1, supported_parameters: [] }), endpoints(), undefined]) {
+        const dead = judgeEndpoints('a', payload);
+        assert.ok(!dead.degraded);
+        assert.equal(evaluateLaunchPolicy([dead, ...rest]).failures.length, 1);
+    }
+});
+
 test('launch policy: inconclusive (API down) is a warning, never a failure', () => {
     const result = evaluateLaunchPolicy(['a', 'b', 'c', 'd'].map(id => verdict(id, 'unknown')));
     assert.deepEqual(result.failures, []);

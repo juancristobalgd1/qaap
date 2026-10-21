@@ -61,7 +61,9 @@ export function judgeEndpoints(id, payload) {
     const summary = described.map(endpoint => `${endpoint.provider} status=${endpoint.status ?? '?'}${endpoint.tools ? ' tools' : ' no-tools'}`
         + `${typeof endpoint.uptime === 'number' ? ` uptime30m=${Math.round(endpoint.uptime)}%` : ''}`).join(', ');
     const statuses = [...new Set(described.map(endpoint => endpoint.status ?? '?'))].join('/');
-    return { id, healthy, summary, endpoints: described.length, tools: described.some(endpoint => endpoint.tools), status: `status ${statuses}` };
+    // -1/-2 are transient (degraded/recovering) states seen on live endpoints; <= -3 (e.g. -5) is down.
+    const degraded = !healthy && described.some(endpoint => (endpoint.status === -1 || endpoint.status === -2) && endpoint.tools);
+    return { id, healthy, degraded, summary, endpoints: described.length, tools: described.some(endpoint => endpoint.tools), status: `status ${statuses}` };
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -126,17 +128,19 @@ export function evaluateLaunchPolicy(verdicts) {
     const head = verdicts[0];
     if (!head) {
         failures.push('No default models to check.');
-    } else if (!head.inconclusive && !head.healthy) {
+    } else if (!head.inconclusive && !head.degraded && !head.healthy) {
         failures.push(`Default model ${head.id} (head of OPENROUTER_DEFAULT_FREE_MODELS) is unhealthy: ${head.summary}`);
     }
     const window = verdicts.slice(0, FALLBACK_WINDOW);
     const healthy = window.filter(verdict => verdict.healthy).length;
-    const possible = window.filter(verdict => verdict.healthy || verdict.inconclusive).length;
+    const possible = window.filter(verdict => verdict.healthy || verdict.inconclusive || verdict.degraded).length;
     if (window.length && possible < MIN_HEALTHY_IN_WINDOW) {
         failures.push(`Only ${healthy} of the first ${window.length} defaults are healthy (need ${MIN_HEALTHY_IN_WINDOW}): the fallback chain is too thin.`);
     }
     for (const verdict of verdicts) {
-        if (verdict.inconclusive) {
+        if (verdict.degraded) {
+            warnings.push(`${verdict.id} is degraded (transient endpoint status -1/-2): ${verdict.summary}`);
+        } else if (verdict.inconclusive) {
             warnings.push(`${verdict.id}: could not be checked (${verdict.summary}).`);
         } else if (!verdict.healthy && verdict !== head) {
             warnings.push(`${verdict.id} is unhealthy: ${verdict.summary}`);
@@ -147,7 +151,7 @@ export function evaluateLaunchPolicy(verdicts) {
 
 /** Markdown table for $GITHUB_STEP_SUMMARY. */
 export function renderSummary(verdicts, result) {
-    const cell = verdict => (verdict.inconclusive ? 'inconclusive' : verdict.healthy ? 'healthy' : 'UNHEALTHY');
+    const cell = verdict => (verdict.inconclusive ? 'inconclusive' : verdict.degraded ? 'degraded' : verdict.healthy ? 'healthy' : 'UNHEALTHY');
     const rows = verdicts.map((verdict, index) => `| ${index + 1} | \`${verdict.id}\` | ${verdict.endpoints} | ${verdict.status} | ${cell(verdict)} | ${verdict.tools ? 'yes' : 'no'} |`);
     return [
         '## QAIQ default free models (OpenRouter)',
