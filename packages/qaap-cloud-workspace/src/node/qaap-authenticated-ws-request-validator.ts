@@ -4,10 +4,11 @@
 // *****************************************************************************
 
 import * as http from 'http';
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { WsRequestValidatorContribution } from '@theia/core/lib/node/ws-request-validators';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { isQaapHostedOrTenantBackendRuntime } from './qaap-docker-control-plane';
+import { QaapSecurityLogRateLimiter } from './qaap-security-log-rate-limiter';
 
 /**
  * Refuses the Theia Socket.IO handshake (both the polling request and the WebSocket upgrade) of
@@ -31,6 +32,10 @@ export class QaapAuthenticatedWsRequestValidator implements WsRequestValidatorCo
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
+    /** Expired sessions and scanners retry every few seconds: log one refusal per client and minute. */
+    @inject(QaapSecurityLogRateLimiter) @optional()
+    protected readonly logLimiter: QaapSecurityLogRateLimiter | undefined;
+
     allowWsUpgrade(request: http.IncomingMessage): boolean {
         if (!this.isHostedRuntime()) {
             return true;
@@ -39,10 +44,14 @@ export class QaapAuthenticatedWsRequestValidator implements WsRequestValidatorCo
         if (context.kind === 'authenticated' || context.kind === 'skip') {
             return true;
         }
-        this.auth.logSecurityEvent('websocket_denied', {
-            reason: 'unauthenticated',
-            path: (request.url ?? '/').split('?', 1)[0],
-        });
+        const sampled = this.logLimiter ? this.logLimiter.admit('websocket_denied', request) : {};
+        if (sampled) {
+            this.auth.logSecurityEvent('websocket_denied', {
+                reason: 'unauthenticated',
+                path: (request.url ?? '/').split('?', 1)[0],
+                ...sampled,
+            });
+        }
         return false;
     }
 

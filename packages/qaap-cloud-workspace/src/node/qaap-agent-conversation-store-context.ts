@@ -28,6 +28,7 @@ import type {
 import type { QaapAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import type { QaapCliAgUiStreamEmitter } from '@theia/qaap-shared-core/lib/common/qaap-cli-ag-ui-stream';
 import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
+import type { QaapExpiredStreamingTurn, QaapTurnWatchdogLimits } from '../common/qaap-agent-turn-watchdog';
 import type { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import type { QaapAgentTaskRunner } from './qaap-agent-task-runner';
@@ -86,6 +87,8 @@ export interface QaapAgentConversationStoreContext {
     persistTimer: ReturnType<typeof setTimeout> | undefined;
     sqliteStore: QaapSqliteStore | undefined;
     turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
+    /** Tasks the turn watchdog is stopping as `interrupted`; their settle keeps the watchdog's reason. */
+    readonly turnWatchdogPausedTaskIds: Set<string>;
     persistFailureLoggedAtMs: number;
     persistChain: Promise<void>;
 
@@ -363,7 +366,7 @@ export interface QaapAgentConversationStoreContext {
     // ─── Watchdog / restart-resume (ADR-002 turn graph) ─────────────────────
     turnHasPendingApproval(conv: QaapAgentConversation): boolean;
     sweepZombieStreamingTurns(nowMs: number, options?: { readonly resetSurvivorsToIdle?: boolean }): boolean;
-    forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean;
+    forceStopZombieTurn(turn: QaapExpiredStreamingTurn, limits: QaapTurnWatchdogLimits): boolean;
     maybeAutoResumeInterruptedTurn(conversationId: string, nowMs: number): Promise<boolean>;
     isTurnGraphEnabled(): boolean;
     resumeInterruptedTurnViaGraph(

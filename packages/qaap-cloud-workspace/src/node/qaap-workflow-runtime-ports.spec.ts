@@ -244,6 +244,16 @@ describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
         expect(createdWith[2]).to.equal('qaiq');
     });
 
+    it('neither cools down nor heals a backend for an interrupted turn', async () => {
+        const { adapter, createdWith } = buildAdapter();
+        const first = await adapter.startAgentTurn(judgeNode, context);
+        adapter.noteAgentTurnResult(first, 'interrupted');
+
+        // codex went quiet (or the backend restarted): it is not cooled down for it.
+        await adapter.startAgentTurn(judgeNode, { ...context, visit: 2 });
+        expect(createdWith).to.deep.equal(['codex', 'codex']);
+    });
+
     it('does not cool a backend down for a turn that completed with a task-level failure verdict', async () => {
         const { adapter, createdWith } = buildAdapter();
         const first = await adapter.startAgentTurn(judgeNode, context);

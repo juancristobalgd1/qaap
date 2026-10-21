@@ -12,6 +12,13 @@ import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia
 import { autoContinueAllowedForInteraction } from '@theia/qaap-transcript/lib/common/qaap-agent-turn-completion';
 
 import { buildConversationAgentPrompt } from '../common/qaap-agent-conversation-prompt';
+import {
+    QAAP_MAX_TURN_MINUTES_ENV,
+    hasStreamingTurnReachedCap,
+    resolveQaapMaxTurnMinutes,
+    type QaapExpiredStreamingTurn,
+    type QaapTurnWatchdogLimits,
+} from '../common/qaap-agent-turn-watchdog';
 import { deriveConversationTitle, isComposerAttachmentPreambleTitle } from '../common/qaap-conversation-title';
 
 import { isTeamSynthesisUserMessage } from '../common/qaap-team-mailbox';
@@ -357,18 +364,19 @@ export function sweepZombieStreamingTurnsExtracted(ctx: QaapAgentConversationSto
     return sweepZombieStreamingTurnsHelper(nowMs, options, {
         conversations: ctx.conversations,
         turnHasPendingApproval: c => ctx.turnHasPendingApproval(c),
-        forceStopZombieTurn: (id, elapsed, max) => ctx.forceStopZombieTurn(id, elapsed, max),
+        forceStopZombieTurn: (turn, limits) => ctx.forceStopZombieTurn(turn, limits),
         getActiveTaskIdsForConversation: id => ctx.getActiveTaskIdsForConversation(id),
         interruptStreamingTurnForRestart: (id, t) => ctx.interruptStreamingTurnForRestart(id, t),
         flushPersist: () => ctx.flushPersist(),
     });
 }
 
-export function forceStopZombieTurnExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean {
-    return forceStopZombieTurnHelper(conversationId, elapsedMs, maxTurnMinutes, {
+export function forceStopZombieTurnExtracted(ctx: QaapAgentConversationStoreContext, turn: QaapExpiredStreamingTurn, limits: QaapTurnWatchdogLimits): boolean {
+    return forceStopZombieTurnHelper(turn, limits, {
         conversations: ctx.conversations,
         taskToConversation: ctx.taskToConversation,
         taskRunner: ctx.taskRunner,
+        turnWatchdogPausedTaskIds: ctx.turnWatchdogPausedTaskIds,
         appendRunCancelledTrace: (c, aid, r) => ctx.appendRunCancelledTrace(c, aid, r),
         finalizeStreamingAgentMessage: (c, aid, r) => ctx.finalizeStreamingAgentMessage(c, aid, r),
         markTurnFailed: (c, info) => ctx.markTurnFailed(c, info),
@@ -383,6 +391,12 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
     }
     const conv = ctx.conversations.get(conversationId);
     if (!conv || conv.status !== 'streaming') {
+        return false;
+    }
+    // Resume runs before the startup sweep: a turn already past the absolute cap must not be
+    // relaunched (it would only be paused again, after re-spending its work). Leave it streaming
+    // so the sweep right after records the cap reason.
+    if (hasStreamingTurnReachedCap(conv, nowMs, resolveQaapMaxTurnMinutes(process.env[QAAP_MAX_TURN_MINUTES_ENV]))) {
         return false;
     }
     // A turn deliberately paused on a human decision (plan/ask mode, request-approval /

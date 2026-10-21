@@ -308,9 +308,12 @@ describe('localizeAgentFailureShortReason', () => {
         )).to.equal('Sign in required');
     });
 
-    it('returns undefined for empty or unclassified failures', () => {
+    it('returns undefined only when there is no error', () => {
         expect(localizeAgentFailureShortReason(undefined)).to.equal(undefined);
         expect(localizeAgentFailureShortReason('   ')).to.equal(undefined);
-        expect(localizeAgentFailureShortReason('Process exited with code 1')).to.equal(undefined);
+    });
+
+    it('falls back to "stopped unexpectedly" for unclassified failures', () => {
+        expect(localizeAgentFailureShortReason('Process exited with code 1')).to.equal('The agent stopped unexpectedly');
     });
 });

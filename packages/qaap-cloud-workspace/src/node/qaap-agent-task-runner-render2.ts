@@ -633,6 +633,7 @@ export function defaultAgentExtracted(
     ctx: QaapAgentTaskRunnerContext,
     isAgentEnabled: (agentId: string) => boolean = () => true,
     isAgentUsable: (agentId: string) => boolean = () => true,
+    hasAuthSignal: (agentId: string) => boolean = () => true,
 ): string {
         const configured = ctx.normalizeAgentId(process.env.QAAP_DEFAULT_AGENT);
         if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured) && isAgentEnabled(configured)) {
@@ -645,9 +646,11 @@ export function defaultAgentExtracted(
             }
         }
         // `isAgentEnabled` already drops a known-disconnected harness, so what is left here is one
-        // whose connection state is still `unknown`: keep the pre-keyless default for it.
+        // whose connection state is still `unknown`: keep the pre-keyless default for it. Only when
+        // that state can still resolve (`hasAuthSignal`: an auth probe or Settings credentials exist);
+        // a harness with neither stays `unknown` forever and would win whether or not it is signed in.
         for (const id of DEFAULT_AGENT_PREFERENCE) {
-            if (selectable(id)) {
+            if (selectable(id) && hasAuthSignal(id)) {
                 return id;
             }
         }
@@ -683,6 +686,7 @@ export async function defaultAgentFreshExtracted(
     isAgentUsable: (agentId: string) => boolean,
     refreshConnectionState: (agentId: string) => Promise<unknown> | undefined,
     budgetMs: number,
+    hasAuthSignal: (agentId: string) => boolean = () => true,
 ): Promise<string> {
     const pending = DEFAULT_AGENT_PREFERENCE
         .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id))
@@ -698,7 +702,7 @@ export async function defaultAgentFreshExtracted(
         ]);
         clearTimeout(timer);
     }
-    return defaultAgentExtracted(ctx, isAgentEnabled, isAgentUsable);
+    return defaultAgentExtracted(ctx, isAgentEnabled, isAgentUsable, hasAuthSignal);
 }
 
 export function normalizeAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, token: string | undefined): string | undefined {

@@ -26,6 +26,7 @@ import { QaapTenantPreviewRouteTable } from './qaap-tenant-preview-route-table';
 import { QaapDockerOrchestrator, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapFrontendStaticManifest } from './qaap-frontend-static-manifest';
+import { QaapControlPlaneRpcGuard } from './qaap-control-plane-rpc-guard';
 
 const HOP_BY_HOP_HEADERS = new Set([
     'connection',
@@ -269,6 +270,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         const deadline = Date.now() + this.getTenantProxyIdleTimeoutMs();
         try {
             const socketIo = this.isSocketIoPath(request.url);
+            if (socketIo) {
+                QaapControlPlaneRpcGuard.markRoutedToTenantBackend(request);
+            }
             if (socketIo && this.wsRequestValidator && !await this.wsRequestValidator.allowWsUpgrade(request)) {
                 // Same outer check Socket.IO's allowRequest applies to the polling handshake.
                 this.writeJson(response, 403, { error: 'Forbidden' });
@@ -552,6 +556,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         originalListeners: readonly Function[],
         server: http.Server,
     ): Promise<void> {
+        QaapControlPlaneRpcGuard.markRoutedToTenantBackend(request);
         if (this.wsRequestValidator && !await this.wsRequestValidator.allowWsUpgrade(request)) {
             socket.destroy();
             return;

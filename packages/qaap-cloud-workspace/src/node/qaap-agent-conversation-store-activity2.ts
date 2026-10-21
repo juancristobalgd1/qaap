@@ -152,7 +152,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         && !usageFinalized.contextUsageEstimated
     ) {
         const modelId = task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-        const usesUserCodexSession = ctx.taskRunner?.isAgentConnected?.(turnAgentId) === true;
+        const usesUserCodexSession = ctx.taskRunner?.isAgentConnected?.(turnAgentId, task.ownerLogin) === true;
         if (isHostedCodexUsage(turnAgentId, modelId) && !usesUserCodexSession) {
             void ctx.billingStore.debitHostedUsage(
                 task.ownerLogin,
@@ -172,9 +172,15 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         contextUsageEstimated: usageFinalized.contextUsageEstimated,
         contextWindowSize: usageFinalized.contextWindowSize,
     };
-    if (task.state === 'cancelled') {
+    // The turn watchdog stops a run as `interrupted` and records its own timeout reason and trace
+    // right after this synchronous settle; the run otherwise settles like a stop (no fallback model,
+    // no failure reason derived from the log).
+    const pausedByWatchdog = task.state === 'interrupted' && ctx.turnWatchdogPausedTaskIds.has(task.id);
+    if (task.state === 'cancelled' || pausedByWatchdog) {
         const cancelledReason = 'Turn cancelled.';
-        const withCancelledTrace = ctx.appendRunCancelledTrace(withUsageBaseline, agentMessageId, cancelledReason);
+        const withCancelledTrace = pausedByWatchdog
+            ? withUsageBaseline
+            : ctx.appendRunCancelledTrace(withUsageBaseline, agentMessageId, cancelledReason);
         const finalized = ctx.finalizeStreamingAgentMessage(withCancelledTrace, agentMessageId, cancelledReason);
         const next: QaapAgentConversation = {
             ...finalized,

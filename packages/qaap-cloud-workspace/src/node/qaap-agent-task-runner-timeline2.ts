@@ -1,7 +1,7 @@
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
-import { checkAgentTaskBillingGate } from './qaap-agent-task-billing-gate';
+import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -88,6 +88,58 @@ export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx.appendAndFireOutput(taskId, `\n[qaap] ${summary}\n`, currentTask.ownerLogin);
     ctx.killAgentProcessTree(child, { escalateAfterMs: 0 });
     return true;
+}
+
+/** A stream-json housekeeping record (`api_retry`, hook, status): the CLI is alive, the agent is not working. */
+const AGENT_SYSTEM_RECORD_LINE = /^\{\s*"type"\s*:\s*"system"/;
+
+/**
+ * Whether an output chunk is agent progress for the no-output timer. Chunks made only of
+ * stream-json `system` records do not count: a CLI looping on provider retries is not working.
+ * Anything else counts — including a line split across chunks — so plain-text agents and
+ * unknown formats keep the old "any output" behaviour.
+ */
+export function isAgentProgressChunk(chunk: unknown): boolean {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+    return text.split('\n').some(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !AGENT_SYSTEM_RECORD_LINE.test(trimmed);
+    });
+}
+
+/** What the no-output timer did when it fired: see {@link expireIdleAgentTask}. */
+export type QaapIdleAgentTaskExpiry = 'not-running' | 'waiting-for-user' | 'interrupted';
+
+/**
+ * The runner's no-output timer fired. A run waiting on a permission approval is waiting for the
+ * user, not hung, so it is kept. Otherwise the process is stopped and the task ends `interrupted`:
+ * the agent went quiet rather than failing, so it offers Continue (not Retry) and does not move
+ * the turn to a fallback model, whose retry contract only covers `failed` runs. The log line is
+ * what the turn's failure message reads ("Timed out after 20 minutes without output").
+ */
+export function expireIdleAgentTask(
+    ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'pendingQaiqControlRequests' | 'killAgentProcessTree' | 'finishTask'>,
+    taskId: string,
+    child: ChildProcess,
+    logStream: Pick<fs.WriteStream, 'write'>,
+): QaapIdleAgentTaskExpiry {
+    if (ctx.tasks.get(taskId)?.state !== 'running') {
+        return 'not-running';
+    }
+    if (ctx.pendingQaiqControlRequests.get(taskId)?.length) {
+        return 'waiting-for-user';
+    }
+    // Settle only once the line is flushed: the settle reads the log right away to build the turn
+    // reason, and a read racing the buffered write would miss the timeout line. The process is
+    // killed in the same callback, so its `close` cannot settle the task first as `failed`.
+    logStream.write(`\n[qaap] task timed out after ${Math.round(IDLE_TASK_TIMEOUT_MS / 1000)}s without output.\n`, () => {
+        if (ctx.tasks.get(taskId)?.state !== 'running') {
+            return;
+        }
+        ctx.killAgentProcessTree(child);
+        ctx.finishTask(taskId, 'interrupted', undefined);
+    });
+    return 'interrupted';
 }
 
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
@@ -269,7 +321,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
             return;
         }
         // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
-        const billingRejection = await checkAgentTaskBillingGate(ctx, task, request);
+        const billingRejection = await resolveAgentTaskBillingRejection(ctx, task, request);
         if (billingRejection !== undefined) {
             fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
             fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');
@@ -449,18 +501,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         const bumpIdleTimer = (): void => {
             clearIdleTimer();
             idleTimer = setTimeout(() => {
-                if (ctx.tasks.get(task.id)?.state !== 'running') {
-                    return;
-                }
-                // A run paused on a permission approval is waiting for the user,
-                // not hung — keep it alive until someone responds.
-                if (ctx.pendingQaiqControlRequests.get(task.id)?.length) {
+                if (expireIdleAgentTask(ctx, task.id, child, logStream) === 'waiting-for-user') {
                     bumpIdleTimer();
-                    return;
                 }
-                logStream.write(`\n[qaap] task timed out after ${Math.round(IDLE_TASK_TIMEOUT_MS / 1000)}s without output.\n`);
-                ctx.killAgentProcessTree(child);
-                ctx.finishTask(task.id, 'failed', undefined);
             }, IDLE_TASK_TIMEOUT_MS);
         };
         bumpIdleTimer();
@@ -588,7 +631,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
         };
         child.stdout?.on('data', chunk => {
-            bumpIdleTimer();
+            if (isAgentProgressChunk(chunk)) {
+                bumpIdleTimer();
+            }
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);

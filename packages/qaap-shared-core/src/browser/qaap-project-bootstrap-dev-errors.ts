@@ -5,8 +5,47 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 
+/**
+ * A script's executable is missing from every `node_modules/.bin` on `PATH`: `sh: 1: theia: not
+ * found` (dash), `bash: line 1: vite: command not found`, `sh: vite: command not found` (macOS).
+ * Package managers, runtimes and git are excluded: their absence is an image problem, not install.
+ */
+const MISSING_SCRIPT_BINARY_REGEX = /\b(?:sh|bash|zsh)(?::\s*(?:line\s*)?\d+)?:\s*(?!(?:npm|npx|pnpm|yarn|bun|node|corepack|git):)([\w@.\/-]+): (?:command )?not found/i;
+
+/**
+ * System executables a script may call. Install never provides them, so `python3: not found` is an
+ * image problem: it must not be reported as missing dependencies or trigger a reinstall.
+ */
+const SYSTEM_BINARIES: ReadonlySet<string> = new Set([
+    'python', 'python3', 'pip', 'pip3', 'uv', 'poetry', 'docker', 'docker-compose', 'podman', 'make', 'cmake',
+    'go', 'cargo', 'rustc', 'java', 'javac', 'mvn', 'gradle', 'ruby', 'gem', 'bundle', 'php', 'composer',
+    'dotnet', 'deno', 'curl', 'wget', 'gcc', 'g++', 'cc', 'clang', 'psql', 'mysql', 'redis-server', 'sqlite3',
+]);
+
 /** Dev/install output that usually means dependencies were not installed (or only production deps). */
-export const DEV_INSTALL_NEEDED_REGEX = /ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|(?:sh|bash):\s*1:\s*(?:vite|esbuild|next|nuxt|astro): not found|Missing script:|npm error code ENOENT/i;
+export const DEV_INSTALL_NEEDED_REGEX = /ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|Missing script:|npm error code ENOENT/i;
+
+/**
+ * `Cannot find module` naming the repository's own compiled output, not a dependency and not a
+ * source import: an absolute or relative path (never a bare or `@/` alias specifier), outside
+ * `node_modules` and `src/`, that is a JavaScript file or sits in an output folder
+ * (`/repo/dev-packages/cli/lib/theia` when `theia start` runs before `npm run build`).
+ * Reinstalling cannot fix it.
+ */
+const CANNOT_FIND_MODULE_REGEX = /Cannot find module '([^']+)'/gi;
+
+function isMissingBuildOutputPath(specifier: string): boolean {
+    const path = specifier.replace(/\\/g, '/');
+    if (!/^(?:\/|\.{1,2}\/|[A-Za-z]:\/)/.test(path) || /\/(?:node_modules|src)\//.test(path)) {
+        return false;
+    }
+    // Next.js's own `.next` cache (`./vendor-chunks/x.js` after a stale dev compile) is a framework
+    // cache problem fixed by restarting the dev server, not a project that was never built.
+    if (/(?:^|\/)\.next\//.test(path) || /(?:^|\/)vendor-chunks\//.test(path)) {
+        return false;
+    }
+    return /\.(?:c|m)?js$/.test(path) || /\/(?:lib|dist|out|build)\//.test(path);
+}
 
 /**
  * A dev port bound by another process. Node prints `EADDRINUSE` / `address already in use`, but
@@ -43,6 +82,8 @@ const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
 export type QaapBootstrapFailureKind =
     | 'out-of-memory'
+    | 'build-required'
+    | 'build-failed'
     | 'dependencies'
     | 'port-conflict'
     | 'next-lock'
@@ -58,8 +99,93 @@ export interface QaapBootstrapFailureDiagnosis {
     readonly message: string;
 }
 
+/**
+ * Preview never builds a project on its own (a monorepo build can take tens of minutes and exhaust
+ * the workspace memory): this tells the user how to build, or how to opt in explicitly.
+ */
+const QAAP_PREVIEW_BUILD_REQUIRED_LEAD = 'The project has not been built yet: its start script needs compiled output that does not exist.';
+
+/**
+ * The `build-required` copy. Build and start and the `.qaap/preview.json` opt-in exist only for
+ * workspace members with a declared build (`buildAndStartCommand`); elsewhere neither is named.
+ */
+export function formatQaapPreviewBuildRequiredMessage(canBuildAndStart: boolean): string {
+    return canBuildAndStart
+        ? `${QAAP_PREVIEW_BUILD_REQUIRED_LEAD} Choose Build and start to build it now (a large project can take several minutes), `
+            + 'run the build yourself, or opt in to building before every preview with {"build": "auto"} in .qaap/preview.json.'
+        : `${QAAP_PREVIEW_BUILD_REQUIRED_LEAD} Run its build yourself (for example npm run build), then start the preview again.`;
+}
+
+/** The `build-required` copy when no Build and start action is available. */
+export const QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE = formatQaapPreviewBuildRequiredMessage(false);
+
+/**
+ * A preview whose command chains an opted-in build (`npm run build && npm run start`) failed.
+ * Every retry would rerun the whole build, so the failure is final and says so: an out-of-memory
+ * build is reported as such, any other exit quotes the useful line. Diagnoses that are not about the
+ * process itself (dependencies, environment, …) keep their own message.
+ */
+export function diagnoseBuildFirstPreviewFailure(
+    diagnosis: QaapBootstrapFailureDiagnosis,
+    buildScript: string,
+    origin: 'preview-config' | 'build-and-start' = 'preview-config',
+): QaapBootstrapFailureDiagnosis {
+    const noRetry = 'Qaap does not retry builds automatically.';
+    const userStarted = origin === 'build-and-start';
+    if (diagnosis.kind === 'out-of-memory') {
+        return {
+            kind: 'out-of-memory',
+            message: userStarted
+                ? `The \`${buildScript}\` step started by Build and start ran out of memory and was stopped. ${noRetry} `
+                    + 'Build with more memory or a narrower build in a terminal, then start the preview again.'
+                : `The \`${buildScript}\` step that runs before the preview ran out of memory and was stopped. ${noRetry} `
+                    + 'Build with more memory or a narrower build in a terminal, or remove "build": "auto" from .qaap/preview.json, then start the preview again.',
+        };
+    }
+    if (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown') {
+        return {
+            kind: 'build-failed',
+            message: userStarted
+                ? `The \`${buildScript}\` step started by Build and start failed: ${diagnosis.message} `
+                    + `${noRetry} Fix the error, then choose Build and start again.`
+                : `The preview runs \`${buildScript}\` first (opted in via .qaap/preview.json) and it failed: ${diagnosis.message} `
+                    + `${noRetry} Fix the error, then start the preview again.`,
+        };
+    }
+    return diagnosis;
+}
+
 export function terminalOutputNeedsInstall(output: string): boolean {
-    return DEV_INSTALL_NEEDED_REGEX.test(output);
+    if (terminalOutputNeedsBuild(output)) {
+        return false;
+    }
+    const missingBinary = terminalOutputMissingBinary(output);
+    return (missingBinary !== undefined && !isSystemBinary(missingBinary)) || DEV_INSTALL_NEEDED_REGEX.test(output);
+}
+
+/** The executable a script could not find (`theia` for `sh: 1: theia: not found`). */
+export function terminalOutputMissingBinary(output: string): string | undefined {
+    return MISSING_SCRIPT_BINARY_REGEX.exec(output.replace(ANSI_REGEX, ''))?.[1];
+}
+
+/** Whether a missing executable is a system tool that install cannot provide. */
+export function isSystemBinary(binary: string): boolean {
+    // `python3.12` is `python3`'s versioned alias.
+    return SYSTEM_BINARIES.has(binary) || SYSTEM_BINARIES.has(binary.replace(/\.[\d.]+$/, ''));
+}
+
+/** Whether the output shows the project's own compiled output is missing (needs a build, not an install). */
+export function terminalOutputNeedsBuild(output: string): boolean {
+    const clean = output.replace(ANSI_REGEX, '');
+    if (clean.includes(QAAP_PREVIEW_BUILD_REQUIRED_LEAD)) {
+        return true;
+    }
+    for (const match of clean.matchAll(CANNOT_FIND_MODULE_REGEX)) {
+        if (isMissingBuildOutputPath(match[1])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 export function terminalOutputOutOfMemory(output: string): boolean {
@@ -96,8 +222,20 @@ export function isTerminalDoesNotExistError(message: string): boolean {
     return /terminal "[\d]+" does not exist/i.test(message);
 }
 
+/**
+ * Output whose line breaks arrived as literal `\n` escapes (JSON-encoded or double-escaped
+ * terminal text) is one long line; restore real line breaks so it is quoted line by line.
+ * Text that already has real line breaks is left alone (`C:\new` in a Windows path stays intact).
+ */
+export function restoreEscapedLineBreaks(output: string): string {
+    if (/[\r\n]/.test(output) || !/\\n/.test(output)) {
+        return output;
+    }
+    return output.replace(/(?:\\r)?\\n/g, '\n');
+}
+
 function lastUsefulErrorLine(output: string): string | undefined {
-    const clean = output.replace(ANSI_REGEX, '');
+    const clean = restoreEscapedLineBreaks(output.replace(ANSI_REGEX, ''));
     const lines = clean.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i];
@@ -115,6 +253,27 @@ export function diagnoseBootstrapFailure(output: string, fallback: string): Qaap
             kind: 'out-of-memory',
             message: 'The dev server ran out of memory and was stopped. Raise the workspace memory limit or use a lighter '
                 + 'dev mode (for example Next.js with Turbopack instead of --webpack), then retry.',
+        };
+    }
+    if (terminalOutputNeedsBuild(output)) {
+        return {
+            kind: 'build-required',
+            message: QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
+        };
+    }
+    const missingBinary = terminalOutputMissingBinary(output);
+    if (missingBinary && isSystemBinary(missingBinary)) {
+        return {
+            kind: 'runtime-version',
+            message: `\`${missingBinary}\` is not available in the workspace environment. Installing dependencies cannot add it: `
+                + 'install it in the workspace image or change the script to use an available executable.',
+        };
+    }
+    if (missingBinary) {
+        return {
+            kind: 'dependencies',
+            message: `The \`${missingBinary}\` command is not installed. In a monorepo it is installed at the workspace root, `
+                + 'so run Install there (Try again does it automatically), then retry the preview.',
         };
     }
     if (terminalOutputNeedsInstall(output)) {
@@ -176,7 +335,7 @@ export const DEV_EXIT_OUTPUT_LINES = 12;
 
 /** The last non-empty lines of dev output, without ANSI escapes. */
 export function lastDevOutputLines(output: string, maxLines: number = DEV_EXIT_OUTPUT_LINES): string {
-    return output.replace(ANSI_REGEX, '')
+    return restoreEscapedLineBreaks(output.replace(ANSI_REGEX, ''))
         .split(/\r?\n|\r/)
         .map(line => line.trimEnd())
         .filter(line => line.trim().length > 0)

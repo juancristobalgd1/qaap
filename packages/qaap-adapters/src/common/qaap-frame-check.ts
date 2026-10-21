@@ -16,9 +16,10 @@ export interface QaapFrameCheckResult {
 }
 
 /**
- * Decides embeddability from response headers (lower-case names).
- * Not embeddable: `X-Frame-Options` DENY / SAMEORIGIN, or a CSP `frame-ancestors` directive that
- * allows neither `*` nor the embedding Qaap origin (`appOrigin`, e.g. `https://qaap.example`).
+ * Decides embeddability from response headers (lower-case names), the way browsers do: when any CSP
+ * `frame-ancestors` directive is present it alone decides and `X-Frame-Options` is ignored; it blocks
+ * unless it allows `*` or the embedding Qaap origin (`appOrigin`, e.g. `https://qaap.example`).
+ * Without `frame-ancestors`, `X-Frame-Options` DENY / SAMEORIGIN blocks.
  */
 export function evaluateQaapFrameHeaders(
     headers: Readonly<Record<string, string | string[] | undefined>>,
@@ -34,19 +35,26 @@ export function evaluateQaapFrameHeaders(
         const value = headers[name];
         return (Array.isArray(value) ? value.join(',') : value ?? '').trim();
     };
-    const xfo = joined('x-frame-options').toLowerCase();
-    if (/(^|[\s,])(deny|sameorigin)\b/.test(xfo)) {
-        return { embeddable: false, reason: `X-Frame-Options: ${xfo}` };
-    }
-    const csp = joined('content-security-policy');
-    for (const policy of csp.split(',')) {
+    let hasFrameAncestors = false;
+    for (const policy of joined('content-security-policy').split(',')) {
         for (const directive of policy.split(';')) {
             const parts = directive.trim().split(/\s+/);
-            if (parts[0]?.toLowerCase() === 'frame-ancestors'
-                && !parts.slice(1).some(source => frameAncestorSourceMatches(source, app))) {
+            if (parts[0]?.toLowerCase() !== 'frame-ancestors') {
+                continue;
+            }
+            hasFrameAncestors = true;
+            // Every policy must allow the embedding origin (browsers enforce each policy separately).
+            if (!parts.slice(1).some(source => frameAncestorSourceMatches(source, app))) {
                 return { embeddable: false, reason: 'Content-Security-Policy: frame-ancestors' };
             }
         }
+    }
+    if (hasFrameAncestors) {
+        return { embeddable: true };
+    }
+    const xfo = joined('x-frame-options').toLowerCase();
+    if (/(^|[\s,])(deny|sameorigin)\b/.test(xfo)) {
+        return { embeddable: false, reason: `X-Frame-Options: ${xfo}` };
     }
     return { embeddable: true };
 }

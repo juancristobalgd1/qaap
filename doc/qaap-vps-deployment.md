@@ -37,6 +37,18 @@ Choose a range that does not overlap the VPS host, VPN, or private network range
 restart Docker before starting Qaap tenant workloads. Without an expanded pool, Docker can exhaust
 its defaults and reject tenant network creation with a non-overlapping IPv4 address-pool error.
 
+The compose network shared by Caddy and theia is also allocated from this pool. The security log
+rate limiter trusts `X-Forwarded-For` from the subnets of the theia container's own interfaces
+(plus loopback), so this works with any pool; only set `QAAP_TRUSTED_PROXY_CIDRS` (which replaces
+that default) if Caddy reaches theia from a subnet the container is not attached to.
+
+Before deploying, check the operator `.env`, because compose now passes these variables to theia
+and `QAAP_TENANT_PROXY_EARLY_ROUTING=0` makes the control plane refuse to boot unless acknowledged:
+
+```sh
+grep -E 'EARLY_ROUTING|TRUSTED_PROXY' /opt/qaap/.env
+```
+
 ## Tenant idle stop and cold-start (wake) timing
 
 In backend-per-tenant mode the reaper stops a tenant's backend and worker after a period without

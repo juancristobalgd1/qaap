@@ -183,6 +183,58 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(reserved).to.deep.equal([5173]);
         });
 
+        it('fails fast as build-required without spawning when the build output is certainly missing', async () => {
+            const { ctx, attachCalls, reserved } = makeCtx(true);
+            const phases: string[] = [];
+            (ctx as unknown as { setPhase: (phase: string) => void }).setPhase = phase => { phases.push(phase); };
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => false };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, PLAN, descriptor);
+            expect(phases).to.deep.equal(['run-failed']);
+            // No Build and start command: neither the button nor the opt-in is named.
+            expect(ctx._error).to.contain('Run its build yourself');
+            expect(ctx._error).not.to.contain('Build and start');
+            expect(ctx._error).not.to.contain('"build": "auto"');
+            expect(attachCalls).to.deep.equal([]);
+            expect(reserved).to.deep.equal([]);
+        });
+
+        it('names Build and start in the fail-fast message only when the action exists', async () => {
+            const { ctx } = makeCtx(true);
+            (ctx as unknown as { setPhase: (phase: string) => void }).setPhase = () => { };
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => false };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+                buildAndStartCommand: 'npm run build && npm run start',
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, PLAN, descriptor);
+            expect(ctx._error).to.contain('Choose Build and start');
+            expect(ctx._error).to.contain('"build": "auto"');
+        });
+
+        it('starts when the user chose Build and start, even with the output still missing', async () => {
+            const { ctx, attachCalls } = makeCtx(true);
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => false };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+                buildAndStartCommand: 'npm run build && npm run start',
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, { ...PLAN, command: 'npm run build && npm run start' }, descriptor);
+            expect(attachCalls).to.deep.equal([[5173]]);
+        });
+
+        it('starts normally once the user built the missing output by hand', async () => {
+            const { ctx, attachCalls } = makeCtx(true);
+            (ctx as unknown as { detector: object }).detector = { pathExists: async () => true };
+            const descriptor = {
+                name: 'api', apps: [], buildRequired: true, buildOutputUri: { toString: () => 'file:///ws/apps/api/dist' },
+            } as unknown as import('./qaap-project-bootstrap-types').QaapProjectDescriptor;
+            await streaming.startDevServerExtracted(ctx, PLAN, descriptor);
+            expect(attachCalls).to.deep.equal([[5173]]);
+        });
+
         it('does not adopt the old server of a restart while its managed terminal is still alive', async () => {
             const { ctx, attachCalls, reserved } = makeCtx(true, { isDisposed: false });
             await streaming.startDevServerExtracted(ctx, PLAN, DESCRIPTOR);
@@ -287,6 +339,127 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(attachCalls()).to.equal(1);
             expect(ctx._error).to.contain('exited with code 0 without listening on port 3001');
             expect(ctx._error).to.contain('SQLite errcode 14 (non-fatal)');
+        });
+
+        it('never auto-retries a failed opted-in build chained before the server', async () => {
+            const { ctx, attachCalls } = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build' },
+                devOutputTail: 'src/index.ts(3,7): error TS2322: Type \'string\' is not assignable to type \'number\'.\n'
+                    + 'npm error Lifecycle script `build` failed with error:\nnpm error code 2\n',
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 2.', PLAN, 7);
+
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            expect(attachCalls()).to.equal(1);
+            expect(ctx._error).to.contain('runs `build` first');
+            expect(ctx._error).to.contain('does not retry builds');
+            expect(ctx._error).to.contain('npm error code 2');
+        });
+
+        it('reports an out-of-memory opted-in build once, as a build failure, without retrying', async () => {
+            const { ctx } = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build' },
+                devOutputTail: 'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n',
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 134.', PLAN, 7);
+
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            expect(ctx._error).to.contain('`build` step that runs before the preview ran out of memory');
+        });
+
+        it('recovers a port conflict of a chained build with the start command alone (no rebuild)', async () => {
+            const started: string[] = [];
+            const { ctx } = failingRunContext({
+                _descriptor: {
+                    name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build', previewStartCommand: 'npm run start',
+                },
+                _portConflictDetected: true,
+                _portConflictPort: 5173,
+                automaticPortRecoveryAttempts: 0,
+                attemptedDevPorts: new Set<number>([5173]),
+                startDevServer: async (plan: { command: string }) => { started.push(plan.command); },
+            });
+            await activity.failDevRunExtracted(ctx, 'Error: listen EADDRINUSE: address already in use :::5173',
+                { ...PLAN, command: 'npm run build && npm run start' }, 7);
+
+            expect(started).to.deep.equal(['npm run start']);
+            expect(ctx.automaticPortRecoveryAttempts).to.equal(1);
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+        });
+
+        it('reports a port conflict of a chained build instead of relaunching it when the start command is unknown', async () => {
+            const started: string[] = [];
+            const { ctx } = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildScript: 'build' },
+                _portConflictDetected: true,
+                _portConflictPort: 5173,
+                automaticPortRecoveryAttempts: 0,
+                attemptedDevPorts: new Set<number>([5173]),
+                startDevServer: async (plan: { command: string }) => { started.push(plan.command); },
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Error: listen EADDRINUSE: address already in use :::5173',
+                { ...PLAN, command: 'npm run build && npm run start' }, 7);
+
+            expect(started).to.deep.equal([]);
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx._error).to.contain('does not relaunch a preview that builds first');
+        });
+
+        it('reports a failed Build and start once, without retrying the build', async () => {
+            const started: string[] = [];
+            const { ctx } = failingRunContext({
+                _descriptor: {
+                    name: 'app', nodeModulesPresent: true, apps: [],
+                    buildAndStartCommand: 'npm run build && npm run start', previewStartCommand: 'npm run start',
+                },
+                devOutputTail: 'src/index.ts(1,1): error TS1005: ; expected.\nnpm error code 2\n',
+                startDevServer: async (plan: { command: string }) => { started.push(plan.command); },
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            });
+            await activity.failDevRunExtracted(ctx, 'Dev server exited with code 2.',
+                { ...PLAN, command: 'npm run build && npm run start' }, 7);
+
+            expect(started).to.deep.equal([]);
+            expect(ctx._phase).to.equal('run-failed');
+            expect(ctx.previewAutoRetryAttempts).to.equal(0);
+            expect(ctx.previewAutoRetryTimer).to.equal(undefined);
+            expect(ctx._error).to.contain('does not retry builds');
+            expect(ctx._error).to.contain('started by Build and start failed');
+            expect(ctx._error).not.to.contain('.qaap/preview.json');
+        });
+
+        it('names Build and start for a runtime build-required failure only when the action exists', async () => {
+            const output = "Error: Cannot find module '/ws/dev-packages/cli/lib/theia'\n";
+            const withAction = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [], buildAndStartCommand: 'npm run build && npm run start' },
+                devOutputTail: output,
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            }).ctx;
+            await activity.failDevRunExtracted(withAction, 'Dev server exited with code 1.', PLAN, 7);
+            expect(withAction._error).to.contain('Choose Build and start');
+
+            const single = failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, apps: [] },
+                devOutputTail: output,
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            }).ctx;
+            await activity.failDevRunExtracted(single, 'Dev server exited with code 1.', PLAN, 7);
+            expect(single._error).to.contain('Run its build yourself');
+            expect(single._error).not.to.contain('Build and start');
+            expect(single.previewAutoRetryAttempts).to.equal(0);
         });
 
         it('handles a later failure of the same run once the first one settled', async () => {

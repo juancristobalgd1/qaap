@@ -1,0 +1,6 @@
+{
+  "name": "fixture-monorepo",
+  "private": true,
+  "scripts": { "lint": "echo lint" },
+  "workspaces": ["tools/*", "apps/*"]
+}

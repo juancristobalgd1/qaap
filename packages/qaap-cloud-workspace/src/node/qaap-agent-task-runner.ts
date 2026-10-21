@@ -94,7 +94,7 @@ import {
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
-import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
+import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
@@ -796,7 +796,20 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             this,
             agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
             agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
+            agentId => this.hasAgentAuthSignal(agentId),
         );
+    }
+
+    /**
+     * Whether this harness's sign-in state can ever be known: Settings credentials (QAIQ) or an auth
+     * probe. Without either it stays `unknown`, which must not make it the default.
+     */
+    protected hasAgentAuthSignal(agentId: string): boolean {
+        const normalized = agentId.trim().toLowerCase();
+        const candidate = this.detectedAgents.get(normalized);
+        return !!candidate
+            && (hasAgentSettingsCredentialsHelper(normalized, () => undefined) !== undefined
+                || !!resolveAgentConnectionProbeHelper(normalized, candidate.bin ?? normalized));
     }
 
     /**
@@ -815,6 +828,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ? undefined
                 : this.refreshAgentConnectionState(agentId, ownerLogin),
             budgetMs,
+            agentId => this.hasAgentAuthSignal(agentId),
         );
     }
 
@@ -1077,8 +1091,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return shellQuoteHelper(value);
     }
 
-    cancel(id: string): QaapAgentTask | undefined {
-        const task = cancelExtracted(this, id);
+    cancel(id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined {
+        const task = cancelExtracted(this, id, options);
         this.releaseTenantOperation(id);
         return task;
     }
