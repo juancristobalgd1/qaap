@@ -38,6 +38,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
     let disableJSDOM: (() => void) | undefined;
     let activity: typeof import('./qaap-project-bootstrap-service-activity');
     let streaming: typeof import('./qaap-project-bootstrap-service-streaming');
+    let toolPills: typeof import('./qaap-project-bootstrap-service-tool-pills');
     let describeDevProcessExit: typeof import('./qaap-project-bootstrap-dev-errors').describeDevProcessExit;
 
     before(() => {
@@ -53,6 +54,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
         } as NodeJS.Module;
         activity = require('./qaap-project-bootstrap-service-activity');
         streaming = require('./qaap-project-bootstrap-service-streaming');
+        toolPills = require('./qaap-project-bootstrap-service-tool-pills');
         ({ describeDevProcessExit } = require('./qaap-project-bootstrap-dev-errors'));
     });
 
@@ -519,44 +521,70 @@ describe('QaapProjectBootstrapService dev run guards', () => {
 
     describe('workspace refresh racing a dev run', () => {
         const ROOT = URI.fromFilePath(PROJECT_CWD);
+        const OTHER_ROOT = URI.fromFilePath('/workspace/other');
         const DESCRIPTOR = { name: 'app', rootUri: ROOT, nodeModulesPresent: true, apps: [] };
+        const OTHER_DESCRIPTOR = { name: 'other', rootUri: OTHER_ROOT, nodeModulesPresent: true, apps: [] };
 
-        const refreshContext = (detect: () => Promise<unknown>): {
-            ctx: QaapProjectBootstrapServiceContext; phases: string[];
-        } => {
+        interface RefreshHarness {
+            ctx: QaapProjectBootstrapServiceContext;
+            phases: string[];
+            scheduledRefreshes(): number;
+            /** Resolves the oldest pending `detect` call for `root`. */
+            resolveDetect(root: URI, descriptor: unknown): void;
+        }
+
+        const refreshContext = (immediate?: unknown): RefreshHarness => {
             const phases: string[] = [];
+            const pending = new Map<string, Array<(descriptor: unknown) => void>>();
+            let scheduled = 0;
             const state = {
                 _phase: 'ready-to-run',
                 _descriptor: DESCRIPTOR,
                 devRunGeneration: 1,
                 installGeneration: 1,
+                refreshGeneration: 0,
+                workspaceRefreshDeferredByDevRun: false,
                 resetBootstrapSessionForWorkspace: () => {
                     state.devRunGeneration++;
                     state.installGeneration++;
                 },
                 clearForwardedPorts: () => undefined,
-                detector: { detect },
+                detector: {
+                    detect: (root: URI) => immediate !== undefined ? Promise.resolve(immediate) : new Promise(resolve => {
+                        const key = root.toString();
+                        pending.set(key, [...(pending.get(key) ?? []), resolve]);
+                    }),
+                },
                 readPersisted: () => undefined,
                 scheduleDevPreviewWarmup: () => undefined,
+                scheduleRefreshFromCurrentWorkspace: () => {
+                    scheduled++;
+                },
                 setPhase: (phase: string) => {
                     phases.push(phase);
                     state._phase = phase;
                 },
             };
-            return { ctx: state as unknown as QaapProjectBootstrapServiceContext, phases };
+            return {
+                ctx: state as unknown as QaapProjectBootstrapServiceContext,
+                phases,
+                scheduledRefreshes: () => scheduled,
+                resolveDetect: (root, descriptor) => pending.get(root.toString())!.shift()!(descriptor),
+            };
+        };
+
+        /** What runDevServer → startDevServer does to the session. */
+        const startRun = (ctx: QaapProjectBootstrapServiceContext): void => {
+            ctx.devRunGeneration++;
+            ctx.setPhase('starting');
         };
 
         it('keeps a dev run that started while detection was in flight', async () => {
-            let resolveDetect: (descriptor: unknown) => void = () => undefined;
-            const { ctx, phases } = refreshContext(() => new Promise(resolve => {
-                resolveDetect = resolve;
-            }));
+            const { ctx, phases, resolveDetect } = refreshContext();
 
             const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
-            // runDevServer → startDevServer bumps the run generation and enters `starting`.
-            ctx.devRunGeneration++;
-            ctx.setPhase('starting');
-            resolveDetect({ ...DESCRIPTOR });
+            startRun(ctx);
+            resolveDetect(ROOT, { ...DESCRIPTOR });
             await refresh;
 
             expect(phases).to.deep.equal(['starting']);
@@ -564,11 +592,108 @@ describe('QaapProjectBootstrapService dev run guards', () => {
         });
 
         it('applies the detected descriptor when nothing started meanwhile', async () => {
-            const { ctx, phases } = refreshContext(async () => ({ ...DESCRIPTOR }));
+            const { ctx, phases } = refreshContext({ ...DESCRIPTOR });
 
             await streaming.refreshFromRootExtracted(ctx, ROOT);
 
             expect(phases).to.deep.equal(['ready-to-run']);
+            expect(ctx.workspaceRefreshDeferredByDevRun).to.equal(false);
+        });
+
+        it('drops a slower refresh of another root once a newer refresh started', async () => {
+            const { ctx, phases, resolveDetect } = refreshContext();
+            ctx._descriptor = undefined;
+
+            const older = streaming.refreshFromRootExtracted(ctx, OTHER_ROOT);
+            const newer = streaming.refreshFromRootExtracted(ctx, ROOT);
+            resolveDetect(ROOT, { ...DESCRIPTOR });
+            await newer;
+            resolveDetect(OTHER_ROOT, { ...OTHER_DESCRIPTOR });
+            await older;
+
+            expect((ctx._descriptor as { name: string } | undefined)?.name).to.equal('app');
+            expect(phases).to.deep.equal(['ready-to-run']);
+        });
+
+        it('defers a snapshot dropped for a live run instead of applying it', async () => {
+            const { ctx, resolveDetect, scheduledRefreshes } = refreshContext();
+            const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
+            startRun(ctx);
+            resolveDetect(ROOT, { ...DESCRIPTOR, nodeModulesPresent: false });
+            await refresh;
+
+            expect(ctx.workspaceRefreshDeferredByDevRun).to.equal(true);
+            expect(scheduledRefreshes()).to.equal(0);
+        });
+
+        it('replays the dropped snapshot right away when the run already settled', async () => {
+            const { ctx, resolveDetect, scheduledRefreshes } = refreshContext();
+            const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
+            startRun(ctx);
+            ctx.setPhase('run-failed');
+            resolveDetect(ROOT, { ...DESCRIPTOR });
+            await refresh;
+
+            expect(ctx.workspaceRefreshDeferredByDevRun).to.equal(false);
+            expect(scheduledRefreshes()).to.equal(1);
+        });
+
+        it('defers a refresh of the same root that arrives while the run is starting', async () => {
+            const { ctx, phases, scheduledRefreshes } = refreshContext({ ...DESCRIPTOR });
+            startRun(ctx);
+
+            await streaming.refreshFromRootExtracted(ctx, ROOT);
+
+            expect(phases).to.deep.equal(['starting']);
+            expect(ctx.workspaceRefreshDeferredByDevRun).to.equal(true);
+            expect(scheduledRefreshes()).to.equal(0);
+        });
+
+        describe('setPhase replay of a deferred refresh', () => {
+            const phaseContext = (): { ctx: QaapProjectBootstrapServiceContext; scheduledRefreshes(): number } => {
+                let scheduled = 0;
+                const ctx = {
+                    _phase: 'starting',
+                    workspaceRefreshDeferredByDevRun: true,
+                    startDevPreviewHealthMonitor: () => undefined,
+                    cancelDevPreviewHealthMonitor: () => undefined,
+                    stateEmitter: { fire: () => undefined },
+                    buildStateChange: () => ({}),
+                    syncHubSession: () => undefined,
+                    scheduleRefreshFromCurrentWorkspace: () => {
+                        scheduled++;
+                    },
+                } as unknown as QaapProjectBootstrapServiceContext;
+                return { ctx, scheduledRefreshes: () => scheduled };
+            };
+
+            it('waits while the server is still up', () => {
+                const { ctx, scheduledRefreshes } = phaseContext();
+
+                toolPills.setPhaseExtracted(ctx, 'running');
+
+                expect(scheduledRefreshes()).to.equal(0);
+                expect(ctx.workspaceRefreshDeferredByDevRun).to.equal(true);
+            });
+
+            it('reschedules the workspace refresh once when the run fails', () => {
+                const { ctx, scheduledRefreshes } = phaseContext();
+
+                toolPills.setPhaseExtracted(ctx, 'run-failed');
+                toolPills.setPhaseExtracted(ctx, 'ready-to-run');
+
+                expect(scheduledRefreshes()).to.equal(1);
+                expect(ctx.workspaceRefreshDeferredByDevRun).to.equal(false);
+            });
+
+            it('reschedules the workspace refresh when the run is stopped', () => {
+                const { ctx, scheduledRefreshes } = phaseContext();
+                toolPills.setPhaseExtracted(ctx, 'running');
+
+                toolPills.setPhaseExtracted(ctx, 'ready-to-run');
+
+                expect(scheduledRefreshes()).to.equal(1);
+            });
         });
     });
 });

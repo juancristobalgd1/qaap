@@ -29,3 +29,8 @@ export function normalizePersistedBootstrapPhase(
             return phase;
     }
 }
+
+/** Phases during which a workspace refresh would reset a live install or dev run. */
+export function isQaapDevRunBusyPhase(phase: QaapPersistedBootstrapPhase): boolean {
+    return phase === 'installing' || phase === 'starting' || phase === 'running';
+}

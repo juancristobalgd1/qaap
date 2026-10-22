@@ -24,7 +24,7 @@ import {
     formatQaapPreviewBuildRequiredMessage,
     terminalOutputNeedsInstall,
 } from './qaap-project-bootstrap-dev-errors';
-import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
+import { isQaapDevRunBusyPhase, normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
 import {
     QAAP_PREVIEW_TERMINAL_KIND,
 } from './qaap-preview-terminal-lifecycle';
@@ -494,6 +494,15 @@ export async function refreshFromCurrentWorkspaceExtracted(ctx: QaapProjectBoots
         await ctx.refreshFromRoot(first?.resource);
 }
 
+function deferWorkspaceRefreshUntilDevRunSettles(ctx: QaapProjectBootstrapServiceContext): void {
+        if (isQaapDevRunBusyPhase(ctx._phase)) {
+            ctx.workspaceRefreshDeferredByDevRun = true;
+            return;
+        }
+        // The run already settled (e.g. failed fast) while `detect` was in flight.
+        ctx.scheduleRefreshFromCurrentWorkspace();
+}
+
 export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceContext, resource: URI | undefined): Promise<void> {
         const nextRootKey = resource?.toString() ?? '';
         const currentRootKey = ctx._descriptor?.rootUri.toString() ?? '';
@@ -502,8 +511,11 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
             && nextRootKey.length > 0
             && nextRootKey === currentRootKey
         ) {
+            // Applying the refresh now would kill the live run; replay it once the run settles.
+            ctx.workspaceRefreshDeferredByDevRun = true;
             return;
         }
+        const refreshId = ++ctx.refreshGeneration;
         ctx.resetBootstrapSessionForWorkspace();
         ctx.clearForwardedPorts();
         if (!resource) {
@@ -516,12 +528,19 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         const devRunGeneration = ctx.devRunGeneration;
         const installGeneration = ctx.installGeneration;
         const descriptor = await ctx.detector.detect(resource);
+        if (refreshId !== ctx.refreshGeneration) {
+            // A newer refresh started while `detect` was in flight, possibly for another root.
+            // It owns the session now; applying this older snapshot would overwrite it.
+            return;
+        }
         if ((devRunGeneration !== ctx.devRunGeneration || installGeneration !== ctx.installGeneration)
             && ctx._descriptor?.rootUri.toString() === nextRootKey) {
-            // A run/install for this same root started (or a newer refresh reset the session)
-            // while `detect` was in flight. Applying this older snapshot would flip `starting` back
-            // to `ready-to-run` under the live process: its "Local: http://…" line is then ignored,
-            // the preview never stages, and the server is orphaned on its port.
+            // A run/install for this same root started while `detect` was in flight. Applying this
+            // older snapshot would flip `starting` back to `ready-to-run` under the live process:
+            // its "Local: http://…" line is then ignored, the preview never stages, and the server
+            // is orphaned on its port. Replay the refresh once the run settles instead, so real
+            // descriptor changes (package.json, .qaap/preview.json, node_modules) still land.
+            deferWorkspaceRefreshUntilDevRunSettles(ctx);
             return;
         }
         ctx._descriptor = descriptor;
@@ -532,7 +551,11 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         ctx._portConflictDetected = false;
         ctx._portConflictPort = undefined;
         if (!descriptor) {
-            ctx._missingDescriptorHint = await ctx.getMissingDescriptorHint(resource);
+            const hint = await ctx.getMissingDescriptorHint(resource);
+            if (refreshId !== ctx.refreshGeneration) {
+                return;
+            }
+            ctx._missingDescriptorHint = hint;
             ctx.setPhase('idle');
             return;
         }

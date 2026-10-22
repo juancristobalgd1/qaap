@@ -3,6 +3,7 @@ import type { QaapProjectBootstrapServiceContext } from './qaap-project-bootstra
 
 import type { PersistedEntry, QaapBootstrapStateChange } from './qaap-project-bootstrap-service';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { isQaapDevRunBusyPhase } from '../common/qaap-project-bootstrap-phase';
 import { nls } from '@theia/core/lib/common/nls';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import {
@@ -316,6 +317,10 @@ export function setPhaseExtracted(ctx: QaapProjectBootstrapServiceContext, phase
         }
         ctx.stateEmitter.fire(ctx.buildStateChange(phase));
         ctx.syncHubSession(phase);
+        if (ctx.workspaceRefreshDeferredByDevRun && !isQaapDevRunBusyPhase(phase)) {
+            ctx.workspaceRefreshDeferredByDevRun = false;
+            ctx.scheduleRefreshFromCurrentWorkspace();
+        }
 }
 
 export function syncHubSessionExtracted(ctx: QaapProjectBootstrapServiceContext, phase: QaapBootstrapPhase): void {

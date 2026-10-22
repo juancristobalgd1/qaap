@@ -317,6 +317,17 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public refreshDebounceTimer: number | undefined;
     /**
+     * Invalidates an in-flight workspace refresh once a newer one starts, whatever its root.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public refreshGeneration = 0;
+    /**
+     * A workspace refresh was dropped because a dev run/install for the same root was in flight;
+     * `setPhase` reschedules it once the run settles so descriptor changes are not lost.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public workspaceRefreshDeferredByDevRun = false;
+    /**
      * Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000).
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */

@@ -112,6 +112,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'reconcileSupersededPreviewClaim'
     | 'recordForwardedPort'
     | 'refreshDebounceTimer'
+    | 'refreshGeneration'
     | 'refreshDescriptorAfterInstall'
     | 'refreshFromCurrentWorkspace'
     | 'refreshFromRoot'
@@ -151,6 +152,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'waitForExit'
     | 'warmupDevPreview'
     | 'watchAttachedDevTerminal'
+    | 'workspaceRefreshDeferredByDevRun'
     | 'workspaceService';
 
 /**
