@@ -11,8 +11,6 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapAgentConversation, QaapAgentMessage, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-
 import { QAAP_CHAT_TURN_NODE, QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT, QAAP_CHAT_TURN_WORKFLOW_ID, buildChatTurnWorkflow, resolveChatTurnOutcome, resolveChatTurnRunBudget } from '../common/qaap-chat-turn-workflow';
 
 import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
@@ -26,7 +24,7 @@ import type { QaapAgentTask } from '../common/qaap-agent-task';
 
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 
-import { agentModelKey, agentTurnHasRetryableEmptyOutput, agentTurnHasRetryableModelFailure, agentTurnHasRetryableToolSupportFailure, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
+import { agentModelKey, agentTurnQualifiesForModelFallback, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
 
 import { countDurableLoopSpawns as countDurableLoopSpawnsHelper } from './qaap-agent-conversation-store-helpers';
 
@@ -156,21 +154,8 @@ export async function maybeRetryTurnWithFallbackModelViaGraphExtracted(ctx: Qaap
         agentMessage: QaapAgentMessage | undefined,
         turnAgentId: string,
         startSha?: string, ): Promise<boolean> {
-        if (!agentSupportsModelPicker(turnAgentId)) {
-            return false;
-        }
-        // The preflight proved the user's BYOK key is rejected or out of credits: another model
-        // of this agent uses the same key, so a fallback retry would only fail again.
-        if (task.providerKeyVerdict === 'key_rejected' || task.providerKeyVerdict === 'no_credits') {
-            return false;
-        }
-        // Same retriability contract as the imperative branch — including the quota exclusion,
-        // which is neither of these classifications.
-        const toolSupportFailure = agentTurnHasRetryableToolSupportFailure(agentMessage);
-        const retryableFailedState = task.state === 'failed'
-            && (agentTurnHasRetryableEmptyOutput(agentMessage)
-                || agentTurnHasRetryableModelFailure(agentMessage));
-        if (!toolSupportFailure && !retryableFailedState) {
+        // Same retriability contract as the imperative branch — see agentTurnQualifiesForModelFallback.
+        if (!agentTurnQualifiesForModelFallback(turnAgentId, task, agentMessage)) {
             return false;
         }
         const runs = ctx.workflowRuns!;

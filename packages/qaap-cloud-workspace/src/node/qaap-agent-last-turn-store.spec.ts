@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
 
@@ -98,6 +99,8 @@ describe('QaapAgentLastTurnStore', () => {
         } else {
             process.env.QAAP_SQLITE_STORE_PATH = previous;
         }
+        // Windows cannot delete a directory holding an open SQLite file (EBUSY).
+        QaapSqliteConnectionRegistry.shared.closeUnder(directory);
         fs.rmSync(directory, { recursive: true, force: true });
     });
 

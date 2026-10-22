@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
 import type { QaapTaskPlan, QaapTaskPlanEditRequest } from './qaap-task-plan';
@@ -697,7 +698,7 @@ export async function restoreConversationCheckpoint(
         rewindRestoreRequestInit(options),
     );
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -712,7 +713,7 @@ export async function rewindConversationToMessage(
         rewindRestoreRequestInit(options),
     );
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -749,7 +750,7 @@ export async function fetchConversationRewindPreview(
         { credentials: 'include' },
     );
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapRewindPreviewDTO>;
 }
@@ -834,7 +835,7 @@ export async function cancelQueuedConversationMessage(
         { method: 'DELETE', credentials: 'include' },
     );
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -858,7 +859,7 @@ export async function dispatchQueuedConversationMessage(
         },
     );
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -872,24 +873,15 @@ export const QAAP_MAX_CONCURRENT_RUNS_CODE = 'max-concurrent-runs';
 
 /** Error carrying the HTTP status/code so callers can branch on the max-concurrent-runs answer. */
 export class QaapConversationMessageError extends Error {
-    constructor(message: string, readonly status: number, readonly code?: string) {
+    constructor(message: string, readonly status: number, readonly code?: string, readonly details?: string) {
         super(message);
     }
 }
 
-/** The server's JSON `error` text (e.g. a missing clone that could not be restored), else the raw body. */
+/** The server's readable error (JSON `error` / `message` unwrapped), keeping status and code for the UI to branch on. */
 async function buildPostMessageError(response: Response): Promise<Error> {
-    const text = await response.text();
-    let message = text || response.statusText;
-    let code: string | undefined;
-    try {
-        const body = JSON.parse(text) as { error?: string; code?: string };
-        message = body.error || message;
-        code = body.code;
-    } catch {
-        // Non-JSON error body — keep the raw text.
-    }
-    return new QaapConversationMessageError(message, response.status, code);
+    const error = await QaapUserFacingErrors.fromResponse(response);
+    return new QaapConversationMessageError(error.message, response.status, error.code, error.details);
 }
 
 /** True when the send failed only because the session already runs the maximum agents. */
@@ -932,7 +924,7 @@ export async function updateConversation(id: string, patch: QaapUpdateConversati
         body: JSON.stringify(patch),
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -946,7 +938,7 @@ export async function respondTaskPullRequestConsent(id: string, allow: boolean):
         body: JSON.stringify({ allow }),
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1012,7 +1004,7 @@ export async function forkConversation(id: string): Promise<QaapAgentConversatio
         credentials: 'include',
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1147,7 +1139,7 @@ export async function retryConversation(id: string, options?: QaapRetryConversat
         } : {}),
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1191,7 +1183,7 @@ export async function worktreeMergeFailure(response: Response): Promise<QaapAppl
             }
         } catch { /* not a refusal body */ }
     }
-    throw new Error(text || response.statusText);
+    throw QaapUserFacingErrors.fromBody(text, response.status, response.statusText);
 }
 
 export async function applyConversationWorktree(
@@ -1228,7 +1220,7 @@ export async function postAgUiTranscriptEvent(
         },
     );
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
 }
 
@@ -1254,7 +1246,7 @@ export async function reportPreviewBootstrapFailure(
         return undefined;
     }
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return await response.json() as QaapAgentConversationDTO;
 }
@@ -1312,7 +1304,7 @@ export async function finalizeVisualFlowVerification(
         return undefined;
     }
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return await response.json() as QaapAgentConversationDTO;
 }
@@ -1337,7 +1329,7 @@ export async function reportPreviewVisualVerificationFailure(
         return undefined;
     }
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return await response.json() as QaapAgentConversationDTO;
 }
@@ -1364,7 +1356,7 @@ export async function recordConversationGitAction(
         return undefined;
     }
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return await response.json() as QaapAgentConversationDTO;
 }

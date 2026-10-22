@@ -175,7 +175,7 @@ describe('agent failure reasons (real logs)', () => {
     describe('the short reasons', () => {
         it('maps provider envelopes to usage, model and command reasons', () => {
             expect(persistAndDescribe(CREDITS_DEPLETED_LOG, { state: 'failed', exitCode: 1 }).label).to.equal('Quota reached');
-            expect(persistAndDescribe(MODEL_UNAVAILABLE_LOG, { state: 'failed', exitCode: 1 }).label).to.equal('Model unavailable');
+            expect(persistAndDescribe(MODEL_UNAVAILABLE_LOG, { state: 'failed', exitCode: 1 }).label).to.equal('Model access denied');
             const repeated = persistAndDescribe(REPEATED_TOOL_FAILURES_LOG, { state: 'failed', exitCode: 1 });
             expect(repeated.persisted).to.match(/^The agent hit an error: Stopped: repeated tool failures detected\./);
             expect(repeated.label).to.equal('A command failed');

@@ -226,7 +226,7 @@ describe('turn-provenance sealing and fallback-model re-attribution (backend hal
         // must reflect the model that is actually running now, not the one that just failed.
         expect(updatedUserMessage.turnAgentModel, 'turnAgentModel is rewritten to the fallback model that is actually running')
             .to.not.deep.equal(originalModel);
-        expect(updatedUserMessage.turnAgentModel?.modelId).to.equal('nvidia/nemotron-3-super-120b-a12b:free');
+        expect(updatedUserMessage.turnAgentModel?.modelId).to.equal('nvidia/nemotron-3-ultra-550b-a55b:free');
         expect(updatedUserMessage.turnAgentId, 'turnAgentId is preserved across the retry').to.equal(QAIQ_AGENT_ID);
         expect(updatedUserMessage.taskId, 'taskId now points at the retry task, not the failed one')
             .to.equal('task-1');

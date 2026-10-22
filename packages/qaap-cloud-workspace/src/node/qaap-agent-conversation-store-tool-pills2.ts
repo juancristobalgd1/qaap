@@ -6,7 +6,7 @@ import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/c
 import { QaapAgentConversation, QaapAgentConversationStatus, QaapAgentMessage, QaapConversationCheckpoint, QaapCreateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
 import { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 
-import { agentSupportsModelPicker, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 import { isConversationTurnVisuallySettled } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -15,7 +15,7 @@ import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-a
 
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 
-import { agentModelKey, agentTurnHasRetryableEmptyOutput, agentTurnHasRetryableModelFailure, agentTurnHasRetryableToolSupportFailure, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
+import { agentModelKey, agentTurnQualifiesForModelFallback, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
 
 import { appendTracePreviewFailureEvent, syncSettledTraceEventsOnMessage } from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 
@@ -33,27 +33,10 @@ export function maybeRetryTurnWithFallbackModelExtracted(ctx: QaapAgentConversat
         agentMessage: QaapAgentMessage | undefined,
         turnAgentId: string,
         startSha?: string, ): boolean {
-        if (!agentSupportsModelPicker(turnAgentId)) {
-            return false;
-        }
-        // The preflight proved the user's BYOK key is rejected or out of credits: another model
-        // of this agent uses the same key, so a fallback retry would only fail again.
-        if (task.providerKeyVerdict === 'key_rejected' || task.providerKeyVerdict === 'no_credits') {
-            return false;
-        }
-        // Tool-support failures also arrive on clean exits (state 'completed'): the model
-        // emitted its tool call as text and the CLI finished "successfully" with exit 0.
-        const toolSupportFailure = agentTurnHasRetryableToolSupportFailure(agentMessage);
-        // Quota is NOT auto-retried: Antigravity models encode effort in the label
-        // ("Gemini 3.5 Flash (High)" → "(Low)"), so silent fallback looks like the
-        // product changed effort without the user asking. Surface the quota dialog
-        // and let them pick another model/effort in the composer.
-        // Only `failed`: a run the no-output timer stopped ends `interrupted` — the model went
-        // quiet rather than failing, so the user gets Continue instead of a silent model swap.
-        const retryableFailedState = task.state === 'failed'
-            && (agentTurnHasRetryableEmptyOutput(agentMessage)
-                || agentTurnHasRetryableModelFailure(agentMessage));
-        if (!toolSupportFailure && !retryableFailedState) {
+        // Shared contract (agent with a model picker, no key verdict, tool-support failure in any
+        // state, else a `failed` turn with empty output or an unavailable model) — see
+        // agentTurnQualifiesForModelFallback; standalone tasks apply the same one.
+        if (!agentTurnQualifiesForModelFallback(turnAgentId, task, agentMessage)) {
             return false;
         }
         const loopBudgetKey = ctx.resolveLoopBudgetKey(conv, userMessageId);

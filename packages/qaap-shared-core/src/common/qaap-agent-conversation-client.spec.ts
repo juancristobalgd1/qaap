@@ -8,6 +8,8 @@ import {
     conversationToSummary,
     createConversation,
     isFailedRunSummary,
+    isMaxConcurrentRunsError,
+    QaapConversationMessageError,
     isLastTurnCancelled,
     latestConversationTurnHasError,
     looksLikeSelfReportedAgentStopFailure,
@@ -250,5 +252,15 @@ describe('create requests surface the server error text', () => {
         failWith(500, 'Internal Server Error');
         const error = await createConversation({ cwd: 'github:octo/app' }).catch((e: Error) => e);
         expect((error as Error).message).to.equal('Internal Server Error');
+    });
+
+    it('maps the 429 body to a max-concurrent-runs error that keeps code, status and raw details', async () => {
+        const body = JSON.stringify({ error: 'This session already runs 3 agents.', code: 'max-concurrent-runs' });
+        failWith(429, body);
+        const error = await createConversation({ cwd: 'github:octo/app' }).catch((e: Error) => e);
+        expect(error).to.be.instanceOf(QaapConversationMessageError);
+        expect(isMaxConcurrentRunsError(error)).to.equal(true);
+        expect((error as QaapConversationMessageError).message).to.equal('This session already runs 3 agents.');
+        expect((error as QaapConversationMessageError).details).to.equal(body);
     });
 });

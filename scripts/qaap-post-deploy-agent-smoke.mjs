@@ -22,7 +22,9 @@
 //                               first cloned project of the smoke user
 //   QAAP_SMOKE_AGENT_CWD        run in this repository path instead (skips the project lookup)
 //   QAAP_SMOKE_AGENT            agent id (default: the user's default agent)
-//   QAAP_SMOKE_AGENT_TIMEOUT_SECONDS  hard limit for the turn (default 300)
+//   QAAP_SMOKE_AGENT_TIMEOUT_SECONDS  hard limit for the turn (default 300), model fallbacks included
+//   QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS  how long a failed task may still be replaced by a backend
+//                               model-fallback retry before it counts as final (default 15000)
 //   QAAP_SMOKE_AGENT_DRY_RUN=1  only the read-only checks (agent configured, project resolved)
 //   QAAP_SMOKE_AGENT_EXPECT_TOKEN=0  accept any completed turn (mock agents that ignore the prompt)
 //   QAAP_SMOKE_ARTIFACT_DIR     where the task detail is written on failure
@@ -95,7 +97,9 @@ function redactSecrets(text) {
         .replace(/\b(?:sk|pk|rk)-[\w-]{4,}/g, '<redacted>')
         .replace(/\b(?:hf_|nvapi-|gsk_|xai-)[\w-]{4,}/g, '<redacted>')
         .replace(/\bAIza[\w-]{8,}/g, '<redacted>')
-        .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>');
+        .replace(/\bBearer\s+\S+/gi, 'Bearer <redacted>')
+        .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[\w]{8,}/g, '<redacted>')
+        .replace(/\b(token|api[_-]?key)(\s*[:=]\s*)[\w.~+/=-]{12,}/gi, '$1$2<redacted>');
 }
 
 /**
@@ -114,6 +118,138 @@ export function findProviderCredentialRejection(detail) {
 
 export { redactSecrets };
 
+const FAILURE_REASON_MAX_CHARS = 400;
+
+function errorText(value) {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value && typeof value === 'object') {
+        return errorText(value.message) || errorText(value.error) || errorText(value.data);
+    }
+    return '';
+}
+
+/**
+ * Why a task failed, from its stored log, for the deploy log: the CLI's final `is_error` result,
+ * else its last error record, else the last plain line (e.g. the runner's own refusal "Add your
+ * OpenRouter API key in Settings → BYOK to use QAIQ, …"). Redacted and truncated; undefined
+ * when the log is empty. Provider keys are BYOK: the smoke account needs its own key in its Settings.
+ */
+export function describeTaskFailure(detail) {
+    const log = typeof detail?.log === 'string' ? detail.log : '';
+    let result;
+    let errorRecord;
+    let plain;
+    for (const raw of log.split('\n')) {
+        const line = raw.trim();
+        if (!line) {
+            continue;
+        }
+        if (line.startsWith('{')) {
+            try {
+                const record = JSON.parse(line);
+                if (record?.type === 'result' && record.is_error) {
+                    result = errorText(record.result) || errorText(record.error)
+                        || (Array.isArray(record.errors) ? record.errors.map(errorText).join('; ') : '');
+                } else if (record?.type === 'error' || (record?.type === undefined && record?.error)) {
+                    errorRecord = errorText(record.error) || errorText(record.message) || errorRecord;
+                }
+                continue;
+            } catch {
+                // Not JSON: a plain line.
+            }
+        }
+        plain = line;
+    }
+    const reason = (result || errorRecord || plain || '').replace(/\s+/g, ' ').trim();
+    if (!reason) {
+        return undefined;
+    }
+    const safe = redactSecrets(reason);
+    return safe.length > FAILURE_REASON_MAX_CHARS ? `${safe.slice(0, FAILURE_REASON_MAX_CHARS - 1)}…` : safe;
+}
+
+/**
+ * The model that ran the task, `vendor/modelId`: the runner's resolved pick on the task, else the
+ * model the agent CLI reported in its `system`/`init` record. `undefined` when neither is known.
+ */
+export function taskModel(detail) {
+    const model = detail?.agentModel ?? detail?.qaiqModel;
+    const modelId = typeof model?.modelId === 'string' ? model.modelId.trim() : '';
+    if (modelId) {
+        const vendor = typeof model.vendor === 'string' && model.vendor.trim() ? `${model.vendor.trim()}/` : '';
+        return redactSecrets(`${vendor}${modelId}`);
+    }
+    const log = typeof detail?.log === 'string' ? detail.log : '';
+    for (const line of log.split('\n')) {
+        if (!line.trimStart().startsWith('{')) {
+            continue;
+        }
+        try {
+            const record = JSON.parse(line);
+            if (record?.type === 'system' && typeof record.model === 'string' && record.model.trim()) {
+                return redactSecrets(record.model.trim());
+            }
+        } catch {
+            // Not a JSON record.
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Provider wording for "this model has no live endpoint / no longer exists": OpenRouter's
+ * "No endpoints found for <model>", Nvidia's "Function '…': Not found for account" (Oct 21 2026: the
+ * default `nvidia/nemotron-3-super-120b-a12b:free` died this way), "is not a valid model ID". The QAIQ
+ * CLI's own "issue with the selected model" is NOT here: it also covers a rejected key.
+ */
+const MODEL_UNAVAILABLE = /No endpoints found for|Not found for account|is not a valid model ID/i;
+
+/**
+ * Whether a failed task died because its model is unavailable on the provider. Standalone tasks
+ * (`POST /agent-tasks`, what this smoke creates) are re-run by the backend on the agent's next
+ * fallback model (see `followModelFallback`), so this verdict means the whole chain ran out: every
+ * model it tried is dead, or the chain has a single model.
+ */
+export function isModelUnavailableFailure(detail) {
+    return detail?.state === 'failed' && typeof detail.log === 'string' && MODEL_UNAVAILABLE.test(detail.log);
+}
+
+/**
+ * Id of the task the backend started to replace this one on a fallback model (`modelFallbackTaskId`),
+ * or undefined when this task is the end of its chain.
+ */
+export function followModelFallback(detail) {
+    const next = detail?.modelFallbackTaskId;
+    return typeof next === 'string' && next.trim() ? next.trim() : undefined;
+}
+
+/**
+ * Whether a terminal task may still be replaced by a model-fallback retry: the backend decides after
+ * the task settles (it reads the log first), so a `failed` task without a link yet is given a short
+ * grace before the smoke calls it final.
+ */
+export function mayStillFallBack(detail) {
+    return detail?.state === 'failed' && !followModelFallback(detail);
+}
+
+const DEFAULT_FALLBACK_GRACE_MS = 15_000;
+
+/** QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS as a non-negative number of ms; anything else is the 15 s default. */
+export function parseFallbackGraceMs(raw) {
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return DEFAULT_FALLBACK_GRACE_MS;
+    }
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_FALLBACK_GRACE_MS;
+}
+
+/** Wording for the fallback count in the deploy log, empty when the first model answered. */
+export function describeFallbacks(count) {
+    return count > 0 ? ` after ${count} model fallback${count === 1 ? '' : 's'}` : '';
+}
+
 /**
  * Pass/fail verdict for a finished task detail. A `failed` turn whose provider refused the smoke
  * user's key is `inconclusive`: the release ran the turn, the account's credentials stopped it.
@@ -127,7 +263,18 @@ export function judgeTask(detail, token) {
         if (rejection) {
             return { ok: false, inconclusive: true, reason: `the model provider rejected the smoke user's credentials: ${rejection}` };
         }
-        return { ok: false, reason: `task ended in state ${state ?? '<missing>'} (exit ${detail?.exitCode ?? '-'})` };
+        const model = taskModel(detail);
+        const reason = `task ended in state ${state ?? '<missing>'}${model ? ` on ${model}` : ''} (exit ${detail?.exitCode ?? '-'})`;
+        const why = describeTaskFailure(detail);
+        if (isModelUnavailableFailure(detail)) {
+            return {
+                ok: false,
+                reason: `${reason}: the model has no live endpoint on its provider. Replace the default (OPENROUTER_DEFAULT_FREE_MODELS) `
+                    + 'or the smoke user\'s model pick; `node scripts/qaap-openrouter-free-model-health.mjs` lists live free models'
+                    + `${why ? `. Provider said: ${why}` : ''}`,
+            };
+        }
+        return { ok: false, reason: `${reason}${why ? `: ${why}` : ''}` };
     }
     if (token && !(typeof detail.log === 'string' && detail.log.includes(token))) {
         return { ok: false, reason: `task ${state} but its log does not contain the token ${token}` };
@@ -234,12 +381,15 @@ async function main(argv, env) {
     if (created.status !== 201 || typeof created.json?.id !== 'string') {
         throw new SmokeError(`creating the agent task returned HTTP ${created.status}: ${created.text.slice(0, 300)}`);
     }
-    const taskId = created.json.id;
+    let taskId = created.json.id;
     console.log(`OK: task ${taskId} created (${created.json.state}).`);
 
     const started = Date.now();
+    const fallbackGraceMs = parseFallbackGraceMs(env.QAAP_SMOKE_AGENT_FALLBACK_GRACE_MS);
     let detail;
     let lastState = '';
+    let fallbacks = 0;
+    let settledAt;
     for (;;) {
         const polled = await request('GET', `${TASKS_PATH}/${encodeURIComponent(taskId)}`, undefined, 30_000)
             .catch(error => ({ status: 0, json: undefined, text: String(error) }));
@@ -249,8 +399,21 @@ async function main(argv, env) {
                 lastState = detail.state;
                 console.log(`   ${Math.round((Date.now() - started) / 1000)}s: ${lastState}`);
             }
+            const next = followModelFallback(detail);
+            if (next) {
+                // The backend re-ran the turn on the agent's next model: follow the chain.
+                console.log(`   task ${taskId} failed on ${taskModel(detail) ?? 'its model'}; following model fallback ${next}.`);
+                taskId = next;
+                fallbacks++;
+                lastState = '';
+                settledAt = undefined;
+                continue;
+            }
             if (TERMINAL_STATES.has(detail.state)) {
-                break;
+                settledAt ??= Date.now();
+                if (!mayStillFallBack(detail) || Date.now() - settledAt >= fallbackGraceMs) {
+                    break;
+                }
             }
         }
         if (Date.now() - started > timeoutMs) {
@@ -264,18 +427,20 @@ async function main(argv, env) {
     const verdict = judgeTask(detail, expectToken ? token : undefined);
     if (verdict.inconclusive) {
         writeDiagnostics(artifactDir, detail);
-        console.log(`::warning::Post-deploy agent smoke inconclusive: task ${taskId} failed because ${verdict.reason}. `
+        console.log(`::warning::Post-deploy agent smoke inconclusive: task ${taskId} failed${describeFallbacks(fallbacks)} because ${verdict.reason}. `
             + 'Update the smoke account\'s provider key in Settings → BYOK, or use a dedicated smoke account (QAAP_SMOKE_SESSION, QAAP_SMOKE_AGENT).');
         return 0;
     }
     if (!verdict.ok) {
         writeDiagnostics(artifactDir, detail);
-        throw new SmokeError(verdict.reason);
+        throw new SmokeError(`${verdict.reason}${fallbacks > 0 ? ` (final task of the chain${describeFallbacks(fallbacks)})` : ''}`);
     }
     if (verdict.warning) {
         console.log(`::warning::Post-deploy agent smoke: task ${taskId} completed with warnings (repository checks red).`);
     }
-    console.log(`OK: agent turn ${taskId} completed in ${Math.round((Date.now() - started) / 1000)}s${expectToken ? ' with the expected reply' : ''}.`);
+    const model = taskModel(detail);
+    console.log(`OK: agent turn ${taskId} completed in ${Math.round((Date.now() - started) / 1000)}s${expectToken ? ' with the expected reply' : ''}`
+        + `${model ? `; answered by ${model}` : ''}${describeFallbacks(fallbacks)}.`);
     return 0;
 }
 

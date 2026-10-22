@@ -21,7 +21,14 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage, type QaapAgentTurnTimeoutCause } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { localizeMissingCodingAgentMessage, localizeQaiqProviderKeyMissingMessage, type QaapAgentTurnTimeoutCause } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import {
+    checkQaiqProviderCredential,
+    logQaiqProviderOperatorHintOnce,
+    QaapQaiqProviderKeyMissingError,
+    type QaapQaiqProviderPreflightFailure,
+} from './qaap-qaiq-provider-preflight';
 import { resolveBackendInteractionModeSystemInstruction } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
@@ -32,7 +39,6 @@ import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/comm
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
 import { listNativeAgentModels } from './qaap-agent-native-models';
-import { vendorHasByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
@@ -218,6 +224,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
                 : {}),
             ...(clientRequestId ? { clientRequestId } : {}),
             ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
+            ...(request.fallbackFromTaskId ? { fallbackFromTaskId: request.fallbackFromTaskId } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt || rawCommand, ownerLogin);
@@ -383,7 +390,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         const agentPrompt = modeInstruction
             ? `[Qaap interaction-mode system instruction]\n${modeInstruction}\n\n---\n\n${promptWithTaskContext}`
             : promptWithTaskContext;
-        ctx.assertQaiqConfigured(id, ownerLogin);
+        ctx.assertQaiqConfigured(id, ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
         const interaction: QaapQaiqInteractionFlagOptions = {
@@ -622,16 +629,15 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
 }
 
 export function resolveQaiqProviderFlagsExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): string {
-        const env = ctx.previewProviderEnv(ownerLogin);
+        // Same binding as the spawn env (resolveAgentBindingForTaskExtracted) and the key preflight
+        // (checkQaiqProviderCredentialForOwner): the Settings alias whether or not its vendor has a key.
+        // Falling back to another vendor's flags here while the env is built for the alias vendor sent
+        // the CLI to a provider it had no key for; a keyless alias is refused before spawn instead.
         const binding = ctx.resolveQaapQaiqBinding(ownerLogin);
-        if (binding && vendorHasByokCredential(
-            ctx.preferenceReaderForOwner(ownerLogin),
-            binding.vendor,
-            key => env[key],
-        )) {
+        if (binding) {
             return formatQaiqProviderFlags(binding);
         }
-        return ctx.resolveQaiqProviderFlagsFromEnv(env);
+        return ctx.resolveQaiqProviderFlagsFromEnv(ctx.previewProviderEnv(ownerLogin));
 }
 
 export function resolveQaapQaiqBindingExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): QaapQaiqModelBinding | undefined {
@@ -665,24 +671,37 @@ export function previewProviderEnvExtracted(ctx: QaapAgentTaskRunnerContext, own
         return env;
 }
 
-export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string, ownerLogin?: string): void {
+export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string, ownerLogin?: string,
+        agentModel?: QaapCreateAgentTaskQaiqModel): void {
         // OpenClaude has its own model/auth configuration. The shared stream protocol does not
         // make QAIQ's Settings catalog a prerequisite for running it.
         if (!agentUsesSettingsModelCatalog(agentId)) {
             return;
         }
-        const env = ctx.previewProviderEnv(ownerLogin);
-        if (ctx.resolveQaiqProviderFlags(ownerLogin)) {
+        const failure = checkQaiqProviderCredentialForOwner(ctx, ownerLogin, agentModel);
+        if (!failure) {
             return;
         }
-        if (env.ANTHROPIC_API_KEY?.trim() || env.OPENAI_API_KEY?.trim()) {
-            return;
-        }
-        throw new Error(
-            'QAIQ/OpenClaude needs an API key from QAAP Settings (Gemini, OpenRouter, NVIDIA, Ollama, OpenAI, or Anthropic) '
-            + 'or from server env (e.g. OPENROUTER_API_KEY / GEMINI_API_KEY in .env on Docker). '
-            + 'Add one, restart the server, then retry.'
-        );
+        // Refuse before spawning: a keyless provider call dies in the CLI as a misleading
+        // "issue with the selected model" 404. The thrown copy becomes the failed turn's reason.
+        logQaiqProviderOperatorHintOnce(failure, mustWithholdOperatorProviderCredentials(ownerLogin));
+        throw new QaapQaiqProviderKeyMissingError(localizeQaiqProviderKeyMissingMessage(failure.providerLabel), failure);
+}
+
+/**
+ * Whether QAIQ can authenticate for `ownerLogin`'s turn: that owner's Settings keys and provider env
+ * only (another owner's key never counts), with the turn's model pick when there is one.
+ */
+export function checkQaiqProviderCredentialForOwner(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string,
+        agentModel?: QaapCreateAgentTaskQaiqModel): QaapQaiqProviderPreflightFailure | undefined {
+        return checkQaiqProviderCredential({
+            readPref: ctx.preferenceReaderForOwner(ownerLogin),
+            env: ctx.previewProviderEnv(ownerLogin),
+            selectedBinding: agentModel?.provider && agentModel.modelId?.trim()
+                ? ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin)
+                : undefined,
+            settingsBinding: ctx.resolveQaapQaiqBinding(ownerLogin),
+        });
 }
 
 /** Why a run was paused (ended `interrupted`), for cause-specific completion copy. */

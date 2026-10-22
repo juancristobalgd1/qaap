@@ -435,6 +435,12 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
         if (conversationId && ctx.suppressCompletionPushForConversation?.(conversationId)) {
             return;
         }
+        // A model-fallback retry replaced this attempt: only the chain's final task notifies. Awaited
+        // only while a decision is pending, so every other push still goes out without a tick of delay.
+        const suppressed = ctx.suppressCompletionPushForTask?.(task);
+        if (suppressed === true || (suppressed instanceof Promise && await suppressed)) {
+            return;
+        }
         const link = { route: 'conversation' as const, conversationId, cwd: task.cwd, userLogin: task.ownerLogin };
         if (task.state === 'completed_with_warnings') {
             try {
@@ -557,7 +563,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         }
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
-        ctx.assertQaiqConfigured(agentId, options.ownerLogin);
+        ctx.assertQaiqConfigured(agentId, options.ownerLogin, options.agentModel);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
             throw new Error(`Agent "${agentId}" is not available for prompt improvement.`);
@@ -641,7 +647,6 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             throw new Error('Prompt is empty.');
         }
         const agentId = ctx.resolveAgentId(prompt, options.agentId, options.ownerLogin);
-        ctx.assertQaiqConfigured(agentId, options.ownerLogin);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
             throw new Error(`Agent "${agentId}" is not available.`);
@@ -653,6 +658,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             ...(options.agentModel ? { agentModel: options.agentModel } : {}),
             ...(options.taskKind ? { taskKind: options.taskKind } : {}),
         }, prompt, options.ownerLogin);
+        ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);
         const vars = ctx.buildTemplateVars(agentId, agentModel, {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',

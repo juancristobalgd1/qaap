@@ -10,6 +10,7 @@ import {
     agentTurnHasRetryableModelFailure,
     agentTurnHasRetryableQuotaFailure,
     agentTurnHasRetryableToolSupportFailure,
+    agentTurnQualifiesForModelFallback,
     buildAgentModelFallbackChain,
     resolveNextFallbackAgentModel,
 } from './qaap-agent-model-fallback';
@@ -24,10 +25,39 @@ describe('qaap-agent-model-fallback', () => {
         const chain = buildAgentModelFallbackChain('qaiq', current);
         expect(chain.map(agentModelKey)).to.deep.equal([
             'openrouter/moonshotai/kimi-k2.6:free',
-            'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+            'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
+            'openrouter/minimax/minimax-m3.1-flash:free',
             'openrouter/google/gemma-4-31b-it:free',
-            'openrouter/qwen/qwen3.8-27b:free',
         ]);
+    });
+
+    it('falls back from the default across different upstream providers', () => {
+        // Oct 21 2026 incident: the old default's only (Nvidia) endpoint died. The default's
+        // chain must not stay with one upstream provider, or one outage kills every retry.
+        const current = {
+            provider: 'openai' as const,
+            vendor: 'openrouter',
+            modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        };
+        const chain = buildAgentModelFallbackChain('qaiq', current);
+        expect(chain.map(agentModelKey)).to.deep.equal([
+            'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
+            'openrouter/minimax/minimax-m3.1-flash:free',
+            'openrouter/google/gemma-4-31b-it:free',
+            'openrouter/poolside/laguna-s-2.1:free',
+        ]);
+        const orgs = new Set(chain.map(model => model.modelId.split('/')[0]));
+        expect(orgs.size).to.equal(chain.length);
+    });
+
+    it('moves a stored pick of the dead old default onto live models', () => {
+        const current = {
+            provider: 'openai' as const,
+            vendor: 'openrouter',
+            modelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+        };
+        const next = resolveNextFallbackAgentModel('qaiq', current, new Set(['openrouter/nvidia/nemotron-3-super-120b-a12b:free']));
+        expect(agentModelKey(next)).to.equal('openrouter/nvidia/nemotron-3-ultra-550b-a55b:free');
     });
 
     it('skips models already tried', () => {
@@ -38,10 +68,10 @@ describe('qaap-agent-model-fallback', () => {
         };
         const tried = new Set([
             'openrouter/moonshotai/kimi-k2.6:free',
-            'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+            'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
         ]);
         const next = resolveNextFallbackAgentModel('qaiq', current, tried);
-        expect(agentModelKey(next)).to.equal('openrouter/google/gemma-4-31b-it:free');
+        expect(agentModelKey(next)).to.equal('openrouter/minimax/minimax-m3.1-flash:free');
     });
 
     it('treats empty agent output as retryable', () => {
@@ -133,5 +163,27 @@ describe('qaap-agent-model-fallback', () => {
         })).to.be.true;
         expect(agentTurnHasRetryableModelFailure({ content: 'TypeError: build failed' })).to.be.false;
         expect(agentTurnHasRetryableModelFailure(undefined)).to.be.false;
+    });
+
+    describe('agentTurnQualifiesForModelFallback (shared by conversation turns and standalone tasks)', () => {
+        const deadModel = { content: "There's an issue with the selected model (tencent/hy3:free). It may not exist or you may not have access to it." };
+
+        it('qualifies a failed turn with no output or an unavailable model', () => {
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, undefined)).to.be.true;
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, deadModel)).to.be.true;
+        });
+
+        it('does not qualify a failure the turn explains, or an interrupted / cancelled turn', () => {
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, { content: 'TypeError: build failed' })).to.be.false;
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'interrupted' }, undefined)).to.be.false;
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'cancelled' }, undefined)).to.be.false;
+        });
+
+        it('never qualifies when the key every model shares stopped the turn, or the agent has no chain', () => {
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', preflightFailure: 'provider_key_missing' }, undefined)).to.be.false;
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', providerKeyVerdict: 'key_rejected' }, deadModel)).to.be.false;
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', providerKeyVerdict: 'no_credits' }, deadModel)).to.be.false;
+            expect(agentTurnQualifiesForModelFallback('shell', { state: 'failed' }, undefined)).to.be.false;
+        });
     });
 });

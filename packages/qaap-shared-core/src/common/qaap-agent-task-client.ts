@@ -7,6 +7,7 @@
  * Shared HTTP + persistence helpers for background agent tasks.
  * Keep {@link QAAP_AGENT_TASK_API_PATH} in sync with `@theia/qaap-cloud-workspace`.
  */
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
 import {
@@ -147,6 +148,8 @@ export interface QaapAgentTaskCreated {
     readonly createdAt?: number;
     readonly startedAt?: number;
     readonly queuePosition?: number;
+    /** Failed task this one re-runs on a fallback model. */
+    readonly fallbackFromTaskId?: string;
 }
 
 /** A task plus its captured stdout/stderr log — returned by `GET /qaap/api/agent-tasks/:id`. */
@@ -163,6 +166,10 @@ export interface QaapAgentTaskDetailDTO {
     readonly exitCode?: number;
     readonly finishedAt?: number;
     readonly parentId?: string;
+    /** Failed task this one re-runs on a fallback model. */
+    readonly fallbackFromTaskId?: string;
+    /** Set once a model-fallback retry replaced this task: follow it to the attempt whose outcome counts. */
+    readonly modelFallbackTaskId?: string;
     readonly log: string;
     readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
 }
@@ -660,15 +667,7 @@ export async function createAgentTask(body: QaapCreateAgentTaskBody): Promise<Qa
         body: JSON.stringify({ ...body, clientRequestId }),
     });
     if (!response.ok) {
-        const text = await response.text();
-        let message = text || response.statusText;
-        try {
-            // The server's readable `error` (e.g. a missing clone that could not be restored), not raw JSON.
-            message = (JSON.parse(text) as { error?: string }).error || message;
-        } catch {
-            // Non-JSON error body — keep the raw text.
-        }
-        throw new Error(message);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentTaskCreated>;
 }
@@ -738,8 +737,7 @@ export async function reorderAgentTask(id: string, direction: 'up' | 'down'): Pr
         body: JSON.stringify({ direction }),
     });
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentTaskCreated>;
 }
@@ -751,8 +749,7 @@ export async function retryAgentTask(id: string): Promise<QaapAgentTaskCreated> 
         credentials: 'include',
     });
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentTaskCreated>;
 }
@@ -764,8 +761,7 @@ export async function resumeAgentTask(id: string): Promise<QaapAgentTaskCreated>
         credentials: 'include',
     });
     if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentTaskCreated>;
 }
