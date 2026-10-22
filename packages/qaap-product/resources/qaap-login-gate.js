@@ -6,14 +6,28 @@
     'use strict';
 
     /**
-     * Qaap is an English-language product. Theia persists display-language choices in
-     * `localeId`; normalize it before bundle.js evaluates `nls.locale`.
+     * Display languages Qaap may run in. Keep in sync with `QaapSupportedLocales.LOCALES`
+     * (`src/common/qaap-supported-locales.ts`; a spec enforces it). English only for launch (audit L1):
+     * to re-enable a language add its Theia language-pack id (for example 'es') in both places.
      */
-    (function enforceEnglishInterface() {
+    var QAAP_SUPPORTED_LOCALES = ['en'];
+
+    /**
+     * Theia persists display-language choices in `localeId` and reads it into `nls.locale` while
+     * bundle.js evaluates, so normalize it first: a stored language that is not supported (for
+     * example an earlier 'es' choice) falls back to English. Desktop and mobile both boot here.
+     */
+    (function enforceSupportedInterfaceLanguage() {
+        var locale = 'en';
         try {
-            window.localStorage.setItem('localeId', 'en');
+            var stored = window.localStorage.getItem('localeId');
+            var normalized = stored ? String(stored).toLowerCase() : '';
+            if (normalized && QAAP_SUPPORTED_LOCALES.indexOf(normalized) !== -1) {
+                locale = normalized;
+            }
+            window.localStorage.setItem('localeId', locale);
         } catch (e) { /* storage may be unavailable */ }
-        document.documentElement.setAttribute('lang', 'en');
+        document.documentElement.setAttribute('lang', locale);
     })();
 
     /** Set when this tab reloads into the classic IDE; the IDE never reads Work Hub data at boot. */

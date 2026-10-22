@@ -315,6 +315,6 @@ export class MobileProjectsTranscriptHistoryUi {
         if (!date || Number.isNaN(date.getTime())) {
             return '';
         }
-        return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
+        return new Intl.DateTimeFormat(nls.locale ?? nls.defaultLocale, { month: 'short', day: 'numeric' }).format(date);
     }
 }

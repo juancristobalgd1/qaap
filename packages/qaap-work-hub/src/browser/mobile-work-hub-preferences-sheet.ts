@@ -1302,7 +1302,7 @@ export class MobileWorkHubPreferencesSheet {
     }
 
     protected formatNumber(value: number): string {
-        return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
+        return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { maximumFractionDigits: 1 }).format(value);
     }
 
     protected readLocalBoolean(key: string, fallback: boolean): boolean {

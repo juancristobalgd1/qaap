@@ -49,7 +49,7 @@ function formatHours(hours: number): string {
 }
 
 function formatCredits(credits: number): string {
-    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(credits);
+    return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { maximumFractionDigits: 0 }).format(credits);
 }
 
 function isPayablePlan(planId: string): planId is 'pro' | 'team' {

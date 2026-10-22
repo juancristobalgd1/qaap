@@ -21,6 +21,9 @@ evidence of tenant isolation, provider reliability, or recoverability.
 - QAIQ is fetched by its exact pinned commit and uses its frozen Bun lockfile.
   Other npm agent CLI defaults are exact versions in Dockerfile, Compose and the
   example environment. Existing operator `.env` overrides must be reviewed.
+- The interface ships English only (audit L1); a stored non-English display
+  language falls back to English. Switch and re-enable steps:
+  [`qaap-localization.md`](qaap-localization.md).
 
 The newly pinned CLI versions were resolved from npm; they are candidates, not
 evidence of compatibility. Build and exercise the Linux image before release.
