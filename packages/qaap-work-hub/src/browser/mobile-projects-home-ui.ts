@@ -138,9 +138,17 @@ export class MobileProjectsHomeUi {
     protected readGettingStartedFlag(flag: 'dismissed' | 'completed', snapshot: WorkHubHomeSnapshot): boolean {
         try {
             // The account-less key is also honoured: the first render can run before the auth session is known.
-            const unscoped = this.gettingStartedKey(flag, { ...snapshot, accountKey: undefined });
-            return window.localStorage.getItem(this.gettingStartedKey(flag, snapshot)) === '1'
-                || window.localStorage.getItem(unscoped) === '1';
+            const unscopedKey = this.gettingStartedKey(flag, { ...snapshot, accountKey: undefined });
+            const scopedKey = this.gettingStartedKey(flag, snapshot);
+            if (window.localStorage.getItem(unscopedKey) === '1') {
+                if (scopedKey !== unscopedKey) {
+                    // Account now known: move the flag to that account so it cannot leak to the next one.
+                    window.localStorage.setItem(scopedKey, '1');
+                    window.localStorage.removeItem(unscopedKey);
+                }
+                return true;
+            }
+            return window.localStorage.getItem(scopedKey) === '1';
         } catch {
             return false;
         }

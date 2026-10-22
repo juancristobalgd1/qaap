@@ -78,6 +78,9 @@ export class MobileProjectsHomeHubUi {
     /** True once the PR inbox has loaded at least once in this session. */
     protected inboxEverLoaded = false;
 
+    /** Account the `inboxEverLoaded` latch was settled for; a different account starts unsettled again. */
+    protected inboxLoadedAccountKey: string | undefined;
+
     constructor(protected readonly host: MobileProjectsHomeHubHost) { }
 
     refreshHomeHubData(forceRender: boolean): void {
@@ -93,10 +96,27 @@ export class MobileProjectsHomeHubUi {
         }
     }
 
+    /**
+     * Latches whether the inbox ever loaded. Switching to another known account drops the latch so
+     * the new account's Home stays "unsettled" until its own inbox arrives. A first render before the
+     * session is known (`undefined`) adopts the account without resetting.
+     */
+    trackInboxEverLoaded(accountKey: string | undefined): boolean {
+        if (accountKey && this.inboxLoadedAccountKey && accountKey !== this.inboxLoadedAccountKey) {
+            this.inboxEverLoaded = false;
+        }
+        if (accountKey) {
+            this.inboxLoadedAccountKey = accountKey;
+        }
+        this.inboxEverLoaded = this.inboxEverLoaded || this.host.inboxPullRequestsLoaded;
+        return this.inboxEverLoaded;
+    }
+
     buildHomeSnapshot(): WorkHubHomeSnapshot {
         // `inboxPullRequestsLoaded` is reset whenever the Review tab is entered; latch it so Home does not
         // fall back to "unsettled" (and hide the checklist) after a visit there.
-        this.inboxEverLoaded = this.inboxEverLoaded || this.host.inboxPullRequestsLoaded;
+        const accountKey = readQaapAuthUser()?.login?.trim() || undefined;
+        const inboxEverLoaded = this.trackInboxEverLoaded(accountKey);
         const members = this.host.collectTeamMembersForHub();
         const approvals = this.host.collectTeamApprovalItems(members);
         const { needsYou, running } = this.host.countTasksAttention();
@@ -191,8 +211,8 @@ export class MobileProjectsHomeHubUi {
             attentionItems,
             recentItems: buildWorkHubHomeRecentItems(recentSources, 5),
             pinnedProjectIds: selectWorkHubHomePinnedProjectIds(this.host.projects, 4),
-            statsSettled: this.inboxEverLoaded && !this.host.tasksFirstLoadPending,
-            accountKey: readQaapAuthUser()?.login?.trim() || undefined,
+            statsSettled: inboxEverLoaded && !this.host.tasksFirstLoadPending,
+            accountKey,
         };
     }
 
