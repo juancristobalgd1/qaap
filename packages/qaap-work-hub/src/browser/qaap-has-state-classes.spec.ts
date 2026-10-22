@@ -175,6 +175,28 @@ describe('QaapHasStateClasses', () => {
         }
     });
 
+    it('clears the class when nested nodes are removed in the same task', async () => {
+        document.body.innerHTML = '<div class="panel" id="panel"><div class="row" id="row"><div class="pill" id="pill"></div></div></div>';
+        start([{ subject: '.panel', has: '.pill', className: 'theia-mod-has-pill', classes: ['panel', 'pill'] }]);
+        const panel = document.getElementById('panel')!;
+        expect(panel.classList.contains('theia-mod-has-pill')).to.equal(true);
+        // The first record's target (the row) is detached by the second one before the observer runs.
+        document.getElementById('pill')!.remove();
+        document.getElementById('row')!.remove();
+        await flushMutations();
+        expect(panel.classList.contains('theia-mod-has-pill')).to.equal(false);
+    });
+
+    it('clears the class when the parent of a removed match is moved out in the same task', async () => {
+        document.body.innerHTML = '<div class="panel" id="panel"><div class="row" id="row"><div class="pill" id="pill"></div></div></div><div id="elsewhere"></div>';
+        start([{ subject: '.panel', has: '.pill', className: 'theia-mod-has-pill', classes: ['panel', 'pill'] }]);
+        const row = document.getElementById('row')!;
+        document.getElementById('pill')!.remove();
+        document.getElementById('elsewhere')!.append(row);
+        await flushMutations();
+        expect(document.getElementById('panel')!.classList.contains('theia-mod-has-pill')).to.equal(false);
+    });
+
     it('flush() applies pending mutations synchronously', () => {
         start([{ subject: 'body', has: '.overlay', className: 'theia-mobile-mod-has-overlay', classes: ['overlay'] }]);
         const overlay = document.createElement('div');
@@ -237,26 +259,34 @@ describe('QAAP_HAS_STATE_CLASS_RULES equivalence', () => {
             const elements = (): Element[] => Array.from(document.body.querySelectorAll('*'));
             try {
                 for (let step = 0; step < 400; step++) {
-                    const all = elements();
-                    const action = random();
-                    if (action < 0.35 || all.length < 3) {
-                        const element = document.createElement(pick(['div', 'span', 'section']));
-                        element.className = tokens.filter(() => random() < 0.3).join(' ');
-                        if (ids.length && random() < 0.1 && !document.getElementById(ids[0])) {
-                            element.id = ids[0];
-                        }
-                        (all.length && random() < 0.85 ? pick(all) : document.body).append(element);
-                    } else if (action < 0.55) {
-                        pick(all).classList.toggle(pick(tokens));
-                    } else if (action < 0.65) {
-                        const element = pick(all) as HTMLElement;
-                        element.hidden = !element.hidden;
-                    } else if (action < 0.8) {
-                        pick(all).remove();
-                    } else {
-                        const [moved, target] = [pick(all), pick(all)];
-                        if (!moved.contains(target)) {
-                            target.append(moved);
+                    // 1–5 mutations per observer batch: records in one batch can see each other's effects.
+                    const batch = 1 + Math.floor(random() * 5);
+                    for (let mutation = 0; mutation < batch; mutation++) {
+                        const all = elements();
+                        const action = random();
+                        if (action < 0.35 || all.length < 3) {
+                            const element = document.createElement(pick(['div', 'span', 'section']));
+                            element.className = tokens.filter(() => random() < 0.3).join(' ');
+                            if (ids.length && random() < 0.1 && !document.getElementById(ids[0])) {
+                                element.id = ids[0];
+                            }
+                            (all.length && random() < 0.85 ? pick(all) : document.body).append(element);
+                        } else if (action < 0.55) {
+                            pick(all).classList.toggle(pick(tokens));
+                        } else if (action < 0.65) {
+                            const element = pick(all) as HTMLElement;
+                            element.hidden = !element.hidden;
+                        } else if (action < 0.8) {
+                            pick(all).remove();
+                        } else {
+                            const [moved, target] = [pick(all), pick(all)];
+                            if (!moved.contains(target)) {
+                                if (random() < 0.5) {
+                                    target.append(moved);
+                                } else {
+                                    target.before(moved);
+                                }
+                            }
                         }
                     }
                     await flushMutations();

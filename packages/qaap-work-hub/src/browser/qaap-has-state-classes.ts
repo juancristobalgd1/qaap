@@ -324,7 +324,13 @@ export class QaapHasStateClasses implements FrontendApplicationContribution {
         // Per dirty rule, the elements the mutation touched: only their subject ancestors (and, for
         // inserted nodes, the subjects inside them) can change, so long transcripts are not re-walked.
         const dirty = new Map<QaapHasStateClassRule, QaapHasStateAnchors>();
+        const removed: Element[] = [];
         for (const record of records) {
+            record.removedNodes.forEach(node => {
+                if (node.nodeType === 1 /* ELEMENT_NODE */) {
+                    removed.push(node as Element);
+                }
+            });
             const rules = new Set<QaapHasStateClassRule>();
             if (record.type === 'attributes') {
                 this.collectAttributeRules(record, rules);
@@ -342,7 +348,14 @@ export class QaapHasStateClasses implements FrontendApplicationContribution {
             }
         }
         for (const [rule, anchors] of dirty) {
-            this.reconcileAround(rule, anchors);
+            // An anchor that was removed or moved in this same batch no longer leads to the subjects
+            // it used to sit under (its `closest()` walks the new or detached tree): re-check them all.
+            const moved = (anchor: Element): boolean => !anchor.isConnected || removed.some(node => node.contains(anchor));
+            if ([...anchors.elements, ...anchors.inserted].some(moved)) {
+                this.reconcile([rule]);
+            } else {
+                this.reconcileAround(rule, anchors);
+            }
         }
     }
 
