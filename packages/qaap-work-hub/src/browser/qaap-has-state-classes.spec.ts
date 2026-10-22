@@ -10,6 +10,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { readFileSync } from 'fs';
 import * as path from 'path';
+import { followTranscriptBottom } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-bottom-follow';
 import { QAAP_HAS_STATE_CLASS_RULES, QaapHasStateClasses, QaapHasStateClassRule } from './qaap-has-state-classes';
 
 disableImportJSDOM();
@@ -118,21 +119,60 @@ describe('QaapHasStateClasses', () => {
         expect(panel.classList.contains('theia-mod-has-hidden-subtitle')).to.equal(false);
     });
 
-    it('ignores mutations that touch no tracked class', async () => {
-        start([{ subject: 'body', has: '.overlay', className: 'theia-mobile-mod-has-overlay', classes: ['overlay'] }]);
-        let reconciles = 0;
-        const reconcile = (tracker as unknown as { reconcile: (rules: Iterable<QaapHasStateClassRule>) => void }).reconcile.bind(tracker);
-        (tracker as unknown as { reconcile: (rules: Iterable<QaapHasStateClassRule>) => void }).reconcile = rules => {
-            reconciles++;
-            reconcile(rules);
+    interface SubjectSpy {
+        reconcileSubject(rule: QaapHasStateClassRule, subject: Element): void;
+    }
+    const countSubjectChecks = (target: TestHasStateClasses): Element[] => {
+        const checked: Element[] = [];
+        const spy = target as unknown as SubjectSpy;
+        const original = spy.reconcileSubject.bind(target);
+        spy.reconcileSubject = (rule, subject) => {
+            checked.push(subject);
+            original(rule, subject);
         };
+        return checked;
+    };
+
+    it('ignores mutations that touch no tracked class', async () => {
+        const checked = countSubjectChecks(start([{ subject: 'body', has: '.overlay', className: 'theia-mobile-mod-has-overlay', classes: ['overlay'] }]));
         const row = document.createElement('div');
         row.className = 'row';
         document.body.append(row);
         row.textContent = 'streamed chunk';
         row.classList.add('theia-mod-streaming');
         await flushMutations();
-        expect(reconciles).to.equal(0);
+        expect(checked).to.have.length(0);
+    });
+
+    it('re-checks only the subjects around the mutation, not every subject in the document', async () => {
+        document.body.innerHTML = Array.from({ length: 50 }, (_, index) =>
+            `<div class="segments" id="s${index}"><span class="content"></span></div>`).join('');
+        const checked = countSubjectChecks(start([{ subject: '.segments', has: '.content', className: 'theia-mod-has-content', classes: ['segments', 'content'] }]));
+        const last = document.getElementById('s49')!;
+        last.replaceChildren();
+        await flushMutations();
+        expect(checked).to.deep.equal([last]);
+        expect(last.classList.contains('theia-mod-has-content')).to.equal(false);
+        expect(document.getElementById('s0')!.classList.contains('theia-mod-has-content')).to.equal(true);
+    });
+
+    it('flushes pending classes before the reduced-motion follow-tail measures the scroller', () => {
+        const previousMatchMedia = window.matchMedia;
+        Object.defineProperty(window, 'matchMedia', {
+            configurable: true,
+            writable: true,
+            value: (query: string) => ({ matches: query.includes('reduce'), media: query }),
+        });
+        try {
+            start([{ subject: 'body', has: '.overlay', className: 'theia-mobile-mod-has-overlay', classes: ['overlay'] }]);
+            const overlay = document.createElement('div');
+            overlay.className = 'overlay';
+            document.body.append(overlay);
+            followTranscriptBottom(document.createElement('div'));
+            expect(document.body.classList.contains('theia-mobile-mod-has-overlay')).to.equal(true);
+        } finally {
+            Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: previousMatchMedia });
+        }
     });
 
     it('flush() applies pending mutations synchronously', () => {
@@ -257,7 +297,7 @@ describe('QAAP_HAS_STATE_CLASS_RULES stylesheets', () => {
         'qaap-work-hub/src/browser/style/mobile-workbench-work-hub.css',
     ].map(file => ({ file, css: readFileSync(path.join(packagesRoot, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '') }));
     const hotSubjectHas = new RegExp('(^|[\\s,>+~(])(body|#theia-right-content-panel|\\.theia-mobile-(projects|projects-scroll|'
-        + 'agent-transcript|agent-transcript-real-chat|agent-transcript-segments)|\\.theia-mod-transcript-scroll-to-bottom-mount)'
+        + 'agent-transcript|agent-transcript-root|agent-transcript-real-chat|agent-transcript-segments)|\\.theia-mod-transcript-scroll-to-bottom-mount)'
         + '(?![\\w-])(\\.[\\w-]+|:not\\((?:[^()]|\\([^()]*\\))*\\))*(:has\\(|:not\\(:has\\()', 'm');
 
     it('keeps :has() off the streaming transcript ancestors', () => {

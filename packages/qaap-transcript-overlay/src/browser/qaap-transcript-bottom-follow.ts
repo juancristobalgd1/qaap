@@ -12,6 +12,17 @@ interface TranscriptBottomFollowState {
 
 const followers = new WeakMap<HTMLElement, TranscriptBottomFollowState>();
 
+let flushPendingLayoutState: (() => void) | undefined;
+
+/**
+ * Registered by the Work Hub (QaapHasStateClasses): applies DOM-derived state classes that are
+ * still pending in a MutationObserver, so the synchronous reduced-motion jump below measures the
+ * same layout the next frame paints.
+ */
+export function setTranscriptBottomFollowLayoutFlush(flush: (() => void) | undefined): void {
+    flushPendingLayoutState = flush;
+}
+
 /** True while a smooth bottom-follow loop is active on the scroller. */
 export function isFollowingTranscriptBottom(scroller: HTMLElement): boolean {
     return followers.has(scroller);
@@ -26,6 +37,7 @@ export function isFollowingTranscriptBottom(scroller: HTMLElement): boolean {
  */
 export function followTranscriptBottom(scroller: HTMLElement): void {
     if (prefersReducedMotion() || typeof requestAnimationFrame !== 'function') {
+        flushPendingLayoutState?.();
         scroller.scrollTop = scroller.scrollHeight;
         return;
     }

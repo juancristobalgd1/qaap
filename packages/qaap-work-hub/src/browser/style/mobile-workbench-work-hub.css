@@ -9209,12 +9209,12 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 /* Drop the reserved subtitle row when nothing is shown beneath the title. */
 .theia-mobile-projects.theia-mod-project-detail.theia-mod-has-hidden-subtitle.theia-mod-has-hidden-subtitle,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-has-hidden-subtitle.theia-mod-has-hidden-subtitle,
-.theia-mobile-agent-transcript-root:has(.theia-mobile-projects-subtitle[hidden]) {
+.theia-mobile-agent-transcript-root.theia-mod-has-sheet-hidden-subtitle.theia-mod-has-sheet-hidden-subtitle {
   --theia-mobile-execution-header-text-block: var(--theia-mobile-execution-header-title-row);
 }
 
 .theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-has-workspace-context.theia-mod-has-workspace-context,
-.theia-mobile-agent-transcript-root:has(.qaap-transcript-workspace-context:not([hidden])) {
+.theia-mobile-agent-transcript-root.theia-mod-has-sheet-workspace-context.theia-mod-has-sheet-workspace-context {
   --theia-mobile-execution-header-text-block: calc(var(--theia-mobile-execution-header-title-row) + var(--theia-mobile-execution-header-subtitle-gap) + var(--theia-mobile-execution-header-subtitle-row));
 }
 

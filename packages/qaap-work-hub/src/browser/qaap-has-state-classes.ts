@@ -5,6 +5,7 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { setTranscriptBottomFollowLayoutFlush } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-bottom-follow';
 
 /**
  * One former `subject:has(argument)` condition, now a plain class on the subject.
@@ -39,6 +40,13 @@ export interface QaapHasStateClassRule {
  * The CSS repeats the class as many times as the argument had classes/attributes
  * (`.theia-mod-has-x.theia-mod-has-x`) so each rule keeps the specificity of the `:has()` it
  * replaced. Do not add `:has()` on these subjects again: add a rule here instead.
+ *
+ * Layering: stylesheets of lower packages (qaap-mobile-shell touch scroll, qaap-product-theme,
+ * qaap-transcript, qaap-composer) read these classes, but only this qaap-work-hub contribution sets
+ * them. An app that drops qaap-work-hub loses those rules; they only target Work Hub DOM anyway.
+ * Classes are applied in the observer's microtask, before the next frame; code that measures
+ * layout synchronously right after a mutation calls {@link QaapHasStateClasses.flush} first
+ * (the reduced-motion follow-tail does, through `setTranscriptBottomFollowLayoutFlush`).
  */
 export const QAAP_HAS_STATE_CLASS_RULES: readonly QaapHasStateClassRule[] = [
     // `body` — overlays and surfaces.
@@ -161,6 +169,21 @@ export const QAAP_HAS_STATE_CLASS_RULES: readonly QaapHasStateClassRule[] = [
         className: 'theia-mod-has-transcript-empty-state',
         classes: ['theia-mod-transcript-scroll-to-bottom-mount', 'theia-mobile-agent-transcript-empty'],
     },
+    // The full-screen transcript sheet (appended to `body`), same header conditions as the panel.
+    {
+        subject: '.theia-mobile-agent-transcript-root',
+        has: '.theia-mobile-projects-subtitle[hidden]',
+        className: 'theia-mod-has-sheet-hidden-subtitle',
+        classes: ['theia-mobile-agent-transcript-root', 'theia-mobile-projects-subtitle'],
+        attributes: ['hidden'],
+    },
+    {
+        subject: '.theia-mobile-agent-transcript-root',
+        has: '.qaap-transcript-workspace-context:not([hidden])',
+        className: 'theia-mod-has-sheet-workspace-context',
+        classes: ['theia-mobile-agent-transcript-root', 'qaap-transcript-workspace-context'],
+        attributes: ['hidden'],
+    },
     // Desktop IDE: the Work Hub chat docked in the right side panel.
     {
         subject: '#theia-right-content-panel',
@@ -170,6 +193,13 @@ export const QAAP_HAS_STATE_CLASS_RULES: readonly QaapHasStateClassRule[] = [
         ids: ['theia-right-content-panel'],
     },
 ];
+
+interface QaapHasStateAnchors {
+    /** Elements whose subject ancestors (or themselves) may have changed. */
+    readonly elements: Set<Element>;
+    /** Inserted nodes: their own subtree may also hold subjects. */
+    readonly inserted: Set<Element>;
+}
 
 /** Tracks {@link QAAP_HAS_STATE_CLASS_RULES} on the live document. */
 @injectable()
@@ -217,11 +247,15 @@ export class QaapHasStateClasses implements FrontendApplicationContribution {
             attributeOldValue: true,
             attributeFilter,
         });
+        setTranscriptBottomFollowLayoutFlush(() => this.flush());
         // `body` itself can change class (theme, surface): rules whose subject is `body` re-check below.
         this.reconcile(this.rules);
     }
 
     stop(): void {
+        if (this.observer) {
+            setTranscriptBottomFollowLayoutFlush(undefined);
+        }
         this.observer?.disconnect();
         this.observer = undefined;
         this.document = undefined;
@@ -287,20 +321,89 @@ export class QaapHasStateClasses implements FrontendApplicationContribution {
     }
 
     protected onMutations(records: readonly MutationRecord[]): void {
-        const dirty = new Set<QaapHasStateClassRule>();
+        // Per dirty rule, the elements the mutation touched: only their subject ancestors (and, for
+        // inserted nodes, the subjects inside them) can change, so long transcripts are not re-walked.
+        const dirty = new Map<QaapHasStateClassRule, QaapHasStateAnchors>();
         for (const record of records) {
+            const rules = new Set<QaapHasStateClassRule>();
             if (record.type === 'attributes') {
-                this.collectAttributeRules(record, dirty);
+                this.collectAttributeRules(record, rules);
+                this.addAnchors(dirty, rules, record.target as Element, false);
             } else {
-                record.addedNodes.forEach(node => this.collectSubtreeRules(node, dirty));
-                record.removedNodes.forEach(node => this.collectSubtreeRules(node, dirty));
-            }
-            if (dirty.size === this.rules.length) {
-                break;
+                record.removedNodes.forEach(node => this.collectSubtreeRules(node, rules));
+                this.addAnchors(dirty, rules, record.target as Element, false);
+                record.addedNodes.forEach(node => {
+                    const added = new Set<QaapHasStateClassRule>();
+                    this.collectSubtreeRules(node, added);
+                    this.addAnchors(dirty, added, node as Element, true);
+                    // The parent's subject ancestors see the new descendant too.
+                    this.addAnchors(dirty, added, record.target as Element, false);
+                });
             }
         }
-        if (dirty.size) {
-            this.reconcile(dirty);
+        for (const [rule, anchors] of dirty) {
+            this.reconcileAround(rule, anchors);
+        }
+    }
+
+    protected addAnchors(
+        dirty: Map<QaapHasStateClassRule, QaapHasStateAnchors>,
+        rules: Set<QaapHasStateClassRule>,
+        anchor: Element,
+        inserted: boolean,
+    ): void {
+        for (const rule of rules) {
+            let anchors = dirty.get(rule);
+            if (!anchors) {
+                anchors = { elements: new Set(), inserted: new Set() };
+                dirty.set(rule, anchors);
+            }
+            (inserted ? anchors.inserted : anchors.elements).add(anchor);
+        }
+    }
+
+    /** Re-evaluates the subjects that are, or contain, the touched elements. */
+    protected reconcileAround(rule: QaapHasStateClassRule, anchors: QaapHasStateAnchors): void {
+        const doc = this.document;
+        if (!doc?.body) {
+            return;
+        }
+        if (rule.subject === 'body') {
+            this.reconcileSubject(rule, doc.body);
+            return;
+        }
+        const subjects = new Set<Element>();
+        const addSelfAndAncestors = (anchor: Element): void => {
+            if (anchor.classList.contains(rule.className) && !anchor.matches(rule.subject)) {
+                anchor.classList.remove(rule.className);
+            }
+            let subject = anchor.closest(rule.subject) ?? undefined;
+            while (subject) {
+                subjects.add(subject);
+                subject = subject.parentElement?.closest(rule.subject) ?? undefined;
+            }
+        };
+        anchors.elements.forEach(addSelfAndAncestors);
+        anchors.inserted.forEach(anchor => {
+            addSelfAndAncestors(anchor);
+            anchor.querySelectorAll(rule.subject).forEach(subject => subjects.add(subject));
+            anchor.querySelectorAll(`.${rule.className}`).forEach(element => {
+                if (!element.matches(rule.subject)) {
+                    element.classList.remove(rule.className);
+                }
+            });
+        });
+        subjects.forEach(subject => {
+            if (subject.isConnected) {
+                this.reconcileSubject(rule, subject);
+            }
+        });
+    }
+
+    protected reconcileSubject(rule: QaapHasStateClassRule, subject: Element): void {
+        const matches = this.matchers.get(rule)!(subject);
+        if (subject.classList.contains(rule.className) !== matches) {
+            subject.classList.toggle(rule.className, matches);
         }
     }
 
@@ -311,6 +414,10 @@ export class QaapHasStateClasses implements FrontendApplicationContribution {
             if (this.rulesByAttribute.has(record.attributeName ?? '')) {
                 this.collectElementRules(target, dirty, rule => rule.attributes?.includes(record.attributeName!) === true);
             }
+            return;
+        }
+        const value = target.getAttribute('class') ?? '';
+        if ((record.oldValue ?? '') === value) {
             return;
         }
         const before = new Set((record.oldValue ?? '').split(/\s+/).filter(Boolean));
@@ -369,10 +476,7 @@ export class QaapHasStateClasses implements FrontendApplicationContribution {
         for (const rule of rules) {
             const subjects = rule.subject === 'body' ? [doc.body] : Array.from(doc.body.querySelectorAll(rule.subject));
             for (const subject of subjects) {
-                const matches = this.matchers.get(rule)!(subject);
-                if (subject.classList.contains(rule.className) !== matches) {
-                    subject.classList.toggle(rule.className, matches);
-                }
+                this.reconcileSubject(rule, subject);
             }
             // An element that stopped being a subject keeps no stale class.
             doc.body.querySelectorAll(`.${rule.className}`).forEach(element => {
