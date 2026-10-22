@@ -1267,3 +1267,27 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
 .theia-mobile-tasks-skeleton-meta {
     width: 38%;
 }
+
+/*
+ * Theme-independent fallbacks for the design-system `q-skeleton` / `q-empty` blocks. The Qaap rules are scoped
+ * under `body.qaap-theme-*` and win by specificity; High Contrast or marketplace themes get these instead.
+ */
+.q-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--theia-widget-border);
+    border-radius: 6px;
+}
+
+.q-skeleton.q-skeleton-text {
+    height: 12px;
+}
+
+.q-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 24px;
+    text-align: center;
+}
