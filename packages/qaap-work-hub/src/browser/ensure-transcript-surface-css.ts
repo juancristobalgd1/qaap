@@ -14,8 +14,9 @@ let transcriptSurfaceCss: Promise<void> | undefined;
  * inline transcript) call it fire-and-forget; `QaapLazySurfaceStylesheetsPreload` also
  * requests it at app start (the Work Hub landing needs it) so those paths find it already applied.
  *
- * The sheets are `?qaap-lazy` imports: they are not part of `bundle.css` and are
- * attached (in this order) the first time a transcript surface opens.
+ * The sheets are `?qaap-lazy-boot` imports: they are not part of `bundle.css`, and the login gate
+ * attaches them (in this order) together with the bundle stylesheet when it boots into the Work Hub,
+ * so the landing finds them applied; otherwise they are attached the first time this runs.
  */
 export function ensureTranscriptSurfaceCss(): Promise<void> {
     if (!transcriptSurfaceCss) {
@@ -37,16 +38,16 @@ async function loadTranscriptSurfaceCss(): Promise<void> {
     // Same relative order these sheets had when they were eager imports of the Work Hub module
     // (timeline sheets before the conversation / transcript surfaces that refine them).
     await QaapLazyStylesheets.loadModules(
-        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premium.css?qaap-lazy'),
-        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css?qaap-lazy'),
-        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css?qaap-lazy'),
-        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-task-plan.css?qaap-lazy'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premium.css?qaap-lazy-boot'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css?qaap-lazy-boot'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-goal-loop.css?qaap-lazy-boot'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-task-plan.css?qaap-lazy-boot'),
         // Rewind preview dialog: only opened from transcript messages.
-        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-rewind-preview.css?qaap-lazy'),
-        import('../../src/browser/style/mobile-workbench-conversation.css?qaap-lazy'),
-        import('@theia/qaap-transcript/src/browser/style/mobile-workbench-transcript.css?qaap-lazy'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-rewind-preview.css?qaap-lazy-boot'),
+        import('../../src/browser/style/mobile-workbench-conversation.css?qaap-lazy-boot'),
+        import('@theia/qaap-transcript/src/browser/style/mobile-workbench-transcript.css?qaap-lazy-boot'),
         // Keep the Markdown surface last: it is the single canonical owner of transcript
         // typography, overflow, tables, headings, and rich code block presentation.
-        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-markdown.css?qaap-lazy'),
+        import('@theia/qaap-transcript/src/browser/style/qaap-transcript-markdown.css?qaap-lazy-boot'),
     );
 }

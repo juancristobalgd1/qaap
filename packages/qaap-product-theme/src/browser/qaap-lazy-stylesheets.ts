@@ -53,22 +53,50 @@ export namespace QaapLazyStylesheets {
         return loading;
     }
 
+    /** Last resort: a link that never fires load/error must not wedge the surface awaiting it. */
+    const SETTLE_TIMEOUT_MS = 15000;
+
     function attach(url: string): Promise<void> {
         if (typeof document === 'undefined') {
             return Promise.resolve();
         }
+        const attached = findAttached(url);
+        if (attached) {
+            lastInserted = attached;
+            return whenApplied(attached, url);
+        }
+        return createLink(url, undefined);
+    }
+
+    /**
+     * Creates and inserts the link (directly after `retryAnchor` when retrying, else after the last
+     * lazy link / the entry stylesheet) and resolves once it settles. Never rejects, never hangs.
+     */
+    function createLink(url: string, retryAnchor: Node | undefined): Promise<void> {
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = url;
         link.dataset.qaapLazy = '';
         const loaded = new Promise<void>(resolve => {
-            link.onload = () => resolve();
-            link.onerror = () => {
-                console.warn(`[qaap] lazy stylesheet failed to load: ${url}`);
+            const timer = setTimeout(() => {
+                console.warn(`[qaap] lazy stylesheet timed out: ${url}`);
+                resolve();
+            }, SETTLE_TIMEOUT_MS);
+            const settle = (): void => {
+                clearTimeout(timer);
                 resolve();
             };
+            link.onload = () => {
+                link.dataset.qaapLazyState = 'loaded';
+                settle();
+            };
+            link.onerror = () => {
+                link.dataset.qaapLazyState = 'error';
+                console.warn(`[qaap] lazy stylesheet failed to load: ${url}`);
+                settle();
+            };
         });
-        const anchor = lastInserted ?? document.querySelector(
+        const anchor = retryAnchor ?? lastInserted ?? document.querySelector(
             // The entry stylesheet: bundle.css (desktop) or bundle-mobile.css (mobile entry).
             'link[rel="stylesheet"][href*="bundle.css"], link[rel="stylesheet"][href*="bundle-mobile.css"]');
         if (anchor?.parentNode) {
@@ -78,5 +106,49 @@ export namespace QaapLazyStylesheets {
         }
         lastInserted = link;
         return loaded;
+    }
+
+    /**
+     * A `?qaap-lazy-boot` sheet the login gate already attached with the bundle stylesheet (same
+     * cascade position: directly after it, in import order). Reused instead of fetched again.
+     */
+    function findAttached(url: string): HTMLLinkElement | undefined {
+        for (const link of Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][data-qaap-lazy]'))) {
+            if (link.href === url || link.getAttribute('href') === url) {
+                return link;
+            }
+        }
+        return undefined;
+    }
+
+    function whenApplied(link: HTMLLinkElement, url: string): Promise<void> {
+        const state = link.dataset.qaapLazyState;
+        if (state === 'loaded' || link.sheet) {
+            return Promise.resolve();
+        }
+        if (state === 'error') {
+            // The gate's link failed before we adopted it: drop it and retry once with a fresh link.
+            const previous = link.previousSibling ?? undefined;
+            link.remove();
+            if (lastInserted === link) {
+                lastInserted = previous as Element | undefined;
+            }
+            return createLink(url, previous);
+        }
+        return new Promise<void>(resolve => {
+            const timer = setTimeout(() => {
+                console.warn(`[qaap] lazy stylesheet timed out: ${link.href}`);
+                resolve();
+            }, SETTLE_TIMEOUT_MS);
+            link.addEventListener('load', () => {
+                clearTimeout(timer);
+                resolve();
+            }, { once: true });
+            link.addEventListener('error', () => {
+                clearTimeout(timer);
+                console.warn(`[qaap] lazy stylesheet failed to load: ${link.href}`);
+                resolve();
+            }, { once: true });
+        });
     }
 }

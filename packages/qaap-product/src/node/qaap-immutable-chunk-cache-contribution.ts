@@ -11,11 +11,11 @@ import { BackendApplicationServer, BackendApplicationPath } from '@theia/core/li
 
 /**
  * esbuild emits content-addressed frontend chunks as `chunk-<hash>.(js|css)`, optionally followed
- * by a `.map` sourcemap suffix and/or a precompressed `.gz` suffix. Any file matching this pattern
+ * by a `.map` sourcemap suffix and/or a precompressed `.gz` / `.br` suffix. Any file matching this pattern
  * is safe to cache forever: a content change always produces a new hash, so the old URL is never
  * reused for different bytes.
  */
-const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(js|css)(\.map)?(\.gz)?$/;
+const HASHED_CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\.(js|css)(\.map)?(\.gz|\.br)?$/;
 
 /** @internal Exported for unit tests only. Accepts URL paths and filesystem paths alike. */
 export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
@@ -67,7 +67,8 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
     }
 
     protected setStaticHeaders(res: express.Response, filePath: string, frontendDir: string): void {
-        const base = path.basename(filePath);
+        // `express.static` sees the rewritten `.gz` / `.br` companion: judge the logical file.
+        const base = path.basename(filePath).replace(/\.(gz|br)$/, '');
         const topLevel = path.dirname(filePath) === frontendDir;
         if (base === 'service-worker.js') {
             // The service worker controls a wider scope than its own location and must not be
@@ -82,7 +83,7 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
             // The shell HTML is small and references hashed chunk URLs — never cache it
             // long-term, otherwise stale shells will reference deleted bundle hashes.
             res.setHeader('Cache-Control', 'no-cache');
-        } else if (topLevel && qaapIsImmutableHashedChunkPath(base)) {
+        } else if (topLevel && qaapIsImmutableHashedChunkPath(path.basename(filePath))) {
             // esbuild only ever emits hashed chunks at the top level of
             // lib/frontend — nested lookalikes are not content-addressed.
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');

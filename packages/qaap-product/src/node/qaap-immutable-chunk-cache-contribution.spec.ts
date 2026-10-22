@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { qaapIsImmutableHashedChunkPath, resolveQaapLegalPagesDir } from './qaap-immutable-chunk-cache-contribution';
+import { QaapFrontendStaticServer, qaapIsImmutableHashedChunkPath, resolveQaapLegalPagesDir } from './qaap-immutable-chunk-cache-contribution';
 
 describe('qaap-immutable-chunk-cache-contribution patterns', () => {
 
@@ -19,6 +19,8 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
             '/chunk-ABCD1234.js.gz',
             '/chunk-ABCD1234.css.gz',
             '/chunk-ABCD1234.js.map.gz',
+            '/chunk-ABCD1234.js.br',
+            '/chunk-ABCD1234.css.br',
             '/chunk-A1B2C3D4.js',
         ];
         for (const sample of samples) {
@@ -34,6 +36,9 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
             '/worker.js',
             '/manifest.webmanifest',
             '/service-worker.js',
+            '/bundle.js.br',
+            '/service-worker.js.br',
+            '/service-worker.js.gz',
             '/chunk-abcd1234.js', // lower-case hash is not the esbuild hash format
             // Note: nested paths are guarded at the server level (top-level dirname check);
             // the matcher itself is basename-scoped.
@@ -62,6 +67,34 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         expect(fs.existsSync(path.join(legalDir, 'terms.html'))).to.equal(true);
         expect(fs.existsSync(path.join(legalDir, 'privacy.html'))).to.equal(true);
         expect(fs.existsSync(path.join(legalDir, 'legal.css'))).to.equal(true);
+    });
+
+    describe('static headers for compressed companions', () => {
+
+        const headersFor = (file: string): Record<string, string> => {
+            const headers: Record<string, string> = {};
+            const res = { setHeader: (name: string, value: string) => { headers[name] = value; } };
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (new QaapFrontendStaticServer() as any).setStaticHeaders(res, path.join('/srv/frontend', file), '/srv/frontend');
+            return headers;
+        };
+
+        for (const suffix of ['.br', '.gz']) {
+            it(`keeps the service worker headers for service-worker.js${suffix}`, () => {
+                expect(headersFor('service-worker.js' + suffix)).to.deep.equal({
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Service-Worker-Allowed': '/',
+                    'Content-Type': 'application/javascript; charset=utf-8',
+                });
+            });
+        }
+
+        it('keeps revalidation for compressed manifest and index companions, immutable for hashed chunks', () => {
+            expect(headersFor('manifest.webmanifest.br')['Cache-Control']).to.equal('no-cache');
+            expect(headersFor('index.html.gz')['Cache-Control']).to.equal('no-cache');
+            expect(headersFor('chunk-ABCD1234.js.br')['Cache-Control']).to.equal('public, max-age=31536000, immutable');
+            expect(headersFor('bundle.js.br')).to.deep.equal({});
+        });
     });
 
 });

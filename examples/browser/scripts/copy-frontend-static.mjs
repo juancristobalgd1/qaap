@@ -6,17 +6,18 @@
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createGzip } from 'node:zlib';
+import { constants as zlibConstants, createBrotliCompress, createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import resolvePackagePath from 'resolve-package-path';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const qaapRoot = path.dirname(resolvePackagePath('@theia/qaap-product', root));
 const requireFromBrowserScript = createRequire(import.meta.url);
-const { patchIndexForFreshAssets: patchFreshAssets } = requireFromBrowserScript(
+const { injectBootStylesheets, patchIndexForFreshAssets: patchFreshAssets } = requireFromBrowserScript(
     path.join(qaapRoot, 'resources', 'qaap-frontend-asset-policy.cjs'),
 );
 const libFrontend = path.join(root, 'lib', 'frontend');
@@ -69,6 +70,17 @@ function patchIndexForFreshAssets(indexPath) {
     }
     const html = patchFreshAssets(fs.readFileSync(indexPath, 'utf8'), BUILD_VERSION);
     fs.writeFileSync(indexPath, html, 'utf8');
+}
+
+/** Lazy stylesheets the Work Hub landing needs at first paint (written by esbuild.mjs). */
+function patchIndexForBootStylesheets(indexPath) {
+    const listPath = path.join(root, 'lib', '.qaap-boot-stylesheets.json');
+    if (!fs.existsSync(indexPath) || !fs.existsSync(listPath)) {
+        return;
+    }
+    const files = JSON.parse(fs.readFileSync(listPath, 'utf8'))
+        .filter(file => fs.existsSync(path.join(libFrontend, file)));
+    fs.writeFileSync(indexPath, injectBootStylesheets(fs.readFileSync(indexPath, 'utf8'), files), 'utf8');
 }
 
 /**
@@ -132,11 +144,13 @@ patchIndexForLoginGate(libIndex);
 // visual contract is fetched as one coherent build. Chunks below the bundle are
 // content-hashed and need no stamp (see verifyFrontendChunkGraph).
 patchIndexForFreshAssets(libIndex);
+patchIndexForBootStylesheets(libIndex);
 // `theia start` serves the generated source index directly in development, while
 // the bundled/static server serves lib/frontend/index.html. Keep both entry points
 // versioned so a browser cannot bypass the fresh bundle through the dev server.
 patchIndexForLoginGate(srcIndex);
 patchIndexForFreshAssets(srcIndex);
+patchIndexForBootStylesheets(srcIndex);
 copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 // Service worker must sit at the same scope as index.html so it can control the whole app.
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));
@@ -204,6 +218,62 @@ if (compressed.length) {
     });
     console.log('[qaap] gzipped:', sizes.join(', '));
 }
+
+// Brotli companions for JS / CSS (~15-20% smaller than gzip -9 on these bundles), served ahead of
+// the .gz by @theia/qaap-product (QaapBrotliStaticContribution) to browsers that accept `br`.
+// Quality 10 for production (q11 measured ~2.5x slower for a negligible size gain); development builds use a fast level.
+const BROTLI_EXTS = /\.(js|css)$/i;
+const BROTLI_QUALITY = PRODUCTION ? 10 : 5;
+
+async function brotliFile(filePath) {
+    const stat = fs.statSync(filePath);
+    if (stat.size < GZIP_MIN_BYTES) { return; }
+    const brPath = filePath + '.br';
+    if (fs.existsSync(brPath) && fs.statSync(brPath).mtimeMs >= stat.mtimeMs) { return; }
+    await pipeline(
+        fs.createReadStream(filePath),
+        createBrotliCompress({
+            params: {
+                [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
+                [zlibConstants.BROTLI_PARAM_SIZE_HINT]: stat.size,
+            },
+        }),
+        fs.createWriteStream(brPath)
+    );
+}
+
+const brotliTargets = gzipTargets.filter(f => BROTLI_EXTS.test(f));
+// Bounded pool: high-quality Brotli is CPU-bound, and ~1600 chunks at once would thrash memory.
+async function runPool(items, worker, concurrency) {
+    const results = new Array(items.length);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
+        while (next < items.length) {
+            const index = next++;
+            try {
+                results[index] = { status: 'fulfilled', value: await worker(items[index]) };
+            } catch (reason) {
+                results[index] = { status: 'rejected', reason };
+            }
+        }
+    }));
+    return results;
+}
+const brotliStarted = Date.now();
+const brotliResults = await runPool(brotliTargets, brotliFile, Math.max(1, os.cpus().length));
+console.log(`[qaap] brotli q${BROTLI_QUALITY}: ${brotliTargets.length} files in ${((Date.now() - brotliStarted) / 1000).toFixed(1)}s`);
+const brotliFailed = brotliResults.filter(r => r.status === 'rejected');
+if (brotliFailed.length) {
+    console.warn('[qaap] brotli failed for some files:', brotliFailed.map(r => r.reason).join(', '));
+}
+const brotliTotals = brotliTargets.reduce((totals, f) => {
+    if (fs.existsSync(f + '.br') && fs.existsSync(f + '.gz')) {
+        totals.gz += fs.statSync(f + '.gz').size;
+        totals.br += fs.statSync(f + '.br').size;
+    }
+    return totals;
+}, { gz: 0, br: 0 });
+console.log(`[qaap] brotli (q${BROTLI_QUALITY}): ${(brotliTotals.gz / 1e6).toFixed(1)} MB gzip → ${(brotliTotals.br / 1e6).toFixed(1)} MB br`);
 
 // Stale code-split chunks are pruned by esbuild.mjs (qaap-prune-stale-chunks) right after the
 // main build, from esbuild's metafile: it keeps this build's chunks plus the previous build's, so

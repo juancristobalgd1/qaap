@@ -3,7 +3,7 @@
 const { expect } = require('chai');
 const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
-const { patchIndexForFreshAssets } = require('./qaap-frontend-asset-policy.cjs');
+const { injectBootStylesheets, patchIndexForFreshAssets } = require('./qaap-frontend-asset-policy.cjs');
 
 const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
 
@@ -79,5 +79,19 @@ describe('Qaap frontend asset policy', () => {
         } finally {
             dom.window.close();
         }
+    });
+
+    it('publishes the boot stylesheets once, replacing a previous build\'s list', () => {
+        const once = injectBootStylesheets(source, ['chunk-AAA111.css', 'chunk-BBB222.css']);
+        const twice = injectBootStylesheets(once, ['chunk-CCC333.css', '../evil.css']);
+        expect(twice.match(/qaap-boot-stylesheets/g)).to.have.length(1);
+        const dom = parseIndex(twice, true);
+        try {
+            expect(dom.window.document.querySelector('meta[name="qaap-boot-stylesheets"]')?.getAttribute('content'))
+                .to.equal('chunk-CCC333.css');
+        } finally {
+            dom.window.close();
+        }
+        expect(injectBootStylesheets(once, [])).to.equal(source);
     });
 });

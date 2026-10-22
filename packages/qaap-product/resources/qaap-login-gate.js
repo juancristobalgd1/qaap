@@ -336,7 +336,7 @@
                 }
                 if (isMobileMode) {
                     // Mobile never reveals the IDE shell: keep the guard and make sure the
-                    // phase-aware placeholder is up (normally it already is since ~1.5 s, see
+                    // phase-aware placeholder is up (normally it already is since ~0.2 s, see
                     // armBootPlaceholder); clearMobileWorkHubBootGuard removes it.
                     bootPlaceholderDue = true;
                     showBootPlaceholder();
@@ -604,8 +604,11 @@
     // (the cached Work Hub shell, when there is one, is already on screen); then the skeleton
     // Work Hub shell, captioned "Starting your workspace…" only while the control plane reports a
     // cold tenant runtime (otherwise the shimmering skeletons alone say it is loading).
+    // The delay only spares a skeleton flash on a near-instant boot: a phone without a snapshot or
+    // replica (first visit, new build, >14 days) otherwise looks at a blank page meanwhile, and a
+    // cold start never reaches the Work Hub that fast.
     // ---------------------------------------------------------------------------------------
-    var BOOT_PLACEHOLDER_DELAY_MS = 1500;
+    var BOOT_PLACEHOLDER_DELAY_MS = 200;
     var BOOT_TEXT_STARTING = 'Starting your workspace…';
     // The status read is an in-memory control-plane lookup (not user activity, never proxied to
     // the tenant). Poll it a bounded number of times while the runtime is cold; the startup
@@ -1364,6 +1367,45 @@
         document.head.appendChild(stylesheet);
     }
 
+    /**
+     * Attach the lazy stylesheets the Work Hub landing needs at first paint (`?qaap-lazy-boot`,
+     * listed by the build in `<meta name="qaap-boot-stylesheets">`) right after the bundle
+     * stylesheet, in cascade order, so they download with the bundle instead of after every
+     * frontend module has loaded. QaapLazyStylesheets reuses these links (`data-qaap-lazy`).
+     */
+    function attachBootStylesheets() {
+        if (bootsIntoIde) {
+            return;
+        }
+        try {
+            var meta = document.querySelector('meta[name="qaap-boot-stylesheets"]');
+            var files = meta ? (meta.getAttribute('content') || '').split(/\s+/) : [];
+            var anchor = document.querySelector('link[rel="stylesheet"][href*="bundle.css"], link[rel="stylesheet"][href*="bundle-mobile.css"]');
+            files.forEach(function (file) {
+                if (!/^chunk-[A-Z0-9]+\.css$/.test(file)) {
+                    return;
+                }
+                var href = new URL('./' + file, document.baseURI).href;
+                if (document.querySelector('link[rel="stylesheet"][data-qaap-lazy][href="' + href + '"]')) {
+                    return;
+                }
+                var link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = href;
+                link.setAttribute('data-qaap-lazy', '');
+                // Record the outcome: QaapLazyStylesheets may adopt this link after the event fired.
+                link.addEventListener('load', function () { link.setAttribute('data-qaap-lazy-state', 'loaded'); });
+                link.addEventListener('error', function () { link.setAttribute('data-qaap-lazy-state', 'error'); });
+                if (anchor && anchor.parentNode) {
+                    anchor.parentNode.insertBefore(link, anchor.nextSibling);
+                } else {
+                    document.head.appendChild(link);
+                }
+                anchor = link;
+            });
+        } catch (e) { /* the frontend attaches them itself (QaapLazyStylesheets) */ }
+    }
+
     function dismissLoginGate() {
         var host = document.getElementById('qaap-login-host');
         if (host) {
@@ -1401,6 +1443,7 @@
         mobileEntryActive = shouldLoadMobileEntry();
         bootEntry = mobileEntryActive ? 'mobile' : 'full';
         activateBundleStylesheet(mobileEntryActive);
+        attachBootStylesheets();
         window.__qaapBundleLoading = true;
         var script = document.createElement('script');
         // The frontend builds as ES modules (esbuild code-splitting); the

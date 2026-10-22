@@ -15,3 +15,10 @@ declare module '*?qaap-lazy' {
     const url: string;
     export default url;
 }
+
+// Same, for lazy sheets the Work Hub landing needs at first paint: the login gate attaches them
+// with the bundle stylesheet (see the `qaap-lazy-css` esbuild plugin).
+declare module '*?qaap-lazy-boot' {
+    const url: string;
+    export default url;
+}
