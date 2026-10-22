@@ -146,4 +146,15 @@ describe('MobileProjectsHomeHubUi.buildHomeSnapshot statsSettled', () => {
         state.inboxLoaded = false; // entering Review
         expect(ui.buildHomeSnapshot().statsSettled).to.equal(true);
     });
+    it('resets the settled latch when another account signs in, but not when the session first becomes known', () => {
+        const state = { inboxLoaded: true, tasksPending: false };
+        const ui = new MobileProjectsHomeHubUi(createHost(state));
+        expect(ui.trackInboxEverLoaded(undefined)).to.equal(true);
+        state.inboxLoaded = false; // entering Review
+        expect(ui.trackInboxEverLoaded('alice')).to.equal(true); // undefined -> alice: same session
+        expect(ui.trackInboxEverLoaded('alice')).to.equal(true);
+        expect(ui.trackInboxEverLoaded('bob')).to.equal(false); // account switch: unsettled again
+        state.inboxLoaded = true;
+        expect(ui.trackInboxEverLoaded('bob')).to.equal(true);
+    });
 });
