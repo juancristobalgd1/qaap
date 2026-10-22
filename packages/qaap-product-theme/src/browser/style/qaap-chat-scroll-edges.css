@@ -155,8 +155,10 @@
   display: none !important;
 }
 
-.theia-mobile-agent-transcript-real-chat:has(> .chat-view-widget)::before,
-.theia-mobile-agent-transcript-real-chat:has(> .chat-view-widget)::after {
+/* `-has-*` classes are set by QaapHasStateClasses (qaap-work-hub) in place of `:has()` on the streaming
+ * transcript's ancestors; repeated as many times as needed to keep the specificity of the `:has()`. */
+.theia-mobile-agent-transcript-real-chat.theia-mod-has-chat-view-widget::before,
+.theia-mobile-agent-transcript-real-chat.theia-mod-has-chat-view-widget::after {
   display: none;
 }
 

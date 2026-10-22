@@ -128,23 +128,25 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
 }
 
 /* DOM-state failsafe: if the IDE/editor is the only painted surface, never leave the top bar blank. */
-body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel,
-body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-history-nav,
-body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-nav,
-body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-right-controls {
+/* `-has-*` classes are set by QaapHasStateClasses (qaap-work-hub) in place of `:has()` on the streaming
+ * transcript's ancestors; repeated as many times as needed to keep the specificity of the `:has()`. */
+body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible):not(.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel,
+body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible):not(.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-history-nav,
+body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible):not(.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-nav,
+body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible):not(.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-right-controls {
   display: flex !important;
   visibility: visible !important;
   pointer-events: auto !important;
 }
 
-body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) .theia-mobile-bottom-chrome-host {
+body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible):not(.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay) .theia-mobile-bottom-chrome-host {
   display: flex !important;
   visibility: visible !important;
   pointer-events: none !important;
 }
 
-body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) .theia-mobile-bottom-chrome-host>#theia-statusBar,
-body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-statusBar {
+body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible):not(.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay) .theia-mobile-bottom-chrome-host>#theia-statusBar,
+body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible):not(.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay) #theia-statusBar {
   display: block !important;
   visibility: visible !important;
   pointer-events: auto !important;
@@ -3558,7 +3560,7 @@ body>.theia-mobile-transcript-files-menu {
   }
 }
 
-.theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) {
+.theia-mobile-agent-transcript.theia-mod-empty-chat.theia-mod-has-transcript-recents {
   justify-content: flex-start;
   align-items: stretch;
 }
@@ -3600,7 +3602,7 @@ body>.theia-mobile-transcript-files-menu {
   text-wrap: balance;
 }
 
-.theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) .theia-mobile-agent-transcript-empty-welcome {
+.theia-mobile-agent-transcript.theia-mod-empty-chat.theia-mod-has-transcript-recents .theia-mobile-agent-transcript-empty-welcome {
   margin: clamp(12px, 4vh, 32px) auto clamp(20px, 5vh, 40px);
   flex: 0 0 auto;
 }
@@ -3639,7 +3641,7 @@ body>.theia-mobile-transcript-files-menu {
   display: flex;
 }
 
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript.theia-mod-empty-chat) .theia-mobile-projects-scroll {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-empty-chat.theia-mod-has-empty-chat .theia-mobile-projects-scroll {
   padding-bottom: 0;
 }
 
@@ -4932,7 +4934,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
   border-top: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.2)) 42%, transparent);
 }
 
-.theia-mobile-agent-transcript-segments:not(:has(.theia-mobile-agent-transcript-content)) .theia-mobile-agent-transcript-artifacts {
+.theia-mobile-agent-transcript-segments:not(.theia-mod-has-transcript-content) .theia-mobile-agent-transcript-artifacts {
   margin-top: 0;
   padding-top: 0;
   border-top: none;
@@ -9597,7 +9599,7 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 }
 
 /* Agents hub inline + project detail — codex composer is a flex sibling below scroll (not overlay). */
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) {
   position: relative;
   flex: 0 0 auto;
   z-index: 8;
@@ -9608,17 +9610,17 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   pointer-events: none;
 }
 
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-projects-sticky-composer-card,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-changes-pill-host,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-projects-sticky-composer-workspace-bar,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-mode-banner,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-transcript-follow-up-queue,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-activity-stack,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-agent-transcript-empty-actions {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-projects-sticky-composer-card,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-changes-pill-host,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-projects-sticky-composer-workspace-bar,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-mode-banner,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-transcript-follow-up-queue,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-activity-stack,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-agent-transcript-empty-actions {
   pointer-events: auto;
 }
 
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-pending-approval-host {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-pending-approval-host {
   pointer-events: auto;
 }
 
@@ -9633,8 +9635,8 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
  * Work Hub landing / non-agents surfaces: keep composer flush (no lip overlap).
  * Agents hub chat restores geometric overlap below — see next rules.
  */
-body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer:not(.theia-mod-agents-hub-shell-active):not(.theia-mod-agents-hub-inline-active):has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer,
-body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer:not(.theia-mod-agents-hub-shell-active):not(.theia-mod-agents-hub-inline-active):has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer {
+body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer:not(.theia-mod-agents-hub-shell-active):not(.theia-mod-agents-hub-inline-active).theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer:not(.theia-mod-agents-hub-shell-active):not(.theia-mod-agents-hub-inline-active).theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer {
   margin-top: 0 !important;
 }
 
@@ -9643,14 +9645,14 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
  * changes/working pill row (kill the dead band left when Work Hub forced margin-top: 0).
  * Pill row ~30px; deepen past the default lip so the floor collides with the pill bottom.
  */
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-sticky-composer-changes-pill-host),
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-sticky-composer-changes-pill-host) {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-changes-pill,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-changes-pill {
   --theia-mobile-transcript-composer-scroll-gap: -34px;
 }
 
 @media (max-width: 767px) {
-  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-sticky-composer-changes-pill-host),
-  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-sticky-composer-changes-pill-host) {
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-changes-pill,
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-changes-pill {
     /* Match densified 26px pill strip (+ lip) in work-hub narrow CSS. */
     --theia-mobile-transcript-composer-scroll-gap: -30px;
   }
@@ -9664,28 +9666,28 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
  * the same variable, so the tail (live-status) is pushed up by exactly the overlap and lands
  * directly above the pills rather than under them.
  */
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status),
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status),
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status) {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-live-status.theia-mod-has-live-status,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-live-status.theia-mod-has-live-status,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-live-status.theia-mod-has-live-status {
   --theia-mobile-transcript-composer-scroll-gap: -12px;
 }
 
 /* Working/Changes strip mounted: clear its full height so live-status clears the pills. */
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host),
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host),
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host) {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-live-status.theia-mod-has-live-status.theia-mod-has-changes-pill,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-live-status.theia-mod-has-live-status.theia-mod-has-changes-pill,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-live-status.theia-mod-has-live-status.theia-mod-has-changes-pill {
   --theia-mobile-transcript-composer-scroll-gap: 16px;
 }
 
-body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) {
+body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) {
   margin-top: var(--theia-mobile-transcript-composer-scroll-gap, -28px) !important;
 }
 
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer .theia-mobile-projects-sticky-composer-column,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer .theia-mobile-projects-sticky-composer-inner {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer .theia-mobile-projects-sticky-composer-column,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer .theia-mobile-projects-sticky-composer-inner {
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -9717,7 +9719,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 /* WorkspaceInputDialog / SingleTextInputDialog must sit above the full-screen transcript sheet. */
-body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialogOverlay {
+body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay .lm-Widget.dialogOverlay {
   z-index: 2147483015 !important;
 }
 
@@ -11097,7 +11099,7 @@ body.qaap-theme-dark .qaap-model-capability-slider {
   box-sizing: border-box;
 }
 
-body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-sticky-composer-sheet-popover.theia-mod-transcript-overlay {
+body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay .qaap-sticky-composer-sheet-popover.theia-mod-transcript-overlay {
   z-index: 2147483003 !important;
 }
 
@@ -11575,7 +11577,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-sticky-com
   box-sizing: border-box;
 }
 
-body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-context-usage-popover.theia-mod-transcript-overlay {
+body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay .qaap-chat-context-usage-popover.theia-mod-transcript-overlay {
   z-index: 2147483003 !important;
 }
 
@@ -12202,7 +12204,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
  * embedded chat widget so the standalone Work Hub keeps its existing composer appearance.
  * No hairline between transcript scroll and composer — seamless lip with the empty-chat chips.
  */
-body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-hub-chat-view .theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
   margin-top: 0 !important;
   padding: 8px 12px 12px;
   border-top: none !important;
@@ -12219,11 +12221,11 @@ body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-
   border-top: none !important;
 }
 
-body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-inner {
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-hub-chat-view .theia-mobile-projects-sticky-composer-inner {
   gap: 0;
 }
 
-body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-hub-chat-view .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
   --qaap-codex-shell-radius: 10px;
   --qaap-codex-shell-lip-radius: 8px;
   --qaap-codex-tray-band-height: 40px;
@@ -12237,7 +12239,7 @@ body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-
   overflow: hidden;
 }
 
-body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-wrap.theia-mod-codex {
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-hub-chat-view .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-wrap.theia-mod-codex {
   border: none !important;
   border-radius: var(--qaap-codex-shell-radius) var(--qaap-codex-shell-radius) 0 0 !important;
   background: var(--theia-input-background, var(--theia-editor-background)) !important;
@@ -12245,8 +12247,8 @@ body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-
   -webkit-backdrop-filter: none;
 }
 
-body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray,
-body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-toolbar.qaap-codex-context-tray {
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-hub-chat-view .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray,
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-hub-chat-view .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-toolbar.qaap-codex-context-tray {
   padding: 4px 8px 6px;
   border: none !important;
   border-top: 1px solid var(--theia-panel-border, var(--theia-widget-border)) !important;
