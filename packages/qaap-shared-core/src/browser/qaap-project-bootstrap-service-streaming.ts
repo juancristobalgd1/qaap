@@ -87,6 +87,8 @@ export async function runInstallExtracted(ctx: QaapProjectBootstrapServiceContex
             }
             ctx._needsInstall = false;
             await ctx.refreshDescriptorAfterInstall();
+            // The install just re-detected the descriptor, so a refresh it blocked has nothing left to add.
+            ctx.deferredWorkspaceRefresh = undefined;
             ctx.persistPhase('ready-to-run');
             ctx.setPhase('ready-to-run');
             // Auto-chain to dev server when a runnable plan is available (single-package script or a

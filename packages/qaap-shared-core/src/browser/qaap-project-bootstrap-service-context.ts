@@ -53,6 +53,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'collectProbePorts'
     | 'delay'
     | 'deferredWorkspaceRefresh'
+    | 'deferredWorkspaceRefreshTimer'
     | 'detector'
     | 'devOutputTail'
     | 'devPortOverride'

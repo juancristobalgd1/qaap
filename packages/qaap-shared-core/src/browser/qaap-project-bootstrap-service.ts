@@ -335,6 +335,8 @@ export class QaapProjectBootstrapService {
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */
     public deferredWorkspaceRefresh: QaapDeferredWorkspaceRefresh | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public deferredWorkspaceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
     /**
      * Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000).
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.

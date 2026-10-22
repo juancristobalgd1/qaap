@@ -48,6 +48,9 @@ export function initExtracted(ctx: QaapProjectBootstrapServiceContext): void {
             if (typeof window !== 'undefined' && ctx.refreshDebounceTimer !== undefined) {
                 window.clearTimeout(ctx.refreshDebounceTimer);
             }
+            if (ctx.deferredWorkspaceRefreshTimer !== undefined) {
+                clearTimeout(ctx.deferredWorkspaceRefreshTimer);
+            }
             ctx.cancelDevPreviewHealthMonitor();
         }));
         // Debug surface (used by integration tests and power users). Exposes the bare minimum to
