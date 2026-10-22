@@ -91,6 +91,10 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
     /** Work Hub tour flag — keeps the pre-split key so existing users are not re-prompted. */
     static readonly STORAGE_KEY = 'theia.mobile.tutorial.seen';
     static readonly IDE_STORAGE_KEY = 'theia.mobile.tutorial.ide.seen';
+    /** Cadence of the in-page check (open transcript, streaming row) while the tour is open. */
+    static readonly ACTIVE_AGENT_DOM_CHECK_INTERVAL_MS = 1000;
+    /** Cadence of the conversation-work API request while the tour is open. */
+    static readonly ACTIVE_AGENT_WORK_REQUEST_INTERVAL_MS = 4000;
 
     static readonly REPLAY_COMMAND: Command = Command.toLocalizedCommand({
         id: 'theia.mobile.onboarding.replay',
@@ -298,23 +302,29 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         if (this.activeAgentWatchTimer !== undefined || typeof window === 'undefined') {
             return;
         }
-        // Poll guard: at most one conversation-work request in flight, and none while the tab
-        // is hidden (the 400ms cadence would otherwise pile up requests on a slow backend).
+        // The DOM check is cheap and catches an opened transcript or a streaming row right away;
+        // the API request (a conversation created elsewhere) only goes out every few seconds,
+        // at most one in flight and none while the tab is hidden.
         let workRequestInFlight = false;
+        let lastWorkRequestAt = Number.NEGATIVE_INFINITY;
         const tick = (): void => {
             if (!this.active) {
+                this.stopActiveAgentWatch();
                 return;
             }
             if (shouldDeferMobileOnboardingTutorial()) {
                 this.dismiss(true);
                 return;
             }
-            if (workRequestInFlight || document.hidden) {
+            const now = Date.now();
+            if (workRequestInFlight || document.hidden
+                || now - lastWorkRequestAt < MobileOnboardingTutorialContribution.ACTIVE_AGENT_WORK_REQUEST_INTERVAL_MS) {
                 return;
             }
             // Any conversation existing (created via composer or API, streaming or already idle)
             // means the user is doing agent work — get the coach-marks out of the way for good.
             workRequestInFlight = true;
+            lastWorkRequestAt = now;
             void hasAnyAgentConversationWork().then(exists => {
                 if (exists && this.active) {
                     this.dismiss(true);
@@ -323,7 +333,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 workRequestInFlight = false;
             });
         };
-        this.activeAgentWatchTimer = window.setInterval(tick, 400);
+        this.activeAgentWatchTimer = window.setInterval(tick, MobileOnboardingTutorialContribution.ACTIVE_AGENT_DOM_CHECK_INTERVAL_MS);
         tick();
     }
 
