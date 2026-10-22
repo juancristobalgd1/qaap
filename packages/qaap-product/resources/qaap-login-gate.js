@@ -1393,6 +1393,9 @@
                 link.rel = 'stylesheet';
                 link.href = href;
                 link.setAttribute('data-qaap-lazy', '');
+                // Record the outcome: QaapLazyStylesheets may adopt this link after the event fired.
+                link.addEventListener('load', function () { link.setAttribute('data-qaap-lazy-state', 'loaded'); });
+                link.addEventListener('error', function () { link.setAttribute('data-qaap-lazy-state', 'error'); });
                 if (anchor && anchor.parentNode) {
                     anchor.parentNode.insertBefore(link, anchor.nextSibling);
                 } else {

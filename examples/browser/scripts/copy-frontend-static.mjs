@@ -6,6 +6,7 @@
  * Run after `theia build` — lib/ is not updated automatically otherwise.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -220,9 +221,9 @@ if (compressed.length) {
 
 // Brotli companions for JS / CSS (~15-20% smaller than gzip -9 on these bundles), served ahead of
 // the .gz by @theia/qaap-product (QaapBrotliStaticContribution) to browsers that accept `br`.
-// Quality 11 only for production; development builds use a fast level.
+// Quality 10 for production (q11 measured ~2.5x slower for a negligible size gain); development builds use a fast level.
 const BROTLI_EXTS = /\.(js|css)$/i;
-const BROTLI_QUALITY = PRODUCTION ? 11 : 5;
+const BROTLI_QUALITY = PRODUCTION ? 10 : 5;
 
 async function brotliFile(filePath) {
     const stat = fs.statSync(filePath);
@@ -242,7 +243,25 @@ async function brotliFile(filePath) {
 }
 
 const brotliTargets = gzipTargets.filter(f => BROTLI_EXTS.test(f));
-const brotliResults = await Promise.allSettled(brotliTargets.map(brotliFile));
+// Bounded pool: high-quality Brotli is CPU-bound, and ~1600 chunks at once would thrash memory.
+async function runPool(items, worker, concurrency) {
+    const results = new Array(items.length);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
+        while (next < items.length) {
+            const index = next++;
+            try {
+                results[index] = { status: 'fulfilled', value: await worker(items[index]) };
+            } catch (reason) {
+                results[index] = { status: 'rejected', reason };
+            }
+        }
+    }));
+    return results;
+}
+const brotliStarted = Date.now();
+const brotliResults = await runPool(brotliTargets, brotliFile, Math.max(1, os.cpus().length));
+console.log(`[qaap] brotli q${BROTLI_QUALITY}: ${brotliTargets.length} files in ${((Date.now() - brotliStarted) / 1000).toFixed(1)}s`);
 const brotliFailed = brotliResults.filter(r => r.status === 'rejected');
 if (brotliFailed.length) {
     console.warn('[qaap] brotli failed for some files:', brotliFailed.map(r => r.reason).join(', '));

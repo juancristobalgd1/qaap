@@ -9,6 +9,7 @@ import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import * as express from '@theia/core/shared/express';
 import { BackendApplicationContribution, BackendApplicationPath } from '@theia/core/lib/node';
 import { EarlyExpressMiddleware } from '@theia/core/lib/node/backend-application';
+import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
 
 const BROTLI_CONTENT_TYPES: Record<string, string> = {
     '.js': 'text/javascript',
@@ -23,14 +24,32 @@ const BROTLI_CONTENT_TYPES: Record<string, string> = {
  *
  * @internal Exported for unit tests only.
  */
-export async function qaapServeBrotli(req: express.Request, res: express.Response, frontendDir: string): Promise<void> {
+export async function qaapServeBrotli(
+    req: express.Request,
+    res: express.Response,
+    frontendDir: string,
+    previewBaseDomain: string | undefined = resolveQaapPreviewBaseDomain()
+): Promise<void> {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
         return;
     }
     const queryIndex = req.url.indexOf('?');
     const pathname = queryIndex === -1 ? req.url : req.url.slice(0, queryIndex);
     const contentType = BROTLI_CONTENT_TYPES[path.posix.extname(pathname)];
-    if (!contentType || req.acceptsEncodings('br') !== 'br') {
+    if (!contentType) {
+        return;
+    }
+    // An isolated preview host serves the previewed app's own bytes (the preview handler owns it),
+    // never Qaap's frontend companions — whatever the handler registration order.
+    const headers = req.headers ?? {};
+    const forwardedHost = headers['x-forwarded-host'];
+    const rawHost = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(',')[0]?.trim() ?? headers.host;
+    if (parseQaapPreviewHostLabel(rawHost, previewBaseDomain)) {
+        return;
+    }
+    // The representation depends on Accept-Encoding whether or not a .br companion exists.
+    res.append('Vary', 'Accept-Encoding');
+    if (req.acceptsEncodings('br') !== 'br') {
         return;
     }
     let relative: string;
@@ -51,7 +70,6 @@ export async function qaapServeBrotli(req: express.Request, res: express.Respons
     req.url = pathname + '.br' + (queryIndex === -1 ? '' : req.url.slice(queryIndex));
     res.set('Content-Encoding', 'br');
     res.set('Content-Type', contentType);
-    res.append('Vary', 'Accept-Encoding');
 }
 
 @injectable()

@@ -67,7 +67,8 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
     }
 
     protected setStaticHeaders(res: express.Response, filePath: string, frontendDir: string): void {
-        const base = path.basename(filePath);
+        // `express.static` sees the rewritten `.gz` / `.br` companion: judge the logical file.
+        const base = path.basename(filePath).replace(/\.(gz|br)$/, '');
         const topLevel = path.dirname(filePath) === frontendDir;
         if (base === 'service-worker.js') {
             // The service worker controls a wider scope than its own location and must not be
@@ -82,7 +83,7 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
             // The shell HTML is small and references hashed chunk URLs — never cache it
             // long-term, otherwise stale shells will reference deleted bundle hashes.
             res.setHeader('Cache-Control', 'no-cache');
-        } else if (topLevel && qaapIsImmutableHashedChunkPath(base)) {
+        } else if (topLevel && qaapIsImmutableHashedChunkPath(path.basename(filePath))) {
             // esbuild only ever emits hashed chunks at the top level of
             // lib/frontend — nested lookalikes are not content-addressed.
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
