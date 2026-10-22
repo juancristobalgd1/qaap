@@ -44,6 +44,8 @@ interface HomeShortcutSpec {
     readonly icon: string;
     readonly label: string;
     readonly hint: string;
+    /** Overrides the nls key suffix (defaults to `action`) when the default text changed, so stale translations are not reused. */
+    readonly nlsKey?: string;
 }
 
 export class MobileProjectsHomeUi {
@@ -72,6 +74,7 @@ export class MobileProjectsHomeUi {
         },
         {
             action: 'all-projects',
+            nlsKey: 'all-projects-v2',
             icon: 'codicon-folder',
             label: 'Projects',
             hint: 'GitHub projects',
@@ -520,10 +523,10 @@ export class MobileProjectsHomeUi {
         body.className = 'theia-mobile-work-hub-home-shortcut-body';
         const title = document.createElement('span');
         title.className = 'theia-mobile-work-hub-home-shortcut-title';
-        title.textContent = nls.localize(`qaap/workHubHome/shortcut/${spec.action}`, spec.label);
+        title.textContent = nls.localize(`qaap/workHubHome/shortcut/${spec.nlsKey ?? spec.action}`, spec.label);
         const hint = document.createElement('span');
         hint.className = 'theia-mobile-work-hub-home-shortcut-hint';
-        hint.textContent = nls.localize(`qaap/workHubHome/shortcutHint/${spec.action}`, spec.hint);
+        hint.textContent = nls.localize(`qaap/workHubHome/shortcutHint/${spec.nlsKey ?? spec.action}`, spec.hint);
         body.append(title, hint);
         btn.append(icon, body);
         return btn;
@@ -587,7 +590,7 @@ export class MobileProjectsHomeUi {
         if (pinnedProjects.length === 0) {
             panel.append(this.createEmptyState({
                 icon: 'codicon-repo',
-                title: nls.localize('qaap/workHubHome/noProjectsTitle', 'No projects yet'),
+                title: nls.localize('qaap/workHubHome/noProjectsHeading', 'No projects yet'),
                 hint: nls.localize(
                     'qaap/workHubHome/noProjectsBody',
                     'Clone a GitHub project to delegate agent work and review the resulting PR.',

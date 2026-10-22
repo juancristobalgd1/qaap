@@ -345,8 +345,8 @@ export class MobileProjectsWorkHubInboxUi {
             hint: searching
                 ? nls.localize('qaap/mobileProjects/noReviewSearchResultsBody', 'Try a title, author, branch, or PR number.')
                 : nls.localize(
-                    'qaap/mobileProjects/noReviewBody',
-                    'When agents open PRs on your linked repos, they show up here for swipe review.',
+                    'qaap/mobileProjects/noReviewProjectsBody',
+                    'When agents open PRs on your projects, they show up here for swipe review.',
                 ),
             action: searching || !withAction ? undefined : {
                 label: nls.localize('qaap/mobileProjects/reviewStartTask', 'Start a task'),

@@ -76,8 +76,24 @@ describe('MobileProjectsHomeUi', () => {
         };
     }
 
+    function clearGettingStartedFlags(): void {
+        const keys: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (key?.startsWith('qaap.workHubHome.gettingStarted')) {
+                keys.push(key);
+            }
+        }
+        keys.forEach(key => window.localStorage.removeItem(key));
+    }
+
     beforeEach(() => {
         document.body.replaceChildren();
+        clearGettingStartedFlags();
+    });
+
+    afterEach(() => {
+        clearGettingStartedFlags();
     });
 
     it('renders the complete first-run dashboard with discoverable actions', () => {

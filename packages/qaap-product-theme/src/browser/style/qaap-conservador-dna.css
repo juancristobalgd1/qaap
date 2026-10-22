@@ -737,3 +737,11 @@ body.qaap-theme-light .q-empty-action {
   font-size: var(--q-text-body);
   font-weight: 600;
 }
+
+@media (pointer: coarse) {
+
+  body.qaap-theme-dark .q-empty-action,
+  body.qaap-theme-light .q-empty-action {
+    min-height: 44px;
+  }
+}

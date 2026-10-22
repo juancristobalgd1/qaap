@@ -591,7 +591,7 @@ export class MobileProjectsPullRequestsSidebarUi {
                     : nls.localize('qaap/pullRequests/empty', 'No pull requests yet'),
                 hint: filtered
                     ? nls.localize('qaap/pullRequests/noResultsBody', 'Try another title, branch, author, or filter.')
-                    : nls.localize('qaap/pullRequests/emptyAllBody', 'Pull requests from your GitHub repositories will appear here.'),
+                    : nls.localize('qaap/pullRequests/emptyAllProjectsBody', 'Pull requests from your projects will appear here.'),
                 action: filtered ? {
                     label: nls.localize('qaap/pullRequests/clearFilters', 'Clear filters'),
                     onClick: () => this.clearFilters(),

@@ -1847,6 +1847,14 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   opacity: 0.7;
 }
 
+@media (pointer: coarse) {
+  .theia-mobile-work-hub-home-section-action {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 8px;
+  }
+}
+
 .theia-mobile-work-hub-home-rows {
   display: flex;
   flex-direction: column;
