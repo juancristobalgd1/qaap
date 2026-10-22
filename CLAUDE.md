@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Critical — surface persists across reload:** F5 in the same tab keeps the active surface (IDE or Work Hub) via `sessionStorage` only; a fresh tab defaults to Work Hub; never `localStorage`, URL or layout restore. Canonical rule: `.cursor/rules/work-hub-reload-default.mdc`.
 
-**Critical CI/CD invariants:** every workflow is green on master since #125 (Sep 26, 2026). Before touching tenant spawning (`qaap-tenant-spawn-service.ts`), terminals, preview bootstrap, `examples/playwright` or `.github/workflows`, read `doc/qaap-ci-invariants.md`. Linux-only terminal failures with a 0px xterm textarea mean the spawn wrapper dropped the shell, not an xterm bug. See `.cursor/rules/ci-invariants.mdc`.
+**Critical CI/CD invariants:** every workflow was green on master after #125 (Sep 26, 2026), but the advisory `Build and Test (windows-2022, …)` legs regressed unnoticed (red on every master merge from ≤#297 to #327, Oct 2026) because they are not required checks — #328 fixes them (spec SQLite handle/CRLF/8.3 paths; task sandbox fails closed on win32). When a PR touches specs that write files, spawn git or use temp paths, add the **`ci:full`** label to run the windows/macOS legs before merging, and check the windows legs on master after merges. Before touching tenant spawning (`qaap-tenant-spawn-service.ts`), terminals, preview bootstrap, `examples/playwright` or `.github/workflows`, read `doc/qaap-ci-invariants.md`. Linux-only terminal failures with a 0px xterm textarea mean the spawn wrapper dropped the shell, not an xterm bug. See `.cursor/rules/ci-invariants.mdc`.
 
 ## Development Commands
 
