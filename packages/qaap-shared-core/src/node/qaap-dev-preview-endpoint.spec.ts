@@ -1470,6 +1470,35 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.get(sibling.previewId)?.port).to.equal(5173);
         });
 
+        it('re-checks the per-owner preview cap right before registering an allocation', async () => {
+            const previous = process.env.QAAP_PREVIEW_MAX_PER_OWNER;
+            process.env.QAAP_PREVIEW_MAX_PER_OWNER = '1';
+            try {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new ClaimTestEndpoint();
+                ep.setClaimFakes('alice', registry);
+                const one = resolveQaapPreviewIdentity({
+                    userId: 'alice', workspaceId: '/workspace/alice/one', projectId: '/workspace/alice/one', conversationId: 'one', processId: 'one',
+                });
+                const two = resolveQaapPreviewIdentity({
+                    userId: 'alice', workspaceId: '/workspace/alice/two', projectId: '/workspace/alice/two', conversationId: 'two', processId: 'two',
+                });
+                // Both concurrent claims passed the caller's check; the first allocation fills the cap.
+                const first = await ep.allocatePreviewPort({ ...one, ownerLogin: 'alice', root: '/workspace/alice/one' }, 5173);
+                const second = await ep.allocatePreviewPort({ ...two, ownerLogin: 'alice', root: '/workspace/alice/two' }, 5180);
+                expect(first).to.not.equal(undefined);
+                expect(second).to.equal(undefined);
+                expect(registry.records().filter(record => record.ownerLogin === 'alice')).to.have.length(1);
+            } finally {
+                if (previous === undefined) {
+                    delete process.env.QAAP_PREVIEW_MAX_PER_OWNER;
+                } else {
+                    process.env.QAAP_PREVIEW_MAX_PER_OWNER = previous;
+                }
+            }
+        });
+
         it('reattaches a restored section to the live project process instead of allocating an unused port', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

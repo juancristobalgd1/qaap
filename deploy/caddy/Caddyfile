@@ -13,6 +13,11 @@
 	# pinned to HTTPS by a previous browser visit.
 	@public not host localhost 127.0.0.1 ::1
 	header @public Strict-Transport-Security "max-age=31536000"
+	# Cap request bodies so one client cannot stream unbounded uploads into the shared backend.
+	# Generous by default (uploads, attachments); override with QAAP_REQUEST_BODY_MAX_SIZE.
+	request_body {
+		max_size {$QAAP_REQUEST_BODY_MAX_SIZE:512MB}
+	}
 	reverse_proxy theia:{$THEIA_PORT:4873}
 }
 

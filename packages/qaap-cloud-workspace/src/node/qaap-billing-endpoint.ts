@@ -28,10 +28,14 @@ import {
     isStripeBillingConfigured,
     resolveBillingPublicOrigin,
     retrieveCheckoutSession,
+    stripeCustomerIdFromObject,
     stripeCustomerIdFromSession,
+    stripeSubscriptionIdFromInvoice,
     stripeSubscriptionIdFromSession,
     verifyStripeWebhookEvent,
     type QaapStripeCheckoutSessionObject,
+    type QaapStripeEvent,
+    type QaapStripeInvoiceObject,
     type QaapStripeSubscriptionObject,
 } from './qaap-stripe-billing';
 
@@ -44,6 +48,9 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
 
     @inject(QaapBillingStore)
     protected readonly store: QaapBillingStore;
+
+    /** Event ids being handled right now, so a concurrent redelivery is not applied twice. */
+    protected readonly stripeEventsInFlight = new Set<string>();
 
     configure(app: Application): void {
         // Webhook must receive the raw body for signature verification.
@@ -105,12 +112,19 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             });
             return;
         }
+        const origin = resolveBillingPublicOrigin(
+            typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
+            typeof req.headers.referer === 'string' ? req.headers.referer : undefined,
+        );
+        if (!origin) {
+            res.status(503).json({
+                error: 'public_url_not_configured',
+                message: 'Set QAAP_PUBLIC_URL to the public https origin before enabling Stripe Checkout.',
+            });
+            return;
+        }
         try {
             const account = await this.store.getOrCreateAccount(login);
-            const origin = resolveBillingPublicOrigin(
-                typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
-                typeof req.headers.referer === 'string' ? req.headers.referer : undefined,
-            );
             const session = await createSubscriptionCheckoutSession({
                 login,
                 planId: planIdRaw,
@@ -161,9 +175,15 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                 res.status(400).json({ error: 'session_missing_plan' });
                 return;
             }
-            const account = await this.store.setPlan(login, extracted.planId, {
+            // Dated by the session: once any newer subscription event (past_due, canceled) is applied,
+            // re-confirming an old paid session cannot hand the plan back.
+            const { account } = await this.store.applyStripeSubscription(login, {
+                status: 'active',
+                planId: extracted.planId,
                 customerId: stripeCustomerIdFromSession(session),
                 subscriptionId: stripeSubscriptionIdFromSession(session),
+                eventCreated: session.created ?? 0,
+                adoptSubscription: true,
             });
             res.json(this.billingSnapshot(login, account));
         } catch (error) {
@@ -221,29 +241,79 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             return;
         }
 
+        const eventId = event.id;
+        if (eventId && this.stripeEventsInFlight.has(eventId)) {
+            // The first delivery may still fail: answer non-2xx so Stripe retries instead of dropping it.
+            res.status(409).json({ error: 'event_in_progress' });
+            return;
+        }
+        if (eventId && await this.store.hasProcessedStripeEvent(eventId)) {
+            res.json({ received: true, duplicate: true });
+            return;
+        }
+        if (eventId) {
+            this.stripeEventsInFlight.add(eventId);
+        }
         try {
-            if (event.type === 'checkout.session.completed') {
-                const session = event.data.object as QaapStripeCheckoutSessionObject;
-                if (session.mode === 'subscription') {
-                    const { login, planId } = extractCheckoutPlanAndLogin(session);
-                    if (login && planId) {
-                        await this.store.setPlan(login, planId, {
-                            customerId: stripeCustomerIdFromSession(session),
-                            subscriptionId: stripeSubscriptionIdFromSession(session),
-                        });
-                    }
-                }
-            } else if (event.type === 'customer.subscription.deleted') {
-                const subscription = event.data.object as QaapStripeSubscriptionObject;
-                const login = subscription.metadata?.login?.trim();
-                if (login) {
-                    await this.store.setPlan(login, 'starter', { clearSubscription: true });
-                }
+            await this.applyStripeEvent(event);
+            if (eventId) {
+                // Only after success: a failed delivery must stay retryable.
+                await this.store.markStripeEventProcessed(eventId);
             }
             res.json({ received: true });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'webhook_failed';
             res.status(500).json({ error: message });
+        } finally {
+            if (eventId) {
+                this.stripeEventsInFlight.delete(eventId);
+            }
+        }
+    }
+
+    protected async applyStripeEvent(event: QaapStripeEvent): Promise<void> {
+        const eventCreated = event.created ?? Math.floor(Date.now() / 1000);
+        if (event.type === 'checkout.session.completed') {
+            const session = event.data.object as QaapStripeCheckoutSessionObject;
+            if (session.mode !== 'subscription') {
+                return;
+            }
+            const { login, planId } = extractCheckoutPlanAndLogin(session);
+            if (login && planId) {
+                await this.store.applyStripeSubscription(login, {
+                    status: 'active',
+                    planId,
+                    customerId: stripeCustomerIdFromSession(session),
+                    subscriptionId: stripeSubscriptionIdFromSession(session),
+                    eventCreated,
+                    adoptSubscription: true,
+                });
+            }
+        } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+            const subscription = event.data.object as QaapStripeSubscriptionObject;
+            const login = subscription.metadata?.login?.trim()
+                || (subscription.id ? await this.store.findLoginByStripeSubscription(subscription.id) : undefined);
+            if (!login) {
+                return;
+            }
+            const planIdRaw = subscription.metadata?.planId?.trim() ?? '';
+            await this.store.applyStripeSubscription(login, {
+                status: event.type === 'customer.subscription.deleted' ? 'canceled' : (subscription.status ?? 'active'),
+                planId: isQaapPayablePlanId(planIdRaw) ? planIdRaw : undefined,
+                customerId: stripeCustomerIdFromObject(subscription),
+                subscriptionId: subscription.id,
+                eventCreated,
+            });
+        } else if (event.type === 'invoice.payment_failed') {
+            // Recorded only. The plan follows the subscription status: a failed renewal also sends
+            // customer.subscription.updated with past_due, while a failed proration or one-off invoice
+            // leaves the subscription active and must not suspend the plan.
+            const invoice = event.data.object as QaapStripeInvoiceObject;
+            console.info('[qaap-billing] Stripe invoice payment failed', {
+                eventId: event.id,
+                subscriptionId: stripeSubscriptionIdFromInvoice(invoice),
+                customerId: stripeCustomerIdFromObject(invoice),
+            });
         }
     }
 

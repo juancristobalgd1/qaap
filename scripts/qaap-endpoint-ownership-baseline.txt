@@ -37,6 +37,7 @@ packages/qaap-cloud-workspace/src/node/qaap-tenant-runtime-endpoint.ts :: GET `$
 packages/qaap-cloud-workspace/src/node/qaap-tenant-runtime-endpoint.ts :: POST `${QAAP_TENANT_RUNTIME_API_PATH}/drain`
 # Deploy-only drain used by scripts/qaap-vps-update.sh via `docker compose exec theia` over the
 # container's own loopback. isLocalDeployRequest() answers 404 unless the peer is loopback AND no
-# X-Forwarded-For / X-Forwarded-Host / Forwarded header is present, so anything through Caddy or
-# the tenant proxy is refused. No user session exists in that context by design. Verified: public
+# X-Forwarded-For / X-Forwarded-Host / Forwarded header is present AND the x-qaap-deploy-token
+# header matches the per-process token in a 0600 file only the backend user can read, so anything
+# through Caddy or the tenant proxy, and agents sharing the netns under their own uid, are refused. No user session exists in that context by design. Verified: public
 # GET /qaap/api/cloud/runtime/drain-status returns 404.

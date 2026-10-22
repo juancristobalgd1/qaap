@@ -1001,6 +1001,18 @@ export class QaapDockerOrchestrator {
             .map(([key, value]) => `${key}=${value}`)];
     }
 
+    /**
+     * Abuse limits enforced by the tenant backend itself (per-login API rate limit, live previews per
+     * owner): authenticated traffic is served there, so the control plane's values, including the
+     * documented `0` switch-off, must reach it. Only plain non-negative numbers pass.
+     */
+    protected tenantBackendLimitsEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+        return ['QAAP_API_RATE_LIMIT_BURST', 'QAAP_API_RATE_LIMIT_PER_SECOND', 'QAAP_PREVIEW_MAX_PER_OWNER']
+            .map(key => [key, env[key]?.trim()] as const)
+            .filter((entry): entry is readonly [string, string] => !!entry[1] && /^\d+(\.\d+)?$/.test(entry[1]))
+            .map(([key, value]) => `${key}=${value}`);
+    }
+
     protected tenantBackendPublicUrlEnv(env: NodeJS.ProcessEnv = process.env): string[] {
         return ['QAAP_OAUTH_PUBLIC_URL', 'QAAP_PREVIEW_BASE_DOMAIN', 'QAAP_PREVIEW_ALLOW_SAME_SITE', 'QAAP_PREVIEW_SHARE_TTL_HOURS']
             .map(key => [key, env[key]?.trim()] as const)
@@ -1375,6 +1387,7 @@ export class QaapDockerOrchestrator {
                 ...this.tenantBackendPublicUrlEnv(),
                 ...this.tenantBackendTaskSandboxEnv(),
                 ...this.tenantBackendExternalTaskEnv(),
+                ...this.tenantBackendLimitsEnv(),
             ];
             const repoMount = `${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
             const worktreeMount = `${dockerMounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
@@ -1964,6 +1977,7 @@ export class QaapDockerOrchestrator {
             ...this.tenantBackendPublicUrlEnv(),
             ...this.tenantBackendTaskSandboxEnv(),
             ...this.tenantBackendExternalTaskEnv(),
+            ...this.tenantBackendLimitsEnv(),
         ];
         // The backend must not publish its own port: a Docker internal network deliberately reports
         // a null mapping. Only the dedicated ingress relay publishes a host port.

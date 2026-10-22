@@ -137,6 +137,10 @@ services:
       QAAP_MAX_QUEUED_AGENTS: ${QAAP_MAX_QUEUED_AGENTS:-100}
       QAAP_MAX_QUEUED_AGENTS_PER_USER: ${QAAP_MAX_QUEUED_AGENTS_PER_USER:-20}
       QAAP_AGENT_VERIFY_MAX_CONCURRENT: ${QAAP_AGENT_VERIFY_MAX_CONCURRENT:-1}
+      # Per-login token bucket on mutating /qaap/api/* requests (0 disables) and live previews per login (0 = no cap).
+      QAAP_API_RATE_LIMIT_BURST: ${QAAP_API_RATE_LIMIT_BURST:-240}
+      QAAP_API_RATE_LIMIT_PER_SECOND: ${QAAP_API_RATE_LIMIT_PER_SECOND:-10}
+      QAAP_PREVIEW_MAX_PER_OWNER: ${QAAP_PREVIEW_MAX_PER_OWNER:-20}
       # Agent-independent job scheduler: global/per-user caps and isolated resource lanes.
       QAAP_JOB_MAX_CONCURRENT: ${QAAP_JOB_MAX_CONCURRENT:-4}
       QAAP_JOB_MAX_CONCURRENT_PER_USER: ${QAAP_JOB_MAX_CONCURRENT_PER_USER:-2}
@@ -324,6 +328,8 @@ services:
     environment:
       QAAP_PUBLIC_HOST: ${QAAP_PUBLIC_HOST:-localhost}
       THEIA_PORT: ${THEIA_PORT:-4873}
+      # Largest request body Caddy forwards (Caddy size syntax, e.g. 512MB).
+      QAAP_REQUEST_BODY_MAX_SIZE: ${QAAP_REQUEST_BODY_MAX_SIZE:-512MB}
       # Isolated preview hosts (*.QAAP_PREVIEW_BASE_DOMAIN) are served only when both the domain
       # and its DuckDNS token are set; the Caddyfile imports deploy/caddy/previews/duckdns.caddy then.
       QAAP_PREVIEW_BASE_DOMAIN: ${QAAP_PREVIEW_BASE_DOMAIN:-}

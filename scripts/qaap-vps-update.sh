@@ -338,12 +338,20 @@ DRAIN_ACTIVE=0
 drain_request() {
     # $1 method, $2 runtime sub-path, $3 optional JSON body. Prints the JSON answer; non-zero when the
     # serving container has no drain endpoint (older image) or is unreachable.
+    # The serving backend writes a per-process token readable only by its own user (the one `exec`
+    # runs as); images older than the token simply ignore the header.
     docker compose exec -T theia node -e '
         const [method, path, body] = process.argv.slice(1);
+        const os = require("os");
+        const tokenFile = process.env.QAAP_DEPLOY_TOKEN_FILE || require("path").join(os.homedir(), ".qaap", "deploy", "drain.token");
+        let token = "";
+        try { token = require("fs").readFileSync(tokenFile, "utf8").trim(); } catch { /* older image */ }
+        const headers = { "content-type": "application/json" };
+        if (token) { headers["x-qaap-deploy-token"] = token; }
         const req = require("http").request({
             host: "127.0.0.1", port: process.env.PORT || 4873, method,
             path: "/qaap/api/cloud/runtime/" + path,
-            headers: { "content-type": "application/json" }, timeout: 5000,
+            headers, timeout: 5000,
         }, res => {
             let data = "";
             res.on("data", chunk => data += chunk);
@@ -369,9 +377,14 @@ drain_agent_turns() {
 ')" ]]; then
         return 0
     fi
-    local answer running
-    if ! answer="$(drain_request POST drain '{"draining":true}')"; then
-        echo "[qaap-vps-update] serving container has no agent drain endpoint; switching without drain"
+    local answer running status=0
+    answer="$(drain_request POST drain '{"draining":true}')" || status=$?
+    if (( status == 2 )); then
+        echo "[qaap-vps-update] serving container refused the agent drain (an image without the endpoint," \
+            "or a missing/mismatched deploy token); switching without drain" >&2
+        return 0
+    elif (( status != 0 )); then
+        echo "[qaap-vps-update] serving container did not answer the agent drain request; switching without drain" >&2
         return 0
     fi
     DRAIN_ACTIVE=1

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
+import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -88,7 +89,7 @@ export function buildQaapPreviewProcessEnv(base: NodeJS.ProcessEnv, port: number
  * orphaned dev servers.
  */
 @injectable()
-export class QaapPreviewSupervisor {
+export class QaapPreviewSupervisor implements BackendApplicationContribution {
 
     @inject(QaapTenantSpawnService)
     protected readonly tenantSpawn: QaapTenantSpawnService;
@@ -317,20 +318,29 @@ export class QaapPreviewSupervisor {
         return 'npm';
     }
 
+    /**
+     * Kills supervised dev servers as part of Theia's ordered shutdown. Theia's own
+     * SIGINT/SIGTERM handler awaits every contribution's `onStop` (runner, stores, auto-resume
+     * state) before exiting, so this must never call `process.exit()` itself.
+     */
+    onStop(): void {
+        this.killAll();
+    }
+
+    protected killAll(): void {
+        for (const record of this.records.values()) {
+            if (record.child && record.child.exitCode === null) {
+                record.child.kill('SIGTERM');
+            }
+        }
+    }
+
     protected registerCleanup(): void {
         if (this.cleanupRegistered) {
             return;
         }
         this.cleanupRegistered = true;
-        const killAll = () => {
-            for (const record of this.records.values()) {
-                if (record.child && record.child.exitCode === null) {
-                    record.child.kill('SIGTERM');
-                }
-            }
-        };
-        process.once('exit', killAll);
-        process.once('SIGINT', () => { killAll(); process.exit(130); });
-        process.once('SIGTERM', () => { killAll(); process.exit(143); });
+        // Safety net for exits that bypass graceful shutdown; signals go through `onStop`.
+        process.once('exit', () => this.killAll());
     }
 }

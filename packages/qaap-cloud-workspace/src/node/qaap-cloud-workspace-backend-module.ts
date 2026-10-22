@@ -302,6 +302,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapWorkflowEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorkflowEndpoint);
     bind(QaapPreviewSupervisor).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapPreviewSupervisor);
     bind(QaapTerminalSessionStore).toSelf().inSingletonScope();
     bind(QaapPreviewShareProxyContribution).toSelf().inSingletonScope();
     bind(QaapCloudWorkspaceEndpoint).toSelf().inSingletonScope();

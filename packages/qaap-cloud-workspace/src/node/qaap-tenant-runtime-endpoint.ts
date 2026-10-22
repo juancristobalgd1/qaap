@@ -7,6 +7,10 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import type { BackendApplicationContribution } from '@theia/core/lib/node';
 import type { Application, Request, Response } from '@theia/core/shared/express';
 import { json } from 'body-parser';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
     QAAP_TENANT_RUNTIME_API_PATH,
     type QaapTenantActivityReason,
@@ -14,6 +18,7 @@ import {
 } from '../common/qaap-cloud-api-types';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
+    isQaapTenantBackendMode,
     QAAP_TENANT_BACKEND_MODE_ENV,
     QAAP_TENANT_BACKEND_SECRET_ENV,
     QAAP_TENANT_LOGIN_ENV,
@@ -32,6 +37,18 @@ const ACTIVITY_REASONS = new Set<QaapTenantActivityReason>([
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const DEFAULT_DEPLOY_DRAIN_MAX_MS = 45 * 60 * 1000;
+/** Header carrying the per-process deploy token (see {@link resolveQaapDeployTokenPath}). */
+export const QAAP_DEPLOY_TOKEN_HEADER = 'x-qaap-deploy-token';
+
+/**
+ * File holding the deploy token: `QAAP_DEPLOY_TOKEN_FILE`, else `~/.qaap/deploy/drain.token` of the
+ * backend user. `scripts/qaap-vps-update.sh` reads it through `docker compose exec theia`, which runs as
+ * that same user; agents running under their own uid cannot read it (file 0600). Its directory is made
+ * 0700, so it must be dedicated to the token: never `~/.qaap` itself, whose `bin/` is on the agents' PATH.
+ */
+export function resolveQaapDeployTokenPath(env: NodeJS.ProcessEnv = process.env): string {
+    return env.QAAP_DEPLOY_TOKEN_FILE?.trim() || path.join(os.homedir(), '.qaap', 'deploy', 'drain.token');
+}
 
 @injectable()
 export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution {
@@ -58,6 +75,47 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
     protected readonly taskRunner: QaapAgentTaskRunner;
 
     protected deployDrainTimer: NodeJS.Timeout | undefined;
+    /** Fresh random token per process; undefined when it could not be written (deploy endpoints then refuse). */
+    protected deployToken: string | undefined;
+
+    initialize(): void {
+        this.initializeDeployToken(process.env);
+    }
+
+    /**
+     * Tenant backends never get a deploy token, so their drain endpoints always answer 404: deploys only
+     * drain the control plane, and a tenant's HOME/.qaap is its config mount, which its agents can write.
+     */
+    protected initializeDeployToken(env: NodeJS.ProcessEnv): void {
+        this.deployToken = isQaapTenantBackendMode(env) ? undefined : this.writeDeployToken(resolveQaapDeployTokenPath(env));
+    }
+
+    protected writeDeployToken(tokenPath: string): string | undefined {
+        const token = crypto.randomBytes(32).toString('hex');
+        try {
+            const directory = path.dirname(tokenPath);
+            fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+            // Never follow a planted link: mkdir succeeds on a symlink to a directory and chmod would follow it.
+            const directoryStat = fs.lstatSync(directory);
+            if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+                throw new Error('deploy token directory is a symlink or not a directory');
+            }
+            if (typeof process.getuid === 'function' && directoryStat.uid !== process.getuid()) {
+                throw new Error('deploy token directory is not owned by the backend user');
+            }
+            fs.chmodSync(directory, 0o700);
+            // Replace instead of writing through: never follow a file or link planted at the path.
+            fs.rmSync(tokenPath, { force: true });
+            fs.writeFileSync(tokenPath, `${token}\n`, { mode: 0o600, flag: 'wx' });
+            return token;
+        } catch (error) {
+            console.warn('[qaap-tenant-runtime] could not write the deploy drain token; deploy drain is disabled', {
+                tokenPath,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return undefined;
+        }
+    }
 
     configure(app: Application): void {
         app.use(json());
@@ -113,15 +171,31 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
     }
 
     /**
-     * Deploy-only: `docker compose exec theia` calls these over the container's own loopback. Anything
-     * that came through Caddy or the tenant proxy carries forwarding headers or a non-loopback peer.
+     * Deploy-only: `docker compose exec theia` calls these over the container's own loopback with the
+     * deploy token. Anything that came through Caddy or the tenant proxy carries forwarding headers or a
+     * non-loopback peer.
      */
     protected isLocalDeployRequest(req: Request): boolean {
         const peer = req.socket.remoteAddress ?? '';
         return LOOPBACK_ADDRESSES.has(peer)
             && !req.headers['x-forwarded-for']
             && !req.headers['x-forwarded-host']
-            && !req.headers.forwarded;
+            && !req.headers.forwarded
+            && this.hasDeployToken(req);
+    }
+
+    /**
+     * Loopback alone is not enough: an agent shares the container's network namespace. The caller
+     * must also present the token only the backend user can read.
+     */
+    protected hasDeployToken(req: Request): boolean {
+        const presented = req.headers[QAAP_DEPLOY_TOKEN_HEADER];
+        if (!this.deployToken || typeof presented !== 'string') {
+            return false;
+        }
+        const expected = Buffer.from(this.deployToken, 'utf8');
+        const actual = Buffer.from(presented.trim(), 'utf8');
+        return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
     }
 
     protected handleDrainStatus(req: Request, res: Response): void {

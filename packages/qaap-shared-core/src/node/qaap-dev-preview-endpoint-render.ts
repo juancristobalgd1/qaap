@@ -292,6 +292,10 @@ export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, r
             }
             const replaceExpired = expiredConflicts.length > 0
                 || (stalePortOwner !== undefined && stalePortOwner !== owner);
+            if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, registration.previewId)) {
+                res.status(429).type('text/plain').send('You have too many previews running. Stop one and try again.');
+                return;
+            }
             const record = ctx.portRegistry.register(registration, { replaceExpired });
             if (!record) {
                 res.status(409).type('text/plain').send('This preview identity or port is already in use.');
@@ -456,6 +460,10 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         conversationId,
     }, owner);
 
+    if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, identity.previewId)) {
+        res.status(429).type('text/plain').send('You have too many previews running. Stop one and try again.');
+        return;
+    }
     const allocated = await ctx.allocatePreviewPort({
         ...identity,
         ownerLogin: owner,
@@ -463,6 +471,10 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         osProcessId,
     }, preferredPort);
     if (!allocated) {
+        if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, identity.previewId)) {
+            res.status(429).type('text/plain').send('You have too many previews running. Stop one and try again.');
+            return;
+        }
         res.status(503).type('text/plain').send('No safe dev-preview port is currently available.');
         return;
     }
@@ -576,6 +588,9 @@ export async function allocatePreviewPortExtracted(
             // it keeps the preview on that server instead of parking a second copy of the app on
             // the next free port.
             if (offset === 0 && ctx.portRegistry.ownerOf(port) === owner) {
+                if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, registration.previewId)) {
+                    return undefined; // a concurrent claim reached the per-owner cap during the probes
+                }
                 const adopted = ctx.portRegistry.register({ ...registration, port }, {
                     claimedAt: Date.now() - PREVIEW_RESERVATION_START_GRACE_MS,
                 });
@@ -595,6 +610,11 @@ export async function allocatePreviewPortExtracted(
             // Something holds the port without answering HTTP (a Theia/Node backend still booting,
             // the host IDE on a non-default port). Handing it out makes the dev server die on bind.
             continue;
+        }
+        // Re-check the per-owner cap with no await before register: concurrent claims of one owner all
+        // passed the caller's check while this loop awaited probes.
+        if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, registration.previewId)) {
+            return undefined;
         }
         const record = ctx.portRegistry.register({ ...registration, port });
         if (!record) {

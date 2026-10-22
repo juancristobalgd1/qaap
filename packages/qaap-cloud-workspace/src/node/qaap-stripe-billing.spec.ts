@@ -9,6 +9,8 @@ import {
     extractCheckoutPlanAndLogin,
     isCheckoutSessionPaid,
     isQaapPayablePlanId,
+    isStripeSubscriptionEntitled,
+    resolveBillingPublicOrigin,
     verifyStripeWebhookEvent,
 } from './qaap-stripe-billing';
 
@@ -47,5 +49,20 @@ describe('qaap-stripe-billing', () => {
             .digest('hex');
         const event = verifyStripeWebhookEvent(payload, `t=${timestamp},v1=${signature}`, secret);
         expect(event.type).to.equal('checkout.session.completed');
+    });
+
+    it('requires QAAP_PUBLIC_URL for the Checkout redirect in a hosted runtime', () => {
+        expect(resolveBillingPublicOrigin('https://evil.example', undefined, { NODE_ENV: 'production' })).to.equal(undefined);
+        expect(resolveBillingPublicOrigin('https://evil.example', undefined, { NODE_ENV: 'production', QAAP_PUBLIC_URL: 'https://qaap.example/' }))
+            .to.equal('https://qaap.example');
+        expect(resolveBillingPublicOrigin('http://localhost:3000/', undefined, {})).to.equal('http://localhost:3000');
+    });
+
+    it('keeps the paid plan only for active or trialing subscriptions', () => {
+        expect(isStripeSubscriptionEntitled('active')).to.equal(true);
+        expect(isStripeSubscriptionEntitled('trialing')).to.equal(true);
+        for (const status of ['past_due', 'unpaid', 'incomplete', 'paused', 'canceled', 'incomplete_expired']) {
+            expect(isStripeSubscriptionEntitled(status), status).to.equal(false);
+        }
     });
 });

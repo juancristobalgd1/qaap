@@ -8,5 +8,9 @@
 	}
 	encode zstd gzip
 	header X-Content-Type-Options "nosniff"
+	# Same body cap as the main site; override with QAAP_REQUEST_BODY_MAX_SIZE.
+	request_body {
+		max_size {$QAAP_REQUEST_BODY_MAX_SIZE:512MB}
+	}
 	reverse_proxy theia:{$THEIA_PORT:4873}
 }
