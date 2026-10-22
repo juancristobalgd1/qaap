@@ -52,6 +52,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'clearForwardedPorts'
     | 'collectProbePorts'
     | 'delay'
+    | 'deferredWorkspaceRefresh'
     | 'detector'
     | 'devOutputTail'
     | 'devPortOverride'
@@ -115,6 +116,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'refreshGeneration'
     | 'refreshDescriptorAfterInstall'
     | 'refreshFromCurrentWorkspace'
+    | 'refreshFromProjectRoot'
     | 'refreshFromRoot'
     | 'registerDevTerminalForConversation'
     | 'releaseActivePreview'
@@ -152,7 +154,6 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'waitForExit'
     | 'warmupDevPreview'
     | 'watchAttachedDevTerminal'
-    | 'workspaceRefreshDeferredByDevRun'
     | 'workspaceService';
 
 /**

@@ -24,7 +24,8 @@ import {
     formatQaapPreviewBuildRequiredMessage,
     terminalOutputNeedsInstall,
 } from './qaap-project-bootstrap-dev-errors';
-import { isQaapDevRunBusyPhase, normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
+import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
+import { deferWorkspaceRefreshUntilDevRunRestsExtracted } from './qaap-project-bootstrap-service-tool-pills';
 import {
     QAAP_PREVIEW_TERMINAL_KIND,
 } from './qaap-preview-terminal-lifecycle';
@@ -494,28 +495,22 @@ export async function refreshFromCurrentWorkspaceExtracted(ctx: QaapProjectBoots
         await ctx.refreshFromRoot(first?.resource);
 }
 
-function deferWorkspaceRefreshUntilDevRunSettles(ctx: QaapProjectBootstrapServiceContext): void {
-        if (isQaapDevRunBusyPhase(ctx._phase)) {
-            ctx.workspaceRefreshDeferredByDevRun = true;
-            return;
-        }
-        // The run already settled (e.g. failed fast) while `detect` was in flight.
-        ctx.scheduleRefreshFromCurrentWorkspace();
-}
-
 export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceContext, resource: URI | undefined): Promise<void> {
         const nextRootKey = resource?.toString() ?? '';
         const currentRootKey = ctx._descriptor?.rootUri.toString() ?? '';
         if (
             (ctx._phase === 'installing' || ctx._phase === 'starting')
+            && resource
             && nextRootKey.length > 0
             && nextRootKey === currentRootKey
         ) {
-            // Applying the refresh now would kill the live run; replay it once the run settles.
-            ctx.workspaceRefreshDeferredByDevRun = true;
+            // Applying the refresh now would kill the live run; replay it once the run is at rest.
+            deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
             return;
         }
         const refreshId = ++ctx.refreshGeneration;
+        // This refresh reads the descriptor afresh, so a replay postponed by an earlier run is moot.
+        ctx.deferredWorkspaceRefresh = undefined;
         ctx.resetBootstrapSessionForWorkspace();
         ctx.clearForwardedPorts();
         if (!resource) {
@@ -538,9 +533,9 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
             // A run/install for this same root started while `detect` was in flight. Applying this
             // older snapshot would flip `starting` back to `ready-to-run` under the live process:
             // its "Local: http://…" line is then ignored, the preview never stages, and the server
-            // is orphaned on its port. Replay the refresh once the run settles instead, so real
+            // is orphaned on its port. Replay the refresh once the run is at rest instead, so real
             // descriptor changes (package.json, .qaap/preview.json, node_modules) still land.
-            deferWorkspaceRefreshUntilDevRunSettles(ctx);
+            deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
             return;
         }
         ctx._descriptor = descriptor;
