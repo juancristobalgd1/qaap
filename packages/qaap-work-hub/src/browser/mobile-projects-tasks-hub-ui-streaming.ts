@@ -20,6 +20,7 @@ import {
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
 } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-detail-activity';
+import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
 import { parseWorkingDetailTaskLogSegments, shouldShowWorkingDetailTaskLog } from '@theia/qaap-shared-core/lib/browser/qaap-sticky-composer-working-detail-task-log';
 import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
@@ -389,7 +390,8 @@ export function markTasksFirstLoadCompleteExtracted(ctx: MobileProjectsTasksHubU
             return;
         }
         ctx.host.tasksFirstLoadPending = false;
-        if (render && ctx.host.visible && ctx.host.hubQueryUi.isTasksHubView()) {
+        if (render && ctx.host.visible && (ctx.host.hubQueryUi.isTasksHubView() || ctx.host.hubQueryUi.isHomeHubView())) {
+            // Home also repaints: its getting-started checklist waits on `tasksFirstLoadPending` (statsSettled).
             ctx.host.renderList();
         }
 }
@@ -422,25 +424,23 @@ export function createTaskSkeletonRowExtracted(ctx: MobileProjectsTasksHubUiCont
 }
 
 export function createTasksEmptyStateExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {
-        const empty = document.createElement('div');
-        empty.className = 'theia-mobile-projects-empty';
-        const icon = document.createElement('span');
-        icon.className = 'codicon codicon-server-process';
-        const title = document.createElement('strong');
-        title.textContent = ctx.host.query
-            ? nls.localize('qaap/mobileProjects/noTasksSearchResults', 'No matching tasks')
-            : nls.localize('qaap/mobileProjects/noTasks', 'No VPS tasks yet');
-        const body = document.createElement('span');
-        body.textContent = ctx.host.query
-            ? nls.localize(
-                'qaap/mobileProjects/noTasksSearchResultsBody',
-                'Try a task title, agent name, or branch.',
-            )
-            : nls.localize(
-                'qaap/mobileProjects/noTasksBody',
-                'Delegate work from a project — it keeps running on the server when you close the app.',
-            );
-        empty.append(icon, title, body);
-        return empty;
+        const searching = !!ctx.host.query;
+        return HubEmptyStateDom.createEmptyState({
+            icon: 'codicon-server-process',
+            className: 'theia-mobile-projects-tasks-empty',
+            title: searching
+                ? nls.localize('qaap/mobileProjects/noTasksSearchResults', 'No matching tasks')
+                : nls.localize('qaap/mobileProjects/noTasksYet', 'No tasks yet'),
+            hint: searching
+                ? nls.localize('qaap/mobileProjects/noTasksSearchResultsBody', 'Try a task title, agent name, or branch.')
+                : nls.localize(
+                    'qaap/mobileProjects/noTasksBody',
+                    'Delegate work from a project — it keeps running on the server when you close the app.',
+                ),
+            action: searching ? undefined : {
+                label: nls.localize('qaap/mobileProjects/startTask', 'Start a task'),
+                onClick: () => { void ctx.host.onHomeQuickAction('delegate-task'); },
+            },
+        });
 }
 

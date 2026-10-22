@@ -41,6 +41,10 @@ export interface WorkHubHomeSnapshot {
     readonly attentionItems: readonly WorkHubHomeAttentionItem[];
     readonly recentItems: readonly WorkHubHomeRecentItem[];
     readonly pinnedProjectIds: readonly string[];
+    /** False until the PR inbox and the first task load have landed; counters are not trustworthy before that. */
+    readonly statsSettled?: boolean;
+    /** Login of the signed-in account; scopes per-user UI flags such as the dismissed checklist. */
+    readonly accountKey?: string;
 }
 
 export interface WorkHubHomeProjectRef {

@@ -23,6 +23,7 @@ import {
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { QuickInputButtonLocation, type QuickInputButton, type QuickPick, type QuickPickItem } from '@theia/core/lib/common/quick-pick-service';
+import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
 
 export type MobileProjectsPullRequestSidebarTab = 'all' | 'reviewing' | 'created';
 export type MobileProjectsPullRequestSidebarState = QaapGithubPullRequestStateFilter;
@@ -219,6 +220,18 @@ export class MobileProjectsPullRequestsSidebarUi {
         this.activeTab = view;
         this.rerender();
         if (this.searchQuickPick) {
+            this.searchQuickPick.items = this.buildSearchPickItems();
+        }
+    }
+
+    /** Resets the search text and both chips so a "no matching" empty state can offer a way out. */
+    protected clearFilters(): void {
+        this.searchQuery = '';
+        this.activeTab = 'all';
+        this.stateFilter = 'all';
+        this.rerender();
+        if (this.searchQuickPick) {
+            this.searchQuickPick.value = '';
             this.searchQuickPick.items = this.buildSearchPickItems();
         }
     }
@@ -560,10 +573,8 @@ export class MobileProjectsPullRequestsSidebarUi {
             return;
         }
         if (pullRequests.length === 0 && (searchLoading || (inboxLoading && !list?.loaded))) {
-            results.append(this.createStatus(
-                'codicon-loading codicon-mod-spin',
+            results.append(HubEmptyStateDom.createSkeletonList(
                 nls.localize('qaap/pullRequests/loading', 'Loading pull requests…'),
-                nls.localize('qaap/pullRequests/loadingBody', 'Fetching pull requests from GitHub.'),
             ));
             return;
         }
@@ -573,15 +584,19 @@ export class MobileProjectsPullRequestsSidebarUi {
                 return;
             }
             const filtered = this.searchQuery !== '' || this.activeTab !== 'all' || this.stateFilter !== 'all';
-            results.append(this.createStatus(
-                'codicon-git-pull-request',
-                filtered
+            results.append(HubEmptyStateDom.createEmptyState({
+                icon: 'codicon-git-pull-request',
+                title: filtered
                     ? nls.localize('qaap/pullRequests/noResults', 'No matching pull requests')
                     : nls.localize('qaap/pullRequests/empty', 'No pull requests yet'),
-                filtered
+                hint: filtered
                     ? nls.localize('qaap/pullRequests/noResultsBody', 'Try another title, branch, author, or filter.')
-                    : nls.localize('qaap/pullRequests/emptyAllBody', 'Pull requests from your GitHub repositories will appear here.'),
-            ));
+                    : nls.localize('qaap/pullRequests/emptyAllProjectsBody', 'Pull requests from your projects will appear here.'),
+                action: filtered ? {
+                    label: nls.localize('qaap/pullRequests/clearFilters', 'Clear filters'),
+                    onClick: () => this.clearFilters(),
+                } : undefined,
+            }));
             const footer = this.createListFooter(list);
             if (footer) {
                 results.append(footer);

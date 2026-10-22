@@ -20,6 +20,7 @@ import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/br
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
+import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
 /** Panel surface for Work Hub inbox grouping and Review / Chat hub list rendering. */
@@ -39,6 +40,7 @@ export interface MobileProjectsWorkHubInboxHost {
 
     refreshInboxPullRequests(projects: MobileProjectEntry[] | undefined): Promise<void>;
     renderSubtitle(): void;
+    onHomeQuickAction(action: import('./mobile-projects-home-ui').WorkHubHomeQuickActionId): Promise<void>;
     localChatsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     vpsTasksForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     conversationMatchesQuery(summary: QaapAgentConversationSummaryDTO, query: string): boolean;
@@ -107,7 +109,7 @@ export class MobileProjectsWorkHubInboxUi {
         } else if (hasGithubRepos && this.host.inboxGithubSignedIn === false) {
             const host = document.createElement('div');
             host.className = 'theia-mobile-review-hub-root';
-            host.append(this.createInboxGithubSignInHint(), this.createReviewEmptyState());
+            host.append(this.createInboxGithubSignInHint(), this.createReviewEmptyState(false));
             this.host.scroll.append(host);
         } else {
             this.host.scroll.append(this.createReviewEmptyState());
@@ -331,43 +333,32 @@ export class MobileProjectsWorkHubInboxUi {
         return section;
     }
 
-    createReviewEmptyState(): HTMLElement {
-        const empty = document.createElement('div');
-        empty.className = 'theia-mobile-projects-empty';
-        const icon = document.createElement('span');
-        icon.className = 'codicon codicon-git-pull-request';
-        const title = document.createElement('strong');
-        title.textContent = this.host.query
-            ? nls.localize('qaap/mobileProjects/noReviewSearchResults', 'No matching pull requests')
-            : nls.localize('qaap/mobileProjects/noReview', 'No open pull requests');
-        const body = document.createElement('span');
-        body.textContent = this.host.query
-            ? nls.localize(
-                'qaap/mobileProjects/noReviewSearchResultsBody',
-                'Try a title, author, branch, or PR number.',
-            )
-            : nls.localize(
-                'qaap/mobileProjects/noReviewBody',
-                'When agents open PRs on your linked repos, they show up here for swipe review.',
-            );
-        empty.append(icon, title, body);
-        return empty;
+    /** `withAction` is false next to the GitHub sign-in hint so two competing calls to action never stack. */
+    createReviewEmptyState(withAction = true): HTMLElement {
+        const searching = !!this.host.query;
+        return HubEmptyStateDom.createEmptyState({
+            icon: 'codicon-git-pull-request',
+            className: 'theia-mobile-projects-review-empty',
+            title: searching
+                ? nls.localize('qaap/mobileProjects/noReviewSearchResults', 'No matching pull requests')
+                : nls.localize('qaap/mobileProjects/noReview', 'No open pull requests'),
+            hint: searching
+                ? nls.localize('qaap/mobileProjects/noReviewSearchResultsBody', 'Try a title, author, branch, or PR number.')
+                : nls.localize(
+                    'qaap/mobileProjects/noReviewProjectsBody',
+                    'When agents open PRs on your projects, they show up here for swipe review.',
+                ),
+            action: searching || !withAction ? undefined : {
+                label: nls.localize('qaap/mobileProjects/reviewStartTask', 'Start a task'),
+                onClick: () => { void this.host.onHomeQuickAction('delegate-task'); },
+            },
+        });
     }
 
     createReviewLoadingState(): HTMLElement {
-        const loading = document.createElement('div');
-        loading.className = 'theia-mobile-projects-empty theia-mod-inbox-loading';
-        const icon = document.createElement('span');
-        icon.className = 'codicon codicon-loading codicon-mod-spin';
-        const title = document.createElement('strong');
-        title.textContent = nls.localize('qaap/mobileProjects/reviewLoading', 'Loading pull requests…');
-        const body = document.createElement('span');
-        body.textContent = nls.localize(
-            'qaap/mobileProjects/reviewLoadingBody',
-            'Fetching open pull requests from GitHub.',
+        return HubEmptyStateDom.createSkeletonList(
+            nls.localize('qaap/mobileProjects/reviewLoading', 'Loading pull requests…'),
         );
-        loading.append(icon, title, body);
-        return loading;
     }
 
     createChatEmptyState(): HTMLElement {

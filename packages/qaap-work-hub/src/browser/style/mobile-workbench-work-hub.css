@@ -1847,6 +1847,16 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   opacity: 0.7;
 }
 
+@media (pointer: coarse) {
+  .theia-mobile-work-hub-home-section-action {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 8px;
+    /* Grow the hit area only: the negative margin cancels the extra 28px/16px so head height and right edge stay as before. */
+    margin: -14px -8px;
+  }
+}
+
 .theia-mobile-work-hub-home-rows {
   display: flex;
   flex-direction: column;

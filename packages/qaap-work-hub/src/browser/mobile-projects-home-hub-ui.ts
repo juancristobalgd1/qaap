@@ -36,6 +36,7 @@ export interface MobileProjectsHomeHubHost {
     inboxPullRequests: QaapGithubPullRequestSummary[];
     inboxPullRequestsLoaded: boolean;
     inboxPullRequestsLoading: boolean;
+    tasksFirstLoadPending: boolean;
     conversations: MobileProjectsConversations | undefined;
     activeTasks: MobileProjectsActiveTasks | undefined;
     inboxStream: MobileWorkHubInboxStream | undefined;
@@ -184,6 +185,8 @@ export class MobileProjectsHomeHubUi {
             attentionItems,
             recentItems: buildWorkHubHomeRecentItems(recentSources, 5),
             pinnedProjectIds: selectWorkHubHomePinnedProjectIds(this.host.projects, 4),
+            statsSettled: this.host.inboxPullRequestsLoaded && !this.host.tasksFirstLoadPending,
+            accountKey: readQaapAuthUser()?.login?.trim() || undefined,
         };
     }
 
@@ -310,7 +313,7 @@ export class MobileProjectsHomeHubUi {
                 );
         }
         if (stats.projectCount === 0) {
-            return nls.localize('qaap/workHubHome/subtitleNoProjects', 'Add a GitHub repository to start agent work');
+            return nls.localize('qaap/workHubHome/subtitleNoProjectsClone', 'Add a GitHub project to start agent work');
         }
         return nls.localize('qaap/workHubHome/subtitleAllClear', 'Ready to capture the next task');
     }

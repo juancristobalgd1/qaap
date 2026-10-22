@@ -31,6 +31,8 @@ export interface MobileProjectsHomeUiDeps {
     getWorkspaceStatus(project: MobileProjectEntry): WorkHubWorkspaceStatus;
     formatRelativeTime(updatedAt: number): string;
     onNavigate(target: WorkHubHomeNavigateTarget): void;
+    /** Opens the clone-a-project dialog directly instead of navigating to the project list. */
+    onCloneProject(): void;
     onOpenProject(project: MobileProjectEntry): void;
     onOpenRecent(item: WorkHubHomeRecentItem): void;
     onOpenAttention(item: WorkHubHomeAttentionItem): void;
@@ -42,9 +44,14 @@ interface HomeShortcutSpec {
     readonly icon: string;
     readonly label: string;
     readonly hint: string;
+    /** Overrides the nls key suffix (defaults to `action`) when the default text changed, so stale translations are not reused. */
+    readonly nlsKey?: string;
 }
 
 export class MobileProjectsHomeUi {
+
+    protected static readonly GETTING_STARTED_DISMISSED_KEY = 'qaap.workHubHome.gettingStartedDismissed';
+    protected static readonly GETTING_STARTED_COMPLETED_KEY = 'qaap.workHubHome.gettingStartedCompleted';
 
     protected static readonly SHORTCUTS: readonly HomeShortcutSpec[] = [
         {
@@ -67,9 +74,10 @@ export class MobileProjectsHomeUi {
         },
         {
             action: 'all-projects',
+            nlsKey: 'all-projects-v2',
             icon: 'codicon-folder',
-            label: 'Repos',
-            hint: 'GitHub workspaces',
+            label: 'Projects',
+            hint: 'GitHub projects',
         },
     ];
 
@@ -105,16 +113,57 @@ export class MobileProjectsHomeUi {
     }
 
     protected shouldShowGettingStarted(snapshot: WorkHubHomeSnapshot): boolean {
+        if (snapshot.statsSettled === false || this.readGettingStartedFlag('dismissed', snapshot)
+            || this.readGettingStartedFlag('completed', snapshot)) {
+            return false;
+        }
         const hasTask = snapshot.recentItems.some(item => item.surface === 'task')
             || snapshot.stats.runningTasks > 0
             || snapshot.stats.needsYou > 0;
-        return snapshot.stats.projectCount === 0 || !hasTask || snapshot.stats.openPullRequests === 0;
+        if (snapshot.stats.projectCount > 0 && hasTask && snapshot.stats.openPullRequests > 0) {
+            // Completion is sticky: merging the last PR or archiving tasks must not bring the checklist back.
+            this.writeGettingStartedFlag('completed', snapshot);
+            return false;
+        }
+        return true;
+    }
+
+    protected gettingStartedKey(flag: 'dismissed' | 'completed', snapshot: WorkHubHomeSnapshot): string {
+        const base = flag === 'dismissed'
+            ? MobileProjectsHomeUi.GETTING_STARTED_DISMISSED_KEY
+            : MobileProjectsHomeUi.GETTING_STARTED_COMPLETED_KEY;
+        return snapshot.accountKey ? `${base}.${snapshot.accountKey}` : base;
+    }
+
+    protected readGettingStartedFlag(flag: 'dismissed' | 'completed', snapshot: WorkHubHomeSnapshot): boolean {
+        try {
+            return window.localStorage.getItem(this.gettingStartedKey(flag, snapshot)) === '1';
+        } catch {
+            return false;
+        }
+    }
+
+    protected writeGettingStartedFlag(flag: 'dismissed' | 'completed', snapshot: WorkHubHomeSnapshot): void {
+        try {
+            window.localStorage.setItem(this.gettingStartedKey(flag, snapshot), '1');
+        } catch {
+            // Storage unavailable: the flag only lasts for this render.
+        }
+    }
+
+    protected dismissGettingStarted(panel: HTMLElement, snapshot: WorkHubHomeSnapshot): void {
+        this.writeGettingStartedFlag('dismissed', snapshot);
+        panel.remove();
     }
 
     protected createGettingStartedPanel(snapshot: WorkHubHomeSnapshot): HTMLElement {
         const panel = this.createPanel('theia-mobile-work-hub-home-getting-started');
         panel.append(this.createSectionHead(
             nls.localize('qaap/workHubHome/gettingStarted', 'Get started'),
+            {
+                label: nls.localize('qaap/workHubHome/dismissGettingStarted', 'Dismiss'),
+                onClick: () => this.dismissGettingStarted(panel, snapshot),
+            },
         ));
 
         const hasRepository = snapshot.stats.projectCount > 0;
@@ -125,12 +174,12 @@ export class MobileProjectsHomeUi {
         const steps = [
             {
                 complete: hasRepository,
-                title: nls.localize('qaap/workHubHome/setupRepository', 'Connect a repository'),
+                title: nls.localize('qaap/workHubHome/setupProject', 'Add a project'),
                 hint: hasRepository
-                    ? nls.localize('qaap/workHubHome/setupRepositoryDone', 'Repository ready')
-                    : nls.localize('qaap/workHubHome/setupRepositoryHint', 'Choose a GitHub repository to work on'),
-                action: hasRepository ? undefined : () => this.deps.onNavigate('repos'),
-                actionLabel: nls.localize('qaap/workHubHome/setupRepositoryAction', 'Add repository'),
+                    ? nls.localize('qaap/workHubHome/setupProjectDone', 'Project ready')
+                    : nls.localize('qaap/workHubHome/setupProjectHint', 'Clone a GitHub project to work on'),
+                action: hasRepository ? undefined : () => this.deps.onCloneProject(),
+                actionLabel: nls.localize('qaap/workHubHome/setupProjectAction', 'Add project'),
             },
             {
                 complete: hasTask,
@@ -474,10 +523,10 @@ export class MobileProjectsHomeUi {
         body.className = 'theia-mobile-work-hub-home-shortcut-body';
         const title = document.createElement('span');
         title.className = 'theia-mobile-work-hub-home-shortcut-title';
-        title.textContent = nls.localize(`qaap/workHubHome/shortcut/${spec.action}`, spec.label);
+        title.textContent = nls.localize(`qaap/workHubHome/shortcut/${spec.nlsKey ?? spec.action}`, spec.label);
         const hint = document.createElement('span');
         hint.className = 'theia-mobile-work-hub-home-shortcut-hint';
-        hint.textContent = nls.localize(`qaap/workHubHome/shortcutHint/${spec.action}`, spec.hint);
+        hint.textContent = nls.localize(`qaap/workHubHome/shortcutHint/${spec.nlsKey ?? spec.action}`, spec.hint);
         body.append(title, hint);
         btn.append(icon, body);
         return btn;
@@ -525,7 +574,7 @@ export class MobileProjectsHomeUi {
     ): HTMLElement {
         const panel = this.createPanel('theia-mobile-work-hub-home-section-panel');
         const head = this.createSectionHead(
-            nls.localize('qaap/workHubHome/workspaces', 'Workspaces'),
+            nls.localize('qaap/workHubHome/projects', 'Projects'),
             projectCount > pinnedProjects.length
                 ? {
                     label: nls.localize('qaap/workHubHome/allProjects', 'View all'),
@@ -541,14 +590,14 @@ export class MobileProjectsHomeUi {
         if (pinnedProjects.length === 0) {
             panel.append(this.createEmptyState({
                 icon: 'codicon-repo',
-                title: nls.localize('qaap/workHubHome/noProjectsTitle', 'No workspaces yet'),
+                title: nls.localize('qaap/workHubHome/noProjectsHeading', 'No projects yet'),
                 hint: nls.localize(
-                    'qaap/workHubHome/noProjects',
-                    'Add a GitHub repository to delegate agent work and review the resulting PR.',
+                    'qaap/workHubHome/noProjectsBody',
+                    'Clone a GitHub project to delegate agent work and review the resulting PR.',
                 ),
                 action: {
-                    label: nls.localize('qaap/workHubHome/addRepository', 'Add repository'),
-                    onClick: () => this.deps.onNavigate('repos'),
+                    label: nls.localize('qaap/workHubHome/addProject', 'Add project'),
+                    onClick: () => this.deps.onCloneProject(),
                 },
             }));
         } else {

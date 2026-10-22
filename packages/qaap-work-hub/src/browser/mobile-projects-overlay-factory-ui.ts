@@ -54,6 +54,7 @@ export interface MobileProjectsOverlayFactoryHost {
     getHomeWorkspaceStatus(project: MobileProjectEntry): 'idle' | 'running' | 'open';
     formatHomeRelativeTime(updatedAt: number): string;
     onHomeNavigate(target: import('./mobile-projects-home-ui').WorkHubHomeNavigateTarget): void;
+    onCloneClick(): Promise<void>;
     onHomeOpenProject(project: MobileProjectEntry): Promise<void>;
     onHomeOpenRecent(item: import('../common/qaap-work-hub-home').WorkHubHomeRecentItem): Promise<void>;
     onHomeOpenAttention(item: import('../common/qaap-work-hub-home').WorkHubHomeAttentionItem): void;
@@ -150,6 +151,7 @@ export class MobileProjectsOverlayFactoryUi {
                 getWorkspaceStatus: project => this.host.getHomeWorkspaceStatus(project),
                 formatRelativeTime: updatedAt => this.host.formatHomeRelativeTime(updatedAt),
                 onNavigate: target => this.host.onHomeNavigate(target),
+                onCloneProject: () => { void this.host.onCloneClick(); },
                 onOpenProject: project => { void this.host.onHomeOpenProject(project); },
                 onOpenRecent: item => { void this.host.onHomeOpenRecent(item); },
                 onOpenAttention: item => this.host.onHomeOpenAttention(item),
