@@ -1275,7 +1275,7 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
 .q-skeleton {
     position: relative;
     overflow: hidden;
-    background: var(--theia-widget-border);
+    background: var(--theia-widget-border, var(--theia-editorWidget-border, rgba(128, 128, 128, 0.25)));
     border-radius: 6px;
 }
 
