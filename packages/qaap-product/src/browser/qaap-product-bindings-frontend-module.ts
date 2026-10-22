@@ -6,10 +6,12 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { AboutDialogProps } from '@theia/core/lib/browser/about-dialog';
+import { CommandContribution } from '@theia/core/lib/common/command';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { QaapBuiltinThemeBrandingContribution } from './qaap-builtin-theme-branding-contribution';
 import { QaapCopilotDefaultsContribution } from './qaap-copilot-defaults-contribution';
 import { QaapCorePreferenceBrandingContribution } from './qaap-core-preference-branding-contribution';
+import { QaapDisplayLanguageCommandContribution } from './qaap-display-language-command-contribution';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
@@ -36,6 +38,10 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
 
     bind(QaapAiPreferenceBrandingStartup).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAiPreferenceBrandingStartup);
+
+    // English only for launch (audit L1): no display-language picker while QaapSupportedLocales is ['en'].
+    bind(QaapDisplayLanguageCommandContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(QaapDisplayLanguageCommandContribution);
 
     if (isBound(AboutDialogProps)) {
         rebind(AboutDialogProps).toDynamicValue(() => ({

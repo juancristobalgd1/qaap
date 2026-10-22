@@ -374,7 +374,7 @@ function appendTimelinePhase(list: HTMLOListElement, status: 'done' | 'current' 
 }
 
 function formatTaskTime(value: number): string {
-    return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return new Date(value).toLocaleTimeString(nls.locale ?? nls.defaultLocale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function buildTaskDiagnostic(

@@ -484,7 +484,7 @@ export class MobileProjectsTranscriptVerifyUi {
             }
             evidence.append(document.createTextNode(` · ${nls.localize('qaap/verify/exitCode', 'Exit: {0}', String(result.exitCode ?? '?'))}`));
             if (result.finishedAt) {
-                evidence.append(document.createTextNode(` · ${new Date(result.finishedAt).toLocaleString()}`));
+                evidence.append(document.createTextNode(` · ${new Date(result.finishedAt).toLocaleString(nls.locale ?? nls.defaultLocale)}`));
             }
             row.append(evidence);
         }

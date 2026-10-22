@@ -371,7 +371,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
             <span
                 className={`qaap-harness-card-last-turn${failed ? ' theia-mod-failed' : ''}`}
                 data-last-turn-outcome={lastTurn.outcome}
-                title={new Date(lastTurn.at).toLocaleString()}
+                title={new Date(lastTurn.at).toLocaleString(nls.locale ?? nls.defaultLocale)}
             >
                 {summary} · {this.describeLastTurnAge(lastTurn.at)}
             </span>
