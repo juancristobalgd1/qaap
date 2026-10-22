@@ -82,6 +82,68 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
         });
     });
 
+    describe('QAIQ missing-provider-key failure card', () => {
+        const refusal = 'Add your OpenRouter API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, or pick another agent from the agent chip. '
+            + 'Keys are personal: each account adds its own.';
+        const ctx = {
+            appendTranscriptShellSummaryTail: () => undefined,
+            contentUi: { cleanTranscriptDisplayText: (text: string) => text },
+        } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
+        (ctx as { createTranscriptAgentAuthLoginCard: unknown }).createTranscriptAgentAuthLoginCard = (
+            challenge: Parameters<typeof createTranscriptAgentAuthLoginCardExtracted>[1],
+            options: Parameters<typeof createTranscriptAgentAuthLoginCardExtracted>[2],
+        ) => createTranscriptAgentAuthLoginCardExtracted(ctx, challenge, options);
+
+        it('reads "API key needed", opens Settings → BYOK, and offers no sign-in', () => {
+            let openedSettings = 0;
+            let signIns = 0;
+            const card = createTranscriptAgentFailureDialogExtracted(ctx, refusal, refusal, {
+                agentId: 'qaiq',
+                agentLabel: 'QAIQ',
+                onOpenAiFeaturesSettings: () => { openedSettings++; },
+                onOpenAgentSignIn: () => { signIns++; },
+                onRetry: () => undefined,
+            });
+            expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('API key needed');
+            expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(refusal);
+            const settings = card.querySelector<HTMLButtonElement>('.codicon-settings-gear');
+            expect(settings?.textContent).to.equal('Add API key in Settings');
+            expect(card.querySelector('.codicon-terminal')).to.equal(null);
+            expect(card.querySelector('.codicon-link-external')).to.equal(null);
+            expect(card.textContent).to.not.match(/sign in/i);
+            settings!.click();
+            expect(openedSettings).to.equal(1);
+            expect(signIns).to.equal(0);
+        });
+    });
+
+    describe('BYOK provider-key failure card', () => {
+        const ctx = {
+            appendTranscriptShellSummaryTail: () => undefined,
+            contentUi: { cleanTranscriptDisplayText: (text: string) => text },
+            createTranscriptClampedPre: (text: string) => Object.assign(document.createElement('pre'), { textContent: text }),
+        } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
+
+        it('names the rejected key and opens BYOK settings instead of a sign-in or model hint', () => {
+            let opened = 0;
+            const error = 'Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.';
+            const log = 'There\'s an issue with the selected model (nvidia/nemotron-3-super-120b-a12b:free).\n'
+                + '[qaap] provider check: OpenRouter key_rejected (HTTP 401).';
+            const card = createTranscriptAgentFailureDialogExtracted(ctx, error, log, {
+                agentId: 'qaiq',
+                onOpenAiFeaturesSettings: () => { opened++; },
+            });
+            expect(card.classList.contains('theia-mod-provider-key')).to.equal(true);
+            expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('API key rejected');
+            expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(error);
+            expect(card.querySelector('.codicon-terminal')).to.equal(null);
+            const button = card.querySelector<HTMLButtonElement>('.codicon-settings-gear');
+            expect(button?.textContent).to.equal('Open BYOK settings');
+            button!.click();
+            expect(opened).to.equal(1);
+        });
+    });
+
     describe('formatTranscriptExecutionTime', () => {
         it('formats sub-second durations as milliseconds', () => {
             expect(formatTranscriptExecutionTime(0)).to.equal('0ms');

@@ -1,4 +1,5 @@
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
+import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
@@ -47,6 +48,7 @@ import {
     removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
+import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -420,6 +422,13 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 const message = error instanceof Error ? error.message : String(error);
                 fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                 fs.writeFileSync(ctx.logPath(task.id), `${message}\n`, 'utf8');
+                if (error instanceof QaapQaiqProviderKeyMissingError) {
+                    // Refused before spawn for a missing key: no other model of this agent can fix it.
+                    const current = ctx.tasks.get(task.id);
+                    if (current) {
+                        ctx.tasks.set(task.id, { ...current, preflightFailure: 'provider_key_missing' });
+                    }
+                }
                 ctx.finishTask(task.id, 'failed', 1);
                 return;
             }
@@ -448,6 +457,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             restoreAntigravitySettings?.();
         };
         let child: ChildProcess;
+        let childEnv: NodeJS.ProcessEnv | undefined;
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -457,7 +467,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(task.command, {
                 cwd: task.cwd,
-                env: ctx.buildChildEnv(task),
+                env: childEnv = ctx.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
                 // On Windows, cmd.exe can keep a detached child waiting after its stdin is closed.
                 // Plain Codex stdin prompts therefore need a non-detached shell process.
@@ -700,8 +710,66 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 void ctx.finishSuccessfulTaskAfterVerification(task, code ?? undefined);
                 return;
             }
+            if (code !== 0 && childEnv && canProbeProviderKey(childEnv, agentModel?.vendor, agentModel?.modelId)) {
+                // QAIQ blames "the selected model" for any OpenRouter 4xx: ask OpenRouter about the
+                // BYOK key before settling, so the failure names the key instead of the model. A
+                // global cap keeps a stuck stream or probe from leaving the task `running`.
+                let capTimer: ReturnType<typeof setTimeout> | undefined;
+                void Promise.race([
+                    explainProviderKeyFailure(ctx, task.id, logStream, childEnv, agentModel),
+                    new Promise<void>(resolve => {
+                        capTimer = setTimeout(resolve, PROVIDER_KEY_EXPLAIN_TIMEOUT_MS);
+                    }),
+                ])
+                    .finally(() => {
+                        clearTimeout(capTimer);
+                        if (ctx.tasks.get(task.id)?.state === 'running') {
+                            ctx.finishTask(task.id, 'failed', code ?? undefined);
+                        }
+                    });
+                return;
+            }
             ctx.finishTask(task.id, code === 0 ? 'completed' : 'failed', code ?? undefined);
         });
+}
+
+/** Upper bound on waiting for the log flush plus the provider preflight before settling. */
+const PROVIDER_KEY_EXPLAIN_TIMEOUT_MS = 10_000;
+
+async function explainProviderKeyFailure(
+    ctx: QaapAgentTaskRunnerContext,
+    taskId: string,
+    logStream: fs.WriteStream,
+    env: NodeJS.ProcessEnv,
+    agentModel: { readonly vendor?: string; readonly modelId?: string } | undefined,
+): Promise<void> {
+    try {
+        if (logStream.errored || logStream.destroyed) {
+            return;
+        }
+        if (!logStream.writableFinished) {
+            await new Promise<void>(resolve => {
+                logStream.once('finish', resolve);
+                logStream.once('error', () => resolve());
+            });
+        }
+        const logPath = ctx.logPath(taskId);
+        const log = await fs.promises.readFile(logPath, 'utf8');
+        const preflight = await runProviderKeyPreflight({ log, env, vendor: agentModel?.vendor, modelId: agentModel?.modelId });
+        if (preflight) {
+            const current = ctx.tasks.get(taskId);
+            if (current?.state !== 'running') {
+                return;
+            }
+            // Recorded on the task so a rejected key or missing credits never triggers a silent
+            // fallback-model retry: every model of this agent runs on the same key.
+            ctx.tasks.set(taskId, { ...current, providerKeyVerdict: preflight.verdict });
+            await fs.promises.appendFile(logPath, `\n${preflight.note}\n`, 'utf8');
+            ctx.fireOutput(taskId, `\n${preflight.note}\n`);
+        }
+    } catch {
+        /* best effort: the run already failed; keep its own reason */
+    }
 }
 
 export function maxConcurrentVerificationPassesExtracted(ctx: QaapAgentTaskRunnerContext): number {

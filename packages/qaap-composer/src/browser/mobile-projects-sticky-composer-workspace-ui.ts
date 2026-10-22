@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_GIT_REVIEW_API_PATH,
@@ -927,8 +928,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 body: JSON.stringify({ root: cwd, branch }),
             });
             if (!response.ok) {
-                const payload = await response.json().catch(() => ({})) as { error?: string };
-                throw new Error(payload.error ?? await response.text());
+                throw await QaapUserFacingErrors.fromResponse(response);
             }
             if (this.host.composerWorkspaceBranchByProjectId.get(project.id) === branch) {
                 this.host.composerWorkspaceBranchByProjectId.delete(project.id);

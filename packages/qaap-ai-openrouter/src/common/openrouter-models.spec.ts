@@ -14,8 +14,8 @@ describe('openrouter-models', () => {
         expect(isFreeOpenRouterModelId(`openrouter/${slug}`)).to.be.false;
         expect(filterOpenRouterModelSlugs([
             slug,
-            'nvidia/nemotron-3-super-120b-a12b:free',
-        ])).to.deep.equal(['nvidia/nemotron-3-super-120b-a12b:free']);
+            'nvidia/nemotron-3-ultra-550b-a55b:free',
+        ])).to.deep.equal(['nvidia/nemotron-3-ultra-550b-a55b:free']);
     });
 
     it('excludes Hunyuan free/tool-less slugs from the agent catalog', () => {
@@ -29,11 +29,11 @@ describe('openrouter-models', () => {
 
     it('excludes Hermes catalog slugs that 404 with no OpenRouter endpoints', () => {
         expect(isExcludedOpenRouterModelSlug('poolside/laguna-m.1:free')).to.be.true;
-        expect(isExcludedOpenRouterModelSlug('nvidia/nemotron-3-ultra-550b-a55b:free')).to.be.true;
+        expect(isExcludedOpenRouterModelSlug('inclusionai/ring-2.6-1t:free')).to.be.true;
         expect(isExcludedOpenRouterModelSlug('openrouter/elephant-alpha')).to.be.true;
         expect(filterOpenRouterModelSlugs([
             'poolside/laguna-m.1:free',
-            'nvidia/nemotron-3-ultra-550b-a55b:free',
+            'inclusionai/ring-2.6-1t:free',
             'google/gemma-4-31b-it:free',
         ])).to.deep.equal(['google/gemma-4-31b-it:free']);
     });
@@ -43,5 +43,22 @@ describe('openrouter-models', () => {
             expect(isExcludedOpenRouterModelSlug(slug), slug).to.be.true;
             expect(OPENROUTER_DEFAULT_FREE_MODELS, slug).to.not.include(slug);
         }
+    });
+
+    it('defaults to a live tool-capable model, never the dead Oct 2026 ones', () => {
+        // Oct 21 2026: `nvidia/nemotron-3-super-120b-a12b:free` (Nvidia endpoint status -5, 404) and
+        // `qwen/qwen3.8-27b:free` (no endpoints) were the default and a fallback.
+        expect(OPENROUTER_DEFAULT_FREE_MODELS[0]).to.equal('nvidia/nemotron-3-ultra-550b-a55b:free');
+        expect(OPENROUTER_DEFAULT_FREE_MODELS).to.not.include('nvidia/nemotron-3-super-120b-a12b:free');
+        expect(OPENROUTER_DEFAULT_FREE_MODELS).to.not.include('qwen/qwen3.8-27b:free');
+        expect(isFreeOpenRouterModelId('openrouter/nvidia/nemotron-3-ultra-550b-a55b:free')).to.be.true;
+    });
+
+    it('keeps every default free, registrable and the first four from distinct providers', () => {
+        expect(filterOpenRouterModelSlugs(OPENROUTER_DEFAULT_FREE_MODELS)).to.deep.equal([...OPENROUTER_DEFAULT_FREE_MODELS]);
+        expect(OPENROUTER_DEFAULT_FREE_MODELS.every(slug => slug.endsWith(':free'))).to.be.true;
+        expect(new Set(OPENROUTER_DEFAULT_FREE_MODELS).size).to.equal(OPENROUTER_DEFAULT_FREE_MODELS.length);
+        const head = OPENROUTER_DEFAULT_FREE_MODELS.slice(0, 4).map(slug => slug.split('/')[0]);
+        expect(new Set(head).size).to.equal(4);
     });
 });
