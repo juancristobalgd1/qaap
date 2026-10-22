@@ -472,6 +472,11 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             next();
             return;
         }
+        // The tenant answers `originalUrl` and encodes its own response; `writeHead` would merge in
+        // what a compression rewrite (`serveGzipped`, QaapBrotliStaticContribution) already set here,
+        // labelling an uncompressed tenant body as gzip / br.
+        res.removeHeader('Content-Encoding');
+        res.removeHeader('Content-Type');
         this.activity.touch(context.userLogin, 'user');
         // One budget covers the tenant cold start and the wait for response headers, so a request
         // that first had to start the backend still gets its answer (at worst a 504) within

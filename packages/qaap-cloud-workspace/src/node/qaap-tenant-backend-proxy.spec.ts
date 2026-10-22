@@ -603,6 +603,30 @@ describe('QaapTenantBackendProxyContribution', () => {
                 expect(warmCalls).to.have.length(1);
             });
 
+            it('drops the encoding headers a compression rewrite set before proxying to the tenant in the fallback', async () => {
+                const proxy = createProxy() as unknown as Record<string, unknown> & {
+                    proxyAuthenticatedRequest(req: unknown, res: unknown, next: () => void): Promise<void>;
+                };
+                proxy.auth = {
+                    authenticate: () => ({ kind: 'authenticated', userLogin: 'alice', sessionId: 's', session: SESSION }),
+                    userWorkspaceRoot: () => '/srv/qaap/users/alice',
+                };
+                proxy.activity = { touch: () => undefined };
+                proxy.docker = { ensureTenantBackend: async () => ({ host: '127.0.0.1', port: 1 }) };
+                proxy.createTenantAssertion = () => 'assertion';
+                let forwardedWith: Record<string, unknown> | undefined;
+                proxy.forwardHttp = (_req: unknown, res: { headers: Record<string, unknown> }) => { forwardedWith = { ...res.headers }; };
+                const headers: Record<string, unknown> = { 'Content-Encoding': 'br', 'Content-Type': 'text/javascript', 'Vary': 'Accept-Encoding' };
+                const res = {
+                    headers, headersSent: false,
+                    setHeader: (key: string, value: unknown) => { headers[key] = value; },
+                    removeHeader: (key: string) => { delete headers[key]; },
+                };
+                await proxy.proxyAuthenticatedRequest(
+                    { method: 'GET', url: '/qaap/api/x.js.br', originalUrl: '/qaap/api/x.js', headers: {} }, res, () => undefined);
+                expect(forwardedWith).to.deep.equal({ 'Vary': 'Accept-Encoding' });
+            });
+
             it('opens no upstream request for a polling request abandoned during the cold start', async () => {
                 const tenantHits: string[] = [];
                 const tenantConnections = { count: 0 };
