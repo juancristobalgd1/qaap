@@ -24,6 +24,7 @@ import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
 import { parseWorkingDetailTaskLogSegments, shouldShowWorkingDetailTaskLog } from '@theia/qaap-shared-core/lib/browser/qaap-sticky-composer-working-detail-task-log';
 import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { QaapChatViewStreamUpdateScheduler } from '@theia/qaap-shared-core/lib/common/qaap-chat-view-stream-update-scheduler';
 
 export function bindWorkingDetailTaskLogSubscriptionExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember | undefined): void {
         const taskId = shouldShowWorkingDetailTaskLog(member ?? {})
@@ -54,17 +55,21 @@ export function bindWorkingDetailTaskLogSubscriptionExtracted(ctx: MobileProject
             ctx.paintWorkingDetailTaskLog(member, taskId);
         };
 
+        // The task WebSocket emits one `output` per chunk: coalesce the log repaint to one per frame.
+        const paintScheduler = new QaapChatViewStreamUpdateScheduler(paint, () => 0);
+        disposables.push(Disposable.create(() => paintScheduler.dispose()));
+
         paint();
         if (activeTasks) {
             disposables.push(activeTasks.onDidTaskOutput(tail => {
                 if (tail.taskId !== taskId) {
                     return;
                 }
-                paint();
+                paintScheduler.schedule();
             }));
             disposables.push(activeTasks.onDidChange(() => {
                 // Task completed/failed — drop the live shimmer while keeping the log.
-                paint();
+                paintScheduler.schedule();
             }));
         }
         ctx.workingDetailTaskLogDispose = Disposable.create(() => {

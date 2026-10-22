@@ -113,10 +113,12 @@ describe('mobile-vertical-touch-scroll', () => {
         const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css'), 'utf8');
         const locks = [...css.matchAll(/([^{}]+)\{\s*overflow:\s*hidden\s*!important;\s*overflow-y:\s*hidden\s*!important;\s*\}/g)]
             .map(match => match[1].replace(/\/\*[\s\S]*?\*\//g, '').trim());
-        const settingsLock = locks.find(selectors => selectors.includes(':has('));
+        const settingsLock = locks.find(selectors => selectors.includes('theia-mod-has-inline-preferences'));
+        // The class stands in for `:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline)`
+        // (set by QaapHasStateClasses in qaap-work-hub), repeated to keep that selector's specificity.
         expect(settingsLock, 'outer scroll lock rule').to.equal(
-            '.theia-mobile-projects-scroll:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline)',
-            'a selector list with `:has()` is dropped whole where `:has()` is unsupported'
+            '.theia-mobile-projects-scroll.theia-mod-has-inline-preferences.theia-mod-has-inline-preferences',
+            'the lock keeps its own rule, scoped to the hub scroller while inline Settings are open'
         );
     });
 

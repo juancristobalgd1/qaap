@@ -444,8 +444,10 @@ body.theia-mobile-mod-workhub-composer-header:not(.theia-mobile-mod-desktop-ide)
 }
 
 /* Work Hub mounted: never leak IDE top panel, even if composer-header class is cleared. */
-body:not(.theia-mobile-mod-desktop-ide):has(.theia-mobile-projects.theia-mod-visible) #theia-top-panel,
-body:not(.theia-mobile-mod-desktop-ide):has(.theia-mobile-agent-transcript-root.theia-mod-visible) #theia-top-panel {
+/* `-has-*` classes are set by QaapHasStateClasses (qaap-work-hub) in place of `:has()` on the streaming
+ * transcript's ancestors; repeated as many times as needed to keep the specificity of the `:has()`. */
+body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible #theia-top-panel,
+body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay #theia-top-panel {
   visibility: hidden !important;
   pointer-events: none !important;
 }
@@ -473,10 +475,10 @@ body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop
 
 /* Failsafe: never leave the workbench blank if Work Hub chrome restored before
    its panel mounted. Hide IDE panels only while a visible Work Hub surface exists. */
-body.theia-mobile-mod-workhub-composer-header:not(:has(.theia-mobile-projects.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
-body.theia-mobile-mod-workhub-no-bottom-chrome:not(:has(.theia-mobile-projects.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
-body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide):not(:has(.theia-mobile-projects.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
-body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide):not(:has(.theia-mobile-projects.theia-mod-visible)) #theia-app-shell:not(.theia-mod-mobile-one-column) #theia-main-content-panel {
+body.theia-mobile-mod-workhub-composer-header:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible) #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible) #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide):not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible) #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide):not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-visible) #theia-app-shell:not(.theia-mod-mobile-one-column) #theia-main-content-panel {
   visibility: visible !important;
   pointer-events: auto !important;
 }
@@ -901,7 +903,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 /* Empty the header on the Agents Hub landing when there is no workspace yet
    (the "No workspaces yet" onboarding state). The header reappears once a
    project is opened (.theia-mod-agents-hub-shell-active) or pinned. */
-.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing:has(.theia-mobile-agent-transcript-empty.theia-mod-no-project) .theia-mobile-projects-header-main {
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-header-main {
   display: none !important;
 }
 
@@ -923,7 +925,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   padding-bottom: 24px;
 }
 
-.theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) {
+.theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript.theia-mod-empty-chat.theia-mod-has-transcript-recents {
   justify-content: flex-start;
 }
 
@@ -2268,7 +2270,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects-sticky-composer,
   body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects-sticky-composer,
   .theia-mobile-agent-transcript-root .theia-mobile-agent-transcript-chat-input .theia-mobile-projects-sticky-composer,
-  .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) {
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) {
     padding-top: 4px;
   }
 
@@ -2301,7 +2303,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 /* Landscape phones in one-column shell — same horizontal inset as narrow mobile. */
 #theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects>.theia-mobile-projects-sticky-composer:not([hidden]),
-#theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) {
+#theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) {
   padding-top: 4px;
 }
 
@@ -6583,7 +6585,7 @@ body.qaap-theme-dark {
 }
 
 /* Menu is portaled to `body`; sit above the full-screen task transcript sheet. */
-body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .theia-mobile-projects-sticky-composer-attach-menu {
+body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay .theia-mobile-projects-sticky-composer-attach-menu {
   z-index: 2147483003 !important;
 }
 
@@ -9205,14 +9207,14 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 }
 
 /* Drop the reserved subtitle row when nothing is shown beneath the title. */
-.theia-mobile-projects.theia-mod-project-detail:has(.theia-mobile-projects-subtitle[hidden]),
-.theia-mobile-projects.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-subtitle[hidden]),
-.theia-mobile-agent-transcript-root:has(.theia-mobile-projects-subtitle[hidden]) {
+.theia-mobile-projects.theia-mod-project-detail.theia-mod-has-hidden-subtitle.theia-mod-has-hidden-subtitle,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-has-hidden-subtitle.theia-mod-has-hidden-subtitle,
+.theia-mobile-agent-transcript-root.theia-mod-has-sheet-hidden-subtitle.theia-mod-has-sheet-hidden-subtitle {
   --theia-mobile-execution-header-text-block: var(--theia-mobile-execution-header-title-row);
 }
 
-.theia-mobile-projects.theia-mod-agents-hub-inline-active:has(.qaap-transcript-workspace-context:not([hidden])),
-.theia-mobile-agent-transcript-root:has(.qaap-transcript-workspace-context:not([hidden])) {
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-has-workspace-context.theia-mod-has-workspace-context,
+.theia-mobile-agent-transcript-root.theia-mod-has-sheet-workspace-context.theia-mod-has-sheet-workspace-context {
   --theia-mobile-execution-header-text-block: calc(var(--theia-mobile-execution-header-title-row) + var(--theia-mobile-execution-header-subtitle-gap) + var(--theia-mobile-execution-header-subtitle-row));
 }
 
@@ -9803,14 +9805,14 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
  * Specificity must beat the narrow/one-column Codex `padding-top: 4px` rules.
  * Geometric overlap (negative margin-top) is restored for agents hub further below.
  */
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-#theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
-#theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) {
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+#theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]),
+#theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-codex-composer.theia-mod-has-codex-composer>.theia-mobile-projects-sticky-composer:not([hidden]) {
   padding-top: 0;
 }
 
@@ -12202,7 +12204,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   z-index: 20;
 }
 
-.theia-mobile-projects-scroll:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline) {
+.theia-mobile-projects-scroll.theia-mod-has-inline-preferences.theia-mod-has-inline-preferences {
   position: relative;
   overflow: hidden;
 }
@@ -12217,7 +12219,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 /* Modal dialogs from embedded Settings / AI Configuration must sit above the sheet (12960). */
-body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialogOverlay:not(.hidden) {
+body.theia-mobile-mod-has-work-hub-preferences.theia-mobile-mod-has-work-hub-preferences .lm-Widget.dialogOverlay:not(.hidden) {
   z-index: 13050 !important;
 }
 

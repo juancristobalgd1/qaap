@@ -74,9 +74,11 @@
 }
 
 /* Never show jump-to-end on idle / quick-action shells (no conversation rows). */
-.theia-mod-transcript-scroll-to-bottom-mount:has(.theia-mobile-agent-transcript.theia-mod-empty-chat)
+/* `-has-*` classes are set by QaapHasStateClasses (qaap-work-hub) in place of `:has()` on the streaming
+ * transcript's ancestors; repeated as many times as needed to keep the specificity of the `:has()`. */
+.theia-mod-transcript-scroll-to-bottom-mount.theia-mod-has-empty-chat-transcript.theia-mod-has-empty-chat-transcript
   .theia-mobile-agent-transcript-scroll-to-bottom,
-.theia-mod-transcript-scroll-to-bottom-mount:has(.theia-mobile-agent-transcript-empty)
+.theia-mod-transcript-scroll-to-bottom-mount.theia-mod-has-transcript-empty-state
   .theia-mobile-agent-transcript-scroll-to-bottom {
   display: none !important;
   pointer-events: none !important;

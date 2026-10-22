@@ -489,7 +489,9 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
 
 .theia-mobile-projects-fab[hidden],
 .theia-mobile-projects.theia-mod-repo-expanded .theia-mobile-projects-fab,
-.theia-mobile-projects:has(.theia-mobile-open-repo.theia-mod-visible) .theia-mobile-projects-fab {
+/* `-has-*` classes are set by QaapHasStateClasses (qaap-work-hub) in place of `:has()` on the streaming
+ * transcript's ancestors; repeated as many times as needed to keep the specificity of the `:has()`. */
+.theia-mobile-projects.theia-mod-has-open-repo.theia-mod-has-open-repo .theia-mobile-projects-fab {
   display: none !important;
   pointer-events: none !important;
 }

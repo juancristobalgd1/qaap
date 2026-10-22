@@ -32,7 +32,9 @@
 }
 
 /* Portaled select menus must stack above modal dialogs (Work Hub at 13050; transcript/sidebar at 2147483015). */
-body:has(.lm-Widget.dialogOverlay:not(.hidden)) #select-component-container,
-body:has(.lm-Widget.dialogOverlay:not(.hidden)) #select-component-container .theia-select-component-dropdown {
+/* `-has-*` classes are set by QaapHasStateClasses (qaap-work-hub) in place of `:has()` on the streaming
+ * transcript's ancestors; repeated as many times as needed to keep the specificity of the `:has()`. */
+body.theia-mobile-mod-has-dialog-overlay.theia-mobile-mod-has-dialog-overlay.theia-mobile-mod-has-dialog-overlay #select-component-container,
+body.theia-mobile-mod-has-dialog-overlay.theia-mobile-mod-has-dialog-overlay.theia-mobile-mod-has-dialog-overlay #select-component-container .theia-select-component-dropdown {
   z-index: 2147483020 !important;
 }

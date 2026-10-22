@@ -348,9 +348,10 @@
     overflow-y: hidden !important;
   }
 
-  /* Own rule: an engine without `:has()` drops the whole selector list, which
-   * must not take the execution-surface lock above with it. */
-  .theia-mobile-projects-scroll:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline) {
+  /* Inline settings lock the hub scroller. The `-has-*` class is set by QaapHasStateClasses
+   * (qaap-work-hub) in place of `:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline)`
+   * and repeated to keep that `:has()`'s specificity. */
+  .theia-mobile-projects-scroll.theia-mod-has-inline-preferences.theia-mod-has-inline-preferences {
     overflow: hidden !important;
     overflow-y: hidden !important;
   }
