@@ -37,6 +37,11 @@ function copyIfExists(from, to) {
 
 fs.mkdirSync(libFrontend, { recursive: true });
 
+// A build killed mid-compression leaves `<file>.gz.tmp` / `<file>.br.tmp` behind (see writeCompressedAtomically).
+for (const orphan of fs.readdirSync(libFrontend).filter(f => /\.(gz|br)\.tmp$/.test(f))) {
+    fs.rmSync(path.join(libFrontend, orphan), { force: true });
+}
+
 const libIndex = path.join(libFrontend, 'index.html');
 if (!copyIfExists(srcIndex, libIndex)) {
     console.warn('[qaap] src-gen/frontend/index.html missing — run: npx theia generate');
