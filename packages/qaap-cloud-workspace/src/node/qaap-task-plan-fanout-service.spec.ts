@@ -139,6 +139,11 @@ describe('QaapTaskPlanFanOutService', function (): void {
         repo = path.join(work, 'repo');
         fs.mkdirSync(repo);
         git(repo, 'init', '-q', '-b', 'main');
+        // Windows runners ship a global core.autocrlf=true, which makes `read-tree -u` write CRLF.
+        // The product honours the user's line-ending config on purpose; these byte-exact
+        // assertions pin LF in the test repo (its linked worktrees share this config).
+        git(repo, 'config', 'core.autocrlf', 'false');
+        git(repo, 'config', 'core.eol', 'lf');
         fs.writeFileSync(path.join(repo, 'README.md'), 'readme\n');
         fs.writeFileSync(path.join(repo, 'old.txt'), 'to be removed\n');
         git(repo, 'add', '-A');
