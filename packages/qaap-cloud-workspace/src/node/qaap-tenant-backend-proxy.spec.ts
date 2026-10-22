@@ -627,6 +627,58 @@ describe('QaapTenantBackendProxyContribution', () => {
                 expect(forwardedWith).to.deep.equal({ 'Vary': 'Accept-Encoding' });
             });
 
+            it('does not let a Content-Encoding: br set before the late proxy route reach a real http response', async () => {
+                const tenant = http.createServer((_req, res) => {
+                    res.setHeader('Content-Type', 'text/javascript');
+                    res.end('tenant body');
+                });
+                await new Promise<void>(resolve => tenant.listen(0, '127.0.0.1', resolve));
+                const proxy = createProxy() as unknown as Record<string, unknown> & {
+                    proxyAuthenticatedRequest(req: http.IncomingMessage, res: http.ServerResponse, next: () => void): Promise<void>;
+                };
+                proxy.auth = {
+                    authenticate: () => ({ kind: 'authenticated', userLogin: 'alice', sessionId: 's', session: { accessToken: 't', user: { provider: 'github', login: 'alice', name: 'Alice' } } }),
+                    userWorkspaceRoot: () => '/srv/qaap/users/alice',
+                    logSecurityEvent: () => undefined,
+                };
+                proxy.activity = { touch: () => undefined, beginOperation: () => () => undefined };
+                proxy.docker = {
+                    ensureTenantBackend: async () => ({ ...TARGET, port: (tenant.address() as net.AddressInfo).port }),
+                    getTenantBackendConnectionToken: () => 'tenant-token',
+                    getTenantBackendAssertionSecret: () => 'z'.repeat(40),
+                    invalidateTenantBackendTarget: () => undefined,
+                };
+                const late = http.createServer((req, res) => {
+                    // What QaapBrotliStaticContribution does before this middleware runs.
+                    res.setHeader('Content-Encoding', 'br');
+                    res.setHeader('Content-Type', 'text/javascript');
+                    res.setHeader('Vary', 'Accept-Encoding');
+                    void proxy.proxyAuthenticatedRequest(req, res, () => res.end('next'));
+                });
+                await new Promise<void>(resolve => late.listen(0, '127.0.0.1', resolve));
+                try {
+                    const response = await new Promise<{ body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+                        const req = http.request({
+                            host: '127.0.0.1', port: (late.address() as net.AddressInfo).port, path: '/qaap/api/x.js', headers: { 'Accept-Encoding': 'br' },
+                        }, res => {
+                            let body = '';
+                            res.setEncoding('utf8');
+                            res.on('data', chunk => { body += chunk; });
+                            res.on('end', () => resolve({ body, headers: res.headers }));
+                        });
+                        req.on('error', reject);
+                        req.end();
+                    });
+                    expect(response.body).to.equal('tenant body');
+                    expect(response.headers['content-encoding']).to.equal(undefined);
+                } finally {
+                    late.closeAllConnections();
+                    tenant.closeAllConnections();
+                    await new Promise<void>(resolve => late.close(() => resolve()));
+                    await new Promise<void>(resolve => tenant.close(() => resolve()));
+                }
+            });
+
             it('opens no upstream request for a polling request abandoned during the cold start', async () => {
                 const tenantHits: string[] = [];
                 const tenantConnections = { count: 0 };
