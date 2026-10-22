@@ -49,6 +49,7 @@ import { QaapExternalTaskStore } from './qaap-external-task-store';
 import { QaapGithubExternalTaskSource } from './qaap-github-external-task-source';
 import { QaapGithubWebhookListener } from '@theia/qaap-shared-core/lib/node/qaap-github-webhook-listener';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
 import { QaapBillingStore } from './qaap-billing-store';
@@ -312,6 +313,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentCliUpdateService).toSelf().inSingletonScope();
     bind(QaapWorktreeGcContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
+    bind(QaapStandaloneTaskModelFallback).toSelf().inSingletonScope();
     bind(QaapAgentTaskEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentTaskEndpoint);
     bind(QaapUserAiSettingsEndpoint).toSelf().inSingletonScope();

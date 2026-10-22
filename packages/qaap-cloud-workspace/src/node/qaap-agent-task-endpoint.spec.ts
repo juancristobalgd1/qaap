@@ -308,6 +308,40 @@ describe('QaapAgentTaskEndpoint queue admission', () => {
     });
 });
 
+describe('QaapAgentTaskEndpoint standalone model fallback', () => {
+    it('registers every task it creates, with the request it built, for model fallback', async () => {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const tracked: Array<{ taskId: string; prompt?: string; readOnlyWorkspace?: boolean; ownerLogin?: string }> = [];
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+                resolveOwnedRepositoryCwd: () => ({ kind: 'ok', cwd: '/repo' })
+            },
+            runner: {
+                defaultAgentFresh: async () => 'qaiq',
+                create: () => ({ id: 'task-1', cwd: '/repo', state: 'running' }),
+            },
+            modelFallback: {
+                track: (task: { id: string }, request: { prompt?: string; readOnlyWorkspace?: boolean }, ownerLogin?: string) => {
+                    tracked.push({ taskId: task.id, prompt: request.prompt, readOnlyWorkspace: request.readOnlyWorkspace, ownerLogin });
+                },
+            },
+        });
+        let status = 0;
+        const response = {
+            status: (code: number) => { status = code; return response; },
+            json: () => response,
+        };
+
+        await endpoint.createForTest({
+            body: { cwd: '/repo', prompt: 'Reply with OK', readOnlyWorkspace: true }, header: () => undefined
+        } as unknown as Request, response as unknown as Response);
+
+        expect(status).to.equal(201);
+        expect(tracked).to.deep.equal([{ taskId: 'task-1', prompt: 'Reply with OK', readOnlyWorkspace: true, ownerLogin: 'alice' }]);
+    });
+});
+
 describe('QaapAgentTaskEndpoint CLI install', () => {
     const originalNodeEnv = process.env.NODE_ENV;
 

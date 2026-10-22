@@ -44,7 +44,7 @@ export interface QaapProviderKeyPreflightInput {
     readonly log: string;
     /** The child environment the CLI ran with (BYOK keys are injected there). */
     readonly env: NodeJS.ProcessEnv;
-    /** Model id the task ran with, e.g. `nvidia/nemotron-3-super-120b-a12b:free`. */
+    /** Model id the task ran with, e.g. `nvidia/nemotron-3-ultra-550b-a55b:free`. */
     readonly modelId?: string;
     /** Vendor of the task's model binding; only `openrouter` turns are probed. */
     readonly vendor?: string;

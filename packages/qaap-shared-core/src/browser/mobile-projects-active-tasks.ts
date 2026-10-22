@@ -58,6 +58,10 @@ export interface MobileProjectTaskView {
     readonly parentId?: string;
     /** Backend self-verification result (passed/failed/skipped) when QAAP_AGENT_VERIFY ran. */
     readonly verification?: MobileProjectTaskVerification;
+    /** Failed task this one re-runs on a fallback model (backend model fallback for standalone tasks). */
+    readonly fallbackFromTaskId?: string;
+    /** Model id this fallback attempt runs on — the "Retried with …" note. Only set with {@link fallbackFromTaskId}. */
+    readonly fallbackModelLabel?: string;
 }
 
 interface TaskEventPayload {
@@ -73,6 +77,10 @@ interface TaskEventPayload {
     readonly queuePosition?: number;
     readonly parentId?: string;
     readonly verification?: MobileProjectTaskVerification;
+    readonly fallbackFromTaskId?: string;
+    /** Set once a model-fallback retry replaced this task; the list shows the retry instead. */
+    readonly modelFallbackTaskId?: string;
+    readonly agentModel?: { readonly vendor?: string; readonly modelId?: string };
 }
 
 export interface MobileProjectAgentDescriptor {
@@ -95,7 +103,7 @@ interface SnapshotPayload {
 type WsServerMessage =
     | ({ readonly type: 'snapshot' } & SnapshotPayload)
     | { readonly type: 'heartbeat' }
-    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered'; readonly task: TaskEventPayload }
+    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered' | 'updated'; readonly task: TaskEventPayload }
     | { readonly type: 'output'; readonly task: TaskEventPayload; readonly chunk: string };
 
 /** Snapshot of what's running in one project. */
@@ -420,6 +428,8 @@ export class MobileProjectsActiveTasks {
             const cwd = normalizeCwd(group.cwd);
             const tasks = sortTasks(
                 group.tasks
+                    // A failed attempt a model-fallback retry replaced: its retry stands for it.
+                    .filter(task => !task.modelFallbackTaskId)
                     .map(task => toTaskView(task))
                     .filter(task => task.state !== 'cancelled')
             );
@@ -439,7 +449,7 @@ export class MobileProjectsActiveTasks {
         this.replaceActive(nextActive);
     }
 
-    protected applyEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered', task: TaskEventPayload): void {
+    protected applyEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered' | 'updated', task: TaskEventPayload): void {
         const cwd = normalizeCwd(task.cwd);
         if (type === 'deleted') {
             const list = [...(lookupByCwd(this.tasksByCwd, cwd) ?? [])].filter(entry => entry.id !== task.id);
@@ -481,8 +491,15 @@ export class MobileProjectsActiveTasks {
         const cwd = normalizeCwd(task.cwd);
         const view = toTaskView({ ...task, cwd });
         const list = [...(lookupByCwd(this.tasksByCwd, cwd) ?? [])];
+        if (view.fallbackFromTaskId) {
+            // Follow the model-fallback chain: the retry takes the failed attempt's place.
+            const replaced = list.findIndex(entry => entry.id === view.fallbackFromTaskId);
+            if (replaced >= 0) {
+                list.splice(replaced, 1);
+            }
+        }
         const index = list.findIndex(entry => entry.id === view.id);
-        if (view.state === 'cancelled') {
+        if (view.state === 'cancelled' || task.modelFallbackTaskId) {
             if (index >= 0) {
                 list.splice(index, 1);
             }
@@ -548,6 +565,10 @@ export function toTaskView(task: TaskEventPayload): MobileProjectTaskView {
         queuePosition: task.queuePosition,
         parentId: task.parentId,
         verification: task.verification,
+        ...(task.fallbackFromTaskId ? {
+            fallbackFromTaskId: task.fallbackFromTaskId,
+            fallbackModelLabel: task.agentModel?.modelId?.trim() || undefined,
+        } : {}),
     };
 }
 

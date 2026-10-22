@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { OPENCLAUDE_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { findQaiqByokProvider } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import { truncateProjectInfo } from '../common/qaap-agent-task-context';
 import {
@@ -395,6 +396,15 @@ export interface QaapQaiqEnvFallbackModel {
 }
 
 /**
+ * OpenRouter model for an env-only key: the head of the curated free list
+ * (`OPENROUTER_DEFAULT_FREE_MODELS`), so the default and the fallback chain can never disagree again
+ * (Oct 21 2026: the hardcoded `nvidia/nemotron-3-super-120b-a12b:free` died and every default turn
+ * burnt a failed attempt). Literal fallback only if the registry is ever emptied.
+ */
+const QAIQ_OPENROUTER_ENV_FALLBACK_MODEL_ID: string =
+    findQaiqByokProvider('openrouter')?.fallbackModels?.[0] ?? 'nvidia/nemotron-3-ultra-550b-a55b:free';
+
+/**
  * Env-only model when Settings aliases are missing or point at a vendor with no credentials.
  * Keep in lockstep with {@link resolveQaiqProviderFlagsFromEnv}.
  */
@@ -403,7 +413,7 @@ export function resolveQaiqEnvFallbackModel(env: NodeJS.ProcessEnv): QaapQaiqEnv
         return { provider: 'gemini', vendor: 'google', modelId: 'gemini-2.5-flash' };
     }
     if (env.OPENROUTER_API_KEY?.trim()) {
-        return { provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/nemotron-3-super-120b-a12b:free' };
+        return { provider: 'openai', vendor: 'openrouter', modelId: QAIQ_OPENROUTER_ENV_FALLBACK_MODEL_ID };
     }
     if (env.NVIDIA_API_KEY?.trim()) {
         return { provider: 'openai', vendor: 'nvidia', modelId: 'meta/llama-3.3-70b-instruct' };

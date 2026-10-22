@@ -29,6 +29,7 @@ import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
+import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
 import { listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
 import {
     QaapGithubAuthGuard,
@@ -88,6 +89,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     /** Clones a project again when its clone is missing from disk; absent, a missing clone is denied. */
     @inject(QaapMissingCloneRecovery) @optional()
     protected readonly cloneRecovery: QaapMissingCloneRecovery | undefined;
+
+    /** Re-runs a failed standalone task on the agent's next fallback model; absent, tasks never fall back. */
+    @inject(QaapStandaloneTaskModelFallback) @optional()
+    protected readonly modelFallback: QaapStandaloneTaskModelFallback | undefined;
 
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/storage-health`, (req, res) => {
@@ -687,7 +692,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // because the auth probes of a freshly started backend have not answered yet.
                 await this.runner.defaultAgentFresh(ownerLogin);
             }
-            const task = this.runner.create({
+            const request: QaapCreateAgentTaskRequest = {
                 clientRequestId: typeof body.clientRequestId === 'string' ? body.clientRequestId.trim() : undefined,
                 command: body.command,
                 prompt: body.prompt,
@@ -713,7 +718,11 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // of it. Coerced strictly: anything other than a literal `true` leaves the turn
                 // unrestricted rather than guessing from a truthy value.
                 readOnlyWorkspace: body.readOnlyWorkspace === true ? true : undefined,
-            }, ownerLogin);
+            };
+            const task = this.runner.create(request, ownerLogin);
+            // Only tasks created HERE are standalone: conversation turns call the runner directly
+            // and fall back inside the conversation store, so they must never be retried twice.
+            this.modelFallback?.track(task, request, ownerLogin);
             res.status(201).json(task);
         } catch (error) {
             const status = error instanceof QaapAgentStorageUnavailableError ? 503 : error instanceof QaapAgentQueueFullError ? 429 : 400;

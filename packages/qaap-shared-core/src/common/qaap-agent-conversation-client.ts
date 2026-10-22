@@ -873,7 +873,7 @@ export const QAAP_MAX_CONCURRENT_RUNS_CODE = 'max-concurrent-runs';
 
 /** Error carrying the HTTP status/code so callers can branch on the max-concurrent-runs answer. */
 export class QaapConversationMessageError extends Error {
-    constructor(message: string, readonly status: number, readonly code?: string) {
+    constructor(message: string, readonly status: number, readonly code?: string, readonly details?: string) {
         super(message);
     }
 }
@@ -881,7 +881,7 @@ export class QaapConversationMessageError extends Error {
 /** The server's readable error (JSON `error` / `message` unwrapped), keeping status and code for the UI to branch on. */
 async function buildPostMessageError(response: Response): Promise<Error> {
     const error = await QaapUserFacingErrors.fromResponse(response);
-    return new QaapConversationMessageError(error.message, response.status, error.code);
+    return new QaapConversationMessageError(error.message, response.status, error.code, error.details);
 }
 
 /** True when the send failed only because the session already runs the maximum agents. */

@@ -73,6 +73,22 @@ const gitEnv = {
 };
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: gitEnv });
 
+describe('QaapTaskSandboxService platform support', () => {
+
+    it('is unsupported on Windows hosts and refuses to start a sandbox there', async () => {
+        const service = new FakeDockerSandboxService();
+        expect(service.isSupported('linux')).to.equal(true);
+        expect(service.isSupported('darwin')).to.equal(true);
+        expect(service.isSupported('win32')).to.equal(false);
+        service.isSupported = () => false;
+        let error: Error | undefined;
+        await service.acquire({ taskId: 't1', cwd: os.tmpdir() }).catch((caught: Error) => { error = caught; });
+        expect(error?.message).to.contain('not supported');
+        expect(service.calls).to.deep.equal([]);
+        expect(service.sandboxFor(os.tmpdir())).to.equal(undefined);
+    });
+});
+
 describe('QaapTaskSandboxService', function (): void {
     this.timeout(20_000);
 
@@ -96,7 +112,13 @@ describe('QaapTaskSandboxService', function (): void {
     let worktreeB: string;
     let home: string;
 
-    before(() => {
+    before(function (): void {
+        // Task sandboxes are unsupported on Windows hosts (see QaapTaskSandboxService.isSupported):
+        // Linux containers cannot bind `C:\...` paths at the same path, and on Windows runners
+        // fs.realpathSync keeps 8.3 short names (RUNNER~1) that git's --show-toplevel expands.
+        if (process.platform === 'win32') {
+            this.skip();
+        }
         scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-sandbox-spec-')));
         repo = path.join(scratch, 'repo');
         fs.mkdirSync(repo);
@@ -113,7 +135,9 @@ describe('QaapTaskSandboxService', function (): void {
     });
 
     after(() => {
-        fs.rmSync(scratch, { recursive: true, force: true });
+        if (scratch) {
+            fs.rmSync(scratch, { recursive: true, force: true });
+        }
     });
 
     beforeEach(() => {

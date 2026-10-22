@@ -503,7 +503,7 @@ export async function cloneQaapGithubRepository(repository: string): Promise<Qaa
 
 /** A failed Qaap API call that keeps the HTTP status (e.g. 404 from an older backend). */
 export class QaapApiRequestError extends Error {
-    constructor(message: string, readonly status: number, readonly code?: string) {
+    constructor(message: string, readonly status: number, readonly code?: string, readonly details?: string) {
         super(message);
         this.name = 'QaapApiRequestError';
     }
@@ -511,7 +511,7 @@ export class QaapApiRequestError extends Error {
 
 async function readQaapApiError(response: Response, fallback: string): Promise<QaapApiRequestError> {
     const error = await QaapUserFacingErrors.fromResponse(response, fallback);
-    return new QaapApiRequestError(error.message, response.status, error.code);
+    return new QaapApiRequestError(error.message, response.status, error.code, error.details);
 }
 
 const workspaceJobTimedOut = (): string => nls.localize(

@@ -29,6 +29,7 @@ import {
     type QaapAgentTaskVerification,
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
+    isQaapAgentTaskFinished,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
@@ -94,7 +95,7 @@ import {
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
-import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
+import { assertQaiqConfiguredExtracted, checkQaiqProviderCredentialForOwner as checkQaiqProviderCredentialForOwnerExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
@@ -840,7 +841,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const bin = candidate.bin ?? normalized;
         return {
             // Lazy reader: a harness without a credential mapping never reads the owner's preferences.
-            settingsConnected: hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
+            settingsConnected: normalized === QAIQ_AGENT_ID
+                // QAIQ is ready only when the provider its turns route to has a key for this owner (an
+                // OpenAI key does not run an OpenRouter model): the same check that gates its spawn.
+                ? !checkQaiqProviderCredentialForOwnerExtracted(this, ownerLogin)
+                : hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
             probeBin: resolveAgentConnectionProbeHelper(normalized, bin) ? bin : undefined,
         };
     }
@@ -1120,8 +1125,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public assertQaiqConfigured(agentId: string, ownerLogin?: string): void {
-        assertQaiqConfiguredExtracted(this, agentId, ownerLogin);
+    public assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void {
+        assertQaiqConfiguredExtracted(this, agentId, ownerLogin, agentModel);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1696,6 +1701,23 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return markTaskBlockedExtracted(this, id);
     }
 
+    /**
+     * Links a finished standalone task to the model-fallback retry that replaced it, so clients can
+     * follow the chain to the attempt whose outcome counts. Persisted with the task index and
+     * announced as an `updated` event. Returns the patched task, or `undefined` when it is gone.
+     */
+    recordModelFallback(failedTaskId: string, fallbackTaskId: string): QaapAgentTask | undefined {
+        const task = this.tasks.get(failedTaskId);
+        if (!task || !isQaapAgentTaskFinished(task.state)) {
+            return undefined;
+        }
+        const linked: QaapAgentTask = { ...task, modelFallbackTaskId: fallbackTaskId };
+        this.tasks.set(failedTaskId, linked);
+        void this.persist();
+        this.onDidChangeTaskEmitter.fire({ type: 'updated', task: linked });
+        return linked;
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const previousState = this.tasks.get(id)?.state;
@@ -1748,6 +1770,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * drives the conversation — the loop sends one push at its end instead of one per turn.
      */
     suppressCompletionPushForConversation?: (conversationId: string) => boolean;
+
+    /**
+     * Optional gate wired by the standalone model-fallback service: resolves `true` when the finished
+     * task was replaced by a fallback retry, so a chain of attempts sends one push (the final outcome).
+     */
+    suppressCompletionPushForTask?: (task: QaapAgentTask) => boolean | Promise<boolean>;
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public async notifyCompletion(task: QaapAgentTask): Promise<void> {
