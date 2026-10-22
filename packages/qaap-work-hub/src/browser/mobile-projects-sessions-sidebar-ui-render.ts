@@ -11,6 +11,7 @@ import { expandConversationSlots, partitionAgentConversations } from '@theia/qaa
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
 import { collapseSessionsSidebarFailedDuplicates } from './mobile-projects-sessions-sidebar-ui-streaming';
+import { sidebarRowFailureKey } from './mobile-projects-project-rows-ui-timeline';
 import { readLocalRemovedProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-session-cache';
 import { withoutRemovedMobileProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dedup';
 import { qaapProjectRemovalIdentity } from '@theia/qaap-shared-core/lib/common/qaap-project-removal-identity';
@@ -260,7 +261,8 @@ export function tryPatchSessionsSidebarListExtracted(ctx: MobileProjectsSessions
         }
     }
     for (const entry of entries) {
-        const nextFingerprint = ctx.buildSidebarRowFingerprint(entry);
+        const failureKey = sidebarRowFailureKey(entry.summary);
+        const nextFingerprint = ctx.buildSidebarRowFingerprint(entry, failureKey);
         const existingRow = rowsByConversationId.get(entry.summary.id);
         if (!existingRow) {
             return false;
@@ -280,7 +282,8 @@ export function tryPatchSessionsSidebarListExtracted(ctx: MobileProjectsSessions
         // The in-place patch updates status and text, not the "+N failed" badge: recreate the row
         // when the number of collapsed failed duplicates changed.
         const failedDuplicatesChanged = (existingRow.dataset.qaapFailedDuplicates ?? '0') !== String(entry.failedDuplicateCount ?? 0);
-        if (!failedDuplicatesChanged && ctx.host.projectRowsUi.patchSidebarCompactTaskRow(existingRow, entry.project, task, entry.summary, {
+        const failureChanged = (existingRow.dataset.qaapFailureKey ?? '') !== failureKey;
+        if (!failedDuplicatesChanged && !failureChanged && ctx.host.projectRowsUi.patchSidebarCompactTaskRow(existingRow, entry.project, task, entry.summary, {
             isCurrent: ctx.host.transcriptOpenSummaryId === entry.summary.id,
         })) {
             existingRow.setAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, nextFingerprint);
@@ -333,7 +336,11 @@ export function stampSessionsSidebarRowFingerprintsExtracted(ctx: MobileProjects
     }
 }
 
-export function buildSidebarRowFingerprintExtracted(ctx: MobileProjectsSessionsSidebarUiContext, entry: SessionsSidebarConversationEntry,): string {
+export function buildSidebarRowFingerprintExtracted(
+    ctx: MobileProjectsSessionsSidebarUiContext,
+    entry: SessionsSidebarConversationEntry,
+    failureKey: string = sidebarRowFailureKey(entry.summary),
+): string {
     const task = ctx.host.conversationIndexUi.summaryToTaskView(entry.summary);
     const unread = ctx.host.conversationIndexUi.isConversationUnread(entry.summary);
     const visualStatusId = resolveQaapAgentTaskVisualStatus(task, entry.summary, unread).id;
@@ -343,6 +350,7 @@ export function buildSidebarRowFingerprintExtracted(ctx: MobileProjectsSessionsS
         visualStatusId,
         unread: isQaapAgentTaskUnreadReply(entry.summary, unread),
         failedDuplicateCount: entry.failedDuplicateCount ?? 0,
+        failureKey,
     });
 }
 

@@ -239,8 +239,8 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
-    public buildSidebarRowFingerprint(entry: SessionsSidebarConversationEntry,): string {
-        return buildSidebarRowFingerprintExtracted(this, entry);
+    public buildSidebarRowFingerprint(entry: SessionsSidebarConversationEntry, failureKey?: string): string {
+        return buildSidebarRowFingerprintExtracted(this, entry, failureKey);
     }
 
     /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */

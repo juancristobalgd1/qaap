@@ -476,7 +476,7 @@ export async function notifyCompletionExtracted(ctx: QaapAgentTaskRunnerContext,
 /** Push body for a paused (`interrupted`) task: cause-specific when known, neutral otherwise. */
 export function describePausedTaskForPush(title: string, pauseCause: QaapAgentTaskPauseCause | undefined): string {
     if (!pauseCause) {
-        return nls.localize('qaap/agentTask/pausedPush', '{0} was paused. Continue runs it again from your original request.', title);
+        return nls.localize('qaap/agentTask/pausedPush', '{0} was paused. Continue picks it up again.', title);
     }
     return nls.localize(
         'qaap/agentTask/pausedPushWithReason',

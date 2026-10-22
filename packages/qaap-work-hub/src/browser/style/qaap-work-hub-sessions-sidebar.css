@@ -2599,10 +2599,10 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   height: 22px;
   margin-left: auto;
   padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 45%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 10%, transparent);
-  color: var(--theia-errorForeground, #f14c4c);
+  background: color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 10%, transparent);
+  color: var(--theia-errorForeground, var(--theia-editorError-foreground));
   font-family: var(--theia-ui-font-family, sans-serif);
   font-size: 11px;
   font-weight: 600;

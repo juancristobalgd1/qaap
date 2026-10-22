@@ -814,21 +814,32 @@ export function localizeAgentTurnTimeoutMessage(cause: QaapAgentTurnTimeoutCause
     if (cause === 'approval_wait') {
         return nls.localize(
             'qaap/agentFailure/approvalWaitTimeout',
-            'Waited {0} hours for your approval. Continue runs it again from your original request.',
+            'Waited {0} hours for your approval. Continue picks it up again.',
             String(Math.max(1, Math.round(minutes / 60))),
         );
     }
     if (cause === 'idle') {
         return nls.localize(
             'qaap/agentFailure/idleTimeout',
-            'Timed out after {0} minutes without output. Continue runs it again from your original request.',
+            'Timed out after {0} minutes without output. Continue picks it up again.',
             rounded,
         );
     }
     return nls.localize(
         'qaap/agentFailure/maxDuration',
-        'Timed out at the {0}-minute task limit. Continue runs it again from your original request.',
+        'Timed out at the {0}-minute task limit. Continue picks it up again.',
         rounded,
+    );
+}
+
+/**
+ * Reason recorded when a backend restart (or a failed restart resume) killed a turn. Its work is
+ * kept, so it points at Continue (the row's one-tap recovery), like the timeout pauses.
+ */
+export function localizeAgentTurnRestartInterruptedMessage(): string {
+    return nls.localize(
+        'qaap/agentFailure/backendRestartInterrupted',
+        'The backend restarted while this turn was in progress, so it was interrupted. Continue picks it up again.',
     );
 }
 
@@ -849,6 +860,10 @@ function formatStoredAgentTurnTimeout(error: string): string | undefined {
     const approvalWait = STORED_APPROVAL_WAIT.exec(error);
     if (approvalWait) {
         return localizeAgentTurnTimeoutMessage('approval_wait', Number(approvalWait[1]) * 60);
+    }
+    // Older rows persisted "… Retry to continue." under a turn the row now offers Continue for.
+    if (RESTART_INTERRUPTED.test(error)) {
+        return localizeAgentTurnRestartInterruptedMessage();
     }
     return undefined;
 }

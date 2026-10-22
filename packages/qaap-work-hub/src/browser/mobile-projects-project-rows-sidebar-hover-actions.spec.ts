@@ -264,6 +264,29 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         expect(chip.disabled).to.equal(false);
     });
 
+    it('exposes the failure line key the sidebar patch compares, so a new reason or action rebuilds the row', () => {
+        const ui = createUi();
+        const render = (lastMessageError: string): HTMLElement => {
+            const failed = summary({ id: 'failed-key', status: 'failed', lastMessageRole: 'agent', lastMessageError });
+            return ui.createTaskItem(project, { ...task, id: failed.id, state: 'failed' as const }, undefined, failed, new Set(), { compact: true });
+        };
+        const retry = render('Bash exited with code 1.').dataset.qaapFailureKey;
+        const resume = render('Timed out after 15 minutes without output. Continue picks it up again.').dataset.qaapFailureKey;
+        expect(retry).to.match(/^retry:/);
+        expect(resume).to.match(/^continue:/);
+        expect(render('Network error.').dataset.qaapFailureKey).to.not.equal(retry);
+    });
+
+    it('keys a streaming row with a self-reported "Stopped:" preview as empty, so SSE ticks keep patching it in place', () => {
+        const ui = createUi();
+        const render = (lastMessagePreview: string): HTMLElement => {
+            const streaming = summary({ id: 'stopped-streaming', status: 'streaming', lastMessageRole: 'agent', lastMessagePreview });
+            return ui.createTaskItem(project, { ...task, id: streaming.id }, undefined, streaming, new Set(), { compact: true });
+        };
+        expect(render('Stopped: waiting on the build').dataset.qaapFailureKey).to.equal('');
+        expect(render('Stopped: waiting on the build, still going').dataset.qaapFailureKey).to.equal('');
+    });
+
     it('keeps the chip off rows being picked for Clear failed runs', () => {
         const failedSummary = summary({ id: 'failed-selection', status: 'failed', lastMessageRole: 'agent', lastMessageError: 'Bash exited with code 1.' });
         const row = createUi().createTaskItem(project, { ...task, id: failedSummary.id, state: 'failed' as const }, undefined, failedSummary, new Set(), {

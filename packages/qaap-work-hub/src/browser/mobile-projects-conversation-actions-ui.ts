@@ -399,7 +399,10 @@ export class MobileProjectsConversationActionsUi {
     /**
      * Resume an interrupted turn (server restart, turn watchdog): its work is kept, so instead of
      * re-running the turn like Retry, send the follow-up the failure copy asks for, with the agent
-     * model stored for the conversation (same as the verify report's follow-up).
+     * model stored for the conversation (same as the verify report's follow-up). No approval fields
+     * are sent on purpose: the server keeps the conversation's stored `autoApprove`,
+     * `interactionModeId`, `approvalPolicyId` and `toolApprovalRules` when a post omits them, so
+     * Continue runs under the policy the user last chose (pinned by a store spec).
      */
     async onContinueConversation(
         project: MobileProjectEntry,

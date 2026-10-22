@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { localizeAgentTurnRestartInterruptedMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -331,7 +332,7 @@ export function interruptStreamingTurnForRestartExtracted(ctx: QaapAgentConversa
         if (!conv || conv.status !== 'streaming') {
             return false;
         }
-        const reason = 'The backend restarted while this turn was in progress, so it was interrupted. Retry to continue.';
+        const reason = localizeAgentTurnRestartInterruptedMessage();
         const lastUser = [...conv.messages].reverse().find(message => message.role === 'user');
         const lastMessage = conv.messages[conv.messages.length - 1];
         const agentMessageId = lastMessage?.role === 'agent' ? lastMessage.id : undefined;

@@ -123,7 +123,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         const settled = store.get('zombie')!;
         expect(settled.status).to.equal('failed');
         const agentMessage = settled.messages.find(m => m.role === 'agent')!;
-        expect(agentMessage.error).to.equal('Timed out at the 180-minute task limit. Continue runs it again from your original request.');
+        expect(agentMessage.error).to.equal('Timed out at the 180-minute task limit. Continue picks it up again.');
     });
 
     it('keeps a 46-minute turn that is still streaming output alive', () => {
@@ -151,7 +151,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         // The task ends `interrupted` (Continue), not `cancelled` as a user stop would.
         expect(runner.cancelOptions).to.deep.equal([{ interrupt: true, pauseCause: { cause: 'idle', limitMinutes: 15 } }]);
         const agentMessage = store.get('quiet')!.messages.find(m => m.role === 'agent')!;
-        expect(agentMessage.error).to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
+        expect(agentMessage.error).to.equal('Timed out after 15 minutes without output. Continue picks it up again.');
     });
 
     it('leaves inactivity of a turn whose task is still live to the runner\'s own output timer', () => {
@@ -221,7 +221,7 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         const settled = store.get('settling')!;
         expect(settled.status).to.equal('failed');
         expect(settled.messages.find(m => m.role === 'agent')!.error)
-            .to.equal('Timed out after 15 minutes without output. Continue runs it again from your original request.');
+            .to.equal('Timed out after 15 minutes without output. Continue picks it up again.');
     });
 
     it('still pauses a turn left waiting on an approval for more than 24 hours', () => {
