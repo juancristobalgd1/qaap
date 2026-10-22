@@ -3,6 +3,8 @@ import type { QaapProjectBootstrapServiceContext } from './qaap-project-bootstra
 
 import type { PersistedEntry, QaapBootstrapStateChange } from './qaap-project-bootstrap-service';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import type URI from '@theia/core/lib/common/uri';
+import { isQaapWorkspaceRefreshReplayPhase } from '../common/qaap-project-bootstrap-phase';
 import { nls } from '@theia/core/lib/common/nls';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import {
@@ -316,6 +318,53 @@ export function setPhaseExtracted(ctx: QaapProjectBootstrapServiceContext, phase
         }
         ctx.stateEmitter.fire(ctx.buildStateChange(phase));
         ctx.syncHubSession(phase);
+        if (ctx.deferredWorkspaceRefresh && isQaapWorkspaceRefreshReplayPhase(phase)) {
+            scheduleDeferredWorkspaceRefreshReplayExtracted(ctx);
+        }
+}
+
+/** Delay before a deferred workspace refresh replays; matches the workspace refresh debounce. */
+export const DEFERRED_WORKSPACE_REFRESH_REPLAY_DELAY_MS = 450;
+
+/**
+ * Postpones a refresh of `root` that a dev run/install blocked. While the run is busy or failed it
+ * stays pending; `setPhase` schedules the replay on the next rest phase.
+ */
+export function deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx: QaapProjectBootstrapServiceContext, root: URI): void {
+        const pinned = ctx.hubPinnedWorkspaceRoot?.toString() === root.toString();
+        ctx.deferredWorkspaceRefresh = { root, projectId: pinned ? ctx.activeProjectId : undefined };
+        if (isQaapWorkspaceRefreshReplayPhase(ctx._phase)) {
+            scheduleDeferredWorkspaceRefreshReplayExtracted(ctx);
+        }
+}
+
+/**
+ * Never replays in the tick that reached the rest phase: `ready-to-run` after an install is followed
+ * at once by the chained `runDevServer()`, and a refresh there would reset the session under it.
+ */
+export function scheduleDeferredWorkspaceRefreshReplayExtracted(ctx: QaapProjectBootstrapServiceContext): void {
+        if (ctx.deferredWorkspaceRefreshTimer !== undefined) {
+            clearTimeout(ctx.deferredWorkspaceRefreshTimer);
+        }
+        ctx.deferredWorkspaceRefreshTimer = setTimeout(() => {
+            ctx.deferredWorkspaceRefreshTimer = undefined;
+            replayDeferredWorkspaceRefreshExtracted(ctx);
+        }, DEFERRED_WORKSPACE_REFRESH_REPLAY_DELAY_MS);
+}
+
+export function replayDeferredWorkspaceRefreshExtracted(ctx: QaapProjectBootstrapServiceContext): void {
+        const deferred = ctx.deferredWorkspaceRefresh;
+        if (!deferred || !isQaapWorkspaceRefreshReplayPhase(ctx._phase)) {
+            // A run started (or failed) again meanwhile; the next rest phase schedules the replay.
+            return;
+        }
+        ctx.deferredWorkspaceRefresh = undefined;
+        if (deferred.projectId !== undefined && ctx.hubPinnedWorkspaceRoot?.toString() === deferred.root.toString()) {
+            // A plain workspace refresh is ignored while Work Hub pins a clone; replay the pin itself.
+            void ctx.refreshFromProjectRoot(deferred.root, deferred.projectId);
+            return;
+        }
+        void ctx.refreshFromCurrentWorkspace();
 }
 
 export function syncHubSessionExtracted(ctx: QaapProjectBootstrapServiceContext, phase: QaapBootstrapPhase): void {

@@ -25,6 +25,7 @@ import {
     terminalOutputNeedsInstall,
 } from './qaap-project-bootstrap-dev-errors';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
+import { deferWorkspaceRefreshUntilDevRunRestsExtracted } from './qaap-project-bootstrap-service-tool-pills';
 import {
     QAAP_PREVIEW_TERMINAL_KIND,
 } from './qaap-preview-terminal-lifecycle';
@@ -86,6 +87,8 @@ export async function runInstallExtracted(ctx: QaapProjectBootstrapServiceContex
             }
             ctx._needsInstall = false;
             await ctx.refreshDescriptorAfterInstall();
+            // The install just re-detected the descriptor, so a refresh it blocked has nothing left to add.
+            ctx.deferredWorkspaceRefresh = undefined;
             ctx.persistPhase('ready-to-run');
             ctx.setPhase('ready-to-run');
             // Auto-chain to dev server when a runnable plan is available (single-package script or a
@@ -499,11 +502,17 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         const currentRootKey = ctx._descriptor?.rootUri.toString() ?? '';
         if (
             (ctx._phase === 'installing' || ctx._phase === 'starting')
+            && resource
             && nextRootKey.length > 0
             && nextRootKey === currentRootKey
         ) {
+            // Applying the refresh now would kill the live run; replay it once the run is at rest.
+            deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
             return;
         }
+        const refreshId = ++ctx.refreshGeneration;
+        // This refresh reads the descriptor afresh, so a replay postponed by an earlier run is moot.
+        ctx.deferredWorkspaceRefresh = undefined;
         ctx.resetBootstrapSessionForWorkspace();
         ctx.clearForwardedPorts();
         if (!resource) {
@@ -516,12 +525,19 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         const devRunGeneration = ctx.devRunGeneration;
         const installGeneration = ctx.installGeneration;
         const descriptor = await ctx.detector.detect(resource);
+        if (refreshId !== ctx.refreshGeneration) {
+            // A newer refresh started while `detect` was in flight, possibly for another root.
+            // It owns the session now; applying this older snapshot would overwrite it.
+            return;
+        }
         if ((devRunGeneration !== ctx.devRunGeneration || installGeneration !== ctx.installGeneration)
             && ctx._descriptor?.rootUri.toString() === nextRootKey) {
-            // A run/install for this same root started (or a newer refresh reset the session)
-            // while `detect` was in flight. Applying this older snapshot would flip `starting` back
-            // to `ready-to-run` under the live process: its "Local: http://…" line is then ignored,
-            // the preview never stages, and the server is orphaned on its port.
+            // A run/install for this same root started while `detect` was in flight. Applying this
+            // older snapshot would flip `starting` back to `ready-to-run` under the live process:
+            // its "Local: http://…" line is then ignored, the preview never stages, and the server
+            // is orphaned on its port. Replay the refresh once the run is at rest instead, so real
+            // descriptor changes (package.json, .qaap/preview.json, node_modules) still land.
+            deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
             return;
         }
         ctx._descriptor = descriptor;
@@ -532,7 +548,11 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         ctx._portConflictDetected = false;
         ctx._portConflictPort = undefined;
         if (!descriptor) {
-            ctx._missingDescriptorHint = await ctx.getMissingDescriptorHint(resource);
+            const hint = await ctx.getMissingDescriptorHint(resource);
+            if (refreshId !== ctx.refreshGeneration) {
+                return;
+            }
+            ctx._missingDescriptorHint = hint;
             ctx.setPhase('idle');
             return;
         }

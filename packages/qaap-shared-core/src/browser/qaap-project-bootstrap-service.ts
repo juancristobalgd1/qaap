@@ -59,6 +59,13 @@ import { buildAndStartPreviewExtracted, cancelActivePreviewLaunchExtracted, focu
 import { adoptExistingPreviewIdentityExtracted, attachTerminalOsProcessIdExtracted, claimDevPreviewPortExtracted, collectProbePortsExtracted, extractPortExtracted, healPreviewClaimToListeningPortExtracted, markPortOpenedExtracted, mayAutoOpenPreviewNowExtracted, monitorPreviewProcessLifetimeExtracted, openPrimaryPreviewWhenReadyExtracted, probeBelongsToActiveProjectExtracted, recordForwardedPortExtracted, resolvePrimaryPreviewTargetExtracted, scanDevOutputExtracted, scanForDevUrlExtracted, scheduleDevPreviewFallbackExtracted, tryAttachToExistingServerExtracted } from './qaap-project-bootstrap-service-timeline';
 import { beginDevRunExtracted, buildStateChangeExtracted, cancelDevPreviewFallbacksExtracted, cancelDevPreviewHealthMonitorExtracted, cancelDevPreviewWarmupExtracted, cleanupDevTerminalExtracted, clearForwardedPortsExtracted, persistPhaseExtracted, readAllPersistedExtracted, registerDevTerminalForConversationExtracted, releaseActivePreviewExtracted, releaseDevTerminalForConversationExtracted, releasePreviewForConversationExtracted, resetBootstrapSessionForWorkspaceExtracted, scheduleDevPreviewWarmupExtracted, setPhaseExtracted, startDevPreviewHealthMonitorExtracted, syncHubSessionExtracted, waitForExitExtracted, warmupDevPreviewExtracted } from './qaap-project-bootstrap-service-tool-pills';
 
+/** Workspace refresh postponed until the dev run that blocked it is back at rest. */
+export interface QaapDeferredWorkspaceRefresh {
+    readonly root: URI;
+    /** Set when Work Hub pinned `root`; the replay must then go through `refreshFromProjectRoot`. */
+    readonly projectId?: string;
+}
+
 /** Storage key used to remember per-workspace user intent (skip / installed). */
 export const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
 
@@ -316,6 +323,20 @@ export class QaapProjectBootstrapService {
     public installGeneration = 0;
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public refreshDebounceTimer: number | undefined;
+    /**
+     * Invalidates an in-flight workspace refresh once a newer one starts, whatever its root.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public refreshGeneration = 0;
+    /**
+     * A workspace refresh dropped because a dev run/install for the same root was in flight.
+     * `setPhase` replays it once the run is back at rest (stopped, retried, ...), so descriptor
+     * changes are not lost; a failed run keeps it pending so its diagnosis stays on screen.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public deferredWorkspaceRefresh: QaapDeferredWorkspaceRefresh | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public deferredWorkspaceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
     /**
      * Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000).
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.

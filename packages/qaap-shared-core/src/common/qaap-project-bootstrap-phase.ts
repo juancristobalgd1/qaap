@@ -29,3 +29,11 @@ export function normalizePersistedBootstrapPhase(
             return phase;
     }
 }
+
+/**
+ * Phases in which a workspace refresh deferred by a dev run may replay. Failed phases are left out:
+ * replaying there would reset the session and wipe the failure the card is showing.
+ */
+export function isQaapWorkspaceRefreshReplayPhase(phase: QaapPersistedBootstrapPhase): boolean {
+    return phase === 'ready-to-run' || phase === 'detected' || phase === 'idle';
+}

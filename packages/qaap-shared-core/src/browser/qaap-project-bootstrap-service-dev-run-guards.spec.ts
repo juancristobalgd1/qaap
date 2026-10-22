@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as sinon from 'sinon';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import URI from '@theia/core/lib/common/uri';
 import type { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
@@ -38,6 +39,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
     let disableJSDOM: (() => void) | undefined;
     let activity: typeof import('./qaap-project-bootstrap-service-activity');
     let streaming: typeof import('./qaap-project-bootstrap-service-streaming');
+    let toolPills: typeof import('./qaap-project-bootstrap-service-tool-pills');
     let describeDevProcessExit: typeof import('./qaap-project-bootstrap-dev-errors').describeDevProcessExit;
 
     before(() => {
@@ -53,6 +55,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
         } as NodeJS.Module;
         activity = require('./qaap-project-bootstrap-service-activity');
         streaming = require('./qaap-project-bootstrap-service-streaming');
+        toolPills = require('./qaap-project-bootstrap-service-tool-pills');
         ({ describeDevProcessExit } = require('./qaap-project-bootstrap-dev-errors'));
     });
 
@@ -519,44 +522,102 @@ describe('QaapProjectBootstrapService dev run guards', () => {
 
     describe('workspace refresh racing a dev run', () => {
         const ROOT = URI.fromFilePath(PROJECT_CWD);
-        const DESCRIPTOR = { name: 'app', rootUri: ROOT, nodeModulesPresent: true, apps: [] };
+        const OTHER_ROOT = URI.fromFilePath('/workspace/other');
+        const DESCRIPTOR = { name: 'app', rootUri: ROOT, nodeModulesPresent: true, apps: [], packageManager: 'npm' };
+        const OTHER_DESCRIPTOR = { name: 'other', rootUri: OTHER_ROOT, nodeModulesPresent: true, apps: [] };
+        const REPLAY_DELAY_MS = 450;
 
-        const refreshContext = (detect: () => Promise<unknown>): {
-            ctx: QaapProjectBootstrapServiceContext; phases: string[];
-        } => {
+        let clock: sinon.SinonFakeTimers;
+        beforeEach(() => {
+            clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        });
+        afterEach(() => clock.restore());
+
+        interface RefreshHarness {
+            ctx: QaapProjectBootstrapServiceContext;
+            phases: string[];
+            /** `resetBootstrapSessionForWorkspace` calls, i.e. refreshes that went through. */
+            resets(): number;
+            workspaceRefreshes(): number;
+            projectRootRefreshes: Array<[string, string]>;
+            /** Resolves the oldest pending `detect` call for `root`. */
+            resolveDetect(root: URI, descriptor: unknown): void;
+        }
+
+        /** Bootstrap session wired to the real `setPhase`, so deferred replays run as in the service. */
+        const refreshContext = (immediate?: unknown, overrides: Record<string, unknown> = {}): RefreshHarness => {
             const phases: string[] = [];
-            const state = {
+            const pending = new Map<string, Array<(descriptor: unknown) => void>>();
+            const projectRootRefreshes: Array<[string, string]> = [];
+            let resets = 0;
+            let workspaceRefreshes = 0;
+            const state: Record<string, unknown> & { devRunGeneration: number; installGeneration: number } = {
                 _phase: 'ready-to-run',
                 _descriptor: DESCRIPTOR,
+                _error: undefined,
                 devRunGeneration: 1,
                 installGeneration: 1,
+                refreshGeneration: 0,
+                deferredWorkspaceRefresh: undefined,
+                deferredWorkspaceRefreshTimer: undefined,
+                hubPinnedWorkspaceRoot: undefined,
+                activeProjectId: undefined,
+                activePreviewConversationId: 'conversation-1',
                 resetBootstrapSessionForWorkspace: () => {
+                    resets++;
                     state.devRunGeneration++;
                     state.installGeneration++;
+                    state.activePreviewConversationId = 'default';
                 },
                 clearForwardedPorts: () => undefined,
-                detector: { detect },
+                detector: {
+                    detect: (root: URI) => immediate !== undefined ? Promise.resolve(immediate) : new Promise(resolve => {
+                        const key = root.toString();
+                        pending.set(key, [...(pending.get(key) ?? []), resolve]);
+                    }),
+                },
                 readPersisted: () => undefined,
                 scheduleDevPreviewWarmup: () => undefined,
+                refreshFromCurrentWorkspace: async () => {
+                    workspaceRefreshes++;
+                },
+                refreshFromProjectRoot: async (root: URI, projectId: string) => {
+                    projectRootRefreshes.push([root.toString(), projectId]);
+                },
+                startDevPreviewHealthMonitor: () => undefined,
+                cancelDevPreviewHealthMonitor: () => undefined,
+                stateEmitter: { fire: () => undefined },
+                buildStateChange: () => ({}),
+                syncHubSession: () => undefined,
                 setPhase: (phase: string) => {
                     phases.push(phase);
-                    state._phase = phase;
+                    toolPills.setPhaseExtracted(ctx, phase as never);
                 },
+                ...overrides,
             };
-            return { ctx: state as unknown as QaapProjectBootstrapServiceContext, phases };
+            const ctx = state as unknown as QaapProjectBootstrapServiceContext;
+            return {
+                ctx,
+                phases,
+                resets: () => resets,
+                workspaceRefreshes: () => workspaceRefreshes,
+                projectRootRefreshes,
+                resolveDetect: (root, descriptor) => pending.get(root.toString())!.shift()!(descriptor),
+            };
+        };
+
+        /** What runDevServer → startDevServer does to the session. */
+        const startRun = (ctx: QaapProjectBootstrapServiceContext): void => {
+            ctx.devRunGeneration++;
+            ctx.setPhase('starting');
         };
 
         it('keeps a dev run that started while detection was in flight', async () => {
-            let resolveDetect: (descriptor: unknown) => void = () => undefined;
-            const { ctx, phases } = refreshContext(() => new Promise(resolve => {
-                resolveDetect = resolve;
-            }));
+            const { ctx, phases, resolveDetect } = refreshContext();
 
             const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
-            // runDevServer → startDevServer bumps the run generation and enters `starting`.
-            ctx.devRunGeneration++;
-            ctx.setPhase('starting');
-            resolveDetect({ ...DESCRIPTOR });
+            startRun(ctx);
+            resolveDetect(ROOT, { ...DESCRIPTOR });
             await refresh;
 
             expect(phases).to.deep.equal(['starting']);
@@ -564,11 +625,205 @@ describe('QaapProjectBootstrapService dev run guards', () => {
         });
 
         it('applies the detected descriptor when nothing started meanwhile', async () => {
-            const { ctx, phases } = refreshContext(async () => ({ ...DESCRIPTOR }));
+            const { ctx, phases } = refreshContext({ ...DESCRIPTOR });
 
             await streaming.refreshFromRootExtracted(ctx, ROOT);
 
             expect(phases).to.deep.equal(['ready-to-run']);
+            expect(ctx.deferredWorkspaceRefresh).to.equal(undefined);
+        });
+
+        it('drops a slower refresh of another root once a newer refresh started', async () => {
+            const { ctx, phases, resolveDetect } = refreshContext();
+            ctx._descriptor = undefined;
+
+            const older = streaming.refreshFromRootExtracted(ctx, OTHER_ROOT);
+            const newer = streaming.refreshFromRootExtracted(ctx, ROOT);
+            resolveDetect(ROOT, { ...DESCRIPTOR });
+            await newer;
+            resolveDetect(OTHER_ROOT, { ...OTHER_DESCRIPTOR });
+            await older;
+
+            expect((ctx._descriptor as { name: string } | undefined)?.name).to.equal('app');
+            expect(phases).to.deep.equal(['ready-to-run']);
+        });
+
+        it('defers a snapshot dropped for a live run instead of applying it', async () => {
+            const { ctx, resolveDetect, workspaceRefreshes } = refreshContext();
+            const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
+            startRun(ctx);
+            resolveDetect(ROOT, { ...DESCRIPTOR, nodeModulesPresent: false });
+            await refresh;
+            clock.tick(REPLAY_DELAY_MS);
+
+            expect(ctx.deferredWorkspaceRefresh?.root.toString()).to.equal(ROOT.toString());
+            expect(workspaceRefreshes()).to.equal(0);
+        });
+
+        it('keeps the failure on screen when the run failed before detection resolved', async () => {
+            const { ctx, phases, resolveDetect, workspaceRefreshes } = refreshContext();
+            const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
+            startRun(ctx);
+            ctx._error = 'Build required before start.';
+            ctx.setPhase('run-failed');
+            resolveDetect(ROOT, { ...DESCRIPTOR });
+            await refresh;
+            clock.tick(REPLAY_DELAY_MS);
+
+            expect(workspaceRefreshes()).to.equal(0);
+            expect(ctx.deferredWorkspaceRefresh).to.not.equal(undefined);
+            expect(ctx._error).to.equal('Build required before start.');
+            expect(phases).to.deep.equal(['starting', 'run-failed']);
+        });
+
+        it('replays the dropped snapshot after the debounce when the run is already back at rest', async () => {
+            const { ctx, resolveDetect, workspaceRefreshes } = refreshContext();
+            const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
+            startRun(ctx);
+            // Stopped by the user while `detect` was still in flight.
+            ctx.setPhase('ready-to-run');
+            resolveDetect(ROOT, { ...DESCRIPTOR });
+            await refresh;
+
+            expect(workspaceRefreshes()).to.equal(0);
+            clock.tick(REPLAY_DELAY_MS);
+            expect(workspaceRefreshes()).to.equal(1);
+            expect(ctx.deferredWorkspaceRefresh).to.equal(undefined);
+        });
+
+        it('defers a refresh of the same root that arrives while the run is starting', async () => {
+            const { ctx, phases, resets } = refreshContext({ ...DESCRIPTOR });
+            startRun(ctx);
+
+            await streaming.refreshFromRootExtracted(ctx, ROOT);
+
+            expect(phases).to.deep.equal(['starting']);
+            expect(resets()).to.equal(0);
+            expect(ctx.deferredWorkspaceRefresh?.root.toString()).to.equal(ROOT.toString());
+        });
+
+        it('drops a pending replay once a newer refresh goes through', async () => {
+            const { ctx, workspaceRefreshes } = refreshContext({ ...OTHER_DESCRIPTOR });
+            ctx.deferredWorkspaceRefresh = { root: ROOT };
+            ctx.setPhase('run-failed');
+
+            await streaming.refreshFromRootExtracted(ctx, OTHER_ROOT);
+            clock.tick(REPLAY_DELAY_MS);
+
+            expect(ctx.deferredWorkspaceRefresh).to.equal(undefined);
+            expect(workspaceRefreshes()).to.equal(0);
+        });
+
+        it('replays a Work Hub pinned root through refreshFromProjectRoot, after the debounce', async () => {
+            const { ctx, resolveDetect, workspaceRefreshes, projectRootRefreshes } = refreshContext();
+            ctx.hubPinnedWorkspaceRoot = ROOT;
+            ctx.activeProjectId = 'project-1';
+            const refresh = streaming.refreshFromRootExtracted(ctx, ROOT);
+            startRun(ctx);
+            ctx.setPhase('ready-to-run');
+            resolveDetect(ROOT, { ...DESCRIPTOR });
+            await refresh;
+
+            expect(projectRootRefreshes).to.deep.equal([]);
+            clock.tick(REPLAY_DELAY_MS);
+            // A plain workspace refresh would be ignored by the hub pin and lose the update.
+            expect(workspaceRefreshes()).to.equal(0);
+            expect(projectRootRefreshes).to.deep.equal([[ROOT.toString(), 'project-1']]);
+        });
+
+        it('does not reset the session between a successful install and its chained dev run', async () => {
+            const devRuns: unknown[] = [];
+            const harness = refreshContext({ ...DESCRIPTOR }, {
+                _descriptor: { ...DESCRIPTOR, nodeModulesPresent: false },
+                _needsInstall: false,
+                resolveInstallPlan: () => ({ command: 'npm install', cwd: ROOT }),
+                spawnCommandWithRetry: async () => ({ isDisposed: false }),
+                waitForExit: async () => 0,
+                refreshDescriptorAfterInstall: async () => undefined,
+                persistPhase: () => undefined,
+                resolveDevPlan: () => PLAN,
+            });
+            const { ctx, phases, resets, workspaceRefreshes, projectRootRefreshes } = harness;
+            ctx.hubPinnedWorkspaceRoot = ROOT;
+            ctx.activeProjectId = 'project-1';
+            (ctx as unknown as { runDevServer(): Promise<void> }).runDevServer = async () => {
+                devRuns.push({ conversation: ctx.activePreviewConversationId, resets: resets() });
+                startRun(ctx);
+            };
+
+            const install = streaming.runInstallExtracted(ctx);
+            // A Work Hub refresh of the same project lands while `npm install` runs.
+            await streaming.refreshFromRootExtracted(ctx, ROOT);
+            expect(ctx.deferredWorkspaceRefresh).to.not.equal(undefined);
+            await install;
+            clock.tick(REPLAY_DELAY_MS);
+
+            expect(phases).to.deep.equal(['installing', 'ready-to-run', 'starting']);
+            expect(devRuns).to.deep.equal([{ conversation: 'conversation-1', resets: 0 }]);
+            expect(resets()).to.equal(0);
+            expect(ctx.activePreviewConversationId).to.equal('conversation-1');
+            expect(ctx.deferredWorkspaceRefresh).to.equal(undefined);
+            expect(workspaceRefreshes()).to.equal(0);
+            expect(projectRootRefreshes).to.deep.equal([]);
+        });
+
+        describe('setPhase replay of a deferred refresh', () => {
+            const deferred = (): RefreshHarness => {
+                const harness = refreshContext();
+                harness.ctx._phase = 'starting';
+                harness.ctx.deferredWorkspaceRefresh = { root: ROOT };
+                return harness;
+            };
+
+            it('waits while the server is still up', () => {
+                const { ctx, workspaceRefreshes } = deferred();
+
+                ctx.setPhase('running');
+                clock.tick(REPLAY_DELAY_MS);
+
+                expect(workspaceRefreshes()).to.equal(0);
+                expect(ctx.deferredWorkspaceRefresh).to.not.equal(undefined);
+            });
+
+            it('keeps the refresh pending through a failed run so its error stays visible', () => {
+                const { ctx, workspaceRefreshes } = deferred();
+                ctx._error = 'The dev server ran out of memory.';
+
+                ctx.setPhase('run-failed');
+                ctx.setPhase('install-failed');
+                clock.tick(REPLAY_DELAY_MS);
+
+                expect(workspaceRefreshes()).to.equal(0);
+                expect(ctx.deferredWorkspaceRefresh).to.not.equal(undefined);
+                expect(ctx._error).to.equal('The dev server ran out of memory.');
+            });
+
+            it('replays once, after the debounce, when the failed run goes back to ready-to-run', () => {
+                const { ctx, workspaceRefreshes } = deferred();
+                ctx.setPhase('run-failed');
+
+                ctx.setPhase('ready-to-run');
+                ctx.setPhase('ready-to-run');
+                expect(workspaceRefreshes()).to.equal(0);
+                clock.tick(REPLAY_DELAY_MS);
+
+                expect(workspaceRefreshes()).to.equal(1);
+                expect(ctx.deferredWorkspaceRefresh).to.equal(undefined);
+            });
+
+            it('stays pending when a run starts again before the debounce fires', () => {
+                const { ctx, workspaceRefreshes } = deferred();
+
+                ctx.setPhase('ready-to-run');
+                startRun(ctx);
+                clock.tick(REPLAY_DELAY_MS);
+                expect(workspaceRefreshes()).to.equal(0);
+                expect(ctx.deferredWorkspaceRefresh).to.not.equal(undefined);
+
+                ctx.setPhase('ready-to-run');
+                clock.tick(REPLAY_DELAY_MS);
+                expect(workspaceRefreshes()).to.equal(1);
+            });
         });
     });
 });
