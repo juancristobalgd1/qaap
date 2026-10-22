@@ -9,6 +9,8 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { MobileProjectsHomeUi } from './mobile-projects-home-ui';
 import { MobileProjectsHomeHubUi, type MobileProjectsHomeHubHost } from './mobile-projects-home-hub-ui';
 
 disableImportJSDOM();
@@ -89,5 +91,59 @@ describe('MobileProjectsHomeHubUi.resolveHomePinnedProject', () => {
 
         host.projects = [project('github:alice/OpenDots', 'OpenDots')];
         expect(ui.resolveHomePinnedProject()?.name).to.equal('OpenDots');
+    });
+});
+
+describe('MobileProjectsHomeHubUi.buildHomeSnapshot statsSettled', () => {
+
+    useSuiteJSDOM();
+
+    function createHost(state: { inboxLoaded: boolean; tasksPending: boolean }): MobileProjectsHomeHubHost {
+        return {
+            projects: [],
+            inboxPullRequests: [],
+            get inboxPullRequestsLoaded(): boolean { return state.inboxLoaded; },
+            get tasksFirstLoadPending(): boolean { return state.tasksPending; },
+            chatAgentService: undefined,
+            collectTeamMembersForHub: () => [],
+            collectTeamApprovalItems: () => [],
+            countTasksAttention: () => ({ needsYou: 0, running: 0 }),
+            missionControlHubUi: { collectItems: () => [] },
+            conversationIndexUi: { conversationsForProject: () => [], localChatsForProject: () => [] },
+        } as unknown as MobileProjectsHomeHubHost;
+    }
+
+    it('stays unsettled until both the inbox and the first task load landed, then repaints the checklist', () => {
+        const state = { inboxLoaded: true, tasksPending: true };
+        const ui = new MobileProjectsHomeHubUi(createHost(state));
+        const home = new MobileProjectsHomeUi({
+            getProject: () => undefined, getWorkspaceActivity: () => '', getWorkspaceStatus: () => 'idle',
+            formatRelativeTime: () => '', onNavigate: () => undefined, onCloneProject: () => undefined,
+            onOpenProject: () => undefined, onOpenRecent: () => undefined, onOpenAttention: () => undefined,
+            onQuickAction: () => undefined,
+        });
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed');
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedCompleted');
+
+        const first = ui.buildHomeSnapshot();
+        expect(first.statsSettled).to.equal(false);
+        const early = document.createElement('div');
+        home.renderDashboard(early, first);
+        expect(early.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
+
+        state.tasksPending = false; // tasks finish after the inbox
+        const settled = ui.buildHomeSnapshot();
+        expect(settled.statsSettled).to.equal(true);
+        const later = document.createElement('div');
+        home.renderDashboard(later, settled);
+        expect(later.querySelector('.theia-mobile-work-hub-home-getting-started')).to.not.equal(null);
+    });
+
+    it('keeps Home settled after the Review tab resets inboxPullRequestsLoaded', () => {
+        const state = { inboxLoaded: true, tasksPending: false };
+        const ui = new MobileProjectsHomeHubUi(createHost(state));
+        expect(ui.buildHomeSnapshot().statsSettled).to.equal(true);
+        state.inboxLoaded = false; // entering Review
+        expect(ui.buildHomeSnapshot().statsSettled).to.equal(true);
     });
 });

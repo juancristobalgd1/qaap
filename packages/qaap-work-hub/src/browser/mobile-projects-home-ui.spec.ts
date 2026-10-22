@@ -174,6 +174,17 @@ describe('MobileProjectsHomeUi', () => {
         window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed.alice');
     });
 
+    it('honours a flag written before the account was known', () => {
+        const ui = new MobileProjectsHomeUi(createDeps());
+        const first = document.createElement('div');
+        ui.renderDashboard(first, snapshot());
+        [...first.querySelectorAll('button')].find(button => button.textContent === 'Dismiss')?.click();
+        const withAccount = document.createElement('div');
+        ui.renderDashboard(withAccount, { ...snapshot(), accountKey: 'carol' });
+        expect(withAccount.querySelector('.theia-mobile-work-hub-home-getting-started')).to.equal(null);
+        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed');
+    });
+
     it('shows attention, workspaces, and continue sections once work exists', () => {
         const demo = project('demo', 'Demo');
         const deps = createDeps([demo]);

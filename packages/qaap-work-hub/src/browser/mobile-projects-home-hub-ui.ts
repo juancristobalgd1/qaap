@@ -75,6 +75,9 @@ export class MobileProjectsHomeHubUi {
      */
     protected homeFallbackProject: QaapDesktopIdeHubProject | undefined;
 
+    /** True once the PR inbox has loaded at least once in this session. */
+    protected inboxEverLoaded = false;
+
     constructor(protected readonly host: MobileProjectsHomeHubHost) { }
 
     refreshHomeHubData(forceRender: boolean): void {
@@ -91,6 +94,9 @@ export class MobileProjectsHomeHubUi {
     }
 
     buildHomeSnapshot(): WorkHubHomeSnapshot {
+        // `inboxPullRequestsLoaded` is reset whenever the Review tab is entered; latch it so Home does not
+        // fall back to "unsettled" (and hide the checklist) after a visit there.
+        this.inboxEverLoaded = this.inboxEverLoaded || this.host.inboxPullRequestsLoaded;
         const members = this.host.collectTeamMembersForHub();
         const approvals = this.host.collectTeamApprovalItems(members);
         const { needsYou, running } = this.host.countTasksAttention();
@@ -185,7 +191,7 @@ export class MobileProjectsHomeHubUi {
             attentionItems,
             recentItems: buildWorkHubHomeRecentItems(recentSources, 5),
             pinnedProjectIds: selectWorkHubHomePinnedProjectIds(this.host.projects, 4),
-            statsSettled: this.host.inboxPullRequestsLoaded && !this.host.tasksFirstLoadPending,
+            statsSettled: this.inboxEverLoaded && !this.host.tasksFirstLoadPending,
             accountKey: readQaapAuthUser()?.login?.trim() || undefined,
         };
     }
