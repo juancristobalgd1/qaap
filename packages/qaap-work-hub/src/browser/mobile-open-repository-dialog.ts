@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { nls } from '@theia/core/lib/common/nls';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/qaap-github-repository-input';
@@ -510,7 +511,7 @@ export class MobileOpenRepositoryDialog {
         try {
             next = await this.service.finishGithubRepositoryImport(result, true);
         } catch (err) {
-            this.progressError.textContent = err instanceof Error ? err.message : String(err);
+            this.progressError.textContent = QaapUserFacingErrors.toMessageAndLog(err);
             this.progressError.hidden = false;
             return;
         }
@@ -651,7 +652,7 @@ export class MobileOpenRepositoryDialog {
             this.repositories = await this.service.listGithubRepositories();
         } catch (err) {
             this.repositories = [];
-            this.loadError = err instanceof Error ? err.message : String(err);
+            this.loadError = QaapUserFacingErrors.toMessageAndLog(err);
         }
         this.loading = false;
         this.list.classList.remove('theia-mod-loading');

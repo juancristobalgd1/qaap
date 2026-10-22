@@ -5,12 +5,15 @@
 
 import { expect } from 'chai';
 import * as sinon from 'sinon';
+import { QaapPlanLimit } from '../common/qaap-plan-limit';
 import {
     createQaapGithubRepository,
     deleteQaapGithubRepository,
     fetchQaapGithubPullRequests,
     fetchQaapProjectSessions,
     openQaapGithubRepository,
+    QaapApiRequestError,
+    startQaapGithubWorkspaceJob,
 } from './qaap-github-auth-client';
 
 describe('qaap-github-auth-client timeouts', () => {
@@ -130,5 +133,37 @@ describe('qaap-github-auth-client timeouts', () => {
         } finally {
             clock.restore();
         }
+    });
+});
+
+describe('qaap-github-auth-client API error mapping', () => {
+    const originalFetch = globalThis.fetch;
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    it('maps the repo-limit 403 body to a plan-limit error with a readable message', async () => {
+        // Shape of respondBillingQuotaError in qaap-github-oauth-endpoint.
+        const body = JSON.stringify({
+            error: 'plan_repo_limit',
+            code: 'plan_limit',
+            reason: 'repo_limit',
+            planId: 'starter',
+            limit: 3,
+            message: 'Your Starter plan allows 3 active repositories.',
+        });
+        globalThis.fetch = (async () => new Response(body, { status: 403 })) as typeof fetch;
+        let error: unknown;
+        try {
+            await startQaapGithubWorkspaceJob({ repository: 'a/b' } as never);
+        } catch (err) {
+            error = err;
+        }
+        expect(error).to.be.instanceOf(QaapApiRequestError);
+        const apiError = error as QaapApiRequestError;
+        expect(QaapPlanLimit.isPlanLimitCode(apiError.code)).to.equal(true);
+        expect(apiError.status).to.equal(403);
+        expect(apiError.message).to.equal('Your Starter plan allows 3 active repositories.');
+        expect(apiError.details).to.equal(body);
     });
 });

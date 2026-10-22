@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_GIT_REVIEW_API_PATH,
@@ -88,7 +89,7 @@ export class MobileProjectsTranscriptHistoryUi {
                 cache: 'no-store',
             });
             if (!response.ok) {
-                throw new Error(await response.text());
+                throw await QaapUserFacingErrors.fromResponse(response);
             }
             const payload = await response.json() as QaapGitHistoryResponse;
             if (generation !== this.host.transcriptHistoryLoadGeneration || this.host.transcriptHistoryRoot !== root || !panel.isConnected) {

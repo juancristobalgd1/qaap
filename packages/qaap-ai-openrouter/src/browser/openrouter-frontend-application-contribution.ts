@@ -75,7 +75,7 @@ export class OpenRouterFrontendApplicationContribution implements FrontendApplic
     /**
      * Strip the `openrouter/` prefix from preference entries that already include it. Users frequently
      * copy ids straight from the model dropdown, which renders the full namespaced id (e.g.
-     * `openrouter/nvidia/nemotron-3-super-120b-a12b:free`). Without this normalization we'd send the
+     * `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free`). Without this normalization we'd send the
      * prefixed slug to the OpenRouter API and get `400 ... is not a valid model ID`.
      */
     protected normalizeModelIds(ids: string[]): string[] {

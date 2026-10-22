@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     buildCreateAgentTaskBody,
@@ -233,7 +234,7 @@ export class MobileAgentTaskComposer {
                 { kind: 'success', duration: 1400 }
             );
         } catch (error) {
-            this.errorEl.textContent = error instanceof Error ? error.message : String(error);
+            this.errorEl.textContent = QaapUserFacingErrors.toMessageAndLog(error);
         } finally {
             this.busy = false;
             this.renderState();

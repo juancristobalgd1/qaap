@@ -28,8 +28,9 @@ export const OPENROUTER_EXCLUDED_MODEL_SLUGS: ReadonlySet<string> = new Set([
     'tencent/hy3:free',
     'tencent/hy3',
     // Hermes catalog copies that 404 on OpenRouter (`No endpoints found`) as of 2026-08-17.
+    // (`nvidia/nemotron-3-ultra-550b-a55b:free` was here until its Nvidia endpoint came back live;
+    // it is the QAIQ default since 2026-10-21.)
     'poolside/laguna-m.1:free',
-    'nvidia/nemotron-3-ultra-550b-a55b:free',
     'inclusionai/ring-2.6-1t:free',
     'openrouter/elephant-alpha',
     'openrouter/pareto-code',
@@ -55,16 +56,29 @@ export const OPENROUTER_DEFAULT_FREE_MODELS: readonly string[] = [
     // When a default below starts 404'ing, replace it via the `ai-features.openrouter.openrouterModels`
     // preference. Any `:free` slug keeps the 🆓 badge automatically (the detector is structural).
 
-    // Verified live (free endpoint status 0, tool calling supported) on 2026-09-24.
-    // 1M context — best fit for the Coder agent's large system prompt.
-    'nvidia/nemotron-3-super-120b-a12b:free',
-    // 262k context — modern, strong general model.
+    // Verified live on 2026-10-21 (`/api/v1/models/<id>/endpoints`: free provider `status: 0`,
+    // `tools` in `supported_parameters`); check again with `node scripts/qaap-openrouter-free-model-health.mjs`.
+    // The head is the QAIQ default (Settings with an OpenRouter key and no explicit pick, and
+    // `resolveQaiqEnvFallbackModel`); the rest is the same-vendor fallback chain, which only tries the
+    // first few entries (`MAX_AGENT_MODEL_FALLBACK_ATTEMPTS`), so the first four come from four
+    // different upstream providers: one provider outage cannot take the whole chain down.
+    //
+    // Removed 2026-10-21: `nvidia/nemotron-3-super-120b-a12b:free` (its only endpoint, Nvidia, went
+    // `status: -5` and answers 404 "Function … Not found for account") and `qwen/qwen3.8-27b:free`
+    // (no endpoints left). Stored picks of either keep working through the fallback chain.
+
+    // Nvidia — 1M context, largest free Nemotron; best fit for the agent's large system prompt.
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    // MiniMax — 1M context, agentic/tool-use tuned.
+    'minimax/minimax-m3.1-flash:free',
+    // Google AI Studio — 262k context, strong general model.
     'google/gemma-4-31b-it:free',
-    'qwen/qwen3.8-27b:free',
-    'google/gemma-4-26b-a4b-it:free',
-    // Coding-focused free endpoints.
+    // Poolside — coding-focused.
     'poolside/laguna-s-2.1:free',
+    // Cohere — coding-focused.
     'cohere/north-mini-code:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'nvidia/nemotron-3.5-lightning:free',
 ];
 
 export function normalizeOpenRouterModelSlug(raw: string): string {

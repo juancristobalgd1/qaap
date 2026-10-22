@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import {
     fetchQaapGithubPullRequestDetail,
     searchQaapGithubPullRequests,
@@ -384,7 +385,7 @@ export class MobileProjectsPullRequestsSidebarUi {
             if (this.searchLists.get(key) !== list) {
                 return;
             }
-            list.error = err instanceof Error ? err.message : String(err);
+            list.error = QaapUserFacingErrors.toMessageAndLog(err);
         } finally {
             if (this.searchLists.get(key) === list) {
                 list.loading = false;

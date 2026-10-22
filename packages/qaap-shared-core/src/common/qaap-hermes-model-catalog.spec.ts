@@ -40,7 +40,7 @@ describe('listHermesNativeModels', () => {
         expect(hermesNativeModelOption('tencent/hy3:free')).to.equal(undefined);
         expect(hermesNativeModelOption('deepseek/deepseek-v4-flash:free')).to.equal(undefined);
         expect(hermesNativeModelOption('poolside/laguna-m.1:free')).to.equal(undefined);
-        expect(hermesNativeModelOption('nvidia/nemotron-3-ultra-550b-a55b:free')).to.equal(undefined);
+        expect(hermesNativeModelOption('inclusionai/ring-2.6-1t:free')).to.equal(undefined);
         expect(hermesNativeModelOption('anthropic/claude-sonnet-5')?.modelId).to.equal('anthropic/claude-sonnet-5');
     });
 });

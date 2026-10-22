@@ -195,6 +195,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         if (!this.isEnabled()) {
             return;
         }
+        if (!this.isSupported()) {
+            console.warn(`[qaap-task-sandbox] ${QAAP_TASK_SANDBOX_ENV}=1 is ignored on ${process.platform}: `
+                + 'task sandboxes need a Linux/macOS host; agent tasks will refuse to start until it is unset.');
+            return;
+        }
         this.reapOrphans().then(removed => {
             if (removed) {
                 console.info(`[qaap-task-sandbox] removed ${removed} orphaned sandbox container(s)`);
@@ -218,6 +223,15 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         return /^(1|true)$/i.test(env[QAAP_TASK_SANDBOX_ENV]?.trim() ?? '');
     }
 
+    /**
+     * Whether this host can run task sandboxes. Each sandbox bind-mounts host paths at the same path
+     * inside a Linux container (`<path>:<path>:rw`, `-w <path>`), which a Windows path (`C:\...`)
+     * cannot express, and its exec helpers are POSIX shell. Production runs on Linux only.
+     */
+    isSupported(platform: NodeJS.Platform = process.platform): boolean {
+        return platform !== 'win32';
+    }
+
     /** Broker mode in a per-tenant backend (no Docker socket), direct mode everywhere else. */
     mode(env: NodeJS.ProcessEnv = process.env): QaapTaskSandboxMode {
         return /^(1|true)$/i.test(env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '') ? 'broker' : 'direct';
@@ -228,6 +242,10 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
      * acquires for one worktree share a single container; different worktrees get different ones.
      */
     async acquire(options: QaapTaskSandboxAcquireOptions): Promise<QaapTaskSandbox> {
+        if (!this.isSupported()) {
+            // Fail closed: the operator asked for isolation, so never run the task unsandboxed.
+            throw new Error(`Task sandboxes are not supported on ${process.platform}; unset ${QAAP_TASK_SANDBOX_ENV} to run tasks without them.`);
+        }
         const { taskId } = options;
         this.acquiring.add(taskId);
         let entry: SandboxEntry;
