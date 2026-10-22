@@ -27,6 +27,10 @@ class TestRuntimeEndpoint extends QaapTenantRuntimeEndpoint {
         return this.deployToken;
     }
 
+    initToken(env: NodeJS.ProcessEnv): void {
+        this.initializeDeployToken(env);
+    }
+
     drain(headers: Record<string, string>, remoteAddress = '127.0.0.1'): number {
         let status = 200;
         const res = {
@@ -95,6 +99,39 @@ describe('QaapTenantRuntimeEndpoint deploy drain', () => {
         expect(fs.statSync(qaapDir).mode & 0o777).to.equal(0o755);
         expect(fs.statSync(path.join(qaapDir, 'bin')).mode & 0o777).to.equal(0o755);
         expect(fs.statSync(path.join(qaapDir, 'deploy')).mode & 0o777).to.equal(0o700);
+    });
+
+    it('never writes a token in tenant-backend mode, so the drain endpoint stays closed', () => {
+        const tokenPath = path.join(tmpDir, 'qaap', 'deploy', 'drain.token');
+        const endpoint = new TestRuntimeEndpoint();
+        endpoint.initToken({ QAAP_TENANT_BACKEND_MODE: '1', QAAP_DEPLOY_TOKEN_FILE: tokenPath });
+        expect(fs.existsSync(path.dirname(tokenPath))).to.equal(false);
+        expect(endpoint.drain({ [QAAP_DEPLOY_TOKEN_HEADER]: '' })).to.equal(404);
+        expect(endpoint.drains).to.deep.equal([]);
+    });
+
+    it('writes the token on the control plane', () => {
+        const tokenPath = path.join(tmpDir, 'qaap', 'deploy', 'drain.token');
+        const endpoint = new TestRuntimeEndpoint();
+        endpoint.initToken({ QAAP_DEPLOY_TOKEN_FILE: tokenPath });
+        const token = fs.readFileSync(tokenPath, 'utf8').trim();
+        expect(endpoint.drain({ [QAAP_DEPLOY_TOKEN_HEADER]: token })).to.equal(200);
+    });
+
+    it('refuses a deploy directory planted as a symlink and leaves its target untouched', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const target = path.join(tmpDir, 'victim');
+        fs.mkdirSync(target, { mode: 0o755 });
+        fs.chmodSync(target, 0o755);
+        fs.mkdirSync(path.join(tmpDir, 'qaap'));
+        fs.symlinkSync(target, path.join(tmpDir, 'qaap', 'deploy'));
+        const endpoint = new TestRuntimeEndpoint();
+        expect(endpoint.writeToken(path.join(tmpDir, 'qaap', 'deploy', 'drain.token'))).to.equal(undefined);
+        expect(fs.statSync(target).mode & 0o777).to.equal(0o755);
+        expect(fs.readdirSync(target)).to.deep.equal([]);
+        expect(endpoint.drain({ [QAAP_DEPLOY_TOKEN_HEADER]: '' })).to.equal(404);
     });
 
     it('resolves the token path from QAAP_DEPLOY_TOKEN_FILE or the backend home', () => {

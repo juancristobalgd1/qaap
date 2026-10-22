@@ -408,6 +408,26 @@ describe('QaapDockerOrchestrator', () => {
         });
     });
 
+    describe('tenantBackendLimitsEnv', () => {
+
+        const limitsEnv = (env: NodeJS.ProcessEnv): string[] =>
+            (new QaapDockerOrchestrator() as unknown as { tenantBackendLimitsEnv(env: NodeJS.ProcessEnv): string[] }).tenantBackendLimitsEnv(env);
+
+        it('passes nothing when the limits are unset (tenant defaults apply)', () => {
+            expect(limitsEnv({})).to.deep.equal([]);
+        });
+
+        it('passes the rate limit and preview cap, including the 0 switch-off', () => {
+            expect(limitsEnv({ QAAP_API_RATE_LIMIT_BURST: '0', QAAP_API_RATE_LIMIT_PER_SECOND: '2.5', QAAP_PREVIEW_MAX_PER_OWNER: ' 5 ' }))
+                .to.deep.equal(['QAAP_API_RATE_LIMIT_BURST=0', 'QAAP_API_RATE_LIMIT_PER_SECOND=2.5', 'QAAP_PREVIEW_MAX_PER_OWNER=5']);
+        });
+
+        it('drops non-numeric values that could smuggle another variable', () => {
+            expect(limitsEnv({ QAAP_API_RATE_LIMIT_BURST: '10\nNODE_OPTIONS=--inspect', QAAP_PREVIEW_MAX_PER_OWNER: '-1' }))
+                .to.deep.equal([]);
+        });
+    });
+
     describe('tenantMountsForRoot', () => {
 
         it('derives all three roots from the tenant segment', () => {

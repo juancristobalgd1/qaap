@@ -11,7 +11,7 @@ describe('Caddy request limits', () => {
     const repoRoot = path.resolve(__dirname, '../../../..');
     const read = (relative: string): string => fs.readFileSync(path.join(repoRoot, relative), 'utf8');
 
-    for (const site of ['deploy/caddy/Caddyfile', 'deploy/caddy/staging.caddy']) {
+    for (const site of ['deploy/caddy/Caddyfile', 'deploy/caddy/staging.caddy', 'deploy/caddy/previews/duckdns.caddy']) {
         it(`caps request bodies before proxying in ${site}`, () => {
             const config = read(site);
             expect(config).to.match(/request_body\s*\{\s*max_size \{\$QAAP_REQUEST_BODY_MAX_SIZE:512MB\}\s*\}/);

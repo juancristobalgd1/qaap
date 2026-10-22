@@ -18,6 +18,7 @@ import {
 } from '../common/qaap-cloud-api-types';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
+    isQaapTenantBackendMode,
     QAAP_TENANT_BACKEND_MODE_ENV,
     QAAP_TENANT_BACKEND_SECRET_ENV,
     QAAP_TENANT_LOGIN_ENV,
@@ -78,7 +79,15 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
     protected deployToken: string | undefined;
 
     initialize(): void {
-        this.deployToken = this.writeDeployToken(resolveQaapDeployTokenPath());
+        this.initializeDeployToken(process.env);
+    }
+
+    /**
+     * Tenant backends never get a deploy token, so their drain endpoints always answer 404: deploys only
+     * drain the control plane, and a tenant's HOME/.qaap is its config mount, which its agents can write.
+     */
+    protected initializeDeployToken(env: NodeJS.ProcessEnv): void {
+        this.deployToken = isQaapTenantBackendMode(env) ? undefined : this.writeDeployToken(resolveQaapDeployTokenPath(env));
     }
 
     protected writeDeployToken(tokenPath: string): string | undefined {
@@ -86,6 +95,14 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
         try {
             const directory = path.dirname(tokenPath);
             fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+            // Never follow a planted link: mkdir succeeds on a symlink to a directory and chmod would follow it.
+            const directoryStat = fs.lstatSync(directory);
+            if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+                throw new Error('deploy token directory is a symlink or not a directory');
+            }
+            if (typeof process.getuid === 'function' && directoryStat.uid !== process.getuid()) {
+                throw new Error('deploy token directory is not owned by the backend user');
+            }
             fs.chmodSync(directory, 0o700);
             // Replace instead of writing through: never follow a file or link planted at the path.
             fs.rmSync(tokenPath, { force: true });
