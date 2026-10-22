@@ -183,6 +183,21 @@ const PRODUCTION = process.argv.includes('--production')
     || process.env.NODE_ENV === 'production';
 const GZIP_LEVEL = PRODUCTION ? 9 : 6;
 
+/**
+ * Compress into `<target>.tmp` and rename it over `target`: an interrupted build never leaves a
+ * truncated companion, which the mtime check above would then treat as up to date and serve.
+ */
+async function writeCompressedAtomically(filePath, targetPath, compressor) {
+    const tmpPath = targetPath + '.tmp';
+    try {
+        await pipeline(fs.createReadStream(filePath), compressor, fs.createWriteStream(tmpPath));
+        fs.renameSync(tmpPath, targetPath);
+    } catch (error) {
+        fs.rmSync(tmpPath, { force: true });
+        throw error;
+    }
+}
+
 async function gzipFile(filePath) {
     const stat = fs.statSync(filePath);
     if (stat.size < GZIP_MIN_BYTES) { return; }
@@ -192,11 +207,7 @@ async function gzipFile(filePath) {
         const gzMtime = fs.statSync(gzPath).mtimeMs;
         if (gzMtime >= srcMtime) { return; } // already up-to-date
     }
-    await pipeline(
-        fs.createReadStream(filePath),
-        createGzip({ level: GZIP_LEVEL }),
-        fs.createWriteStream(gzPath)
-    );
+    await writeCompressedAtomically(filePath, gzPath, createGzip({ level: GZIP_LEVEL }));
 }
 
 const gzipTargets = fs.readdirSync(libFrontend)
@@ -230,16 +241,12 @@ async function brotliFile(filePath) {
     if (stat.size < GZIP_MIN_BYTES) { return; }
     const brPath = filePath + '.br';
     if (fs.existsSync(brPath) && fs.statSync(brPath).mtimeMs >= stat.mtimeMs) { return; }
-    await pipeline(
-        fs.createReadStream(filePath),
-        createBrotliCompress({
-            params: {
-                [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
-                [zlibConstants.BROTLI_PARAM_SIZE_HINT]: stat.size,
-            },
-        }),
-        fs.createWriteStream(brPath)
-    );
+    await writeCompressedAtomically(filePath, brPath, createBrotliCompress({
+        params: {
+            [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
+            [zlibConstants.BROTLI_PARAM_SIZE_HINT]: stat.size,
+        },
+    }));
 }
 
 const brotliTargets = gzipTargets.filter(f => BROTLI_EXTS.test(f));

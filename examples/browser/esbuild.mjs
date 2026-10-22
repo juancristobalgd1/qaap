@@ -404,6 +404,44 @@ function appendModulePreloadsTo(metafile, entryFile) {
     fs.writeFileSync(file, patched);
 }
 
+/**
+ * Non-hashed outputs (`bundle*.js`, `bundle*.css`, `secondary-window.*`) are rewritten in place on
+ * every build, but their `.gz` / `.br` companions are only refreshed by copy-frontend-static. In
+ * `--watch` mode nothing runs it, and serveGzipped / QaapBrotliStaticContribution would keep
+ * serving the previous build's bytes: drop companions older than their file (a full build writes
+ * fresh ones afterwards).
+ */
+function dropStaleCompressedCompanions(metafile) {
+    for (const output of Object.keys(metafile.outputs)) {
+        const file = path.resolve(output);
+        if (PRUNABLE_CHUNK.test(path.basename(file)) || !fs.existsSync(file)) {
+            continue;
+        }
+        const mtime = fs.statSync(file).mtimeMs;
+        for (const companion of [`${file}.gz`, `${file}.br`]) {
+            if (fs.existsSync(companion) && fs.statSync(companion).mtimeMs < mtime) {
+                fs.rmSync(companion, { force: true });
+            }
+        }
+    }
+}
+
+const dropStaleCompressedPlugin = {
+    name: 'qaap-drop-stale-compressed',
+    setup(build) {
+        build.onEnd(result => {
+            if (result.errors.length || !result.metafile) {
+                return;
+            }
+            try {
+                dropStaleCompressedCompanions(result.metafile);
+            } catch (error) {
+                console.warn('[qaap] stale .gz/.br cleanup skipped:', error);
+            }
+        });
+    },
+};
+
 const modulePreloadPlugin = {
     name: 'qaap-module-preload',
     setup(build) {
@@ -430,7 +468,7 @@ const mainOptions = {
     banner: { ...browserOptions.banner, js: [browserOptions.banner?.js, CHUNK_HASH_EPOCH].filter(Boolean).join('\n') },
     // Interop plugin FIRST: esbuild gives the file to the first onLoad that
     // returns contents, and exposeModulePlugin also intercepts .js files.
-    plugins: [esmDiInteropPlugin, vendorShimPlugin, woff2OnlyFontsPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
+    plugins: [esmDiInteropPlugin, vendorShimPlugin, woff2OnlyFontsPlugin, lazyCssPlugin, ...browserOptions.plugins, modulePreloadPlugin, dropStaleCompressedPlugin, pruneStaleChunksPlugin, writeMetafilePlugin],
 };
 /**
  * The transcript markdown worker (`new Worker('./qaap-transcript-markdown-worker.js')`)
@@ -448,6 +486,8 @@ const workerOptions = {
         'plugin-worker': pluginWorkerEntry,
         'qaap-transcript-markdown-worker': transcriptMarkdownWorkerEntry,
     },
+    metafile: true,
+    plugins: [...browserOptions.plugins, dropStaleCompressedPlugin],
 };
 
 const browserContext = await esbuild.context(mainOptions);
