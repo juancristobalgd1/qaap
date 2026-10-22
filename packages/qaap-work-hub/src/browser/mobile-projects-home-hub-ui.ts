@@ -85,8 +85,8 @@ export class MobileProjectsHomeHubUi {
         this.host.activeTasks?.start();
         this.host.refreshTasksHubApprovals(forceRender);
         if (!this.host.inboxPullRequestsLoaded && !this.host.inboxPullRequestsLoading) {
-            this.host.inboxStream?.start();
-            this.host.subscribeToInboxStream();
+            // Home only needs one snapshot of the PR inbox; the live webhook SSE feed opens when the
+            // user enters Review or the sidebar pull requests (its listener ignores every other view).
             void this.host.refreshInboxPullRequests(undefined, false);
         } else if (forceRender) {
             this.host.renderList();
