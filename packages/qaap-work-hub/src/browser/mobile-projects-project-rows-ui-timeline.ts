@@ -56,6 +56,11 @@ function resolveTaskFailureHint(summary: QaapAgentConversationSummaryDTO | undef
  * another error, Retry becoming Continue) is rebuilt instead of patched.
  */
 export function sidebarRowFailureKey(summary: QaapAgentConversationSummaryDTO | undefined): string {
+    // A streaming row can match the self-reported "Stopped:" failure pattern while its preview keeps
+    // growing: keying it would rebuild the row on every SSE tick instead of patching it in place.
+    if (summary?.status === 'streaming') {
+        return '';
+    }
     const hint = resolveTaskFailureHint(summary);
     return hint && summary ? `${resolveQaapFailedRunAction(summary)}:${hint}` : '';
 }

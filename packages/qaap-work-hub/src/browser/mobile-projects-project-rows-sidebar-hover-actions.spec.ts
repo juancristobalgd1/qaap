@@ -277,6 +277,16 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         expect(render('Network error.').dataset.qaapFailureKey).to.not.equal(retry);
     });
 
+    it('keys a streaming row with a self-reported "Stopped:" preview as empty, so SSE ticks keep patching it in place', () => {
+        const ui = createUi();
+        const render = (lastMessagePreview: string): HTMLElement => {
+            const streaming = summary({ id: 'stopped-streaming', status: 'streaming', lastMessageRole: 'agent', lastMessagePreview });
+            return ui.createTaskItem(project, { ...task, id: streaming.id }, undefined, streaming, new Set(), { compact: true });
+        };
+        expect(render('Stopped: waiting on the build').dataset.qaapFailureKey).to.equal('');
+        expect(render('Stopped: waiting on the build, still going').dataset.qaapFailureKey).to.equal('');
+    });
+
     it('keeps the chip off rows being picked for Clear failed runs', () => {
         const failedSummary = summary({ id: 'failed-selection', status: 'failed', lastMessageRole: 'agent', lastMessageError: 'Bash exited with code 1.' });
         const row = createUi().createTaskItem(project, { ...task, id: failedSummary.id, state: 'failed' as const }, undefined, failedSummary, new Set(), {
