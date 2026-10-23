@@ -69,7 +69,8 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
     protected setStaticHeaders(res: express.Response, filePath: string, frontendDir: string): void {
         // `express.static` sees the rewritten `.gz` / `.br` companion: judge the logical file.
         const base = path.basename(filePath).replace(/\.(gz|br)$/, '');
-        const topLevel = path.dirname(filePath) === frontendDir;
+        // Normalize both sides: on win32 a `/`-rooted dir never string-equals its `\` form.
+        const topLevel = path.resolve(path.dirname(filePath)) === path.resolve(frontendDir);
         if (base === 'service-worker.js') {
             // The service worker controls a wider scope than its own location and must not be
             // cached by the browser for long — users would otherwise be stuck on stale workers.

@@ -300,7 +300,9 @@ describe('QAAP_HAS_STATE_CLASS_RULES equivalence', () => {
             } finally {
                 tracker.stop();
             }
-        });
+        // CPU-bound and deterministic (~0.6–1 s on a fast laptop): CI runners, Windows above all,
+        // are several times slower than mocha's 2 s default.
+        }).timeout(30_000);
     };
 
     it('gives every rule its own class', () => {
