@@ -27,6 +27,6 @@ describe('Caddy request limits', () => {
         const compose = read('docker-compose.yml');
         expect(compose).to.contain('QAAP_API_RATE_LIMIT_BURST: ${QAAP_API_RATE_LIMIT_BURST:-240}');
         expect(compose).to.contain('QAAP_API_RATE_LIMIT_PER_SECOND: ${QAAP_API_RATE_LIMIT_PER_SECOND:-10}');
-        expect(compose).to.contain('QAAP_PREVIEW_MAX_PER_OWNER: ${QAAP_PREVIEW_MAX_PER_OWNER:-20}');
+        expect(compose).to.contain('QAAP_PREVIEW_MAX_PER_OWNER: ${QAAP_PREVIEW_MAX_PER_OWNER:-6}');
     });
 });

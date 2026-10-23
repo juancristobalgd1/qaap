@@ -143,7 +143,10 @@ services:
       # Per-login token bucket on mutating /qaap/api/* requests (0 disables) and live previews per login (0 = no cap).
       QAAP_API_RATE_LIMIT_BURST: ${QAAP_API_RATE_LIMIT_BURST:-240}
       QAAP_API_RATE_LIMIT_PER_SECOND: ${QAAP_API_RATE_LIMIT_PER_SECOND:-10}
-      QAAP_PREVIEW_MAX_PER_OWNER: ${QAAP_PREVIEW_MAX_PER_OWNER:-20}
+      # Every live preview is a dev server inside the owner's tenant container, sharing its memory limit
+      # with the backend and agents: 6 Vite servers (~250 MiB each) fit next to a working agent in
+      # 3 GiB; 20 (the code default, kept for local development) did not. Excess opens get a 429.
+      QAAP_PREVIEW_MAX_PER_OWNER: ${QAAP_PREVIEW_MAX_PER_OWNER:-6}
       # Agent-independent job scheduler: global/per-user caps and isolated resource lanes.
       QAAP_JOB_MAX_CONCURRENT: ${QAAP_JOB_MAX_CONCURRENT:-4}
       QAAP_JOB_MAX_CONCURRENT_PER_USER: ${QAAP_JOB_MAX_CONCURRENT_PER_USER:-2}
