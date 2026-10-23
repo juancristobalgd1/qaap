@@ -12,6 +12,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import { MobileProjectsHomeUi } from './mobile-projects-home-ui';
 import { MobileProjectsHomeHubUi, type MobileProjectsHomeHubHost } from './mobile-projects-home-hub-ui';
+import { clearGettingStartedTestFlags } from './test/qaap-getting-started-test-flags';
 
 disableImportJSDOM();
 
@@ -98,6 +99,9 @@ describe('MobileProjectsHomeHubUi.buildHomeSnapshot statsSettled', () => {
 
     useSuiteJSDOM();
 
+    beforeEach(() => clearGettingStartedTestFlags());
+    afterEach(() => clearGettingStartedTestFlags());
+
     function createHost(state: { inboxLoaded: boolean; tasksPending: boolean }): MobileProjectsHomeHubHost {
         return {
             projects: [],
@@ -122,8 +126,6 @@ describe('MobileProjectsHomeHubUi.buildHomeSnapshot statsSettled', () => {
             onOpenProject: () => undefined, onOpenRecent: () => undefined, onOpenAttention: () => undefined,
             onQuickAction: () => undefined,
         });
-        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed');
-        window.localStorage.removeItem('qaap.workHubHome.gettingStartedCompleted');
 
         const first = ui.buildHomeSnapshot();
         expect(first.statsSettled).to.equal(false);
