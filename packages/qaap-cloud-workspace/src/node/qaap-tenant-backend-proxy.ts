@@ -681,12 +681,15 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             // Bound only the handshake: a backend that accepts TCP but never answers the upgrade
             // would otherwise hold the browser socket open forever. The upgraded stream is unbounded.
             let connectTimedOut = false;
+            let handshakeAnswered = false;
+            let clientAborted = false;
             const isConnected = this.trackUpstreamConnected(upstream);
             const connectTimer = setTimeout(() => {
                 connectTimedOut = true;
                 upstream.destroy(new Error('Tenant backend did not accept the WebSocket in time.'));
             }, this.getTenantWebSocketConnectTimeoutMs());
             upstream.once('upgrade', (response, upstreamSocket, upstreamHead) => {
+                handshakeAnswered = true;
                 clearTimeout(connectTimer);
                 const status = `HTTP/1.1 ${response.statusCode ?? 101} ${response.statusMessage ?? 'Switching Protocols'}\r\n`;
                 const lines = Object.entries(response.headers).flatMap(([key, value]) => {
@@ -704,20 +707,31 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 socket.pipe(upstreamSocket);
             });
             upstream.once('response', () => {
+                handshakeAnswered = true;
                 clearTimeout(connectTimer);
                 release();
                 socket.destroy();
             });
             upstream.once('error', error => {
                 clearTimeout(connectTimer);
-                if (this.shouldEvictTenantBackendTarget(error, connectTimedOut, isConnected())) {
+                if (this.shouldEvictTenantBackendTarget(error, connectTimedOut, isConnected(), handshakeAnswered, clientAborted)) {
                     // Same as the HTTP path: drop the cached target so the next upgrade re-ensures it.
                     this.docker.invalidateTenantBackendTarget(userLogin, target);
                 }
                 release();
                 socket.destroy();
             });
-            socket.once('error', () => upstream.destroy());
+            // A browser that leaves before the handshake answer makes the upstream hang up: not a dead backend.
+            const markClientAborted = (): void => {
+                if (!handshakeAnswered) {
+                    clientAborted = true;
+                }
+            };
+            socket.once('error', () => {
+                markClientAborted();
+                upstream.destroy();
+            });
+            socket.once('close', markClientAborted);
             upstream.end();
         } catch {
             release();
@@ -765,6 +779,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             headers,
         }, response => {
             // Headers arrived: streaming / long-lived bodies must not be cut by the wait deadline.
+            responseStarted = true;
             clearTimeout(responseTimer);
             const responseHeaders = { ...response.headers };
             for (const key of Object.keys(responseHeaders)) {
@@ -792,6 +807,8 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         // open) pending forever. Destroying the upstream request closes its connection, so the
         // tenant backend sees the response 'close' and cancels the work (e.g. kills git).
         let timedOut = false;
+        let responseStarted = false;
+        let clientAborted = false;
         const isConnected = this.trackUpstreamConnected(upstream);
         const responseTimer = setTimeout(() => {
             timedOut = true;
@@ -801,19 +818,23 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         res.once('close', () => {
             clearTimeout(responseTimer);
             if (!res.writableFinished) {
+                clientAborted = true;
                 upstream.destroy();
             }
         });
         upstream.once('error', error => {
             clearTimeout(responseTimer);
             const connected = isConnected();
-            if (this.shouldEvictTenantBackendTarget(error, timedOut, connected)) {
+            const hangUp = this.isTenantBackendHangUp(error, responseStarted, clientAborted);
+            if (this.shouldEvictTenantBackendTarget(error, timedOut, connected, responseStarted, clientAborted)) {
                 // Drop the cached target so the next request re-ensures (restarts) the backend.
                 this.docker.invalidateTenantBackendTarget(tenantLogin, target);
             }
             const replayableRead = req.method === 'GET' || req.method === 'HEAD';
-            if (retryOnConnectFailure && replayableRead && !timedOut && !connected
-                && this.isTenantBackendConnectError(error)) {
+            // Either a connect failure before any TCP connection, or a hang-up before any response
+            // (a relay that outlives its stopped backend). One replay only: it is built without a retry.
+            if (retryOnConnectFailure && replayableRead && !timedOut
+                && (hangUp || (!connected && this.isTenantBackendConnectError(error)))) {
                 // The target cache can outlive a crashed/restarted tenant. A safe read can recover
                 // in the same request after invalidation rather than surfacing a transient 502 to
                 // the signed-in client.
@@ -927,11 +948,34 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     }
 
     /**
-     * Evict the cached target only when the backend is unreachable: a connect error, or a timeout
-     * before any TCP connection. A slow request on a live backend (e.g. a long clone) keeps it cached.
+     * Evict the cached target only when the backend is unreachable: a connect error, a timeout
+     * before any TCP connection, or a hang-up before any response. A slow request on a live backend
+     * (e.g. a long clone) keeps it cached.
      */
-    protected shouldEvictTenantBackendTarget(error: unknown, timedOut: boolean, connected: boolean): boolean {
-        return this.isTenantBackendConnectError(error) || (timedOut && !connected);
+    protected shouldEvictTenantBackendTarget(
+        error: unknown,
+        timedOut: boolean,
+        connected: boolean,
+        responseStarted: boolean,
+        clientAborted: boolean,
+    ): boolean {
+        return this.isTenantBackendConnectError(error)
+            || (timedOut && !connected)
+            || this.isTenantBackendHangUp(error, responseStarted, clientAborted);
+    }
+
+    /**
+     * The backend accepted the connection and then dropped it before answering (`socket hang up`,
+     * ECONNRESET/EPIPE): typically a relay still listening after its container exited. Not a hang-up
+     * when the response already started, or when the browser aborted and this proxy closed the upstream.
+     */
+    protected isTenantBackendHangUp(error: unknown, responseStarted: boolean, clientAborted: boolean): boolean {
+        if (responseStarted || clientAborted) {
+            return false;
+        }
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        const message = error instanceof Error ? error.message : undefined;
+        return code === 'ECONNRESET' || code === 'EPIPE' || message === 'socket hang up';
     }
 
     protected isTenantBackendConnectError(error: unknown): boolean {
