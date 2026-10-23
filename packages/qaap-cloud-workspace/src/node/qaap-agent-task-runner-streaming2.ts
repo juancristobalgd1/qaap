@@ -58,7 +58,7 @@ import {
     type QaapQaiqModelBinding,
 } from '../common/qaap-qaiq-model-binding';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
-import { coerceRunnableAgentModel, resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
+import { agentModelFitsAgent, coerceRunnableAgentModel, resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
 import {
     parseQaapNativeModelRoutingTable,
     QAAP_AGENT_TASK_MODELS_ENV,
@@ -614,7 +614,10 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
             ? formatQaiqInteractionFlags(interaction ?? {})
             : '';
         const joinQaiqFlags = (...parts: string[]): string => parts.map(part => part.trim()).filter(Boolean).join(' ');
-        if (agentModel?.provider && agentModel.modelId?.trim()) {
+        // Last gate before argv: callers that hand a model straight in (prompt improve, reviewer)
+        // skip the request resolution, and a foreign model here is `--model <id>` → model_not_found.
+        if (agentModel?.provider && agentModel.modelId?.trim()
+            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
             const flags = formatModelFlagsForAgent(agentId, binding);
             if (isQaiqAgent(agentId)) {
