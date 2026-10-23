@@ -422,6 +422,16 @@ describe('QaapDockerOrchestrator', () => {
                 .to.deep.equal(['QAAP_API_RATE_LIMIT_BURST=0', 'QAAP_API_RATE_LIMIT_PER_SECOND=2.5', 'QAAP_PREVIEW_MAX_PER_OWNER=5']);
         });
 
+        it('passes the agent-concurrency guardrails so they bound each tenant container', () => {
+            expect(limitsEnv({
+                QAAP_MAX_CONCURRENT_AGENTS: '3', QAAP_MAX_CONCURRENT_AGENTS_PER_USER: '3', QAAP_MAX_CONCURRENT_AGENTS_PER_REPO: '0',
+                QAAP_AGENT_VERIFY_MAX_CONCURRENT: '1', QAAP_MAX_PARALLEL_VARIANTS: '3',
+            })).to.deep.equal([
+                'QAAP_MAX_CONCURRENT_AGENTS=3', 'QAAP_MAX_CONCURRENT_AGENTS_PER_USER=3', 'QAAP_MAX_CONCURRENT_AGENTS_PER_REPO=0',
+                'QAAP_AGENT_VERIFY_MAX_CONCURRENT=1', 'QAAP_MAX_PARALLEL_VARIANTS=3',
+            ]);
+        });
+
         it('drops non-numeric values that could smuggle another variable', () => {
             expect(limitsEnv({ QAAP_API_RATE_LIMIT_BURST: '10\nNODE_OPTIONS=--inspect', QAAP_PREVIEW_MAX_PER_OWNER: '-1' }))
                 .to.deep.equal([]);

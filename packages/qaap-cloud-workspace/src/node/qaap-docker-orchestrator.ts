@@ -1002,12 +1002,19 @@ export class QaapDockerOrchestrator {
     }
 
     /**
-     * Abuse limits enforced by the tenant backend itself (per-login API rate limit, live previews per
-     * owner): authenticated traffic is served there, so the control plane's values, including the
-     * documented `0` switch-off, must reach it. Only plain non-negative numbers pass.
+     * Limits enforced by the tenant backend itself: abuse limits (per-login API rate limit, live
+     * previews per owner) and the agent-concurrency guardrails. Authenticated traffic and agent
+     * processes run there, so the control plane's values, including the documented `0` switch-off,
+     * must reach it. Without the concurrency caps a tenant backend fell back to its built-in 16
+     * agents / 8 per user and unbounded verification passes inside one memory-limited container.
+     * Only plain non-negative numbers pass.
      */
     protected tenantBackendLimitsEnv(env: NodeJS.ProcessEnv = process.env): string[] {
-        return ['QAAP_API_RATE_LIMIT_BURST', 'QAAP_API_RATE_LIMIT_PER_SECOND', 'QAAP_PREVIEW_MAX_PER_OWNER']
+        return [
+            'QAAP_API_RATE_LIMIT_BURST', 'QAAP_API_RATE_LIMIT_PER_SECOND', 'QAAP_PREVIEW_MAX_PER_OWNER',
+            'QAAP_MAX_CONCURRENT_AGENTS', 'QAAP_MAX_CONCURRENT_AGENTS_PER_USER', 'QAAP_MAX_CONCURRENT_AGENTS_PER_REPO',
+            'QAAP_AGENT_VERIFY_MAX_CONCURRENT', 'QAAP_MAX_PARALLEL_VARIANTS',
+        ]
             .map(key => [key, env[key]?.trim()] as const)
             .filter((entry): entry is readonly [string, string] => !!entry[1] && /^\d+(\.\d+)?$/.test(entry[1]))
             .map(([key, value]) => `${key}=${value}`);
@@ -2395,7 +2402,9 @@ export class QaapDockerOrchestrator {
     protected getTenantMemoryLimit(): number {
         const raw = process.env.QAAP_TENANT_MEMORY_LIMIT?.trim();
         const num = raw ? Number.parseInt(raw, 10) : Number.NaN;
-        return Number.isInteger(num) && num > 0 ? num : 2 * 1024 * 1024 * 1024;
+        // 3 GiB: tenant backend under load (~600 MiB) + 3 agent CLIs (~400 MiB each) + one
+        // verification build (~500 MiB) + used tmpfs; 2 GiB left no room for the verification pass.
+        return Number.isInteger(num) && num > 0 ? num : 3 * 1024 * 1024 * 1024;
     }
 
     /** The default, raised for `ownerLogin` by `QAAP_TENANT_MEMORY_LIMIT_OVERRIDES` (see QaapTenantResourceOverrides). */

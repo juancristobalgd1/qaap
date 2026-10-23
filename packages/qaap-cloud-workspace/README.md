@@ -204,7 +204,10 @@ PWA service worker includes `push` / `notificationclick` handlers (see `Frontend
   are also accepted). On a local Linux host without systemd, bounded rlimits are used as a fallback;
   production fails closed instead of launching an unbounded process.
 - `QAAP_TENANT_MEMORY_LIMIT` / `QAAP_TENANT_CPU_LIMIT` — optional Docker worker limits (bytes and
-  cores respectively); these are also accepted as host-limit fallbacks for deployment consistency.
+  cores respectively; defaults 3 GiB and 2); these are also accepted as host-limit fallbacks for
+  deployment consistency. A tenant backend container also receives the control plane's
+  `QAAP_MAX_CONCURRENT_AGENTS*`, `QAAP_AGENT_VERIFY_MAX_CONCURRENT` and `QAAP_MAX_PARALLEL_VARIANTS`,
+  which then apply per tenant.
 - `QAAP_TENANT_TMPFS_SIZE` — size of the tenant container `/tmp` tmpfs that also holds the tenant
   HOME (`<n>[k|m|g]`, default `512m`). tmpfs pages count against the container memory limit, so values
   above half of `QAAP_TENANT_MEMORY_LIMIT` are ignored.
