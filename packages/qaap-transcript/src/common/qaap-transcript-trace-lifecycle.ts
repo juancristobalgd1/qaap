@@ -55,65 +55,21 @@ export function appendTracePreviewFailureEvent(
 }
 
 /**
- * Timeline note for a turn that finished but whose backend self-verification stayed red.
- * Unlike {@link appendTracePreviewFailureEvent} it does NOT set {@code message.error}: the
- * turn itself succeeded, so the transcript must not render it as a failed run.
+ * Timeline note carrying a finished task's closing report (verification, independent review,
+ * blocked signal and diff, already rendered as text by the backend). Unlike
+ * {@link appendTracePreviewFailureEvent} it does NOT set {@code message.error}: the turn itself
+ * was delivered, so the transcript must not render it as a failed run.
  */
-export function appendTraceVerificationWarningEvent(
+export function appendTraceClosingReportEvent(
     message: QaapAgentMessageDTO,
-    reason: string,
+    report: string,
     options: { readonly at?: number } = {},
 ): QaapAgentMessageDTO {
     const at = options.at ?? Date.now();
     const event: QaapTranscriptTraceEventDTO = {
         type: 'error',
-        id: `verification-warning-${at}`,
-        message: reason,
-        startedAt: at,
-    };
-    return {
-        ...message,
-        traceEvents: [...(message.traceEvents ?? []), event],
-    };
-}
-
-/**
- * Timeline note for a turn whose agent declared itself blocked on user input (blocked-signal
- * sentinel). Like {@link appendTraceVerificationWarningEvent}, it must not set
- * {@code message.error} — the turn ended deliberately, not in failure.
- */
-export function appendTraceBlockedEvent(
-    message: QaapAgentMessageDTO,
-    need: string,
-    options: { readonly at?: number } = {},
-): QaapAgentMessageDTO {
-    const at = options.at ?? Date.now();
-    const event: QaapTranscriptTraceEventDTO = {
-        type: 'error',
-        id: `blocked-${at}`,
-        message: need,
-        startedAt: at,
-    };
-    return {
-        ...message,
-        traceEvents: [...(message.traceEvents ?? []), event],
-    };
-}
-
-/**
- * Timeline note from the independent adversarial review pass (rejected change or no verdict).
- * Must not set {@code message.error}: the turn itself was delivered.
- */
-export function appendTraceReviewEvent(
-    message: QaapAgentMessageDTO,
-    note: string,
-    options: { readonly at?: number } = {},
-): QaapAgentMessageDTO {
-    const at = options.at ?? Date.now();
-    const event: QaapTranscriptTraceEventDTO = {
-        type: 'error',
-        id: `review-${at}`,
-        message: note,
+        id: `closing-report-${at}`,
+        message: report,
         startedAt: at,
     };
     return {

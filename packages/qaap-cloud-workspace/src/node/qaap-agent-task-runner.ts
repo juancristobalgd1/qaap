@@ -100,8 +100,9 @@ import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, cl
 import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
 import { buildAgentVerificationFixPromptExtracted, captureWorktreeBaselineExtracted, detectEmptyAgentTurnForTaskExtracted, finishSuccessfulTaskAfterVerificationExtracted, hasEditedFilesForVerificationExtracted, releaseVerificationPassExtracted, resolveReviewerCandidatesExtracted, restoreBaselineSensitiveFilesExtracted, reviewSuccessfulAgentTaskExtracted, runAgentVerificationFixTurnExtracted, runVerificationScriptsExtracted, verifySuccessfulAgentTaskExtracted } from './qaap-agent-task-runner-activity2';
+import type { QaapAgentClosingDiffSummary } from '../common/qaap-agent-closing-report';
 import { parseWorktreeStatusZ, type QaapWorktreeChange } from '../common/qaap-verification-scope';
-import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, recordTaskClosingDiffExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
 import { runOneShotCommandExtracted } from './qaap-agent-task-runner-live-status2';
 import {
     isQaapHarnessEnabled,
@@ -1697,8 +1698,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return applyHelperEnvExtracted(this, env, ownerLogin, parentTaskId, autoApprove);
     }
 
-    markTaskBlocked(id: string): QaapAgentTask | undefined {
-        return markTaskBlockedExtracted(this, id);
+    /** Reclassify a delivered task as `blocked`; `need` is what the agent asked the user for. */
+    markTaskBlocked(id: string, need?: string): QaapAgentTask | undefined {
+        return markTaskBlockedExtracted(this, id, need);
+    }
+
+    /** Attach the turn's measured diff to the task's closing report (no-op without a report). */
+    recordTaskClosingDiff(id: string, diff: QaapAgentClosingDiffSummary): QaapAgentTask | undefined {
+        return recordTaskClosingDiffExtracted(this, id, diff);
     }
 
     /**

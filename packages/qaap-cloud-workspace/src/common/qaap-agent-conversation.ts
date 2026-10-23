@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
 import type { QaapExternalTaskOrigin } from './qaap-external-task';
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -241,6 +242,8 @@ export interface QaapAgentTurnVerdict {
     readonly blockedNeed?: string;
     /** The turn ran with a read-only workspace (exploration). */
     readonly readOnly?: boolean;
+    /** The task's deterministic closing report, kept here so it outlives the pruned task. */
+    readonly closingReport?: QaapAgentClosingReport;
     readonly settledAt: number;
 }
 

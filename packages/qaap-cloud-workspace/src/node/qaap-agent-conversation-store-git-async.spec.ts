@@ -126,8 +126,14 @@ describe('computeGitDiffStats (async)', () => {
             seen.push([...args]);
             return args.includes('abc123..HEAD') ? ok('3\t1\ta.ts\n') : ok('2\t4\tb.ts\n');
         });
-        expect(stats).to.deep.equal({ added: 5, removed: 5 });
+        expect(stats).to.deep.equal({ added: 5, removed: 5, files: 2 });
         expect(seen.map(args => args[args.length - 1])).to.deep.equal(['abc123..HEAD', 'HEAD']);
+    });
+
+    it('counts a path changed both before and after the commit once', async () => {
+        const stats = await computeGitDiffStats('/repo', 'abc123', async (_cwd, args) =>
+            args.includes('abc123..HEAD') ? ok('3\t1\ta.ts\n1\t0\tc.ts\n') : ok('2\t4\ta.ts\n'));
+        expect(stats).to.deep.equal({ added: 6, removed: 5, files: 2 });
     });
 
     it('returns undefined (non-fatal) when git fails or times out', async () => {

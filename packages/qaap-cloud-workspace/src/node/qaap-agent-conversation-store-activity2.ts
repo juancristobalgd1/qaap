@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { buildAgentClosingReport, shouldSurfaceAgentClosingReport, type QaapAgentClosingDiffSummary, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { QaapAgentConversation, QaapAgentMessage, QaapAgentTurnVerdict, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
@@ -89,7 +90,7 @@ export function resolveStructuredParsedTraceEventsExtracted(ctx: QaapAgentConver
 
 /** Diff stats + checkpoint captured for a delivered turn (git side of the settle). */
 interface QaapTurnGitState {
-    readonly gitStats?: { added: number; removed: number };
+    readonly gitStats?: { added: number; removed: number; files?: number };
     readonly checkpoint?: QaapConversationCheckpoint;
 }
 
@@ -116,6 +117,23 @@ async function captureTurnGitState(ctx: QaapAgentConversationStoreContext, conve
     } catch {
         return undefined;
     }
+}
+
+/**
+ * Hand the settle-time facts the runner cannot see — this turn's diff and the blocked signal — to
+ * the runner, which re-folds the task's closing report. Returns the latest task, or undefined when
+ * the runner keeps no report for it.
+ */
+function recordClosingReportFacts(ctx: QaapAgentConversationStoreContext, taskId: string,
+    diff: QaapAgentClosingDiffSummary | undefined, blockedNeed: string | undefined): QaapAgentTask | undefined {
+    let latest: QaapAgentTask | undefined;
+    if (diff) {
+        latest = ctx.taskRunner.recordTaskClosingDiff?.(taskId, diff);
+    }
+    if (blockedNeed !== undefined) {
+        latest = ctx.taskRunner.markTaskBlocked(taskId, blockedNeed) ?? latest;
+    }
+    return latest;
 }
 
 /** The checkpoint was captured ahead of the tool-support reroute; drop its ref so it does not leak. */
@@ -421,23 +439,28 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         withReply = { ...withReply, checkpoints: [...(withReply.checkpoints ?? []), checkpoint] };
         withReply = ctx.appendCheckpointTrace(withReply, agentMessageId, checkpoint);
     }
-    if (task.verification?.status === 'failed') {
-        withReply = ctx.appendVerificationWarningTrace(withReply, agentMessageId, task);
-    }
-    if (task.review?.status === 'failed') {
-        withReply = ctx.appendReviewTrace(withReply, agentMessageId,
-            `Independent review rejected the change: ${task.review.reason || 'no reason given'}`);
-    } else if (task.review?.status === 'inconclusive') {
-        withReply = ctx.appendReviewTrace(withReply, agentMessageId,
-            'Independent review ran but produced no verdict — the result was not double-checked.');
-    }
-    // Blocked wins over the verification warning (more urgent for the user), but any warning
-    // trace appended above is preserved — both facts stay visible in the transcript.
+    // One closing trace instead of a verification warning, a review note and a blocked note: the
+    // runner folds verification, review, blocked signal and this turn's diff into the task's
+    // closing report, and the transcript shows that report whenever it is not a clean completion.
+    // Blocked still wins over the warning in the headline; the checks/review lines keep both facts.
     const blockedNeed = ctx.detectAgentBlockedNeed(withReply, agentMessageId);
-    if (blockedNeed !== undefined) {
-        withReply = ctx.appendBlockedTrace(withReply, agentMessageId, blockedNeed);
+    // A failed git side (turnGit undefined) leaves the diff unmeasured; no stats from a working git
+    // side means the turn changed no line.
+    const closingDiff = turnGit ? turnGit.gitStats ?? { added: 0, removed: 0 } : undefined;
+    const closingTask = recordClosingReportFacts(ctx, task.id, closingDiff, blockedNeed);
+    // Fallback for a runner that kept no report (a test double): same fold, same inputs.
+    const closingReport = closingTask?.closingReport ?? buildAgentClosingReport({
+        state: blockedNeed !== undefined ? 'blocked' : task.state,
+        exitCode: task.exitCode,
+        verification: task.verification,
+        review: task.review,
+        blockedNeed,
+        diff: closingDiff,
+    });
+    if (closingReport && shouldSurfaceAgentClosingReport(closingReport)) {
+        withReply = ctx.appendClosingReportTrace(withReply, agentMessageId, closingReport);
     }
-    withReply = recordTurnVerdict(withReply, userMessageId, task, blockedNeed);
+    withReply = recordTurnVerdict(withReply, userMessageId, task, blockedNeed, Date.now(), closingReport);
     const finalizedAgentMessageId = settledAgentMessage?.id ?? agentMessageId;
     withReply = ctx.clearRunActive(withReply, finalizedAgentMessageId);
     ctx.conversations.set(conversationId, withReply);
@@ -445,9 +468,8 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     ctx.modelFallbackTriedByUserMessage.delete(ctx.resolveLoopBudgetKey(withReply, userMessageId));
     ctx.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
     if (blockedNeed !== undefined) {
-        // The agent explicitly asked for the user — reclassify the task and never auto-continue
-        // on top of a question only the user can answer.
-        ctx.taskRunner.markTaskBlocked(task.id);
+        // The agent explicitly asked for the user — the task was reclassified above; never
+        // auto-continue on top of a question only the user can answer.
         ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'blocked', detail: blockedNeed });
         return 'blocked';
     }
@@ -519,6 +541,7 @@ export function recordTurnVerdict(
     task: Pick<QaapAgentTask, 'state' | 'verification' | 'review' | 'readOnlyWorkspace'>,
     blockedNeed: string | undefined,
     now: number = Date.now(),
+    closingReport?: QaapAgentClosingReport,
 ): QaapAgentConversation {
     const turnVerdict: QaapAgentTurnVerdict = {
         taskState: blockedNeed !== undefined ? 'blocked' : task.state,
@@ -526,6 +549,7 @@ export function recordTurnVerdict(
         ...(task.review ? { review: task.review } : {}),
         ...(blockedNeed !== undefined ? { blockedNeed } : {}),
         ...(task.readOnlyWorkspace ? { readOnly: true } : {}),
+        ...(closingReport ? { closingReport } : {}),
         settledAt: now,
     };
     return {

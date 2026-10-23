@@ -191,17 +191,22 @@ export class QaapGitCwdSerializer {
     }
 }
 
-/** Line counts changed since `startSha` (committed) plus the uncommitted worktree; async so settling never blocks the backend. */
-export async function computeGitDiffStats(cwd: string, startSha?: string, gitRead: QaapGitRead = localGitRead): Promise<{ added: number; removed: number } | undefined> {
+/**
+ * Line counts changed since `startSha` (committed) plus the uncommitted worktree, and the number of
+ * distinct tracked paths behind them; async so settling never blocks the backend.
+ */
+export async function computeGitDiffStats(cwd: string, startSha?: string, gitRead: QaapGitRead = localGitRead): Promise<QaapGitDiffStats | undefined> {
     try {
         let added = 0;
         let removed = 0;
+        const paths = new Set<string>();
         if (startSha) {
             const committed = await gitRead(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', `${startSha}..HEAD`]);
             if (committed.status === 0 && committed.stdout) {
                 const stats = parseGitNumstat(committed.stdout);
                 added += stats.added;
                 removed += stats.removed;
+                stats.paths.forEach(p => paths.add(p));
             }
         }
         const uncommitted = await gitRead(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', 'HEAD']);
@@ -209,14 +214,23 @@ export async function computeGitDiffStats(cwd: string, startSha?: string, gitRea
             const stats = parseGitNumstat(uncommitted.stdout);
             added += stats.added;
             removed += stats.removed;
+            stats.paths.forEach(p => paths.add(p));
         }
         if (added === 0 && removed === 0) {
             return undefined;
         }
-        return { added, removed };
+        return { added, removed, files: paths.size };
     } catch {
         return undefined;
     }
+}
+
+/** Result of {@link computeGitDiffStats}. */
+export interface QaapGitDiffStats {
+    readonly added: number;
+    readonly removed: number;
+    /** Distinct tracked paths in the numstat output (untracked files are not counted). */
+    readonly files?: number;
 }
 
 export function checkpointLabel(content: string): string {
