@@ -176,6 +176,64 @@ describe('qaap-transcript-content-display', () => {
         expect(isAgentToolResultFailure('Error: Exit code 1\nnpm ERR! Test failed', { toolName: 'Bash' })).to.equal(true);
     });
 
+    describe('isAgentToolResultFailure verdict cache', () => {
+
+        // Expected verdicts were checked against the uncached implementation.
+        const cases: ReadonlyArray<readonly [string, string | undefined, boolean]> = [
+            ['fatal: not a git repository', undefined, true],
+            ['git log --oneline -10\nError: Exit code 128', 'Bash', true],
+            ['<tool_use_error>File not found</tool_use_error>', 'Read', true],
+            ['Error: File does not exist: /missing.ts', 'Read', true],
+            ['bash: line 1: npm: command not found', 'Bash', true],
+            ['package.json\nnode_modules/postcss/lib/css-syntax-error.js', 'Glob', false],
+            ['  ✓ 42 passing\n  0 failed', 'Bash', false],
+            ['Process exited with code 0', 'Bash', false],
+            ['Process exited with code 2', 'Bash', true],
+            ['all good', 'Bash', false],
+            ['   \n\t', 'Bash', false],
+        ];
+
+        it('returns the same verdict on a cold and on a warm cache', () => {
+            for (const [result, toolName, expected] of cases) {
+                expect(isAgentToolResultFailure(result, { toolName }), `cold: ${result}`).to.equal(expected);
+                expect(isAgentToolResultFailure(result, { toolName }), `warm: ${result}`).to.equal(expected);
+            }
+        });
+
+        it('keeps Read and non-Read verdicts for the same result apart', () => {
+            // One numbered line skips the keyword scan only for a pure Read tool.
+            const result = '1: const value = compute();\nerror occurred while saving';
+            expect(isAgentToolResultFailure(result, { toolName: 'Read' })).to.equal(false);
+            expect(isAgentToolResultFailure(result, { toolName: 'Bash' })).to.equal(true);
+            expect(isAgentToolResultFailure(result)).to.equal(true);
+            expect(isAgentToolResultFailure(result, { toolName: 'Read' })).to.equal(false);
+            expect(isAgentToolResultFailure(result, { toolName: 'mcp.read' })).to.equal(false);
+        });
+
+        it('does not reuse a verdict for a result that only differs by growth or whitespace', () => {
+            const clean = 'build step 1 ok';
+            expect(isAgentToolResultFailure(clean, { toolName: 'Bash' })).to.equal(false);
+            expect(isAgentToolResultFailure(`${clean}\nbuild step 2 failed`, { toolName: 'Bash' })).to.equal(true);
+            expect(isAgentToolResultFailure(`${clean} `, { toolName: 'Bash' })).to.equal(false);
+            expect(isAgentToolResultFailure('Error: boom', { toolName: 'Bash' })).to.equal(true);
+            expect(isAgentToolResultFailure(' Error: boom', { toolName: 'Bash' })).to.equal(true);
+        });
+
+        it('stays correct after eviction and for results larger than the cache budget', () => {
+            // Push well over the 2M-character budget through the cache.
+            for (let i = 0; i < 40; i++) {
+                expect(isAgentToolResultFailure(`chunk ${i} `.repeat(10_000), { toolName: 'Bash' })).to.equal(false);
+            }
+            for (const [result, toolName, expected] of cases) {
+                expect(isAgentToolResultFailure(result, { toolName }), `after eviction: ${result}`).to.equal(expected);
+            }
+            const huge = 'ok line\n'.repeat(300_000);
+            expect(isAgentToolResultFailure(huge, { toolName: 'Bash' })).to.equal(false);
+            expect(isAgentToolResultFailure(`${huge}fatal: bad object`, { toolName: 'Bash' })).to.equal(true);
+            expect(isAgentToolResultFailure(`${huge}fatal: bad object`, { toolName: 'Bash' })).to.equal(true);
+        });
+    });
+
     describe('stripAnsiEscapes', () => {
 
         it('removes CSI color codes', () => {
