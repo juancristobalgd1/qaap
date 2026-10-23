@@ -421,6 +421,8 @@ const ALLOWED = [
     /^dev-packages\/application-package\//,
     // Fork-authored QA issue reports and multi-tenancy audit — not upstream Theia content.
     /^docs\/qa\/issues\/.*\.md$/,
+    // Cross-account agent handoff log (pending work, validation state); docs only.
+    /^docs\/HANDOFF\.md$/,
     /^MULTI_TENANCY_AUDIT\.md$/,
     // Fork-specific git attributes (line-ending rules for generated icon assets).
     /^\.gitattributes$/,

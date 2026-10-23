@@ -181,18 +181,23 @@ For more information also look at:
 
 
 
-## Flujo de trabajo de orquestación  
-Tú (Fable) eres el orquestador y el modelo más caro de la sesión: cada token que entra a tu contexto se factura a la tarifa más alta. Planifica, descompone, sintetiza — y mantén tu contexto ligero recibiendo conclusiones, no volcados.  
+## Selección de modelos y orquestación
 
-**Delega hacia abajo (por defecto):**  
-- Lectura amplia y exploración (greps multi-archivo, entender un subsistema, localizar código) → Explore o fast-worker. No leas tú archivos enteros que un Sonnet puede resumir.  
-- Trabajo mecánico (plantillas, pruebas, formateo, ediciones repetitivas) → fast-worker.  
+Política obligatoria: usa el modelo adecuado a la complejidad real de cada tarea; reserva Opus para pensar, revisar y decidir, y usa Haiku para ejecutar trabajo rutinario. Prioriza calidad y seguridad, no el ahorro a cualquier precio.
 
-**Escala hacia arriba (solo lo difícil):**  
-- Razonamiento intensivo, arquitectura, depuración compleja → deep-reasoner (Opus).  
-- Decisiones críticas o callejones sin salida → deep-reasoner con `model: "fable"` (patrón *advisor*: el asesor devuelve una decisión concisa; un ejecutor barato la implementa).  
+**Opus (`claude-opus-5-5`, sesión principal o agente `deep-reasoner`):** revisiones profundas de código y auditorías de seguridad; planificación de funcionalidades complejas y arquitectura; bugs difíciles, problemas sistémicos y regresiones; decisiones con impacto transversal; revisar planes antes de cambios grandes o arriesgados; validar resultados de trabajos complejos.
 
-**Reutiliza subagentes (caché por agente):** cada subagente mantiene su propia caché entre llamadas. Para iterar con el mismo deep-reasoner o Codex, continúa la conversación con `SendMessage` en lugar de lanzar un agente nuevo — respawnear re-paga todo el contexto que el agente ya tenía cacheado.  
+**Haiku (`claude-haiku-5-5`, agente `fast-worker` o `Explore`) como primera opción para:** tareas agénticas sencillas y bien delimitadas; exploración inicial y recopilación de información; cambios mecánicos, repetitivos o de alcance reducido; documentación y configuración sencillas; ejecutar comprobaciones y clasificar errores; subagentes de tareas rutinarias y de bajo riesgo. No mantengas Opus haciendo trabajo mecánico ni leyendo archivos enteros que Haiku puede resumir.
 
-Codex (/codex:rescue --background) es un ingeniero experto al nivel de deep-reasoner, desde una perspectiva diferente. Trátalo como un par, no como un revisor.  
-Decisiones de alto riesgo: asigna la misma tarea a deep-reasoner (Opus o Fable según el riesgo) + Codex en paralelo, sintetiza lo mejor de ambos, sin mostrarle a ninguno la respuesta del otro.  
+**Escalado:** si una tarea de Haiku exige razonamiento profundo, tiene ambigüedades importantes, toca arquitectura o seguridad, o falla repetidamente, detenla y pide a `deep-reasoner` (Opus) que analice el problema o revise el plan. No escales automáticamente lo sencillo.
+
+**Reglas de ejecución:**
+- Conserva el modelo actual si la tarea ya está avanzada y cambiarlo pierde contexto útil.
+- Antes de delegar, da al agente instrucciones, archivos relevantes, restricciones y criterios de aceptación claros.
+- No des nada por terminado sin verificar los cambios y ejecutar las pruebas pertinentes.
+- Comprueba qué modelo se usa realmente (`/model`, el selector de la app o el frontmatter `model:` de `.claude/agents/*.md`); escribir un nombre de modelo en un documento no cambia el modelo activo. Para un subagente puntual, pasa `model: "haiku"` u `model: "opus"` en la llamada a Agent.
+- Registra en `docs/HANDOFF.md` las tareas pendientes, el estado de validación y las limitaciones relevantes para continuar desde otra cuenta.
+
+**Reutiliza subagentes (caché por agente):** para iterar con el mismo deep-reasoner o Codex, continúa con `SendMessage` en lugar de lanzar un agente nuevo — respawnear re-paga todo el contexto cacheado.
+
+Codex (/codex:rescue --background) es un ingeniero experto al nivel de deep-reasoner, desde otra perspectiva: trátalo como un par, no como un revisor. Decisiones de alto riesgo: asigna la misma tarea a deep-reasoner + Codex en paralelo y sintetiza lo mejor de ambos, sin mostrarle a ninguno la respuesta del otro.
