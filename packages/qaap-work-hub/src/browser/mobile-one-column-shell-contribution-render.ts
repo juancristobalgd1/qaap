@@ -389,8 +389,6 @@ export function initBottomBarControllerExtracted(ctx: MobileOneColumnShellContri
         openPullRequestPanel: () => ctx.pullRequestPanelController.openPullRequestPanel(),
         executeAndDismiss: commandId => ctx.executeAndDismiss(commandId),
         relayoutMainPreviewWidgets: () => ctx.relayoutMainPreviewWidgets(),
-        conversationsStart: () => ctx.conversations.start(),
-        inboxStreamStart: () => ctx.inboxStream.start(),
         syncOverlayEdgeSwipeZones: () => ctx.syncOverlayEdgeSwipeZones(),
     };
     ctx.bottomBarController = new MobileShellBottomBarController({

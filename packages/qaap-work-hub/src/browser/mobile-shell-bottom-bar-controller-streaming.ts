@@ -96,7 +96,7 @@ export function createMobileBottomButtonExtracted(ctx: MobileShellBottomBarContr
         } else {
             btn.setAttribute('aria-pressed', 'false');
         }
-        const isHubLandingTab = def.id === 'hub-home' || def.id === 'hub-projects';
+        const isHubLandingTab = def.id === 'hub-projects';
         let hubTabNavAt = 0;
         const onHubTabActivate = (): void => {
             const now = Date.now();
@@ -262,7 +262,7 @@ export function removeBottomBarSecondaryMenuExtracted(ctx: MobileShellBottomBarC
 }
 
 export async function getBottomBarSecondaryItemsExtracted(ctx: MobileShellBottomBarControllerContext, def: MobileBottomButton): Promise<BottomBarSecondaryItem[]> {
-        if (def.id === 'hub-home' || def.id === 'hub-projects' || def.id === 'hub-review' || def.id === 'hub-automations') {
+        if (def.id === 'hub-projects' || def.id === 'hub-automations') {
             return [];
         }
         switch (def.id) {

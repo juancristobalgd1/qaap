@@ -114,8 +114,6 @@ describe('mobile-shell-bottom-bar-controller', () => {
             openPullRequestPanel: () => undefined,
             executeAndDismiss: async () => undefined,
             relayoutMainPreviewWidgets: () => undefined,
-            conversationsStart: () => undefined,
-            inboxStreamStart: () => undefined,
             syncOverlayEdgeSwipeZones: () => undefined,
             ...options.host,
         };
