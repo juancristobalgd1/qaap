@@ -72,6 +72,11 @@ describe('qaap-dev-preview-port-listener', () => {
         const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-port-cwd-')));
         const { child, port } = await spawnListeningChild(cwd);
         try {
+            if (!findListeningPidsOnPort(port).includes(child.pid!)) {
+                // Hosts that restrict reading other processes' /proc entries (e.g. Yama ptrace_scope on
+                // CI runners) cannot attribute the socket to the child; nothing to assert there.
+                this.skip();
+            }
             const cwds = findListeningProcessCwdsOnPort(port).map(entry => fs.realpathSync(entry));
             expect(cwds).to.deep.equal([cwd]);
         } finally {

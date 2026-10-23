@@ -1356,7 +1356,14 @@ export class QaapDockerOrchestrator {
             }
             if (!inspect.State.Running) {
                 wake.action = 'started';
-                await container.start();
+                try {
+                    await container.start();
+                } catch (startError) {
+                    // 304: the on-failure restart policy brought it up between inspect and start.
+                    if (!this.isDockerAlreadyStopped(startError)) {
+                        throw startError;
+                    }
+                }
             } else if (wake.action !== 'resumed') {
                 wake.action = 'running';
             }
