@@ -199,6 +199,18 @@ describe('MobileProjectsHomeUi', () => {
         expect(dave.querySelector('.theia-mobile-work-hub-home-getting-started')).to.not.equal(null);
     });
 
+    it('migrates an account-less completed flag even when dismissed is also set', () => {
+        window.localStorage.setItem('qaap.workHubHome.gettingStartedDismissed', '1');
+        window.localStorage.setItem('qaap.workHubHome.gettingStartedCompleted', '1');
+        const ui = new MobileProjectsHomeUi(createDeps());
+        ui.renderDashboard(document.createElement('div'), { ...snapshot(), accountKey: 'erin' });
+        expect(window.localStorage.getItem('qaap.workHubHome.gettingStartedCompleted')).to.equal(null);
+        expect(window.localStorage.getItem('qaap.workHubHome.gettingStartedCompleted.erin')).to.equal('1');
+        const frank = document.createElement('div');
+        ui.renderDashboard(frank, { ...snapshot(), accountKey: 'frank' });
+        expect(frank.querySelector('.theia-mobile-work-hub-home-getting-started')).to.not.equal(null);
+    });
+
     it('shows attention, workspaces, and continue sections once work exists', () => {
         const demo = project('demo', 'Demo');
         const deps = createDeps([demo]);

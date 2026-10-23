@@ -113,8 +113,14 @@ export class MobileProjectsHomeUi {
     }
 
     protected shouldShowGettingStarted(snapshot: WorkHubHomeSnapshot): boolean {
-        if (snapshot.statsSettled === false || this.readGettingStartedFlag('dismissed', snapshot)
-            || this.readGettingStartedFlag('completed', snapshot)) {
+        if (snapshot.statsSettled === false) {
+            return false;
+        }
+        // Read both flags (no short-circuit) so an account-less `completed` migrates to this account
+        // alongside `dismissed` instead of lingering for the next account to inherit.
+        const dismissed = this.readGettingStartedFlag('dismissed', snapshot);
+        const completed = this.readGettingStartedFlag('completed', snapshot);
+        if (dismissed || completed) {
             return false;
         }
         const hasTask = snapshot.recentItems.some(item => item.surface === 'task')

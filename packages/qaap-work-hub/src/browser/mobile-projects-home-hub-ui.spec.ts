@@ -98,6 +98,21 @@ describe('MobileProjectsHomeHubUi.buildHomeSnapshot statsSettled', () => {
 
     useSuiteJSDOM();
 
+    // Account-scoped keys too: a checklist flag left by one test must not hide the checklist in the next.
+    function clearGettingStartedFlags(): void {
+        const keys: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (key?.startsWith('qaap.workHubHome.gettingStarted')) {
+                keys.push(key);
+            }
+        }
+        keys.forEach(key => window.localStorage.removeItem(key));
+    }
+
+    beforeEach(() => clearGettingStartedFlags());
+    afterEach(() => clearGettingStartedFlags());
+
     function createHost(state: { inboxLoaded: boolean; tasksPending: boolean }): MobileProjectsHomeHubHost {
         return {
             projects: [],
@@ -122,8 +137,6 @@ describe('MobileProjectsHomeHubUi.buildHomeSnapshot statsSettled', () => {
             onOpenProject: () => undefined, onOpenRecent: () => undefined, onOpenAttention: () => undefined,
             onQuickAction: () => undefined,
         });
-        window.localStorage.removeItem('qaap.workHubHome.gettingStartedDismissed');
-        window.localStorage.removeItem('qaap.workHubHome.gettingStartedCompleted');
 
         const first = ui.buildHomeSnapshot();
         expect(first.statsSettled).to.equal(false);
