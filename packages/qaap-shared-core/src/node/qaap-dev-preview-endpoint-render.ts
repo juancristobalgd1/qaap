@@ -26,7 +26,7 @@ import {
 } from '../common/qaap-preview-identity';
 import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes, type QaapPreviewRoute } from '../common/qaap-preview-route';
 import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
-import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
+import { canSignalProcessGroup, isSelfOrUnsafeSignalTarget, terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, canonicalizeQaapPreviewRoot, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewAllocation, QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
@@ -667,16 +667,19 @@ export function supersedeConversationPreviewsExtracted(ctx: QaapDevPreviewEndpoi
 }
 
 export function terminatePreviewProcessExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number; readonly port?: number }): void {
-    if (record.osProcessId !== undefined) {
+    const osProcessId = record.osProcessId;
+    if (osProcessId !== undefined && !isSelfOrUnsafeSignalTarget(osProcessId)) {
         try {
-            process.kill(record.osProcessId, 'SIGTERM');
+            process.kill(osProcessId, 'SIGTERM');
         } catch {
             // Already gone, or not ours to signal; the registration is released either way.
         }
-        try {
-            process.kill(-record.osProcessId, 'SIGTERM');
-        } catch {
-            // Process group may not exist or may not be ours.
+        if (canSignalProcessGroup(osProcessId)) {
+            try {
+                process.kill(-osProcessId, 'SIGTERM');
+            } catch {
+                // Process group may not exist or may not be ours.
+            }
         }
     }
     if (record.port !== undefined) {

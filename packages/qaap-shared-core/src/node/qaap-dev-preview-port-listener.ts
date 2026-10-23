@@ -158,6 +158,10 @@ function readProcessCwd(pid: number): string | undefined {
 export function findListeningProcessCwdsOnPort(port: number): string[] {
     const cwds: string[] = [];
     for (const pid of findListeningPidsOnPort(port)) {
+        if (pid === process.pid) {
+            // The backend listening on a sandbox forward is not evidence about the preview's owner.
+            continue;
+        }
         const cwd = readProcessCwd(pid);
         if (!cwd) {
             return [];
@@ -178,15 +182,83 @@ function swallowEsrch(fn: () => void): void {
 }
 
 /**
+ * Process group id of `pid`, or undefined when it cannot be read. Linux reads /proc/<pid>/stat
+ * (parsed after the last `)` because the command name may contain spaces); elsewhere `ps`.
+ */
+export function readProcessGroupId(pid: number): number | undefined {
+    if (!Number.isInteger(pid) || pid <= 0) {
+        return undefined;
+    }
+    if (process.platform === 'linux') {
+        try {
+            const stat = fs.readFileSync(path.join('/proc', String(pid), 'stat'), 'utf8');
+            const fields = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/);
+            const pgid = Number(fields[2]);
+            return Number.isInteger(pgid) && pgid > 0 ? pgid : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+    try {
+        const output = execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], {
+            encoding: 'utf8',
+            timeout: 2000,
+        }).trim();
+        const pgid = Number(output);
+        return Number.isInteger(pgid) && pgid > 0 ? pgid : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * True when signalling `pid` could hit this process: not a positive integer above 1 (0, 1, negatives
+ * and NaN would address groups or every process), or this process itself.
+ */
+export function isSelfOrUnsafeSignalTarget(pid: number): boolean {
+    if (!Number.isInteger(pid) || pid <= 1) {
+        return true;
+    }
+    return pid === process.pid;
+}
+
+/**
+ * Whether `process.kill(-pid)` is safe: the group led by `pid` must be readable and must not contain
+ * this process. Fail-safe: an unreadable process group is never signalled.
+ */
+export function canSignalProcessGroup(pid: number): boolean {
+    if (isSelfOrUnsafeSignalTarget(pid)) {
+        return false;
+    }
+    const ownGroup = readProcessGroupId(process.pid);
+    const targetGroup = readProcessGroupId(pid);
+    if (ownGroup === undefined || targetGroup === undefined) {
+        return false;
+    }
+    return ownGroup !== pid && targetGroup !== ownGroup;
+}
+
+/**
  * SIGTERM the listener PID and its process group (`-pid`). Best-effort; never throws.
  * Used when superseding a terminal-spawned preview that has no recorded osProcessId.
+ * Never signals this process: the sandbox forwards preview ports through the backend itself.
  */
 export function terminateListenersOnPort(port: number): void {
     if (process.platform === 'win32') {
         return;
     }
+    let refused = false;
     for (const pid of findListeningPidsOnPort(port)) {
+        if (isSelfOrUnsafeSignalTarget(pid)) {
+            refused = refused || pid === process.pid;
+            continue;
+        }
         swallowEsrch(() => process.kill(pid, 'SIGTERM'));
-        swallowEsrch(() => process.kill(-pid, 'SIGTERM'));
+        if (canSignalProcessGroup(pid)) {
+            swallowEsrch(() => process.kill(-pid, 'SIGTERM'));
+        }
+    }
+    if (refused) {
+        console.warn(`[qaap-preview] refusing to signal own process listening on port ${port}; the preview server lives elsewhere (sandbox forward)`);
     }
 }

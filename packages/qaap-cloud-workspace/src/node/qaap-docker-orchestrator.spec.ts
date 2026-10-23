@@ -984,6 +984,7 @@ describe('QaapDockerOrchestrator', () => {
             expect(options.HostConfig?.LogConfig).to.deep.equal({ Type: 'json-file', Config: { 'max-size': '50m', 'max-file': '5' } });
             expect(options.HostConfig?.CapDrop).to.deep.equal(['ALL']);
             expect(options.HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
+            expect(options.HostConfig?.RestartPolicy).to.deep.equal({ Name: 'on-failure', MaximumRetryCount: 3 });
             expect(options.Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
         });
     });

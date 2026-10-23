@@ -1452,6 +1452,9 @@ export class QaapDockerOrchestrator {
                         [TENANT_BACKEND_LOGS_MOUNT]: TENANT_BACKEND_LOGS_TMPFS_OPTIONS,
                     },
                     NetworkMode: networkMode,
+                    // Restart a backend that crashed (OOM, node exit) on its own. Create-time only: not part of
+                    // tenantBackendContainerMatches, so live containers are never recreated over this setting.
+                    RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 3 },
                     AutoRemove: false,
                 },
             });

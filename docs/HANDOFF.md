@@ -2,6 +2,27 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-10-24 — VPS caído: backend de tenant se autoeliminaba y no se recuperaba
+
+**Diagnóstico** (prod `https://161.97.69.219.sslip.io`, build `f89ce0b32`): toda la app quedaba en spinner + "took too long to start", 502 `Tenant backend unavailable / socket hang up` en `project-sessions`, `user-settings` y `socket.io`.
+- Causa 1: el forwarder del sandbox hace que el propio backend escuche en el puerto de la preview; al sustituir la preview, `terminateListenersOnPort` le mandaba SIGTERM a sí mismo y a su grupo (logs: `[qaap-preview] reserved` → 3 s → `Stopping backend contributions`, Exited 1, ambos tenants el 23 oct).
+- Causa 2: el relay `qaap-ingress-*` sigue vivo, el proxy ve `socket hang up` (no un connect error), nunca invalida el target ni re-ensura → 502 permanente. Sin restart policy.
+
+**Hecho** (rama `fix/tenant-backend-preview-selfkill`)
+- Mitigación en prod: `docker start` de los dos `qaap-backend-*` en el Docker rootless (uid 1000). Se volverán a caer al abrir una preview hasta desplegar el fix.
+- `qaap-shared-core`: guard `isSelfOrUnsafeSignalTarget` / `canSignalProcessGroup` (nunca pid ≤1, el propio pid ni un grupo que contenga al backend; fail-safe si no se lee el pgid) en `terminateListenersOnPort`, `terminatePreviewProcessExtracted` y `releasePreviewsForWorkspace`; `findListeningProcessCwdsOnPort` ignora el propio pid.
+- `qaap-cloud-workspace`: hang-up antes de respuesta (no abortado por el cliente) invalida el target y reintenta GET/HEAD una vez; WS invalida igual; backend de tenant creado con `RestartPolicy on-failure` (3).
+
+**Validación**
+- `npx tsc -b` de ambos paquetes OK; specs: shared-core 116 passing, cloud-workspace 147 passing; drift-check OK; eslint 0 errores.
+- Diagnóstico de usuario hecho por un agente Haiku en el navegador (bloqueado en el arranque, flujos 2-8 sin probar).
+
+**Pendiente**
+- PR + CI + deploy; tras deploy, repetir la prueba Haiku de flujos 2-8 (Work Hub, añadir repo, delegar tarea, Settings/BYOK, recarga, móvil).
+- Al sustituir una preview servida desde el sandbox, el dev server dentro del sandbox no se termina (huérfano): enrutar el terminate al exec server del sandbox.
+- `osProcessId` reportado desde el sandbox está en otro pid namespace: no debería señalarse localmente.
+- P1: mensaje de error real en el frontend cuando el backend devuelve 502; fallos `opencode`/`qaiq` exit 1; `could not grant agent uid 1001 access … cache`; `task storage write failed`.
+
 ## 2026-10-23 — Política de selección de modelos
 
 **Hecho**

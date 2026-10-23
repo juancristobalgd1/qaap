@@ -147,6 +147,22 @@ describe('QaapTenantBackendProxyContribution', () => {
             }
         });
 
+        it('evicts the cached target when the tenant backend hangs up before answering the upgrade', async () => {
+            const hangUp = net.createServer(connection => connection.destroy());
+            await new Promise<void>(resolve => hangUp.listen(0, '127.0.0.1', resolve));
+            try {
+                const invalidations: unknown[] = [];
+                const proxy = createWebSocketProxy((hangUp.address() as net.AddressInfo).port, invalidations);
+                const socket = new PassThrough();
+                const closed = waitForClose(socket);
+                await proxy.proxyWebSocket(upgradeRequest(), socket, Buffer.alloc(0), 'alice', SESSION, [], {});
+                await closed;
+                expect(invalidations).to.deep.equal([['alice', true]]);
+            } finally {
+                await new Promise<void>(resolve => hangUp.close(() => resolve()));
+            }
+        });
+
         it('does not evict the target when the backend answers the upgrade with an HTTP response', async () => {
             const server = http.createServer((_req, res) => res.writeHead(403).end());
             await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -173,14 +189,36 @@ describe('QaapTenantBackendProxyContribution', () => {
 
     it('evicts only for unreachable backends, not for a slow live one', () => {
         const proxy = createProxy() as unknown as {
-            shouldEvictTenantBackendTarget(error: unknown, timedOut: boolean, connected: boolean): boolean;
+            shouldEvictTenantBackendTarget(error: unknown, timedOut: boolean, connected: boolean, responseStarted: boolean, clientAborted: boolean): boolean;
+            isTenantBackendHangUp(error: unknown, responseStarted: boolean, clientAborted: boolean): boolean;
         };
         const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
         const timedOut = new Error('Tenant backend did not respond in time.');
-        expect(proxy.shouldEvictTenantBackendTarget(refused, false, false)).to.equal(true);
-        expect(proxy.shouldEvictTenantBackendTarget(timedOut, true, false)).to.equal(true);
-        expect(proxy.shouldEvictTenantBackendTarget(timedOut, true, true)).to.equal(false);
-        expect(proxy.shouldEvictTenantBackendTarget(new Error('socket hang up'), false, true)).to.equal(false);
+        const hangUp = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+        expect(proxy.shouldEvictTenantBackendTarget(refused, false, false, false, false)).to.equal(true);
+        expect(proxy.shouldEvictTenantBackendTarget(timedOut, true, false, false, false)).to.equal(true);
+        expect(proxy.shouldEvictTenantBackendTarget(timedOut, true, true, false, false)).to.equal(false);
+        // A live backend that hangs up before answering is dead enough to evict...
+        expect(proxy.shouldEvictTenantBackendTarget(hangUp, false, true, false, false)).to.equal(true);
+        expect(proxy.shouldEvictTenantBackendTarget(new Error('socket hang up'), false, true, false, false)).to.equal(true);
+        // ...but not once the response started, nor when the browser aborted.
+        expect(proxy.shouldEvictTenantBackendTarget(hangUp, false, true, true, false)).to.equal(false);
+        expect(proxy.shouldEvictTenantBackendTarget(hangUp, false, true, false, true)).to.equal(false);
+    });
+
+    it('classifies only a pre-response hang-up of a live client as a backend hang-up', () => {
+        const proxy = createProxy() as unknown as {
+            isTenantBackendHangUp(error: unknown, responseStarted: boolean, clientAborted: boolean): boolean;
+        };
+        const econnreset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+        const epipe = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+        const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+        expect(proxy.isTenantBackendHangUp(new Error('socket hang up'), false, false)).to.equal(true);
+        expect(proxy.isTenantBackendHangUp(econnreset, false, false)).to.equal(true);
+        expect(proxy.isTenantBackendHangUp(epipe, false, false)).to.equal(true);
+        expect(proxy.isTenantBackendHangUp(refused, false, false)).to.equal(false);
+        expect(proxy.isTenantBackendHangUp(new Error('socket hang up'), true, false)).to.equal(false);
+        expect(proxy.isTenantBackendHangUp(new Error('socket hang up'), false, true)).to.equal(false);
     });
 
     it('does not evict a live tenant backend when the HTTP response wait times out, and closes the upstream request', async () => {
@@ -263,6 +301,150 @@ describe('QaapTenantBackendProxyContribution', () => {
             server.closeAllConnections();
             await new Promise<void>(resolve => server.close(() => resolve()));
         }
+    });
+
+    describe('upstream hang-up before the response (relay outliving its stopped backend)', () => {
+        type ForwardingProxy = Record<string, unknown> & {
+            forwardHttp(req: unknown, res: unknown, target: unknown, assertion: string, tenantLogin: string, timeoutMs: number,
+                extraHeaders?: unknown, publicRoute?: unknown, retryOnConnectFailure?: () => Promise<void>): void;
+        };
+
+        const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+        function listenOn(server: net.Server | http.Server): Promise<number> {
+            return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve((server.address() as net.AddressInfo).port)));
+        }
+
+        function closeHttp(server: http.Server): Promise<void> {
+            server.closeAllConnections();
+            return new Promise(resolve => server.close(() => resolve()));
+        }
+
+        /** A front that forwards each request to `upstreamPort`; `replay` receives the proxy's one replay, if any. */
+        function createForwardingFront(
+            upstreamPort: number,
+            invalidations: unknown[],
+            replay?: { port: number; calls: number },
+        ): http.Server {
+            const proxy = createProxy() as unknown as ForwardingProxy;
+            proxy.docker = { invalidateTenantBackendTarget: (...args: unknown[]) => invalidations.push(args) };
+            return http.createServer((req, res) => {
+                const retry = replay ? async (): Promise<void> => {
+                    replay.calls += 1;
+                    proxy.forwardHttp(req, res, { ...TARGET, port: replay.port }, 'assertion', 'alice', 5_000);
+                } : undefined;
+                proxy.forwardHttp(req, res, { ...TARGET, port: upstreamPort }, 'assertion', 'alice', 5_000, undefined, undefined, retry);
+            });
+        }
+
+        function openGet(port: number, path = '/app'): Promise<{ status: number; req: http.ClientRequest }> {
+            return new Promise((resolve, reject) => {
+                const req = http.get({ host: '127.0.0.1', port, path }, res => {
+                    res.resume();
+                    resolve({ status: res.statusCode ?? 0, req });
+                });
+                req.on('error', reject);
+            });
+        }
+
+        it('invalidates the target and replays a GET once when the backend hangs up before answering', async () => {
+            const hangUp = net.createServer(connection => connection.destroy());
+            const healthy = http.createServer((_req, res) => res.end('ok'));
+            const hangUpPort = await listenOn(hangUp);
+            const healthyPort = await listenOn(healthy);
+            const invalidations: unknown[] = [];
+            const replay = { port: healthyPort, calls: 0 };
+            const front = createForwardingFront(hangUpPort, invalidations, replay);
+            const frontPort = await listenOn(front);
+            try {
+                const { status, req } = await openGet(frontPort);
+                req.destroy();
+                expect(status).to.equal(200);
+                expect(replay.calls).to.equal(1);
+                expect(invalidations).to.deep.equal([['alice', { ...TARGET, port: hangUpPort }]]);
+            } finally {
+                hangUp.close();
+                await closeHttp(healthy);
+                await closeHttp(front);
+            }
+        });
+
+        it('replays a hang-up only once: a second hang-up is a 502, with no third attempt', async () => {
+            const hangUp = net.createServer(connection => connection.destroy());
+            const alsoHangUp = net.createServer(connection => connection.destroy());
+            const hangUpPort = await listenOn(hangUp);
+            const alsoHangUpPort = await listenOn(alsoHangUp);
+            const invalidations: unknown[] = [];
+            const replay = { port: alsoHangUpPort, calls: 0 };
+            const front = createForwardingFront(hangUpPort, invalidations, replay);
+            const frontPort = await listenOn(front);
+            try {
+                const { status, req } = await openGet(frontPort).catch(() => ({ status: 502, req: undefined }));
+                req?.destroy();
+                expect(status).to.equal(502);
+                expect(replay.calls).to.equal(1);
+                // The replay's own target is evicted too; it is the same tenant, so the next request re-ensures it.
+                expect(invalidations).to.have.length(2);
+            } finally {
+                hangUp.close();
+                alsoHangUp.close();
+                await closeHttp(front);
+            }
+        });
+
+        it('does not invalidate when the backend already answered its headers and then cut the body', async () => {
+            const cutting = http.createServer((req, res) => {
+                res.writeHead(200);
+                res.write('partial');
+                setTimeout(() => req.socket.destroy(), 20);
+            });
+            const cuttingPort = await listenOn(cutting);
+            const invalidations: unknown[] = [];
+            const replay = { port: cuttingPort, calls: 0 };
+            const front = createForwardingFront(cuttingPort, invalidations, replay);
+            const frontPort = await listenOn(front);
+            try {
+                const { status, req } = await openGet(frontPort);
+                req.destroy();
+                await delay(100);
+                expect(status).to.equal(200);
+                expect(replay.calls).to.equal(0);
+                expect(invalidations).to.deep.equal([]);
+            } finally {
+                await closeHttp(cutting);
+                await closeHttp(front);
+            }
+        });
+
+        it('does not invalidate or replay when the browser aborts while the backend has not answered', async () => {
+            let tenantGotRequest!: () => void;
+            const tenantReceived = new Promise<void>(resolve => { tenantGotRequest = resolve; });
+            let tenantSawClose!: () => void;
+            const tenantClosed = new Promise<void>(resolve => { tenantSawClose = resolve; });
+            const silent = http.createServer((_req, tenantRes) => {
+                tenantRes.once('close', () => tenantSawClose());
+                tenantGotRequest();
+            });
+            const silentPort = await listenOn(silent);
+            const invalidations: unknown[] = [];
+            const replay = { port: silentPort, calls: 0 };
+            const front = createForwardingFront(silentPort, invalidations, replay);
+            const frontPort = await listenOn(front);
+            try {
+                // No response ever arrives, so the browser request is simply abandoned once the backend has it.
+                const clientReq = http.get({ host: '127.0.0.1', port: frontPort, path: '/app' });
+                clientReq.on('error', () => undefined);
+                await tenantReceived;
+                clientReq.destroy();
+                await tenantClosed;
+                await delay(100);
+                expect(replay.calls).to.equal(0);
+                expect(invalidations).to.deep.equal([]);
+            } finally {
+                await closeHttp(silent);
+                await closeHttp(front);
+            }
+        });
     });
 
     describe('early request routing (before Express and Socket.IO)', () => {

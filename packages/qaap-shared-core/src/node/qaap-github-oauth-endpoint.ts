@@ -82,6 +82,7 @@ import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } fro
 import { QaapHealthCheckContribution, type QaapHealthCheckResult } from './qaap-health-check-contribution';
 import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
 import { qaapMobileEntryProbeFields } from './qaap-mobile-entry-flag';
+import { canSignalProcessGroup, isSelfOrUnsafeSignalTarget } from './qaap-dev-preview-port-listener';
 import {
     QaapGitProgressParser,
     describeRepositoryImportFailure,
@@ -1160,9 +1161,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const records = this.portRegistry?.listForOwnerUnderRoot(login, workspacePath) ?? [];
         for (const record of records) {
             const pid = record.osProcessId;
-            if (typeof pid === 'number' && pid > 1) {
+            if (typeof pid === 'number' && !isSelfOrUnsafeSignalTarget(pid)) {
                 try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
-                try { process.kill(-pid, 'SIGTERM'); } catch { /* already gone */ }
+                if (canSignalProcessGroup(pid)) {
+                    try { process.kill(-pid, 'SIGTERM'); } catch { /* already gone */ }
+                }
             }
             this.portRegistry.releasePreview(record.previewId, login);
         }
