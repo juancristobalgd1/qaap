@@ -9,7 +9,7 @@ import {
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
-import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
+import { QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import {
     BottomBarSecondaryItem,
@@ -95,27 +95,8 @@ export function shouldDismissSheetsForButtonExtracted(ctx: MobileShellBottomBarC
 
 export async function onMobileBottomButtonClickExtracted(ctx: MobileShellBottomBarControllerContext, def: MobileBottomButton, btn: HTMLButtonElement): Promise<void> {
     MobileHaptics.fire(MobileHaptics.LIGHT);
-    if (def.id === 'hub-home') {
-        dismissQaapAccountMenu();
-        await ctx.host.openMobileWorkHubLanding('home');
-        return;
-    }
-    if (def.id === 'hub-inbox') {
-        dismissQaapAccountMenu();
-        await ctx.host.openMobileWorkHubLanding('review');
-        ctx.host.conversationsStart();
-        ctx.host.inboxStreamStart();
-        return;
-    }
     if (def.id === 'hub-projects') {
         await ctx.host.openMobileWorkHubLanding('repos');
-        return;
-    }
-    if (def.id === 'hub-review') {
-        dismissQaapAccountMenu();
-        await ctx.host.openMobileWorkHubLanding('review');
-        ctx.host.conversationsStart();
-        ctx.host.inboxStreamStart();
         return;
     }
     if (def.id === 'projects') {

@@ -9,7 +9,6 @@ export const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';
 
 export interface WorkHubPerfProbeDiagnostics {
     readonly projectCount: number;
-    readonly mcRowCount: number;
     readonly teamRowCount: number;
     readonly hubView: string;
 }
@@ -26,8 +25,6 @@ export interface QaapWorkHubPerfProbeApi {
     burstConversationTicks(count: number): void;
     setTranscriptOverlayOpenForProbe(open: boolean): void;
     openSessionsSidebarForProbe(): void;
-    navigateToHomeHubForProbe(): void;
-    expandMissionControlForProbe(): void;
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;

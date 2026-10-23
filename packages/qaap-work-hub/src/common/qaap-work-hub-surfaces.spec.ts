@@ -13,6 +13,13 @@ describe('qaap-work-hub-surfaces', () => {
         expect(normalizeWorkHubViewId('work')).to.equal('tasks');
         expect(normalizeWorkHubViewId('repos')).to.equal('tasks');
         expect(normalizeWorkHubViewId('home')).to.equal('tasks');
+        expect(normalizeWorkHubViewId('chat')).to.equal('tasks');
+    });
+
+    it('keeps the live hub views', () => {
+        for (const view of ['tasks', 'review', 'diff', 'workflows']) {
+            expect(normalizeWorkHubViewId(view)).to.equal(view);
+        }
     });
 
 });

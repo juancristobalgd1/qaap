@@ -53,8 +53,6 @@ export interface MobileShellBottomBarHost {
     openPullRequestPanel(): void;
     executeAndDismiss(commandId: string): Promise<void>;
     relayoutMainPreviewWidgets(): void;
-    conversationsStart(): void;
-    inboxStreamStart(): void;
     syncOverlayEdgeSwipeZones(): void;
 }
 

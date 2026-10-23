@@ -738,24 +738,16 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
     });
 
     describe('first task load completion', () => {
-        function hostWithView(view: 'tasks' | 'home' | 'other'): { host: MobileProjectsTasksHubHost; renders: () => number } {
+        function hostWithView(view: 'tasks' | 'other'): { host: MobileProjectsTasksHubHost; renders: () => number } {
             const host = createHost({ running: 0 });
             let count = 0;
             host.tasksFirstLoadPending = true;
             host.renderList = () => { count++; };
             host.hubQueryUi = {
                 isTasksHubView: () => view === 'tasks',
-                isHomeHubView: () => view === 'home',
             } as unknown as MobileProjectsTasksHubHost['hubQueryUi'];
             return { host, renders: () => count };
         }
-
-        it('repaints the Home hub when the fallback settles the first load', () => {
-            const { host, renders } = hostWithView('home');
-            new MobileProjectsTasksHubUi(host).markTasksFirstLoadComplete(true);
-            expect(host.tasksFirstLoadPending).to.equal(false);
-            expect(renders()).to.equal(1);
-        });
 
         it('repaints the tasks hub and skips other views', () => {
             const tasks = hostWithView('tasks');

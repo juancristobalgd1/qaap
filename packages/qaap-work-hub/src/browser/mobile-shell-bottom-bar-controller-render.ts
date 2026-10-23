@@ -343,10 +343,7 @@ export function getMobileIdeHeaderViewButtonsExtracted(ctx: MobileShellBottomBar
 export function isMobileBottomButtonActiveExtracted(ctx: MobileShellBottomBarControllerContext, id: MobileBottomButtonId): boolean {
     if (!ctx.host.isMobileWorkHubLandingVisible()) {
         switch (id) {
-            case 'hub-home':
-            case 'hub-inbox':
             case 'hub-projects':
-            case 'hub-review':
             case 'hub-automations':
                 return false;
             default:
@@ -354,18 +351,10 @@ export function isMobileBottomButtonActiveExtracted(ctx: MobileShellBottomBarCon
         }
     }
     switch (id) {
-        case 'hub-home':
-            return false;
-        case 'hub-inbox':
-            return ctx.host.isMobileWorkHubLandingVisible()
-                && ctx.host.getProjectsPanel()?.getHubView() === 'review';
         case 'hub-projects':
             return ctx.host.isMobileWorkHubLandingVisible()
                 && ctx.host.getProjectsPanel()?.getHubView() === 'tasks'
                 && !ctx.host.getProjectsPanel()?.isProjectDetailView();
-        case 'hub-review':
-            return ctx.host.isMobileWorkHubLandingVisible()
-                && ctx.host.getProjectsPanel()?.getHubView() === 'review';
         case 'hub-automations':
             return ctx.host.isMobileWorkHubLandingVisible()
                 && false;

@@ -11,7 +11,6 @@ import {
 } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import { githubRepoKeysForProjects } from './mobile-work-hub-inbox';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
@@ -35,8 +34,6 @@ export interface MobileProjectsSubtitleHost {
     inboxPullRequestsLoaded: boolean;
     inboxGithubSignedIn: boolean | undefined;
 
-    buildHomeSubtitle(snapshot: WorkHubHomeSnapshot): string;
-    buildHomeSnapshot(): WorkHubHomeSnapshot;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     shouldUseAgentsHubLanding(): boolean;
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
@@ -80,12 +77,6 @@ export class MobileProjectsSubtitleUi {
             this.host.subtitleEl.textContent = count === 1
                 ? nls.localize('qaap/diff/oneProjectWithChanges', '1 project with changes')
                 : nls.localize('qaap/diff/nProjectsWithChanges', '{0} projects with changes', String(count));
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'home') {
-            this.host.subtitleEl.className = 'theia-mobile-projects-subtitle q-fs-meta';
-            this.host.subtitleEl.textContent = this.host.buildHomeSubtitle(this.host.buildHomeSnapshot());
-            this.host.subtitleEl.hidden = false;
             return;
         }
         if (this.host.homeMode && this.host.hubView === 'workflows') {
@@ -188,24 +179,6 @@ export class MobileProjectsSubtitleUi {
                     'Open pull requests across your linked repositories',
                 );
             }
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'chat') {
-            this.host.subtitleEl.className = 'theia-mobile-projects-subtitle';
-            const chatCount = this.host.projects.reduce(
-                (sum, project) => sum + this.host.conversationIndexUi.localChatsForProject(project).length,
-                0,
-            );
-            this.host.subtitleEl.textContent = chatCount > 0
-                ? nls.localize(
-                    'qaap/mobileProjects/chatSubtitleCount',
-                    '{0} local chat sessions · saved on this device',
-                    String(chatCount),
-                )
-                : nls.localize(
-                    'qaap/mobileProjects/chatSubtitle',
-                    'Interactive workspace chat — persists when you close the app',
-                );
             return;
         }
         if (this.host.isProjectDetailView()) {

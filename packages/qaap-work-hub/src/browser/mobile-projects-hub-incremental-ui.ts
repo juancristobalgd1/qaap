@@ -121,25 +121,6 @@ export class MobileProjectsHubIncrementalUi {
             }
             return false;
         }
-        if (this.host.hubView === 'chat') {
-            const groups = this.host.collectChatHubGroups(projects);
-            const items = groups.map(group => ({
-                project: group.project,
-                items: group.summaries.map(summary => ({
-                    kind: 'conversation' as const,
-                    project: group.project,
-                    summary,
-                    sortAt: summary.updatedAt,
-                    priority: 0,
-                })),
-            }));
-            const inboxRoot = this.findInboxRoot('chat-inbox');
-            if (this.tryPatchInbox('chat-inbox', inboxRoot, items)) {
-                this.host.renderSubtitle();
-                return true;
-            }
-            return false;
-        }
         if (this.host.hubView === 'review') {
             const groups = this.host.collectReviewGroups(projects);
             const inboxRoot = this.findInboxRoot('review-inbox');

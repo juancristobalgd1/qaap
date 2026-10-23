@@ -395,8 +395,7 @@ export function markTasksFirstLoadCompleteExtracted(ctx: MobileProjectsTasksHubU
             return;
         }
         ctx.host.tasksFirstLoadPending = false;
-        if (render && ctx.host.visible && (ctx.host.hubQueryUi.isTasksHubView() || ctx.host.hubQueryUi.isHomeHubView())) {
-            // Home also repaints: its getting-started checklist waits on `tasksFirstLoadPending` (statsSettled).
+        if (render && ctx.host.visible && ctx.host.hubQueryUi.isTasksHubView()) {
             ctx.host.renderList();
         }
 }

@@ -64,14 +64,10 @@ export class MobileProjectsHubQueryUi {
     }
 
     projectsForCurrentHubList(): MobileProjectEntry[] {
-        const base = (this.host.hubView === 'tasks' || this.host.hubView === 'chat' || this.host.hubView === 'review')
+        const base = (this.host.hubView === 'tasks' || this.host.hubView === 'review')
             ? this.host.projects
             : this.applyFilter(this.host.projects, this.host.filter);
         return this.applySearch(base);
-    }
-
-    isHomeHubView(): boolean {
-        return this.host.hubView === 'home';
     }
 
     isTasksHubView(): boolean {
@@ -81,7 +77,7 @@ export class MobileProjectsHubQueryUi {
     isSidebarSecondaryHubView(): boolean {
         return QAAP_AGENTS_HUB_LANDING_ENABLED
             && this.host.homeMode
-            && (this.host.hubView === 'home' || this.host.hubView === 'workflows');
+            && this.host.hubView === 'workflows';
     }
 
     navigateBackFromSidebarSecondaryHub(): void {

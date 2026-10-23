@@ -91,7 +91,6 @@ export interface MobileProjectsPanelLifecycleHost {
     refreshDiffHubView(): Promise<void>;
     refreshTasksHubApprovals(forceRender?: boolean): void;
     refreshInboxPullRequests(projects?: MobileProjectEntry[], force?: boolean): Promise<void>;
-    refreshHomeHubData(forceRender: boolean): void;
     render(): void;
     renderList(): void;
     scheduleRenderList(): void;
@@ -240,9 +239,6 @@ export class MobileProjectsPanelLifecycleUi {
             this.subscribeToInboxStream();
             void this.host.refreshInboxPullRequests(undefined, true);
         }
-        if (this.host.hubView === 'home') {
-            this.host.refreshHomeHubData(false);
-        }
     }
 
     protected async primeVisiblePanelData(): Promise<void> {
@@ -331,8 +327,6 @@ export class MobileProjectsPanelLifecycleUi {
                         return;
                     }
                     this.host.scheduleRenderList();
-                } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView()) {
-                    this.host.scheduleRenderList();
                 } else if (this.host.visible && !this.host.transcriptSheet) {
                     void this.applyActiveTasksRefresh();
                 }
@@ -397,8 +391,6 @@ export class MobileProjectsPanelLifecycleUi {
                     } else if (this.host.visible && isWorkingAgentsExpandPinnedOpen()) {
                         // Transcript overlay / non-tasks surface: keep Working DETAIL activity live.
                         this.host.updateTasksAttentionChrome();
-                    } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView()) {
-                        this.host.scheduleRenderList();
                     } else if (this.host.visible && !this.host.transcriptSheet) {
                         void this.applyActiveTasksRefresh();
                     }
@@ -521,15 +513,6 @@ export class MobileProjectsPanelLifecycleUi {
             this.host.chatServiceRefreshHandle = undefined;
             void this.applyActiveTasksRefresh();
         }, 120);
-    }
-
-    scheduleChatHubListRefreshAfterSummaries(): void {
-        void this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries().then(() => {
-            if (this.host.hubView === 'chat' && this.host.visible) {
-                this.host.scheduleRenderList();
-                this.host.renderSubtitle();
-            }
-        });
     }
 
     async applyActiveTasksRefresh(): Promise<void> {

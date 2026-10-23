@@ -61,7 +61,6 @@ export interface MobileProjectsHubHeaderHost {
     transcriptSheetUi: MobileProjectsTranscriptSheetUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     updateTasksAttentionChrome(): void;
-    buildHomeGreeting(): string;
     scroll: HTMLElement;
     lastTitleTap: number;
 
@@ -130,10 +129,6 @@ export class MobileProjectsHubHeaderUi {
             this.host.titleEl.textContent = nls.localize('qaap/diff/reviewLabel', 'Working changes');
             return;
         }
-        if (this.host.hubView === 'chat') {
-            this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/chatTitle', 'Chat');
-            return;
-        }
         if (this.host.hubView === 'tasks') {
             const useAgentsHubLanding = this.host.shouldUseAgentsHubLanding();
             if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject && this.host.transcriptOpenSummary) {
@@ -163,12 +158,6 @@ export class MobileProjectsHubHeaderUi {
         }
         if (this.host.hubView === 'workflows') {
             this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/workflowsTitle', 'Workflows');
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'home') {
-            this.host.titleEl.textContent = this.host.buildHomeGreeting();
-            this.host.titleAttentionEl.hidden = true;
-            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
             return;
         }
         this.host.titleAttentionEl.hidden = true;

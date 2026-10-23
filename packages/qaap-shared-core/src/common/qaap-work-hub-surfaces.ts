@@ -25,9 +25,12 @@ export function filterVpsTaskSummaries<T extends QaapAgentConversationSummaryDTO
     return summaries.filter(isVpsTaskSummary);
 }
 
-/** Legacy hub tab ids — removed landing surfaces now resolve to the unified Agents Work Hub. */
+/**
+ * Legacy hub tab ids — removed landing surfaces (Home, Chat, Chats, Team, Work, Projects) now resolve
+ * to the unified Agents Work Hub, so a persisted or deep-linked legacy id never lands on a deleted view.
+ */
 export function normalizeWorkHubViewId(view: string): string {
-    if (view === 'home' || view === 'chats' || view === 'team' || view === 'work' || view === 'repos') {
+    if (view === 'home' || view === 'chat' || view === 'chats' || view === 'team' || view === 'work' || view === 'repos') {
         return 'tasks';
     }
     return view;

@@ -49,10 +49,7 @@ export type MobileBottomButtonId =
     | 'explore'
     | 'pr'
     | 'terminal'
-    | 'hub-home'
     | 'hub-projects'
-    | 'hub-review'
-    | 'hub-inbox'
     | 'hub-automations';
 
 export interface MobileBottomButton {

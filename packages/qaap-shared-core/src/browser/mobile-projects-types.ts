@@ -45,8 +45,10 @@ export type MobileProjectFilter = 'all' | 'active' | 'pinned';
 
 /**
  * Work Hub primary surfaces.
- * - `chat` — local Theia sessions (persist in workspace metadata).
- * - `tasks` — VPS agent work (conversations + background tasks).
+ * - `tasks` — VPS agent work (conversations + background tasks); the Agents Hub landing.
+ * - `review`, `diff`, `workflows` — the other live landing views.
+ * - `home`, `chat` — removed views, kept only as legacy navigation and persisted-state inputs;
+ *   `normalizeWorkHubViewId` resolves them to `tasks` before any view renders.
  */
 export type MobileProjectsHubView = 'home' | 'repos' | 'chat' | 'tasks' | 'review' | 'diff' | 'workflows' | 'team';
 

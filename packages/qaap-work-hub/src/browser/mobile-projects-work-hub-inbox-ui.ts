@@ -40,7 +40,7 @@ export interface MobileProjectsWorkHubInboxHost {
 
     refreshInboxPullRequests(projects: MobileProjectEntry[] | undefined): Promise<void>;
     renderSubtitle(): void;
-    onHomeQuickAction(action: import('./mobile-projects-home-ui').WorkHubHomeQuickActionId): Promise<void>;
+    onHomeQuickAction(action: import('./mobile-projects-home-hub-ui').WorkHubHomeQuickActionId): Promise<void>;
     localChatsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     vpsTasksForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     conversationMatchesQuery(summary: QaapAgentConversationSummaryDTO, query: string): boolean;
@@ -114,39 +114,6 @@ export class MobileProjectsWorkHubInboxUi {
         } else {
             this.host.scroll.append(this.createReviewEmptyState());
         }
-        this.host.renderSubtitle();
-    }
-
-    renderChatHubView(projects: MobileProjectEntry[]): void {
-        const groups = this.collectChatHubGroups(projects);
-        if (groups.length === 0) {
-            this.host.scroll.append(this.createChatEmptyState());
-            this.host.renderSubtitle();
-            return;
-        }
-        const host = document.createElement('div');
-        host.className = 'theia-mobile-projects-chats-inbox theia-mod-local-chat';
-        for (const group of groups) {
-            const items: MobileWorkHubInboxItem[] = group.summaries.map(summary => ({
-                kind: 'conversation',
-                project: group.project,
-                summary,
-                sortAt: summary.updatedAt,
-                priority: 0,
-            }));
-            host.append(this.createInboxProjectGroup(group.project, items));
-        }
-        this.host.scroll.append(host);
-        this.host.hubIncrementalUi.rememberRenderedStructure('chat-inbox', groups.map(group => ({
-            project: group.project,
-            items: group.summaries.map(summary => ({
-                kind: 'conversation' as const,
-                project: group.project,
-                summary,
-                sortAt: summary.updatedAt,
-                priority: 0,
-            })),
-        })));
         this.host.renderSubtitle();
     }
 
