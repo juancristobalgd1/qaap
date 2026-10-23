@@ -65,6 +65,13 @@ interface QaapProcessInvocation {
 const DEFAULT_AGENT_MEMORY_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_AGENT_CPU_LIMIT_CORES = 2;
 const SYSTEMD_RUN_PROBE_TIMEOUT_MS = 3000;
+/**
+ * `oom_score_adj` given to every process a tenant backend spawns (agents, verification builds, dev
+ * servers, terminals). The backend itself stays at 0, so when the tenant container's memory cgroup
+ * fills the kernel kills one child (one turn or one preview) instead of the backend, which would take
+ * the container and every in-flight turn with it. Raising the value needs no capability.
+ */
+const TENANT_BACKEND_CHILD_OOM_SCORE_ADJ = 500;
 
 /**
  * Single source of truth for spawning a workspace-scoped child process under the correct OS identity
@@ -288,7 +295,7 @@ export class QaapTenantSpawnService {
      */
     protected applyResourceLimits(invocation: QaapProcessInvocation, cwd: string): QaapProcessInvocation {
         if (!this.shouldApplyResourceLimits()) {
-            return invocation;
+            return this.preferAsOomVictim(invocation);
         }
 
         const limits = this.resolveResourceLimits();
@@ -333,6 +340,24 @@ export class QaapTenantSpawnService {
             : ['-c', portableFallbackScript, 'qaap-resource-limited', String(memoryKilobytes),
                 String(Math.max(1, Math.ceil(limits.cpuCores * 3600))), ...command];
         return { file: '/bin/sh', args: fallbackArgs, shell: false };
+    }
+
+    /**
+     * Inside a backend-per-tenant container the Docker cgroup is the only memory boundary and the
+     * backend shares it with everything it spawns. Run the invocation through a tiny `/bin/sh` that
+     * raises its own `oom_score_adj` (inherited by setpriv, the command and all descendants) before
+     * `exec`ing it unchanged. Same argv-preserving contract as the rlimit fallback: `$0` is the label
+     * and `$1…` is the command, so nothing is shifted. A failed write (no /proc) is ignored.
+     */
+    protected preferAsOomVictim(invocation: QaapProcessInvocation): QaapProcessInvocation {
+        if (!this.isLinuxResourceLimitPlatform() || !this.isTenantBackendMode()) {
+            return invocation;
+        }
+        const raise = `{ echo ${TENANT_BACKEND_CHILD_OOM_SCORE_ADJ} > /proc/self/oom_score_adj; } 2>/dev/null`;
+        const args = invocation.shell
+            ? ['-c', `${raise}; exec /bin/sh -c "$1"`, 'qaap-oom-preferred', invocation.file]
+            : ['-c', `${raise}; exec "$@"`, 'qaap-oom-preferred', invocation.file, ...invocation.args];
+        return { file: '/bin/sh', args, shell: false };
     }
 
     /**
