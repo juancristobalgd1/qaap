@@ -226,6 +226,8 @@ const ALLOWED = [
     /^scripts\/qaap-ensure-dash-licenses-jar\.mjs$/,
     /^scripts\/translation-update\.js$/,
     /^\.claude\/skills\/qaap-dev\.md$/,
+    // Project subagents (model-selection policy: fast-worker=haiku, deep-reasoner=opus); fork tooling, not upstream.
+    /^\.claude\/agents\/[^/]+\.md$/,
     /^\.cursor\/rules\/mobile-touch-accessibility\.mdc$/,
     // Qaap package project references: upstream package tsconfigs must include
     // qaap-* dependencies so the TypeScript build graph resolves them.
