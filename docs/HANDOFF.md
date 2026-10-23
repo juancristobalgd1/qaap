@@ -13,7 +13,7 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 - `node scripts/qaap-drift-check.js` en verde. Sin cambios de código: no aplica compile ni build.
 
 **Limitaciones**
-- `.claude/agents/` está en `.gitignore` (`.claude/*`): los cambios de agentes no viajan con el repo. En otra cuenta o máquina, replica el frontmatter `model:` a mano.
+- `.claude/agents/` se versiona en el repo desde el 2026-10-23 (excepción en `.gitignore`), así que la política de modelos de los subagentes viaja con el repo a cualquier cuenta o máquina.
 - El modelo por defecto de la sesión principal lo fija `~/.claude/settings.json` (`"model"`) o el selector de la app; en la cuenta original se cambió de `fable[1m]` a `opus` el 2026-10-23. En otra cuenta, ajústalo igual.
 
 **Pendiente**

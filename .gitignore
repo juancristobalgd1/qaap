@@ -38,6 +38,8 @@ allure-results
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+!.claude/agents/
+!.claude/agents/**
 license-check-summary.txt*
 .playwright-mcp/*
 **/.playwright-cli/
