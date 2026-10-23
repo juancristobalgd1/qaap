@@ -15,6 +15,7 @@ import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
 import { MobileProjectsHomeUi, type MobileProjectsHomeUiDeps } from './mobile-projects-home-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { clearGettingStartedTestFlags } from './test/qaap-getting-started-test-flags';
 
 disableImportJSDOM();
 
@@ -76,24 +77,13 @@ describe('MobileProjectsHomeUi', () => {
         };
     }
 
-    function clearGettingStartedFlags(): void {
-        const keys: string[] = [];
-        for (let i = 0; i < window.localStorage.length; i++) {
-            const key = window.localStorage.key(i);
-            if (key?.startsWith('qaap.workHubHome.gettingStarted')) {
-                keys.push(key);
-            }
-        }
-        keys.forEach(key => window.localStorage.removeItem(key));
-    }
-
     beforeEach(() => {
         document.body.replaceChildren();
-        clearGettingStartedFlags();
+        clearGettingStartedTestFlags();
     });
 
     afterEach(() => {
-        clearGettingStartedFlags();
+        clearGettingStartedTestFlags();
     });
 
     it('renders the complete first-run dashboard with discoverable actions', () => {

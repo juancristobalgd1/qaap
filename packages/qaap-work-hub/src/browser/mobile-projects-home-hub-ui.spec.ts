@@ -12,6 +12,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import { MobileProjectsHomeUi } from './mobile-projects-home-ui';
 import { MobileProjectsHomeHubUi, type MobileProjectsHomeHubHost } from './mobile-projects-home-hub-ui';
+import { clearGettingStartedTestFlags } from './test/qaap-getting-started-test-flags';
 
 disableImportJSDOM();
 
@@ -98,20 +99,8 @@ describe('MobileProjectsHomeHubUi.buildHomeSnapshot statsSettled', () => {
 
     useSuiteJSDOM();
 
-    // Account-scoped keys too: a checklist flag left by one test must not hide the checklist in the next.
-    function clearGettingStartedFlags(): void {
-        const keys: string[] = [];
-        for (let i = 0; i < window.localStorage.length; i++) {
-            const key = window.localStorage.key(i);
-            if (key?.startsWith('qaap.workHubHome.gettingStarted')) {
-                keys.push(key);
-            }
-        }
-        keys.forEach(key => window.localStorage.removeItem(key));
-    }
-
-    beforeEach(() => clearGettingStartedFlags());
-    afterEach(() => clearGettingStartedFlags());
+    beforeEach(() => clearGettingStartedTestFlags());
+    afterEach(() => clearGettingStartedTestFlags());
 
     function createHost(state: { inboxLoaded: boolean; tasksPending: boolean }): MobileProjectsHomeHubHost {
         return {
