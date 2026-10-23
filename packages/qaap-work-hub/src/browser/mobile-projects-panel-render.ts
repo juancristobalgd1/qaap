@@ -271,10 +271,6 @@ export function syncWorkHubProjectSkillRootsExtracted(ctx: MobileProjectsPanelCo
 }
 
 export function tryPatchHubListBeforeRebuildExtracted(ctx: MobileProjectsPanelContext): boolean {
-    if (ctx.hubQueryUi.isHomeHubView() && ctx.missionControlHubUi.tryPatchBeforeRebuild()) {
-        ctx.subtitleUi.renderSubtitle();
-        return true;
-    }
     return ctx.hubIncrementalUi.tryPatchBeforeRebuild();
 }
 
@@ -295,21 +291,6 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: MobileProjectsPanelCo
         getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
         setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
         openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
-        navigateToHomeHubForProbe: () => {
-            // `navigateHubTab('home')` normalizes to `tasks` (Agents landing). Mission Control only
-            // mounts when hubView is literally `home`, so set it directly for the probe.
-            panel.agentsHubLegacyInbox = true;
-            if (panel.agentsHubShellActive) {
-                panel.teardownAgentsHubExecutionShell();
-            }
-            panel.hubView = 'home';
-            panel.setMissionControlExpanded(true);
-            panel.renderList();
-        },
-        expandMissionControlForProbe: () => {
-            panel.setMissionControlExpanded(true);
-            panel.renderList();
-        },
         showTasksInboxWithTeamForProbe: () => {
             panel.navigateHubTab('tasks');
             panel.agentsHubLegacyInbox = true;
@@ -373,17 +354,15 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: MobileProjectsPanelCo
                 panel.conversations.perfProbeTickStreamingSummaries(cwd);
             }
             // Conversation ticks while Agents Hub landing is active skip full list rebuilds.
-            // Force a paint so probe E2E can assert progress patches (team-since / MC progress).
+            // Patch the embedded Team section, then always paint so probe E2E can assert the
+            // progress patches (team-since) through the incremental list path.
             const teamRoot = panel.scroll.querySelector<HTMLElement>(
                 '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks',
             );
-            const teamPatched = !teamRoot || panel.hubIncrementalUi.tryPatchTeamSection(teamRoot);
-            const missionControlPatched = panel.missionControlHubUi.tryPatchBeforeRebuild();
-            // Both surfaces can be mounted in Agents Hub. A successful Mission Control patch
-            // must not hide a failed Team patch (for example, when its row structure changed).
-            if (!teamPatched || !missionControlPatched) {
-                panel.renderList();
+            if (teamRoot) {
+                panel.hubIncrementalUi.tryPatchTeamSection(teamRoot);
             }
+            panel.renderList();
         },
         renderTranscriptForProbe: (conversation, chatHost) => {
             panel.transcriptOpenSummaryId = conversation.id;
@@ -394,7 +373,6 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: MobileProjectsPanelCo
         getWorkspaceCwdForProbe: () => panel.projectsService.getCurrentWorkspaceCwd(),
         getProbeDiagnostics: (): WorkHubPerfProbeDiagnostics => ({
             projectCount: panel.projects.length,
-            mcRowCount: panel.scroll.querySelectorAll('.theia-mobile-mission-control-row').length,
             teamRowCount: panel.scroll.querySelectorAll(
                 '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks .theia-mobile-hub-team-row',
             ).length,

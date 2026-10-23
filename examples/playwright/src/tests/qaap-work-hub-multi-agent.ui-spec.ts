@@ -46,45 +46,6 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
 
     test.use({ viewport: MOBILE_VIEWPORT });
 
-    test('patches expanded mission control rows across three streaming agents', async ({ playwright, browser }) => {
-        const ws = new TheiaWorkspace([SAMPLE_FILES]);
-        const app = await TheiaAppLoader.load({ playwright, browser }, ws);
-        await app.waitForShellAndInitialized();
-        await enableWorkHubPerfProbe(app.page);
-        await app.waitForShellAndInitialized();
-        await dismissMobileTutorial(app.page);
-        await expect(app.page.locator('.theia-mobile-projects-sticky-composer-input')).toBeVisible({ timeout: 60_000 });
-        await waitForWorkHubPerfProbe(app.page);
-
-        await expect.poll(async () => app.page.evaluate(
-            () => window.__qaapWorkHubPerfProbe?.hasWorkspaceForProbe() === true,
-        ), { timeout: 60_000 }).toBe(true);
-
-        await app.page.evaluate(() => {
-            window.__qaapWorkHubPerfProbe?.navigateToHomeHubForProbe();
-            window.__qaapWorkHubPerfProbe?.seedMultiAgentProbeConversations();
-        });
-        await flushAnimationFrames(app.page, 3);
-
-        await expect.poll(async () => app.page.evaluate(
-            () => window.__qaapWorkHubPerfProbe?.getProbeDiagnostics()?.mcRowCount ?? 0,
-        ), { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
-
-        await expect(app.page.locator('.theia-mobile-mission-control-host .theia-mobile-mission-control-row')).toHaveCount(3);
-
-        await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.resetMetrics());
-        await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.tickProbeStreamingConversations());
-        await flushAnimationFrames(app.page, 3);
-
-        const metrics = await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.getMetrics());
-        expect(metrics?.hubScrollReplaceChildren ?? 99).toBeLessThanOrEqual(1);
-        await expect.poll(async () => app.page.locator('.theia-mobile-mission-control-progress').first().textContent(), {
-            timeout: 15_000,
-        }).toContain('3/5');
-
-        await app.page.close();
-    });
-
     test('patches team rows for multiple streaming agents on the tasks inbox', async ({ playwright, browser }) => {
         const ws = new TheiaWorkspace([SAMPLE_FILES]);
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);

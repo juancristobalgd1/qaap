@@ -10,7 +10,6 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { MobileProjectsHomeUi } from './mobile-projects-home-ui';
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
 import { MobileProjectsTeamHubUi } from './mobile-projects-team-hub-ui';
@@ -19,10 +18,9 @@ export interface MobileProjectsOverlayBundle {
     parallel: MobileProjectsParallelUi;
     team: MobileProjectsTeamUi;
     teamHub: MobileProjectsTeamHubUi;
-    home: MobileProjectsHomeUi;
 }
 
-/** Panel surface for lazy overlay UI bundles (parallel, team, home dashboard). */
+/** Panel surface for lazy overlay UI bundles (parallel, team). */
 export interface MobileProjectsOverlayFactoryHost {
     overlayUi: MobileProjectsOverlayBundle | undefined;
     visible: boolean;
@@ -50,19 +48,10 @@ export interface MobileProjectsOverlayFactoryHost {
     selectHubLandingView(view: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView): void;
     toggleConversationAutoApproveById(conversationId: string): Promise<void>;
     renderList(): void;
-    buildHomeWorkspaceActivity(project: MobileProjectEntry): string;
-    getHomeWorkspaceStatus(project: MobileProjectEntry): 'idle' | 'running' | 'open';
-    formatHomeRelativeTime(updatedAt: number): string;
-    onHomeNavigate(target: import('./mobile-projects-home-ui').WorkHubHomeNavigateTarget): void;
-    onCloneClick(): Promise<void>;
-    onHomeOpenProject(project: MobileProjectEntry): Promise<void>;
-    onHomeOpenRecent(item: import('../common/qaap-work-hub-home').WorkHubHomeRecentItem): Promise<void>;
-    onHomeOpenAttention(item: import('../common/qaap-work-hub-home').WorkHubHomeAttentionItem): void;
-    onHomeQuickAction(action: import('./mobile-projects-home-ui').WorkHubHomeQuickActionId): Promise<void>;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
 }
 
-/** Lazily constructs parallel/team/home overlay UI bundles wired to the panel host. */
+/** Lazily constructs parallel/team overlay UI bundles wired to the panel host. */
 export class MobileProjectsOverlayFactoryUi {
 
     constructor(protected readonly host: MobileProjectsOverlayFactoryHost) { }
@@ -145,18 +134,6 @@ export class MobileProjectsOverlayFactoryUi {
             parallel,
             team,
             teamHub,
-            home: new MobileProjectsHomeUi({
-                getProject: projectId => this.host.projects.find(project => project.id === projectId),
-                getWorkspaceActivity: project => this.host.buildHomeWorkspaceActivity(project),
-                getWorkspaceStatus: project => this.host.getHomeWorkspaceStatus(project),
-                formatRelativeTime: updatedAt => this.host.formatHomeRelativeTime(updatedAt),
-                onNavigate: target => this.host.onHomeNavigate(target),
-                onCloneProject: () => { void this.host.onCloneClick(); },
-                onOpenProject: project => { void this.host.onHomeOpenProject(project); },
-                onOpenRecent: item => { void this.host.onHomeOpenRecent(item); },
-                onOpenAttention: item => this.host.onHomeOpenAttention(item),
-                onQuickAction: action => { void this.host.onHomeQuickAction(action); },
-            }),
         };
         return this.host.overlayUi;
     }

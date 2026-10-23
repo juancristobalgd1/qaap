@@ -61,7 +61,6 @@ export interface MobileProjectsHubHeaderHost {
     transcriptSheetUi: MobileProjectsTranscriptSheetUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     updateTasksAttentionChrome(): void;
-    buildHomeGreeting(): string;
     scroll: HTMLElement;
     lastTitleTap: number;
 
@@ -163,12 +162,6 @@ export class MobileProjectsHubHeaderUi {
         }
         if (this.host.hubView === 'workflows') {
             this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/workflowsTitle', 'Workflows');
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'home') {
-            this.host.titleEl.textContent = this.host.buildHomeGreeting();
-            this.host.titleAttentionEl.hidden = true;
-            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
             return;
         }
         this.host.titleAttentionEl.hidden = true;

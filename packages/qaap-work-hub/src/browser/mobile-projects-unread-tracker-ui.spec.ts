@@ -97,8 +97,6 @@ describe('MobileProjectsUnreadTrackerUi', () => {
             'mobile-projects-conversation-open-ui.ts',
             'mobile-projects-sessions-sidebar-ui-timeline.ts',
             'mobile-projects-background-task-ui.ts',
-            'mobile-projects-mission-control-hub-ui.ts',
-            'mobile-projects-home-hub-ui.ts',
             'mobile-projects-hub-team-data-ui.ts',
             'mobile-projects-conversation-actions-ui.ts',
             'mobile-projects-work-hub-search-ui.ts',

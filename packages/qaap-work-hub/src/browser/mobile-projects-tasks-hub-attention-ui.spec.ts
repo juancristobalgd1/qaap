@@ -27,11 +27,10 @@ describe('MobileProjectsTasksHubAttentionUi approval retry state', () => {
             collectTeamMembersForHub: () => [],
             collectTeamApprovalItems: () => [],
             isTasksHubView: () => true,
-            isHomeHubView: () => false,
             renderList: () => { listRenders++; },
             updateTasksAttentionChrome: () => undefined,
             renderSubtitle: () => undefined,
-            hubQueryUi: { isTasksHubView: () => true, isHomeHubView: () => false },
+            hubQueryUi: { isTasksHubView: () => true },
         } as unknown as MobileProjectsTasksHubAttentionHost;
         globalThis.fetch = (async () => { throw new TypeError('connection lost'); }) as typeof fetch;
         try {

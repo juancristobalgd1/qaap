@@ -35,8 +35,6 @@ export interface QaapWorkHubPerfProbeHost {
     setTranscriptOpenSummaryId(value: string | undefined): void;
     renderTranscriptForProbe(conversation: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO, host: HTMLElement): void;
     openWorkHubSessionsSidebar(): void;
-    navigateToHomeHubForProbe(): void;
-    expandMissionControlForProbe(): void;
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
@@ -154,12 +152,6 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
             host.openWorkHubSessionsSidebar();
             host.getSessionsSidebar()?.show();
             ensureSidebarListPatched();
-        },
-        navigateToHomeHubForProbe: () => {
-            host.navigateToHomeHubForProbe();
-        },
-        expandMissionControlForProbe: () => {
-            host.expandMissionControlForProbe();
         },
         showTasksInboxWithTeamForProbe: () => {
             host.showTasksInboxWithTeamForProbe();

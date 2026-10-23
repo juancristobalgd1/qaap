@@ -105,7 +105,6 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             refreshDiffHubView: async () => undefined,
             refreshTasksHubApprovals: () => undefined,
             refreshInboxPullRequests: async () => undefined,
-            refreshHomeHubData: () => undefined,
             render: () => undefined,
             renderList: () => { renderListCalls.value++; },
             scheduleRenderList: () => { scheduleRenderListCalls.value++; },
@@ -252,7 +251,6 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             transcriptOpenSummaryId: 'b',
             hubQueryUi: {
                 isTasksHubView: () => false,
-                isHomeHubView: () => false,
             } as unknown as MobileProjectsPanelLifecycleHost['hubQueryUi'],
             sessionsSidebar: {
                 isVisible: () => true,

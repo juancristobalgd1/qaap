@@ -101,7 +101,6 @@ describe('MobileProjectsHubHeaderUi', () => {
                 executionSurfaceTabForProject: () => activeTab,
             } as unknown as MobileProjectsHubHeaderHost['executionSurfaceTabsUi'],
             updateTasksAttentionChrome: () => undefined,
-            buildHomeGreeting: () => 'Hello',
             scroll: document.createElement('div'),
             lastTitleTap: 0,
             closeAgentsHubSession: () => undefined,

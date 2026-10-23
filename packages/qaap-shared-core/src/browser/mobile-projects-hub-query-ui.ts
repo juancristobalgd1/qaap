@@ -70,10 +70,6 @@ export class MobileProjectsHubQueryUi {
         return this.applySearch(base);
     }
 
-    isHomeHubView(): boolean {
-        return this.host.hubView === 'home';
-    }
-
     isTasksHubView(): boolean {
         return this.host.hubView === 'tasks';
     }
@@ -81,7 +77,7 @@ export class MobileProjectsHubQueryUi {
     isSidebarSecondaryHubView(): boolean {
         return QAAP_AGENTS_HUB_LANDING_ENABLED
             && this.host.homeMode
-            && (this.host.hubView === 'home' || this.host.hubView === 'workflows');
+            && this.host.hubView === 'workflows';
     }
 
     navigateBackFromSidebarSecondaryHub(): void {

@@ -40,7 +40,7 @@ export interface MobileProjectsWorkHubInboxHost {
 
     refreshInboxPullRequests(projects: MobileProjectEntry[] | undefined): Promise<void>;
     renderSubtitle(): void;
-    onHomeQuickAction(action: import('./mobile-projects-home-ui').WorkHubHomeQuickActionId): Promise<void>;
+    onHomeQuickAction(action: import('./mobile-projects-home-hub-ui').WorkHubHomeQuickActionId): Promise<void>;
     localChatsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     vpsTasksForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     conversationMatchesQuery(summary: QaapAgentConversationSummaryDTO, query: string): boolean;

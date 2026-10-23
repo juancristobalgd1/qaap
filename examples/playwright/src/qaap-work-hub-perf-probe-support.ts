@@ -14,7 +14,6 @@ export interface WorkHubPerfProbeMetrics {
 
 export interface WorkHubPerfProbeDiagnostics {
     projectCount: number;
-    mcRowCount: number;
     teamRowCount: number;
     hubView: string;
 }
@@ -23,8 +22,6 @@ export interface WorkHubPerfProbeApi {
     burstConversationTicks(count: number): void;
     setTranscriptOverlayOpenForProbe(open: boolean): void;
     openSessionsSidebarForProbe(): void;
-    navigateToHomeHubForProbe(): void;
-    expandMissionControlForProbe(): void;
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;

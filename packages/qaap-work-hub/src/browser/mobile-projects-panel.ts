@@ -34,7 +34,6 @@ import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill
 import {
     type WorkHubTeamMember,
 } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
-import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { confirmRemoveProjectDialog } from './mobile-projects-remove-confirm';
 import {
@@ -130,14 +129,8 @@ import {
 import {
     MobileProjectsHomeHubUi,
     type MobileProjectsHomeHubHost,
+    type WorkHubHomeQuickActionId,
 } from './mobile-projects-home-hub-ui';
-import {
-    MobileProjectsMissionControlHubUi,
-} from './mobile-projects-mission-control-hub-ui';
-import type {
-    MissionControlLaneFilter,
-    MissionControlSurfaceFilter,
-} from './mobile-work-mission-control';
 import {
     MobileProjectsHubHeaderUi,
     type MobileProjectsHubHeaderHost,
@@ -242,11 +235,6 @@ import {
     type MobileProjectsSessionsSidebarHost,
 } from './mobile-projects-sessions-sidebar-ui';
 import { MobileWorkHubSessionsSidebar, shouldKeepSessionsSidebarOpenAfterNavigation } from './mobile-work-hub-sessions-sidebar';
-import {
-    type WorkHubHomeAttentionItem,
-    type WorkHubHomeRecentItem,
-    type WorkHubHomeSnapshot,
-} from '../common/qaap-work-hub-home';
 import {
     type QaapComposerSurface,
 } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
@@ -373,9 +361,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public hubView: MobileProjectsHubView = 'tasks';
     protected query = '';
-    protected missionControlExpanded = false;
-    protected missionControlLaneFilter: MissionControlLaneFilter = 'all';
-    protected missionControlSurfaceFilter: MissionControlSurfaceFilter = 'all';
     protected agentApprovalsFetchGeneration = 0;
     /** Project ids whose conversation list is fully expanded (not capped at {@link CONVERSATIONS_COLLAPSED_LIMIT}). */
     protected readonly expandedConversationProjectIds = new Set<string>();
@@ -489,8 +474,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly diffHubUi = new MobileProjectsDiffHubUi(this as unknown as MobileProjectsDiffHubHost);
     protected readonly homeHubUi = new MobileProjectsHomeHubUi(this as unknown as MobileProjectsHomeHubHost);
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
-    public readonly missionControlHubUi = new MobileProjectsMissionControlHubUi(this as unknown as import('./mobile-projects-mission-control-hub-ui').MobileProjectsMissionControlHubHost);
-    /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public readonly hubHeaderUi = new MobileProjectsHubHeaderUi(this as unknown as MobileProjectsHubHeaderHost);
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public readonly hubLandingUi = new MobileProjectsHubLandingUi(this as unknown as MobileProjectsHubLandingHost);
@@ -565,7 +548,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         parallel: MobileProjectsParallelUi;
         team: MobileProjectsTeamUi;
         teamHub: MobileProjectsTeamHubUi;
-        home: MobileProjectsHomeUi;
     } | undefined;
     /** Monotonic counter that disambiguates each AIChatInputWidget instance from the WidgetManager cache. */
     protected agentChatInputMountSeq = 0;
@@ -1116,19 +1098,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubIncrementalUi.resetStructureFingerprint();
     }
 
-    /** @internal Used by the extracted mobile-projects-panel-* modules. */
-    public setMissionControlExpanded(expanded: boolean): void {
-        this.missionControlExpanded = expanded;
-    }
-
-    protected setMissionControlLaneFilter(filter: MissionControlLaneFilter): void {
-        this.missionControlLaneFilter = filter;
-    }
-
-    protected setMissionControlSurfaceFilter(filter: MissionControlSurfaceFilter): void {
-        this.missionControlSurfaceFilter = filter;
-    }
-
     protected scheduleRenderList(): void {
         this.hubListRenderScheduler.schedule();
     }
@@ -1191,64 +1160,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.diffHubUi.detachDiffReviewWidgetFromHost();
     }
 
-    protected refreshHomeHubData(forceRender: boolean): void {
-        this.homeHubUi.refreshHomeHubData(forceRender);
-    }
-
-    protected buildHomeSnapshot(): WorkHubHomeSnapshot {
-        return this.homeHubUi.buildHomeSnapshot();
-    }
-
-    protected resolveHomeFavoriteModelLabel(): string | undefined {
-        return this.homeHubUi.resolveHomeFavoriteModelLabel();
-    }
-
-    protected buildHomeGreeting(): string {
-        return this.homeHubUi.buildHomeGreeting();
-    }
-
-    protected formatHomeRelativeTime(updatedAt: number): string {
-        return this.homeHubUi.formatHomeRelativeTime(updatedAt);
-    }
-
-    protected buildHomeWorkspaceActivity(project: MobileProjectEntry): string {
-        return this.homeHubUi.buildHomeWorkspaceActivity(project);
-    }
-
-    protected getHomeWorkspaceStatus(project: MobileProjectEntry): 'idle' | 'running' | 'open' {
-        return this.homeHubUi.getHomeWorkspaceStatus(project);
-    }
-
-    protected buildHomeSubtitle(snapshot: WorkHubHomeSnapshot): string {
-        return this.homeHubUi.buildHomeSubtitle(snapshot);
-    }
-
-    protected resolveHomeAgentLabel(agentId: string): string {
-        return this.homeHubUi.resolveHomeAgentLabel(agentId);
-    }
-
-    protected renderHomeHubView(): void {
-        this.homeHubUi.renderHomeHubView();
-    }
-
     protected resolveHomePinnedProject(): MobileProjectEntry | undefined {
         return this.homeHubUi.resolveHomePinnedProject();
-    }
-
-    protected onHomeNavigate(target: WorkHubHomeNavigateTarget): void {
-        this.homeHubUi.onHomeNavigate(target);
-    }
-
-    protected async onHomeOpenProject(project: MobileProjectEntry): Promise<void> {
-        await this.homeHubUi.onHomeOpenProject(project);
-    }
-
-    protected async onHomeOpenRecent(item: WorkHubHomeRecentItem): Promise<void> {
-        await this.homeHubUi.onHomeOpenRecent(item);
-    }
-
-    protected onHomeOpenAttention(item: WorkHubHomeAttentionItem): void {
-        this.homeHubUi.onHomeOpenAttention(item);
     }
 
     protected async onHomeQuickAction(action: WorkHubHomeQuickActionId): Promise<void> {
@@ -2224,7 +2137,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         parallel: MobileProjectsParallelUi;
         team: MobileProjectsTeamUi;
         teamHub: MobileProjectsTeamHubUi;
-        home: MobileProjectsHomeUi;
     } {
         return ensureOverlayUiExtracted(this);
     }

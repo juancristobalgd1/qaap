@@ -37,7 +37,7 @@ import { appendTasksHubTeamSectionExtracted, renderTasksHubViewExtracted } from 
 
 /** Panel surface for Tasks hub list rendering and Agents Hub landing recents/quick actions. */
 export interface MobileProjectsTasksHubHost {
-    onHomeQuickAction(action: import('./mobile-projects-home-ui').WorkHubHomeQuickActionId): Promise<void>;
+    onHomeQuickAction(action: import('./mobile-projects-home-hub-ui').WorkHubHomeQuickActionId): Promise<void>;
     transcriptPreviewRequestPending?: boolean;
     transcriptPreviewRequestRunning?: boolean;
     resolveShellProject?(): MobileProjectEntry | undefined;

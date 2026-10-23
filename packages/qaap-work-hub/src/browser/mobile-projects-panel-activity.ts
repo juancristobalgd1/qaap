@@ -9,7 +9,6 @@ import {
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
 import { MobileProjectsTeamHubUi } from './mobile-projects-team-hub-ui';
-import { MobileProjectsHomeUi } from './mobile-projects-home-ui';
 import { normalizeQaapPreviewConversationId } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
 import {
     QaapAgentConversationDTO,
@@ -81,7 +80,6 @@ export function ensureOverlayUiExtracted(ctx: MobileProjectsPanelContext): {
     parallel: MobileProjectsParallelUi;
     team: MobileProjectsTeamUi;
     teamHub: MobileProjectsTeamHubUi;
-    home: MobileProjectsHomeUi;
 } {
     return ctx.overlayFactoryUi.ensureOverlayUi();
 }

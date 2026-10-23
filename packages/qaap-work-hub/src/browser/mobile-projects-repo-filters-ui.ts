@@ -95,7 +95,6 @@ export class MobileProjectsRepoFiltersUi {
 
     isSearchChromeHidden(): boolean {
         return this.host.hubView === 'diff'
-            || this.host.hubView === 'home'
             || this.host.hubView === 'tasks'
             || this.host.hubView === 'review'
             || this.host.hubView === 'chat'
