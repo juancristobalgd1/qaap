@@ -13,6 +13,7 @@
 // `import type` throughout to avoid a runtime import cycle with the extracted modules (several of
 // which are imported back into `qaap-agent-conversation-store.ts`).
 
+import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { Emitter } from '@theia/core/lib/common/event';
 import type { QaapGitRunResult } from './qaap-agent-conversation-store-git';
 import type { QaapConversationEventLog, QaapConversationLogEntry } from './qaap-conversation-event-log';
@@ -276,20 +277,10 @@ export interface QaapAgentConversationStoreContext {
         reason: string,
     ): QaapAgentConversation;
     detectAgentBlockedNeed(conv: QaapAgentConversation, agentMessageId: string | undefined): string | undefined;
-    appendReviewTrace(
+    appendClosingReportTrace(
         conv: QaapAgentConversation,
         agentMessageId: string | undefined,
-        note: string,
-    ): QaapAgentConversation;
-    appendBlockedTrace(
-        conv: QaapAgentConversation,
-        agentMessageId: string | undefined,
-        need: string,
-    ): QaapAgentConversation;
-    appendVerificationWarningTrace(
-        conv: QaapAgentConversation,
-        agentMessageId: string | undefined,
-        task: QaapAgentTask,
+        report: QaapAgentClosingReport,
     ): QaapAgentConversation;
     appendCheckpointTrace(
         conv: QaapAgentConversation,
@@ -349,7 +340,7 @@ export interface QaapAgentConversationStoreContext {
     /** Serialize an async git job with every other checkpoint/restore job on the same repository. */
     runSerializedGit<T>(cwd: string, job: () => Promise<T>): Promise<T>;
     captureGitSha(cwd: string): string | undefined;
-    computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number } | undefined>;
+    computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number; files?: number } | undefined>;
     /** Not serialized by itself: callers wrap it (plus related git) in {@link runSerializedGit}. */
     captureCheckpoint(
         cwd: string,

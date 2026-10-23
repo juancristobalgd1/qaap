@@ -6,6 +6,7 @@
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentReadOnlyEnforcement } from './qaap-agent-readonly-workspace';
 import type { QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
 
 /** HTTP base path for the background agent-task endpoints. */
 export const QAAP_AGENT_TASK_API_PATH = '/qaap/api/agent-tasks';
@@ -154,6 +155,12 @@ export interface QaapAgentTask {
     readonly verification?: QaapAgentTaskVerification;
     /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */
     readonly review?: QaapAgentTaskReview;
+    /**
+     * Deterministic closing report (`qaap-agent-closing-report.ts`): {@link verification},
+     * {@link review}, the blocked signal and the turn's diff folded into one object by the runner
+     * when the task settles in one of the four closing states. Never built from agent output.
+     */
+    readonly closingReport?: QaapAgentClosingReport;
     /**
      * Live phase of the automatic post-turn verification (repo checks + bounded fix turns). Present
      * only while the task is still `'running'` and the runner is executing verification scripts or

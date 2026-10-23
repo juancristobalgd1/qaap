@@ -182,9 +182,10 @@ export interface QaapConversationTaskRef {
 
 // ─── Git helpers ─────────────────────────────────────────────────────────────
 
-export function parseGitNumstat(output: string): { added: number; removed: number } {
+export function parseGitNumstat(output: string): { added: number; removed: number; paths: string[] } {
     let added = 0;
     let removed = 0;
+    const paths: string[] = [];
     for (const line of output.split('\n')) {
         const parts = line.trim().split('\t');
         if (parts.length >= 2) {
@@ -192,7 +193,8 @@ export function parseGitNumstat(output: string): { added: number; removed: numbe
             const r = parseInt(parts[1], 10);
             if (!isNaN(a)) { added += a; }
             if (!isNaN(r)) { removed += r; }
+            if (parts.length >= 3 && parts[2]) { paths.push(parts.slice(2).join('\t')); }
         }
     }
-    return { added, removed };
+    return { added, removed, paths };
 }

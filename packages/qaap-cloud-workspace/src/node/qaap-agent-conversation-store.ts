@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import type { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 import {
@@ -107,7 +108,7 @@ import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatc
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
-import { appendAgentReplyExtracted, appendBlockedTraceExtracted, appendCheckpointTraceExtracted, appendReviewTraceExtracted, appendRunCancelledTraceExtracted, appendVerificationWarningTraceExtracted, buildTaskCreateRequestExtracted, clearRunActiveExtracted, detectAgentBlockedNeedExtracted, extractAgentMentionFromUserMessageExtracted, failTurnBeforeSpawnExtracted, finalizeStreamingAgentMessageExtracted, markTurnFailedExtracted, maybeAutoContinueIncompleteTurnExtracted, maybeRetryTurnWithFallbackModelExtracted, postAutoContinueMessageExtracted, prepareContextCompactionForTurnExtracted, publishFinalizedAgentMessageExtracted, reportPreviewBootstrapFailureExtracted, resolveTurnAgentExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-conversation-store-tool-pills2';
+import { appendAgentReplyExtracted, appendCheckpointTraceExtracted, appendClosingReportTraceExtracted, appendRunCancelledTraceExtracted, buildTaskCreateRequestExtracted, clearRunActiveExtracted, detectAgentBlockedNeedExtracted, extractAgentMentionFromUserMessageExtracted, failTurnBeforeSpawnExtracted, finalizeStreamingAgentMessageExtracted, markTurnFailedExtracted, maybeAutoContinueIncompleteTurnExtracted, maybeRetryTurnWithFallbackModelExtracted, postAutoContinueMessageExtracted, prepareContextCompactionForTurnExtracted, publishFinalizedAgentMessageExtracted, reportPreviewBootstrapFailureExtracted, resolveTurnAgentExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-conversation-store-tool-pills2';
 import { applyAgUiTranscriptEventExtracted, buildPromptExtracted, clearAgUiReducerExtracted, cwdMatchesGithubRepoExtracted, fireAgentMessageWireUpdateExtracted, flushPersistExtracted, forceStopZombieTurnExtracted, maybeAutoResumeInterruptedTurnExtracted, recordStreamMetricsExtracted, resolveRunAgentMessageIdExtracted, restoreFromDiskExtracted, schedulePersistExtracted, stageWireMetricsBaselineExtracted, startTurnWatchdogExtracted, sweepZombieStreamingTurnsExtracted, tryAutoLinkConversationToGitBranchExtracted } from './qaap-agent-conversation-store-live-status2';
 import { captureCheckpointExtracted, discardCheckpointRefExtracted, countDurableLoopSpawnsExtracted, findLiveChatTurnRunExtracted, interruptStreamingTurnForRestartExtracted, maybeRetryTurnWithFallbackModelViaGraphExtracted, persistExtracted, reapOrphanedChatTurnRunsExtracted, resumeInterruptedTurnViaGraphExtracted, settleChatTurnRunExtracted } from './qaap-agent-conversation-store-thought-brief2';
 import { previewRewindExtracted, restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-agent-conversation-store-diff2';
@@ -717,18 +718,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public appendReviewTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, note: string, ): QaapAgentConversation {
-        return appendReviewTraceExtracted(this, conv, agentMessageId, note);
-    }
-
-    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public appendBlockedTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, need: string, ): QaapAgentConversation {
-        return appendBlockedTraceExtracted(this, conv, agentMessageId, need);
-    }
-
-    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public appendVerificationWarningTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, task: QaapAgentTask, ): QaapAgentConversation {
-        return appendVerificationWarningTraceExtracted(this, conv, agentMessageId, task);
+    public appendClosingReportTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, report: QaapAgentClosingReport, ): QaapAgentConversation {
+        return appendClosingReportTraceExtracted(this, conv, agentMessageId, report);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
@@ -999,7 +990,7 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number } | undefined> {
+    public computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number; files?: number } | undefined> {
         return computeGitDiffStatsHelper(cwd, startSha, this.readGit.bind(this));
     }
 

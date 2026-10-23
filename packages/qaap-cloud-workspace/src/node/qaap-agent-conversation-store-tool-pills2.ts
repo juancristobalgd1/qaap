@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
@@ -21,7 +22,7 @@ import { appendTracePreviewFailureEvent, syncSettledTraceEventsOnMessage } from 
 
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 
-import { clearRunActive as clearRunActiveHelper, appendRunCancelledTrace as appendRunCancelledTraceHelper, detectAgentBlockedNeed as detectAgentBlockedNeedHelper, appendReviewTrace as appendReviewTraceHelper, appendBlockedTrace as appendBlockedTraceHelper, appendVerificationWarningTrace as appendVerificationWarningTraceHelper, appendCheckpointTrace as appendCheckpointTraceHelper, appendAgentReply as appendAgentReplyHelper, maybeAutoContinueIncompleteTurn as maybeAutoContinueIncompleteTurnHelper, prepareContextCompactionForTurn as prepareContextCompactionForTurnHelper } from './qaap-agent-conversation-store-helpers';
+import { clearRunActive as clearRunActiveHelper, appendRunCancelledTrace as appendRunCancelledTraceHelper, detectAgentBlockedNeed as detectAgentBlockedNeedHelper, appendClosingReportTrace as appendClosingReportTraceHelper, appendCheckpointTrace as appendCheckpointTraceHelper, appendAgentReply as appendAgentReplyHelper, maybeAutoContinueIncompleteTurn as maybeAutoContinueIncompleteTurnHelper, prepareContextCompactionForTurn as prepareContextCompactionForTurnHelper } from './qaap-agent-conversation-store-helpers';
 
 import { markTurnFailed as markTurnFailedHelper, buildTaskCreateRequest as buildTaskCreateRequestHelper } from './qaap-agent-conversation-store-helpers2';
 
@@ -296,22 +297,10 @@ export function detectAgentBlockedNeedExtracted(ctx: QaapAgentConversationStoreC
         return detectAgentBlockedNeedHelper(conv, agentMessageId);
 }
 
-export function appendReviewTraceExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
+export function appendClosingReportTraceExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
         agentMessageId: string | undefined,
-        note: string, ): QaapAgentConversation {
-        return appendReviewTraceHelper(conv, agentMessageId, note);
-}
-
-export function appendBlockedTraceExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
-        agentMessageId: string | undefined,
-        need: string, ): QaapAgentConversation {
-        return appendBlockedTraceHelper(conv, agentMessageId, need);
-}
-
-export function appendVerificationWarningTraceExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
-        agentMessageId: string | undefined,
-        task: QaapAgentTask, ): QaapAgentConversation {
-        return appendVerificationWarningTraceHelper(conv, agentMessageId, task);
+        report: QaapAgentClosingReport, ): QaapAgentConversation {
+        return appendClosingReportTraceHelper(conv, agentMessageId, report);
 }
 
 export function appendCheckpointTraceExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,

@@ -29,6 +29,7 @@ import {
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { billableAgentDurationMs } from '../common/qaap-billing-agent-runtime';
+import { buildAgentClosingReport, type QaapAgentClosingDiffSummary, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import {
     applyAgentApprovalPolicyToCommand,
@@ -377,15 +378,47 @@ export function applyHelperEnvExtracted(ctx: QaapAgentTaskRunnerContext, env: No
         return true;
 }
 
-export function markTaskBlockedExtracted(ctx: QaapAgentTaskRunnerContext, id: string): QaapAgentTask | undefined {
+export function markTaskBlockedExtracted(ctx: QaapAgentTaskRunnerContext, id: string, need?: string): QaapAgentTask | undefined {
         const task = ctx.tasks.get(id);
         if (!task || (task.state !== 'completed' && task.state !== 'completed_with_warnings')) {
             return undefined;
         }
-        const blocked: QaapAgentTask = { ...task, state: 'blocked' };
+        const blocked: QaapAgentTask = {
+            ...task,
+            state: 'blocked',
+            closingReport: rebuildClosingReport(task, 'blocked', { blockedNeed: need }),
+        };
         ctx.tasks.set(id, blocked);
         void ctx.persist();
         return blocked;
+}
+
+/**
+ * Attach the turn's diff stats (measured by the conversation store at settle) to the closing
+ * report of a settled task. No-op for a task without a report, i.e. not in a closing state.
+ */
+export function recordTaskClosingDiffExtracted(ctx: QaapAgentTaskRunnerContext, id: string, diff: QaapAgentClosingDiffSummary): QaapAgentTask | undefined {
+        const task = ctx.tasks.get(id);
+        if (!task?.closingReport) {
+            return undefined;
+        }
+        const updated: QaapAgentTask = { ...task, closingReport: rebuildClosingReport(task, task.state, { diff }) };
+        ctx.tasks.set(id, updated);
+        void ctx.persist();
+        return updated;
+}
+
+/** Re-fold the report from the task's own fields; amendments override what the old report carried. */
+function rebuildClosingReport(task: QaapAgentTask, state: QaapAgentTaskState,
+        amend: { readonly blockedNeed?: string; readonly diff?: QaapAgentClosingDiffSummary }): QaapAgentClosingReport | undefined {
+        return buildAgentClosingReport({
+            state,
+            exitCode: task.exitCode,
+            verification: task.verification,
+            review: task.review,
+            blockedNeed: amend.blockedNeed ?? task.closingReport?.blockedNeed,
+            diff: amend.diff ?? task.closingReport?.diff,
+        });
 }
 
 export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
@@ -397,7 +430,10 @@ export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string,
             ? ctx.captureWorktreeFingerprint(task.cwd) : undefined;
         // The live verification phase only means something while the task runs; drop it on settle
         // (including a cancel mid-verification) so a finished task never reads as "verifying".
-        const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now(), worktreeFinishedFingerprint, verificationPhase: undefined };
+        const finished: QaapAgentTask = {
+            ...task, state, exitCode, finishedAt: Date.now(), worktreeFinishedFingerprint, verificationPhase: undefined,
+            closingReport: buildAgentClosingReport({ state, exitCode, verification: task.verification, review: task.review }),
+        };
         ctx.tasks.set(id, finished);
         void ctx.persist();
         ctx.observability?.recordAgentCommandFinished(

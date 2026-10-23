@@ -6,10 +6,9 @@
 import { expect } from 'chai';
 import {
     agentMessageHasStructuredTrace,
-    appendTraceBlockedEvent,
     appendTraceCheckpointEvent,
+    appendTraceClosingReportEvent,
     appendTraceRunCancelledEvent,
-    appendTraceVerificationWarningEvent,
     isPlaceholderAgentContent,
     syncSettledTraceEventsOnMessage,
 } from './qaap-transcript-trace-lifecycle';
@@ -56,29 +55,18 @@ describe('qaap-transcript-trace-lifecycle', () => {
         expect(twice.traceEvents?.[0]).to.deep.include({ id: 'cancel-1', startedAt: 10 });
     });
 
-    it('appendTraceVerificationWarningEvent appends an error row without failing the turn', () => {
-        const next = appendTraceVerificationWarningEvent(
-            agentMessage({ content: 'done' }),
-            'Verification checks are still failing after 2 fix attempts.',
-        );
+    it('appendTraceClosingReportEvent appends one error row without failing the turn', () => {
+        const report = 'Blocked — needs your input: which DB?\nChecks: failing (npm run build) after 2 fix turns.';
+        const next = appendTraceClosingReportEvent(agentMessage({ content: 'done' }), report, { at: 7 });
         expect(next.traceEvents).to.have.length(1);
         expect(next.traceEvents?.[0]).to.deep.include({
             type: 'error',
-            message: 'Verification checks are still failing after 2 fix attempts.',
+            id: 'closing-report-7',
+            message: report,
         });
-        // Unlike a preview failure, the turn itself succeeded — message.error must stay unset.
+        // Unlike a preview failure, the turn itself was delivered — message.error must stay unset.
         expect(next.error).to.equal(undefined);
         expect(next.content).to.equal('done');
-    });
-
-    it('appendTraceBlockedEvent appends an error row without failing the turn', () => {
-        const next = appendTraceBlockedEvent(agentMessage({ content: 'done' }), 'Blocked — needs your input: which DB?');
-        expect(next.traceEvents).to.have.length(1);
-        expect(next.traceEvents?.[0]).to.deep.include({
-            type: 'error',
-            message: 'Blocked — needs your input: which DB?',
-        });
-        expect(next.error).to.equal(undefined);
     });
 
     it('appendTraceCheckpointEvent appends a checkpoint row once', () => {

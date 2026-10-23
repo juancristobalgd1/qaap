@@ -18,12 +18,11 @@ import {
 } from '../common/qaap-agent-conversation';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import {
-    appendTraceBlockedEvent,
     appendTraceCheckpointEvent,
-    appendTraceReviewEvent,
+    appendTraceClosingReportEvent,
     appendTraceRunCancelledEvent,
-    appendTraceVerificationWarningEvent,
 } from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
+import { formatAgentClosingReport, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import {
     detectAgentAuthFailureMode,
@@ -157,66 +156,24 @@ export function detectAgentBlockedNeed(
     return undefined;
 }
 
-export function appendReviewTrace(
-    conv: QaapAgentConversation,
-    agentMessageId: string | undefined,
-    note: string,
-): QaapAgentConversation {
-    const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
-    if (!targetId) {
-        return conv;
-    }
-    return {
-        ...conv,
-        messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
-            ? appendTraceReviewEvent(message, note)
-            : message),
-    };
-}
-
-export function appendBlockedTrace(
-    conv: QaapAgentConversation,
-    agentMessageId: string | undefined,
-    need: string,
-): QaapAgentConversation {
-    const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
-    if (!targetId) {
-        return conv;
-    }
-    return {
-        ...conv,
-        messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
-            ? appendTraceBlockedEvent(message, `Blocked — needs your input: ${need}`)
-            : message),
-    };
-}
-
 /**
- * Timeline note for a turn delivered with the backend verification still red
- * ({@code task.state === 'completed_with_warnings'}). Falls back to the last message when the
- * streaming agent message id is gone (e.g. the turn was backfilled from the log).
+ * The task's closing report as one timeline note (see {@code qaap-agent-closing-report.ts}).
+ * Falls back to the last message when the streaming agent message id is gone (e.g. the turn was
+ * backfilled from the log).
  */
-export function appendVerificationWarningTrace(
+export function appendClosingReportTrace(
     conv: QaapAgentConversation,
     agentMessageId: string | undefined,
-    task: QaapAgentTask,
+    report: QaapAgentClosingReport,
 ): QaapAgentConversation {
     const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
     if (!targetId) {
         return conv;
     }
-    const verification = task.verification;
-    const summary = verification?.status === 'failed' ? verification.summary.trim() : '';
-    const attempts = verification?.status === 'failed' ? verification.attempts : 0;
-    const headline = attempts > 0
-        ? `Verification checks are still failing after ${attempts} fix ${attempts === 1 ? 'attempt' : 'attempts'}.`
-        : 'Verification checks are failing.';
-    const detail = summary.length > 600 ? `${summary.slice(0, 600)}…` : summary;
-    const reason = detail ? `${headline}\n${detail}` : headline;
     return {
         ...conv,
         messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
-            ? appendTraceVerificationWarningEvent(message, reason)
+            ? appendTraceClosingReportEvent(message, formatAgentClosingReport(report))
             : message),
     };
 }

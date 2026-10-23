@@ -763,3 +763,63 @@ describe('QaapAgentTaskRunner markTaskBlocked', () => {
         expect(runner.markTaskBlocked('nope')).to.equal(undefined);
     });
 });
+
+describe('QaapAgentTaskRunner closing report', () => {
+
+    function makeClosingRunner(task: QaapAgentTask): { runner: TestableQaapAgentTaskRunner; tasks: Map<string, QaapAgentTask> } {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, QaapAgentTask>([[task.id, task]]);
+        Object.assign(runner, {
+            tasks,
+            persist: async () => undefined,
+            onDidChangeTaskEmitter: { fire: () => undefined },
+            notifyCompletion: async () => undefined,
+            drainQueuedTasks: () => undefined,
+        });
+        return { runner, tasks };
+    }
+
+    it('settles a report from the verification and review already on the task', () => {
+        const { runner, tasks } = makeClosingRunner({
+            ...TASK,
+            verification: { status: 'failed', command: 'npm run build', attempts: 2, summary: 'red' },
+        });
+        runner.finishTask(TASK.id, 'completed_with_warnings', 0);
+        const report = tasks.get(TASK.id)?.closingReport;
+        expect(report?.state).to.equal('completed_with_warnings');
+        expect(report?.verification).to.deep.equal({ status: 'failed', command: 'npm run build', attempts: 2, summary: 'red' });
+        expect(report?.headline).to.equal('Completed with warnings — verification checks are failing.');
+    });
+
+    it('settles a failed report and none for a cancelled task', () => {
+        const failed = makeClosingRunner({ ...TASK });
+        failed.runner.finishTask(TASK.id, 'failed', 1);
+        expect(failed.tasks.get(TASK.id)?.closingReport?.headline).to.equal('Failed — the agent exited with code 1.');
+        const cancelled = makeClosingRunner({ ...TASK });
+        cancelled.runner.finishTask(TASK.id, 'cancelled', undefined);
+        expect(cancelled.tasks.get(TASK.id)?.closingReport).to.equal(undefined);
+    });
+
+    it('re-folds the report with the settle-time diff and then the blocked need', () => {
+        const { runner, tasks } = makeClosingRunner({
+            ...TASK,
+            review: { status: 'passed', reason: 'ok', agentId: 'codex' },
+        });
+        runner.finishTask(TASK.id, 'completed', 0);
+        runner.recordTaskClosingDiff(TASK.id, { files: 2, added: 7, removed: 1 });
+        const blocked = runner.markTaskBlocked(TASK.id, 'Which branch?');
+        expect(blocked?.state).to.equal('blocked');
+        const report = tasks.get(TASK.id)?.closingReport;
+        expect(report?.state).to.equal('blocked');
+        expect(report?.blockedNeed).to.equal('Which branch?');
+        expect(report?.diff).to.deep.equal({ files: 2, added: 7, removed: 1 });
+        expect(report?.review?.status).to.equal('passed');
+        expect(report?.headline).to.equal('Blocked — needs your input: Which branch?');
+    });
+
+    it('ignores a diff for a task that has no closing report', () => {
+        const { runner, tasks } = makeClosingRunner({ ...TASK, state: 'cancelled' });
+        expect(runner.recordTaskClosingDiff(TASK.id, { added: 1, removed: 0 })).to.equal(undefined);
+        expect(tasks.get(TASK.id)?.closingReport).to.equal(undefined);
+    });
+});
