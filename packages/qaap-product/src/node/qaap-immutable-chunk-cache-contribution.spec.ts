@@ -95,6 +95,21 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
             expect(headersFor('chunk-ABCD1234.js.br')['Cache-Control']).to.equal('public, max-age=31536000, immutable');
             expect(headersFor('bundle.js.br')).to.deep.equal({});
         });
+
+        it('judges top-level against the normalized frontend dir, never a nested lookalike', () => {
+            const cacheControlFor = (filePath: string, frontendDir: string): string | undefined => {
+                const headers: Record<string, string> = {};
+                const res = { setHeader: (name: string, value: string) => { headers[name] = value; } };
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (new QaapFrontendStaticServer() as any).setStaticHeaders(res, filePath, frontendDir);
+                return headers['Cache-Control'];
+            };
+            const chunk = path.join('/srv/frontend', 'chunk-ABCD1234.js');
+            for (const frontendDir of ['/srv/frontend', '/srv/frontend/', '/srv/./frontend', '/srv/other/../frontend']) {
+                expect(cacheControlFor(chunk, frontendDir), frontendDir).to.equal('public, max-age=31536000, immutable');
+            }
+            expect(cacheControlFor(path.join('/srv/frontend', 'nested', 'chunk-ABCD1234.js'), '/srv/frontend')).to.equal(undefined);
+        });
     });
 
 });
