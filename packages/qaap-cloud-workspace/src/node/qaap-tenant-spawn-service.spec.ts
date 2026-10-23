@@ -350,11 +350,40 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         svc.linuxResourceLimits = true;
         svc.systemdRun = false;
         svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
-        // A root backend launches the trusted absolute setpriv, never a PATH-resolved one.
-        expect(svc.launches[0].file).to.equal(svc.setprivPath);
-        expect(svc.launches[0].args).to.deep.equal([
-            '--reuid', '1001', '--regid', '1001', '--clear-groups', '--', 'npm', 'run', 'dev',
+        // Only the OOM-preference shell wraps it (no host rlimit/systemd wrapper), and a root backend
+        // launches the trusted absolute setpriv, never a PATH-resolved one.
+        expect(svc.launches[0].file).to.equal('/bin/sh');
+        expect(svc.launches[0].args[1]).to.contain('/proc/self/oom_score_adj');
+        expect(svc.launches[0].args.slice(2)).to.deep.equal([
+            'qaap-oom-preferred', svc.setprivPath, '--reuid', '1001', '--regid', '1001', '--clear-groups', '--', 'npm', 'run', 'dev',
         ]);
+    });
+
+    it('passes a shell command to the OOM-preference wrapper as one argument inside a tenant backend', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        const svc = new TestTenantSpawnService();
+        svc.backendRoot = false;
+        svc.linuxResourceLimits = true;
+        svc.spawn('npm run dev -- --port 5173', { cwd: tenantCwd, env: {}, stdio: ['pipe', 'pipe', 'pipe'] });
+        expect(svc.launches[0].file).to.equal('/bin/sh');
+        expect(svc.launches[0].args[1]).to.match(/oom_score_adj; } 2>\/dev\/null; exec \/bin\/sh -c "\$1"$/);
+        expect(svc.launches[0].args.slice(2)).to.deep.equal(['qaap-oom-preferred', 'npm run dev -- --port 5173']);
+    });
+
+    it('OOM-preference wrapper raises oom_score_adj and execs the wrapped executable itself', function (): void {
+        // Real /bin/sh and /proc: Linux only (same reason as the rlimit fallback spec above).
+        if (process.platform !== 'linux') {
+            this.skip();
+        }
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        const svc = new TestTenantSpawnService();
+        svc.backendRoot = false;
+        svc.linuxResourceLimits = true;
+        svc.spawnArgvPrepared('/bin/cat', ['/proc/self/oom_score_adj'], { cwd: tenantCwd, env: {} });
+        const launch = svc.launches[0];
+        const result = spawnSync(launch.file, launch.args, { encoding: 'utf8' });
+        expect(result.status).to.equal(0);
+        expect(result.stdout.trim()).to.equal('500');
     });
 
     it('keeps an already non-root tenant backend agent under the backend uid', () => {
