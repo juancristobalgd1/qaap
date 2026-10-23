@@ -949,10 +949,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.panelLifecycleUi.scheduleChatServiceRefresh();
     }
 
-    protected scheduleChatHubListRefreshAfterSummaries(): void {
-        this.panelLifecycleUi.scheduleChatHubListRefreshAfterSummaries();
-    }
-
     protected async applyActiveTasksRefresh(): Promise<void> {
         await this.panelLifecycleUi.applyActiveTasksRefresh();
     }
@@ -1840,10 +1836,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderReviewHubView(projects: MobileProjectEntry[]): void {
         this.workHubInboxUi.renderReviewHubView(projects);
-    }
-
-    protected renderChatHubView(projects: MobileProjectEntry[]): void {
-        this.workHubInboxUi.renderChatHubView(projects);
     }
 
     protected collectChatHubGroups(projects: MobileProjectEntry[],): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {

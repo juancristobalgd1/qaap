@@ -64,7 +64,7 @@ export class MobileProjectsHubQueryUi {
     }
 
     projectsForCurrentHubList(): MobileProjectEntry[] {
-        const base = (this.host.hubView === 'tasks' || this.host.hubView === 'chat' || this.host.hubView === 'review')
+        const base = (this.host.hubView === 'tasks' || this.host.hubView === 'review')
             ? this.host.projects
             : this.applyFilter(this.host.projects, this.host.filter);
         return this.applySearch(base);

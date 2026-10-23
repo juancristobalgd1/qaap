@@ -97,7 +97,6 @@ export class MobileProjectsRepoFiltersUi {
         return this.host.hubView === 'diff'
             || this.host.hubView === 'tasks'
             || this.host.hubView === 'review'
-            || this.host.hubView === 'chat'
             || this.host.isProjectDetailView();
     }
 
@@ -113,9 +112,6 @@ export class MobileProjectsRepoFiltersUi {
     }
 
     workHubSearchPlaceholder(): string {
-        if (this.host.hubView === 'chat') {
-            return nls.localize('qaap/mobileProjects/searchChatPlaceholder', 'Search local chat sessions');
-        }
         if (this.host.hubView === 'tasks') {
             return this.host.tasksHubSurface === 'chat'
                 ? nls.localize('qaap/mobileProjects/searchChatPlaceholder', 'Search local chat sessions')

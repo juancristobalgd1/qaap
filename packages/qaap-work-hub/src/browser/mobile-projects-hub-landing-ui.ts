@@ -41,7 +41,6 @@ export interface MobileProjectsHubLandingHost {
     isProjectDiffView(): boolean;
     show(options?: { preferredHubView?: MobileProjectsHubView }): Promise<void>;
     hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
-    scheduleChatHubListRefreshAfterSummaries(): void;
     refreshTasksHubApprovals(forceRender?: boolean): void;
     render(): void;
     syncLandingHubListChrome(): void;
@@ -76,11 +75,6 @@ export class MobileProjectsHubLandingUi {
             this.host.delegate.onHubLandingViewChanged?.();
             return;
         }
-        if (!force && this.host.hubView === view && view === 'chat') {
-            this.host.scheduleChatHubListRefreshAfterSummaries();
-            this.host.delegate.onHubLandingViewChanged?.();
-            return;
-        }
         if (!force && this.host.hubView === view && view === 'tasks') {
             this.host.conversations?.start();
             this.host.activeTasks?.start();
@@ -110,9 +104,6 @@ export class MobileProjectsHubLandingUi {
         this.host.projectsService.setHubView(view);
         this.host.expandedId = undefined;
         this.host.soloExpanded = false;
-        if (view === 'chat') {
-            this.host.scheduleChatHubListRefreshAfterSummaries();
-        }
         if (view === 'review') {
             this.host.inboxLoadGeneration++;
             this.host.inboxPullRequestsLoaded = false;

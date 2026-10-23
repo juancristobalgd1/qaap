@@ -129,10 +129,6 @@ export class MobileProjectsHubHeaderUi {
             this.host.titleEl.textContent = nls.localize('qaap/diff/reviewLabel', 'Working changes');
             return;
         }
-        if (this.host.hubView === 'chat') {
-            this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/chatTitle', 'Chat');
-            return;
-        }
         if (this.host.hubView === 'tasks') {
             const useAgentsHubLanding = this.host.shouldUseAgentsHubLanding();
             if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject && this.host.transcriptOpenSummary) {

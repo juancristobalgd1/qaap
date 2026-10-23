@@ -117,39 +117,6 @@ export class MobileProjectsWorkHubInboxUi {
         this.host.renderSubtitle();
     }
 
-    renderChatHubView(projects: MobileProjectEntry[]): void {
-        const groups = this.collectChatHubGroups(projects);
-        if (groups.length === 0) {
-            this.host.scroll.append(this.createChatEmptyState());
-            this.host.renderSubtitle();
-            return;
-        }
-        const host = document.createElement('div');
-        host.className = 'theia-mobile-projects-chats-inbox theia-mod-local-chat';
-        for (const group of groups) {
-            const items: MobileWorkHubInboxItem[] = group.summaries.map(summary => ({
-                kind: 'conversation',
-                project: group.project,
-                summary,
-                sortAt: summary.updatedAt,
-                priority: 0,
-            }));
-            host.append(this.createInboxProjectGroup(group.project, items));
-        }
-        this.host.scroll.append(host);
-        this.host.hubIncrementalUi.rememberRenderedStructure('chat-inbox', groups.map(group => ({
-            project: group.project,
-            items: group.summaries.map(summary => ({
-                kind: 'conversation' as const,
-                project: group.project,
-                summary,
-                sortAt: summary.updatedAt,
-                priority: 0,
-            })),
-        })));
-        this.host.renderSubtitle();
-    }
-
     collectChatHubGroups(
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {

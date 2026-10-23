@@ -515,15 +515,6 @@ export class MobileProjectsPanelLifecycleUi {
         }, 120);
     }
 
-    scheduleChatHubListRefreshAfterSummaries(): void {
-        void this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries().then(() => {
-            if (this.host.hubView === 'chat' && this.host.visible) {
-                this.host.scheduleRenderList();
-                this.host.renderSubtitle();
-            }
-        });
-    }
-
     async applyActiveTasksRefresh(): Promise<void> {
         if (this.host.transcriptSheet) {
             return;

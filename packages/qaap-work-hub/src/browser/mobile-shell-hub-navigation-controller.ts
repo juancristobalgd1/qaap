@@ -94,7 +94,7 @@ export class MobileShellHubNavigationController {
             this.host.warmLiveTransport();
             this.host.startActiveTasks();
             panel.preferComposerSurface('task');
-        } else if (view === 'chat' || view === 'review') {
+        } else if (view === 'review') {
             this.host.warmLiveTransport();
         }
         panel.navigateHubTab(view);
@@ -146,7 +146,7 @@ export class MobileShellHubNavigationController {
             this.host.warmLiveTransport();
             this.host.startActiveTasks();
             resolved.preferComposerSurface('task');
-        } else if (view === 'chat' || view === 'review') {
+        } else if (view === 'review') {
             this.host.warmLiveTransport();
         }
         resolved.navigateHubTab(view);

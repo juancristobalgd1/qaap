@@ -181,24 +181,6 @@ export class MobileProjectsSubtitleUi {
             }
             return;
         }
-        if (this.host.homeMode && this.host.hubView === 'chat') {
-            this.host.subtitleEl.className = 'theia-mobile-projects-subtitle';
-            const chatCount = this.host.projects.reduce(
-                (sum, project) => sum + this.host.conversationIndexUi.localChatsForProject(project).length,
-                0,
-            );
-            this.host.subtitleEl.textContent = chatCount > 0
-                ? nls.localize(
-                    'qaap/mobileProjects/chatSubtitleCount',
-                    '{0} local chat sessions · saved on this device',
-                    String(chatCount),
-                )
-                : nls.localize(
-                    'qaap/mobileProjects/chatSubtitle',
-                    'Interactive workspace chat — persists when you close the app',
-                );
-            return;
-        }
         if (this.host.isProjectDetailView()) {
             const project = this.host.projectNavigationUi.resolveSelectedProject();
             this.host.subtitleEl.className = 'theia-mobile-projects-subtitle';

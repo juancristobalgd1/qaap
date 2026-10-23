@@ -29,7 +29,6 @@ export interface MobileProjectsRenderListHost {
     shouldPreserveAgentsHubExecutionShell(): boolean;
     renderDiffHubView(): void;
     hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
-    renderChatHubView(projects: MobileProjectEntry[]): void;
     renderTasksHubView(projects: MobileProjectEntry[]): void;
     renderReviewHubView(projects: MobileProjectEntry[]): void;
     renderCatalogHubView(): void;
@@ -104,10 +103,6 @@ export class MobileProjectsRenderListUi {
 
             const filtered = this.host.hubQueryUi.projectsForCurrentHubList();
 
-            if (this.host.hubView === 'chat') {
-                this.host.renderChatHubView(filtered);
-                return;
-            }
             if (this.host.hubView === 'tasks') {
                 this.host.renderTasksHubView(filtered);
                 return;
