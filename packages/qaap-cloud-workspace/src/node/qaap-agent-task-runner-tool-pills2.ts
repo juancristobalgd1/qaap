@@ -577,11 +577,34 @@ export function persistExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void>
                     ctx.drainQueuedTasks();
                 }
             })
-            .catch(() => {
+            .catch((error: unknown) => {
                 ctx.storageWriteFailed = true;
-                console.warn('[qaap-agent-tasks] task storage write failed; new tasks and queue promotion are blocked.');
+                console.warn(`[qaap-agent-tasks] task storage write failed; new tasks and queue promotion are blocked: ${(error as Error)?.message ?? String(error)}`);
+                scheduleStorageWriteRetry(ctx);
             });
         return ctx.persistChain;
+}
+
+/** Delay before a failed index write is retried on its own. */
+const STORAGE_WRITE_RETRY_DELAY_MS = 5_000;
+const pendingStorageWriteRetries = new WeakSet<QaapAgentTaskRunnerContext>();
+
+/**
+ * A failed write blocks create() for every caller (conversation turns included), and nothing else
+ * persists while no task can start. Retry in the background so a transient failure clears itself.
+ */
+function scheduleStorageWriteRetry(ctx: QaapAgentTaskRunnerContext): void {
+    if (pendingStorageWriteRetries.has(ctx)) {
+        return;
+    }
+    pendingStorageWriteRetries.add(ctx);
+    const timer = setTimeout(() => {
+        pendingStorageWriteRetries.delete(ctx);
+        if (ctx.storageWriteFailed) {
+            void persistExtracted(ctx);
+        }
+    }, STORAGE_WRITE_RETRY_DELAY_MS);
+    timer.unref?.();
 }
 
 export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerContext, options: {

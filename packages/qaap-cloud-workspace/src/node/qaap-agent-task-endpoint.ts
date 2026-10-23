@@ -719,6 +719,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // unrestricted rather than guessing from a truthy value.
                 readOnlyWorkspace: body.readOnlyWorkspace === true ? true : undefined,
             };
+            // A failed write blocks every new task until something persists again. Retry once here
+            // so a transient failure (for example a temp-file collision) clears on the next user
+            // request; if it still fails, create() below answers 503 as before.
+            const health = this.runner.storageHealth();
+            if (health.writeFailed && health.recovery === 'ready') {
+                await this.runner.retryStorage();
+            }
             const task = this.runner.create(request, ownerLogin);
             // Only tasks created HERE are standalone: conversation turns call the runner directly
             // and fall back inside the conversation store, so they must never be retried twice.

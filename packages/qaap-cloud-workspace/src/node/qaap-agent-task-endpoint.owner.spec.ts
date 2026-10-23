@@ -45,6 +45,7 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
             cliUpdates: { isInstallSupported: () => false },
             runner: {
                 listForCwd: () => [task],
+                storageHealth: () => ({ ready: true, recovery: 'ready', writeFailed: false }),
                 isAgentConfigured: () => true,
                 isQaiqInstalled: () => true,
                 refreshAgentCatalog: () => undefined,

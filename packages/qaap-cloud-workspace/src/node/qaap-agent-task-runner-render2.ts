@@ -9,7 +9,7 @@ import { execFile } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
-import { writeJsonAtomicSync } from './qaap-write-json-atomic';
+import { sweepOrphanedTempFiles, writeJsonAtomicSync } from './qaap-write-json-atomic';
 import * as path from 'path';
 import {
     type QaapQaiqModelOption,
@@ -278,6 +278,9 @@ export function readCustomAgentsExtracted(ctx: QaapAgentTaskRunnerContext): Agen
 
 export async function restoreFromDiskExtracted(ctx: QaapAgentTaskRunnerContext): Promise<void> {
         ctx.recoveryState = 'loading';
+        // Remove temp files a previous boot (possibly with this same pid) left behind before the
+        // first write, so a stale temp can never block index persistence.
+        await sweepOrphanedTempFiles(INDEX_PATH);
         try {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
             ctx.restorePersistedIndex(JSON.parse(raw));
