@@ -111,7 +111,6 @@ export function appendLongTranscriptProbeDelta(
 
 export interface WorkHubPerfProbeDiagnostics {
     readonly projectCount: number;
-    readonly mcRowCount: number;
     readonly teamRowCount: number;
     readonly hubView: string;
 }
