@@ -131,6 +131,9 @@ services:
       QAAP_MAX_PARALLEL_VARIANTS: ${QAAP_MAX_PARALLEL_VARIANTS:-3}
       # Agent processes dominate memory. Defaults leave headroom for Parallel×2 on a 4 GiB box;
       # raise via .env for the live event window (see doc/qaap-demo-rehearsal-checklist.md).
+      # With QAAP_BACKEND_PER_TENANT=1 these caps (and QAAP_AGENT_VERIFY_MAX_CONCURRENT,
+      # QAAP_MAX_PARALLEL_VARIANTS) are passed on to every tenant backend and apply per tenant
+      # container, so size them together with QAAP_TENANT_MEMORY_LIMIT.
       QAAP_MAX_CONCURRENT_AGENTS: ${QAAP_MAX_CONCURRENT_AGENTS:-3}
       QAAP_MAX_CONCURRENT_AGENTS_PER_USER: ${QAAP_MAX_CONCURRENT_AGENTS_PER_USER:-3}
       QAAP_MAX_CONCURRENT_AGENTS_PER_REPO: ${QAAP_MAX_CONCURRENT_AGENTS_PER_REPO:-0}
@@ -200,7 +203,10 @@ services:
       # Before that stop, idle tenant backends are frozen (docker pause) after this long: no CPU, memory kept,
       # and the next request resumes them in well under a second instead of a cold wake. 0 disables it.
       QAAP_TENANT_PAUSE_AFTER_MS: ${QAAP_TENANT_PAUSE_AFTER_MS:-1800000}
-      QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-2147483648}
+      # Bytes per tenant container (backend + its agents, verification builds, dev servers and /tmp
+      # tmpfs). 3 GiB fits 3 agents + 1 verification pass; Node sizes the tenant backend heap to half
+      # of it on its own. Changing it recreates idle tenant backends (busy ones once their turns end).
+      QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-3221225472}
       QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
       # Per-login raises for users who build large projects (e.g. Qaap itself) in a project:
