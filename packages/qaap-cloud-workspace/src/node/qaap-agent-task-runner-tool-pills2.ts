@@ -30,6 +30,8 @@ import {
 } from '../common/qaap-agent-task';
 import { billableAgentDurationMs } from '../common/qaap-billing-agent-runtime';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
+import { agentModelFitsAgent } from '../common/qaap-agent-task-model-routing';
+import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
     resolveOpencodePermissionEnv,
@@ -563,12 +565,16 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         }
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
-        ctx.assertQaiqConfigured(agentId, options.ownerLogin, options.agentModel);
+        // The composer may still hold another agent's pick; the agent's own default beats a foreign model.
+        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId))
+            ? options.agentModel
+            : undefined;
+        ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
             throw new Error(`Agent "${agentId}" is not available for prompt improvement.`);
         }
-        const vars = ctx.buildTemplateVars(agentId, options.agentModel, {
+        const vars = ctx.buildTemplateVars(agentId, agentModel, {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',
         }, options.ownerLogin);
@@ -605,7 +611,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             startedAt: createdAt,
             autoApprove: true,
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
-            ...(options.agentModel ? { agentModel: options.agentModel, qaiqModel: options.agentModel } : {}),
+            ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
         try {
             return await ctx.runOneShotCommand(

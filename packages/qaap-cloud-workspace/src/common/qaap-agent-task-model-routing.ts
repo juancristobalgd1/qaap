@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { agentUsesSettingsModelCatalog } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { agentSupportsModelPicker, agentUsesSettingsModelCatalog } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { NATIVE_MODEL_PICKER_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { QaapAgentTaskKind, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import { resolveRequestAgentModel } from './qaap-agent-task';
@@ -117,6 +118,42 @@ export function coerceRunnableAgentModel(
     return model;
 }
 
+/**
+ * Whether `agentId`'s CLI can run `model`. Each CLI understands only its own catalog — QAIQ the
+ * Settings/BYOK vendors, a native CLI (claude, codex, …) the models it lists — and anything else
+ * becomes `--model <foreign-id>` and dies with model_not_found (QAIQ's NVIDIA llama default handed
+ * to claude). Explicit picks are checked too: the request carries whatever the client had selected
+ * (the legacy `qaiqModel` field, a composer whose agent changed, a fallback chain), not a promise
+ * that it belongs to this agent.
+ *
+ * Native catalog options carry `vendor: <agentId>`, so a pick made for this agent stays valid after
+ * it drops out of a refreshed catalog; a pick from another catalog fits only when this agent lists
+ * the same model id (hermes and openclaude options reuse real vendor names).
+ */
+export function agentModelFitsAgent(
+    agentId: string | undefined,
+    model: QaapCreateAgentTaskQaiqModel,
+    listCatalog: () => readonly QaapQaiqModelOption[],
+): boolean {
+    const normalized = agentId?.trim().toLowerCase();
+    const modelId = model.modelId?.trim().toLowerCase();
+    if (!normalized || !modelId) {
+        return false;
+    }
+    const vendor = model.vendor?.trim().toLowerCase();
+    if (agentUsesSettingsModelCatalog(normalized)) {
+        // A native CLI's own pick names no provider QAIQ can call.
+        return !vendor || !NATIVE_MODEL_PICKER_AGENT_IDS.has(vendor);
+    }
+    if (!agentSupportsModelPicker(normalized)) {
+        return false;
+    }
+    if (vendor === normalized) {
+        return true;
+    }
+    return listCatalog().some(option => option.modelId.trim().toLowerCase() === modelId);
+}
+
 export interface ResolveEffectiveAgentModelRequest {
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
@@ -143,7 +180,8 @@ export interface QaapAgentModelRoutingContext {
 }
 
 /**
- * Explicit composer/thread model wins, always. Otherwise route by task kind, on two separate paths
+ * Explicit composer/thread model wins whenever it fits the agent ({@link agentModelFitsAgent}).
+ * Otherwise route by task kind, on two separate paths
  * because the two catalogs are not interchangeable:
  *
  * - QAIQ (the Settings alias catalog): routed aliases are provider bindings (NVIDIA/OpenRouter/…).
@@ -170,7 +208,8 @@ export function resolveEffectiveRequestAgentModel(
     context?: QaapAgentModelRoutingContext,
 ): QaapCreateAgentTaskQaiqModel | undefined {
     const explicit = resolveRequestAgentModel(request);
-    if (explicit) {
+    // A pick from another agent's catalog is no pick for this one: route as if none was sent.
+    if (explicit && agentModelFitsAgent(agentId, explicit, () => context?.listNativeModels?.(agentId) ?? [])) {
         return explicit;
     }
     if (!agentUsesSettingsModelCatalog(agentId)) {
