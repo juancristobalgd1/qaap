@@ -15,7 +15,11 @@ import {
     type TranscriptToolUiPayload,
     type TranscriptToolUiQuestionFlowPayload,
 } from '../common/qaap-transcript-tool-ui-payloads';
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
+import {
+    createTranscriptCodeView,
+    patchTranscriptCodeView,
+    resolveTranscriptCodeLanguage,
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 
 export const TRANSCRIPT_CODE_BLOCK_CARD_CLASS = 'theia-mobile-agent-code-block-card';
@@ -59,9 +63,16 @@ function resolveHostname(href: string): string {
     }
 }
 
+/**
+ * Payload each code-block card currently shows, so {@link patchTranscriptMarkdownCodeBlockCard} can
+ * grow a streaming fence in place and the copy button always copies the latest code.
+ */
+const codeBlockCardPayloads = new WeakMap<HTMLElement, TranscriptToolUiCodeBlockPayload>();
+
 export function buildTranscriptCodeBlockCard(payload: TranscriptToolUiCodeBlockPayload): HTMLElement {
     const card = document.createElement('div');
     card.className = TRANSCRIPT_CODE_BLOCK_CARD_CLASS;
+    codeBlockCardPayloads.set(card, payload);
     const head = document.createElement('div');
     head.className = 'theia-mobile-agent-code-block-card-head';
     const language = document.createElement('span');
@@ -69,7 +80,7 @@ export function buildTranscriptCodeBlockCard(payload: TranscriptToolUiCodeBlockP
     language.textContent = payload.filename
         ?? (payload.language && payload.language !== 'text' ? payload.language : 'Code');
     head.append(language);
-    appendCopyButton(head, () => payload.code);
+    appendCopyButton(head, () => codeBlockCardPayloads.get(card)?.code ?? payload.code);
     const separator = document.createElement('div');
     separator.className = 'theia-mobile-agent-rich-card-sep';
     separator.setAttribute('role', 'separator');
@@ -360,6 +371,31 @@ function inferFenceLanguage(pre: HTMLPreElement): string | undefined {
         return undefined;
     }
     return [...code.classList].map(token => /^language-(.+)$/.exec(token)?.[1]).find(Boolean);
+}
+
+/**
+ * Re-points a markdown code-block card (built by {@link enhanceTranscriptMarkdownRichContent}) at the
+ * fence `pre` freshly rendered for the same block, re-tokenizing only the changed lines. Used while a
+ * fence streams in the open markdown tail, where rebuilding the card every tick re-created thousands
+ * of token spans. Returns `false` without mutating anything when the result could differ from a fresh
+ * card — another fence language, a tool-UI card, an empty fence or a code view that cannot patch.
+ */
+export function patchTranscriptMarkdownCodeBlockCard(card: HTMLElement, pre: HTMLPreElement): boolean {
+    const previous = codeBlockCardPayloads.get(card);
+    if (!previous || previous.filename !== undefined || !card.classList.contains(TRANSCRIPT_CODE_BLOCK_CARD_CLASS)) {
+        return false;
+    }
+    const language = inferFenceLanguage(pre);
+    const code = (pre.querySelector('code') ?? pre).textContent ?? '';
+    if (language !== previous.language || !code.trim()) {
+        return false;
+    }
+    const view = card.querySelector<HTMLElement>(':scope > .theia-mobile-agent-code-block-card-body > .theia-mobile-agent-code-view');
+    if (!view || !patchTranscriptCodeView(view, code, resolveTranscriptCodeLanguage(undefined, code, language))) {
+        return false;
+    }
+    codeBlockCardPayloads.set(card, { ...previous, code });
+    return true;
 }
 
 function wrapMarkdownCodeBlock(pre: HTMLPreElement): void {

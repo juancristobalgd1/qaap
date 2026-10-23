@@ -32,6 +32,7 @@ import {
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
+import { patchTranscriptStreamingTailHtml } from './qaap-transcript-streaming-tail-patch';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { textContainsQaapCaptureDirective } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
@@ -530,7 +531,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
         patch: StreamingMarkdownHtmlPatch,
         cleanLength: number,
     ): void {
-        if (!applyStreamingMarkdownHtmlPatch(host, patch)) {
+        if (!applyStreamingMarkdownHtmlPatch(host, patch, patchTranscriptStreamingTailHtml)) {
             return;
         }
         updateStreamingPlainPreview(host, transcriptStreamSourceCache.get(host) ?? '', patch.totalLength);

@@ -80,11 +80,14 @@ export interface StreamingMarkdownHtmlPatch {
  * Apply pre-sanitized frozen/tail HTML from the markdown worker. Main thread only
  * touches DOM — no markdown-it on the SSE hot path.
  *
+ * @param applyTailHtml Mounts the tail HTML; defaults to a plain `innerHTML` replace. Hosts that
+ * enhance rendered blocks pass a block-reusing applier so unchanged tail blocks keep their DOM.
  * @returns `false` when the patch is a noop (same lengths as already applied).
  */
 export function applyStreamingMarkdownHtmlPatch(
     contentEl: HTMLElement,
     patch: StreamingMarkdownHtmlPatch,
+    applyTailHtml: (tail: HTMLElement, tailHtml: string) => void = replaceStreamingTailHtml,
 ): boolean {
     const previousStable = Number(contentEl.dataset[STREAM_STABLE_LENGTH_DATA] ?? '-1');
     const previousTotal = Number(contentEl.dataset[STREAM_TOTAL_LENGTH_DATA] ?? '-1');
@@ -113,9 +116,13 @@ export function applyStreamingMarkdownHtmlPatch(
         }
         contentEl.dataset[STREAM_STABLE_LENGTH_DATA] = String(patch.stableLength);
     }
-    tail.innerHTML = patch.tailHtml;
+    applyTailHtml(tail, patch.tailHtml);
     contentEl.dataset[STREAM_TOTAL_LENGTH_DATA] = String(patch.totalLength);
     return true;
+}
+
+function replaceStreamingTailHtml(tail: HTMLElement, tailHtml: string): void {
+    tail.innerHTML = tailHtml;
 }
 
 export function ensureStreamingPlainPreview(contentEl: HTMLElement): HTMLElement {

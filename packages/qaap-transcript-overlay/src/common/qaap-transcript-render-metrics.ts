@@ -48,7 +48,11 @@ export type QaapTranscriptRenderMetricKind =
     | 'timeline_item_sync'
     | 'timeline_item_sync_light'
     | 'timeline_item_sync_skipped'
-    | 'markdown_worker_coalesced';
+    | 'markdown_worker_coalesced'
+    | 'markdown_tail_full_reset'
+    | 'markdown_tail_block_reused'
+    | 'markdown_tail_code_patched'
+    | 'markdown_tail_block_replaced';
 
 export type QaapTranscriptRenderMetricsSnapshot = Readonly<Record<QaapTranscriptRenderMetricKind, number>> & {
     readonly enabled: boolean;
@@ -106,6 +110,10 @@ const EMPTY_COUNTS = (): Record<QaapTranscriptRenderMetricKind, number> => ({
     timeline_item_sync_light: 0,
     timeline_item_sync_skipped: 0,
     markdown_worker_coalesced: 0,
+    markdown_tail_full_reset: 0,
+    markdown_tail_block_reused: 0,
+    markdown_tail_code_patched: 0,
+    markdown_tail_block_replaced: 0,
 });
 
 function resolveStore(): MetricsStore | undefined {
