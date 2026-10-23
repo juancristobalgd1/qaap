@@ -14,7 +14,7 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 
 **Limitaciones**
 - `.claude/agents/` está en `.gitignore` (`.claude/*`): los cambios de agentes no viajan con el repo. En otra cuenta o máquina, replica el frontmatter `model:` a mano.
-- El modelo por defecto de la sesión principal lo fija `~/.claude/settings.json` (`"model"`) o el selector de la app; esta política no lo cambia.
+- El modelo por defecto de la sesión principal lo fija `~/.claude/settings.json` (`"model"`) o el selector de la app; en la cuenta original se cambió de `fable[1m]` a `opus` el 2026-10-23. En otra cuenta, ajústalo igual.
 
 **Pendiente**
 - Nada.
