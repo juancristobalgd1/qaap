@@ -456,6 +456,15 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         return pathname === '/socket.io' || pathname.startsWith('/socket.io/');
     }
 
+    /**
+     * A 403 from a tenant's Socket.IO or WebSocket endpoint means the cached connection token is stale:
+     * a restarted backend mints a new token that the control plane did not capture. Only 403 qualifies;
+     * other statuses are legitimate application answers and must not evict the target.
+     */
+    protected isStaleTenantConnectionTokenResponse(statusCode: number | undefined): boolean {
+        return statusCode === 403;
+    }
+
     protected isEarlyRequestRoutingEnabled(): boolean {
         return !/^(0|false|off|no)$/i.test(process.env.QAAP_TENANT_PROXY_EARLY_ROUTING?.trim() ?? '');
     }
@@ -706,9 +715,12 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 upstreamSocket.pipe(socket);
                 socket.pipe(upstreamSocket);
             });
-            upstream.once('response', () => {
+            upstream.once('response', response => {
                 handshakeAnswered = true;
                 clearTimeout(connectTimer);
+                if (this.isStaleTenantConnectionTokenResponse(response.statusCode)) {
+                    this.docker.invalidateTenantBackendTarget(userLogin, target);
+                }
                 release();
                 socket.destroy();
             });
@@ -781,6 +793,11 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             // Headers arrived: streaming / long-lived bodies must not be cut by the wait deadline.
             responseStarted = true;
             clearTimeout(responseTimer);
+            if (!publicRoute && tenantLogin && this.isSocketIoPath(req.url) && this.isStaleTenantConnectionTokenResponse(response.statusCode)) {
+                // The 403 is still forwarded to the browser; engine.io's next poll re-ensures the target
+                // and captures the restarted backend's fresh connection token.
+                this.docker.invalidateTenantBackendTarget(tenantLogin, target);
+            }
             const responseHeaders = { ...response.headers };
             for (const key of Object.keys(responseHeaders)) {
                 if (HOP_BY_HOP_HEADERS.has(key.toLowerCase()) || key.toLowerCase() === 'set-cookie') {

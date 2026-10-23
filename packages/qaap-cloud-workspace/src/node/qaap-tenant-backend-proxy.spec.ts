@@ -163,8 +163,8 @@ describe('QaapTenantBackendProxyContribution', () => {
             }
         });
 
-        it('does not evict the target when the backend answers the upgrade with an HTTP response', async () => {
-            const server = http.createServer((_req, res) => res.writeHead(403).end());
+        it('does not evict the target when the backend answers the upgrade with an HTTP response other than 403', async () => {
+            const server = http.createServer((_req, res) => res.writeHead(404).end());
             await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
             try {
                 const invalidations: unknown[] = [];
@@ -174,6 +174,23 @@ describe('QaapTenantBackendProxyContribution', () => {
                 await proxy.proxyWebSocket(upgradeRequest(), socket, Buffer.alloc(0), 'alice', SESSION, [], {});
                 await closed;
                 expect(invalidations).to.deep.equal([]);
+            } finally {
+                server.closeAllConnections();
+                await new Promise<void>(resolve => server.close(() => resolve()));
+            }
+        });
+
+        it('evicts the cached target when the backend rejects the upgrade with 403 (rotated connection token)', async () => {
+            const server = http.createServer((_req, res) => res.writeHead(403).end());
+            await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+            try {
+                const invalidations: unknown[] = [];
+                const proxy = createWebSocketProxy((server.address() as net.AddressInfo).port, invalidations);
+                const socket = new PassThrough();
+                const closed = waitForClose(socket);
+                await proxy.proxyWebSocket(upgradeRequest(), socket, Buffer.alloc(0), 'alice', SESSION, [], {});
+                await closed;
+                expect(invalidations).to.deep.equal([['alice', true]]);
             } finally {
                 server.closeAllConnections();
                 await new Promise<void>(resolve => server.close(() => resolve()));
@@ -465,6 +482,8 @@ describe('QaapTenantBackendProxyContribution', () => {
             warmCalls?: unknown[][];
             /** Counts TCP connections the proxy opens to the tenant backend. */
             tenantConnections?: { count: number };
+            /** Receives the arguments of every tenant target invalidation. */
+            invalidations?: unknown[];
             /** Replaces the Express stand-in (default: answers `control-plane`). */
             original?: (proxy: Record<string, unknown>, req: http.IncomingMessage, res: http.ServerResponse) => void;
         }
@@ -515,7 +534,7 @@ describe('QaapTenantBackendProxyContribution', () => {
                 },
                 getTenantBackendConnectionToken: () => 'tenant-token',
                 getTenantBackendAssertionSecret: () => SECRET,
-                invalidateTenantBackendTarget: () => undefined,
+                invalidateTenantBackendTarget: (...args: unknown[]) => options.invalidations?.push(args),
                 warmTenantBackend: (...args: unknown[]) => options.warmCalls?.push(args),
                 predictTenantBackendBuild: async () => options.predictedBuild,
             };
@@ -567,6 +586,36 @@ describe('QaapTenantBackendProxyContribution', () => {
             expect(seen[0].headers.cookie).to.equal('theia-connection-token=tenant-token');
             expect(seen[0].headers.origin).to.match(/^http:\/\/127\.0\.0\.1:\d+$/);
             expect(seen[0].headers[QAAP_TENANT_BACKEND_ASSERTION_HEADER]).to.be.a('string');
+        });
+
+        it('invalidates the tenant target when Socket.IO polling is answered 403, and still forwards the 403', async () => {
+            const invalidations: unknown[] = [];
+            await withTenantAndFront((_req, res) => res.writeHead(403, { 'content-type': 'application/json' }).end('{"code":4,"message":"Forbidden"}'),
+                { authenticated: true, invalidations }, async ({ port }) => {
+                    const response = await request(port, '/socket.io/?EIO=4&transport=polling');
+                    expect(response.status).to.equal(403);
+                    expect(response.body).to.equal('{"code":4,"message":"Forbidden"}');
+                });
+            expect(invalidations).to.have.length(1);
+            const [login, target] = invalidations[0] as [string, { tenantLogin: string }];
+            expect(login).to.equal('alice');
+            expect(target.tenantLogin).to.equal('alice');
+        });
+
+        it('does not invalidate the tenant target when Socket.IO polling is answered 200', async () => {
+            const invalidations: unknown[] = [];
+            await withTenantAndFront((_req, res) => res.end('tenant'), { authenticated: true, invalidations }, async ({ port }) => {
+                expect((await request(port, '/socket.io/?EIO=4&transport=polling')).status).to.equal(200);
+            });
+            expect(invalidations).to.deep.equal([]);
+        });
+
+        it('does not invalidate the tenant target for a 403 from a non Socket.IO API path', async () => {
+            const invalidations: unknown[] = [];
+            await withTenantAndFront((_req, res) => res.writeHead(403).end('forbidden'), { authenticated: true, invalidations }, async ({ port }) => {
+                expect((await request(port, '/qaap/api/x')).status).to.equal(403);
+            });
+            expect(invalidations).to.deep.equal([]);
         });
 
         it('rejects a polling handshake the outer WebSocket validators refuse', async () => {
