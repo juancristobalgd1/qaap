@@ -57,6 +57,22 @@ describe('qaap-activity-tool-icon-motion', () => {
         expect(icon.classList.contains(activityToolIconMotionKindClass('edit'))).to.equal(false);
     });
 
+    it('re-syncing an already animated icon does not rewrite its class attribute', () => {
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-edit theia-mobile-tool-group-icon';
+        syncActivityToolIconMotion(icon, true, 'edit');
+        const before = icon.className;
+        const observer = new MutationObserver(() => undefined);
+        observer.observe(icon, { attributes: true });
+        try {
+            syncActivityToolIconMotion(icon, true, 'edit');
+            expect(observer.takeRecords()).to.have.length(0);
+            expect(icon.className).to.equal(before);
+        } finally {
+            observer.disconnect();
+        }
+    });
+
     it('switches motion kind without leaving stale kind classes', () => {
         const icon = document.createElement('span');
         syncActivityToolIconMotion(icon, true, 'search');

@@ -167,11 +167,11 @@ export function isLikelyReadToolFileContent(result: string): boolean {
     return isLikelySourceFileDump(trimmed) || isLikelySourceFileDump(stripped);
 }
 
-function shouldSkipToolOutputKeywordFailureScan(result: string, toolName?: string): boolean {
+function shouldSkipToolOutputKeywordFailureScan(result: string, pureReadTool: boolean): boolean {
     if (isLikelyReadToolFileContent(result)) {
         return true;
     }
-    if (isPureReadToolName(toolName) && /^\d+:\s/m.test(result)) {
+    if (pureReadTool && /^\d+:\s/m.test(result)) {
         return true;
     }
     return false;
@@ -212,6 +212,47 @@ function isPureReadToolName(toolName: string | undefined): boolean {
 }
 
 /**
+ * Verdict cache for {@link isAgentToolResultFailure}, keyed by the exact
+ * result string, with one slot per tool-name class (the only way the tool
+ * name affects the verdict). The timeline rebuilds its events on every
+ * streaming tick and re-classifies every finished tool, so without this the
+ * regex scans over large Read/Bash payloads dominated each refresh. A hit
+ * needs an exact string match, so a cached verdict is always the one a fresh
+ * scan would give. Bounded by total cached characters, oldest key evicted first.
+ */
+interface ToolResultFailureVerdicts {
+    readTool?: boolean;
+    otherTool?: boolean;
+}
+const TOOL_RESULT_FAILURE_CACHE_MAX_CHARS = 2_000_000;
+const toolResultFailureCache = new Map<string, ToolResultFailureVerdicts>();
+let toolResultFailureCacheChars = 0;
+
+function cacheToolResultFailureVerdict(result: string, pureReadTool: boolean, failed: boolean): void {
+    if (result.length > TOOL_RESULT_FAILURE_CACHE_MAX_CHARS) {
+        return;
+    }
+    let verdicts = toolResultFailureCache.get(result);
+    if (!verdicts) {
+        verdicts = {};
+        toolResultFailureCache.set(result, verdicts);
+        toolResultFailureCacheChars += result.length;
+    }
+    if (pureReadTool) {
+        verdicts.readTool = failed;
+    } else {
+        verdicts.otherTool = failed;
+    }
+    for (const key of toolResultFailureCache.keys()) {
+        if (toolResultFailureCacheChars <= TOOL_RESULT_FAILURE_CACHE_MAX_CHARS) {
+            break;
+        }
+        toolResultFailureCache.delete(key);
+        toolResultFailureCacheChars -= key.length;
+    }
+}
+
+/**
  * Whether a finished tool's stdout/stderr indicates failure.
  * Ignores {@code error} substrings inside file paths (e.g. css-syntax-error.js)
  * and inside Read tool file payloads (e.g. {@code webglError}, {@code error=}).
@@ -223,10 +264,22 @@ export function isAgentToolResultFailure(
     if (!result?.trim()) {
         return false;
     }
+    const pureReadTool = isPureReadToolName(options.toolName);
+    const verdicts = toolResultFailureCache.get(result);
+    const cached = pureReadTool ? verdicts?.readTool : verdicts?.otherTool;
+    if (cached !== undefined) {
+        return cached;
+    }
+    const failed = scanAgentToolResultFailure(result, pureReadTool);
+    cacheToolResultFailureVerdict(result, pureReadTool, failed);
+    return failed;
+}
+
+function scanAgentToolResultFailure(result: string, pureReadTool: boolean): boolean {
     if (/tool_use_error|InputValidationError/i.test(result)) {
         return true;
     }
-    const skipKeywordScan = shouldSkipToolOutputKeywordFailureScan(result, options.toolName);
+    const skipKeywordScan = shouldSkipToolOutputKeywordFailureScan(result, pureReadTool);
     if (isTranscriptErrorOutput(result) && !skipKeywordScan) {
         return true;
     }

@@ -102,8 +102,10 @@ export function syncActivityToolIconMotion(
     const hasKind = icon.classList.contains(kindClass);
     if (hasHost && hasKind) {
         // Drop any stale sibling kind classes without re-toggling the host.
+        // `classList.remove` rewrites the class attribute even for absent
+        // tokens, so only remove what is actually there.
         for (const other of ACTIVITY_TOOL_ICON_MOTION_KINDS) {
-            if (other !== motionKind) {
+            if (other !== motionKind && icon.classList.contains(activityToolIconMotionKindClass(other))) {
                 icon.classList.remove(activityToolIconMotionKindClass(other));
             }
         }
