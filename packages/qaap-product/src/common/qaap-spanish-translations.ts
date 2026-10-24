@@ -93,6 +93,9 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
 
     'qaap/sessionsSidebar/loadingHistory': 'Cargando historial de sesiones…',
     'qaap/sessionsSidebar/historyUnavailable': 'Historial no disponible. Reconectando…',
+    'qaap/sessionsSidebar/historyRetryTitle': 'No se pudo cargar el historial de sesiones',
+    'qaap/sessionsSidebar/historyRetryHint': 'Revisa la conexión e inténtalo de nuevo.',
+    'qaap/sessionsSidebar/historyRetry': 'Reintentar',
     'qaap/sessionsSidebar/noSessions': 'Todavía no hay sesiones. Inicia una desde Agentes.',
     'qaap/sessionsSidebar/noSearchResults': 'Ninguna sesión coincide con la búsqueda.',
     'qaap/sessionsSidebar/projectsSection': 'Proyectos',

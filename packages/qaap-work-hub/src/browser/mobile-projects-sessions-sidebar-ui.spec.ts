@@ -34,23 +34,53 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
     });
 
     it('distinguishes loading and connection failure from an empty history', () => {
-        for (const snapshotState of ['loading', 'reconnecting', 'error'] as const) {
+        for (const snapshotState of ['loading', 'reconnecting'] as const) {
             const host = document.createElement('div');
             renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } } as unknown as MobileProjectsSessionsSidebarUiContext, host);
             expect(host.textContent).not.to.contain('No agent sessions');
-            if (snapshotState === 'error') {
-                expect(host.querySelector('[role="status"]')?.textContent).to.contain('Reconnecting');
-            } else {
-                // Transient states show only a thin progress bar on the separator, no text line.
-                const progress = host.querySelector('.theia-mobile-work-hub-sessions-sidebar-progress[role="progressbar"]');
-                expect(progress).not.to.equal(null);
-                // Only the Projects head (so a repository can be added) and skeleton rows, no empty copy.
-                expect(host.textContent).to.equal('Projects');
-                expect(host.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar-skeleton-row').length).to.be.greaterThan(0);
-                expect(host.querySelector('.theia-mod-add-project')).not.to.equal(null);
-                expect(progress!.getAttribute('aria-label')).to.contain(snapshotState === 'loading' ? 'Loading' : 'Reconnecting');
-            }
+            // Transient states show only a thin progress bar on the separator, no text line.
+            const progress = host.querySelector('.theia-mobile-work-hub-sessions-sidebar-progress[role="progressbar"]');
+            expect(progress).not.to.equal(null);
+            // Only the Projects head (so a repository can be added) and skeleton rows, no empty copy.
+            expect(host.textContent).to.equal('Projects');
+            expect(host.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar-skeleton-row').length).to.be.greaterThan(0);
+            expect(host.querySelector('.theia-mod-add-project')).not.to.equal(null);
+            expect(progress!.getAttribute('aria-label')).to.contain(snapshotState === 'loading' ? 'Loading' : 'Reconnecting');
         }
+    });
+
+    it('shows the progress indicator, never the legacy unavailable text, while history loads or retries', () => {
+        for (const snapshotState of ['loading', 'reconnecting'] as const) {
+            const host = document.createElement('div');
+            renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } } as unknown as MobileProjectsSessionsSidebarUiContext, host);
+            expect(host.textContent).not.to.contain('Session history unavailable');
+            expect(host.querySelector('[role="status"]')).to.equal(null);
+            expect(host.querySelector('.q-empty')).to.equal(null);
+            expect(host.getAttribute('aria-busy')).to.equal('true');
+        }
+    });
+
+    it('shows a discreet Retry empty state after a persistent history failure with no projects', () => {
+        const host = document.createElement('div');
+        let emitted = 0;
+        let primed = 0;
+        const conversations = {
+            snapshotState: 'error',
+            emitConversationChange: (): void => { emitted++; },
+            schedulePrimeFromAll: (): void => { primed++; },
+        };
+        renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations } } as unknown as MobileProjectsSessionsSidebarUiContext, host);
+        expect(host.textContent).not.to.contain('Session history unavailable');
+        expect(host.querySelector('[role="status"]')).to.equal(null);
+        expect(host.hasAttribute('aria-busy')).to.equal(false);
+        expect(host.querySelector('.q-empty')).not.to.equal(null);
+        expect(host.querySelector('.theia-mod-add-project')).not.to.equal(null);
+        const retry = host.querySelector<HTMLButtonElement>('.q-empty-action');
+        expect(retry?.textContent).to.equal('Retry');
+        retry!.click();
+        expect(conversations.snapshotState).to.equal('reconnecting');
+        expect(emitted).to.equal(1);
+        expect(primed).to.equal(1);
     });
 
     let disableJSDOM: (() => void) | undefined;
