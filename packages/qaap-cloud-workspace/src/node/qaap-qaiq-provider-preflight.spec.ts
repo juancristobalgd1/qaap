@@ -191,7 +191,8 @@ describe('QAIQ provider preflight', () => {
             console.warn = (message: string) => { lines.push(message); };
             try {
                 const runner = createRunner();
-                expect(runner.defaultAgent('bob')).to.not.equal('qaiq');
+                // The skipped operator default still falls back to QAIQ for a keyless owner (BYOK prompt in the composer).
+                expect(runner.defaultAgent('bob')).to.equal('qaiq');
                 runner.defaultAgent('bob');
                 expect(runner.defaultAgent('alice')).to.equal('qaiq');
             } finally {
@@ -202,13 +203,13 @@ describe('QAIQ provider preflight', () => {
             expect(hints.join('\n')).to.not.match(/sk-|bob|alice/);
         });
 
-        it('reports QAIQ connected per owner, so a keyless owner never gets it as default', () => {
+        it('reports QAIQ connected per owner; a keyless owner defaults to QAIQ too, so the BYOK prompt shows instead of a keyless agent', () => {
             const runner = createRunner();
             const states = (owner: string): string | undefined => runner.listAgents(owner).find(agent => agent.id === 'qaiq')?.connectionState;
             expect(states('alice')).to.equal('connected');
             expect(states('bob')).to.equal('disconnected');
             expect(runner.defaultAgent('alice')).to.equal('qaiq');
-            expect(runner.defaultAgent('bob')).to.not.equal('qaiq');
+            expect(runner.defaultAgent('bob')).to.equal('qaiq');
         });
     });
 });

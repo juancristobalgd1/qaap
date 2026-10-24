@@ -47,11 +47,18 @@ describe('defaultAgentExtracted', () => {
         }
     });
 
-    it('without any key or login falls through qaiq to the keyless hosted agent', () => {
+    it('without any key or login defaults to QAIQ (the BYOK prompt), never the keyless hosted agent', () => {
         expect(pickDefault({
             detected: ['qaiq', 'claude', 'opencode'],
             states: { qaiq: 'disconnected', claude: 'disconnected', opencode: 'unknown' },
-        })).to.equal('opencode');
+        })).to.equal('qaiq');
+    });
+
+    it('without a QAIQ key but with a connected Codex picks the first usable agent (Codex)', () => {
+        expect(pickDefault({
+            detected: ['qaiq', 'codex', 'opencode'],
+            states: { qaiq: 'disconnected', codex: 'connected' },
+        })).to.equal('codex');
     });
 
     it('keeps the pre-keyless default while a preferred agent is still unprobed (fresh backend start)', () => {
@@ -76,8 +83,8 @@ describe('defaultAgentExtracted', () => {
     });
 
     it('on Starter never picks hosted Codex, but Pro/Team may', () => {
-        const input = { detected: ['codex', 'opencode'], states: { codex: 'disconnected' as const } };
-        expect(pickDefault({ ...input, hostedModels: false })).to.equal('opencode');
+        const input = { detected: ['qaiq', 'codex', 'opencode'], states: { qaiq: 'disconnected' as const, codex: 'disconnected' as const } };
+        expect(pickDefault({ ...input, hostedModels: false })).to.equal('qaiq');
         expect(pickDefault({ ...input, hostedModels: true })).to.equal('codex');
     });
 
@@ -117,12 +124,20 @@ describe('defaultAgentExtracted without an auth signal', () => {
         expect(defaultAgentExtracted(ctx, enabled, usable, hasAuthSignal)).to.equal('claude');
     });
 
-    it('falls to keyless OpenCode when the only installed preferred agent has no auth signal', () => {
+    it('falls to QAIQ, not keyless OpenCode, when the only installed preferred agent has no auth signal', () => {
         const [ctx, enabled, usable] = pickDefaultArgs({
-            detected: ['grok', 'opencode'],
-            states: { grok: 'unknown', opencode: 'unknown' },
+            detected: ['grok', 'qaiq', 'opencode'],
+            states: { grok: 'unknown', qaiq: 'disconnected', opencode: 'unknown' },
         });
-        expect(defaultAgentExtracted(ctx, enabled, usable, id => id !== 'grok')).to.equal('opencode');
+        expect(defaultAgentExtracted(ctx, enabled, usable, id => id !== 'grok')).to.equal('qaiq');
+    });
+
+    it('a disabled QAIQ is not the fallback; the remaining custom agent is used', () => {
+        const [ctx, enabled, usable] = pickDefaultArgs({
+            detected: ['qaiq', 'claude', 'my-custom-cli'],
+            states: { qaiq: 'disconnected', claude: 'disconnected' },
+        });
+        expect(defaultAgentExtracted(ctx, enabled, usable, () => true, id => id !== 'qaiq')).to.equal('my-custom-cli');
     });
 });
 
@@ -167,8 +182,8 @@ describe('defaultAgentFreshExtracted', () => {
         expect(Date.now() - started).to.be.lessThan(1_000);
     });
 
-    it('falls back to the keyless agent once every preferred agent is explicitly disconnected', async () => {
-        expect(await pickFresh('disconnected', 5, 500)).to.equal('opencode');
+    it('falls back to QAIQ once every preferred agent is explicitly disconnected', async () => {
+        expect(await pickFresh('disconnected', 5, 500)).to.equal('qaiq');
     });
 });
 
@@ -204,9 +219,9 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
 
     const signedOut = { qaiq: 'disconnected', codex: 'disconnected', opencode: 'unknown' } as const;
 
-    it('Starter without keys or logins defaults to keyless OpenCode', () => {
+    it('Starter without keys or logins defaults to QAIQ (BYOK prompt), not keyless OpenCode', () => {
         const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: false, creditsRemaining: 0 } });
-        expect(runner.defaultAgent('alice')).to.equal('opencode');
+        expect(runner.defaultAgent('alice')).to.equal('qaiq');
     });
 
     it('Pro with credits gets hosted Codex even though Codex is signed out', () => {
@@ -216,22 +231,22 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
 
     it('Pro with the hosted credits spent does not get a Codex that turn start would deny', () => {
         const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 0 } });
-        expect(runner.defaultAgent('alice')).to.equal('opencode');
+        expect(runner.defaultAgent('alice')).to.equal('qaiq');
     });
 
-    it('an installed grok (no auth probe, never connected) does not beat keyless OpenCode', () => {
+    it('an installed grok (no auth probe, never connected) does not beat QAIQ', () => {
         const runner = runnerWith({ states: signedOut, entitlements: undefined, extraDetected: ['grok'] });
-        expect(runner.defaultAgent('alice')).to.equal('opencode');
+        expect(runner.defaultAgent('alice')).to.equal('qaiq');
     });
 
     it('a cold billing cache is treated as Starter', () => {
         const runner = runnerWith({ states: signedOut, entitlements: undefined });
-        expect(runner.defaultAgent('alice')).to.equal('opencode');
+        expect(runner.defaultAgent('alice')).to.equal('qaiq');
     });
 
     it('an anonymous owner never gets hosted Codex', () => {
         const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 10 } });
-        expect(runner.defaultAgent(undefined)).to.equal('opencode');
+        expect(runner.defaultAgent(undefined)).to.equal('qaiq');
     });
 
     it('listAgents keeps a signed-out Codex unavailable once the credits are gone', () => {
@@ -269,10 +284,10 @@ describe('defaultAgentExtracted fallbacks past the preferred agents', () => {
         expect(pickDefault({ detected: [], states: {} })).to.equal('env');
     });
 
-    it('when every preferred agent is disconnected and opencode is not installed, falls to the shell or operator command', () => {
+    it('when every preferred agent is disconnected and QAIQ is not detected, falls to the shell or operator command', () => {
         const input: PickDefaultOptions = {
-            detected: ['qaiq', 'codex', 'claude'],
-            states: { qaiq: 'disconnected', codex: 'disconnected', claude: 'disconnected' },
+            detected: ['codex', 'claude'],
+            states: { codex: 'disconnected', claude: 'disconnected' },
             hostedModels: false,
         };
         expect(pickDefault(input)).to.equal('shell');
@@ -280,11 +295,26 @@ describe('defaultAgentExtracted fallbacks past the preferred agents', () => {
         expect(pickDefault(input)).to.equal('env');
     });
 
-    it('when every preferred agent is disconnected and opencode is not installed, prefers a custom detected agent', () => {
+    it('when every preferred agent is disconnected and QAIQ is not detected, prefers a custom detected agent', () => {
+        expect(pickDefault({
+            detected: ['claude', 'my-custom-cli'],
+            states: { claude: 'disconnected' },
+        })).to.equal('my-custom-cli');
+    });
+
+    it('when every preferred agent is disconnected, defaults to QAIQ before a custom detected agent', () => {
         expect(pickDefault({
             detected: ['qaiq', 'claude', 'my-custom-cli'],
             states: { qaiq: 'disconnected', claude: 'disconnected' },
-        })).to.equal('my-custom-cli');
+        })).to.equal('qaiq');
+    });
+
+    it('an operator QAAP_DEFAULT_AGENT=opencode still wins over the QAIQ fallback', () => {
+        process.env.QAAP_DEFAULT_AGENT = 'opencode';
+        expect(pickDefault({
+            detected: ['qaiq', 'opencode'],
+            states: { qaiq: 'disconnected' },
+        })).to.equal('opencode');
     });
 });
 
@@ -327,8 +357,8 @@ describe('defaultAgentFreshExtracted with grok and a pending vs failed probe', (
         expect(await pickFreshWithGrok('pending')).to.equal('claude');
     });
 
-    it('falls to keyless OpenCode, never grok, once the probe failed', async () => {
-        expect(await pickFreshWithGrok('failed')).to.equal('opencode');
+    it('never grok once the probe failed; with no QAIQ detected the remaining fallbacks (shell) apply', async () => {
+        expect(await pickFreshWithGrok('failed')).to.equal('shell');
     });
 });
 
@@ -372,10 +402,10 @@ describe('QaapAgentTaskRunner.defaultAgentFresh with failing auth probes (real r
 
     const claudeChip = (runner: QaapAgentTaskRunner): string | undefined => runner.listAgents('alice').find(agent => agent.id === 'claude')?.connectionState;
 
-    it('a probe that throws makes the default fall to keyless OpenCode, while the chip still says unknown', async () => {
+    it('a probe that throws leaves no usable preferred agent; with no QAIQ detected the remaining fallbacks (shell) apply, while the chip still says unknown', async () => {
         const runner = runnerWithProbe(() => Promise.reject(new Error('tenant wrapper failed')));
-        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('opencode');
-        expect(runner.defaultAgent('alice')).to.equal('opencode');
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('shell');
+        expect(runner.defaultAgent('alice')).to.equal('shell');
         expect(claudeChip(runner)).to.equal('unknown');
     });
 
@@ -398,7 +428,7 @@ describe('QaapAgentTaskRunner.defaultAgentFresh with failing auth probes (real r
         expect(claudeChip(runner)).to.equal('connected');
     });
 
-    it('a fresh failed probe is not re-probed and keeps the keyless default', async () => {
+    it('a fresh failed probe is not re-probed and does not fall to keyless OpenCode', async () => {
         let probes = 0;
         const runner = runnerWithProbe(() => {
             probes++;
@@ -407,16 +437,16 @@ describe('QaapAgentTaskRunner.defaultAgentFresh with failing auth probes (real r
         const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number; probeFailed?: boolean }> })
             .agentConnectionStates;
         states.set('claude:alice', { state: 'unknown', at: Date.now(), probeFailed: true });
-        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('opencode');
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('shell');
         expect(probes).to.equal(0);
     });
 
-    it('a docker tenant without a repos root yet (the probe cannot run without its tenant cwd) defaults to keyless OpenCode', async () => {
+    it('a docker tenant without a repos root yet (the probe cannot run without its tenant cwd) does not default to keyless OpenCode', async () => {
         process.env.QAAP_CLOUD_MODE = 'docker';
         process.env.QAAP_REPOS_ROOT = path.join(os.tmpdir(), `qaap-default-agent-missing-${process.pid}-${Date.now()}`);
         const runner = runnerWithProbe();
-        // OpenCode's real probe fails here too; it stays selectable because it runs keyless.
-        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('opencode');
+        // OpenCode's real probe fails here too; keyless OpenCode is no longer an automatic default, so the remaining fallbacks apply.
+        expect(await runner.defaultAgentFresh('alice', 500)).to.equal('shell');
         expect(claudeChip(runner)).to.equal('unknown');
     });
 });

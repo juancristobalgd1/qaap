@@ -1,5 +1,5 @@
 import {
-    AGENT_CANDIDATES, CUSTOM_AGENTS_ENV, DEFAULT_AGENT_PREFERENCE, HOSTED_KEYLESS_DEFAULT_AGENTS, ENV_AGENT_ID, HELPER_BIN_DIR, HELPER_BIN_PATH, HELPER_CLI_SOURCE, INDEX_PATH,
+    AGENT_CANDIDATES, CUSTOM_AGENTS_ENV, DEFAULT_AGENT_PREFERENCE, ENV_AGENT_ID, HELPER_BIN_DIR, HELPER_BIN_PATH, HELPER_CLI_SOURCE, INDEX_PATH,
     QAIQ_AGENT_ID, SHELL_AGENT_ID, TOKEN_PATH, TOKENS_PATH, type AgentCandidate, type PersistedAgentTaskIndex,
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -717,7 +717,11 @@ export function logDefaultAgentOverriddenOnce(
  * hosted agent the owner's plan allows); then the pre-existing "installed and not known to be
  * disconnected" preference (an agent whose auth probe has not answered yet, e.g. right after a
  * backend restart, keeps the pre-keyless behaviour instead of losing to the keyless agent); only
- * when every preferred agent is explicitly disconnected, `HOSTED_KEYLESS_DEFAULT_AGENTS`.
+ * when every preferred agent is explicitly disconnected, QAIQ itself (the BYOK harness, even without
+ * a key) so the composer shows the "add your API key in Settings → BYOK" prompt. The keyless hosted
+ * agents (`HOSTED_KEYLESS_DEFAULT_AGENTS`) are never picked automatically; a user can still choose
+ * them by hand. `isHarnessEnabled` is the admin/user enablement only, without the connection check,
+ * so a disconnected QAIQ can still be the fallback.
  * An agent with no auth probe and no credential mapping (e.g. grok) never wins automatically; `QAAP_DEFAULT_AGENT` overrides.
  */
 export function defaultAgentExtracted(
@@ -725,6 +729,7 @@ export function defaultAgentExtracted(
     isAgentEnabled: (agentId: string) => boolean = () => true,
     isAgentUsable: (agentId: string) => boolean = () => true,
     hasAuthSignal: (agentId: string) => boolean = () => true,
+    isHarnessEnabled: (agentId: string) => boolean = () => true,
 ): string {
         const configured = ctx.normalizeAgentId(process.env.QAAP_DEFAULT_AGENT);
         if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured)) {
@@ -748,10 +753,10 @@ export function defaultAgentExtracted(
                 return id;
             }
         }
-        for (const id of HOSTED_KEYLESS_DEFAULT_AGENTS) {
-            if (selectable(id) && isAgentUsable(id)) {
-                return id;
-            }
+        // Every preferred agent is explicitly disconnected: default to QAIQ even without a key, so the
+        // composer's BYOK prompt is shown instead of silently starting a keyless hosted agent.
+        if (ctx.detectedAgents.has(QAIQ_AGENT_ID) && !isUiHiddenVpsAgent(QAIQ_AGENT_ID) && isHarnessEnabled(QAIQ_AGENT_ID)) {
+            return QAIQ_AGENT_ID;
         }
         for (const candidate of [...ctx.detectedAgents.values()]) {
             if (
@@ -785,6 +790,7 @@ export async function defaultAgentFreshExtracted(
     budgetMs: number,
     hasAuthSignal: (agentId: string) => boolean = () => true,
     isProbeWorthAwaiting: (agentId: string) => boolean = isAgentEnabled,
+    isHarnessEnabled: (agentId: string) => boolean = () => true,
 ): Promise<string> {
     const pending = DEFAULT_AGENT_PREFERENCE
         .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isProbeWorthAwaiting(id))
@@ -800,7 +806,7 @@ export async function defaultAgentFreshExtracted(
         ]);
         clearTimeout(timer);
     }
-    return defaultAgentExtracted(ctx, isAgentEnabled, isAgentUsable, hasAuthSignal);
+    return defaultAgentExtracted(ctx, isAgentEnabled, isAgentUsable, hasAuthSignal, isHarnessEnabled);
 }
 
 export function normalizeAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, token: string | undefined): string | undefined {
