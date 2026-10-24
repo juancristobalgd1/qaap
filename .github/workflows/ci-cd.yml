@@ -17,16 +17,39 @@ on:
     # Default types plus `labeled`, so adding the `ci:full` label starts the windows/macOS legs.
     types: [opened, synchronize, reopened, labeled]
 
-# A new push to a PR cancels that PR's previous run. Every non-PR run (master push,
-# workflow_dispatch) gets its own group via run_id, so it is never cancelled or replaced.
+# Redundant run = a duplicate that must not do any work or cancel the real run for the PR:
+#   (a) `opened` on a PR that already has `ci:full`. `gh pr create --label ci:full` emits
+#       `opened` and `labeled` in the same second; the `labeled` run does the full work.
+#   (b) `labeled` with any label other than `ci:full`.
+# Redundant runs get their own concurrency group (run_id) so they never cancel or are cancelled
+# by the real run, and every job is skipped through the `gate` job. Skipped checks count as
+# satisfied for required checks, so the names "Lint" and "Build and Test (...)" keep reporting.
+# The same condition is repeated in `concurrency` below: concurrency cannot read job outputs.
+#
+# A new push to a PR cancels that PR's previous real run. master pushes and workflow_dispatch
+# get their own group via run_id, so they are never cancelled or replaced.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ ((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'ci:full')) || (github.event.action == 'labeled' && github.event.label.name != 'ci:full')) && github.run_id || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'ci:full')) || (github.event.action == 'labeled' && github.event.label.name != 'ci:full')) }}
 
 jobs:
 
+  gate:
+    name: CI gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      redundant: ${{ steps.decide.outputs.redundant }}
+    steps:
+      - id: decide
+        env:
+          REDUNDANT: ${{ (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'ci:full')) || (github.event.action == 'labeled' && github.event.label.name != 'ci:full') }}
+        run: echo "redundant=${REDUNDANT}" >> "$GITHUB_OUTPUT"
+
   lint:
     name: Lint
+    needs: gate
+    if: needs.gate.outputs.redundant != 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
@@ -64,6 +87,8 @@ jobs:
 
   build:
     name: Build and Test (${{ matrix.os }}, node-${{ matrix.node }})
+    needs: gate
+    if: needs.gate.outputs.redundant != 'true'
 
     strategy:
       fail-fast: false

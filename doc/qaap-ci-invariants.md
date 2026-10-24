@@ -195,6 +195,14 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   `qaap-drift-check` use `concurrency: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}`
   with `cancel-in-progress` only for `pull_request`: a new push cancels the PR's previous run;
   master pushes, schedules and manual runs get a unique group and are never cancelled or replaced.
+  `ci-cd` is the exception for duplicate events. `gh pr create --label ci:full` emits `opened` and
+  `labeled` in the same second (#352, #355: PR created 01:29:33 / 03:24:35, labeled +1 s, two runs at +3 s).
+  Both shared the PR group, so one was CANCELLED and blocked the required checks. `ci-cd` therefore runs
+  a `gate` job that marks a run redundant when it is `opened` with `ci:full` already set, or `labeled`
+  with another label. Redundant runs use a per-run group and skip every job (`needs: gate`, `if:`),
+  so the real run is never cancelled and no work is doubled. The same condition is repeated in
+  `concurrency`, which cannot read job outputs. Note: this relies on GitHub treating skipped jobs as
+  satisfied for required checks, which is the exception to the "no `if:` on required checks" rule above.
   `qaap-guards` keeps its own group; `qaap-vps-deploy` keeps its single non-cancelling group.
 
 ### 12. Installs retry the whole `npm ci`
