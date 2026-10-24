@@ -11,17 +11,18 @@ Estados: **Resuelto** (desplegado y verificado), **Desplegado** (en producción,
 | E-01 | El backend del usuario se mata a sí mismo al gestionar la preview | Bloqueante | Resuelto (#349) |
 | E-02 | Un backend caído no se recupera: 502 permanente | Bloqueante | Resuelto (#349) |
 | E-03 | Bucle de 403 en socket.io tras reiniciar un backend | Alta | Desplegado (#350) |
-| E-04 | Un temporal huérfano bloquea la creación de tareas (503) | Bloqueante | Desplegado (#351), pendiente de recreación del backend |
+| E-04 | Un temporal huérfano bloquea la creación de tareas (503) | Bloqueante | Resuelto (#351) |
 | E-05 | Respuesta vacía del modelo: el transcript muestra JSON crudo | Alta | Abierto |
-| E-06 | BYOK no muestra dónde poner la API key | Alta | Abierto |
+| E-06 | BYOK parecía no mostrar la API key (destello del editor sin filtrar) | Media | Resuelto (#353) |
 | E-07 | Dev server huérfano en el sandbox al sustituir la preview | Media | Abierto |
 | E-08 | Errores de arranque y de backend se muestran como "took too long to start" | Media | Abierto |
-| E-09 | El agente por defecto (OpenCode · Big Pickle) agota su cuota gratuita y se cuelga en silencio | **Bloqueante** | PR abierta (fallo rápido); la cuota y el agente por defecto siguen abiertos |
+| E-09 | El agente por defecto (OpenCode · Big Pickle) agota su cuota gratuita y se cuelga en silencio | **Bloqueante** | Fallo rápido desplegado (#352); la cuota y el agente por defecto siguen abiertos |
 | E-10 | "New agent" no crea un chat nuevo en el proyecto activo | Alta | Abierto |
 | E-11 | Al cargar se abre una sesión de otro proyecto | Alta | Abierto |
 | E-12 | Contador del estado del turno incoherente | Media | Abierto |
 | E-13 | Sondeo excesivo del cliente y SSE reconectando en bucle | Media | Abierto |
 | E-14 | Conflicto de `index.lock` en los snapshots de OpenCode | Media | Abierto |
+| E-15 | Las API keys se mostraban en texto plano en Settings | Alta | Resuelto (#353) |
 
 ## E-01 · El backend se mata a sí mismo con la preview
 
@@ -47,7 +48,7 @@ Estados: **Resuelto** (desplegado y verificado), **Desplegado** (en producción,
 - **Síntoma:** health del backend en 503 con `agentStorage.writeFailed: true`; `create()` responde 503 a todas las tareas nuevas.
 - **Causa:** `writeJsonAtomic` nombraba el temporal `{file}.{pid}.{contador}.tmp`; el backend siempre es pid 7 y el contador vuelve a 0 al arrancar. Un crash dejó `index.json.7.11.tmp`, así que la escritura nº 11 de cada arranque fallaba con EEXIST, y nada volvía a escribir.
 - **Solución:** sufijo aleatorio, reintento en EEXIST, limpieza de temporales del mismo pid anteriores al arranque, error registrado y reintento automático a los 5 s (#351).
-- **Pendiente:** el backend de `jcristgd` se recreará con la imagen de #351 cuando terminen sus turnos activos; entonces debe desaparecer el huérfano.
+- **Verificado (24 oct, 01:30 UTC):** el backend de `jcristgd` se recreó con la imagen de #351 en cuanto terminaron sus turnos activos (el control plane aplaza la recreación mientras hay turnos: `Deferring recreation of stale tenant backend … 1 agent turn(s) running`). La limpieza al arrancar borró `index.json.7.11.tmp`: en `agent-tasks/` solo quedan `index.json` y `owners`. Health 200 con `agentStorage.writeFailed: false`.
 
 ## E-05 · Respuesta vacía: JSON crudo en el transcript
 
@@ -57,9 +58,17 @@ Estados: **Resuelto** (desplegado y verificado), **Desplegado** (en producción,
 
 ## E-06 · BYOK no muestra la API key
 
-- **Síntoma:** la sección BYOK de Settings enseña ajustes del editor o "Notifications/Privacy"; no hay campos de clave, proveedor ni modelo.
-- **Causa probable:** la sección filtra el editor de preferencias con la búsqueda `ai-features` (`mobile-work-hub-preferences-sheet.ts`) y ese filtro no deja visibles los ajustes de IA. Por confirmar.
-- **Pista nueva (24 oct):** en producción el frontend registra `[qaap-user-ai-settings] tenant AI preference provider is not bound; AI settings are not persisted per user` (`qaap-user-ai-settings-sync.ts:49`). Es decir, el proveedor de preferencias `User` no está envuelto por `QaapTenantAiUserPreferenceProvider`. El envoltorio se instala con `onActivation` en `qaap-product-bindings-frontend-module.ts:62`. Hipótesis: el proveedor `User` se activa antes de que ese hook esté registrado, o se resuelve por un alias que el hook no intercepta. Consecuencia: los ajustes de IA de cada usuario (incluida la API key de BYOK) no se guardan por usuario. Confirmar con un arranque local con sesión de tenant.
+- **Síntoma reportado:** la sección BYOK de Settings enseña ajustes del editor o "Notifications/Privacy"; no hay campos de clave, proveedor ni modelo.
+- **Diagnóstico (inspección en vivo en producción, 24 oct):** BYOK **sí funciona**: tras pulsarla, el editor embebido se filtra a las 23 preferencias `ai-features` de proveedores, empezando por `ai-features.openrouter.openrouterApiKey`. Pero durante 1–3 s muestra el editor completo sin filtrar ("Commonly Used", `files.autoSave`, `editor.fontSize`…). Eso es lo que capturó el tester. "Notifications/Privacy" es el contenido propio de la sección *General*, no de BYOK; no se reprodujo bajo el título BYOK.
+- **Solución (#353):** la sección oculta el editor, con una barra de carga ligera, hasta que el filtro está realmente aplicado. Ver también E-15.
+- **Verificado en producción (build `2cd9f35`, 24 oct):** con muestras cada 250 ms tras pulsar BYOK, el editor permanece oculto (`theia-mod-applying-query`) hasta los ~2 s y aparece ya filtrado, con `ai-features.openrouter.openrouterApiKey` como primera preferencia visible.
+- **Sobre el aviso `tenant AI preference provider is not bound`** (`qaap-user-ai-settings-sync.ts:49`): es real. El proveedor `User` en ejecución no está envuelto por `QaapTenantAiUserPreferenceProvider` (su binding no tiene hook de activación). Con backends por tenant no rompe BYOK, porque el `settings.json` ya es de cada tenant. Queda pendiente revisar el orden de activación de ese envoltorio (`qaap-product-bindings-frontend-module.ts:62`).
+
+## E-15 · Las API keys se mostraban en texto plano
+
+- **Evidencia:** en BYOK, el campo "Openrouter Api Key" mostraba la clave completa del usuario.
+- **Solución (#353):** `QaapSecretPreferenceInputRenderer`, registrado con prioridad 3 frente al renderer de string upstream (2), muestra como contraseña, con botón de mostrar/ocultar, toda preferencia cuyo id acaba en `apiKey`, `token` o `secret`. El guardado no cambia. Aplica también a los Settings del IDE. El enmascarado es solo visual: el valor sigue en claro en `settings.json`.
+- **Verificado en producción (build `2cd9f35`):** el campo de la clave de OpenRouter es `type="password"`, se ve como puntos y tiene el botón "Show value".
 
 ## E-07 · Dev server huérfano en el sandbox
 
@@ -90,8 +99,9 @@ Estados: **Resuelto** (desplegado y verificado), **Desplegado** (en producción,
   3. Fallo rápido: si stderr trae un `stream error` terminal (`AI_RetryError: Failed after N attempts` o un error de cuota), matar el proceso y cerrar el turno como `quota`, con mensaje claro, sin esperar 20 minutos.
   4. En un fallo de cuota, no relanzar el mismo modelo: pasar a otro agente o modelo (por ejemplo QAIQ con la clave BYOK del usuario) o pedir al usuario que elija.
   5. Producto: no dejar como agente por defecto un modelo gratuito con cuota compartida; elegir uno según lo que el usuario tenga conectado.
-- **Agravante:** con E-06, un usuario nuevo tampoco puede poner su propia clave en BYOK. Hoy un usuario nuevo **no tiene ningún agente que funcione**.
-- **Hecho (PR `fix/opencode-quota-fast-fail`):** puntos 1 a 3 de la solución.
+- **Agravante (revisado):** BYOK sí permite poner una clave propia (E-06 era un destello). Pero un usuario nuevo no tiene clave por defecto, y el agente por defecto no tiene cuota.
+- **Cuota también en el deploy (24 oct, 03:10 UTC):** la smoke de agente posterior al deploy de `2cd9f35` falló porque la clave OpenRouter de la cuenta de smoke agotó su límite diario de modelos gratuitos (`429 Rate limit exceeded: free-models-per-day`). El deploy en sí fue correcto (endpoint, build y smoke de usuario en verde). Los modelos gratuitos con cuota compartida hacen la smoke frágil; conviene una clave con saldo para la smoke.
+- **Hecho (#352):** puntos 1 a 3 de la solución.
   - Plantilla con `--print-logs --log-level ERROR`.
   - Patrones `usage limit reached` / `free usage limit` en `QUOTA_PATTERNS`.
   - `qaap-opencode-fatal-error.ts` detecta el `stream error` de cuota o de límite del turno principal (`small=false`) en stderr. El runner escribe `[qaap] OpenCode reported: …`, mata el proceso y la tarea queda `failed` con motivo `quota`.
