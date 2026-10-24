@@ -160,6 +160,7 @@ QaapQaiqChatAgentContribution -> bind.toSelf().inSingletonScope()
 QaapQaiqGenericToolRenderer -> bind.toSelf().inSingletonScope()
 QaapScmContribution -> bind.toSelf().inSingletonScope()
 QaapScmKeybindingContribution -> bind.toSelf().inSingletonScope()
+QaapSecretPreferenceInputRenderer -> bind.toSelf()
 QaapSelectComponentOverlayContribution -> bind.toSelf().inSingletonScope()
 QaapSessionExpiryWatcher -> bind.toSelf().inSingletonScope()
 QaapShellCommandContribution -> bind.toSelf().inSingletonScope()
@@ -314,6 +315,7 @@ Symbol(PreferenceContribution) -> bind.toService(QaapMobileAppPreferenceContribu
 Symbol(PreferenceContribution) -> bind.toService(QaapPluginCompatibilityPreferenceContribution)
 Symbol(PreferenceContribution) -> bind.toService(QaapSkillsPreferenceContribution)
 Symbol(PreferenceContribution) -> bind.toService(QaapTerminalPreferenceContribution)
+Symbol(PreferenceNodeRendererContribution) -> bind.to(QaapSecretPreferenceInputRendererContribution).inSingletonScope()
 Symbol(PreferenceProvider) -> onActivation
 Symbol(PreferenceProvider) -> onActivation
 Symbol(PreferenceProvider) -> onActivation
