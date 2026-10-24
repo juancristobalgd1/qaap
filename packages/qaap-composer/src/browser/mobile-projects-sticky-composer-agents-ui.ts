@@ -34,6 +34,9 @@ import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/brow
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
 
+/** Minimum gap between agent catalog reloads for the same cwd when a catalog is already loaded. */
+export const STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS = 10_000;
+
 export interface MobileProjectsStickyComposerAgentsHost {
     stickyComposerPinnedAgentId: string | undefined;
     stickyComposerAgentModel?: QaapCreateAgentTaskQaiqModel;
@@ -266,9 +269,22 @@ export class MobileProjectsStickyComposerAgentsUi {
         );
         return listQaapComposerPickerAgents(agents, disabledIds);
     }
+    /** Last catalog request per cwd: re-renders inside the window reuse the loaded catalog. */
+    protected lastStickyCatalogRefresh: { readonly cwd: string; readonly at: number } | undefined;
+
     async refreshStickyComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
+        // The composer re-renders on every transcript tick; without this each render hit
+        // GET /agent-tasks/all. Skip only when the catalog is already loaded for this cwd.
+        const cwdKey = cwd ?? '';
+        const now = Date.now();
+        if (!options?.forceRefresh && this.host.stickyComposerBackendAgents.length > 0
+            && this.lastStickyCatalogRefresh?.cwd === cwdKey
+            && now - this.lastStickyCatalogRefresh.at < STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS) {
+            return true;
+        }
+        this.lastStickyCatalogRefresh = { cwd: cwdKey, at: now };
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot(options);
             let pickerAgents = this.getComposerAgentPickerAgents(snapshot.agents);

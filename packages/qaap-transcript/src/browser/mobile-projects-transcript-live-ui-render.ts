@@ -157,7 +157,8 @@ export function ensureVisibilityResumeListenerExtracted(ctx: MobileProjectsTrans
             }
             if (conv.status === 'streaming') {
                 ctx.scheduleTranscriptComposerActivityRefresh(conv);
-                ctx.scheduleTranscriptPreviewOfferRefresh(conv, { restart: true });
+                // No `restart`: each render restarted the probe timer, so a 10-port sweep kept firing.
+                ctx.scheduleTranscriptPreviewOfferRefresh(conv);
                 if (ctx.pendingSseRenderConv) {
                     ctx.schedulePendingSseRender();
                 }

@@ -40,7 +40,14 @@ import {
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_PREVIEW_POLL_BASE_MS } from './mobile-projects-transcript-live-ui';
-import { TRANSCRIPT_APPROVAL_REFRESH_MS, TRANSCRIPT_PREVIEW_POLL_MAX_MS, TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
+import { TRANSCRIPT_PREVIEW_POLL_MAX_MS, TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
+import {
+    type ApprovalPollState,
+    INITIAL_APPROVAL_POLL_STATE,
+    approvalListKey,
+    nextApprovalPollDelayMs,
+    recordApprovalPollOutcome,
+} from '@theia/qaap-shared-core/lib/common/qaap-approval-poll-backoff';
 
 export function stopTranscriptLiveWatchExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
         ctx.transcriptTurnVisuallySettledActive = false;
@@ -76,32 +83,56 @@ export function stopTranscriptApprovalRefreshExtracted(ctx: MobileProjectsTransc
         }
 }
 
+/** Per-host poll backoff state. Keyed by the host so the poller keeps its state across re-arms. */
+const approvalPollStateByHost = new WeakMap<object, ApprovalPollState>();
+
+/**
+ * Arms the single approval poll. An already-armed timer is kept, not restarted: SSE ticks and
+ * render passes call this constantly, and restarting on each one used to fire a request per tick
+ * (the old fixed 320 ms cadence). The delay grows while the pending list is unchanged, backs off
+ * on errors, and a hidden tab only re-checks visibility locally without any request.
+ */
 export function scheduleTranscriptApprovalRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
-        ctx.stopTranscriptApprovalRefresh();
+        if (ctx.host.transcriptApprovalRefreshTimer !== undefined) {
+            return;
+        }
         if (!ctx.host.transcriptOpenSummaryId || !ctx.host.transcriptLastConv
             || !conversationUsesInteractiveApprovals(ctx.host.transcriptLastConv)) {
             return;
         }
+        const state = approvalPollStateByHost.get(ctx.host) ?? INITIAL_APPROVAL_POLL_STATE;
+        const delayMs = nextApprovalPollDelayMs(state, isTranscriptDocumentVisible());
         ctx.host.transcriptApprovalRefreshTimer = window.setTimeout(() => {
             ctx.host.transcriptApprovalRefreshTimer = undefined;
             void ctx.refreshTranscriptApprovals();
-        }, TRANSCRIPT_APPROVAL_REFRESH_MS);
+        }, delayMs);
 }
 
 export async function refreshTranscriptApprovalsExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
         if (!ctx.host.transcriptOpenSummaryId) {
             return;
         }
+        if (!isTranscriptDocumentVisible()) {
+            // Hidden: no request. Re-check later (local timer only); the visibility change resumes it.
+            ctx.scheduleTranscriptApprovalRefresh();
+            return;
+        }
+        const previousKey = approvalListKey(ctx.host.cachedAgentApprovals);
+        let outcome: 'changed' | 'unchanged' | 'error' = 'error';
         try {
-            ctx.host.cachedAgentApprovals = await fetchAgentApprovals(ctx.host.transcriptOpenProject
+            const approvals = await fetchAgentApprovals(ctx.host.transcriptOpenProject
                 ? ctx.host.projectsService.getProjectCwd(ctx.host.transcriptOpenProject)
                 : ctx.host.transcriptOpenSummary?.cwd);
+            ctx.host.cachedAgentApprovals = approvals;
+            outcome = approvalListKey(approvals) === previousKey ? 'unchanged' : 'changed';
             if (ctx.host.transcriptLastConv) {
                 ctx.syncTranscriptPendingApproval(ctx.host.transcriptLastConv);
             }
         } catch {
             /* best-effort */
         } finally {
+            const hostState = approvalPollStateByHost.get(ctx.host) ?? INITIAL_APPROVAL_POLL_STATE;
+            approvalPollStateByHost.set(ctx.host, recordApprovalPollOutcome(hostState, outcome));
             if (ctx.host.transcriptLastConv?.status === 'streaming'
                 && conversationUsesInteractiveApprovals(ctx.host.transcriptLastConv)) {
                 ctx.scheduleTranscriptApprovalRefresh();

@@ -98,6 +98,12 @@ export class QaapTranscriptLiveController implements Disposable {
     }
 
     watch(conversationId: string): void {
+        // Re-watching the conversation already bound (every transcript render calls this) must not
+        // fire an immediate GET /conversation: keep the bound listeners and only ensure the poll.
+        if (this.watchedConversationId === conversationId && this.scheduleRefresh !== undefined) {
+            this.armActivePoll();
+            return;
+        }
         this.watchedConversationId = conversationId;
         this.activePollGraceUntil = 0;
         this.clearRefreshTimer();
