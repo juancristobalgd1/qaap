@@ -15,6 +15,7 @@ import {
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { syncTranscriptComposerQuickActions } from './qaap-transcript-composer-quick-actions';
 import {
     appendBeforeTranscriptLiveStatus,
 } from '../common/qaap-transcript-live-status';
@@ -150,7 +151,7 @@ export function clearTranscriptEmptyQuickActionsExtracted(ctx: MobileProjectsTra
             return;
         }
         messageHost.classList.remove('theia-mod-empty-chat');
-        ctx.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
+        syncTranscriptComposerQuickActions(ctx.host, conv, ctx.host.transcriptLastConv);
 }
 
 export function syncTranscriptActivityRowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {

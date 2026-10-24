@@ -85,6 +85,7 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: MobileProjectsTas
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'theia-mobile-agent-transcript-empty-action';
+            btn.setAttribute('data-quick-action', action.id);
             const iconWrap = document.createElement('span');
             iconWrap.className = 'theia-mobile-agent-transcript-empty-action-icon';
             const icon = document.createElement('i');

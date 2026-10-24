@@ -208,3 +208,23 @@ export function shouldShowTranscriptEmptyQuickActions(
     }
     return conv.messages.length === 0;
 }
+
+/** Composer quick-actions row: full chips, only the preview-starting chip, or hidden. */
+export type TranscriptComposerQuickActionsMode = 'full' | 'preview-only' | 'hidden';
+
+/**
+ * The "Run app" chip is the only visible sign that a preview is booting. The row used to hide as
+ * soon as the chat left its empty state, so the chip stayed in the DOM under `display: none` and
+ * the "Starting preview…" button measured 0×0. While a preview request is in flight the row now
+ * stays visible, narrowed to the chip (`preview-only`).
+ */
+export function resolveTranscriptComposerQuickActionsMode(
+    conv: QaapAgentConversationDTO,
+    cached: Pick<QaapAgentConversationDTO, 'id' | 'messages'> | undefined,
+    previewStarting: boolean,
+): TranscriptComposerQuickActionsMode {
+    if (shouldShowTranscriptEmptyQuickActions(conv, cached)) {
+        return 'full';
+    }
+    return previewStarting ? 'preview-only' : 'hidden';
+}

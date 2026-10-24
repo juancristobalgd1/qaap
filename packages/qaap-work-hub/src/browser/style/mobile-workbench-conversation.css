@@ -3641,6 +3641,12 @@ body>.theia-mobile-transcript-files-menu {
   display: flex;
 }
 
+/* A preview is booting after the chat left its empty state: keep only the "Run app" chip (now
+   "Starting preview…") so it stays visible instead of collapsing to 0×0. */
+.theia-mod-quick-actions-preview-only .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions .theia-mobile-agent-transcript-empty-action:not([data-quick-action="run-app"]) {
+  display: none;
+}
+
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-empty-chat.theia-mod-has-empty-chat .theia-mobile-projects-scroll {
   padding-bottom: 0;
 }

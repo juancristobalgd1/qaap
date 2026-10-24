@@ -10,7 +10,8 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
-import { resolveTranscriptEffectiveStatus, shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { resolveTranscriptComposerQuickActionsMode, resolveTranscriptEffectiveStatus } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { applyTranscriptComposerQuickActionsMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-composer-quick-actions';
 import {
     MAX_TRANSCRIPT_FOLLOW_UP_QUEUE,
     type TranscriptFollowUpEntry,
@@ -321,10 +322,11 @@ export function syncTranscriptComposerQuickActionsVisibilityExtracted(ctx: Mobil
             updatedAt: summary.updatedAt,
             messages: [],
         };
-        host.classList.toggle(
-            'theia-mod-show-quick-actions',
-            shouldShowTranscriptEmptyQuickActions(conv, current),
-        );
+        applyTranscriptComposerQuickActionsMode(host, resolveTranscriptComposerQuickActionsMode(
+            conv,
+            current,
+            !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending,
+        ));
 }
 
 export async function onTranscriptComposerAttachExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
