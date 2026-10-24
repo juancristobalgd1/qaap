@@ -7,6 +7,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { turnElapsedAnchor } from '@theia/qaap-shared-core/lib/common/qaap-turn-elapsed-anchor';
 import { formatConversationExecutionSessionMeta } from '@theia/qaap-composer/lib/common/qaap-conversation-composer-state';
 import { createAgentIdentityElement, createAgentTaskBadge, createAgentTaskVerificationBadge } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { sharedSecondTicker } from '@theia/qaap-transcript/lib/browser/qaap-shared-elapsed-ticker';
@@ -361,7 +362,8 @@ export function formatConversationRunDurationExtracted(ctx: MobileProjectsProjec
         isRunning: boolean,): string | undefined {
         let durationMs: number | undefined;
         if (isRunning && summary.turnStartedAt) {
-            durationMs = Math.max(0, Date.now() - summary.turnStartedAt);
+            // Same anchor as the transcript timer so a relaunch never shows a smaller "ran" time.
+            durationMs = turnElapsedAnchor.resolveElapsedMs(summary.id, summary.turnStartedAt, true);
         } else if (summary.lastTurnDurationMs) {
             durationMs = summary.lastTurnDurationMs;
         }

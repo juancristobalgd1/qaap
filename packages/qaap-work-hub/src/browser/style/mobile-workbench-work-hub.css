@@ -7442,6 +7442,35 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   color: var(--theia-errorForeground);
 }
 
+/*
+ * Narrow phones (<= 767px, MOBILE_NARROW_VIEWPORT_MEDIA_QUERY): the composer's Mode, approval and
+ * model-capability chips keep their icon and chevron; the text moves to the existing title and
+ * aria-label. "Build", "Approve for me" and "Standard" no longer clip at ~400px. Desktop unchanged.
+ */
+@media (max-width: 767px) {
+  .theia-mobile-projects-sticky-composer-mode,
+  .theia-mobile-projects-sticky-composer-approval-policy {
+    position: relative;
+    flex: 0 0 auto;
+    max-width: none;
+    padding: 0 8px;
+  }
+
+  .theia-mobile-projects-sticky-composer-mode-label,
+  .theia-mobile-projects-sticky-composer-approval-policy-label,
+  .theia-mobile-projects-sticky-composer-model-capability .theia-mobile-projects-sticky-composer-model-capability-level {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 @media (max-width: 380px) {
   .theia-mobile-projects-sticky-composer-input-wrap {
     gap: 1px;

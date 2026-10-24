@@ -6,6 +6,7 @@ import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '
 import { extractTranscriptDiffCard } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamOutputTokens, isAwaitingFirstTranscriptAgentOutput, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldShowTranscriptStreamingActivity, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
+import { turnElapsedAnchor } from '@theia/qaap-shared-core/lib/common/qaap-turn-elapsed-anchor';
 import {
     resolveTranscriptEffectiveStatus,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
@@ -266,7 +267,9 @@ export function createTranscriptStreamMetaExtracted(ctx: MobileProjectsTranscrip
         const meta = document.createElement('span');
         meta.className = 'theia-mobile-agent-stream-meta';
         const update = (): void => {
-            const parts = [formatTranscriptStreamElapsed(Date.now() - turnStart)];
+            // Same clock as the "Starting the agent" label: never moves back on a relaunch.
+            const elapsedMs = turnElapsedAnchor.resolveElapsedMs(conv.id, turnStart, true) ?? 0;
+            const parts = [formatTranscriptStreamElapsed(elapsedMs)];
             // Keep the token meter visible for the whole stream (incl. ~0).
             // Output estimate of the in-flight turn, labelled so it is not confused with the
             // provider context total shown by the context ring.
@@ -300,8 +303,8 @@ export function createTranscriptStreamMetaExtracted(ctx: MobileProjectsTranscrip
 
 export function resolveTranscriptStreamDurationLabelExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, conv: QaapAgentConversationDTO): string {
         const turnStartMs = resolveTranscriptTurnStartMs(conv.messages);
-        const durationMs = resolveTranscriptTurnElapsedMs(turnStartMs);
         const streaming = resolveTranscriptEffectiveStatus(conv) === 'streaming';
+        const durationMs = turnElapsedAnchor.resolveElapsedMs(conv.id, turnStartMs, streaming);
         return resolveTranscriptActivityTimelineSummaryText(0, {
             streaming,
             durationMs,

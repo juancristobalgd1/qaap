@@ -19,6 +19,9 @@ import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-t
 import { createTranscriptGitActionCard } from './qaap-transcript-git-action-ui';
 
 export class MobileProjectsTranscriptMessagesUserUi {
+    /** Pending reset timers for the user-message Copy action, keyed by button. */
+    protected readonly transcriptUserCopyTimers = new WeakMap<HTMLButtonElement, number>();
+
     constructor(
         protected readonly host: MobileProjectsTranscriptMessagesHost,
         protected readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
@@ -101,7 +104,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
             canEdit: actionsEnabled,
             canUndo: actionsEnabled && !isTheiaChat,
             onEdit: () => { void this.editTranscriptUserMessage(msg, conv); },
-            onCopy: () => { void this.copyTranscriptUserMessage(plainText); },
+            onCopy: () => this.copyTranscriptUserMessage(plainText),
             onCopyLink: () => { void this.copyTranscriptUserMessageLink(msg.id); },
             onUndo: () => { void this.undoTranscriptUserMessage(msg, conv); },
         }));
@@ -359,7 +362,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
         canEdit: boolean;
         canUndo: boolean;
         onEdit: () => void;
-        onCopy: () => void;
+        onCopy: () => Promise<boolean>;
         onCopyLink: () => void;
         onUndo: () => void;
     }): HTMLElement {
@@ -373,7 +376,13 @@ export class MobileProjectsTranscriptMessagesUserUi {
 
         const editBtn = this.createTranscriptUserActionButton('edit', editLabel, 'codicon-edit', options.onEdit);
         editBtn.disabled = !options.canEdit || !options.plainText;
-        const copyBtn = this.createTranscriptUserActionButton('copy', copyLabel, 'codicon-copy', options.onCopy);
+        const copyBtn = this.createTranscriptUserActionButton('copy', copyLabel, 'codicon-copy', () => {
+            void options.onCopy().then(copied => {
+                if (copied) {
+                    this.flashTranscriptUserCopyButton(copyBtn, copyLabel);
+                }
+            });
+        });
         copyBtn.disabled = !options.plainText;
         const linkBtn = this.createTranscriptUserActionButton('link', linkLabel, 'codicon-link', options.onCopyLink);
         const undoBtn = this.createTranscriptUserActionButton('undo', undoLabel, 'codicon-discard', options.onUndo);
@@ -403,6 +412,37 @@ export class MobileProjectsTranscriptMessagesUserUi {
         return button;
     }
 
+    /**
+     * Shows a short "Copied" state on the Copy action (check icon, label, aria-live) and restores
+     * the idle state after 1.5 s. On touch layouts the text label is visually hidden, so the icon
+     * swap is the visible cue there.
+     */
+    protected flashTranscriptUserCopyButton(button: HTMLButtonElement, copyLabel: string): void {
+        const copiedLabel = nls.localize('qaap/mobileProjects/transcriptShellCopied', 'Copied');
+        const icon = button.querySelector<HTMLElement>('.codicon');
+        const label = button.querySelector<HTMLElement>('.theia-mobile-agent-transcript-user-action-label');
+        const previousTimer = this.transcriptUserCopyTimers.get(button);
+        if (previousTimer !== undefined) {
+            window.clearTimeout(previousTimer);
+        }
+        icon?.classList.replace('codicon-copy', 'codicon-check');
+        if (label) {
+            label.textContent = copiedLabel;
+        }
+        button.classList.add('theia-mod-copied');
+        button.setAttribute('aria-live', 'polite');
+        button.setAttribute('aria-label', copiedLabel);
+        this.transcriptUserCopyTimers.set(button, window.setTimeout(() => {
+            icon?.classList.replace('codicon-check', 'codicon-copy');
+            if (label) {
+                label.textContent = copyLabel;
+            }
+            button.classList.remove('theia-mod-copied');
+            button.setAttribute('aria-label', copyLabel);
+            this.transcriptUserCopyTimers.delete(button);
+        }, 1500));
+    }
+
     protected transcriptUserMessageElementId(messageId: string): string {
         return `qaap-transcript-message-${messageId}`;
     }
@@ -430,10 +470,11 @@ export class MobileProjectsTranscriptMessagesUserUi {
         }
     }
 
-    async copyTranscriptUserMessage(text: string): Promise<void> {
+    /** Resolves `true` when the text reached the clipboard, so the caller can show the Copied state. */
+    async copyTranscriptUserMessage(text: string): Promise<boolean> {
         const trimmed = text.trim();
         if (!trimmed) {
-            return;
+            return false;
         }
         try {
             if (this.host.previewClipboard) {
@@ -442,8 +483,10 @@ export class MobileProjectsTranscriptMessagesUserUi {
                 await navigator.clipboard.writeText(trimmed);
             }
             MobileSnackbar.show(nls.localize('qaap/mobileProjects/transcriptShellCopied', 'Copied'), { kind: 'success', duration: 1800 });
+            return true;
         } catch {
             MobileSnackbar.show(nls.localize('qaap/mobileProjects/transcriptShellCopyFailed', 'Could not copy'), { kind: 'warning' });
+            return false;
         }
     }
 

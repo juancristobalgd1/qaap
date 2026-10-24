@@ -10,6 +10,7 @@ import {
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { syncTranscriptComposerQuickActions } from './qaap-transcript-composer-quick-actions';
 import {
     appendBeforeTranscriptLiveStatus,
     detachTranscriptLiveStatusFromScroller,
@@ -49,7 +50,7 @@ export function renderTranscriptMessagesVirtualExtracted(ctx: MobileProjectsTran
         const messageHost = ctx.resolveTranscriptMessageHost(host);
         messageHost.classList.remove('theia-mod-empty-chat');
         messageHost.classList.add('theia-mod-virtual-scroll');
-        ctx.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
+        syncTranscriptComposerQuickActions(ctx.host, normalized);
 
         const list = ctx.host.transcriptUi.mount(messageHost, normalized, index => {
             const current = ctx.host.transcriptLastConv;
@@ -242,7 +243,7 @@ export function renderTranscriptMessagesExtracted(ctx: MobileProjectsTranscriptM
         if (isEmptyChat) {
             ctx.host.transcriptUi.disposeList();
             messageHost.classList.remove('theia-mod-virtual-scroll', 'theia-mod-empty-chat');
-            ctx.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
+            syncTranscriptComposerQuickActions(ctx.host, conv, previousConversation);
             messageHost.replaceChildren();
             ctx.host.transcriptLastRenderedConversationId = conv.id;
             ctx.host.transcriptLastRenderedMessageId = undefined;
@@ -268,7 +269,7 @@ export function renderTranscriptMessagesExtracted(ctx: MobileProjectsTranscriptM
             ? undefined
             : ctx.captureTranscriptScrollAnchor(messageHost);
         messageHost.classList.toggle('theia-mod-empty-chat', false);
-        ctx.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
+        syncTranscriptComposerQuickActions(ctx.host, conv, previousConversation);
         // Build off-DOM then swap once — avoids N reflows while appending rows
         // into a connected host (visible flicker during streaming rebuilds).
         // Keyed reuse: a row whose stamped render key still matches its message
