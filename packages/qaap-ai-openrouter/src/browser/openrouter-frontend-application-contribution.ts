@@ -5,8 +5,8 @@
 // *****************************************************************************
 
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
-import { inject, injectable } from '@theia/core/shared/inversify';
-import { PreferenceService } from '@theia/core';
+import { inject, injectable, named } from '@theia/core/shared/inversify';
+import { ILogger, PreferenceService } from '@theia/core';
 import { AICorePreferences, PREFERENCE_NAME_MAX_RETRIES } from '@theia/ai-core/lib/common/ai-core-preferences';
 import { OpenAiLanguageModelsManager, OpenAiModelDescription } from '@theia/ai-openai/lib/common';
 import { API_KEY_PREF, BASE_URL_PREF, MODELS_PREF, OPENROUTER_DEFAULT_BASE_URL } from '../common/openrouter-preferences';
@@ -28,15 +28,27 @@ export class OpenRouterFrontendApplicationContribution implements FrontendApplic
     @inject(OpenAiLanguageModelsManager)
     protected manager: OpenAiLanguageModelsManager;
 
+    @inject(ILogger) @named('openrouter')
+    protected readonly logger: ILogger;
+
     @inject(AICorePreferences)
     protected aiCorePreferences: AICorePreferences;
 
     protected prevModels: string[] = [];
 
+    /**
+     * Tail of the queue of calls to the backend manager. The backend `createOrUpdateLanguageModels`
+     * looks a model up, awaits, and then adds it, so two overlapping calls (startup, a preference
+     * change, an API key change) both see the model as missing and the second one logs
+     * "already existing language model" for every model. Chaining the calls makes each one see the
+     * models the previous call registered, so it patches them instead.
+     */
+    protected backendQueue: Promise<void> = Promise.resolve();
+
     onStart(): void {
         this.preferenceService.ready.then(() => {
             const models = this.normalizeModelIds(this.preferenceService.get<string[]>(MODELS_PREF, []));
-            this.manager.createOrUpdateLanguageModels(...models.map(modelId => this.createOpenRouterModelDescription(modelId)));
+            this.createOrUpdateModels(models.map(modelId => this.createOpenRouterModelDescription(modelId)));
             this.prevModels = [...models];
 
             this.preferenceService.onPreferenceChanged(event => {
@@ -62,14 +74,32 @@ export class OpenRouterFrontendApplicationContribution implements FrontendApplic
         const modelsToRemove = [...oldModels].filter(model => !updatedModels.has(model));
         const modelsToAdd = [...updatedModels].filter(model => !oldModels.has(model));
 
-        this.manager.removeLanguageModels(...modelsToRemove.map(model => `${OPENROUTER_PROVIDER_ID}/${model}`));
-        this.manager.createOrUpdateLanguageModels(...modelsToAdd.map(modelId => this.createOpenRouterModelDescription(modelId)));
+        if (modelsToRemove.length > 0) {
+            this.enqueueBackendCall(() => this.manager.removeLanguageModels(...modelsToRemove.map(model => `${OPENROUTER_PROVIDER_ID}/${model}`)));
+        }
+        this.createOrUpdateModels(modelsToAdd.map(modelId => this.createOpenRouterModelDescription(modelId)));
         this.prevModels = newModels;
     }
 
     protected updateAllModels(): void {
         const models = this.normalizeModelIds(this.preferenceService.get<string[]>(MODELS_PREF, []));
-        this.manager.createOrUpdateLanguageModels(...models.map(modelId => this.createOpenRouterModelDescription(modelId)));
+        this.createOrUpdateModels(models.map(modelId => this.createOpenRouterModelDescription(modelId)));
+    }
+
+    protected createOrUpdateModels(descriptions: OpenAiModelDescription[]): void {
+        if (descriptions.length === 0) {
+            return;
+        }
+        this.enqueueBackendCall(() => this.manager.createOrUpdateLanguageModels(...descriptions));
+    }
+
+    /** Runs `call` after every previously queued backend call; a failed call is logged and does not block the queue. */
+    protected enqueueBackendCall(call: () => Promise<void> | void): void {
+        this.backendQueue = this.backendQueue
+            .then(call)
+            .catch(error => {
+                this.logger.error('Failed to update OpenRouter language models', error);
+            });
     }
 
     /**
@@ -79,7 +109,8 @@ export class OpenRouterFrontendApplicationContribution implements FrontendApplic
      * prefixed slug to the OpenRouter API and get `400 ... is not a valid model ID`.
      */
     protected normalizeModelIds(ids: string[]): string[] {
-        return filterOpenRouterModelSlugs(ids.map(id => normalizeOpenRouterModelSlug(id)));
+        // `openrouter/x:free` and `x:free` normalize to the same model; register it once.
+        return [...new Set(filterOpenRouterModelSlugs(ids.map(id => normalizeOpenRouterModelSlug(id))))];
     }
 
     protected createOpenRouterModelDescription(modelId: string): OpenAiModelDescription {

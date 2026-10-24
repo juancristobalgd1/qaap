@@ -104,9 +104,23 @@ class TenantBackendAclTestService extends QaapTenantSpawnService {
     readonly commands: Array<{ file: string; args: readonly string[] }> = [];
 
     protected override isBackendRoot(): boolean { return true; }
-    protected override runTenantAccessCommand(file: string, args: readonly string[]): boolean {
+    protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
         this.commands.push({ file, args });
-        return true;
+        return { ok: true };
+    }
+}
+
+/** Fails the `find` sweeps with a concrete cause, as a live harness that deletes files mid-sweep does. */
+class FailingStorageSweepService extends TenantBackendAclTestService {
+    protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
+        this.commands.push({ file, args });
+        return file === 'find'
+            ? { ok: false, reason: 'find exit status 1: setfacl: /home/theia/.qaap/.qaap-agent-storage/cache/x.db: No such file or directory' }
+            : { ok: true };
+    }
+
+    prepare(root: string): void {
+        this.ensureTenantAgentStorage(root);
     }
 }
 
@@ -157,7 +171,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
 
     const envKeys = [
         'QAAP_CLOUD_MODE', 'QAAP_TENANT_CONTAINER_ISOLATION', 'QAAP_TENANT_BACKEND_MODE',
-        'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_AGENT_UID_PER_USER', 'QAAP_REPOS_ROOT',
+        'QAAP_AGENT_UID', 'QAAP_AGENT_GID', 'QAAP_AGENT_UID_PER_USER', 'QAAP_REPOS_ROOT', 'QAAP_TENANT_CONFIG_ROOT',
     ] as const;
     const saved: Partial<Record<typeof envKeys[number], string | undefined>> = {};
 
@@ -227,6 +241,38 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             expect(forDir[0]?.args).to.include.members(['-uid', '0', 'u:1001:rwx,d:u:1001:rwx']);
             expect(forDir[1]?.args).to.include.members(['-uid', '0', 'u:1001:rwX']);
         }
+    });
+
+    it('attempts the agent storage grant once per root and logs its concrete cause once', () => {
+        const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-storage-'));
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = storageRoot;
+        const savedWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+        try {
+            const service = new FailingStorageSweepService();
+            for (let attempt = 0; attempt < 5; attempt++) {
+                service.prepare(storageRoot);
+            }
+            expect(service.commands.filter(command => command.file === 'find')).to.have.length(1);
+            expect(warnings).to.have.length(1);
+            expect(warnings[0]).to.include('could not prepare tenant agent storage').and.to.include('No such file or directory');
+        } finally {
+            console.warn = savedWarn;
+            fs.rmSync(storageRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('reports the exit status and first stderr line of a failed access command', () => {
+        class RawRunService extends QaapTenantSpawnService {
+            run(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
+                return this.runTenantAccessCommand(file, args);
+            }
+        }
+        const result = new RawRunService().run(process.execPath, ['-e', 'process.stderr.write("setfacl: boom\\n"); process.exit(3)']);
+        expect(result.ok).to.equal(false);
+        expect(result.reason).to.include('exit status 3').and.to.include('setfacl: boom');
     });
 
     it('refuses tenant agent execution when the image has no non-root uid configured', () => {
