@@ -199,6 +199,12 @@ export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscr
     }
     const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
     const changesPill = renderStickyComposerChangesPill(activityOptions);
+    // The "Starting preview…" chip lives in the changes pill row (next to Working). While that row
+    // carries it, the separate empty-chat quick-actions strip is hidden so the chips form ONE row.
+    host.classList.toggle(
+        'theia-mod-preview-chip-in-pill-row',
+        !!changesPill && !!activityOptions.previewStarting && !!activityOptions.onRunApp,
+    );
     // Activity row vs Working/Step-only strip share the same host class — never tear down
     // `theia-mod-working-only` during streaming ticks or Step/Working flicker every SSE.
     const pillHosts = Array.from(

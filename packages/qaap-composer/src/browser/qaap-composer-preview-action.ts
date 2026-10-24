@@ -214,3 +214,28 @@ export async function openCurrentComposerPreview(
     }
     return open(result.previewUrl);
 }
+
+/** Inputs for the composer preview chips: whether a start is in flight and whether the probe verified a live URL. */
+export interface ComposerPreviewChipInput {
+    /** A run/start request is in flight: the server has not answered yet. */
+    readonly previewStarting: boolean;
+    /** The composer probe verified that the preview URL answers (server responding). */
+    readonly previewVerified: boolean;
+}
+
+/** Which preview chip the composer may show. "View Preview" only for a verified, settled preview. */
+export interface ComposerPreviewChipVisibility {
+    readonly showStarting: boolean;
+    readonly showViewPreview: boolean;
+}
+
+/**
+ * While a preview boots only the starting state is shown; a stale verified URL must not surface
+ * "View Preview" next to it. "View Preview" appears only once the probe has verified the server.
+ */
+export function resolveComposerPreviewChipVisibility(input: ComposerPreviewChipInput): ComposerPreviewChipVisibility {
+    if (input.previewStarting) {
+        return { showStarting: true, showViewPreview: false };
+    }
+    return { showStarting: false, showViewPreview: input.previewVerified };
+}

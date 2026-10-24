@@ -5,12 +5,14 @@
 
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { formatMissingBootstrapProjectHint } from '@theia/qaap-shared-core/lib/common/qaap-project-bootstrap-scaffold-plan';
 import {
     COMPOSER_PREVIEW_PROBE_BACKOFF_MAX_MS,
     composerConversationInvolvesPreview,
     composerPreviewProbeBackoffMs,
     isComposerPreviewStartupActive,
     openCurrentComposerPreview,
+    resolveComposerPreviewChipVisibility,
     resolveComposerFallbackPreviewUrls,
     resolveComposerPreviewCandidate,
     resolveComposerPreviewTarget,
@@ -34,6 +36,20 @@ describe('qaap-composer-preview-action', () => {
         expect(isComposerPreviewStartupActive({ phase: 'idle' }, { previewRequestActive: true })).to.equal(true);
         expect(isComposerPreviewStartupActive({ phase: 'idle' }, { agentWorking: true })).to.equal(true);
     });
+    it('shows only the starting chip while a preview boots, even if a stale URL verified', () => {
+        expect(resolveComposerPreviewChipVisibility({ previewStarting: true, previewVerified: true }))
+            .to.deep.equal({ showStarting: true, showViewPreview: false });
+        expect(resolveComposerPreviewChipVisibility({ previewStarting: true, previewVerified: false }))
+            .to.deep.equal({ showStarting: true, showViewPreview: false });
+    });
+
+    it('offers View Preview only once the probe verified the server answers', () => {
+        expect(resolveComposerPreviewChipVisibility({ previewStarting: false, previewVerified: true }))
+            .to.deep.equal({ showStarting: false, showViewPreview: true });
+        expect(resolveComposerPreviewChipVisibility({ previewStarting: false, previewVerified: false }))
+            .to.deep.equal({ showStarting: false, showViewPreview: false });
+    });
+
     const ready: ComposerPreviewRuntime = {
         projectId: 'project-a',
         projectCwd: '/workspace/project-a',
@@ -203,5 +219,12 @@ describe('qaap-composer-preview-action', () => {
             // A verification made for another candidate does not carry over.
             expect(resolveVerifiedComposerPreviewUrl(runtime, identity, ORIGIN, `${ORIGIN}/qaap-dev/3000/`)).to.equal(undefined);
         });
+    });
+
+    it('explains a project without a runnable target in full, never the truncated discovery toast', () => {
+        const message = formatMissingBootstrapProjectHint([]) ?? '';
+        expect(message).to.match(/no app Qaap can start yet/);
+        expect(message).to.match(/\.qaap\/preview\.json/);
+        expect(message).to.not.match(/discovery/i);
     });
 });

@@ -297,8 +297,15 @@ export async function openComposerPreviewExtracted(ctx: MobileProjectsTranscript
             const ownsBootstrap = !!project
                 && project.id === projectId
                 && !!resolveComposerPreviewCandidate(ctx.resolveComposerPreviewRuntime(project));
-            if (bootstrap && ownsBootstrap) {
+            const snapshot = bootstrap?.getStateSnapshot();
+            // Only a real preview URL may be focused: without one the mini-browser opens blank on
+            // "Enter a URL". A project Qaap cannot run gets the explanation instead.
+            if (bootstrap && ownsBootstrap && snapshot?.previewUrl) {
                 await bootstrap.focusPreview();
+                return;
+            }
+            if (snapshot && !snapshot.descriptor && snapshot.missingDescriptorHint) {
+                MobileSnackbar.show(snapshot.missingDescriptorHint, { kind: 'warning', duration: 8000 });
                 return;
             }
             ctx.verifiedComposerPreview = undefined;
