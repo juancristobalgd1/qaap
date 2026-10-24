@@ -960,14 +960,19 @@ export class QaapTenantSpawnService {
         // Harness state written while agents still ran as root (opencode.db, its log, caches) keeps
         // root:root 0755/0644 and default ACLs only cover new entries; without this the dropped-uid
         // agent fails on its own log file (PermissionDenied: FileSystem.open .../opencode.log).
+        // Best effort, unlike the ACLs above: one stale entry find cannot read (a dir owned by an old
+        // container uid, e.g. cache/bun) must not abort the whole preparation. That abort skipped the
+        // sign-in links under the same root, so every Codex/Claude login stayed in the volatile HOME
+        // and the task sandbox never received it. The cause is logged once; the storage stays usable.
         for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]) {
             const dirs = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']);
-            if (!dirs.ok) {
-                throw new Error(`Could not grant agent uid ${uid} access to existing harness state under ${dir} (${dirs.reason}).`);
-            }
-            const files = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']);
+            const files = dirs.ok
+                ? this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+'])
+                : dirs;
             if (!files.ok) {
-                throw new Error(`Could not grant agent uid ${uid} access to existing harness state under ${dir} (${files.reason}).`);
+                console.warn(`[qaap-security] agent uid ${uid} may not reach existing harness state under ${dir} `
+                    + `(${files.reason ?? 'unknown reason'}); the sign-in links are still prepared.`);
+                return;
             }
         }
     }

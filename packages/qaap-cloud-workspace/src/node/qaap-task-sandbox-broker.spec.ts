@@ -808,6 +808,24 @@ describe('QaapTaskSandboxService in broker mode (tenant backend)', function (): 
         expect(service.sandboxFor(worktree)?.name).to.equal('qaap-task-b');
     });
 
+    it('does not forward, and warns about, a sign-in left in HOME without a persistent link', () => {
+        const volatileHome = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-volatile-home-'));
+        fs.mkdirSync(path.join(volatileHome, '.codex'));
+        const warnings: string[] = [];
+        const savedWarn = console.warn;
+        console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+        try {
+            const links = (service as unknown as { homeLinks(home: string | undefined): Array<{ name: string; target: string }> })
+                .homeLinks(volatileHome);
+            expect(links).to.deep.equal([]);
+            expect(warnings).to.have.length(1);
+            expect(warnings[0]).to.include('.codex').and.to.include('not linked to persistent agent storage');
+        } finally {
+            console.warn = savedWarn;
+            fs.rmSync(volatileHome, { recursive: true, force: true });
+        }
+    });
+
     it('spawns through the local exec client with the task env and no secret on the argv', async () => {
         let launched: { file: string; args: string[]; options: { env: NodeJS.ProcessEnv } } | undefined;
         const child = service.spawnInSandbox(sandbox, '/bin/sh', ['-c', 'echo "$TASK_KEY:$QAAP_TENANT_BACKEND_SECRET:$HOME"'],

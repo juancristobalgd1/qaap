@@ -860,13 +860,20 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
             return links;
         }
         for (const name of [...QAAP_PERSISTENT_HOME_DIRECTORIES, ...QAAP_PERSISTENT_HOME_FILES]) {
+            const link = path.join(home, name);
+            let stat: fs.Stats;
             try {
-                const link = path.join(home, name);
-                if (fs.lstatSync(link).isSymbolicLink()) {
-                    links.push({ name, target: path.resolve(path.dirname(link), fs.readlinkSync(link)) });
-                }
+                stat = fs.lstatSync(link);
             } catch {
-                // not linked in this backend
+                continue; // absent in this backend
+            }
+            if (stat.isSymbolicLink()) {
+                links.push({ name, target: path.resolve(path.dirname(link), fs.readlinkSync(link)) });
+            } else {
+                // A sign-in written into the volatile HOME: only symlinks are forwarded, so the sandbox
+                // would start logged out while the probe (same HOME) reports the CLI as connected.
+                console.warn(`[qaap-task-sandbox] ${name} in ${home} is not linked to persistent agent storage; `
+                    + 'the sandbox does not receive its sign-in state');
             }
         }
         return links;
