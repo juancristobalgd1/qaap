@@ -89,6 +89,20 @@ describe('qaap-transcript-capture-pending-ui', () => {
             .to.equal(chip);
     });
 
+    it('hides the raw [QAAP capture] token from the reader while keeping the pending chip', () => {
+        const { host } = createMessageRow('<p>Capturo evidencia visual.</p><p>Aquí tienes las capturas:</p><p>[QAAP capture: /]</p>');
+        expect(enhanceTranscriptCaptureDirectives(host)).to.equal(1);
+        // A second pass over the same DOM must still find the directive and keep the chip.
+        expect(enhanceTranscriptCaptureDirectives(host)).to.equal(1);
+
+        const visible = host.cloneNode(true) as HTMLElement;
+        visible.querySelectorAll('[hidden]').forEach(node => node.remove());
+        expect(visible.textContent).to.not.contain('[QAAP');
+        expect(visible.textContent).to.contain('Aquí tienes las capturas:');
+        expect(host.querySelector('[hidden]')?.textContent).to.equal('[QAAP capture: /]');
+        expect(host.querySelector(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)).to.not.equal(null);
+    });
+
     it('shows "not available" instead of a skeleton when the row can no longer receive a capture', () => {
         const { row, host } = createMessageRow('<p>Listo.</p><p>[QAAP capture]</p>');
         syncTranscriptCaptureClosedRow(row, true);

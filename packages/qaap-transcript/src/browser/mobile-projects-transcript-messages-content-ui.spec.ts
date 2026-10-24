@@ -260,6 +260,14 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         expect(linked).to.contain(`[${isolated}](${isolated})`);
     });
 
+    it('links a localhost dev URL quoted as an inline code span to the preview link', () => {
+        const ui = new MobileProjectsTranscriptMessagesContentUi({} as never);
+        const linked = ui.linkifyTranscriptPreviewUrls('La preview queda en `http://localhost:5173` ahora.');
+        expect(linked).to.contain('[`http://localhost:5173`](http://localhost:5173)');
+        // Plain text around the link is untouched and the URL is not linked twice.
+        expect(linked).to.not.contain('[`http://localhost:5173`](http://localhost:5173)](');
+    });
+
     it('validates an isolated-origin link by host label although the probe reports the canonical id', async () => {
         const hostLabel = '0123456789abcdef0123456789abcdef';
         const isolated = `https://${hostLabel}.previews.qaap.example/`;

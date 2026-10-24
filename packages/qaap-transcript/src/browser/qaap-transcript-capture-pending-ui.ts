@@ -14,6 +14,7 @@ import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from '@theia/qaap-
 
 export const TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS = 'theia-mobile-agent-transcript-capture-pending';
 export const TRANSCRIPT_CAPTURE_DIRECTIVE_CLASS = 'theia-mobile-agent-transcript-capture-directive';
+const TRANSCRIPT_CAPTURE_DIRECTIVE_TEXT_CLASS = 'theia-mobile-agent-transcript-capture-directive-text';
 /**
  * Set on an agent message row when no capture can land for it any more, so a `[QAAP capture]`
  * directive renders as "not available" instead of an endless "Processing screenshot…" skeleton.
@@ -203,7 +204,51 @@ function syncExistingCapturePendingChip(
  * When the agent streams `[QAAP capture]` / `[QAAP record]`, show a skeleton chip below the
  * directive until visual evidence (or a failure note) lands in the same message row.
  */
+/**
+ * `[QAAP capture]` / `[QAAP record]` is a protocol token the capture pipeline and the pending chip read,
+ * not prose for the reader. Wrap each occurrence in a hidden span: `textContent` keeps the token, so the
+ * directive detection below still works, while the reader no longer sees the raw bracket text.
+ */
+export function concealTranscriptCaptureDirectiveText(host: HTMLElement): void {
+    const doc = host.ownerDocument ?? document;
+    const textNodes: Text[] = [];
+    // Numeric SHOW_TEXT and nodeType checks: DOM globals (NodeFilter, Text) may come from another realm.
+    const SHOW_TEXT = 0x4;
+    const TEXT_NODE = 3;
+    const walker = doc.createTreeWalker(host, SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.nodeType === TEXT_NODE && !node.parentElement?.classList.contains(TRANSCRIPT_CAPTURE_DIRECTIVE_TEXT_CLASS)) {
+            textNodes.push(node as Text);
+        }
+    }
+    for (const textNode of textNodes) {
+        const data = textNode.data;
+        const regex = new RegExp(QAAP_CAPTURE_DIRECTIVE_PATTERN, 'gi');
+        const parts: Node[] = [];
+        let cursor = 0;
+        for (let match = regex.exec(data); match; match = regex.exec(data)) {
+            if (match.index > cursor) {
+                parts.push(doc.createTextNode(data.slice(cursor, match.index)));
+            }
+            const concealed = doc.createElement('span');
+            concealed.className = TRANSCRIPT_CAPTURE_DIRECTIVE_TEXT_CLASS;
+            concealed.setAttribute('hidden', '');
+            concealed.textContent = match[0];
+            parts.push(concealed);
+            cursor = match.index + match[0].length;
+        }
+        if (parts.length === 0) {
+            continue;
+        }
+        if (cursor < data.length) {
+            parts.push(doc.createTextNode(data.slice(cursor)));
+        }
+        textNode.replaceWith(...parts);
+    }
+}
+
 export function enhanceTranscriptCaptureDirectives(host: HTMLElement): number {
+    concealTranscriptCaptureDirectiveText(host);
     const row = resolveTranscriptMessageRow(host);
     if (transcriptRowHasResolvedVisualEvidence(row)) {
         removeCapturePendingChips(row ?? host);

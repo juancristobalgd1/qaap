@@ -222,8 +222,22 @@ export function appendAgentReply(
  * rate limits). Covers stream-json `is_error:true` and plain-text Antigravity
  * quota lines ("Individual quota reached…").
  */
+/**
+ * The task log is one file: the agent CLI writes first, then the post-agent phases (self-verification,
+ * the goal-loop gate, the independent reviewer, the skipped-reviewer notes) append their own output.
+ * Those phases run after the CLI has already exited, so their stdout/stderr (a lint report, a reviewer
+ * CLI that is not signed in) must never decide whether the delivered turn failed. Returns the log up to
+ * the first post-agent phase header; the full log when no such header exists.
+ */
+const POST_AGENT_PHASE_LOG_HEADER = /(?:^|\n)\[qaap\] (?:Verifying:|Goal loop verifying:|High-risk change|Skipping reviewer |Skipping self-verification)/;
+
+export function agentCliLogBeforePostAgentPhases(log: string): string {
+    const header = POST_AGENT_PHASE_LOG_HEADER.exec(log);
+    return header ? log.slice(0, header.index) : log;
+}
+
 export function resolveCompletedTurnAuthFailureReason(log: string | undefined, agentId?: string): string | undefined {
-    const trimmed = (log ?? '').trim();
+    const trimmed = agentCliLogBeforePostAgentPhases(log ?? '').trim();
     if (!trimmed) {
         return undefined;
     }

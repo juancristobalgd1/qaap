@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import type { QaapAgentConversation, QaapAgentMessage } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
+import { agentCliLogBeforePostAgentPhases } from './qaap-agent-conversation-store-helpers';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
@@ -115,6 +116,40 @@ describe('QaapAgentConversationStore completed-turn auth failure', () => {
         const store = new TestConversationStore();
         expect(store.exposeResolveCompletedTurnAuthFailureReason('Edited src/app.ts and ran tests.')).to.equal(undefined);
         expect(store.exposeResolveCompletedTurnAuthFailureReason('')).to.equal(undefined);
+    });
+
+    it('resolveCompletedTurnAuthFailureReason ignores a reviewer or verification failure appended after a delivered turn', () => {
+        const store = new TestConversationStore();
+        // The agent CLI finished cleanly; the post-agent phases then append their own output to the
+        // same task log. A reviewer CLI that rejects its key must not turn the delivered turn into a
+        // sign-in failure (the turn stays completed, the review is merely inconclusive).
+        const agentOutput = '{"type":"result","subtype":"success","is_error":false,"result":"Listo."}';
+        const log = [
+            agentOutput,
+            '',
+            '[qaap] Verifying: npm run lint',
+            '  12:3  error  Unexpected any  @typescript-eslint/no-explicit-any',
+            '[qaap] High-risk change — starting independent codex review.',
+            '{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Incorrect API key provided"}}',
+            '[qaap] Skipping reviewer qaiq: QAIQ turn refused before spawn: no OpenRouter API key.',
+        ].join('\n');
+        expect(store.exposeResolveCompletedTurnAuthFailureReason(log, 'qaiq')).to.equal(undefined);
+    });
+
+    it('resolveCompletedTurnAuthFailureReason still fails an agent CLI auth error printed before the post-agent phases', () => {
+        const store = new TestConversationStore();
+        const log = [
+            '{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Incorrect API key provided"}}',
+            '[qaap] Verifying: npm run lint',
+        ].join('\n');
+        const reason = store.exposeResolveCompletedTurnAuthFailureReason(log, 'codex');
+        expect(reason).to.match(/needs you to sign in/i);
+    });
+
+    it('agentCliLogBeforePostAgentPhases keeps the full log when no post-agent phase header exists', () => {
+        const log = 'plain agent reply\nwith two lines';
+        expect(agentCliLogBeforePostAgentPhases(log)).to.equal(log);
+        expect(agentCliLogBeforePostAgentPhases('reply\n[qaap] Verifying: npm test\nfail')).to.equal('reply');
     });
 
     it('resolveCompletedTurnAuthFailureReason ignores a successful turn that merely describes auth code (no structured error)', () => {
