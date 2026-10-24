@@ -422,9 +422,14 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
             source.addEventListener('pending-drained', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('goal_loop', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('resync', ev => ctx.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('heartbeat', () => ctx.onDidReceiveTransportActivityEmitter.fire());
-            source.addEventListener('open', () => {
+            // The reconnect backoff resets only once the stream proves healthy (a heartbeat or a
+            // delivered event), not on `open`: a proxy/backend that accepts and then drops the
+            // stream used to reset the counter every time, reconnecting every ~1 s in a loop.
+            source.addEventListener('heartbeat', () => {
                 ctx.sseReconnectAttempt = 0;
+                ctx.onDidReceiveTransportActivityEmitter.fire();
+            });
+            source.addEventListener('open', () => {
                 if (ctx.transportWasDisconnected) {
                     ctx.transportWasDisconnected = false;
                     ctx.onDidReconnectTransportEmitter.fire();
@@ -444,6 +449,8 @@ export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext):
 }
 
 export function dispatchSseEventExtracted(ctx: MobileProjectsConversationsContext, ev: MessageEvent): void {
+        // A delivered event proves the stream is live: only now may the reconnect backoff reset.
+        ctx.sseReconnectAttempt = 0;
         try {
             routeLiveFrameExtracted(ctx, JSON.parse(ev.data) as QaapLiveFeedFrame, ev.lastEventId, true);
         } catch {

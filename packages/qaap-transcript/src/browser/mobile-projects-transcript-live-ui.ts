@@ -99,8 +99,6 @@ export interface MobileProjectsTranscriptLiveHost {
     getChatServiceConversation(summary: QaapAgentConversationSummaryDTO): Promise<QaapAgentConversationDTO | undefined>;
 }
 
-/** Poll pending VPS tool approvals while an interactive agent turn is streaming. */
-export const TRANSCRIPT_APPROVAL_REFRESH_MS = 320;
 /** Coalesce bursty SSE token deltas into one paint per frame on mobile. */
 export const TRANSCRIPT_SSE_COALESCE_RAF = true;
 /** Debounce composer activity stack scans while the agent is still streaming. */

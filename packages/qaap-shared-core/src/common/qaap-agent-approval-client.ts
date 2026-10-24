@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
+import { dedupeInFlight } from './qaap-in-flight-dedupe';
 
 export const QAAP_AGENT_APPROVAL_API_PATH = '/qaap/api/agent-approvals';
 
@@ -33,14 +34,19 @@ export interface QaapAgentApprovalActionResponseDTO {
     readonly error?: string;
 }
 
-export async function fetchAgentApprovals(cwd?: string): Promise<QaapAgentApprovalRequestDTO[]> {
+/** Pending list requests in flight, keyed by query: concurrent pollers share one request. */
+const approvalFetchesInFlight = new Map<string, Promise<QaapAgentApprovalRequestDTO[]>>();
+
+export function fetchAgentApprovals(cwd?: string): Promise<QaapAgentApprovalRequestDTO[]> {
     const query = cwd?.trim() ? `?cwd=${encodeURIComponent(cwd)}` : '';
-    const response = await fetchQaapGetWithTransientRetry(`${QAAP_AGENT_APPROVAL_API_PATH}${query}`, { credentials: 'include' });
-    if (!response.ok) {
-        throw new Error(response.statusText);
-    }
-    const body = await response.json() as QaapAgentApprovalListResponseDTO;
-    return body.approvals ?? [];
+    return dedupeInFlight(approvalFetchesInFlight, query, async () => {
+        const response = await fetchQaapGetWithTransientRetry(`${QAAP_AGENT_APPROVAL_API_PATH}${query}`, { credentials: 'include' });
+        if (!response.ok) {
+            throw new Error(response.statusText);
+        }
+        const body = await response.json() as QaapAgentApprovalListResponseDTO;
+        return body.approvals ?? [];
+    });
 }
 
 export async function approveAgentRequest(id: string): Promise<QaapAgentApprovalActionResponseDTO> {
