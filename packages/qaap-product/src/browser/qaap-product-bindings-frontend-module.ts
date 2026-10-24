@@ -16,7 +16,6 @@ import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-c
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
 import { rebindQaapPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-preferences-contribution';
-import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
 import { bindQaapSecretPreferenceInputRenderer } from '@theia/qaap-shared-core/lib/browser/qaap-secret-preference-input-renderer';
 
 /**
@@ -24,7 +23,7 @@ import { bindQaapSecretPreferenceInputRenderer } from '@theia/qaap-shared-core/l
  * TextMate/embedded languages, plugin host, getting started) live in
  * `qaap-product-ide-frontend-module`, which desktop loads right after this module.
  */
-export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync, onActivation) => {
+export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapBuiltinThemeBrandingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapBuiltinThemeBrandingContribution);
 
@@ -60,7 +59,4 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     rebindQaapPreferencesContribution(bind, rebind);
     // API keys and tokens in the settings editor (Settings, BYOK, IDE) are masked with a show/hide toggle.
     bindQaapSecretPreferenceInputRenderer(bind);
-
-    // Authenticated tenants' AI settings live in a per-user overlay, never in the shared User settings.json.
-    decorateQaapTenantAiUserPreferenceProvider(onActivation);
 });

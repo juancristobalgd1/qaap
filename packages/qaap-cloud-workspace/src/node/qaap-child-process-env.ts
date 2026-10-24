@@ -19,6 +19,9 @@ export const QAAP_BACKEND_ONLY_ENV: readonly string[] = [
     // Web Push signing key: lets a tenant forge notifications to other users.
     'QAAP_VAPID_PRIVATE_KEY',
     'QAAP_VAPID_SUBJECT',
+    // Master keys that seal stored API keys and GitHub tokens at rest: an agent that read them could decrypt
+    // every sealed value on disk. (Does not match the SECRET/PRIVATE_KEY pattern below, so listed explicitly.)
+    'QAAP_SECRETS_KEYS',
 ];
 
 /** Any future QAAP_* secret or private key is backend-only by default (fail closed). */

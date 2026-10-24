@@ -88,6 +88,11 @@ BACKEND_PER_TENANT="$(dexec 'printf %s "${QAAP_BACKEND_PER_TENANT:-}"')"
 BACKEND_SECRET_LENGTH="$(dexec 'printf %s "${#QAAP_TENANT_BACKEND_MASTER_SECRET}"')"
 PREVIEW_BASE_DOMAIN="$(dexec 'printf %s "${QAAP_PREVIEW_BASE_DOMAIN:-}"')"
 OPERATOR_LOGINS="$(dexec 'printf %s "${QAAP_OPERATOR_LOGINS:-}"')"
+# Advisory only: sealing of stored API keys and GitHub tokens (length is printed, never the value).
+SECRETS_KEYS_LENGTH="$(dexec 'printf %s "${#QAAP_SECRETS_KEYS}"')"
+if [[ "$SECRETS_KEYS_LENGTH" -eq 0 ]]; then
+    echo "  WARN QAAP_SECRETS_KEYS is not set: user API keys and GitHub tokens are stored in plain text (see doc/qaap-secrets-at-rest.md)"
+fi
 # Third party = an admitted login that is not an operator; only those need isolated previews.
 OPERATOR_SET=",${OPERATOR_LOGINS//[[:space:]]/},"
 OPERATOR_SET="${OPERATOR_SET,,}"

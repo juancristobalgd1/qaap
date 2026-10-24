@@ -14,19 +14,12 @@ import {
 } from '@theia/preferences/lib/browser/views/components/preference-node-renderer-creator';
 import { PreferenceStringInputRenderer } from '@theia/preferences/lib/browser/views/components/preference-string-input';
 
-/** Matches preference ids whose string value is a credential (API keys, tokens, secrets). */
-const QAAP_SECRET_PREFERENCE_ID_PATTERN = /(api[_-]?key|token|secret)$/i;
+import { isQaapSecretPreferenceId } from '../common/qaap-secret-preference-id';
+
+export { isQaapSecretPreferenceId };
 
 /** Upstream string input renderer uses priority 2; secret inputs must win over it. */
 const QAAP_SECRET_RENDERER_PRIORITY = 3;
-
-/**
- * Whether a preference id names a credential that must not be shown in plain text in the
- * settings editor (e.g. `ai-features.openrouter.openrouterApiKey`).
- */
-export function isQaapSecretPreferenceId(preferenceId: string): boolean {
-    return QAAP_SECRET_PREFERENCE_ID_PATTERN.test(preferenceId);
-}
 
 /**
  * String input for credential preferences: masked by default, with a show/hide toggle.

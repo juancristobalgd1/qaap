@@ -18,6 +18,9 @@ import {
     usesSharedAiSettingsFallback,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { parse, parseTree, type ParseError } from 'jsonc-parser';
+import { QaapSecretCipher } from '@theia/qaap-persistence/lib/node/qaap-secret-cipher';
+import { isQaapSecretPreferenceId } from '@theia/qaap-shared-core/lib/common/qaap-secret-preference-id';
 import { isQaapAiSettingsPrefKey } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
@@ -379,6 +382,18 @@ export function appendBoundedCommandOutput(current: string, chunk: string, maxCh
  *  `~/.theia/settings.json`, which would leak User A's BYOK keys into User B's spawn.
  *  Skip-auth / anonymous still fall back to the shared file for local single-user VPS. */
 export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    if (ownerLogin?.trim() && isTenantBackendOwnedBy(ownerLogin, env)) {
+        try {
+            migrateTenantSharedCredentialSettings(ownerLogin, homeDir, env);
+        } catch (error) {
+            console.warn('[qaap-agent-tasks] could not move tenant credentials to the sealed per-user settings:', error instanceof Error ? error.message : String(error));
+        }
+    }
+    const settings = readRawUserSettingsFromDisk(ownerLogin, homeDir, env);
+    return openSealedSettings(settings, ownerLogin, QaapSecretCipher.fromEnvironment(env));
+}
+
+function readRawUserSettingsFromDisk(ownerLogin: string | undefined, homeDir: string, env: NodeJS.ProcessEnv): Record<string, unknown> {
     try {
         const sharedSettingsPath = path.join(homeDir, '.theia', 'settings.json');
         const userSettingsPath = ownerLogin?.trim()
@@ -418,12 +433,21 @@ function isTenantBackendOwnedBy(ownerLogin: string, env: NodeJS.ProcessEnv): boo
         && tenantLogin === ownerLogin.trim().toLowerCase();
 }
 
+/**
+ * Reads a settings file. Theia's `settings.json` may hold comments and trailing commas (JSONC), so it is
+ * parsed as JSONC; plain JSON, which is what this module writes, parses identically. Malformed content throws.
+ */
 export function parseSettingsJsonFile(settingsPath: string): Record<string, unknown> {
     const raw = fs.readFileSync(settingsPath, 'utf8');
     if (!raw.trim()) {
         return {};
     }
-    return JSON.parse(raw) as Record<string, unknown>;
+    const errors: ParseError[] = [];
+    const parsed: unknown = parse(raw, errors, { allowTrailingComma: true });
+    if (errors.length > 0) {
+        throw new Error(`Settings file ${settingsPath} is not valid JSON(C) (first error at offset ${errors[0].offset})`);
+    }
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
 }
 
 /** Keeps only AI settings (`ai-features.*`, see {@link isQaapAiSettingsPrefKey}): the per-user file never stores other keys. */
@@ -437,15 +461,70 @@ export function filterAiSettings(settings: Record<string, unknown>): Record<stri
     return filtered;
 }
 
-/** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. */
+/**
+ * AAD of a sealed credential setting. Bound to the normalized login and the preference id, so a value
+ * copied to another user's file or another preference fails authentication instead of decrypting.
+ */
+function userSettingAad(ownerLogin: string | undefined, prefKey: string): string {
+    return `settings:${(ownerLogin ?? '').trim().toLowerCase()}:${prefKey}`;
+}
+
+/**
+ * Seals the string credential values of `settings` in place. Values in `plainKeys` (just written by the
+ * caller) are always sealed; other values are sealed only when still plain text (lazy migration of legacy
+ * files). Values already sealed on disk are kept as they are.
+ */
+function sealCredentialSettings(
+    settings: Record<string, unknown>,
+    ownerLogin: string,
+    cipher: QaapSecretCipher,
+    plainKeys: ReadonlySet<string>,
+): Record<string, unknown> {
+    const sealed: Record<string, unknown> = { ...settings };
+    for (const [key, value] of Object.entries(settings)) {
+        if (typeof value !== 'string' || !isQaapSecretPreferenceId(key)) {
+            continue;
+        }
+        if (!plainKeys.has(key) && cipher.isEncrypted(value)) {
+            continue;
+        }
+        sealed[key] = cipher.encrypt(value, userSettingAad(ownerLogin, key));
+    }
+    return sealed;
+}
+
+/**
+ * Opens sealed values for the caller (the owner of the file). A value that cannot be opened is dropped
+ * and logged by key only, so the rest of the settings still load and no secret reaches a log.
+ */
+function openSealedSettings(settings: Record<string, unknown>, ownerLogin: string | undefined, cipher: QaapSecretCipher): Record<string, unknown> {
+    const opened: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(settings)) {
+        if (!cipher.isEncrypted(value)) {
+            opened[key] = value;
+            continue;
+        }
+        try {
+            opened[key] = cipher.decrypt(value, userSettingAad(ownerLogin, key));
+        } catch (error) {
+            console.warn(`[qaap-agent-tasks] could not open sealed setting ${key}:`, error instanceof Error ? error.message : String(error));
+        }
+    }
+    return opened;
+}
+
+/** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. Credentials are sealed at rest. */
 export function writeUserSettingsToDisk(
     ownerLogin: string,
     patch: Record<string, unknown>,
     homeDir: string = os.homedir(),
+    env: NodeJS.ProcessEnv = process.env,
 ): Record<string, unknown> {
+    const cipher = QaapSecretCipher.fromEnvironment(env);
     const filePath = resolveUserSettingsFilePath(ownerLogin, homeDir);
     const current = fs.existsSync(filePath) ? parseSettingsJsonFile(filePath) : {};
-    const next = { ...current, ...filterAiSettings(patch) };
+    const filteredPatch = filterAiSettings(patch);
+    const next = { ...current, ...filteredPatch };
     // `null` (JSON's only way to say `undefined`) removes an AI key, so the reader falls back to the schema default.
     for (const [key, value] of Object.entries(patch)) {
         // eslint-disable-next-line no-null/no-null
@@ -453,13 +532,118 @@ export function writeUserSettingsToDisk(
             delete next[key];
         }
     }
+    const sealed = sealCredentialSettings(next, ownerLogin, cipher, new Set(Object.keys(filteredPatch)));
     const dir = path.dirname(filePath);
     const tmpPath = `${filePath}.${process.pid}.tmp`;
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(tmpPath, `${JSON.stringify(next, undefined, 2)}\n`, { mode: 0o600 });
+    fs.writeFileSync(tmpPath, `${JSON.stringify(sealed, undefined, 2)}\n`, { mode: 0o600 });
     fs.renameSync(tmpPath, filePath);
     try { fs.chmodSync(filePath, 0o600); } catch { /* best-effort */ }
-    return filterAiSettings(next);
+    return openSealedSettings(filterAiSettings(sealed), ownerLogin, cipher);
+}
+
+/**
+ * Removes one top-level property from a JSONC text by deleting only its own source range and one adjacent
+ * comma, so comments and layout around it survive. Returns the text unchanged when the key is absent.
+ */
+function removeJsoncProperty(text: string, key: string): string {
+    const root = parseTree(text, [], { allowTrailingComma: true });
+    const property = root?.type === 'object'
+        ? root.children?.find(child => child.children?.[0]?.value === key)
+        : undefined;
+    if (!property) {
+        return text;
+    }
+    let start = property.offset;
+    let end = property.offset + property.length;
+    // Whitespace and comments may sit between the property and its comma.
+    const following = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*,/.exec(text.slice(end));
+    if (following) {
+        end += following[0].length;
+    } else {
+        // Last property: drop the comma that precedes it instead, so the object stays valid.
+        const preceding = /,\s*$/.exec(text.slice(0, start));
+        if (preceding) {
+            start -= preceding[0].length;
+        }
+    }
+    return text.slice(0, start) + text.slice(end);
+}
+
+/** Opens a sealed value, or returns `undefined` when it cannot be opened (the caller decides what that means). */
+function openOrUndefined(value: unknown, aad: string, cipher: QaapSecretCipher): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    try {
+        return cipher.decrypt(value, aad);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Moves AI credentials that an earlier build left in the tenant's own `~/.theia/settings.json` into the
+ * sealed per-user file, then removes them from the Theia file (JSONC comments and formatting are kept).
+ *
+ * Runs only for an authenticated tenant backend with a configured key; without a key nothing moves.
+ * Idempotent: once moved, a key is no longer in the Theia file. Conservative on conflicts: when the per-user
+ * file already holds a different value (or an unreadable sealed one) the Theia copy stays where it is.
+ * Only `ai-features.*` credential keys are moved, because the per-user file stores nothing else.
+ */
+export function migrateTenantSharedCredentialSettings(ownerLogin: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): void {
+    const cipher = QaapSecretCipher.fromEnvironment(env);
+    if (!cipher.isEnabled()) {
+        return;
+    }
+    const sharedPath = path.join(homeDir, '.theia', 'settings.json');
+    if (!fs.existsSync(sharedPath)) {
+        return;
+    }
+    const text = fs.readFileSync(sharedPath, 'utf8');
+    const errors: ParseError[] = [];
+    const shared: unknown = parse(text, errors, { allowTrailingComma: true });
+    if (errors.length > 0 || !shared || typeof shared !== 'object' || Array.isArray(shared)) {
+        return;
+    }
+    const userPath = resolveUserSettingsFilePath(ownerLogin, homeDir);
+    const rawUser = fs.existsSync(userPath) ? parseSettingsJsonFile(userPath) : {};
+    const toSeal: Record<string, unknown> = {};
+    const toRemove: string[] = [];
+    for (const [key, value] of Object.entries(shared as Record<string, unknown>)) {
+        if (!isQaapAiSettingsPrefKey(key) || !isQaapSecretPreferenceId(key) || typeof value !== 'string' || !value.trim() || cipher.isEncrypted(value)) {
+            continue;
+        }
+        const existing = rawUser[key];
+        if (existing === undefined) {
+            toSeal[key] = value;
+            toRemove.push(key);
+            continue;
+        }
+        const existingValue = cipher.isEncrypted(existing)
+            ? openOrUndefined(existing, userSettingAad(ownerLogin, key), cipher)
+            : (typeof existing === 'string' ? existing : undefined);
+        if (existingValue === value) {
+            // Already moved by an earlier run that stopped before removing the Theia copy.
+            toRemove.push(key);
+        } else {
+            console.warn(`[qaap-agent-tasks] ${key} is set in both the tenant settings.json and the per-user settings (or the per-user copy cannot be opened); keeping the tenant copy`);
+        }
+    }
+    if (toRemove.length === 0) {
+        return;
+    }
+    if (Object.keys(toSeal).length > 0) {
+        writeUserSettingsToDisk(ownerLogin, toSeal, homeDir, env);
+    }
+    let edited = text;
+    for (const key of toRemove) {
+        edited = removeJsoncProperty(edited, key);
+    }
+    const tmpPath = `${sharedPath}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpPath, edited, { mode: 0o600 });
+    fs.renameSync(tmpPath, sharedPath);
+    try { fs.chmodSync(sharedPath, 0o600); } catch { /* best-effort */ }
 }
 
 /** Minimal preference seam: the runner passes the backend `PreferenceService`; tests may pass a stub. */
