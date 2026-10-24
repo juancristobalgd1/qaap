@@ -124,6 +124,48 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-btn')).to.not.equal(null);
     });
 
+    describe('backend update chip', () => {
+        const originalFetch = (global as { fetch?: unknown }).fetch;
+
+        afterEach(() => {
+            (global as { fetch?: unknown }).fetch = originalFetch;
+        });
+
+        async function renderWithRuntimeStatus(update: object): Promise<Element | null> {
+            (global as { fetch?: unknown }).fetch = async (input: string) => ({
+                ok: true,
+                json: async () => (String(input).includes('runtime/status') ? { runtime: {}, update } : { build: 'abc1234' }),
+            });
+            const sidebar = new MobileWorkHubSessionsSidebar({
+                renderSessionList: () => undefined,
+                onNewChat: () => undefined,
+                onClose: () => undefined,
+            });
+            document.body.append(sidebar.node);
+            await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
+            return sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-update');
+        }
+
+        it('shows a non-blocking chip with the reason and the builds while a newer build waits', async () => {
+            const chip = await renderWithRuntimeStatus({
+                backendBuild: 'old5678',
+                controlPlaneBuild: 'abc1234',
+                updatePending: true,
+                reason: 'agent-turns-running',
+            });
+            expect(chip).to.not.equal(null);
+            expect(chip?.textContent).to.equal('Update ready');
+            expect(chip?.getAttribute('role')).to.equal('status');
+            expect(chip?.getAttribute('title')).to.contain('Update ready — applies when your running tasks finish');
+            expect(chip?.getAttribute('title')).to.contain('Running build old5678; new build abc1234');
+        });
+
+        it('shows no chip when the backend already runs the deployed build', async () => {
+            const chip = await renderWithRuntimeStatus({ backendBuild: 'abc1234', controlPlaneBuild: 'abc1234', updatePending: false });
+            expect(chip).to.equal(null);
+        });
+    });
+
     it('restores the normal sidebar controls when Settings is hidden', () => {
         const currentWindow = (global as { window?: Window }).window;
         (global as { window?: Window }).window = {

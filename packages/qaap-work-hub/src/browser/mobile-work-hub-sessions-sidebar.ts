@@ -14,11 +14,25 @@ import { installMobileVerticalTouchScroll } from '@theia/qaap-mobile-shell/lib/b
 import { MobileHaptics } from '@theia/qaap-mobile-shell/lib/browser/mobile-haptics';
 import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { setQaapClientErrorBuild } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
-import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { fetchQaapAuthConfig, qaapAuthenticatedFetchInit } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
 import { TASK_TITLE_OVERFLOW_CLASS } from './mobile-projects-task-title-marquee';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
+
+/**
+ * `GET /qaap/api/cloud/runtime/status`, mirrored from `QAAP_TENANT_RUNTIME_API_PATH`: this package
+ * sits below `@theia/qaap-cloud-workspace` in the layer order and cannot import that constant.
+ */
+const QAAP_TENANT_RUNTIME_STATUS_PATH = '/qaap/api/cloud/runtime/status';
+
+/** Structural copy of the `update` field the control plane adds to the runtime status. */
+export interface MobileWorkHubBackendUpdateStatus {
+    readonly backendBuild?: string;
+    readonly controlPlaneBuild?: string;
+    readonly updatePending: boolean;
+    readonly reason?: 'agent-turns-running';
+}
 
 /** localStorage key — first open shows a one-time dismiss hint. */
 export const QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY = 'qaap.sessionsSidebar.dismissHintSeen';
@@ -128,6 +142,8 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly accountLabel: HTMLSpanElement;
     /** Short deployed git SHA from `/qaap/api/auth/config` (shown next to the account name). */
     protected deployedBuildSha: string | undefined;
+    /** Set while the user's backend waits for a newer build (see {@link loadBackendUpdateStatus}). */
+    protected backendUpdate: MobileWorkHubBackendUpdateStatus | undefined;
     protected readonly scrollHost: HTMLElement;
     protected readonly listHost: HTMLElement;
     protected settingsOptions: MobileWorkHubSettingsSidebarOptions | undefined;
@@ -454,14 +470,37 @@ export class MobileWorkHubSessionsSidebar {
         nameEl.textContent = name;
         this.accountLabel.append(nameEl);
         const build = this.deployedBuildSha?.trim();
-        if (!build) {
-            return;
+        if (build) {
+            const buildEl = document.createElement('span');
+            buildEl.className = 'theia-mobile-work-hub-sessions-sidebar-build';
+            buildEl.textContent = `(${build})`;
+            buildEl.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
+            this.accountLabel.append(buildEl);
         }
-        const buildEl = document.createElement('span');
-        buildEl.className = 'theia-mobile-work-hub-sessions-sidebar-build';
-        buildEl.textContent = `(${build})`;
-        buildEl.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
-        this.accountLabel.append(buildEl);
+        if (this.backendUpdate) {
+            this.accountLabel.append(this.createBackendUpdateChip(this.backendUpdate));
+        }
+    }
+
+    /**
+     * Non-blocking notice that a newer build waits for the user's backend. The full sentence and the
+     * running / new builds sit in the tooltip so the chip stays small next to the account name.
+     */
+    protected createBackendUpdateChip(update: MobileWorkHubBackendUpdateStatus): HTMLElement {
+        const message = update.reason === 'agent-turns-running'
+            ? nls.localize('qaap/sessionsSidebar/backendUpdateWhenTurnsFinish',
+                'Update ready — applies when your running tasks finish')
+            : nls.localize('qaap/sessionsSidebar/backendUpdateNextStart',
+                'Update ready — applies on your next session');
+        const versions = nls.localize('qaap/sessionsSidebar/backendUpdateVersions',
+            'Running build {0}; new build {1}',
+            update.backendBuild ?? '?', update.controlPlaneBuild ?? '?');
+        const chip = document.createElement('span');
+        chip.className = 'theia-mobile-work-hub-sessions-sidebar-update';
+        chip.setAttribute('role', 'status');
+        chip.textContent = nls.localize('qaap/sessionsSidebar/backendUpdateChip', 'Update ready');
+        chip.title = `${message}. ${versions}.`;
+        return chip;
     }
 
     /**
@@ -477,6 +516,27 @@ export class MobileWorkHubSessionsSidebar {
                 this.syncAccountLabel();
             }
         }).catch(() => undefined);
+        void this.loadBackendUpdateStatus();
+    }
+
+    /**
+     * Asks the control plane whether the user's backend still runs an older build than the one
+     * deployed. Shown as a quiet chip next to the account; a failed or old-server response shows nothing.
+     */
+    protected async loadBackendUpdateStatus(): Promise<void> {
+        try {
+            const response = await fetch(QAAP_TENANT_RUNTIME_STATUS_PATH, qaapAuthenticatedFetchInit());
+            if (!response.ok) {
+                return;
+            }
+            const body = await response.json() as { update?: MobileWorkHubBackendUpdateStatus };
+            this.backendUpdate = body.update?.updatePending ? body.update : undefined;
+            if (this.root.isConnected || this.accountLabel.isConnected) {
+                this.syncAccountLabel();
+            }
+        } catch {
+            // Informational only: the sidebar works without it.
+        }
     }
 
     /** Evita ghost-tap en la posición del botón de cerrar al abrir. */

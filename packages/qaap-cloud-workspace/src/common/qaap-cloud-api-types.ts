@@ -63,6 +63,21 @@ export interface QaapTenantRuntimeStatus {
     readonly reaperEnabled: boolean;
 }
 
+/**
+ * Whether the signed-in user's backend runs an older build than the control plane. Reported in
+ * `GET {QAAP_TENANT_RUNTIME_API_PATH}/status` next to `runtime`; `updatePending` is true while a
+ * newer build waits to be applied, and `reason` says why it has not been applied yet.
+ */
+export interface QaapTenantBackendUpdateStatus {
+    /** `QAAP_BUILD_SHA` the user's running backend reported; undefined when not known in memory. */
+    readonly backendBuild?: string;
+    /** `QAAP_BUILD_SHA` of the control plane serving this request. */
+    readonly controlPlaneBuild?: string;
+    readonly updatePending: boolean;
+    /** Only `agent-turns-running`: the stale backend is kept until its running agent turns finish. */
+    readonly reason?: 'agent-turns-running';
+}
+
 export interface QaapTenantRuntimeMetrics {
     readonly scans: number;
     readonly candidates: number;

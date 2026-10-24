@@ -260,7 +260,8 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
                 state: this.docker.isEnabled() ? 'destroyed' : 'active',
                 reaperEnabled: this.reaper.isEnabled(),
             };
-        res.json({ runtime });
+        // In-memory only: the control plane already knows the backend build and any deferred recreation.
+        res.json({ runtime, update: this.docker.getTenantBackendUpdateStatus(ownerLogin) });
     }
 
     protected handleMetrics(req: Request, res: Response): void {
