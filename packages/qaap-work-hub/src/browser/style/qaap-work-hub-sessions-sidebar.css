@@ -546,6 +546,21 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   user-select: text;
 }
 
+/* Quiet notice: a newer backend build waits for the user's running turns to finish. */
+.theia-mobile-work-hub-sessions-sidebar-update {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--theia-editorInfo-foreground, var(--theia-foreground)) 45%, transparent);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--theia-editorInfo-foreground, var(--theia-foreground));
+  cursor: help;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-mobile-work-hub-sessions-sidebar-account-btn {
   box-sizing: border-box;
   display: flex;

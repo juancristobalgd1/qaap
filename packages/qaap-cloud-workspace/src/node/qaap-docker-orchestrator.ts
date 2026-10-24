@@ -28,8 +28,9 @@ import {
     resolveQaapDockerNodes,
     type QaapDockerNodeConfig,
 } from './qaap-docker-control-plane';
-import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
+import { QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantBackendUpdateStatus } from '../common/qaap-cloud-api-types';
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
+import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
@@ -394,6 +395,19 @@ export class QaapDockerOrchestrator {
         void this.ensureTenantBackend(ownerLogin, tenantRootHostPath).catch(error => {
             console.warn(`[qaap-docker] Background warm-up of the tenant backend for ${ownerLogin} failed:`,
                 error instanceof Error ? error.message : String(error));
+        });
+    }
+
+    /**
+     * Build status of the tenant's running backend, from in-memory state only (no Docker call): the
+     * build its last ready health reported and whether a recreation is deferred for running turns.
+     */
+    getTenantBackendUpdateStatus(ownerLogin: string): QaapTenantBackendUpdateStatus {
+        const tenant = ownerLogin.trim().toLowerCase();
+        return computeTenantBackendUpdateStatus({
+            backendBuild: tenant ? this.tenantBackendBuilds.get(tenant) : undefined,
+            controlPlaneBuild: process.env.QAAP_BUILD_SHA,
+            deferred: !!tenant && this.deferredTenantBackendRecreations.has(tenant),
         });
     }
 
