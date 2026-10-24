@@ -423,7 +423,7 @@ the Work Hub UI with both previews.
 | `QAAP_TASK_SANDBOX_ARCHIVE_TTL_MS` | 86400000 | Archives older than this are reaped at boot |
 | `QAAP_TASK_SANDBOX_OWNER` | host name | Owner label; the boot reaper only removes this owner's sandboxes |
 | `QAAP_TASK_SANDBOX_NETWORK` | `bridge` | Docker network for sandboxes |
-| `QAAP_TASK_SANDBOX_MEMORY` / `_CPUS` / `_PIDS` | `2g` / `2` / `1024` | Limits |
+| `QAAP_TASK_SANDBOX_MEMORY` / `_CPUS` / `_PIDS` | `4g` / `2` / `1024` | Limits |
 | `QAAP_TASK_SANDBOX_HOME_DIRS` | agent credential dirs | Comma list under `$HOME` mounted rw |
 | `QAAP_TASK_SANDBOX_TOOLCHAIN` | unset | Host dir mounted ro at `/opt/qaap-agent` (its `bin/` first on PATH) |
 | `QAAP_TASK_SANDBOX_MAX_PER_TENANT` | 8 | Broker mode: sandboxes per tenant (every state but archives) |
