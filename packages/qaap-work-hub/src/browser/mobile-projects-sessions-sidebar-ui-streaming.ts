@@ -159,6 +159,30 @@ export function createSessionsSidebarSkeletonExtracted(rows = 4): HTMLElement {
     return skeleton;
 }
 
+/**
+ * Empty state after the snapshot retry budget is exhausted with no projects to show.
+ * Retry re-primes the history snapshot; the progress bar takes over while it runs.
+ */
+function createSessionsSidebarHistoryRetryExtracted(ctx: MobileProjectsSessionsSidebarUiContext): HTMLElement {
+    return createSessionsSidebarEmptyState({
+        icon: 'codicon-warning',
+        title: nls.localize('qaap/sessionsSidebar/historyRetryTitle', 'Could not load session history'),
+        hint: nls.localize('qaap/sessionsSidebar/historyRetryHint', 'Check your connection and try again.'),
+        action: {
+            label: nls.localize('qaap/sessionsSidebar/historyRetry', 'Retry'),
+            onClick: () => {
+                const conversations = ctx.host.conversations;
+                if (!conversations) {
+                    return;
+                }
+                conversations.snapshotState = 'reconnecting';
+                conversations.emitConversationChange({ kind: 'snapshot' });
+                conversations.schedulePrimeFromAll();
+            },
+        },
+    });
+}
+
 export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSessionsSidebarUiContext, host: HTMLElement): void {
         // Empty first paints need subscriptions too; otherwise the first snapshot
         // cannot replace the loading/empty state until a later navigation.
@@ -172,9 +196,11 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
         const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
         const rawQuery = (ctx.host.query ?? '').trim();
         const query = rawQuery.toLowerCase();
+        host.removeAttribute('aria-busy');
         if (snapshotState === 'loading' || snapshotState === 'reconnecting') {
             // A thin indeterminate bar on the separator under the nav instead of a text line:
             // loading / reconnecting is transient and should not take over the list.
+            host.setAttribute('aria-busy', 'true');
             const progress = document.createElement('div');
             progress.className = 'theia-mobile-work-hub-sessions-sidebar-progress';
             progress.setAttribute('role', 'progressbar');
@@ -187,16 +213,10 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSes
                 host.append(createSessionsSidebarProjectsHeadExtracted(ctx), createSessionsSidebarSkeletonExtracted());
                 return;
             }
-        } else if (snapshotState === 'error') {
-            const status = document.createElement('p');
-            status.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
-            status.setAttribute('role', 'status');
-            status.textContent = nls.localize('qaap/sessionsSidebar/historyUnavailable', 'Session history unavailable. Reconnecting…');
-            host.append(status);
-            if (projects.length === 0) {
-                host.append(createSessionsSidebarProjectsHeadExtracted(ctx));
-                return;
-            }
+        } else if (snapshotState === 'error' && projects.length === 0) {
+            // Persistent failure with nothing to show: a discreet empty state with Retry.
+            host.append(createSessionsSidebarProjectsHeadExtracted(ctx), createSessionsSidebarHistoryRetryExtracted(ctx));
+            return;
         }
         const signedIn = typeof ctx.readQaapSignedIn === 'function' ? ctx.readQaapSignedIn() : readQaapSignedIn();
         if (projects.length === 0) {
