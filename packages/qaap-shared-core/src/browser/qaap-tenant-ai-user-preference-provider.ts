@@ -140,6 +140,14 @@ export class QaapTenantAiUserPreferenceProvider implements PreferenceProvider {
         return this.delegate.getConfigUri?.(resourceUri, sectionName);
     }
 
+    /**
+     * The upstream User provider's per-file providers map. Theia's api-tests (launch-preferences) read
+     * `userPreferences['providers']` directly, so the wrapper must stay transparent for it.
+     */
+    protected get providers(): unknown {
+        return (this.delegate as unknown as { providers?: unknown }).providers;
+    }
+
     getContainingConfigUri(resourceUri?: string, sectionName?: string): URI | undefined {
         return this.delegate.getContainingConfigUri?.(resourceUri, sectionName);
     }

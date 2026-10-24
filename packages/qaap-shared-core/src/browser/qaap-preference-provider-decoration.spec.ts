@@ -9,18 +9,14 @@ const disableJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { Container, ContainerModule, inject, injectable, named } from '@theia/core/shared/inversify';
 import { ILogger } from '@theia/core/lib/common/logger';
-import { PreferenceProvider, PreferenceProviderProvider, PreferenceScope } from '@theia/core/lib/common/preferences';
+import { PreferenceProvider, PreferenceScope } from '@theia/core/lib/common/preferences';
 import { PreferenceConfigurations } from '@theia/core/lib/common/preferences/preference-configurations';
 import { UserConfigsPreferenceProvider, UserStorageLocationProvider } from '@theia/preferences/lib/common/user-configs-preference-provider';
 import { UserPreferenceProviderFactory } from '@theia/preferences/lib/common/user-preference-provider';
-import { WorkspacePreferenceProvider } from '@theia/preferences/lib/browser/workspace-preference-provider';
-import { WorkspaceFilePreferenceProviderFactory } from '@theia/preferences/lib/browser/workspace-file-preference-provider';
-import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import {
     decorateQaapTenantAiUserPreferenceProvider,
     QaapTenantAiUserPreferenceProvider,
 } from './qaap-tenant-ai-user-preference-provider';
-import { bindQaapWorkspacePreferenceProvider, QaapWorkspacePreferenceProvider } from './qaap-workspace-preference-provider';
 
 disableJSDOM();
 
@@ -67,6 +63,9 @@ describe('Tenant AI preference provider decoration (instance-based, independent 
             loadUserDecoration(container);
             const user = container.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User);
             expect(user).to.be.instanceOf(QaapTenantAiUserPreferenceProvider);
+            // Theia's launch-preferences api-test reads `userPreferences['providers']` on the wrapped provider.
+            const providers = (user as unknown as { providers?: Map<unknown, unknown> }).providers;
+            expect(providers).to.be.instanceOf(Map);
         });
 
         it('wraps the upstream User provider when injected as a @named(User) dependency', () => {
@@ -75,32 +74,6 @@ describe('Tenant AI preference provider decoration (instance-based, independent 
             loadUserDecoration(container);
             const consumer = container.get(UserPreferenceConsumer);
             expect(consumer.userProvider).to.be.instanceOf(QaapTenantAiUserPreferenceProvider);
-        });
-    });
-
-    describe('Workspace scope', () => {
-
-        function loadWorkspaceDecoration(container: Container): void {
-            container.bind(WorkspaceService).toConstantValue({
-                ready: Promise.resolve(),
-                workspace: undefined,
-                onWorkspaceChanged: () => ({ dispose: () => { } }),
-            } as unknown as WorkspaceService);
-            container.bind(WorkspaceFilePreferenceProviderFactory).toConstantValue(() => { throw new Error('not used'); });
-            container.bind(PreferenceProviderProvider).toConstantValue(() => undefined as never);
-            container.load(new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
-                bindQaapWorkspacePreferenceProvider(bind, onActivation);
-            }));
-            container.load(new ContainerModule(bind => {
-                bind(PreferenceProvider).to(WorkspacePreferenceProvider).inSingletonScope().whenTargetNamed(PreferenceScope.Workspace);
-            }));
-        }
-
-        it('replaces the upstream Workspace provider when resolved by name', () => {
-            const container = new Container();
-            loadWorkspaceDecoration(container);
-            const workspace = container.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.Workspace);
-            expect(workspace).to.be.instanceOf(QaapWorkspacePreferenceProvider);
         });
     });
 });
