@@ -88,6 +88,9 @@ jobs:
       # daemon with `docker save | docker load` instead of pulling the pinned digest.
       - name: Tenant image seed regression
         run: bash scripts/qaap-vps-tenant-image.test.sh
+      # Fails if the optional read-only GHCR login leaks the token into argv or logs, or stops logging out.
+      - name: Optional GHCR read-auth regression
+        run: bash scripts/qaap-ghcr-read-auth.test.sh
       # Fails if the one-command VPS rollback stops pinning the retained release by digest and commit.
       - name: VPS rollback regression
         run: bash scripts/qaap-vps-rollback.test.sh
