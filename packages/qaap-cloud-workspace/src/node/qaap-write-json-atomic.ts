@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -26,12 +27,68 @@ export interface WriteJsonAtomicOptions {
     readonly trailingNewline?: boolean;
 }
 
+/** Exclusive-create attempts before a temp-name collision is reported to the caller. */
+const MAX_TEMP_NAME_ATTEMPTS = 3;
+
+/** Grace period so a temp file written just before this process started is not mistaken for a live one. */
+const PROCESS_START_MARGIN_MS = 1000;
+
 let atomicWriteCounter = 0;
 
-/** pid + a per-process counter so two concurrent writes to the same file never collide on the temp name. */
+/**
+ * pid + a per-process counter + a random suffix. The counter restarts at 0 on every boot, and a
+ * container restarts with the same pid (often 7), so the random part keeps a leftover temp from an
+ * earlier boot from ever colliding with a new write.
+ */
 function tempPathFor(filePath: string): string {
     atomicWriteCounter = (atomicWriteCounter + 1) % 1_000_000;
-    return `${filePath}.${process.pid}.${atomicWriteCounter}.tmp`;
+    return `${filePath}.${process.pid}.${atomicWriteCounter}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+}
+
+/** Opens a fresh temp file exclusively, choosing another name when the chosen one already exists. */
+async function openTempFile(filePath: string, mode: number | undefined): Promise<{ readonly tmp: string; readonly handle: fsp.FileHandle }> {
+    for (let attempt = 1; ; attempt++) {
+        const tmp = tempPathFor(filePath);
+        try {
+            return { tmp, handle: await fsp.open(tmp, 'wx', mode) };
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= MAX_TEMP_NAME_ATTEMPTS) {
+                throw error;
+            }
+        }
+    }
+}
+
+/** Synchronous counterpart of {@link openTempFile}. */
+function openTempFileSync(filePath: string, mode: number | undefined): { readonly tmp: string; readonly fd: number } {
+    for (let attempt = 1; ; attempt++) {
+        const tmp = tempPathFor(filePath);
+        try {
+            return { tmp, fd: fs.openSync(tmp, 'wx', mode) };
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= MAX_TEMP_NAME_ATTEMPTS) {
+                throw error;
+            }
+        }
+    }
+}
+
+/**
+ * Parses the pid out of a temp-file middle segment: `{pid}.{counter}` (format before the random
+ * suffix) or `{pid}.{counter}.{hex}`. Returns undefined for anything else.
+ */
+function tempFilePid(middle: string): number | undefined {
+    const match = /^([1-9]\d*)\.\d+(?:\.[0-9a-f]{8})?$/.exec(middle);
+    if (!match) {
+        return undefined;
+    }
+    const pid = Number(match[1]);
+    return Number.isSafeInteger(pid) && pid <= 0x7fffffff ? pid : undefined;
+}
+
+/** Wall-clock time at which this process started. */
+function processStartedAtMs(): number {
+    return Date.now() - process.uptime() * 1000;
 }
 
 function serialize(value: unknown, options?: WriteJsonAtomicOptions): string {
@@ -40,11 +97,13 @@ function serialize(value: unknown, options?: WriteJsonAtomicOptions): string {
 }
 
 export async function writeJsonAtomic(filePath: string, value: unknown, options?: WriteJsonAtomicOptions): Promise<void> {
-    const tmp = tempPathFor(filePath);
+    let tmp = '';
     let created = false;
     try {
         const content = serialize(value, options);
-        const handle = await fsp.open(tmp, 'wx', options?.mode);
+        const opened = await openTempFile(filePath, options?.mode);
+        tmp = opened.tmp;
+        const handle = opened.handle;
         created = true;
         try {
             await handle.writeFile(content, 'utf8');
@@ -100,12 +159,17 @@ export async function sweepOrphanedTempFiles(filePath: string): Promise<void> {
         if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) {
             return;
         }
-        // entry pattern: {base}.{pid}.{counter}.tmp
+        // entry pattern: {base}.{pid}.{counter}[.{hex}].tmp
         const middle = entry.slice(prefix.length, -suffix.length);
-        if (!isConfirmedOrphan(middle)) {
+        const pid = tempFilePid(middle);
+        if (pid === undefined) {
             return;
         }
         try {
+            const { mtimeMs } = await fsp.stat(path.join(dir, entry));
+            if (!isConfirmedOrphan(pid, mtimeMs)) {
+                return;
+            }
             await fsp.unlink(path.join(dir, entry));
         } catch {
             // best-effort — race with another sweeper or a concurrent writer
@@ -133,10 +197,15 @@ export function sweepOrphanedTempFilesSync(filePath: string): void {
             continue;
         }
         const middle = entry.slice(prefix.length, -suffix.length);
-        if (!isConfirmedOrphan(middle)) {
+        const pid = tempFilePid(middle);
+        if (pid === undefined) {
             continue;
         }
         try {
+            const { mtimeMs } = fs.statSync(path.join(dir, entry));
+            if (!isConfirmedOrphan(pid, mtimeMs)) {
+                continue;
+            }
             fs.unlinkSync(path.join(dir, entry));
         } catch {
             // best-effort
@@ -144,14 +213,15 @@ export function sweepOrphanedTempFilesSync(filePath: string): void {
     }
 }
 
-/** Signal zero checks existence without terminating or signalling the writer. */
-function isConfirmedOrphan(middle: string): boolean {
-    if (!/^[1-9]\d*\.\d+$/.test(middle)) {
-        return false;
-    }
-    const pid = Number(middle.split('.')[0]);
-    if (!Number.isSafeInteger(pid) || pid > 0x7fffffff || pid === process.pid) {
-        return false;
+/**
+ * Decides whether a temp file belongs to a dead writer. A temp file of a live other pid is kept.
+ * A temp file carrying this process's own pid is kept too, unless it predates this process's start:
+ * then an earlier boot with the same pid (a restarted container) wrote it and it can never be renamed.
+ * Signal zero checks existence without terminating or signalling the writer.
+ */
+function isConfirmedOrphan(pid: number, mtimeMs: number): boolean {
+    if (pid === process.pid) {
+        return mtimeMs < processStartedAtMs() - PROCESS_START_MARGIN_MS;
     }
     try {
         process.kill(pid, 0);
@@ -162,11 +232,13 @@ function isConfirmedOrphan(middle: string): boolean {
 }
 
 export function writeJsonAtomicSync(filePath: string, value: unknown, options?: WriteJsonAtomicOptions): void {
-    const tmp = tempPathFor(filePath);
+    let tmp = '';
     let created = false;
     try {
         const content = serialize(value, options);
-        const fd = fs.openSync(tmp, 'wx', options?.mode);
+        const opened = openTempFileSync(filePath, options?.mode);
+        tmp = opened.tmp;
+        const fd = opened.fd;
         created = true;
         try {
             fs.writeFileSync(fd, content, 'utf8');

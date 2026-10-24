@@ -48,6 +48,27 @@ describe('Qaap task storage recovery gate', () => {
         expect(count.called).to.equal(true);
     });
 
+    it('retries a failed write on its own so admission reopens without another caller', async () => {
+        const clock = sinon.useFakeTimers({ toFake: ['setTimeout'] });
+        const runner = Object.create(RecoveryRunner.prototype) as RecoveryRunner;
+        Object.assign(runner, { tasks: new Map(), queuedCreateRequests: new Map(), recoveryState: 'ready' });
+        sinon.stub(fsp, 'mkdir').resolves();
+        sinon.stub(fsp, 'chmod').resolves();
+        const write = sinon.stub(atomic, 'writeJsonAtomic');
+        write.onFirstCall().rejects(Object.assign(new Error('temp exists'), { code: 'EEXIST' }));
+        write.onSecondCall().resolves();
+        const warn = sinon.stub(console, 'warn');
+        sinon.stub(runner as unknown as { countRunningTasks(): number }, 'countRunningTasks').returns(0);
+        Object.assign(runner, { maxConcurrentAgents: () => 1 });
+        await runner.save();
+        expect(runner.storageHealth().writeFailed).to.equal(true);
+        expect(String(warn.firstCall.args[0])).to.contain('temp exists');
+        await clock.tickAsync(5_000);
+        await runner.persistChain;
+        expect(write.callCount).to.equal(2);
+        expect(runner.storageHealth()).to.deep.equal({ ready: true, recovery: 'ready', writeFailed: false });
+    });
+
     it('blocks creation and writes after corrupt or unreadable storage', async () => {
         for (const failure of ['invalid JSON', Object.assign(new Error('Denied'), { code: 'EACCES' })]) {
             const runner = Object.create(RecoveryRunner.prototype) as RecoveryRunner;

@@ -291,7 +291,11 @@ describe('QaapAgentTaskEndpoint queue admission', () => {
                     authenticate: () => ({ kind: 'authenticated', userLogin: 'alice' }),
                     resolveOwnedRepositoryCwd: () => ({ kind: 'ok', cwd: '/repo' })
                 },
-                runner: { defaultAgentFresh: async () => 'shell', create: () => { throw error; } }
+                runner: {
+                    defaultAgentFresh: async () => 'shell',
+                    storageHealth: () => ({ ready: true, recovery: 'ready', writeFailed: false }),
+                    create: () => { throw error; }
+                }
             });
             let status = 0;
             let payload: unknown;
@@ -306,6 +310,72 @@ describe('QaapAgentTaskEndpoint queue admission', () => {
             expect(payload).to.deep.equal({ error: error.message });
         }
     });
+
+    it('retries a failed storage write once before creating: 201 when the retry recovers, 503 when it does not', async () => {
+        for (const [retryRecovers, expectedStatus] of [[true, 201], [false, 503]] as const) {
+            const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+            let writeFailed = true;
+            let retries = 0;
+            Object.assign(endpoint, {
+                auth: {
+                    authenticate: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+                    resolveOwnedRepositoryCwd: () => ({ kind: 'ok', cwd: '/repo' })
+                },
+                runner: {
+                    defaultAgentFresh: async () => 'shell',
+                    storageHealth: () => ({ ready: !writeFailed, recovery: 'ready', writeFailed }),
+                    retryStorage: async () => {
+                        retries++;
+                        writeFailed = !retryRecovers;
+                        return { ready: !writeFailed, recovery: 'ready', writeFailed };
+                    },
+                    create: () => {
+                        if (writeFailed) {
+                            throw new QaapAgentStorageUnavailableError();
+                        }
+                        return { id: 'task-1' };
+                    }
+                }
+            });
+            let status = 0;
+            const response = {
+                status: (code: number) => { status = code; return response; },
+                json: () => response
+            };
+            await endpoint.createForTest({
+                body: { cwd: '/repo', command: 'echo test' }, header: () => undefined
+            } as unknown as Request, response as unknown as Response);
+            expect(retries).to.equal(1);
+            expect(status).to.equal(expectedStatus);
+        }
+    });
+
+    it('does not retry storage when writes are healthy', async () => {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        let retries = 0;
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+                resolveOwnedRepositoryCwd: () => ({ kind: 'ok', cwd: '/repo' })
+            },
+            runner: {
+                defaultAgentFresh: async () => 'shell',
+                storageHealth: () => ({ ready: true, recovery: 'ready', writeFailed: false }),
+                retryStorage: async () => { retries++; return { ready: true, recovery: 'ready', writeFailed: false }; },
+                create: () => ({ id: 'task-2' })
+            }
+        });
+        let status = 0;
+        const response = {
+            status: (code: number) => { status = code; return response; },
+            json: () => response
+        };
+        await endpoint.createForTest({
+            body: { cwd: '/repo', command: 'echo test' }, header: () => undefined
+        } as unknown as Request, response as unknown as Response);
+        expect(retries).to.equal(0);
+        expect(status).to.equal(201);
+    });
 });
 
 describe('QaapAgentTaskEndpoint standalone model fallback', () => {
@@ -319,6 +389,7 @@ describe('QaapAgentTaskEndpoint standalone model fallback', () => {
             },
             runner: {
                 defaultAgentFresh: async () => 'qaiq',
+                storageHealth: () => ({ ready: true, recovery: 'ready', writeFailed: false }),
                 create: () => ({ id: 'task-1', cwd: '/repo', state: 'running' }),
             },
             modelFallback: {
@@ -427,7 +498,11 @@ describe('QaapAgentTaskEndpoint project clone missing from disk', () => {
                 denyForbidden: (res: Response) => { res.status(403).json({ error: 'Forbidden' }); return false; },
             },
             cloneRecovery: { resolveOwnedRepositoryCwd: async () => recovered },
-            runner: { defaultAgentFresh: async () => 'shell', create: (request: unknown) => { created.push(request); return { id: 't1' }; } },
+            runner: {
+                defaultAgentFresh: async () => 'shell',
+                storageHealth: () => ({ ready: true, recovery: 'ready', writeFailed: false }),
+                create: (request: unknown) => { created.push(request); return { id: 't1' }; }
+            },
         });
         let status = 0;
         let payload: unknown;
