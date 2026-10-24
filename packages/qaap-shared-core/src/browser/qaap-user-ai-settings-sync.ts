@@ -46,7 +46,10 @@ export class QaapUserAiSettingsSyncContribution implements FrontendApplicationCo
         setAgentModelStorageUserLogin(readQaapAuthUser()?.login);
         const tenantProvider = this.tenantProvider();
         if (this.shouldInterceptWrites() && !tenantProvider) {
-            console.warn('[qaap-user-ai-settings] tenant AI preference provider is not bound; AI settings are not persisted per user.');
+            // Isolation failure: a tenant's AI settings would be written to the process-wide User settings.json
+            // shared by every tenant on this backend. Reported as an error so it cannot pass unnoticed.
+            console.error('[qaap-user-ai-settings] ISOLATION FAILURE: tenant AI preference provider is not wrapped; '
+                + 'AI settings writes go to the shared User scope and are not persisted per user.');
         }
         void this.hydrateFromServer();
         tenantProvider?.onDidChangeTenantSetting(() => this.schedulePush());

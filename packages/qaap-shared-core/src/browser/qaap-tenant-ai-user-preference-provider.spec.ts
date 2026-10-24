@@ -53,6 +53,10 @@ class FakeSharedUserProvider implements PreferenceProvider {
     }
 }
 
+/** A different class for the Workspace binding: the decorator identifies the User provider by its class. */
+@injectable()
+class FakeSharedWorkspaceProvider extends FakeSharedUserProvider { }
+
 describe('QaapTenantAiUserPreferenceProvider', () => {
 
     let tenant: boolean;
@@ -122,8 +126,9 @@ describe('QaapTenantAiUserPreferenceProvider', () => {
         const container = new Container();
         container.load(new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
             bind(PreferenceProvider).to(FakeSharedUserProvider).inSingletonScope().whenTargetNamed(PreferenceScope.User);
-            bind(PreferenceProvider).to(FakeSharedUserProvider).inSingletonScope().whenTargetNamed(PreferenceScope.Workspace);
-            decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true);
+            bind(PreferenceProvider).to(FakeSharedWorkspaceProvider).inSingletonScope().whenTargetNamed(PreferenceScope.Workspace);
+            decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true,
+                provider => provider instanceof FakeSharedUserProvider && !(provider instanceof FakeSharedWorkspaceProvider));
         }));
         const user = container.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User);
         expect(user).to.be.instanceOf(QaapTenantAiUserPreferenceProvider);
@@ -136,7 +141,7 @@ describe('QaapTenantAiUserPreferenceProvider', () => {
             const container = new Container();
             container.load(new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
                 bind(PreferenceProvider).to(FakeSharedUserProvider).inSingletonScope().whenTargetNamed(PreferenceScope.User);
-                decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true);
+                decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true, provider => provider instanceof FakeSharedUserProvider);
             }));
             return container;
         };
