@@ -17,16 +17,71 @@ on:
     # Default types plus `labeled`, so adding the `ci:full` label starts the windows/macOS legs.
     types: [opened, synchronize, reopened, labeled]
 
-# A new push to a PR cancels that PR's previous run. Every non-PR run (master push,
-# workflow_dispatch) gets its own group via run_id, so it is never cancelled or replaced.
+# Why `opened` and `labeled` are split out. `gh pr create --label ci:full` creates the PR and then
+# adds the label in a second call, so the `opened` payload usually has NO labels. The `labeled`
+# event (ci:full) starts the real run about 1 s later. Both runs used to share the PR group, and
+# the first was CANCELLED, which left the required checks blocked (PR #352, #355, #356).
+#
+# Groups:
+#   - `opened` and `labeled` with a label other than ci:full: own group (run_id), never cancel
+#     and never cancelled. They do not cancel or get cancelled by the real run for the PR.
+#   - synchronize, reopened and labeled with ci:full: PR group, cancel-in-progress. A new push
+#     cancels the PR's previous real run.
+#   - master pushes and workflow_dispatch: own group (run_id), never cancelled.
+#
+# The `gate` job decides whether a run is redundant. An `opened` run is redundant when the PR has
+# ci:full right now (read through the API, not the payload). A `labeled` run is redundant when its
+# label is not ci:full. Redundant runs skip every job (`needs: gate`, `if:`), so no work doubles.
+# Race: if the gate reads the labels before `gh pr create` adds ci:full, the `opened` run does the
+# full work too. That is a duplicate, but it is never cancelled. If the API call fails the gate
+# answers redundant=false and warns: a duplicate is cheaper than losing CI.
+# Skipped checks count as satisfied for required checks, so "Lint" and "Build and Test (...)" keep
+# reporting. `concurrency` cannot read job outputs, so its condition repeats the event rules.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ (github.event.action == 'opened' || (github.event.action == 'labeled' && github.event.label.name != 'ci:full')) && github.run_id || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'opened' && !(github.event.action == 'labeled' && github.event.label.name != 'ci:full') }}
 
 jobs:
 
+  gate:
+    name: CI gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      redundant: ${{ steps.decide.outputs.redundant }}
+    steps:
+      - id: decide
+        env:
+          EVENT_ACTION: ${{ github.event.action }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          redundant=false
+          if [[ "${EVENT_ACTION}" == "labeled" ]]; then
+            if [[ "${LABEL_NAME}" != "ci:full" ]]; then
+              redundant=true
+            fi
+          elif [[ "${EVENT_ACTION}" == "opened" ]]; then
+            if labels="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" --paginate --jq '.[].name')"; then
+              if grep -qx 'ci:full' <<< "${labels}"; then
+                redundant=true
+              fi
+            else
+              echo "::warning::Could not read the PR labels; running CI in full to avoid losing it."
+            fi
+          fi
+          echo "redundant=${redundant}" >> "$GITHUB_OUTPUT"
+
   lint:
     name: Lint
+    needs: gate
+    if: needs.gate.outputs.redundant != 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
@@ -64,6 +119,8 @@ jobs:
 
   build:
     name: Build and Test (${{ matrix.os }}, node-${{ matrix.node }})
+    needs: gate
+    if: needs.gate.outputs.redundant != 'true'
 
     strategy:
       fail-fast: false
