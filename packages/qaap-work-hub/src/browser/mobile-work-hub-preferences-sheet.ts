@@ -25,6 +25,11 @@ import {
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
+import {
+    hasPreferencesContent,
+    isPreferencesFilterApplied,
+    WORK_HUB_PREFERENCES_APPLYING_QUERY_CLASS,
+} from './mobile-work-hub-preferences-filter';
 import type { QaapAppearanceMode } from '@theia/qaap-shared-core/lib/common/qaap-appearance-mode';
 import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
 import type {
@@ -433,8 +438,7 @@ export class MobileWorkHubPreferencesSheet {
             if (this.isCustomSettingsSection(section.id)) {
                 this.showCustomSettingsSection(section.id);
             } else {
-                this.showPreferencesSection(widget);
-                await this.applyPreferencesQuery(widget, typeof query === 'string' ? query : section.query);
+                await this.showPreferencesSectionFiltered(widget, typeof query === 'string' ? query : section.query);
                 if (aiFeatures && this.visible) {
                     this.lockAiFeaturesSearch(widget, WORK_HUB_AI_FEATURES_PREFERENCES_QUERY);
                 }
@@ -456,6 +460,7 @@ export class MobileWorkHubPreferencesSheet {
             this.windowResizeListener = undefined;
         }
         this.unobserveWidgetHostResize();
+        this.widgetHost.classList.remove(WORK_HUB_PREFERENCES_APPLYING_QUERY_CLASS);
         const lockedWidget = this.lockedAiFeaturesQuery ? this.preferencesWidget : undefined;
         this.unlockAiFeaturesSearch();
         void (lockedWidget ?? this.preferencesWidget)?.setSearchTerm('');
@@ -684,8 +689,7 @@ export class MobileWorkHubPreferencesSheet {
             if (this.isCustomSettingsSection(section.id)) {
                 this.showCustomSettingsSection(section.id);
             } else {
-                this.showPreferencesSection(this.preferencesWidget);
-                await this.applyPreferencesQuery(this.preferencesWidget, section.query);
+                await this.showPreferencesSectionFiltered(this.preferencesWidget, section.query);
             }
         }
     }
@@ -701,6 +705,20 @@ export class MobileWorkHubPreferencesSheet {
         this.widgetHost.hidden = false;
         this.attachWidget(widget);
         this.observeWidgetHostResize(widget, this.widgetHost);
+    }
+
+    /**
+     * Attaches the preferences widget and applies the section query. The host is covered until the
+     * filter has taken effect, so the unfiltered editor (Commonly Used, files.*, editor.*) never shows.
+     */
+    protected async showPreferencesSectionFiltered(widget: PreferencesWidget, query: string): Promise<void> {
+        this.widgetHost.classList.add(WORK_HUB_PREFERENCES_APPLYING_QUERY_CLASS);
+        try {
+            this.showPreferencesSection(widget);
+            await this.applyPreferencesQuery(widget, query);
+        } finally {
+            this.widgetHost.classList.remove(WORK_HUB_PREFERENCES_APPLYING_QUERY_CLASS);
+        }
     }
 
     protected showCustomSettingsSection(sectionId: string): void {
@@ -1455,7 +1473,7 @@ export class MobileWorkHubPreferencesSheet {
             const searchInput = widget.node.querySelector<HTMLInputElement>(`#${CSS.escape(searchId)}`);
             if (searchInput) {
                 await this.commitPreferencesSearch(widget, searchInput, query);
-                if (await this.waitForPreferencesContent(widget)) {
+                if (await this.waitForPreferencesContent(widget, query)) {
                     this.scheduleLayoutSync(widget);
                     return;
                 }
@@ -1463,7 +1481,7 @@ export class MobileWorkHubPreferencesSheet {
             await animationFrame();
         }
         await this.commitPreferencesSearch(widget, undefined, query);
-        await this.waitForPreferencesContent(widget);
+        await this.waitForPreferencesContent(widget, query);
         this.scheduleLayoutSync(widget);
     }
 
@@ -1487,20 +1505,22 @@ export class MobileWorkHubPreferencesSheet {
         }
     }
 
-    protected async waitForPreferencesContent(widget: PreferencesWidget): Promise<boolean> {
+    /**
+     * Waits until the query's filter is visible in the editor (see {@link isPreferencesFilterApplied}).
+     * When it does not settle within the frame budget, falls back to "any content rendered" so the
+     * caller does not recommit the query in a loop.
+     */
+    protected async waitForPreferencesContent(widget: PreferencesWidget, query: string): Promise<boolean> {
         for (let attempt = 0; attempt < 30; attempt++) {
             if (!this.visible) {
                 return false;
             }
-            const editor = widget.node.querySelector('.preferences-editor-widget');
-            const hasPreferences = !!editor?.querySelector('.single-pref, .settings-section-category-title');
-            const hasNoResults = widget.node.querySelector('.settings-main.no-results') !== null;
-            if (hasPreferences || hasNoResults) {
+            if (isPreferencesFilterApplied(widget.node, query)) {
                 return true;
             }
             await animationFrame();
         }
-        return false;
+        return hasPreferencesContent(widget.node);
     }
 
     /**

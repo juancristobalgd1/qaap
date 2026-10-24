@@ -14213,3 +14213,22 @@ body.theia-mod-work-hub-settings-resizing * {
     animation: none;
   }
 }
+
+/* BYOK / settings sections: keep the unfiltered preferences editor hidden until the section query is applied. */
+.theia-mobile-work-hub-preferences-widget-host.theia-mod-applying-query {
+    visibility: hidden;
+    position: relative;
+}
+
+.theia-mobile-work-hub-preferences-widget-host.theia-mod-applying-query::before {
+    content: '';
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 40%;
+    height: 12px;
+    border-radius: 6px;
+    background: var(--theia-descriptionForeground);
+    opacity: 0.25;
+    visibility: visible;
+}

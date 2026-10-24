@@ -17,6 +17,7 @@ import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
 import { rebindQaapPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-preferences-contribution';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
+import { bindQaapSecretPreferenceInputRenderer } from '@theia/qaap-shared-core/lib/browser/qaap-secret-preference-input-renderer';
 
 /**
  * Mobile-safe product bindings (part of the `bundle-mobile` entry). IDE-only rebinds (Monaco
@@ -57,6 +58,8 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     rebindQaapPreferenceTreeGenerator(bind, rebind);
     // The Settings editor is built on first open, not while collecting commands behind the splash.
     rebindQaapPreferencesContribution(bind, rebind);
+    // API keys and tokens in the settings editor (Settings, BYOK, IDE) are masked with a show/hide toggle.
+    bindQaapSecretPreferenceInputRenderer(bind);
 
     // Authenticated tenants' AI settings live in a per-user overlay, never in the shared User settings.json.
     decorateQaapTenantAiUserPreferenceProvider(onActivation);
