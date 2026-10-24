@@ -13,6 +13,7 @@ import {
     PreferenceResolveResult,
     PreferenceScope,
 } from '@theia/core/lib/common/preferences';
+import { UserConfigsPreferenceProvider } from '@theia/preferences/lib/common/user-configs-preference-provider';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { isQaapAiSettingsPrefKey, isQaapIsolatedAiSettingsPrefKey } from '../common/qaap-qaiq-byok-provider-registry';
 import { shouldInterceptSharedUserAiPrefWrites } from '../common/qaap-user-ai-settings-overlay';
@@ -180,17 +181,28 @@ export class QaapTenantAiUserPreferenceProvider implements PreferenceProvider {
 }
 
 /**
- * Wraps the User-scope preference provider on activation. Upstream binds it as a named `PreferenceProvider`
+ * Identifies the upstream User-scope provider by the instance itself. The activation context's
+ * `currentRequest` cannot be used for this: inversify 6 leaves it pointing at the last dependency resolved
+ * (e.g. a property-injected logger), so a scope check on the request silently skips the wrap and the
+ * unwrapped instance is cached for the rest of the session.
+ */
+export function isUpstreamUserPreferenceProvider(provider: PreferenceProvider): boolean {
+    return provider instanceof UserConfigsPreferenceProvider;
+}
+
+/**
+ * Wraps the upstream User-scope preference provider on activation. Upstream binds it as a named `PreferenceProvider`
  * (`whenTargetNamed(PreferenceScope.User)`), which cannot be rebound in isolation, so the activation hook is the seam.
+ * The wrap is idempotent, so registering this decorator more than once is harmless.
  */
 export function decorateQaapTenantAiUserPreferenceProvider(
     onActivation: interfaces.Container['onActivation'],
     isTenant: () => boolean = () => shouldInterceptSharedUserAiPrefWrites(readQaapAuthUser()?.login),
+    isUserProvider: (provider: PreferenceProvider) => boolean = isUpstreamUserPreferenceProvider,
 ): void {
-    onActivation<PreferenceProvider>(PreferenceProvider, (context, provider) => {
-        const scope = context.currentRequest.target.getNamedTag()?.value;
-        return scope === PreferenceScope.User && !(provider instanceof QaapTenantAiUserPreferenceProvider)
+    onActivation<PreferenceProvider>(PreferenceProvider, (_context, provider) =>
+        isUserProvider(provider) && !(provider instanceof QaapTenantAiUserPreferenceProvider)
             ? new QaapTenantAiUserPreferenceProvider(provider, isTenant)
-            : provider;
-    });
+            : provider
+    );
 }

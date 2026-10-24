@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { PreferenceProvider, PreferenceScope } from '@theia/core/lib/common/preferences';
+import { PreferenceProvider } from '@theia/core/lib/common/preferences';
 import { injectable, interfaces, postConstruct } from '@theia/core/shared/inversify';
 import { WorkspacePreferenceProvider } from '@theia/preferences/lib/browser/workspace-preference-provider';
 
@@ -28,10 +28,11 @@ export class QaapWorkspacePreferenceProvider extends WorkspacePreferenceProvider
  */
 export function bindQaapWorkspacePreferenceProvider(bind: interfaces.Bind, onActivation: interfaces.Container['onActivation']): void {
     bind(QaapWorkspacePreferenceProvider).toSelf().inSingletonScope();
-    onActivation<PreferenceProvider>(PreferenceProvider, (context, provider) => {
-        const scope = context.currentRequest.target.getNamedTag()?.value;
-        return scope === PreferenceScope.Workspace && !(provider instanceof QaapWorkspacePreferenceProvider)
+    // Identified by instance, not by `context.currentRequest`: inversify leaves that pointing at the last
+    // dependency resolved, so a scope check on the request silently keeps the upstream provider.
+    onActivation<PreferenceProvider>(PreferenceProvider, (context, provider) =>
+        provider instanceof WorkspacePreferenceProvider && !(provider instanceof QaapWorkspacePreferenceProvider)
             ? context.container.get(QaapWorkspacePreferenceProvider)
-            : provider;
-    });
+            : provider
+    );
 }

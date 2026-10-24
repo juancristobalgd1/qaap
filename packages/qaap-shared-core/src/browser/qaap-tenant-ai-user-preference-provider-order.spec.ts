@@ -63,7 +63,7 @@ describe('QaapTenantAiUserPreferenceProvider decoration order', () => {
     it('wraps the User provider when the decorator is loaded before anything resolves it (preload seam)', () => {
         const container = new Container();
         container.load(new ContainerModule((_bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
-            decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true);
+            decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true, provider => provider instanceof FakeUpstreamUserProvider);
         }));
         container.load(upstreamUserBinding);
         const user = container.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User);
@@ -76,7 +76,7 @@ describe('QaapTenantAiUserPreferenceProvider decoration order', () => {
         container.load(upstreamUserBinding);
         const early = container.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User);
         container.load(new ContainerModule((_bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
-            decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true);
+            decorateQaapTenantAiUserPreferenceProvider(onActivation, () => true, provider => provider instanceof FakeUpstreamUserProvider);
         }));
         const later = container.getNamed<PreferenceProvider>(PreferenceProvider, PreferenceScope.User);
         expect(later).to.equal(early);
