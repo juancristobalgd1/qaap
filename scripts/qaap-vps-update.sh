@@ -118,6 +118,10 @@ refresh_caddy() {
 
 # Tenant image seeding of the rootless daemon (preload_tenant_image); sourced so it can be tested
 # with a fake docker.
+# Optional read-only GHCR login for the pulls (no-op unless QAAP_GHCR_USERNAME/QAAP_GHCR_READ_TOKEN are set).
+# shellcheck source=scripts/qaap-ghcr-read-auth.sh
+source "$REPO_DIR/scripts/qaap-ghcr-read-auth.sh"
+
 # shellcheck source=scripts/qaap-vps-tenant-image.sh
 source "$REPO_DIR/scripts/qaap-vps-tenant-image.sh"
 
@@ -370,7 +374,7 @@ undo_drain_on_failure() {
         drain_request POST drain '{"draining":false}' >/dev/null || true
     fi
 }
-trap undo_drain_on_failure EXIT
+trap 'undo_drain_on_failure; qaap_ghcr_logout' EXIT
 
 drain_agent_turns() {
     if [[ -z "$(docker compose ps -q theia 2>/dev/null | tr -d '
@@ -430,6 +434,8 @@ export QAAP_BUILD_SHA="$BEFORE"
 
 # Guard the host loopback before anything else changes, so a failed release still leaves it closed.
 ensure_tenant_loopback_guard
+# Read-only GHCR login before the pulls (logged out again on exit). No-op without QAAP_GHCR_* settings.
+qaap_ghcr_login
 # Pull and verify the CI-built image before anything runs `docker compose run|up theia`. The
 # runtime-state check below starts a temporary `theia` container; with QAAP_THEIA_IMAGE still
 # unset, Compose resolved the fallback `qaap-theia:local`, which the post-deploy prune deletes,

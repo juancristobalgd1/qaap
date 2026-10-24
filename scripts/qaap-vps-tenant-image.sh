@@ -58,7 +58,12 @@ rootless_pull_digest() {
     socket="$(tenant_docker_socket_on_host "$container_id" || true)"
     for ((attempt = 1; attempt <= attempts; attempt++)); do
         status=0
-        if [[ -n "$socket" && -S "$socket" && -w "$socket" ]]; then
+        if [[ -n "$socket" && -S "$socket" && -w "$socket" && "${QAAP_GHCR_AUTHENTICATED:-0}" == 1 ]]; then
+            # Read-only GHCR login made by qaap_ghcr_login (qaap-ghcr-read-auth.sh): the host client
+            # carries that PAT as X-Registry-Auth for this one pull; the daemon does not keep it.
+            echo "[qaap-vps-update] pulling $digest_ref into rootless Docker (host client, authenticated read-only login, changed layers only)"
+            ${limit[@]+"${limit[@]}"} docker -H "unix://$socket" pull "$digest_ref" || status=1
+        elif [[ -n "$socket" && -S "$socket" && -w "$socket" ]]; then
             echo "[qaap-vps-update] pulling $digest_ref into rootless Docker (host client, anonymous, changed layers only)"
             # Empty client config: the deploy's registry login is not sent as X-Registry-Auth.
             anonymous="$(mktemp -d -t qaap-anonymous-pull.XXXXXXXX)" || return 1
