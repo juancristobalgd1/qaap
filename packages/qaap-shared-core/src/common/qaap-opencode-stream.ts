@@ -276,7 +276,21 @@ export function parseOpencodeLog(log: string): { content: string; segments: Qaap
         const segments = [...jsonAcc.getSegments()];
         return { content: jsonAcc.getDisplayText() || log, segments };
     }
-    return parseOpencodeFormattedLog(log);
+    const assistantLog = withoutOpencodeLogLines(log);
+    if (!assistantLog.trim()) {
+        // Only OpenCode/runner log lines (e.g. `--print-logs` errors): not assistant prose.
+        return { content: '', segments: [] };
+    }
+    return parseOpencodeFormattedLog(assistantLog);
+}
+
+/** OpenCode `--print-logs` lines and runner `[qaap]` notes: diagnostics, never assistant text. */
+const OPENCODE_LOG_LINE = /^(?:DEBUG|INFO|WARN|ERROR)\b|^timestamp=|\blevel=(?:DEBUG|INFO|WARN|ERROR)\b|^\[qaap\]/;
+
+function withoutOpencodeLogLines(log: string): string {
+    return log.replace(/\r\n/g, '\n').split('\n')
+        .filter(line => !OPENCODE_LOG_LINE.test(line.trim()))
+        .join('\n');
 }
 
 /**

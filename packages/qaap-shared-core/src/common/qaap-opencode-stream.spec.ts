@@ -135,4 +135,29 @@ describe('parseOpencodeLog', () => {
         expect(parsed.segments.filter(segment => segment.type === 'tool')).to.have.length(0);
         expect(parsed.content).to.include('Here is a summary');
     });
+
+    it('does not show OpenCode log lines as assistant text when no JSON event exists', () => {
+        const log = [
+            'ERROR 2026-10-24T10:00:00 +5ms service=session.processor level=ERROR run=9e2e9059 message="stream error" providerID=opencode modelID=big-pickle small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached."',
+            'INFO 2026-10-24T10:00:01 +1ms service=bus type=session.error',
+            '[qaap] OpenCode reported: AI_APICallError: Free usage limit reached.',
+            '',
+        ].join('\n');
+        const parsed = parseOpencodeLog(log);
+        expect(parsed.content).to.equal('');
+        expect(parsed.segments).to.deep.equal([]);
+    });
+
+    it('keeps prose and drops log lines when both are present without JSON', () => {
+        const log = 'INFO 2026-10-24T10:00:00 service=llm\nHello from the agent.\n';
+        expect(parseOpencodeLog(log).content).to.equal('Hello from the agent.');
+    });
+
+    it('ignores log lines next to JSON events', () => {
+        const log = [
+            'INFO 2026-10-24T10:00:00 service=llm',
+            '{"type":"text","part":{"type":"text","text":"Hola"}}',
+        ].join('\n');
+        expect(parseOpencodeLog(log).segments).to.deep.equal([{ type: 'text', content: 'Hola' }]);
+    });
 });

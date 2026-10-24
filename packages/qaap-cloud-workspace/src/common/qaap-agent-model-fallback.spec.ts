@@ -179,6 +179,12 @@ describe('qaap-agent-model-fallback', () => {
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'cancelled' }, undefined)).to.be.false;
         });
 
+        it('does not fall back on a failed quota turn, even with no output', () => {
+            const quotaTurn = { content: 'ERROR message="stream error" small=false error.error="AI_APICallError: Free usage limit reached."' };
+            expect(agentTurnQualifiesForModelFallback('opencode', { state: 'failed' }, undefined)).to.be.true;
+            expect(agentTurnQualifiesForModelFallback('opencode', { state: 'failed' }, quotaTurn)).to.be.false;
+        });
+
         it('never qualifies when the key every model shares stopped the turn, or the agent has no chain', () => {
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', preflightFailure: 'provider_key_missing' }, undefined)).to.be.false;
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', providerKeyVerdict: 'key_rejected' }, deadModel)).to.be.false;

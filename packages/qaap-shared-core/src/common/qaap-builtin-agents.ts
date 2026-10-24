@@ -25,7 +25,7 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
     { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {model_flags} -p {prompt}' },
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
     { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
-    { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --dangerously-skip-permissions {model_flags} {prompt}' },
+    { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
     // `--model` is a top-level Hermes flag (`hermes --model <slug> chat`). Putting it after
     // `chat` is accepted by argparse, but a stale ~/.hermes/config.yaml still supplies the
     // main/auxiliary model when `{model_flags}` is empty — including dead OpenRouter `:free`

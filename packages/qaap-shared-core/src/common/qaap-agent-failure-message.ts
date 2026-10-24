@@ -49,6 +49,9 @@ const QUOTA_PATTERNS: readonly RegExp[] = [
     /\bdepleted\s+your\b[^.\n]{0,40}\bcredits?\b/i,
     /\bbilling\b/i,
     /\bresource[_\s-]?exhausted\b/i,
+    // OpenCode free tier: "AI_APICallError: Free usage limit reached. Subscribe to ... to keep going".
+    /\busage\s+limit\s+reached\b/i,
+    /\bfree\s+usage\s+limit\b/i,
 ];
 
 const RATE_LIMIT_PATTERNS: readonly RegExp[] = [
@@ -56,6 +59,14 @@ const RATE_LIMIT_PATTERNS: readonly RegExp[] = [
     /\btoo\s+many\s+requests\b/i,
     /\b429\b/,
 ];
+
+/** True when a provider error text reports exhausted quota, a usage limit or rate limiting. */
+export function isAgentQuotaOrRateLimitText(text: string | undefined): boolean {
+    if (!text) {
+        return false;
+    }
+    return matchesAny(text, QUOTA_PATTERNS) || matchesAny(text, RATE_LIMIT_PATTERNS);
+}
 
 const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
     /\bissue\s+with\s+the\s+selected\s+model\b/i,
