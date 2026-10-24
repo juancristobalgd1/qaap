@@ -23,6 +23,7 @@ Estados: **Resuelto** (desplegado y verificado), **Desplegado** (en producción,
 | E-13 | Sondeo excesivo del cliente y SSE reconectando en bucle | Media | Abierto |
 | E-14 | Conflicto de `index.lock` en los snapshots de OpenCode | Media | Abierto |
 | E-15 | Las API keys se mostraban en texto plano en Settings | Alta | Resuelto (#353) |
+| E-16 | "Levanta la app" en el proyecto `qaap` no cabe en el sandbox (2 GiB) | Alta | Abierto |
 
 ## E-01 · El backend se mata a sí mismo con la preview
 
@@ -136,6 +137,40 @@ Estados: **Resuelto** (desplegado y verificado), **Desplegado** (en producción,
 - **Evidencia:** `failed to add snapshot files … Unable to create '…/opencode/snapshot/…/index.lock'` en casi todas las ejecuciones.
 - **Causa probable:** varias ejecuciones de OpenCode (o una colgada) comparten el mismo directorio de snapshots en `XDG_DATA_HOME`; la colgada de E-09 deja el lock tomado.
 - **Solución propuesta:** directorio de datos por tarea, o limpiar el lock al matar la tarea.
+
+## E-16 · "Levanta la app" en `qaap` no cabe en el sandbox
+
+- **Evidencia (24 oct):** el sandbox de tareas (`qaap-task-*`) tiene límite de 2 GiB de RAM, 2 CPU y 1024 pids. El repo `qaap` del usuario ocupa 2,3 GB, con 1.290 entradas en `node_modules`. El propio CI de `qaap` lanza el build con `NODE_OPTIONS=--max_old_space_size=4096` (`.github/workflows/ci-cd.yml`), es decir, solo el heap de Node necesita hasta 4 GiB. A eso se suma la compilación de unos 96 paquetes y el bundle de webpack.
+- **Conclusión:** aunque el modelo respondiera (E-09), levantar este monorepo dentro del sandbox actual acabaría casi seguro en OOM o en timeout. Los proyectos pequeños (p. ej. `shadcn-landing-page`) sí levantan su preview en menos de un minuto (QA ronda 3).
+- **Opciones:**
+  1. Límites de sandbox por plan o por proyecto (p. ej. 6–8 GiB para repos grandes; el VPS tiene 23 GiB).
+  2. Que el agente detecte que el proyecto supera el límite (tamaño del repo y heap declarado en scripts o CI) y lo diga en vez de intentarlo.
+  3. Para `qaap` en concreto, servir una build ya compilada en lugar de compilar dentro del sandbox.
+
+## Propuesta: agente por defecto que funcione para un usuario nuevo (E-09)
+
+**Cómo se elige hoy** (`defaultAgentExtracted`, `qaap-agent-task-runner-render2.ts`):
+1. `QAAP_DEFAULT_AGENT`, si está configurado y usable.
+2. El primero usable de `DEFAULT_AGENT_PREFERENCE = [qaiq, openclaude, grok, codex, claude, cursor]`. "Usable" significa conectado: clave BYOK propia o sesión iniciada.
+3. Si ninguno lo está, `HOSTED_KEYLESS_DEFAULT_AGENTS = ['opencode']`, es decir, Big Pickle gratis y sin clave.
+4. Además, el composer recuerda el último agente de cada proyecto (`readStoredAgent(cwd) ?? defaultAgentId`, `qaap-conversation-composer-state.ts:207`). Un proyecto que usó Big Pickle lo sigue usando aunque cambie el default.
+
+**Por qué falla para un usuario nuevo:** no tiene clave ni sesión, así que cae en OpenCode. La cuota gratuita de OpenCode Zen y la de OpenRouter `:free` son compartidas o diarias y en producción están agotadas: "Free usage limit reached" en OpenCode, `429 free-models-per-day` en la smoke de QAIQ. La selección no sabe que un agente está sin cuota; solo sabe si está conectado.
+
+**Propuesta, por orden de impacto:**
+1. **Cuota "de cortesía" financiada por el operador, aislada por usuario.** Al dar de alta a un usuario, crear una clave OpenRouter propia de ese usuario con un tope de gasto (por ejemplo, con la API de provisioning de claves de OpenRouter; confirmar en su documentación) y guardarla en su BYOK. Con esto:
+   - QAIQ funciona desde el primer minuto.
+   - Ningún usuario agota la cuota de otro.
+   - El gasto queda acotado por usuario.
+   - Encaja con la facturación existente (`planId: starter`, eventos `quota.consumption`).
+
+   Al agotarse el tope, se pide al usuario su propia clave. Requiere una decisión de coste del operador.
+2. **La selección debe conocer la cuota.** Cuando un turno falla con motivo `quota` (ya se clasifica con #352), marcar ese agente o modelo como agotado para ese usuario hasta su reinicio (OpenRouter `:free`: 00:00 UTC). `isAgentUsable` debe devolver false mientras tanto; hoy `qaap-agent-health` solo lo aparta 5 minutos y solo por código de salida.
+3. **El agente recordado por proyecto no puede ganar si está agotado o desconectado.** Hay que validar `readStoredAgent(cwd)` contra el estado actual y avisar del cambio ("Big Pickle sin cuota, usando QAIQ").
+4. **Si no queda ningún agente usable, no elegir uno muerto.** Mostrar en el composer una tarjeta "Conecta un modelo" (BYOK, Claude, Codex) en lugar de enviar a un agente que fallará.
+5. **Smoke del deploy con una clave de pago dedicada**, para que una cuota diaria no ponga en rojo cada deploy.
+
+**Recomendación:** 1 + 2 + 3 como paquete mínimo de lanzamiento; 4 y 5 justo después. Sin el punto 1 (o un plan equivalente, como exigir BYOK en el alta), un usuario nuevo seguirá sin un agente que funcione en cuanto se agote la cuota gratuita compartida.
 
 ## Rondas de QA
 
