@@ -65,8 +65,9 @@ export const REPO_MAP_CACHE_TTL_MS = 60_000;
 export const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'openclaude', 'grok', 'codex', 'claude', 'cursor'];
 
 /**
- * Hosted agents that run without a user key or login (OpenCode's free catalog). They are the safe
- * default for a new user who has connected nothing; the tail of the preference order, not the head.
+ * Hosted agents that run without a user key or login (OpenCode's free catalog). They are never the
+ * automatic default: BYOK is the product model, so a user with no key of their own gets QAIQ (and the
+ * Settings → BYOK prompt) instead. A user can still select them by hand. Used only as a usability hint.
  */
 export const HOSTED_KEYLESS_DEFAULT_AGENTS: readonly string[] = ['opencode'];
 
