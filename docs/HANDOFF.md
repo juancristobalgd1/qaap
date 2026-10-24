@@ -23,6 +23,14 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 - `osProcessId` reportado desde el sandbox está en otro pid namespace: no debería señalarse localmente.
 - P1: mensaje de error real en el frontend cuando el backend devuelve 502; fallos `opencode`/`qaiq` exit 1; `could not grant agent uid 1001 access … cache`; `task storage write failed`.
 
+**Ronda 2 de QA (Haiku, cuenta jcristgd, 23 oct 23:10 UTC)**
+- El autokill también lo dispara el reaper sin acción del usuario: `qaap-backend-7626…` murió a las 22:35 tras `[qaap-preview] reaped stopped process` (preview vieja del puerto 3000). Reiniciar a mano es inútil hasta desplegar #349.
+- 403 `{"code":4}` en bucle de socket.io: token de conexión rotado al reiniciar el backend y cacheado en el control plane. Arreglado en #349 (commit 02c77d30d). Mientras no se despliegue, afecta a jcristgd (reinicio manual).
+- **Pendiente P0, otra PR:** `parseOpencodeLog` (`qaap-shared-core/src/common/qaap-opencode-stream.ts`) devuelve `content: getDisplayText() || log`; cuando el modelo no produce texto (opencode/big-pickle: 6 tokens de salida), el transcript muestra el NDJSON crudo (`step_start`/`step_finish`) como respuesta. Debe tratarse como turno vacío o fallido, con retry o modelo de reserva. Revisar también `qaap-cli-transcript-stream.ts` ~98.
+- "Working" sin fin: el primer turno tenía `runFinishedAt` en el registro; el segundo turno ("njn", enviado por el usuario) seguía ejecutando la verificación `npm run build` del monorepo qaap. Verificar tras el deploy si la UI cierra el turno.
+- BYOK en Settings muestra la lista entera del editor: la sección filtra `ai-features` en el widget de preferencias; probablemente el filtro no se aplicó por el 403. Reverificar tras el deploy.
+- UX: el selector de proyecto de la cabecera no abre menú; no hay acción visible para abrir la preview; Copy sin feedback; controles del composer (Build / Approve for me / Standard) sin explicación y truncados en móvil.
+
 ## 2026-10-23 — Política de selección de modelos
 
 **Hecho**
