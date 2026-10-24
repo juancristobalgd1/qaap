@@ -212,7 +212,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
     public composerCommitBusy = false;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     /** `candidate` is the runtime candidate the probe verified (a port probe answers with the identity URL). */
-    public verifiedComposerPreview: { readonly projectId: string; readonly url: string; readonly candidate?: string } | undefined;
+    public verifiedComposerPreview: { readonly projectId: string; readonly url: string; readonly candidate?: string; readonly verifiedAt?: number } | undefined;
+    /** @internal When the agent turn currently in progress was first observed working (ms epoch). */
+    public composerAgentWorkingSince: number | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public composerPreviewProbeInFlight: Promise<void> | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */

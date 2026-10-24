@@ -196,6 +196,11 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const activityFiles = ctx.resolveComposerActivityFilesForStack(project, summary, conv);
     void ctx.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
     const agentWorking = ctx.isTranscriptStickyComposerAgentWorking();
+    if (agentWorking) {
+        ctx.composerAgentWorkingSince ??= Date.now();
+    } else {
+        ctx.composerAgentWorkingSince = undefined;
+    }
     // Everything below is gated on the agent having actually edited files in THIS conversation.
     // A fresh/idle conversation has no activity and no git snapshot, so the whole row stays gone.
     const hasFileActivity = ctx.hasComposerFileActivity(conv);
@@ -210,7 +215,13 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
         : undefined;
     const previewStarting = !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending;
-    const previewChips = resolveComposerPreviewChipVisibility({ previewStarting, previewVerified: !!verifiedPreviewUrl });
+    const previewChips = resolveComposerPreviewChipVisibility({
+        previewStarting,
+        previewVerified: !!verifiedPreviewUrl,
+        agentWorking,
+        agentWorkingSince: ctx.composerAgentWorkingSince,
+        verifiedAt: ctx.verifiedComposerPreview?.verifiedAt,
+    });
     return {
         queueEntries: ctx.host.transcriptFollowUpQueue.peek(summary.id),
         queueExpanded: ctx.host.transcriptComposerQueueExpanded,

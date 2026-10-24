@@ -104,6 +104,7 @@ export type MobileProjectsTranscriptStickyComposerUiContextMember =
     | 'syncTranscriptQueuedFollowUpBubbles'
     | 'undoAllComposerChangedFiles'
     | 'verifiedComposerPreview'
+    | 'composerAgentWorkingSince'
     | 'workHub';
 
 /**

@@ -221,6 +221,12 @@ export interface ComposerPreviewChipInput {
     readonly previewStarting: boolean;
     /** The composer probe verified that the preview URL answers (server responding). */
     readonly previewVerified: boolean;
+    /** An agent turn is in progress in this conversation ("Working" / streaming). */
+    readonly agentWorking?: boolean;
+    /** When the current agent turn was first observed working (ms epoch). */
+    readonly agentWorkingSince?: number;
+    /** When the probe last verified the preview URL (ms epoch). */
+    readonly verifiedAt?: number;
 }
 
 /** Which preview chip the composer may show. "View Preview" only for a verified, settled preview. */
@@ -230,12 +236,23 @@ export interface ComposerPreviewChipVisibility {
 }
 
 /**
- * While a preview boots only the starting state is shown; a stale verified URL must not surface
- * "View Preview" next to it. "View Preview" appears only once the probe has verified the server.
+ * While a preview boots only the starting state is shown. While an agent turn is in progress,
+ * "View Preview" needs a verification taken AFTER that turn began: a verification from an earlier
+ * run (an old server still answering) must not offer the preview. Without a turn in progress the
+ * verified state alone decides.
  */
 export function resolveComposerPreviewChipVisibility(input: ComposerPreviewChipInput): ComposerPreviewChipVisibility {
     if (input.previewStarting) {
         return { showStarting: true, showViewPreview: false };
     }
-    return { showStarting: false, showViewPreview: input.previewVerified };
+    if (!input.previewVerified) {
+        return { showStarting: false, showViewPreview: false };
+    }
+    if (input.agentWorking) {
+        const fresh = input.agentWorkingSince !== undefined
+            && input.verifiedAt !== undefined
+            && input.verifiedAt >= input.agentWorkingSince;
+        return { showStarting: false, showViewPreview: fresh };
+    }
+    return { showStarting: false, showViewPreview: true };
 }

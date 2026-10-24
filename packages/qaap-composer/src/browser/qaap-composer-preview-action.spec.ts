@@ -43,6 +43,24 @@ describe('qaap-composer-preview-action', () => {
             .to.deep.equal({ showStarting: true, showViewPreview: false });
     });
 
+    it('hides View Preview during a turn when the verification predates the turn', () => {
+        expect(resolveComposerPreviewChipVisibility({
+            previewStarting: false, previewVerified: true, agentWorking: true, agentWorkingSince: 2_000, verifiedAt: 1_000,
+        })).to.deep.equal({ showStarting: false, showViewPreview: false });
+    });
+
+    it('offers View Preview during a turn once the verification postdates the turn start', () => {
+        expect(resolveComposerPreviewChipVisibility({
+            previewStarting: false, previewVerified: true, agentWorking: true, agentWorkingSince: 2_000, verifiedAt: 3_000,
+        })).to.deep.equal({ showStarting: false, showViewPreview: true });
+    });
+
+    it('offers View Preview when idle and verified, regardless of timestamps', () => {
+        expect(resolveComposerPreviewChipVisibility({
+            previewStarting: false, previewVerified: true, agentWorking: false, agentWorkingSince: undefined, verifiedAt: 1_000,
+        })).to.deep.equal({ showStarting: false, showViewPreview: true });
+    });
+
     it('offers View Preview only once the probe verified the server answers', () => {
         expect(resolveComposerPreviewChipVisibility({ previewStarting: false, previewVerified: true }))
             .to.deep.equal({ showStarting: false, showViewPreview: true });
