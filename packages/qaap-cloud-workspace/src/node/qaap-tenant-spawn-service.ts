@@ -36,6 +36,12 @@ import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTru
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
 
+/** Outcome of a privileged ACL command; `reason` names the concrete cause (exit status, errno, first stderr line). */
+export interface QaapTenantAccessCommandResult {
+    readonly ok: boolean;
+    readonly reason?: string;
+}
+
 /** Agent HOME inside a tenant backend container: the private `/tmp` tmpfs (read-only rootfs). */
 export const QAAP_TENANT_BACKEND_HOME = '/tmp/qaap-home';
 
@@ -514,21 +520,31 @@ export class QaapTenantSpawnService {
         if (uid === undefined) {
             throw new Error('Refusing to prepare tenant workspace access without a non-root agent uid.');
         }
-        if (!this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, root])) {
-            throw new Error(`Could not grant the non-root agent access to its tenant workspace ${root}; install the acl package.`);
+        const rootAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, root]);
+        if (!rootAcl.ok) {
+            throw new Error(`Could not grant the non-root agent access to its tenant workspace ${root} (${rootAcl.reason}); install the acl package.`);
         }
-        if (!this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+'])) {
-            throw new Error(`Could not prepare tenant workspace directories for agent uid ${uid}; install find and acl.`);
+        const dirs = this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']);
+        if (!dirs.ok) {
+            throw new Error(`Could not prepare tenant workspace directories for agent uid ${uid} (${dirs.reason}); install find and acl.`);
         }
-        if (!this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+'])) {
-            throw new Error(`Could not prepare tenant workspace files for agent uid ${uid}; install find and acl.`);
+        const files = this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']);
+        if (!files.ok) {
+            throw new Error(`Could not prepare tenant workspace files for agent uid ${uid} (${files.reason}); install find and acl.`);
         }
         this.preparedTenantBackendAgentRoots.add(root);
     }
 
-    protected runTenantAccessCommand(file: string, args: readonly string[]): boolean {
-        const result = spawnSync(file, [...args], { stdio: 'ignore', timeout: 120_000 });
-        return !result.error && result.status === 0;
+    protected runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
+        const result = spawnSync(file, [...args], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 120_000 });
+        if (!result.error && result.status === 0) {
+            return { ok: true };
+        }
+        const cause = result.error
+            ? (result.error as NodeJS.ErrnoException).code ?? result.error.message
+            : `exit status ${result.status ?? result.signal ?? 'unknown'}`;
+        const firstStderrLine = (result.stderr ?? '').split('\n').map(line => line.trim()).find(Boolean);
+        return { ok: false, reason: `${file} ${cause}${firstStderrLine ? `: ${firstStderrLine}` : ''}` };
     }
 
     /**
@@ -868,6 +884,8 @@ export class QaapTenantSpawnService {
     }
 
     protected readonly preparedAgentStorageRoots = new Set<string>();
+    /** Roots whose preparation was attempted in this process, successful or not (see ensureTenantAgentStorage). */
+    protected readonly attemptedAgentStorageRoots = new Set<string>();
     protected readonly persistentTenantHomes = new Set<string>();
 
     /**
@@ -907,9 +925,13 @@ export class QaapTenantSpawnService {
      * not race another one creating the parent. Best effort: tools create missing dirs themselves.
      */
     protected ensureTenantAgentStorage(root: string): void {
-        if (this.preparedAgentStorageRoots.has(root)) {
+        if (this.preparedAgentStorageRoots.has(root) || this.attemptedAgentStorageRoots.has(root)) {
             return;
         }
+        // One attempt per backend process and root. Every agent spawn resolves this, so a failed
+        // attempt that was retried would re-run the recursive ACL sweep and re-log the same failure
+        // on each operation; the single warning below carries the concrete cause instead.
+        this.attemptedAgentStorageRoots.add(root);
         try {
             for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
                 fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -931,17 +953,21 @@ export class QaapTenantSpawnService {
         const configAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, configRoot]);
         const rootAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx`, root]);
         const childAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]);
-        if (!configAcl || !rootAcl || !childAcl) {
-            throw new Error(`Could not grant agent uid ${uid} access to its private tenant cache at ${root}.`);
+        const failedAcl = [configAcl, rootAcl, childAcl].find(result => !result.ok);
+        if (failedAcl) {
+            throw new Error(`Could not grant agent uid ${uid} access to its private tenant cache at ${root} (${failedAcl.reason}).`);
         }
         // Harness state written while agents still ran as root (opencode.db, its log, caches) keeps
         // root:root 0755/0644 and default ACLs only cover new entries; without this the dropped-uid
         // agent fails on its own log file (PermissionDenied: FileSystem.open .../opencode.log).
         for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root)]) {
             const dirs = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']);
+            if (!dirs.ok) {
+                throw new Error(`Could not grant agent uid ${uid} access to existing harness state under ${dir} (${dirs.reason}).`);
+            }
             const files = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']);
-            if (!dirs || !files) {
-                throw new Error(`Could not grant agent uid ${uid} access to existing harness state under ${dir}.`);
+            if (!files.ok) {
+                throw new Error(`Could not grant agent uid ${uid} access to existing harness state under ${dir} (${files.reason}).`);
             }
         }
     }
