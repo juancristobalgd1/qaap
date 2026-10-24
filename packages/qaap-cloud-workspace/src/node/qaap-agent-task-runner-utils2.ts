@@ -18,6 +18,8 @@ import {
     usesSharedAiSettingsFallback,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { QaapSecretCipher } from '@theia/qaap-persistence/lib/node/qaap-secret-cipher';
+import { isQaapSecretPreferenceId } from '@theia/qaap-shared-core/lib/common/qaap-secret-preference-id';
 import { isQaapAiSettingsPrefKey } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
@@ -379,6 +381,11 @@ export function appendBoundedCommandOutput(current: string, chunk: string, maxCh
  *  `~/.theia/settings.json`, which would leak User A's BYOK keys into User B's spawn.
  *  Skip-auth / anonymous still fall back to the shared file for local single-user VPS. */
 export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = os.homedir(), env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+    const settings = readRawUserSettingsFromDisk(ownerLogin, homeDir, env);
+    return openSealedSettings(settings, ownerLogin, QaapSecretCipher.fromEnvironment(env));
+}
+
+function readRawUserSettingsFromDisk(ownerLogin: string | undefined, homeDir: string, env: NodeJS.ProcessEnv): Record<string, unknown> {
     try {
         const sharedSettingsPath = path.join(homeDir, '.theia', 'settings.json');
         const userSettingsPath = ownerLogin?.trim()
@@ -437,15 +444,70 @@ export function filterAiSettings(settings: Record<string, unknown>): Record<stri
     return filtered;
 }
 
-/** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. */
+/**
+ * AAD of a sealed credential setting. Bound to the normalized login and the preference id, so a value
+ * copied to another user's file or another preference fails authentication instead of decrypting.
+ */
+function userSettingAad(ownerLogin: string | undefined, prefKey: string): string {
+    return `settings:${(ownerLogin ?? '').trim().toLowerCase()}:${prefKey}`;
+}
+
+/**
+ * Seals the string credential values of `settings` in place. Values in `plainKeys` (just written by the
+ * caller) are always sealed; other values are sealed only when still plain text (lazy migration of legacy
+ * files). Values already sealed on disk are kept as they are.
+ */
+function sealCredentialSettings(
+    settings: Record<string, unknown>,
+    ownerLogin: string,
+    cipher: QaapSecretCipher,
+    plainKeys: ReadonlySet<string>,
+): Record<string, unknown> {
+    const sealed: Record<string, unknown> = { ...settings };
+    for (const [key, value] of Object.entries(settings)) {
+        if (typeof value !== 'string' || !isQaapSecretPreferenceId(key)) {
+            continue;
+        }
+        if (!plainKeys.has(key) && cipher.isEncrypted(value)) {
+            continue;
+        }
+        sealed[key] = cipher.encrypt(value, userSettingAad(ownerLogin, key));
+    }
+    return sealed;
+}
+
+/**
+ * Opens sealed values for the caller (the owner of the file). A value that cannot be opened is dropped
+ * and logged by key only, so the rest of the settings still load and no secret reaches a log.
+ */
+function openSealedSettings(settings: Record<string, unknown>, ownerLogin: string | undefined, cipher: QaapSecretCipher): Record<string, unknown> {
+    const opened: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(settings)) {
+        if (!cipher.isEncrypted(value)) {
+            opened[key] = value;
+            continue;
+        }
+        try {
+            opened[key] = cipher.decrypt(value, userSettingAad(ownerLogin, key));
+        } catch (error) {
+            console.warn(`[qaap-agent-tasks] could not open sealed setting ${key}:`, error instanceof Error ? error.message : String(error));
+        }
+    }
+    return opened;
+}
+
+/** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. Credentials are sealed at rest. */
 export function writeUserSettingsToDisk(
     ownerLogin: string,
     patch: Record<string, unknown>,
     homeDir: string = os.homedir(),
+    env: NodeJS.ProcessEnv = process.env,
 ): Record<string, unknown> {
+    const cipher = QaapSecretCipher.fromEnvironment(env);
     const filePath = resolveUserSettingsFilePath(ownerLogin, homeDir);
     const current = fs.existsSync(filePath) ? parseSettingsJsonFile(filePath) : {};
-    const next = { ...current, ...filterAiSettings(patch) };
+    const filteredPatch = filterAiSettings(patch);
+    const next = { ...current, ...filteredPatch };
     // `null` (JSON's only way to say `undefined`) removes an AI key, so the reader falls back to the schema default.
     for (const [key, value] of Object.entries(patch)) {
         // eslint-disable-next-line no-null/no-null
@@ -453,13 +515,14 @@ export function writeUserSettingsToDisk(
             delete next[key];
         }
     }
+    const sealed = sealCredentialSettings(next, ownerLogin, cipher, new Set(Object.keys(filteredPatch)));
     const dir = path.dirname(filePath);
     const tmpPath = `${filePath}.${process.pid}.tmp`;
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(tmpPath, `${JSON.stringify(next, undefined, 2)}\n`, { mode: 0o600 });
+    fs.writeFileSync(tmpPath, `${JSON.stringify(sealed, undefined, 2)}\n`, { mode: 0o600 });
     fs.renameSync(tmpPath, filePath);
     try { fs.chmodSync(filePath, 0o600); } catch { /* best-effort */ }
-    return filterAiSettings(next);
+    return openSealedSettings(filterAiSettings(sealed), ownerLogin, cipher);
 }
 
 /** Minimal preference seam: the runner passes the backend `PreferenceService`; tests may pass a stub. */

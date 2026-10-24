@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+import { QaapSecretCipher } from '@theia/qaap-persistence/lib/node/qaap-secret-cipher';
 import type { QaapAuthSessionUser } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { nls } from '@theia/core/lib/common';
 import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
@@ -63,6 +64,8 @@ export class QaapGithubSessionStore {
 
     protected readonly sessions = new Map<string, QaapGithubStoredSession>();
     protected readonly oauthStates = new Map<string, number>();
+    /** Seals `accessToken` at rest. Throws at construction on a malformed `QAAP_SECRETS_KEYS` (fail at startup). */
+    protected readonly secretCipher: QaapSecretCipher = QaapSecretCipher.fromEnvironment();
     protected readonly storePath: string = resolveQaapAuthStorePath();
     protected readonly sqlitePath: string = resolveQaapSqlitePath(this.storePath);
     protected sqliteStore: QaapSqliteStore | undefined;
@@ -185,7 +188,7 @@ export class QaapGithubSessionStore {
     protected readPersistedSession(key: string): QaapGithubStoredSession | undefined | 'unavailable' {
         try {
             const value = this.getSqliteStore().get<unknown>(key);
-            return this.isValidSession(value) ? value : undefined;
+            return this.isValidSession(value) ? this.openStoredSession(key, value) : undefined;
         } catch (error) {
             console.warn('[qaap-auth] Could not read persisted session:', error);
             return 'unavailable';
@@ -230,9 +233,13 @@ export class QaapGithubSessionStore {
             if (!key.startsWith('session:') || this.dirtyKeys.has(key) || !this.isValidSession(value)) {
                 continue;
             }
+            const session = this.openStoredSession(key, value);
+            if (!session) {
+                continue;
+            }
             const id = key.slice('session:'.length);
             persistedIds.add(id);
-            this.sessions.set(id, value);
+            this.sessions.set(id, session);
             this.sessionCheckedAt.set(id, now);
             this.missingSessions.delete(id);
         }
@@ -296,12 +303,42 @@ export class QaapGithubSessionStore {
         this.dirtyKeys.set(key, value);
     }
 
+    /** Value as stored in SQLite: the session's `accessToken` is sealed with the session id as context. */
+    protected toStoredValue(key: string, value: QaapGithubStoredSession | number): QaapGithubStoredSession | number {
+        if (typeof value === 'number' || !key.startsWith('session:')) {
+            return value;
+        }
+        const sessionId = key.slice('session:'.length);
+        return { ...value, accessToken: this.secretCipher.encrypt(value.accessToken, this.sessionAad(sessionId)) };
+    }
+
+    /**
+     * Session as used in memory: a sealed `accessToken` is opened. A legacy plain token is accepted and
+     * re-sealed on the next flush. A token that cannot be opened makes the session unusable (logged by id only).
+     */
+    protected openStoredSession(key: string, value: QaapGithubStoredSession): QaapGithubStoredSession | undefined {
+        if (!this.secretCipher.isEncrypted(value.accessToken)) {
+            return value;
+        }
+        const sessionId = key.slice('session:'.length);
+        try {
+            return { ...value, accessToken: this.secretCipher.decrypt(value.accessToken, this.sessionAad(sessionId)) };
+        } catch (error) {
+            console.warn(`[qaap-auth] Could not open sealed GitHub session ${sessionId}; it is treated as signed out:`, error instanceof Error ? error.message : String(error));
+            return undefined;
+        }
+    }
+
+    protected sessionAad(sessionId: string): string {
+        return `kv:github-sessions:${sessionId}`;
+    }
+
     protected writeKeyNow(key: string, value: QaapGithubStoredSession | number): void {
         if (!this.loaded) {
             return;
         }
         try {
-            this.getSqliteStore().set(key, value);
+            this.getSqliteStore().set(key, this.toStoredValue(key, value));
         } catch (error) {
             console.warn('[qaap-auth] Could not persist session store key:', error);
             this.markDirty(key, value);
@@ -355,10 +392,20 @@ export class QaapGithubSessionStore {
                 }
             }
             const loadedAt = Date.now();
+            let resealPending = false;
             for (const [key, value] of store.list<QaapGithubStoredSession | number>()) {
                 if (key.startsWith('session:') && this.isValidSession(value)) {
+                    const session = this.openStoredSession(key, value);
+                    if (!session) {
+                        continue;
+                    }
+                    if (this.secretCipher.isEnabled() && !this.secretCipher.isEncrypted(value.accessToken)) {
+                        // Legacy plain token (pre-encryption or imported from sessions.json): rewrite it sealed.
+                        this.markDirty(key, session);
+                        resealPending = true;
+                    }
                     const id = key.slice('session:'.length);
-                    this.sessions.set(id, value);
+                    this.sessions.set(id, session);
                     this.sessionCheckedAt.set(id, loadedAt);
                 } else if (key.startsWith('oauth:') && typeof value === 'number') {
                     if (Date.now() - value <= OAUTH_STATE_MAX_AGE_MS) {
@@ -367,6 +414,11 @@ export class QaapGithubSessionStore {
                 }
             }
             this.sessionsListSyncedAt = loadedAt;
+            this.loaded = true;
+            if (resealPending) {
+                this.schedulePersist();
+            }
+            return;
         } catch (error) {
             console.warn('[qaap-auth] Could not restore SQLite session store:', error);
         }
@@ -451,7 +503,7 @@ export class QaapGithubSessionStore {
                     if (value === undefined) {
                         store.delete(key);
                     } else {
-                        store.set(key, value);
+                        store.set(key, this.toStoredValue(key, value));
                     }
                 }
             });

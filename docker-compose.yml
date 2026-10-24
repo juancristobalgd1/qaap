@@ -111,6 +111,8 @@ services:
       QAAP_VAPID_PUBLIC_KEY: ${QAAP_VAPID_PUBLIC_KEY:-}
       QAAP_VAPID_PRIVATE_KEY: ${QAAP_VAPID_PRIVATE_KEY:-}
       QAAP_VAPID_SUBJECT: ${QAAP_VAPID_SUBJECT:-mailto:qaap@localhost}
+      # Master keys that seal stored API keys and GitHub tokens (kid:base64-32-bytes, comma separated).
+      QAAP_SECRETS_KEYS: ${QAAP_SECRETS_KEYS:-}
       # Background-agent CLI template for Jobs tasks ({prompt} = task description).
       QAAP_AGENT_COMMAND: ${QAAP_AGENT_COMMAND:-}
       QAAP_AGENT_COMMANDS: ${QAAP_AGENT_COMMANDS:-}

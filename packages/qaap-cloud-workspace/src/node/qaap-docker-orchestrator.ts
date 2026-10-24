@@ -115,6 +115,7 @@ const TENANT_WORKER_ENV_DENYLIST = new Set([
     'QAAP_GITHUB_CLIENT_SECRET',
     'QAAP_VAPID_PRIVATE_KEY',
     'QAAP_VAPID_SUBJECT',
+    'QAAP_SECRETS_KEYS',
     'STRIPE_SECRET_KEY',
     'STRIPE_WEBHOOK_SECRET',
     'QAAP_SESSION_SECRET',
@@ -1020,6 +1021,16 @@ export class QaapDockerOrchestrator {
             .map(([key, value]) => `${key}=${value}`);
     }
 
+    /**
+     * Master key that seals the tenant backend's stored API keys and GitHub tokens (`QAAP_SECRETS_KEYS`).
+     * Passed only to the backend container, never to agent processes (see QAAP_BACKEND_ONLY_ENV). Kept out
+     * of the recreate check, so existing tenant containers pick the key up when they are next recreated.
+     */
+    protected tenantBackendSecretsEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+        const value = env.QAAP_SECRETS_KEYS?.trim();
+        return value && /^[A-Za-z0-9_.:,+/=-]+$/.test(value) ? [`QAAP_SECRETS_KEYS=${value}`] : [];
+    }
+
     protected tenantBackendPublicUrlEnv(env: NodeJS.ProcessEnv = process.env): string[] {
         return ['QAAP_OAUTH_PUBLIC_URL', 'QAAP_PREVIEW_BASE_DOMAIN', 'QAAP_PREVIEW_ALLOW_SAME_SITE', 'QAAP_PREVIEW_SHARE_TTL_HOURS']
             .map(key => [key, env[key]?.trim()] as const)
@@ -1402,8 +1413,9 @@ export class QaapDockerOrchestrator {
                 ...this.tenantBackendTaskSandboxEnv(),
                 ...this.tenantBackendExternalTaskEnv(),
                 ...this.tenantBackendLimitsEnv(),
+                ...this.tenantBackendSecretsEnv(),
             ];
-            const repoMount = `${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
+            const repoMount =`${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
             const worktreeMount = `${dockerMounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
             const parallelMount = `${dockerMounts.parallelRoot}:${TENANT_BACKEND_PARALLEL_MOUNT}/${expectedSegment}:rw`;
             container = await docker.createContainer({
