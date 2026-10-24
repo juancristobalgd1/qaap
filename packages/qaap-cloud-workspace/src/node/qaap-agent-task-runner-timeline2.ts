@@ -5,6 +5,7 @@ import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
 import { finishTaskWithPauseCause } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
+import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -465,10 +466,16 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             await ctx.acquireTaskSandbox?.(task);
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
+            childEnv = ctx.buildChildEnv(task);
+            if (task.agentId?.trim().toLowerCase() === 'opencode') {
+                // A run killed mid-snapshot leaves index.lock in the tenant's persistent data dir,
+                // and every later OpenCode run then fails to create its snapshot lock.
+                await removeStaleOpencodeSnapshotLocks(childEnv.XDG_DATA_HOME);
+            }
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(task.command, {
                 cwd: task.cwd,
-                env: childEnv = ctx.buildChildEnv(task),
+                env: childEnv,
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
                 // On Windows, cmd.exe can keep a detached child waiting after its stdin is closed.
                 // Plain Codex stdin prompts therefore need a non-detached shell process.
