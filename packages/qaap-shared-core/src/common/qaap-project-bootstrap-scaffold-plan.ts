@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
+
 /** Minimal shape for install/dev cwd resolution (orphan scaffolds vs workspace root). */
 export interface QaapBootstrapInstallTarget {
     readonly rootKey: string;
@@ -22,9 +24,12 @@ export interface QaapBootstrapAppTarget {
 /** Human-readable hint when preview cannot run because the workspace root has no manifest. */
 export function formatMissingBootstrapProjectHint(candidatePaths: readonly string[]): string | undefined {
     if (candidatePaths.length === 0) {
-        return 'Preview discovery found no runnable target. Qaap supports Node, static HTML, Django, FastAPI/Flask, '
-            + 'Go, Rust, .NET, PHP, and explicit .qaap/preview.json launch plans. Add a supported entry point or '
-            + 'declare command, args, cwd, and port in .qaap/preview.json.';
+        return nls.localize(
+            'qaap/mobileProjects/previewNoRunnableTarget',
+            'This project has no app Qaap can start yet. Qaap can start Node, static HTML, Django, FastAPI/Flask, '
+            + 'Go, Rust, .NET and PHP apps, or a launch plan in .qaap/preview.json. Add an entry point for one of these, '
+            + 'or ask the agent to set up the app.',
+        );
     }
     if (candidatePaths.length === 1) {
         return 'No runnable target exists at the workspace root. '

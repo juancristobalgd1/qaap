@@ -26,6 +26,7 @@ import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityS
 import {
     composerConversationInvolvesPreview,
     resolveComposerPreviewCandidate,
+    resolveComposerPreviewChipVisibility,
     resolveVerifiedComposerPreviewUrl,
 } from './qaap-composer-preview-action';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
@@ -195,6 +196,11 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const activityFiles = ctx.resolveComposerActivityFilesForStack(project, summary, conv);
     void ctx.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
     const agentWorking = ctx.isTranscriptStickyComposerAgentWorking();
+    if (agentWorking) {
+        ctx.composerAgentWorkingSince ??= Date.now();
+    } else {
+        ctx.composerAgentWorkingSince = undefined;
+    }
     // Everything below is gated on the agent having actually edited files in THIS conversation.
     // A fresh/idle conversation has no activity and no git snapshot, so the whole row stays gone.
     const hasFileActivity = ctx.hasComposerFileActivity(conv);
@@ -208,6 +214,14 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const verifiedPreviewUrl = ctx.verifiedComposerPreview?.projectId === project.id
         ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
         : undefined;
+    const previewStarting = !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending;
+    const previewChips = resolveComposerPreviewChipVisibility({
+        previewStarting,
+        previewVerified: !!verifiedPreviewUrl,
+        agentWorking,
+        agentWorkingSince: ctx.composerAgentWorkingSince,
+        verifiedAt: ctx.verifiedComposerPreview?.verifiedAt,
+    });
     return {
         queueEntries: ctx.host.transcriptFollowUpQueue.peek(summary.id),
         queueExpanded: ctx.host.transcriptComposerQueueExpanded,
@@ -293,9 +307,8 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         onRunApp: () => {
             void ctx.launchComposerDevPreview(project, summary);
         },
-        previewStarting: !!ctx.host.transcriptPreviewRequestRunning
-            || !!ctx.host.transcriptPreviewRequestPending,
-        onOpenPreview: verifiedPreviewUrl
+        previewStarting,
+        onOpenPreview: previewChips.showViewPreview
             ? () => { void ctx.openComposerPreview(project.id); }
             : undefined,
         onKeepAll: () => { void ctx.keepAllComposerChangedFiles(project, summary); },
@@ -332,10 +345,14 @@ export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTrans
                 skipConversationPortProbe: true,
             });
             if (!readyUrl) {
+                const state = bootstrap.getStateSnapshot();
+                // No runnable app: explain it in full (the snackbar would clip a long hint).
+                const noRunnableHint = !state.descriptor ? state.missingDescriptorHint : undefined;
                 MobileSnackbar.show(
-                    bootstrap.getStateSnapshot().error
+                    noRunnableHint
+                        ?? state.error
                         ?? nls.localize('qaap/mobileProjects/previewDidNotStart', 'Preview did not start. Check the Dev terminal and retry.'),
-                    { kind: 'warning' },
+                    { kind: 'warning', duration: noRunnableHint ? 8000 : undefined },
                 );
                 return;
             }

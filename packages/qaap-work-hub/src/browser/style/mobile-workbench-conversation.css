@@ -3647,6 +3647,12 @@ body>.theia-mobile-transcript-files-menu {
   display: none;
 }
 
+/* While the changes pill row shows the starting chip, the quick-actions strip steps aside: one
+   horizontal row (Working · Starting preview…) instead of two stacked rows. */
+.theia-mod-preview-chip-in-pill-row .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
+  display: none;
+}
+
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-empty-chat.theia-mod-has-empty-chat .theia-mobile-projects-scroll {
   padding-bottom: 0;
 }

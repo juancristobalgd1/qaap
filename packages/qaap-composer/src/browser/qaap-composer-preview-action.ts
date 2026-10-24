@@ -214,3 +214,45 @@ export async function openCurrentComposerPreview(
     }
     return open(result.previewUrl);
 }
+
+/** Inputs for the composer preview chips: whether a start is in flight and whether the probe verified a live URL. */
+export interface ComposerPreviewChipInput {
+    /** A run/start request is in flight: the server has not answered yet. */
+    readonly previewStarting: boolean;
+    /** The composer probe verified that the preview URL answers (server responding). */
+    readonly previewVerified: boolean;
+    /** An agent turn is in progress in this conversation ("Working" / streaming). */
+    readonly agentWorking?: boolean;
+    /** When the current agent turn was first observed working (ms epoch). */
+    readonly agentWorkingSince?: number;
+    /** When the probe last verified the preview URL (ms epoch). */
+    readonly verifiedAt?: number;
+}
+
+/** Which preview chip the composer may show. "View Preview" only for a verified, settled preview. */
+export interface ComposerPreviewChipVisibility {
+    readonly showStarting: boolean;
+    readonly showViewPreview: boolean;
+}
+
+/**
+ * While a preview boots only the starting state is shown. While an agent turn is in progress,
+ * "View Preview" needs a verification taken AFTER that turn began: a verification from an earlier
+ * run (an old server still answering) must not offer the preview. Without a turn in progress the
+ * verified state alone decides.
+ */
+export function resolveComposerPreviewChipVisibility(input: ComposerPreviewChipInput): ComposerPreviewChipVisibility {
+    if (input.previewStarting) {
+        return { showStarting: true, showViewPreview: false };
+    }
+    if (!input.previewVerified) {
+        return { showStarting: false, showViewPreview: false };
+    }
+    if (input.agentWorking) {
+        const fresh = input.agentWorkingSince !== undefined
+            && input.verifiedAt !== undefined
+            && input.verifiedAt >= input.agentWorkingSince;
+        return { showStarting: false, showViewPreview: fresh };
+    }
+    return { showStarting: false, showViewPreview: true };
+}

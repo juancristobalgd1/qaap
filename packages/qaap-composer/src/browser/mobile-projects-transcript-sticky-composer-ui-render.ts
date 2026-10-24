@@ -227,10 +227,17 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
                 }
             }
             const next = probe.ready && stillCurrent
-                ? { projectId: project.id, url: probe.previewUrl, candidate }
+                ? { projectId: project.id, url: probe.previewUrl, candidate, verifiedAt: Date.now() }
                 : undefined;
+            const turnSince = ctx.composerAgentWorkingSince;
+            // A verification taken after the current turn began flips "View Preview" on even when
+            // the URL is unchanged, so it must re-render.
+            const becameFreshForTurn = !!next && turnSince !== undefined
+                && next.verifiedAt >= turnSince
+                && (ctx.verifiedComposerPreview?.verifiedAt ?? 0) < turnSince;
             const changed = ctx.verifiedComposerPreview?.projectId !== next?.projectId
-                || ctx.verifiedComposerPreview?.url !== next?.url;
+                || ctx.verifiedComposerPreview?.url !== next?.url
+                || becameFreshForTurn;
             ctx.verifiedComposerPreview = next;
             if (ctx.composerPreviewProbeCandidate === candidate) {
                 if (probe.ready || adopted) {
@@ -297,8 +304,15 @@ export async function openComposerPreviewExtracted(ctx: MobileProjectsTranscript
             const ownsBootstrap = !!project
                 && project.id === projectId
                 && !!resolveComposerPreviewCandidate(ctx.resolveComposerPreviewRuntime(project));
-            if (bootstrap && ownsBootstrap) {
+            const snapshot = bootstrap?.getStateSnapshot();
+            // Only a real preview URL may be focused: without one the mini-browser opens blank on
+            // "Enter a URL". A project Qaap cannot run gets the explanation instead.
+            if (bootstrap && ownsBootstrap && snapshot?.previewUrl) {
                 await bootstrap.focusPreview();
+                return;
+            }
+            if (snapshot && !snapshot.descriptor && snapshot.missingDescriptorHint) {
+                MobileSnackbar.show(snapshot.missingDescriptorHint, { kind: 'warning', duration: 8000 });
                 return;
             }
             ctx.verifiedComposerPreview = undefined;
