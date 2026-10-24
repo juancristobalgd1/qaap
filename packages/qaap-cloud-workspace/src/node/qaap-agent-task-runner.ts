@@ -812,6 +812,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
             agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
             agentId => this.hasAgentAuthSignal(agentId, ownerLogin),
+            agentId => this.isAgentEnabled(agentId, ownerLogin),
         );
     }
 
@@ -872,6 +873,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             budgetMs,
             agentId => this.hasAgentAuthSignal(agentId, ownerLogin),
             // A failed probe makes the agent unselectable, yet a stale failure must still be re-probed.
+            agentId => this.isAgentEnabled(agentId, ownerLogin),
             agentId => this.isAgentEnabled(agentId, ownerLogin),
         );
     }
