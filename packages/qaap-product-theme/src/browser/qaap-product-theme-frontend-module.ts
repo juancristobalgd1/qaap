@@ -24,6 +24,7 @@ import '../../src/browser/style/qaap-select-component-narrow.css';
 import '../../src/browser/style/qaap-select-component-overlay.css';
 import '../../src/browser/style/qaap-chat-input-product.css';
 import '../../src/browser/style/qaap-status-bar.css';
+import '../../src/browser/style/qaap-secret-preference-input.css';
 import '../../src/browser/style/qaap-workbench-chrome.css';
 import '../../src/browser/style/qaap-file-dialog.css';
 import '../../src/browser/style/qaap-notifications.css';
