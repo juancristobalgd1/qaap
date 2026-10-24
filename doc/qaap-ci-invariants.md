@@ -195,14 +195,19 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   `qaap-drift-check` use `concurrency: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}`
   with `cancel-in-progress` only for `pull_request`: a new push cancels the PR's previous run;
   master pushes, schedules and manual runs get a unique group and are never cancelled or replaced.
-  `ci-cd` is the exception for duplicate events. `gh pr create --label ci:full` emits `opened` and
-  `labeled` in the same second (#352, #355: PR created 01:29:33 / 03:24:35, labeled +1 s, two runs at +3 s).
-  Both shared the PR group, so one was CANCELLED and blocked the required checks. `ci-cd` therefore runs
-  a `gate` job that marks a run redundant when it is `opened` with `ci:full` already set, or `labeled`
-  with another label. Redundant runs use a per-run group and skip every job (`needs: gate`, `if:`),
-  so the real run is never cancelled and no work is doubled. The same condition is repeated in
-  `concurrency`, which cannot read job outputs. Note: this relies on GitHub treating skipped jobs as
-  satisfied for required checks, which is the exception to the "no `if:` on required checks" rule above.
+  `ci-cd` is the exception for duplicate events. `gh pr create --label ci:full` creates the PR and
+  then adds the label in a second call, so the `opened` payload usually has NO labels; `labeled`
+  (ci:full) follows about 1 s later and starts the real run (#352, #355, #356). Both used to share the
+  PR group, so the first run was CANCELLED and the required checks stayed blocked.
+  Groups: `opened` and `labeled` with another label get a per-run group and never cancel or get
+  cancelled. synchronize, reopened and labeled=ci:full keep the PR group with cancel-in-progress.
+  The `gate` job (its own `permissions`: contents/pull-requests/issues read) reads the PR labels
+  live through the API for `opened`; a run is redundant when ci:full is present, or when it is
+  `labeled` with another label. Redundant runs skip every job (`needs: gate`, `if:`).
+  Race: if the gate reads before `gh pr create` adds ci:full, the `opened` run completes too. That is a
+  duplicate, never a cancellation. If the API fails the gate answers redundant=false with a warning.
+  Skipped jobs must count as satisfied for required checks; that is the exception to the "no `if:` on
+  required checks" rule above.
   `qaap-guards` keeps its own group; `qaap-vps-deploy` keeps its single non-cancelling group.
 
 ### 12. Installs retry the whole `npm ci`
