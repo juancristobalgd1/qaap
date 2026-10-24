@@ -438,7 +438,7 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         const sandbox = await broker.create('alice', args);
         const config = docker.created.find(entry => entry.name === sandbox.name) as {
             User: string; Entrypoint: string[]; Env: string[]; Labels: Record<string, string>; WorkingDir: string;
-            HostConfig: { Binds: string[]; CapDrop: string[]; SecurityOpt: string[]; NetworkMode: string; ReadonlyRootfs: boolean; Init: boolean; Privileged?: boolean };
+            HostConfig: { Binds: string[]; CapDrop: string[]; SecurityOpt: string[]; NetworkMode: string; ReadonlyRootfs: boolean; Init: boolean; Privileged?: boolean; Memory: number };
         };
         // The exec server is reached on the INTERNAL network's address, never by name: Docker DNS may
         // answer with the direct-egress address, and that bridge drops container-to-container traffic.
@@ -460,6 +460,8 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         expect(config.HostConfig).to.include({ NetworkMode: 'qaap-tenant-net-alice', ReadonlyRootfs: true, Init: true });
         expect(config.HostConfig.CapDrop).to.deep.equal(['ALL']);
         expect(config.HostConfig.SecurityOpt).to.deep.equal(['no-new-privileges:true']);
+        // Default sandbox memory fits a large monorepo build (a 4 GiB Node heap).
+        expect(config.HostConfig.Memory).to.equal(4 * 1024 ** 3);
         expect(docker.connected).to.deep.equal([`qaap-tenant-egress-alice:${sandbox.name}`]);
         expect(config.Labels).to.include({ 'com.qaap.task-sandbox.broker': 'true', 'com.qaap.tenant-login': 'alice', 'com.qaap.task-sandbox.worktree': args.root });
         expect(config.Env).to.include('APP_MODE=dev');

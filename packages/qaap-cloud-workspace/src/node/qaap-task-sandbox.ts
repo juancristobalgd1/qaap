@@ -1031,7 +1031,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
             '--cap-drop', 'ALL',
             '--security-opt', 'no-new-privileges:true',
             '--pids-limit', String(this.positiveInt('QAAP_TASK_SANDBOX_PIDS', 1024)),
-            '--memory', process.env.QAAP_TASK_SANDBOX_MEMORY?.trim() || '2g',
+            '--memory', process.env.QAAP_TASK_SANDBOX_MEMORY?.trim() || '4g',
             '--cpus', process.env.QAAP_TASK_SANDBOX_CPUS?.trim() || '2',
             '--user', `${uid}:${gid}`,
             '--tmpfs', '/tmp:rw,exec,nosuid,size=2g,mode=1777',

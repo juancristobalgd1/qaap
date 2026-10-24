@@ -589,7 +589,8 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 CapDrop: ['ALL'],
                 SecurityOpt: ['no-new-privileges:true'],
                 PidsLimit: this.positiveInt('QAAP_TASK_SANDBOX_PIDS', 1024),
-                Memory: this.memoryBytes(process.env.QAAP_TASK_SANDBOX_MEMORY?.trim() || '2g'),
+                // 4g: building a large monorepo (e.g. a Theia app, whose CI runs with a 4 GiB heap) OOMs at 2g.
+                Memory: this.memoryBytes(process.env.QAAP_TASK_SANDBOX_MEMORY?.trim() || '4g'),
                 NanoCpus: Math.round(Number(process.env.QAAP_TASK_SANDBOX_CPUS?.trim() || '2') * 1e9) || 2e9,
                 // The base image needs nothing written outside /tmp; a devcontainer image may install packages.
                 ReadonlyRootfs: image === placement.image,
@@ -819,7 +820,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
     protected memoryBytes(raw: string): number {
         const match = /^(\d+(?:\.\d+)?)([kmg]?)b?$/i.exec(raw.trim());
         if (!match) {
-            return 2 * 1024 ** 3;
+            return 4 * 1024 ** 3;
         }
         const unit = { '': 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[match[2].toLowerCase() as '' | 'k' | 'm' | 'g'];
         return Math.round(Number(match[1]) * unit);
