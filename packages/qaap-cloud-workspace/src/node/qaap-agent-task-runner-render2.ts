@@ -78,13 +78,49 @@ export function openHelperTokens(stored: Record<string, unknown>, cipher: QaapSe
     return tokens;
 }
 
-/** Seals every helper token for `task-tokens.json`, each bound to its owner. */
-export function sealHelperTokens(tokens: ReadonlyMap<string, string>, cipher: QaapSecretCipher): Record<string, string> {
+/**
+ * Seals every helper token for `task-tokens.json`, each bound to its owner.
+ *
+ * An entry already on disk that is a sealed envelope this process cannot open (wrong or rotated key) is
+ * never overwritten or dropped: it is copied back verbatim, and an in-memory token for that owner is not
+ * persisted over it. The key can be restored later and the original envelope then opens again.
+ */
+export function sealHelperTokens(
+    tokens: ReadonlyMap<string, string>,
+    cipher: QaapSecretCipher,
+    stored: Record<string, unknown> = {},
+): Record<string, string> {
     const obj: Record<string, string> = {};
+    for (const [owner, raw] of Object.entries(stored)) {
+        if (typeof raw === 'string' && cipher.isEncrypted(raw) && !canOpenHelperToken(owner, raw, cipher)) {
+            obj[owner] = raw;
+        }
+    }
     for (const [owner, token] of tokens) {
+        if (owner in obj) {
+            continue;
+        }
         obj[owner] = cipher.encrypt(token, helperTokenAad(owner));
     }
     return obj;
+}
+
+function canOpenHelperToken(owner: string, sealed: string, cipher: QaapSecretCipher): boolean {
+    try {
+        cipher.decrypt(sealed, helperTokenAad(owner));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** Entries currently in `task-tokens.json`, as stored (sealed or legacy plain). Empty when absent or unreadable. */
+function readStoredHelperTokens(): Record<string, unknown> {
+    try {
+        return JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8')) as Record<string, unknown>;
+    } catch {
+        return {};
+    }
 }
 
 export function loadHelperTokensExtracted(ctx: QaapAgentTaskRunnerContext): void {
@@ -104,7 +140,7 @@ export function loadHelperTokensExtracted(ctx: QaapAgentTaskRunnerContext): void
 export function persistHelperTokensExtracted(ctx: QaapAgentTaskRunnerContext): void {
         const cipher = QaapSecretCipher.fromEnvironment();
         try {
-            writeJsonAtomicSync(TOKENS_PATH, sealHelperTokens(ctx.helperTokens, cipher), { space: 0, mode: 0o600 });
+            writeJsonAtomicSync(TOKENS_PATH, sealHelperTokens(ctx.helperTokens, cipher, readStoredHelperTokens()), { space: 0, mode: 0o600 });
         } catch {
             /* persistence is best-effort */
         }

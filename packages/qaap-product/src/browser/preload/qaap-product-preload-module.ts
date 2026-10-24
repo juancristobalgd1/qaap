@@ -8,9 +8,15 @@ import { TextReplacementContribution } from '@theia/core/lib/browser/preload/tex
 import { Preloader } from '@theia/core/lib/browser/preload/preloader';
 import { QaapMobileBootBudget } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-boot-budget';
 import { QaapPreloader } from '@theia/qaap-shared-core/lib/browser/qaap-preloader';
+import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
 import { QaapTextReplacementContribution } from './qaap-text-replacement-contribution';
 
-export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
+export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
+    // Must be registered before anything resolves the User-scope PreferenceProvider: a singleton is cached
+    // at its first resolution, and onActivation handlers registered later never see that instance. The
+    // preload modules load before the frontend modules, so this is the earliest seam of the desktop build.
+    decorateQaapTenantAiUserPreferenceProvider(onActivation);
+
     bind(QaapTextReplacementContribution).toSelf().inSingletonScope();
     bind(TextReplacementContribution).toService(QaapTextReplacementContribution);
 

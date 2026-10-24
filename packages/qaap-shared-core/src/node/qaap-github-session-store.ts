@@ -377,6 +377,10 @@ export class QaapGithubSessionStore {
     protected loadFromDisk(): void {
         try {
             const store = this.getSqliteStore();
+            // TODO(secrets-at-rest, phase 2): the legacy sessions.json still holds plain GitHub tokens after the
+            // one-time import below. Delete it, or truncate it to `{}`, only once (a) every session in it is
+            // present and readable in sessions.sqlite and (b) the operator has confirmed the rollback window (decision
+            // pending in doc/qaap-secrets-at-rest.md). Until then it is kept on purpose (CLAUDE.md: legacy files are retained for rollback).
             try {
                 store.migrateLegacy(this.parseLegacyState.bind(this));
             } catch (error) {
