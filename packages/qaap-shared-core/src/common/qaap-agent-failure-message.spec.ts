@@ -91,6 +91,14 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('cli_missing');
     });
 
+    it('detectAgentFailureKind classifies the OpenCode free usage limit as quota', () => {
+        expect(detectAgentFailureKind(
+            'ERROR 2026-10-24T10:00:00 service=session.processor level=ERROR message="stream error" small=false error.error="AI_APICallError: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go"',
+        )).to.equal('quota');
+        expect(detectAgentFailureKind('[qaap] OpenCode reported: AI_APICallError: Free usage limit reached.'))
+            .to.equal('quota');
+    });
+
     it('detectAgentFailureKind recognizes auth, timeout, and network failures', () => {
         expect(detectAgentFailureKind('invalid_api_key'))
             .to.equal('auth');

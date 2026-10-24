@@ -4,6 +4,7 @@ import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-contex
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
 import { finishTaskWithPauseCause } from './qaap-agent-task-runner-streaming2';
+import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -674,11 +675,22 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 scanStdioApprovalChunk(chunk);
             }
         });
+        // OpenCode keeps running after a quota error and prints nothing on stdout: stop the run here
+        // so the task settles `failed` with the provider reason in its log, not after the idle timeout.
+        const opencodeFatalWatcher = task.agentId?.trim().toLowerCase() === 'opencode'
+            ? createOpencodeFatalStderrWatcher()
+            : undefined;
         child.stderr?.on('data', chunk => {
             bumpIdleTimer();
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);
+            const fatalError = opencodeFatalWatcher?.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+            if (fatalError !== undefined && ctx.tasks.get(task.id)?.state === 'running') {
+                logStream.write(`\n[qaap] OpenCode reported: ${fatalError}\n`);
+                clearIdleTimer();
+                ctx.killAgentProcessTree(child);
+            }
         });
         child.on('error', error => {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);

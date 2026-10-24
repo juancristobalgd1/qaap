@@ -264,6 +264,12 @@ export function agentTurnQualifiesForModelFallback(
     if (agentTurnHasRetryableToolSupportFailure(agentMessage)) {
         return true;
     }
-    return task.state === 'failed'
-        && (agentTurnHasRetryableEmptyOutput(agentMessage) || agentTurnHasRetryableModelFailure(agentMessage));
+    if (task.state !== 'failed') {
+        return false;
+    }
+    // A quota failure with no output is still quota: switching model silently would spend another key.
+    if (agentMessage && detectAgentFailureKind(collectAgentMessageDetails(agentMessage)) === 'quota') {
+        return false;
+    }
+    return agentTurnHasRetryableEmptyOutput(agentMessage) || agentTurnHasRetryableModelFailure(agentMessage);
 }
