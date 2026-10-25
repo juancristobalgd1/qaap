@@ -119,6 +119,7 @@ import { QaapWorkflowService } from './qaap-workflow-service';
 import { ProcessManager } from '@theia/process/lib/node';
 import { QaapTerminalOwnership, installQaapTerminalOwnership } from './qaap-terminal-ownership';
 import { QaapTerminalCwdGuard } from './qaap-terminal-cwd-guard';
+import { buildTerminalPromptEnv } from './qaap-terminal-prompt';
 import { QaapDockerControlPlaneContribution } from './qaap-docker-control-plane-contribution';
 import { QaapTenantActivityContribution } from './qaap-tenant-activity-contribution';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
@@ -494,6 +495,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             const shellArgs = options.args === undefined
                 ? ShellProcess.getShellExecutableArgs()
                 : (Array.isArray(options.args) ? options.args : parseArgs(options.args));
+            if (options.strictEnv !== true) {
+                // Short prompt for interactive shells: no user, host or container id in PS1. The caller's
+                // explicit env still wins, and managed `-c` commands get nothing (see buildTerminalPromptEnv).
+                options.env = { ...buildTerminalPromptEnv({ shellPath: shell, shellArgs, cwd }), ...(options.env ?? {}) };
+            }
             const tenantEnvironment: NodeJS.ProcessEnv = {};
             for (const [key, value] of Object.entries(options.env ?? {})) {
                 if (value !== undefined && value !== null) {
