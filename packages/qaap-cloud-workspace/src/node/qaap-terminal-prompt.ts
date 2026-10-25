@@ -29,7 +29,7 @@ export const QAAP_BASH_PROMPT_COMMAND: string = [
     'if [ -n "$__qaap_d" ]; then __qaap_p=${__qaap_d##*/}${PWD#"$__qaap_d"};',
     'elif [ "$PWD" = "${HOME-}" ]; then __qaap_p="~";',
     'elif [ -n "${HOME-}" ] && [ "${PWD#"${HOME}"/}" != "$PWD" ]; then __qaap_p="~/${PWD#"${HOME}"/}";',
-    'else __qaap_p=${PWD##*/}; fi;',
+    'else __qaap_p=${PWD##*/}; [ -n "$__qaap_p" ] || __qaap_p=/; fi;',
     'fi;',
     // Minimal colour: bold green label, reset, then `$` (or `#` for root) as the standard PS1 escape.
     'PS1=\'\\[\\e[1;32m\\]${__qaap_p}\\[\\e[0m\\] \\$ \'',
