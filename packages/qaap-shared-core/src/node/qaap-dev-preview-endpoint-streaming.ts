@@ -24,6 +24,44 @@ import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint'
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 
+/** Longest gap between two `[qaap-preview] current claim` logs for an unchanged claim. */
+export const CURRENT_CLAIM_LOG_MAX_SILENCE_MS = 60_000;
+/** Entries older than this are dropped from the log gate so it cannot grow without bound. */
+const CURRENT_CLAIM_LOG_GATE_RETENTION_MS = 10 * 60_000;
+
+interface CurrentClaimLogFields {
+    readonly projectId: string;
+    readonly conversationId: string | undefined;
+    readonly previewId: string;
+    readonly port: number;
+    readonly conversationFilter: string | undefined;
+}
+
+const currentClaimLogGate = new Map<string, { readonly signature: string; readonly loggedAt: number }>();
+
+/**
+ * `/api/current` is polled about once a second while a project is open, so the same claim used
+ * to be logged on every poll. Log a claim only when something it reports changed for its previewId
+ * (project, conversation, port, conversation filter) or when the last log is older than
+ * {@link CURRENT_CLAIM_LOG_MAX_SILENCE_MS}.
+ */
+export function shouldLogCurrentClaim(fields: CurrentClaimLogFields, now: number = Date.now()): boolean {
+    const signature = JSON.stringify([fields.projectId, fields.conversationId, fields.port, fields.conversationFilter]);
+    const previous = currentClaimLogGate.get(fields.previewId);
+    if (previous && previous.signature === signature && now - previous.loggedAt < CURRENT_CLAIM_LOG_MAX_SILENCE_MS) {
+        return false;
+    }
+    if (currentClaimLogGate.size >= 256) {
+        for (const [previewId, entry] of currentClaimLogGate) {
+            if (now - entry.loggedAt >= CURRENT_CLAIM_LOG_GATE_RETENTION_MS) {
+                currentClaimLogGate.delete(previewId);
+            }
+        }
+    }
+    currentClaimLogGate.set(fields.previewId, { signature, loggedAt: now });
+    return true;
+}
+
 export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number }): boolean {
         if (record.osProcessId === undefined) {
             return false;
@@ -246,13 +284,16 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         const ready = await ctx.probeLocalDevServer(record.port);
         if (ready) {
             ctx.portRegistry.touchPreview(record.previewId, login);
-            console.info('[qaap-preview] current claim', {
+            const claimLog = {
                 projectId: record.projectId,
                 conversationId,
                 previewId: record.previewId,
                 port: record.port,
                 conversationFilter,
-            });
+            };
+            if (shouldLogCurrentClaim(claimLog)) {
+                console.info('[qaap-preview] current claim', claimLog);
+            }
             res.json({
                 ready: true,
                 readiness: 'transport_ready',
