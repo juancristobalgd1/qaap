@@ -16,7 +16,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from './qaap-builtin-agents';
 import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
-import { OPENCODE_FREE_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
+import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 
 export {
@@ -131,7 +131,14 @@ export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOpti
                 ...(model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
             };
         });
-    return validModels.length > 0 ? validModels : [...OPENCODE_FALLBACK_MODELS];
+    if (validModels.length > 0) {
+        return validModels;
+    }
+    // No backend answer: free models stay usable, paid ones stay visible and locked until a session is known.
+    return [
+        ...OPENCODE_FALLBACK_MODELS,
+        ...OPENCODE_PAID_MODEL_OPTIONS.map(model => ({ ...model, available: false, unavailableReason: 'not-connected' as const })),
+    ];
 }
 
 export interface QaapCreateAgentTaskQaiqModel {

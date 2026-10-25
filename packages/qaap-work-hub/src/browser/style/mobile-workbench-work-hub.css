@@ -8166,6 +8166,23 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet.theia-mo
   box-shadow: 0 5px 10px -9px rgba(0, 0, 0, 0.8);
 }
 
+.theia-qaap-agent-sheet-provider-label .theia-qaap-agent-sheet-connect {
+  margin-left: auto;
+  min-height: 28px;
+  max-width: none;
+  padding: 3px 12px;
+  border: 1px solid var(--q-accent, var(--qaap-accent, #e58e40));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--q-accent, var(--qaap-accent, #e58e40));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
 .theia-qaap-agent-sheet-provider-label .theia-qaap-llm-provider-icon.theia-mod-sm {
   width: 14px;
   height: 14px;
