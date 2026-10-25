@@ -837,8 +837,8 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public releaseActivePreview(): void {
-        releaseActivePreviewExtracted(this);
+    public releaseActivePreview(reason: string): void {
+        releaseActivePreviewExtracted(this, reason);
     }
 
     releasePreviewForConversation(conversationId: string | undefined): void {
@@ -856,8 +856,8 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public resetBootstrapSessionForWorkspace(): void {
-        resetBootstrapSessionForWorkspaceExtracted(this);
+    public resetBootstrapSessionForWorkspace(reason: string): void {
+        resetBootstrapSessionForWorkspaceExtracted(this, reason);
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

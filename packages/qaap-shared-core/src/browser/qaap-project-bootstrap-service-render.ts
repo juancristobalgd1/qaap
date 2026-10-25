@@ -1,4 +1,5 @@
 import type { QaapProjectBootstrapServiceContext } from './qaap-project-bootstrap-service-context';
+import { logBootstrapReleaseExtracted } from './qaap-project-bootstrap-service-tool-pills';
 // Extracted from qaap-project-bootstrap-service.ts
 
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -406,8 +407,9 @@ export async function switchMonorepoAppExtracted(ctx: QaapProjectBootstrapServic
 }
 
 export async function stopManagedDevServerForAppSwitchExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
+        logBootstrapReleaseExtracted(ctx, 'stopManagedDevServerForAppSwitch');
         ctx.devRunGeneration++;
-        ctx.releaseActivePreview();
+        ctx.releaseActivePreview('stopManagedDevServerForAppSwitch');
         // The replacement is a different app process, not a reattachment. Give it a new process
         // identity so a delayed probe/claim from the stopped app cannot be adopted as the new one.
         ctx.previewRunIdByConversation.delete(ctx.activePreviewConversationId);

@@ -376,7 +376,7 @@ export function cancelActivePreviewLaunchExtracted(ctx: QaapProjectBootstrapServ
         ctx.devRunCancelledByUser = true;
         ctx.devRunGeneration++;
         ctx.installGeneration++;
-        ctx.releaseActivePreview();
+        ctx.releaseActivePreview('cancelActivePreviewLaunch');
         ctx.cancelDevPreviewFallbacks();
     ctx.cancelDevPreviewHealthMonitor();
     if (typeof window !== 'undefined' && ctx.previewAutoRetryTimer !== undefined) {
@@ -513,7 +513,7 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         const refreshId = ++ctx.refreshGeneration;
         // This refresh reads the descriptor afresh, so a replay postponed by an earlier run is moot.
         ctx.deferredWorkspaceRefresh = undefined;
-        ctx.resetBootstrapSessionForWorkspace();
+        ctx.resetBootstrapSessionForWorkspace('refreshFromRoot');
         ctx.clearForwardedPorts();
         if (!resource) {
             ctx._descriptor = undefined;

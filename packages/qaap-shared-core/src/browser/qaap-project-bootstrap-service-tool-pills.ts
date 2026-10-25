@@ -49,17 +49,29 @@ export function waitForExitExtracted(ctx: QaapProjectBootstrapServiceContext, te
         });
 }
 
+/** Diagnostic line for every path that releases or disposes a running preview (no secrets). */
+export function logBootstrapReleaseExtracted(ctx: QaapProjectBootstrapServiceContext, reason: string): void {
+        console.info('[qaap-bootstrap] release', {
+            reason,
+            previewId: ctx.activePreviewClaim?.previewId,
+            root: ctx._descriptor?.rootUri.toString(),
+            conversationId: ctx.activePreviewConversationId,
+        });
+}
+
 export function beginDevRunExtracted(ctx: QaapProjectBootstrapServiceContext): void {
+        logBootstrapReleaseExtracted(ctx, 'beginDevRun');
         ctx.devRunCancelledByUser = false;
         ctx.devRunGeneration++;
-        ctx.releaseActivePreview();
+        ctx.releaseActivePreview('beginDevRun');
         ctx.cancelDevPreviewFallbacks();
         if (ctx.devTerminalConversationId === ctx.activePreviewConversationId) {
             ctx.cleanupDevTerminal();
         }
 }
 
-export function releaseActivePreviewExtracted(ctx: QaapProjectBootstrapServiceContext): void {
+export function releaseActivePreviewExtracted(ctx: QaapProjectBootstrapServiceContext, reason: string): void {
+        logBootstrapReleaseExtracted(ctx, reason);
         const scope = ctx.activePreviewConversationId;
         const claim = ctx.previewClaimByConversation.get(scope);
         ctx.previewClaimByConversation.delete(scope);
@@ -121,7 +133,8 @@ export function releaseDevTerminalForConversationExtracted(ctx: QaapProjectBoots
         ctx.devTerminalByConversationId.delete(conversationId);
 }
 
-export function resetBootstrapSessionForWorkspaceExtracted(ctx: QaapProjectBootstrapServiceContext): void {
+export function resetBootstrapSessionForWorkspaceExtracted(ctx: QaapProjectBootstrapServiceContext, reason: string): void {
+        logBootstrapReleaseExtracted(ctx, reason);
         ctx.installGeneration++;
         // A hosted Work Hub switches between many project roots inside one Theia workspace. Do
         // not dispose the previous project's terminal/process here: doing so made simultaneous
