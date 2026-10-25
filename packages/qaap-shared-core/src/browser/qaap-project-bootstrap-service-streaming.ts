@@ -333,7 +333,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             ctx.devTerminalListener = new DisposableCollection(onOutput, onProcessExit, onWidgetClose);
             ctx.toDispose.push(ctx.devTerminalListener);
             // Register in the per-conversation map (multi-preview support).
-            ctx.registerDevTerminalForConversation(ctx.activePreviewConversationId, terminal, ctx.devTerminalListener);
+            ctx.registerDevTerminalForConversation(ctx.activePreviewConversationId, terminal, ctx.devTerminalListener, descriptor.rootUri.toString());
 
             // Fallback: if the user has a known framework we already know the default port; route
             // through the port-forwarding machinery so the fallback shows up in the strip just like
@@ -513,7 +513,7 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         const refreshId = ++ctx.refreshGeneration;
         // This refresh reads the descriptor afresh, so a replay postponed by an earlier run is moot.
         ctx.deferredWorkspaceRefresh = undefined;
-        ctx.resetBootstrapSessionForWorkspace('refreshFromRoot');
+        ctx.resetBootstrapSessionForWorkspace('refreshFromRoot', resource?.toString() ?? ctx._descriptor?.rootUri.toString());
         ctx.clearForwardedPorts();
         if (!resource) {
             ctx._descriptor = undefined;

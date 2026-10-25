@@ -367,6 +367,8 @@ export class QaapProjectBootstrapService {
     public readonly devTerminalByConversationId = new Map<string, {
         readonly terminal: TerminalWidget;
         readonly listener: Disposable;
+        /** Project root the terminal was started for; a workspace reset only disposes its own root. */
+        readonly rootKey: string | undefined;
     }>();
     /**
      * Conversation that owns {@link devTerminal}, when a dev run is in flight or attached.
@@ -846,8 +848,9 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public registerDevTerminalForConversation(conversationId: string | undefined, terminal: TerminalWidget, listener: Disposable,): void {
-        registerDevTerminalForConversationExtracted(this, conversationId, terminal, listener);
+    public registerDevTerminalForConversation(conversationId: string | undefined, terminal: TerminalWidget, listener: Disposable,
+        rootKey?: string,): void {
+        registerDevTerminalForConversationExtracted(this, conversationId, terminal, listener, rootKey);
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
@@ -856,8 +859,8 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public resetBootstrapSessionForWorkspace(reason: string): void {
-        resetBootstrapSessionForWorkspaceExtracted(this, reason);
+    public resetBootstrapSessionForWorkspace(reason: string, rootKey?: string): void {
+        resetBootstrapSessionForWorkspaceExtracted(this, reason, rootKey);
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

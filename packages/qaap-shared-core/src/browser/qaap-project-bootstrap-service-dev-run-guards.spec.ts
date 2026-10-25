@@ -826,4 +826,97 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             });
         });
     });
+
+    describe('workspace reset scope', () => {
+        const ROOT_A = URI.fromFilePath('/workspace/a').toString();
+        const ROOT_B = URI.fromFilePath('/workspace/b').toString();
+
+        let consoleInfo: sinon.SinonStub;
+        beforeEach(() => {
+            consoleInfo = sinon.stub(console, 'info');
+        });
+        afterEach(() => consoleInfo.restore());
+
+        /** Session with one live dev terminal per project (A, B) and one without a known root. */
+        const makeSession = (): { ctx: QaapProjectBootstrapServiceContext; disposed: string[]; listenersDisposed: string[]; state: Record<string, unknown> } => {
+            const disposed: string[] = [];
+            const listenersDisposed: string[] = [];
+            const entry = (id: string, rootKey: string | undefined): { terminal: { id: string }; listener: { dispose(): void }; rootKey: string | undefined } => ({
+                terminal: { id },
+                listener: { dispose: () => { listenersDisposed.push(id); } },
+                rootKey,
+            });
+            const terminalA = entry('term-a', ROOT_A);
+            const state: Record<string, unknown> = {
+                installGeneration: 0,
+                devRunGeneration: 0,
+                cancelDevPreviewFallbacks: () => undefined,
+                cancelDevPreviewHealthMonitor: () => undefined,
+                devTerminalListener: { dispose: () => undefined },
+                devTerminal: terminalA.terminal,
+                devTerminalConversationId: 'conv-a',
+                activePreviewClaim: { previewId: 'p-a', port: 5173, previewUrl: 'http://localhost:5173' },
+                activePreviewRunId: 'run-a',
+                activePreviewConversationId: 'conv-a',
+                devPortOverride: undefined,
+                automaticPortRecoveryAttempts: 0,
+                attemptedDevPorts: new Set<number>([5173]),
+                portRecoveryFrom: undefined,
+                activeDevPortHint: 5173,
+                previewRunIdByConversation: new Map([['conv-a', 'run-a'], ['conv-b', 'run-b']]),
+                previewClaimByConversation: new Map([['conv-a', { previewId: 'p-a', port: 5173 }], ['conv-b', { previewId: 'p-b', port: 5174 }]]),
+                devTerminalByConversationId: new Map<string, unknown>([
+                    ['conv-a', terminalA],
+                    ['conv-b', entry('term-b', ROOT_B)],
+                    ['conv-legacy', entry('term-legacy', undefined)],
+                ]),
+                disposeBootstrapTerminal: (terminal: { id: string } | undefined) => { if (terminal) { disposed.push(terminal.id); } },
+                installTerminal: undefined,
+            };
+            return { ctx: state as unknown as QaapProjectBootstrapServiceContext, disposed, listenersDisposed, state };
+        };
+
+        it('disposes only the dev terminals of the root being reset', () => {
+            const { ctx, disposed, listenersDisposed, state } = makeSession();
+            toolPills.resetBootstrapSessionForWorkspaceExtracted(ctx, 'refreshFromRoot', ROOT_B);
+
+            expect(disposed).to.deep.equal(['term-b']);
+            expect(listenersDisposed).to.deep.equal(['term-b']);
+            expect([...(state.devTerminalByConversationId as Map<string, unknown>).keys()]).to.deep.equal(['conv-a', 'conv-legacy']);
+        });
+
+        it('keeps the other project live pointers and per-conversation claims', () => {
+            const { ctx, state } = makeSession();
+            toolPills.resetBootstrapSessionForWorkspaceExtracted(ctx, 'refreshFromRoot', ROOT_B);
+
+            expect(state.devTerminal).to.not.equal(undefined);
+            expect(state.devTerminalConversationId).to.equal('conv-a');
+            expect([...(state.previewRunIdByConversation as Map<string, string>).keys()]).to.deep.equal(['conv-a']);
+            expect([...(state.previewClaimByConversation as Map<string, unknown>).keys()]).to.deep.equal(['conv-a']);
+        });
+
+        it('disposes the terminal of the reset root when that root is the active one', () => {
+            const { ctx, disposed, state } = makeSession();
+            toolPills.resetBootstrapSessionForWorkspaceExtracted(ctx, 'refreshFromRoot', ROOT_A);
+
+            expect(disposed).to.deep.equal(['term-a']);
+            expect(state.devTerminal).to.equal(undefined);
+            expect(state.devTerminalConversationId).to.equal(undefined);
+        });
+
+        it('disposes nothing when no root is named', () => {
+            const { ctx, disposed } = makeSession();
+            toolPills.resetBootstrapSessionForWorkspaceExtracted(ctx, 'refreshFromRoot', undefined);
+
+            expect(disposed).to.deep.equal([]);
+        });
+
+        it('records the root of a registered dev terminal', () => {
+            const { ctx, state } = makeSession();
+            const terminal = { id: 'term-c' } as unknown as import('@theia/terminal/lib/browser/base/terminal-widget').TerminalWidget;
+            toolPills.registerDevTerminalForConversationExtracted(ctx, 'conv-c', terminal, { dispose: () => undefined } as never, ROOT_A);
+
+            expect((state.devTerminalByConversationId as Map<string, { rootKey: string | undefined }>).get('conv-c')?.rootKey).to.equal(ROOT_A);
+        });
+    });
 });

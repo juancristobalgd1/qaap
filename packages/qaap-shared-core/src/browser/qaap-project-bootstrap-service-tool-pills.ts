@@ -110,7 +110,8 @@ export function releasePreviewForConversationExtracted(ctx: QaapProjectBootstrap
 
 export function registerDevTerminalForConversationExtracted(ctx: QaapProjectBootstrapServiceContext, conversationId: string | undefined,
         terminal: TerminalWidget,
-        listener: Disposable,): void {
+        listener: Disposable,
+        rootKey?: string,): void {
         if (!conversationId) {
             return;
         }
@@ -120,7 +121,7 @@ export function registerDevTerminalForConversationExtracted(ctx: QaapProjectBoot
             existing.listener.dispose();
             ctx.disposeBootstrapTerminal(existing.terminal);
         }
-        ctx.devTerminalByConversationId.set(conversationId, { terminal, listener });
+        ctx.devTerminalByConversationId.set(conversationId, { terminal, listener, rootKey });
 }
 
 export function releaseDevTerminalForConversationExtracted(ctx: QaapProjectBootstrapServiceContext, conversationId: string): void {
@@ -133,18 +134,15 @@ export function releaseDevTerminalForConversationExtracted(ctx: QaapProjectBoots
         ctx.devTerminalByConversationId.delete(conversationId);
 }
 
-export function resetBootstrapSessionForWorkspaceExtracted(ctx: QaapProjectBootstrapServiceContext, reason: string): void {
+export function resetBootstrapSessionForWorkspaceExtracted(ctx: QaapProjectBootstrapServiceContext, reason: string, rootKey?: string): void {
         logBootstrapReleaseExtracted(ctx, reason);
         ctx.installGeneration++;
-        // A hosted Work Hub switches between many project roots inside one Theia workspace. Do
-        // not dispose the previous project's terminal/process here: doing so made simultaneous
-        // previews impossible and turned every project switch into a race for the default port.
+        // A hosted Work Hub switches between many project roots inside one Theia workspace. Only the
+        // root being reset loses its dev terminals; other projects' previews keep running (see the
+        // scoped disposal below). Disposing them here made every project switch kill a booting server.
         ctx.devRunGeneration++;
         ctx.cancelDevPreviewFallbacks();
         ctx.cancelDevPreviewHealthMonitor();
-        ctx.devTerminalListener.dispose();
-        ctx.devTerminalListener = Disposable.NULL;
-        ctx.devTerminal = undefined;
         ctx.activePreviewClaim = undefined;
         ctx.devPortOverride = undefined;
         ctx.automaticPortRecoveryAttempts = 0;
@@ -153,15 +151,34 @@ export function resetBootstrapSessionForWorkspaceExtracted(ctx: QaapProjectBoots
         ctx.activeDevPortHint = undefined;
         ctx.activePreviewRunId = undefined;
         ctx.activePreviewConversationId = QAAP_DEFAULT_PREVIEW_CONVERSATION_ID;
-        ctx.previewRunIdByConversation.clear();
-        ctx.previewClaimByConversation.clear();
-        ctx.devTerminalConversationId = undefined;
-        // Dispose all per-conversation dev terminals (full workspace reset).
-        for (const [, entry] of ctx.devTerminalByConversationId) {
-            entry.listener.dispose();
-            ctx.disposeBootstrapTerminal(entry.terminal);
+        // Dispose only the dev terminals started for the root being reset (the workspace root when
+        // the caller does not name one). Entries without a known root belong to no reset root.
+        const disposedConversationIds = new Set<string>();
+        if (rootKey !== undefined) {
+            for (const [conversationId, entry] of ctx.devTerminalByConversationId) {
+                if (entry.rootKey !== rootKey) {
+                    continue;
+                }
+                entry.listener.dispose();
+                ctx.disposeBootstrapTerminal(entry.terminal);
+                ctx.devTerminalByConversationId.delete(conversationId);
+                disposedConversationIds.add(conversationId);
+            }
         }
-        ctx.devTerminalByConversationId.clear();
+        // Per-conversation run ids and claims are dropped only for the conversations that were disposed,
+        // so another project's preview keeps its process identity and claim.
+        for (const conversationId of disposedConversationIds) {
+            ctx.previewRunIdByConversation.delete(conversationId);
+            ctx.previewClaimByConversation.delete(conversationId);
+        }
+        // The singular pointer follows the conversation it belongs to: keep it when that terminal is
+        // another project's live dev server.
+        if (ctx.devTerminalConversationId === undefined || disposedConversationIds.has(ctx.devTerminalConversationId)) {
+            ctx.devTerminalListener.dispose();
+            ctx.devTerminalListener = Disposable.NULL;
+            ctx.devTerminal = undefined;
+            ctx.devTerminalConversationId = undefined;
+        }
         ctx.disposeBootstrapTerminal(ctx.installTerminal);
         ctx.installTerminal = undefined;
 }
