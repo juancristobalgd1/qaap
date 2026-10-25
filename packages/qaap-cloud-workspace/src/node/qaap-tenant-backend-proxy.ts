@@ -17,7 +17,7 @@ import {
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { filterQaapReservedSetCookies, QAAP_PREVIEW_ACCESS_COOKIE_NAME, stripQaapReservedCookies } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forward-headers';
 import { QAAP_DEV_PREVIEW_PREFIX, QAAP_IDENTITY_PREVIEW_PREFIX } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
-import { QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantActivityReason } from '../common/qaap-cloud-api-types';
+import { QAAP_PUSH_NOTIFY_PATH, QAAP_PUSH_SUBSCRIBE_PATH, QAAP_PUSH_VAPID_PATH, QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantActivityReason } from '../common/qaap-cloud-api-types';
 import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
 import { QAAP_PREVIEW_ROUTE_HEADER, parseQaapPreviewRoutes, type QaapPreviewRoute } from '@theia/qaap-shared-core/lib/common/qaap-preview-route';
 import { parseQaapPublicPreviewSharePath } from '../common/qaap-preview-share';
@@ -929,6 +929,10 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             || pathname === QAAP_GITHUB_OAUTH_CALLBACK_PATH
             || pathname === QAAP_TENANT_RUNTIME_API_PATH
             || pathname.startsWith(`${QAAP_TENANT_RUNTIME_API_PATH}/`)
+            // Web Push: subscriptions and VAPID keys live only on the control plane (per owner session).
+            || pathname === QAAP_PUSH_VAPID_PATH
+            || pathname === QAAP_PUSH_SUBSCRIBE_PATH
+            || pathname === QAAP_PUSH_NOTIFY_PATH
             // GitHub delivers webhooks to the control plane, whose inbox hub streams them.
             || pathname === `${QAAP_GITHUB_API_PATH}/webhook`
             || pathname.startsWith(`${QAAP_GITHUB_API_PATH}/inbox/`);

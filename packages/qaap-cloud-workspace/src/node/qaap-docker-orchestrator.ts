@@ -28,7 +28,7 @@ import {
     resolveQaapDockerNodes,
     type QaapDockerNodeConfig,
 } from './qaap-docker-control-plane';
-import { QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantBackendUpdateStatus } from '../common/qaap-cloud-api-types';
+import { QAAP_TENANT_PUSH_OUTBOX_PATH, QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantBackendUpdateStatus } from '../common/qaap-cloud-api-types';
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
@@ -1827,6 +1827,24 @@ export class QaapDockerOrchestrator {
     }
 
     protected fetchTenantBusyStatus(target: QaapTenantBackendTarget): Promise<QaapTenantBusyStatus | undefined> {
+        return this.fetchSignedTenantJson(target, `${QAAP_TENANT_RUNTIME_API_PATH}/busy`, 5_000)
+            .then(body => QaapTenantBusyProbe.parseStatus(body));
+    }
+
+    /**
+     * Drains a tenant backend's push outbox (pull model). Only a running backend is asked; a paused,
+     * stopped or unknown tenant yields `undefined` and is never woken up for this.
+     */
+    async fetchTenantPushOutbox(ownerLogin: string, timeoutMs: number): Promise<unknown> {
+        if (!this.isBackendPerTenantEnabled() || !ownerLogin.trim()) {
+            return undefined;
+        }
+        const target = this.getTenantBackendTarget(ownerLogin) ?? await this.inspectRunningTenantBackendTarget(ownerLogin);
+        return target ? this.fetchSignedTenantJson(target, QAAP_TENANT_PUSH_OUTBOX_PATH, timeoutMs) : undefined;
+    }
+
+    /** GET a tenant runtime path with the tenant-scoped signed probe; `undefined` on any failure or non-200. */
+    protected fetchSignedTenantJson(target: QaapTenantBackendTarget, requestPath: string, timeoutMs: number): Promise<unknown> {
         let probe: string;
         try {
             probe = QaapTenantBusyProbe.create(target.tenantLogin, this.tenantBackendSecret(target.tenantLogin));
@@ -1838,8 +1856,8 @@ export class QaapDockerOrchestrator {
             const request = http.get({
                 host: target.host,
                 port: target.port,
-                path: `${QAAP_TENANT_RUNTIME_API_PATH}/busy`,
-                timeout: 5_000,
+                path: requestPath,
+                timeout: timeoutMs,
                 headers: {
                     [QAAP_TENANT_BUSY_PROBE_HEADER]: probe,
                     ...(token ? { cookie: `theia-connection-token=${encodeURIComponent(token)}` } : {}),
@@ -1854,13 +1872,13 @@ export class QaapDockerOrchestrator {
                         return;
                     }
                     try {
-                        resolve(QaapTenantBusyProbe.parseStatus(JSON.parse(body)));
+                        resolve(JSON.parse(body));
                     } catch {
                         resolve(undefined);
                     }
                 });
             });
-            request.on('timeout', () => request.destroy(new Error('tenant busy probe timeout')));
+            request.on('timeout', () => request.destroy(new Error('tenant signed request timeout')));
             request.on('error', () => resolve(undefined));
         });
     }

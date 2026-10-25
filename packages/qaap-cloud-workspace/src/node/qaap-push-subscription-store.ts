@@ -24,19 +24,25 @@ export class QaapPushSubscriptionStore {
     protected sqliteStore: QaapSqliteStore | undefined;
 
     async upsert(userLogin: string, subscription: QaapPushSubscriptionJson): Promise<void> {
-        const all = await this.readAll();
-        const key = subscription.endpoint;
-        all[key] = {
-            userLogin,
+        // Reading first runs the one-time legacy import, so a later per-key write cannot be overwritten by it.
+        await this.readAll();
+        this.getSqliteStore().set<StoredPushSubscription>(subscription.endpoint, {
+            // Logins are compared case-insensitively: the tenant side names owners in lower case.
+            userLogin: userLogin.toLowerCase(),
             subscription,
             createdAt: new Date().toISOString(),
-        };
-        await this.writeAll(all);
+        });
+    }
+
+    /** Forgets one subscription (the push service reported it gone). */
+    async remove(endpoint: string): Promise<void> {
+        await this.readAll();
+        this.getSqliteStore().delete(endpoint);
     }
 
     async listForUser(userLogin: string): Promise<StoredPushSubscription[]> {
         const all = await this.readAll();
-        return Object.values(all).filter(row => row.userLogin === userLogin);
+        return Object.values(all).filter(row => row.userLogin.toLowerCase() === userLogin.toLowerCase());
     }
 
     async listAll(): Promise<StoredPushSubscription[]> {
@@ -58,10 +64,6 @@ export class QaapPushSubscriptionStore {
         } catch {
             return {};
         }
-    }
-
-    protected async writeAll(data: Record<string, StoredPushSubscription>): Promise<void> {
-        this.getSqliteStore().replace(Object.entries(data));
     }
 
     protected getSqliteStore(): QaapSqliteStore {
