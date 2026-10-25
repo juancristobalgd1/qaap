@@ -33,6 +33,7 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
+import { readComposerAgentCatalogSession, writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 
 /** Minimum gap between agent catalog reloads for the same cwd when a catalog is already loaded. */
 export const STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS = 10_000;
@@ -289,7 +290,10 @@ export class MobileProjectsStickyComposerAgentsUi {
             const snapshot = await this.host.loadBackendAgentSnapshot(options);
             let pickerAgents = this.getComposerAgentPickerAgents(snapshot.agents);
             let filteredAgents = this.filterSelectableComposerAgents(pickerAgents);
-            if (filteredAgents.length === 0) {
+            // The backend answer is authoritative once the live task stream has reported agents; the
+            // 3 s wait only covers a page whose stream has not spoken yet.
+            const streamHasAgents = (this.host.activeTasks?.getAgents() ?? []).length > 0;
+            if (filteredAgents.length === 0 && !streamHasAgents) {
                 await this.waitForSelectableActiveTaskAgents(3000);
                 const liveAgents = this.filterSelectableComposerAgents(this.host.activeTasks?.getAgents() ?? []);
                 if (liveAgents.length > 0) {
@@ -298,6 +302,7 @@ export class MobileProjectsStickyComposerAgentsUi {
                 }
             }
             this.host.stickyComposerBackendAgents = pickerAgents;
+            writeComposerAgentCatalogSession(pickerAgents);
             this.host.stickyComposerQaiqModels = snapshot.qaiqModels;
             const resolved = this.reconcileStickyComposerPinnedAgent(
                 this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
@@ -414,8 +419,11 @@ export class MobileProjectsStickyComposerAgentsUi {
             readonly onError: () => void;
         },
     ): void {
-        const cached = options.cached.length > 0
-            ? this.getComposerAgentPickerAgents(options.cached)
+        // After a reload the in-memory catalogs are empty: the tab's last answer paints the picker while
+        // the refresh runs. It is only a paint source; the load below still refreshes it.
+        const remembered = options.cached.length > 0 ? options.cached : readComposerAgentCatalogSession();
+        const cached = remembered.length > 0
+            ? this.getComposerAgentPickerAgents(remembered)
             : undefined;
         if (cached) {
             options.render(cached);

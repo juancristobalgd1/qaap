@@ -627,14 +627,20 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * {@link listAgents} after giving the stale auth probes up to `budgetMs` to settle. The probes
-     * run in parallel off the event loop; whatever is still pending keeps its last known state
-     * and lands in the cache for the next request.
+     * {@link listAgents} after giving the auth probes up to `budgetMs` to settle. A harness that has
+     * a remembered answer (even a stale one) is not waited for: its re-probe runs in the background,
+     * answers the next request, and the picker is served from the snapshot at once. Only a probe with
+     * no remembered answer (first request for this owner, or a catalog refresh that cleared the cache)
+     * holds the response up to the budget. The probes run in parallel off the event loop.
      */
     async listAgentsFresh(ownerLogin?: string, budgetMs = QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS): Promise<QaapAgentDescriptor[]> {
         const pending = listAgentsHelper(this.detectedAgents)
             .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
-            .map(agent => this.refreshAgentConnectionState(agent.id, ownerLogin))
+            .map(agent => {
+                const probe = this.refreshAgentConnectionState(agent.id, ownerLogin);
+                const remembered = this.agentConnectionStates.has(this.agentConnectionCacheKey(agent.id, ownerLogin));
+                return remembered ? undefined : probe;
+            })
             .filter((probe): probe is Promise<QaapAgentDescriptor['connectionState']> => !!probe);
         if (pending.length > 0) {
             let timer: ReturnType<typeof setTimeout> | undefined;

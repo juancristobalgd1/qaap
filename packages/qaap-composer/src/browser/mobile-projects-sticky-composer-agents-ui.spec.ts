@@ -61,6 +61,8 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
 
     beforeEach(() => {
         window.localStorage.clear();
+        // The tab's remembered catalog must not leak between cases.
+        window.sessionStorage.clear();
     });
 
     it('keeps an explicit shell selection when the VPS catalog contains coding agents', () => {

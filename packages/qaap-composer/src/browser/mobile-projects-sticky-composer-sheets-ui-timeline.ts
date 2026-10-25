@@ -299,10 +299,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                 && (agent.accessState === 'hosted' || agent.connectionState !== 'disconnected'),
         });
     }
-    if (agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id))) {
-        renderAgentPickerSkeleton(chrome.list);
-    }
-    await Promise.all(agentEntries.map(async entry => {
+    const resolveAgentModels = (): Promise<void> => Promise.all(agentEntries.map(async entry => {
         let models = chrome.modelsByAgent.get(entry.id);
         if (models === undefined) {
             if (entry.available !== false && agentSupportsModelPicker(entry.id)) {
@@ -323,7 +320,23 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             chrome.modelsByAgent.set(entry.id, models);
         }
         (entry as { models: readonly QaapQaiqModelOption[] }).models = models;
-    }));
+    })).then(() => undefined);
+    const modelListsPending = agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id));
+    if (modelListsPending) {
+        // The rows are usable without the model lists (those only label the stored model and open the
+        // drill-down), so the list paints now and repaints once they arrive. Holding the whole picker on
+        // a skeleton for the slowest CLI model probe made every first open wait for it.
+        for (const entry of agentEntries) {
+            (entry as { models: readonly QaapQaiqModelOption[] }).models = chrome.modelsByAgent.get(entry.id) ?? [];
+        }
+        void resolveAgentModels().then(() => {
+            if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
+                void renderComposerAgentPickerExtracted(ctx, chrome, options);
+            }
+        });
+    } else {
+        await resolveAgentModels();
+    }
     if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
         return;
     }
