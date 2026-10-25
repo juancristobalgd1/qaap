@@ -185,6 +185,102 @@ describe('qaap-composer-preview-action', () => {
         expect(opened).to.deep.equal([IDENTITY_URL]);
     });
 
+    describe('the section live claim before the saved target', () => {
+        const LIVE_URL = 'http://localhost:3000/qaap-preview/u-alice-w-file-wor-p-file-wor-x-33333333-qqqqqqqq/';
+        const LIVE_ID = 'u-alice-w-file-wor-p-file-wor-x-33333333-qqqqqqqq';
+        const SAVED_ID = 'u-alice-w-file-wor-p-file-wor-x-11111111-abcdefgh';
+
+        it('opens the live claim when the saved target is dead, without probing the saved one', async () => {
+            const probed: string[] = [];
+            const opened: string[] = [];
+            const didOpen = await openCurrentComposerPreview(
+                'project-a',
+                () => identityReady,
+                async target => {
+                    probed.push(target.previewId ?? `port:${target.port}`);
+                    return target.previewId === LIVE_ID
+                        ? { ready: true, previewUrl: LIVE_URL }
+                        : { ready: false, previewUrl: IDENTITY_URL };
+                },
+                async url => {
+                    opened.push(url);
+                    return true;
+                },
+                'http://localhost:3000',
+                async () => ({ previewUrl: LIVE_URL }),
+            );
+            expect(didOpen).to.equal(true);
+            expect(probed).to.deep.equal([LIVE_ID]);
+            expect(opened).to.deep.equal([LIVE_URL]);
+            expect(probed).to.not.include(SAVED_ID);
+        });
+
+        it('keeps the saved-target flow when there is no live claim', async () => {
+            const probed: string[] = [];
+            const opened: string[] = [];
+            const didOpen = await openCurrentComposerPreview(
+                'project-a',
+                () => identityReady,
+                async target => {
+                    probed.push(target.previewId ?? `port:${target.port}`);
+                    return { ready: false, previewUrl: IDENTITY_URL };
+                },
+                async url => {
+                    opened.push(url);
+                    return true;
+                },
+                'http://localhost:3000',
+                async () => undefined,
+            );
+            expect(didOpen).to.equal(false);
+            expect(probed).to.deep.equal([SAVED_ID]);
+            expect(opened).to.deep.equal([]);
+        });
+
+        it('a live claim that is not ready yet falls through to the saved-target flow', async () => {
+            const probed: string[] = [];
+            const opened: string[] = [];
+            const didOpen = await openCurrentComposerPreview(
+                'project-a',
+                () => identityReady,
+                async target => {
+                    probed.push(target.previewId ?? `port:${target.port}`);
+                    return target.previewId === SAVED_ID
+                        ? { ready: true, previewUrl: IDENTITY_URL }
+                        : { ready: false, previewUrl: LIVE_URL };
+                },
+                async url => {
+                    opened.push(url);
+                    return true;
+                },
+                'http://localhost:3000',
+                async () => ({ previewUrl: LIVE_URL }),
+            );
+            expect(didOpen).to.equal(true);
+            expect(probed).to.deep.equal([LIVE_ID, SAVED_ID]);
+            expect(opened).to.deep.equal([IDENTITY_URL]);
+        });
+
+        it('a failed live lookup is treated as no live claim', async () => {
+            const probed: string[] = [];
+            const didOpen = await openCurrentComposerPreview(
+                'project-a',
+                () => identityReady,
+                async target => {
+                    probed.push(target.previewId ?? `port:${target.port}`);
+                    return { ready: false, previewUrl: IDENTITY_URL };
+                },
+                async () => true,
+                'http://localhost:3000',
+                async () => {
+                    throw new Error('network down');
+                },
+            );
+            expect(didOpen).to.equal(false);
+            expect(probed).to.deep.equal([SAVED_ID]);
+        });
+    });
+
     describe('previews the Run flow did not start (agent shell dev servers)', () => {
         const ORIGIN = 'https://qaap.example.test';
         const idle: ComposerPreviewRuntime = {

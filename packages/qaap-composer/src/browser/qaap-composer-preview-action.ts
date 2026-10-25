@@ -188,10 +188,23 @@ export async function openCurrentComposerPreview(
     probe: (target: ComposerPreviewTarget) => Promise<QaapDevPreviewProbeResponse>,
     open: (previewUrl: string) => Promise<boolean>,
     origin?: string,
+    lookupCurrent?: () => Promise<{ readonly previewUrl?: string } | undefined>,
 ): Promise<boolean> {
     const before = resolveRuntime();
     if (!before || before.projectId !== expectedProjectId) {
         return false;
+    }
+    // The section's live claim wins over the saved target: a saved identity may name a rotated host
+    // label whose probe fails although the preview is up. Only a ready live claim is opened here; any
+    // other answer keeps the saved-target flow below.
+    const live = await lookupCurrent?.().catch(() => undefined);
+    const liveUrl = live?.previewUrl?.trim();
+    const liveTarget = liveUrl ? resolveComposerPreviewTarget(liveUrl, origin) : undefined;
+    if (liveUrl && liveTarget) {
+        const liveResult = await probe(liveTarget).catch(() => undefined);
+        if (liveResult?.ready && resolveRuntime()?.projectId === expectedProjectId) {
+            return open(liveResult.previewUrl || liveUrl);
+        }
     }
     const candidate = resolveComposerPreviewCandidate(before, origin);
     const target = resolveComposerPreviewTarget(candidate, origin);

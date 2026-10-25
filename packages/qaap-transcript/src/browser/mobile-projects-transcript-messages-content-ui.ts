@@ -14,7 +14,8 @@ import {
 import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-worker-client';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { resolveCurrentPreviewHref } from '@theia/qaap-shared-core/lib/browser/qaap-preview-current-href';
 import {
     isQaapIsolatedPreviewHostLabel,
     parseQaapDevPreviewRequestPath,
@@ -219,10 +220,18 @@ export class MobileProjectsTranscriptMessagesContentUi {
             );
             return true;
         }
-        const previewUrl = normalizeTranscriptPreviewHref(href, publicOrigin);
-        if (!previewUrl || !summary || !project) {
+        const savedPreviewUrl = normalizeTranscriptPreviewHref(href, publicOrigin);
+        if (!savedPreviewUrl || !summary || !project) {
             return false;
         }
+        // The saved link may name a rotated host label: open the section's live preview as of this click.
+        const conversationId = summary.id;
+        const previewUrl = await resolveCurrentPreviewHref(savedPreviewUrl, async () => {
+            const current = await fetchQaapCurrentDevPreview([project.id], conversationId);
+            return current?.previewUrl
+                ? { previewUrl: normalizeTranscriptPreviewHref(current.previewUrl, publicOrigin) ?? current.previewUrl }
+                : undefined;
+        });
 
         const port = extractDevPreviewPortFromUrl(previewUrl);
         const previewId = extractTranscriptPreviewId(previewUrl, publicOrigin);
