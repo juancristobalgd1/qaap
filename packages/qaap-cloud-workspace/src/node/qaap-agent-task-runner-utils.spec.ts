@@ -56,6 +56,12 @@ describe('harness connection state', () => {
         expect(classifyAgentConnectionProbe('codex', 1, 'Not logged in', false)).to.equal('disconnected');
     });
 
+    it('treats OpenCode with zero saved credentials as signed out, even though it exits 0', () => {
+        // Real `opencode auth list` output with an empty auth store (exit 0).
+        expect(classifyAgentConnectionProbe('opencode', 0, '┌  Credentials ~/.local/share/opencode/auth.json\n│\n└  0 credentials', false)).to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('opencode', 0, '┌  Credentials\n│\n●  OpenCode api\n│\n└  1 credentials', false)).to.equal('connected');
+    });
+
     it('withholds API keys from Codex (and its auth probe) but not from QAIQ', () => {
         const env = { OPENAI_API_KEY: 'sk-proj', codex_api_key: 'k', OPENAI_BASE_URL: 'https://x', PATH: '/usr/bin' };
         expect(stripSignInOnlyAgentApiKeyEnv({ ...env }, 'codex')).to.deep.equal({ PATH: '/usr/bin' });

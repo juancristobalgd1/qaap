@@ -324,6 +324,10 @@ export function classifyAgentConnectionProbe(
         || /logged in|authenticated|credentials configured|active account/.test(sample)) {
         return 'connected';
     }
+    if (agentId.trim().toLowerCase() === 'opencode' && /\b0 credentials\b/.test(sample)) {
+        // `opencode auth list` exits 0 and prints its table even when nothing is saved.
+        return 'disconnected';
+    }
     if (agentId.trim().toLowerCase() === 'opencode' && sample.trim().length > 0) {
         // `opencode auth list` reports saved providers as rows without using the word "authenticated".
         return 'connected';
