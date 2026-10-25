@@ -59,10 +59,17 @@ export function writeStoredAgentToolApprovalRules(
     }
 }
 
+/**
+ * Effective shell/network scopes for the composer's policy. Rules are derived from the policy, not
+ * carried over from a previous one: `current` and the stored values can still hold the
+ * `shell: false` written by "Request approval" (or by an older build), and reusing them under
+ * "Approve for me" made every routine Bash call get denied. Approve for me therefore always resolves
+ * to the policy defaults (routine shell on, network gated); the composer exposes no per-scope toggle.
+ */
 export function reconcileAgentToolApprovalRules(
     policyId: QaapAgentApprovalPolicyId | undefined,
-    cwd: string | undefined,
-    current: QaapAgentToolApprovalRules | undefined,
+    _cwd: string | undefined,
+    _current: QaapAgentToolApprovalRules | undefined,
 ): QaapAgentToolApprovalRules {
     const policy = policyId ?? 'approve-for-me';
     if (policy === 'full-access') {
@@ -71,9 +78,5 @@ export function reconcileAgentToolApprovalRules(
     if (policy === 'request-approval') {
         return { shell: false, network: false };
     }
-    const stored = readStoredAgentToolApprovalRules(cwd);
-    return {
-        shell: current?.shell ?? stored?.shell ?? DEFAULT_APPROVE_FOR_ME_TOOL_RULES.shell,
-        network: current?.network ?? stored?.network ?? DEFAULT_APPROVE_FOR_ME_TOOL_RULES.network,
-    };
+    return { ...DEFAULT_APPROVE_FOR_ME_TOOL_RULES };
 }

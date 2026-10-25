@@ -141,7 +141,7 @@ export function createQaiqPreToolUseHookGate(
                 // guard): those requests fall through to the normal path, which rejects them with its message.
                 const qaapDenies = resolveQaiqControlRequestAutoAction(task.command ?? '', task.autoApprove, request) === 'deny';
                 if (result.decision === 'allow' && !qaapDenies
-                    && !findQaiqDevServerGuardDenial(request) && !findQaiqDestructiveCommandGuardDenial(request)) {
+                    && !findQaiqDevServerGuardDenial(request) && !findQaiqDestructiveCommandGuardDenial(request, task.cwd)) {
                     record(request, 'approve');
                     respond(request, 'approve');
                     return;
