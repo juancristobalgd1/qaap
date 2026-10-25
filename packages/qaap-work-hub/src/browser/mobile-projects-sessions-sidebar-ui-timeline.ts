@@ -28,11 +28,17 @@ export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSe
     const syncExpandedState = (): void => {
         const isExpanded = ctx.host.sessionsSidebarExpandedProjectIds.has(project.id);
         section.classList.toggle('theia-mod-collapsed', !isExpanded);
-        const chevronBtn = head.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn');
-        chevronBtn?.setAttribute('aria-expanded', String(isExpanded));
-        chevronBtn?.setAttribute('aria-label', isExpanded
+        // The chevron and the folder row both toggle the group, so both carry the disclosure state.
+        const toggleControls = head.querySelectorAll<HTMLElement>(
+            '.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn, .theia-mobile-work-hub-sessions-sidebar-project-row'
+        );
+        const toggleLabel = isExpanded
             ? nls.localize('qaap/sessionsSidebar/collapseProject', 'Collapse {0}', project.name)
-            : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name));
+            : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name);
+        toggleControls.forEach(control => {
+            control.setAttribute('aria-expanded', String(isExpanded));
+            control.setAttribute('aria-label', toggleLabel);
+        });
         const folderIcon = head.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-folder');
         if (folderIcon) {
             folderIcon.classList.toggle('codicon-folder', !isExpanded);
@@ -50,10 +56,7 @@ export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSe
     const toggleExpand = (): void => {
         setExpanded(!ctx.host.sessionsSidebarExpandedProjectIds.has(project.id));
     };
-    const ensureExpanded = (): void => {
-        setExpanded(true);
-    };
-    const head = ctx.createSessionsSidebarProjectRowHead(project, expanded, toggleExpand, ensureExpanded);
+    const head = ctx.createSessionsSidebarProjectRowHead(project, expanded, toggleExpand);
     const list = document.createElement('div');
     list.className = 'theia-mobile-projects-chats-list';
     ctx.appendSessionsSidebarConversationItems(list, project, conversations, onActivate, bypassConversationLimit);
@@ -63,8 +66,7 @@ export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSe
 
 export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     expanded: boolean,
-    onToggleExpand: () => void,
-    onEnsureExpanded?: () => void,): HTMLElement {
+    onToggleExpand: () => void,): HTMLElement {
     const row = document.createElement('div');
     row.className = 'theia-mobile-work-hub-sessions-sidebar-project-row-wrap';
     if (project.isCurrent) {
@@ -73,30 +75,34 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     const chevronBtn = document.createElement('button');
     chevronBtn.type = 'button';
     chevronBtn.className = 'theia-mobile-work-hub-sessions-sidebar-project-chevron-btn';
-    chevronBtn.setAttribute('aria-expanded', String(expanded));
-    chevronBtn.setAttribute('aria-label', expanded
-        ? nls.localize('qaap/sessionsSidebar/collapseProject', 'Collapse {0}', project.name)
-        : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name));
     const chevron = document.createElement('span');
     chevron.className = 'codicon codicon-chevron-right theia-mobile-work-hub-sessions-sidebar-project-chevron';
     chevron.setAttribute('aria-hidden', 'true');
     chevronBtn.append(chevron);
-    chevronBtn.addEventListener('click', ev => {
-        ev.stopPropagation();
-        onToggleExpand();
-        const nowExpanded = ctx.host.sessionsSidebarExpandedProjectIds.has(project.id);
-        chevronBtn.setAttribute('aria-expanded', String(nowExpanded));
-        chevronBtn.setAttribute('aria-label', nowExpanded
-            ? nls.localize('qaap/sessionsSidebar/collapseProject', 'Collapse {0}', project.name)
-            : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name));
-    });
     const head = document.createElement('button');
     head.type = 'button';
     head.className = 'theia-mobile-work-hub-sessions-sidebar-project-row';
-    head.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/openProject', 'Open {0}', project.name));
     if (ctx.host.agentsHubSelectedProjectId === project.id) {
         head.setAttribute('aria-current', 'true');
     }
+    // The chevron and the folder row share one disclosure control: both toggle the group and
+    // both carry the same aria-expanded / aria-label.
+    const syncToggleAria = (isExpanded: boolean): void => {
+        const label = isExpanded
+            ? nls.localize('qaap/sessionsSidebar/collapseProject', 'Collapse {0}', project.name)
+            : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name);
+        for (const control of [chevronBtn, head]) {
+            control.setAttribute('aria-expanded', String(isExpanded));
+            control.setAttribute('aria-label', label);
+        }
+    };
+    syncToggleAria(expanded);
+    const toggleFromControl = (ev: MouseEvent): void => {
+        ev.stopPropagation();
+        onToggleExpand();
+        syncToggleAria(ctx.host.sessionsSidebarExpandedProjectIds.has(project.id));
+    };
+    chevronBtn.addEventListener('click', toggleFromControl);
     const folder = document.createElement('span');
     folder.className = 'theia-mobile-work-hub-sessions-sidebar-project-folder codicon '
         + (expanded ? 'codicon-folder-opened' : 'codicon-folder');
@@ -105,17 +111,8 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     name.className = 'theia-mobile-work-hub-sessions-sidebar-project-name';
     name.textContent = project.name;
     head.append(folder, name);
-    head.addEventListener('click', ev => {
-        ev.stopPropagation();
-        if (onEnsureExpanded) {
-            // The project Set owns expansion state. Reapply it to a possibly stale group
-            // before selecting, then preserve the row's expand-if-collapsed behavior.
-            onEnsureExpanded();
-        } else if (!ctx.host.sessionsSidebarExpandedProjectIds.has(project.id)) {
-            onToggleExpand();
-        }
-        void ctx.selectSessionsSidebarProject(project);
-    });
+    // Native button activation maps Enter and Space to this click, so keyboard users get the same toggle.
+    head.addEventListener('click', toggleFromControl);
     const actions = document.createElement('div');
     actions.className = 'theia-mobile-work-hub-sessions-sidebar-project-actions';
     actions.append(ctx.createSessionsSidebarNewAgentControl(project));

@@ -812,10 +812,9 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(ui.clearFailedModeProjectId).to.equal(undefined);
     });
 
-    it('project name switches the workspace; chevron only expands or collapses', async () => {
+    it('folder row and chevron share one expand/collapse control; neither opens the project', () => {
         const project = { id: 'json-server', name: 'json-server', status: 'working' } as MobileProjectEntry;
-        let selectedId: string | undefined;
-        let toggled = 0;
+        let selected = 0;
         let hidOverlay = false;
         const expandedIds = new Set<string>();
         const host = {
@@ -829,16 +828,13 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
                 },
                 toggleCardMenu: () => undefined,
             },
-            selectSessionsSidebarProject: async (entry: MobileProjectEntry) => {
-                selectedId = entry.id;
-            },
+            selectSessionsSidebarProject: async () => { selected += 1; },
             sessionsSidebar: {
                 hideForMobileOverlay: () => { hidOverlay = true; },
             },
         } as unknown as MobileProjectsSessionsSidebarHost;
         const ui = new MobileProjectsSessionsSidebarUi(host);
         const row = ui.createSessionsSidebarProjectRowHead(project, false, () => {
-            toggled += 1;
             if (expandedIds.has(project.id)) {
                 expandedIds.delete(project.id);
             } else {
@@ -851,22 +847,27 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         const name = row.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-row') as HTMLButtonElement;
         expect(chevron).to.not.equal(null);
         expect(name).to.not.equal(null);
-
-        chevron.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        expect(toggled).to.equal(1);
-        expect(selectedId).to.equal(undefined);
-        expect(hidOverlay).to.equal(false);
+        expect(name.getAttribute('aria-expanded')).to.equal('false');
+        expect(name.getAttribute('aria-label')).to.equal('Expand json-server');
 
         name.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        await new Promise<void>(resolve => { setTimeout(resolve, 0); });
-        expect(selectedId).to.equal(project.id);
-        expect(toggled).to.equal(1);
-        expect(hidOverlay).to.equal(true);
+        expect(expandedIds.has(project.id)).to.equal(true);
+        expect(name.getAttribute('aria-expanded')).to.equal('true');
+        expect(name.getAttribute('aria-label')).to.equal('Collapse json-server');
+        expect(chevron.getAttribute('aria-expanded')).to.equal('true');
+
+        chevron.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        expect(expandedIds.has(project.id)).to.equal(false);
+        expect(name.getAttribute('aria-expanded')).to.equal('false');
+        expect(chevron.getAttribute('aria-label')).to.equal('Expand json-server');
+
+        expect(selected).to.equal(0);
+        expect(hidOverlay).to.equal(false);
 
         row.remove();
     });
 
-    it('repairs the rendered group from expanded-project state on the first project-name click', () => {
+    it('repairs the rendered group from expanded-project state on the first folder-row click', () => {
         const project = { id: 'shadcn-landing-page', name: 'shadcn-landing-page', status: 'working' } as MobileProjectEntry;
         const expandedIds = new Set<string>();
         const ctx: MobileProjectsSessionsSidebarUiContext = {
@@ -878,8 +879,8 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
                     toggleCardMenu: () => undefined,
                 },
             },
-            createSessionsSidebarProjectRowHead: (entry: MobileProjectEntry, expanded: boolean, onToggle: () => void, onEnsure?: () => void): HTMLElement =>
-                createSessionsSidebarProjectRowHeadExtracted(ctx as unknown as MobileProjectsSessionsSidebarUiContext, entry, expanded, onToggle, onEnsure),
+            createSessionsSidebarProjectRowHead: (entry: MobileProjectEntry, expanded: boolean, onToggle: () => void): HTMLElement =>
+                createSessionsSidebarProjectRowHeadExtracted(ctx as unknown as MobileProjectsSessionsSidebarUiContext, entry, expanded, onToggle),
             createSessionsSidebarNewAgentControl: () => document.createElement('button'),
             appendSessionsSidebarConversationItems: () => undefined,
             selectSessionsSidebarProject: async () => undefined,
@@ -888,24 +889,26 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         document.body.append(group);
 
         // Streaming/default expansion may update the Set after a stale row is mounted.
-        // The project-name click should make the DOM reflect that state immediately.
+        // The folder-row click toggles from the Set, so the repaired DOM must match the result.
         expandedIds.add(project.id);
         const name = group.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-row') as HTMLButtonElement;
         name.click();
 
-        expect(group.classList.contains('theia-mod-collapsed')).to.equal(false);
-        expect(group.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn')?.getAttribute('aria-expanded')).to.equal('true');
-        expect(expandedIds.has(project.id)).to.equal(true);
+        expect(group.classList.contains('theia-mod-collapsed')).to.equal(true);
+        expect(group.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn')?.getAttribute('aria-expanded')).to.equal('false');
+        expect(name.getAttribute('aria-expanded')).to.equal('false');
+        expect(expandedIds.has(project.id)).to.equal(false);
 
         const chevron = group.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn') as HTMLButtonElement;
+        chevron.click();
+        expect(group.classList.contains('theia-mod-collapsed')).to.equal(false);
+        expect(chevron.getAttribute('aria-expanded')).to.equal('true');
+        expect(name.getAttribute('aria-expanded')).to.equal('true');
+        expect(expandedIds.has(project.id)).to.equal(true);
         chevron.click();
         expect(group.classList.contains('theia-mod-collapsed')).to.equal(true);
         expect(chevron.getAttribute('aria-expanded')).to.equal('false');
         expect(expandedIds.has(project.id)).to.equal(false);
-        chevron.click();
-        expect(group.classList.contains('theia-mod-collapsed')).to.equal(false);
-        expect(chevron.getAttribute('aria-expanded')).to.equal('true');
-        expect(expandedIds.has(project.id)).to.equal(true);
         group.remove();
     });
 
@@ -928,7 +931,7 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(name.getAttribute('aria-current')).to.equal('true');
     });
 
-    it('selecting a collapsed project expands it so its conversations become visible', async () => {
+    it('clicking the folder row of a collapsed project expands it so its conversations become visible', () => {
         const project = { id: 'marked', name: 'marked', status: 'working' } as MobileProjectEntry;
         let toggled = 0;
         const expandedIds = new Set<string>();
@@ -949,7 +952,6 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         });
         const name = row.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-row') as HTMLButtonElement;
         name.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        await new Promise<void>(resolve => { setTimeout(resolve, 0); });
         expect(toggled).to.equal(1);
         expect(expandedIds.has(project.id)).to.equal(true);
     });

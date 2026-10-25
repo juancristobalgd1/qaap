@@ -71,6 +71,8 @@ export interface MobileProjectsCardMenuHost {
     onClearProjectChats(project: MobileProjectEntry): Promise<void>;
     onClearFailedTasks(project: MobileProjectEntry): Promise<void>;
     closeCurrentWorkspace(): Promise<void>;
+    /** Switches the workspace to this project (the project row no longer does this; its menu does). */
+    selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void>;
     ensureOverlayUi(): {
         parallel: {
             openVariantChooseSheet(summary: QaapAgentConversationSummaryDTO): void;
@@ -134,6 +136,17 @@ export class MobileProjectsCardMenuUi {
         menu.className = 'theia-mobile-projects-card-menu';
         menu.setAttribute('role', 'menu');
         menu.hidden = true;
+
+        // Opening the project moved here from the sidebar folder row, which now expands and collapses.
+        this.appendCardMenuItem(menu, {
+            label: nls.localize('qaap/mobileProjects/openProject', 'Open project'),
+            iconClass: 'codicon-folder-opened',
+            onSelect: () => {
+                this.closeCardMenu();
+                this.host.sessionsSidebar?.hideForMobileOverlay();
+                void this.host.selectSessionsSidebarProject(project);
+            },
+        });
 
         if (!matchesMobileOneColumnLayout()) {
             this.appendCardMenuItem(menu, {
