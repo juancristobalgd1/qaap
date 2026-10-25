@@ -65,6 +65,7 @@ import {
     type QaapNativeModelRoutingTable,
 } from '../common/qaap-agent-native-model-routing';
 import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default-workflow';
+import { isConversationalTurn } from '../common/qaap-agent-conversational-turn';
 import { prependAgentTaskContextToPrompt, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
 import {
@@ -370,7 +371,9 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         // body, the per-project info artifact, the repo's own agent instructions (CLAUDE.md /
         // AGENTS.md), and a shallow repo map — so a stateless CLI starts warm instead of cold.
         const resolvedCwd = cwd ? path.resolve(cwd) : undefined;
-        const repoContext: QaapAgentRepoContext | undefined = resolvedCwd
+        // A greeting or thanks needs no workspace context: skip it so the reply cannot echo the repo.
+        const conversationalTurn = isConversationalTurn(runnerPrompt, userQuery);
+        const repoContext: QaapAgentRepoContext | undefined = resolvedCwd && !conversationalTurn
             ? {
                 agentInstructions: ctx.readAgentInstructions(resolvedCwd),
                 repoMap: ctx.readRepoMap(resolvedCwd),
@@ -382,8 +385,8 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             : undefined;
         const promptWithTaskContext = prependAgentTaskContextToPrompt(
             workflowPrompt,
-            contextPreamble,
-            resolvedCwd ? ctx.readProjectInfo(resolvedCwd) : undefined,
+            conversationalTurn ? undefined : contextPreamble,
+            resolvedCwd && !conversationalTurn ? ctx.readProjectInfo(resolvedCwd) : undefined,
             repoContext,
         );
         const modeInstruction = resolveBackendInteractionModeSystemInstruction(interactionModeId);

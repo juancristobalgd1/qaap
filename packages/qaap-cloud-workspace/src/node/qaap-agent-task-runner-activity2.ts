@@ -1,5 +1,6 @@
 import { SHELL_AGENT_ID, EMPTY_TURN_GATE_COMMAND, MAX_LOG_BYTES, QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS, type QaapGenericCommandResult } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
 // Extracted from qaap-agent-task-runner.ts
 
 import * as fs from 'fs';
@@ -56,6 +57,11 @@ export function setTaskVerificationPhaseExtracted(ctx: QaapAgentTaskRunnerContex
 }
 
 export async function finishSuccessfulTaskAfterVerificationExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
+        // Conversational turns have no change to verify: skip the empty-turn gate, verification and review.
+        if (isConversationalTurnTask(ctx.tasks.get(task.id) ?? task)) {
+            ctx.finishTask(task.id, 'completed', exitCode);
+            return;
+        }
         // Verification/fix turns use their own bounded lane. A saturated lane waits FIFO instead of
         // silently upgrading an unverified change to `completed`. The commands inside the lane have
         // hard wall clocks, so a waiter cannot be held indefinitely by a healthy runner.
