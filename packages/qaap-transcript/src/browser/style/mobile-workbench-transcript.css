@@ -2489,6 +2489,15 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   max-width: none;
 }
 
+/* Discreet line under the provenance badge when the turn ran on a fallback model. */
+.theia-mobile-turn-fallback-notice {
+  margin: -4px 0 8px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--theia-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
 .theia-mobile-process-accordion.theia-mod-working .theia-mobile-process-accordion-label {
   color: var(--theia-foreground);
 }

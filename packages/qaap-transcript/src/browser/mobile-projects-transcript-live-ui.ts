@@ -62,6 +62,10 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptComposerHost: HTMLElement | undefined;
     transcriptComposerPrefsConvId: string | undefined;
+    /** Optional: the composer's model for the open conversation (owned by the composer layer). */
+    transcriptComposerAgentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+    /** Optional: the composer's per-conversation prefs apply (owned by the composer layer). Used to adopt a fallback model. */
+    applyTranscriptComposerPrefsFromConversation?: (conv: QaapAgentConversationDTO, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO) => void;
     transcriptComposerSendRefresh: (() => void) | undefined;
     transcriptPreviewRequestPending: boolean;
     transcriptPreviewRequestRunning: boolean;

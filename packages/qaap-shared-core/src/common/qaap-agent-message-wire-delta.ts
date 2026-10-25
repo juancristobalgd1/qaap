@@ -94,6 +94,10 @@ export interface QaapAgentMessageWireSnapshot {
     readonly turnAgentId?: string;
     /** @see QaapAgentMessageDTO.turnAgentModel */
     readonly turnAgentModel?: QaapAgentMessageDTO['turnAgentModel'];
+    /** @see QaapAgentMessageDTO.fallbackFromModel */
+    readonly fallbackFromModel?: QaapAgentMessageDTO['fallbackFromModel'];
+    /** @see QaapAgentMessageDTO.fallbackReason */
+    readonly fallbackReason?: QaapAgentMessageDTO['fallbackReason'];
     /** @see QaapAgentMessageDTO.runUserMessageId */
     readonly runUserMessageId?: string;
     readonly runActive?: boolean;
@@ -110,6 +114,8 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
         segments: message.segments,
         turnAgentId: message.turnAgentId,
         turnAgentModel: message.turnAgentModel,
+        fallbackFromModel: message.fallbackFromModel,
+        fallbackReason: message.fallbackReason,
         runUserMessageId: message.runUserMessageId,
         runActive: message.runActive,
         runFinishedAt: message.runFinishedAt,
@@ -120,7 +126,7 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
 export function toAgentMessageWirePayload(
     message: Pick<
         QaapAgentMessageDTO,
-        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId' | 'runActive' | 'runFinishedAt'
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'fallbackFromModel' | 'fallbackReason' | 'runUserMessageId' | 'runActive' | 'runFinishedAt'
     >,
 ): QaapAgentMessageDTO {
     const base: QaapAgentMessageDTO = {
@@ -132,6 +138,8 @@ export function toAgentMessageWirePayload(
         createdAt: message.createdAt,
         ...(message.turnAgentId ? { turnAgentId: message.turnAgentId } : {}),
         ...(message.turnAgentModel ? { turnAgentModel: message.turnAgentModel } : {}),
+        ...(message.fallbackFromModel ? { fallbackFromModel: message.fallbackFromModel } : {}),
+        ...(message.fallbackReason ? { fallbackReason: message.fallbackReason } : {}),
         ...(message.runUserMessageId ? { runUserMessageId: message.runUserMessageId } : {}),
     };
     if (message.traceEvents?.length) {
@@ -147,7 +155,7 @@ export function toAgentMessageWirePayload(
 export function toAgentMessageWireSnapshot(
     message: Pick<
         QaapAgentMessageDTO,
-        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId' | 'runActive' | 'runFinishedAt'
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'fallbackFromModel' | 'fallbackReason' | 'runUserMessageId' | 'runActive' | 'runFinishedAt'
     >,
 ): QaapAgentMessageWireSnapshot {
     const snapshot: QaapAgentMessageWireSnapshot = {
@@ -159,6 +167,8 @@ export function toAgentMessageWireSnapshot(
         createdAt: message.createdAt,
         ...(message.turnAgentId ? { turnAgentId: message.turnAgentId } : {}),
         ...(message.turnAgentModel ? { turnAgentModel: message.turnAgentModel } : {}),
+        ...(message.fallbackFromModel ? { fallbackFromModel: message.fallbackFromModel } : {}),
+        ...(message.fallbackReason ? { fallbackReason: message.fallbackReason } : {}),
         ...(message.runUserMessageId ? { runUserMessageId: message.runUserMessageId } : {}),
     };
     if (message.traceEvents?.length) {
@@ -177,10 +187,11 @@ export function toAgentMessageWireSnapshot(
  * re-seal (fallback-model retry) into `noop`, which `fireAgentMessageWireUpdate` drops outright.
  */
 function turnProvenanceFingerprint(
-    message: Pick<QaapAgentMessageDTO, 'turnAgentId' | 'turnAgentModel' | 'runActive' | 'runFinishedAt'>,
+    message: Pick<QaapAgentMessageDTO, 'turnAgentId' | 'turnAgentModel' | 'fallbackFromModel' | 'runActive' | 'runFinishedAt'>,
 ): string {
     const model = message.turnAgentModel;
-    return `${message.runActive ?? false}|${message.runFinishedAt ?? ''}|${message.turnAgentId ?? ''}|${model ? `${model.provider}:${model.vendor}:${model.modelId}` : ''}`;
+    const fallbackFrom = message.fallbackFromModel;
+    return `${message.runActive ?? false}|${message.runFinishedAt ?? ''}|${message.turnAgentId ?? ''}|${model ? `${model.provider}:${model.vendor}:${model.modelId}` : ''}|${fallbackFrom ? `${fallbackFrom.vendor}:${fallbackFrom.modelId}` : ''}`;
 }
 
 function segmentFingerprint(segment: QaapAgentMessageSegmentDTO): string {

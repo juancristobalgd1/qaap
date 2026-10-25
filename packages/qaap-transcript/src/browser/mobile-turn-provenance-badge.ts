@@ -13,6 +13,56 @@
 import { createAgentIdentityElement, resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { QaapAgentMessageDTO, QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { nls } from '@theia/core/lib/common/nls';
+
+/** Class of the discreet line under the provenance badge that says a turn ran on a fallback model. */
+export const MOBILE_TURN_FALLBACK_NOTICE_CLASS = 'theia-mobile-turn-fallback-notice';
+
+/** The model a turn was asked for and the reason it was re-run on another model. */
+export interface TranscriptTurnFallback {
+    readonly fromModel: QaapCreateAgentTaskQaiqModel;
+    readonly reason?: QaapAgentModelFallbackReason;
+}
+
+/**
+ * The localized fallback notice, e.g. "minimax-m3.1-flash is unavailable — used nemotron-3-ultra instead."
+ * Shared by every call site through {@link syncTranscriptStandaloneTurnProvenance}, so the transcript
+ * never shows a model swap without saying so.
+ */
+export function formatTranscriptTurnFallbackNotice(
+    fallback: TranscriptTurnFallback,
+    usedModel: QaapCreateAgentTaskQaiqModel | undefined,
+): string {
+    const from = formatQaiqModelIdShortLabel(fallback.fromModel.modelId.trim());
+    const to = formatQaiqModelIdShortLabel((usedModel?.modelId ?? '').trim());
+    return fallback.reason === 'turn-failed'
+        ? nls.localize('theia/qaap/transcript/modelFallbackTurnFailed', '{0} did not finish the turn — used {1} instead.', from, to)
+        : nls.localize('theia/qaap/transcript/modelFallbackUnavailable', '{0} is unavailable — used {1} instead.', from, to);
+}
+
+/** Who drove a turn, and - when it was re-run on a fallback model - the model that was asked for. */
+export interface TurnProvenance {
+    readonly turnAgentId?: string;
+    readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
+    readonly fallback?: TranscriptTurnFallback;
+}
+
+/** The fallback a sealed user turn carries, or undefined when the turn ran on the model it was sent with. */
+export function turnFallbackOf(
+    userMessage: Pick<QaapAgentMessageDTO, 'fallbackFromModel' | 'fallbackReason'> | undefined,
+): TranscriptTurnFallback | undefined {
+    const fromModel = userMessage?.fallbackFromModel;
+    return fromModel ? { fromModel, reason: userMessage?.fallbackReason } : undefined;
+}
+
+function transcriptTurnFallbackKey(fallback: TranscriptTurnFallback | undefined): string {
+    if (!fallback) {
+        return '';
+    }
+    const model = fallback.fromModel;
+    return `${model.vendor ?? ''}/${model.modelId ?? ''}#${fallback.reason ?? ''}`;
+}
 
 /**
  * Legacy class formerly used when provenance lived inside the accordion
@@ -102,10 +152,13 @@ function clearLegacyAccordionHeaderProvenance(header: HTMLElement): void {
  * of the turn's segments body — ABOVE the process accordion when tools exist, or above the
  * thought brief / text blocks when they do not. Never mounts inside the accordion header.
  *
- * Idempotent: re-running with the same `turnAgentId`/`turnAgentModel` is a no-op (dataset-key
- * compare), so calling it on every streaming sync tick never duplicates or flickers the badge.
- * An undefined `turnAgentId` (historical turns predating the field) removes any existing badge
- * and leaves no gap -- no reserved space, no layout shift.
+ * When the turn was re-run on a fallback model ({@link TranscriptTurnFallback}), a discreet notice
+ * line is mounted directly under the badge, so the swap is stated in the transcript itself.
+ *
+ * Idempotent: re-running with the same arguments is a no-op (dataset-key compare), so calling it on
+ * every streaming sync tick never duplicates or flickers the badge or the notice. An undefined
+ * `turnAgentId` (historical turns predating the field) removes any existing badge and notice and
+ * leaves no gap -- no reserved space, no layout shift.
  *
  * Always uses `prepend`, so repeated calls keep the badge in the same slot even after later
  * content (accordion, thought brief, text blocks) has been appended.
@@ -114,26 +167,38 @@ export function syncTranscriptStandaloneTurnProvenance(
     body: HTMLElement,
     turnAgentId: string | undefined,
     turnAgentModel: QaapCreateAgentTaskQaiqModel | undefined,
+    fallback?: TranscriptTurnFallback,
 ): void {
     const existing = body.querySelector<HTMLElement>(`:scope > .${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`);
+    const existingNotice = body.querySelector<HTMLElement>(`:scope > .${MOBILE_TURN_FALLBACK_NOTICE_CLASS}`);
     if (!turnAgentId) {
         existing?.remove();
+        existingNotice?.remove();
         return;
     }
-    const key = transcriptProvenanceBadgeKey(turnAgentId, turnAgentModel);
-    if (existing) {
-        if (existing.dataset.qaapProvenanceKey === key) {
-            // Keep the badge first even when identity is unchanged (accordion may have been
-            // rebuilt and prepended ahead of it).
-            if (body.firstElementChild !== existing) {
-                body.prepend(existing);
-            }
-            return;
+    const key = `${transcriptProvenanceBadgeKey(turnAgentId, turnAgentModel)}::${transcriptTurnFallbackKey(fallback)}`;
+    if (existing && existing.dataset.qaapProvenanceKey === key) {
+        // Keep the badge first even when identity is unchanged (accordion may have been
+        // rebuilt and prepended ahead of it), with the notice right under it.
+        if (body.firstElementChild !== existing) {
+            body.prepend(existing);
         }
-        existing.remove();
+        if (existingNotice && existing.nextElementSibling !== existingNotice) {
+            existing.after(existingNotice);
+        }
+        return;
     }
+    existing?.remove();
+    existingNotice?.remove();
     const badge = createTranscriptProvenanceBadgeElement(MOBILE_TURN_PROVENANCE_STANDALONE_CLASS, turnAgentId, turnAgentModel);
+    badge.dataset.qaapProvenanceKey = key;
     body.prepend(badge);
+    if (fallback) {
+        const notice = document.createElement('div');
+        notice.className = MOBILE_TURN_FALLBACK_NOTICE_CLASS;
+        notice.textContent = formatTranscriptTurnFallbackNotice(fallback, turnAgentModel);
+        badge.after(notice);
+    }
 }
 
 // Exported for consumers that need to clear legacy provenance nodes (e.g. the

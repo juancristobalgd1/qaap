@@ -12,10 +12,18 @@ import {
     agentTurnHasRetryableToolSupportFailure,
     agentTurnQualifiesForModelFallback,
     buildAgentModelFallbackChain,
+    resolveAgentModelFallbackReason,
     resolveNextFallbackAgentModel,
 } from './qaap-agent-model-fallback';
 
 describe('qaap-agent-model-fallback', () => {
+    it('names the reason a turn was re-run: unavailable model vs. any other failed turn', () => {
+        const unavailable = { content: "There's an issue with the selected model (x). It may not exist or you may not have access to it." };
+        expect(resolveAgentModelFallbackReason(unavailable)).to.equal('model-unavailable');
+        expect(resolveAgentModelFallbackReason({ content: '' })).to.equal('turn-failed');
+        expect(resolveAgentModelFallbackReason(undefined)).to.equal('turn-failed');
+    });
+
     it('builds an OpenRouter chain with the current model first', () => {
         const current = {
             provider: 'openai' as const,
@@ -26,8 +34,8 @@ describe('qaap-agent-model-fallback', () => {
         expect(chain.map(agentModelKey)).to.deep.equal([
             'openrouter/moonshotai/kimi-k2.6:free',
             'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
-            'openrouter/minimax/minimax-m3.1-flash:free',
             'openrouter/google/gemma-4-31b-it:free',
+            'openrouter/poolside/laguna-s-2.1:free',
         ]);
     });
 
@@ -42,9 +50,9 @@ describe('qaap-agent-model-fallback', () => {
         const chain = buildAgentModelFallbackChain('qaiq', current);
         expect(chain.map(agentModelKey)).to.deep.equal([
             'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
-            'openrouter/minimax/minimax-m3.1-flash:free',
             'openrouter/google/gemma-4-31b-it:free',
             'openrouter/poolside/laguna-s-2.1:free',
+            'openrouter/cohere/north-mini-code:free',
         ]);
         const orgs = new Set(chain.map(model => model.modelId.split('/')[0]));
         expect(orgs.size).to.equal(chain.length);
@@ -71,7 +79,7 @@ describe('qaap-agent-model-fallback', () => {
             'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
         ]);
         const next = resolveNextFallbackAgentModel('qaiq', current, tried);
-        expect(agentModelKey(next)).to.equal('openrouter/minimax/minimax-m3.1-flash:free');
+        expect(agentModelKey(next)).to.equal('openrouter/google/gemma-4-31b-it:free');
     });
 
     it('treats empty agent output as retryable', () => {

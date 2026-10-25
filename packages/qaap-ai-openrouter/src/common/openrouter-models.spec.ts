@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import {
+    OPENROUTER_EXCLUDED_MODEL_SLUGS,
     filterOpenRouterModelSlugs,
     isExcludedOpenRouterModelSlug,
     isFreeOpenRouterModelId,
@@ -43,6 +44,13 @@ describe('openrouter-models', () => {
             expect(isExcludedOpenRouterModelSlug(slug), slug).to.be.true;
             expect(OPENROUTER_DEFAULT_FREE_MODELS, slug).to.not.include(slug);
         }
+    });
+
+    it('curated free list carries no slug OpenRouter no longer lists (minimax-m3.1-flash:free, 2026-10-25)', () => {
+        // Static guard: this exact slug 404'd ("may not exist or you may not have access") on every
+        // turn and was silently swapped out. Paid `minimax/minimax-m3.1-flash` is not a free pick.
+        expect(OPENROUTER_DEFAULT_FREE_MODELS).to.not.include('minimax/minimax-m3.1-flash:free');
+        expect(OPENROUTER_EXCLUDED_MODEL_SLUGS.has('minimax/minimax-m3.1-flash:free')).to.be.true;
     });
 
     it('defaults to a live tool-capable model, never the dead Oct 2026 ones', () => {

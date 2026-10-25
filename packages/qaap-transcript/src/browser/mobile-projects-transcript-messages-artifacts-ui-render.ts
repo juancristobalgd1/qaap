@@ -5,7 +5,6 @@ import { MOBILE_CLOSING_TEXT_ERROR_PREFIX } from './mobile-projects-transcript-m
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, resolveRunUserMessageId } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     extractLastFailedToolFromMessage,
     localizeAgentFailureShortReason,
@@ -32,6 +31,7 @@ import {
     wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
 import { ensureSlowTurnHint } from './qaap-slow-turn-hint';
+import { turnFallbackOf, type TurnProvenance } from './mobile-turn-provenance-badge';
 import {
     removeTranscriptLiveStatusElement,
     resolveTranscriptChatHostFromNode,
@@ -111,7 +111,7 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
             // inside would be worse than no accordion at all.
             const effectiveMessage = options?.message ?? ctx.resolveLastAgentMessage(conv);
             const provenance = ctx.resolveTurnProvenance(conv, effectiveMessage);
-            syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel);
+            syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel, provenance.fallback);
             // No tools yet — render thinking content (if any) as a thought brief,
             // then visible text segments. This preserves the thinking-phase UX
             // (collapsible reasoning block with live indicator) before the first
@@ -221,7 +221,7 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: MobileProjectsT
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
         const provenance = ctx.resolveTurnProvenance(conv, effectiveMessage);
         // Agent/model identity always sits ABOVE the accordion (never inside its summary).
-        syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel);
+        syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel, provenance.fallback);
         const accordion = wrapMobileProcessAccordion(eventTimeline, {
             isWorking,
             isError,
@@ -397,13 +397,17 @@ export function resolveTranscriptRowAgentMessageExtracted(ctx: MobileProjectsTra
 }
 
 export function resolveTurnProvenanceExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, conv: QaapAgentConversationDTO | undefined,
-        message: QaapAgentMessageDTO | undefined,): { readonly turnAgentId?: string; readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel } {
+        message: QaapAgentMessageDTO | undefined,): TurnProvenance {
         if (!conv || !message) {
             return {};
         }
         const userMessageId = resolveRunUserMessageId(conv.messages, message.id);
         const userMessage = userMessageId ? conv.messages.find(entry => entry.id === userMessageId) : undefined;
-        return { turnAgentId: userMessage?.turnAgentId, turnAgentModel: userMessage?.turnAgentModel };
+        return {
+            turnAgentId: userMessage?.turnAgentId,
+            turnAgentModel: userMessage?.turnAgentModel,
+            fallback: turnFallbackOf(userMessage),
+        };
 }
 
 export function resolveMobileClosingNarrativeActionExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, text: string,

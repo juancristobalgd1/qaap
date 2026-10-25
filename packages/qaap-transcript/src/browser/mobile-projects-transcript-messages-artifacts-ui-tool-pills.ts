@@ -222,7 +222,7 @@ export function patchStreamingThoughtBriefExtracted(ctx: MobileProjectsTranscrip
     if (!hasMobileExecutionEventTimeline(row)) {
         const message = ctx.resolveTranscriptRowAgentMessage(row, conv);
         const provenance = ctx.resolveTurnProvenance(conv, message);
-        syncTranscriptStandaloneTurnProvenance(segmentsBody, provenance.turnAgentId, provenance.turnAgentModel);
+        syncTranscriptStandaloneTurnProvenance(segmentsBody, provenance.turnAgentId, provenance.turnAgentModel, provenance.fallback);
     }
     const thinking = resolveTranscriptThinkingContent([...segments]);
     const stats = resolveTranscriptActivityStats([...segments]);

@@ -166,6 +166,47 @@ export function ensureVisibilityResumeListenerExtracted(ctx: MobileProjectsTrans
         });
 }
 
+/** The fallback-model turn each live host last adopted: adopting is once per turn, never a tug-of-war with a manual pick. */
+const adoptedTurnFallbackByHost = new WeakMap<object, string>();
+
+/**
+ * When the server re-ran a user turn on a fallback model, the composer follows it for THIS conversation:
+ * the composer's model becomes the model that actually runs, so the next follow-up is sent with it.
+ * Adopted once per turn (keyed by the re-sealed user message id); a later manual pick is never overridden.
+ */
+export function adoptTurnFallbackModelExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conversationId: string, message: QaapAgentMessageDTO): void {
+        const host = ctx.host;
+        const fallbackModel = message.turnAgentModel;
+        // Only a dead pick moves the composer. A turn that merely failed transiently keeps the pick:
+        // the notice still says it was re-run, but the user's model choice is left alone.
+        if (message.role !== 'user' || !message.fallbackFromModel || !fallbackModel
+            || message.fallbackReason !== 'model-unavailable') {
+            return;
+        }
+        const conv = host.transcriptLastConv;
+        const project = host.transcriptOpenProject;
+        const summary = host.transcriptOpenSummary;
+        if (!conv || !project || !summary || conv.id !== conversationId || summary.id !== conversationId) {
+            return;
+        }
+        if (host.transcriptComposerPrefsConvId !== conversationId || !host.applyTranscriptComposerPrefsFromConversation) {
+            return;
+        }
+        const current = host.transcriptComposerAgentModel;
+        if (current?.vendor === fallbackModel.vendor && current.modelId === fallbackModel.modelId) {
+            return;
+        }
+        if (adoptedTurnFallbackByHost.get(host) === message.id) {
+            return;
+        }
+        adoptedTurnFallbackByHost.set(host, message.id);
+        host.applyTranscriptComposerPrefsFromConversation({
+            ...conv,
+            agentModel: fallbackModel,
+            qaiqModel: fallbackModel,
+        }, project, summary);
+}
+
 export function handleTranscriptSseMessageExtracted(ctx: MobileProjectsTranscriptLiveUiContext, event: ConversationLiveMessageEvent): void {
         if (!ctx.isActiveTranscriptConversation(event.conversationId)) {
             return;
@@ -173,6 +214,9 @@ export function handleTranscriptSseMessageExtracted(ctx: MobileProjectsTranscrip
         ctx.touchTranscriptTransportEvent();
         ctx.agUiLiveBridge.onLiveMessage(event);
         const message = ctx.resolveLiveSseMessage(event);
+        if (message) {
+            adoptTurnFallbackModelExtracted(ctx, event.conversationId, message);
+        }
         if (!message) {
             // Wire delta against a message the local snapshot never received (e.g. its
             // message_start was dropped) — silently skipping would wedge the transcript

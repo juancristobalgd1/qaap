@@ -16,7 +16,7 @@ import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-a
 
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 
-import { agentModelKey, agentTurnQualifiesForModelFallback, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
+import { agentModelKey, agentTurnQualifiesForModelFallback, resolveAgentModelFallbackReason, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
 
 import { appendTracePreviewFailureEvent, syncSettledTraceEventsOnMessage } from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 
@@ -68,6 +68,11 @@ export function maybeRetryTurnWithFallbackModelExtracted(ctx: QaapAgentConversat
                     taskId: undefined,
                     turnAgentId,
                     turnAgentModel: nextModel,
+                    // The first hop's requested model stays the notice's "from" across a second hop.
+                    ...(currentModel ? {
+                        fallbackFromModel: message.fallbackFromModel ?? currentModel,
+                        fallbackReason: resolveAgentModelFallbackReason(agentMessage),
+                    } : {}),
                 }
                 : message);
         const retryConv: QaapAgentConversation = {
