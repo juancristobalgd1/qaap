@@ -179,13 +179,20 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         return requestAgentCliUpdate(info.id);
     }
 
+    /**
+     * The snackbar clips its text to one line (ellipsis), so a failure reason would be cut off. The
+     * platform notification wraps the whole sentence and keeps the Retry action until it is answered.
+     */
     protected showUpdateFailure(info: QaapAgentCliUpdateInfo, message: string): void {
-        MobileSnackbar.show(message, {
-            kind: 'warning',
-            duration: 7000,
-            position: 'top',
-            actionLabel: nls.localize('qaap/agentCliUpdate/retry', 'Retry'),
-            onAction: () => void this.runUpdate(info),
+        const retryLabel = nls.localize('qaap/agentCliUpdate/retry', 'Retry');
+        if (!this.messages) {
+            MobileSnackbar.show(message, { kind: 'warning', duration: 7000, position: 'top' });
+            return;
+        }
+        void this.messages.error(message, retryLabel).then(choice => {
+            if (choice === retryLabel && !this.disposed) {
+                void this.runUpdate(info);
+            }
         });
     }
 }

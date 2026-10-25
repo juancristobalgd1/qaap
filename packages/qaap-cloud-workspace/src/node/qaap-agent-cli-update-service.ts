@@ -267,6 +267,10 @@ export function describeQaapNpmInstallFailure(
     if (/spawn\S* (?:npm|npm\.cmd|setpriv)\b.*ENOENT|\bENOENT\b.*spawn/i.test(output)) {
         return `${label} could not be updated: npm is not available on this server.`;
     }
+    // The process never started (for example the backend cannot enter the harness folder): not a write error.
+    if (install.error && /^spawn\S*\s/.test(install.error.message) && /\b(?:EACCES|EPERM)\b/.test(install.error.message)) {
+        return `${label} update could not start npm on this server: permission denied (EACCES). Try again; if it keeps failing, contact support.`;
+    }
     if (/\b(?:ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|ESOCKETTIMEDOUT)\b/.test(output)) {
         return `${label} update could not reach the npm registry. Check the connection and try again${suffix}.`;
     }
@@ -570,7 +574,10 @@ export class QaapAgentCliUpdateService {
             return { status: null, signal: null, stdout: '', stderr: '', error: error as Error };
         }
         return this.runBoundedProcess(invocation.file, invocation.args, {
-            cwd: target.prefix,
+            // A root backend without CAP_DAC_OVERRIDE cannot enter the agent-owned prefix (mode 770, agent
+            // uid), so chdir fails and spawn reports EACCES. npm gets an absolute --prefix and drops to the
+            // agent uid itself, so the process only needs a directory the backend can enter.
+            cwd: this.dropsToTargetUid(target) ? '/' : target.prefix,
             env: this.npmInstallEnvironment(target),
             shell: invocation.shell,
             timeoutMs: NPM_INSTALL_TIMEOUT_MS,
@@ -699,6 +706,11 @@ export class QaapAgentCliUpdateService {
         env.TMP = work.tmp;
         env.TEMP = work.tmp;
         return env;
+    }
+
+    /** Whether a root backend runs the process as the target's agent uid through `setpriv`. */
+    protected dropsToTargetUid(target: ResolvedNpmInstallTarget): boolean {
+        return this.backendUid() === 0 && target.uid !== 0;
     }
 
     /** Uid of the backend process; `undefined` where POSIX uids do not exist. Overridable in tests. */
@@ -936,7 +948,8 @@ export class QaapAgentCliUpdateService {
                 return { bin };
             }
             const probe = await this.runBoundedProcess(file, args, {
-                cwd: target?.home,
+                // Same chdir constraint as the install: a root backend drops to the agent uid, so it runs from '/'.
+                cwd: dropsToTarget ? '/' : target?.home,
                 env,
                 timeoutMs: CLI_VERSION_PROBE_TIMEOUT_MS,
             });

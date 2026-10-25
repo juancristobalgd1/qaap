@@ -76,4 +76,31 @@ describe('QaapAgentCliUpdateContribution update action', () => {
         expect(contributionModule.presentableAgentCliUpdateFailure('npm ERR! code EACCES')).to.equal(undefined);
         expect(contributionModule.presentableAgentCliUpdateFailure('x'.repeat(300))).to.equal(undefined);
     });
+
+    it('shows the full failure in a wrapping notification and re-runs the update when Retry is chosen', async () => {
+        const contribution = Object.create(contributionModule.QaapAgentCliUpdateContribution.prototype) as Record<string, unknown>;
+        const shown: Array<{ message: string; actions: string[] }> = [];
+        const reruns: string[] = [];
+        const fullMessage = 'Codex update could not start npm on this server: permission denied (EACCES). Try again; if it keeps failing, contact support.';
+        Object.assign(contribution, {
+            disposed: false,
+            messages: {
+                error: (message: string, ...actions: string[]) => {
+                    shown.push({ message, actions });
+                    return Promise.resolve(actions[0]);
+                },
+            },
+            runUpdate: async (request: QaapAgentCliUpdateInfo) => { reruns.push(request.id); },
+        });
+        const info: QaapAgentCliUpdateInfo = {
+            id: 'codex', label: 'Codex', bin: 'codex', latestVersion: '1.1.0', updateAvailable: true, updateSupported: true,
+        };
+
+        (contribution as unknown as { showUpdateFailure(request: QaapAgentCliUpdateInfo, message: string): void })
+            .showUpdateFailure(info, fullMessage);
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(shown).to.deep.equal([{ message: fullMessage, actions: ['Retry'] }]);
+        expect(reruns).to.deep.equal(['codex']);
+    });
 });
