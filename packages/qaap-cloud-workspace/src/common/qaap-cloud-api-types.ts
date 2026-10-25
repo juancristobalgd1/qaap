@@ -6,6 +6,15 @@
 export const QAAP_CLOUD_API_PATH = '/qaap/api/cloud';
 /** Tenant runtime lifecycle, activity and FinOps control-plane API. */
 export const QAAP_TENANT_RUNTIME_API_PATH = `${QAAP_CLOUD_API_PATH}/runtime`;
+/**
+ * Tenant-backend push outbox (pull model): the control plane drains it with the signed busy-probe
+ * header. Served under the runtime prefix, so the browser proxy never reaches it.
+ */
+export const QAAP_TENANT_PUSH_OUTBOX_PATH = `${QAAP_TENANT_RUNTIME_API_PATH}/push/outbox`;
+/** Web Push routes owned by the control plane (subscriptions and VAPID keys never leave it). */
+export const QAAP_PUSH_VAPID_PATH = `${QAAP_CLOUD_API_PATH}/push/vapid`;
+export const QAAP_PUSH_SUBSCRIBE_PATH = `${QAAP_CLOUD_API_PATH}/push/subscribe`;
+export const QAAP_PUSH_NOTIFY_PATH = `${QAAP_CLOUD_API_PATH}/push/notify`;
 /** Signed-in billing entitlements + Codex hosted credit wallet. */
 export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
 /** Create a Stripe Checkout session for Pro / Team monthly subscription. */
@@ -143,6 +152,8 @@ export interface QaapPushNotifyRequest {
     readonly conversationId?: string;
     /** Working directory of the task/conversation — helps the app resolve the owning project. */
     readonly cwd?: string;
+    /** Same-origin relative path (`/…`) to open on click; anything else is dropped by the control plane. */
+    readonly url?: string;
 }
 
 export interface QaapPushVapidResponse {

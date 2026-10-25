@@ -10,6 +10,12 @@ packages/qaap-cloud-workspace/src/node/qaap-billing-endpoint.ts :: POST QAAP_BIL
 # (verifyStripeWebhookEvent, qaap-stripe-billing.ts), not by session. A session guard
 # here would break Stripe's own calls. Auth in handler: none by design.
 
+packages/qaap-cloud-workspace/src/node/qaap-push-outbox-endpoint.ts :: GET QAAP_TENANT_PUSH_OUTBOX_PATH
+# Tenant push outbox, drained by the control plane (QaapPushDrainer). Authenticated by the
+# per-tenant signed probe (QaapTenantBusyProbe.verify, same scheme as the busy probe), not
+# by a user session: the caller is the control plane. 401 without a valid probe, 404 outside
+# tenant-backend mode.
+
 packages/qaap-shared-core/src/node/qaap-dev-preview-endpoint-render.ts :: POST QAAP_DEV_PREVIEW_CLAIM_PATH
 packages/qaap-shared-core/src/node/qaap-dev-preview-endpoint-render.ts :: POST QAAP_DEV_PREVIEW_RELEASE_PATH
 # Guard lives in an imported extracted function (handleClaimExtracted /

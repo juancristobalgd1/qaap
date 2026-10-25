@@ -35,6 +35,14 @@ describe('QaapTenantBackendProxyContribution', () => {
         expect(proxy.isControlPlanePath('/services')).to.equal(false);
     });
 
+    it('keeps Web Push subscription routes on the control-plane (keys and subscriptions never reach a tenant)', () => {
+        const proxy = createProxy() as unknown as { isControlPlanePath(url: string): boolean };
+        expect(proxy.isControlPlanePath('/qaap/api/cloud/push/vapid')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/cloud/push/subscribe')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/cloud/push/notify?x=1')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/cloud/push/subscribe-other')).to.equal(false);
+    });
+
     it('does not forward the control-plane cookie to a tenant backend', () => {
         const proxy = createProxy() as unknown as {
             forwardHeaders(headers: Record<string, string>, target: typeof TARGET, assertion: string): Record<string, string | string[]>;

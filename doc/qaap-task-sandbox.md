@@ -431,3 +431,24 @@ the Work Hub UI with both previews.
 | `QAAP_TASK_SANDBOX_PULL_ALLOWLIST` | empty (never pull) | Broker mode: image reference prefixes that may be pulled |
 | `QAAP_TASK_SANDBOX_PULLS_PER_TENANT` / `_PULLS_PER_DAY` | 1 / 5 | Broker mode: concurrent and daily pulls per tenant |
 | `QAAP_TASK_SANDBOX_PORT_WATCH_MS` | 1000 | Preview port detection interval |
+
+## Web Push in backend-per-tenant mode (pull outbox)
+
+Subscriptions and VAPID keys live only on the control plane. Tenant backends never receive
+`QAAP_VAPID_PRIVATE_KEY` (the launch gate in `scripts/qaap-tenant-backend-isolation-check.js` enforces it).
+
+- **Subscribe and key routes.** `GET {cloud}/push/vapid`, `POST {cloud}/push/subscribe` and `POST {cloud}/push/notify`
+  are control-plane paths (`isControlPlanePath`). Subscriptions are stored per owner: the owner is the signed-in session
+  login (lower-cased), never a body field. The browser re-subscribes on every start (`qaap-web-push-contribution.ts`),
+  so subscriptions lost when they moved off the tenants come back on the next start.
+- **Tenant outbox.** In tenant-backend mode `QaapWebPushService.notify()` does not send. It queues a sanitized copy in
+  `QaapPushOutbox` (in memory, at most 50 entries, 1 h TTL, oldest dropped first). `GET {runtime}/push/outbox` returns and
+  empties the queue. It requires the same tenant-scoped signed probe as `/runtime/busy` (`x-qaap-busy-probe`, 60 s window),
+  otherwise 401. Delivery is at-most-once.
+- **Drainer (control plane).** `QaapPushDrainer` runs every `QAAP_PUSH_DRAIN_INTERVAL_MS` (default 10 s, minimum 1 s). It only
+  contacts tenant backends that are running and not paused. It never starts, wakes or stops a backend. Each request has a
+  2 s timeout, at most 8 tenants are drained at once, and a failing tenant is logged once per cause. Every notification is
+  delivered to the subscriptions of the login the orchestrator bound to that tenant container. Limits: title 120 characters,
+  body 500, `url` only as a same-origin relative path, 30 notifications per owner per minute (the excess is dropped and logged).
+  A subscription that answers 404 or 410 is removed.
+
