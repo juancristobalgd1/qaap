@@ -18,8 +18,6 @@ import {
     QAAP_INBOX_ROW_FP_ATTR,
     QAAP_INBOX_ROW_ID_ATTR,
 } from './mobile-projects-hub-incremental-ui';
-import { formatConversationExecutionSessionMeta } from '@theia/qaap-composer/lib/common/qaap-conversation-composer-state';
-import { createAgentIdentityElement } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-shell/lib/browser/qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
@@ -65,19 +63,23 @@ export function sidebarRowFailureKey(summary: QaapAgentConversationSummaryDTO | 
     return hint && summary ? `${resolveQaapFailedRunAction(summary)}:${hint}` : '';
 }
 
-function createTaskFailureHintElement(hint: string): HTMLElement {
-    const failure = document.createElement('div');
-    failure.className = 'theia-mobile-projects-task-failure-hint';
-    const icon = document.createElement('span');
-    icon.className = 'codicon codicon-error';
-    icon.setAttribute('aria-hidden', 'true');
-    const label = document.createElement('span');
-    label.className = 'theia-mobile-projects-task-failure-hint-label';
-    label.textContent = hint;
-    failure.append(icon, label);
-    failure.setAttribute('aria-label', hint);
-    failure.title = hint;
-    return failure;
+/**
+ * A compact (sidebar) row is one line: the failure reason and the model are not shown in it.
+ * They live in the row's tooltip and accessible name instead. Shared with the in-place patch so a
+ * changed model or failure refreshes both.
+ */
+export function applySidebarCompactRowTooltip(item: HTMLElement, task: MobileProjectTaskView, summary: QaapAgentConversationSummaryDTO | undefined): void {
+    const lines: string[] = [task.title];
+    const failureHint = resolveTaskFailureHint(summary);
+    if (failureHint) {
+        lines.push(nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint));
+    }
+    const modelId = (summary?.lastTurnAgentModel ?? summary?.agentModel ?? summary?.qaiqModel)?.modelId?.trim();
+    if (modelId) {
+        lines.push(nls.localize('qaap/sessionsSidebar/rowModelHint', 'Model: {0}', modelId));
+    }
+    item.title = lines.join('\n');
+    item.setAttribute('aria-label', lines.join('. '));
 }
 
 /**
@@ -256,62 +258,12 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     } else {
         taskTitleRow.append(taskTitle);
     }
+    if (compact) {
+        // One line: the time sits at the row's right edge; the reason and model are in the tooltip.
+        taskTitleRow.append(taskSince);
+        applySidebarCompactRowTooltip(item, task, summary);
+    }
     taskBody.append(taskTitleRow);
-
-    if (compact && failureHint) {
-        const failure = createTaskFailureHintElement(
-            nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint),
-        );
-        if (summary && summary.status !== 'streaming' && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-') && !options?.selection) {
-            failure.append(createFailedRunChip(ctx, project, summary));
-            // Plain classes instead of `:has()`: they drive the chip wrap and hide the time label on touch.
-            failure.classList.add('theia-mod-has-recovery');
-            row.classList.add('theia-mod-has-recovery');
-        }
-        taskBody.append(failure);
-    }
-
-    const sessionMeta = summary
-        ? formatConversationExecutionSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
-            ...summary,
-            agentId,
-        }))
-        : undefined;
-
-    if (compact && summary?.agentId) {
-        const metaRow = document.createElement('div');
-        metaRow.className = 'theia-mobile-projects-task-foot theia-mod-sidebar-compact-meta';
-        // The sidebar describes the run that produced this row. The composer model is the
-        // selection for the next follow-up and may intentionally differ after a fallback or
-        // after the user changes the picker. Prefer the server-sealed last-turn provenance.
-        const model = summary.lastTurnAgentModel ?? summary.agentModel ?? summary.qaiqModel;
-        const modelId = model?.modelId?.trim();
-        const executionAgentId = summary.lastTurnAgentId ?? summary.agentId;
-        const identity = createAgentIdentityElement({
-            agentId: executionAgentId,
-            agentModel: modelId ? model : undefined,
-            label: modelId ?? undefined,
-            iconSize: 'sm',
-        });
-        identity.classList.add('theia-mobile-projects-task-foot-meta-identity');
-        metaRow.dataset.qaapExecutionAgent = executionAgentId;
-        metaRow.dataset.qaapExecutionModel = modelId ?? '';
-        metaRow.append(identity, taskSince);
-        taskBody.append(metaRow);
-    } else if (compact && sessionMeta) {
-        const metaRow = document.createElement('div');
-        metaRow.className = 'theia-mobile-projects-task-foot theia-mod-sidebar-compact-meta';
-        const metaLabel = document.createElement('span');
-        metaLabel.className = 'theia-mobile-projects-task-foot-meta-label';
-        metaLabel.textContent = sessionMeta;
-        metaRow.append(metaLabel, taskSince);
-        taskBody.append(metaRow);
-    } else if (compact) {
-        const metaRow = document.createElement('div');
-        metaRow.className = 'theia-mobile-projects-task-foot theia-mod-sidebar-compact-meta';
-        metaRow.append(taskSince);
-        taskBody.append(metaRow);
-    }
 
     if (!compact) {
         const footRow = document.createElement('div');
@@ -409,6 +361,14 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
                 shield.title = manualLabel;
                 taskTitleRow.insertBefore(shield, taskTitleRow.firstChild);
             }
+        }
+
+        // Compact rows keep the recovery chip (Continue/Retry) in the row, revealed on hover or focus
+        // by CSS; it is icon-only and the overflow menu offers the same action on touch.
+        if (compact && failureHint && summary.status !== 'streaming' && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-') && !options?.selection) {
+            const recoveryChip = createFailedRunChip(ctx, project, summary);
+            recoveryChip.classList.add('theia-mod-row-action');
+            row.append(recoveryChip);
         }
 
         // Pin remains available from the conversation overflow menu. Keep the compact row
