@@ -40,23 +40,57 @@ export interface QaapTenantPersistentHomeOwner {
 }
 
 /**
+ * Fallback used when the backend cannot change the owner of an entry (no CAP_CHOWN): grants the
+ * agent uid access to `entry` through an ACL instead. The backend still owns the entry, so the
+ * ACL can be set without CAP_FOWNER. `directory` selects the directory or the file grant.
+ */
+export type QaapTenantPersistentHomeAccessGrant = (entry: string, directory: boolean) => void;
+
+/**
  * Links the credential entries of a volatile tenant HOME to a directory on the tenant's private,
  * disk-backed storage. Existing entries in HOME (written before the link existed) are moved over.
  */
 export namespace QaapTenantPersistentHome {
 
-    export function link(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): void {
-        ensureDirectory(home, owner);
-        ensureDirectory(persistentHome, owner);
+    /**
+     * Every entry is attempted even when an earlier one fails, so one refused step cannot leave the
+     * other sign-in links missing. Failures are reported together once all entries were tried.
+     */
+    export function link(
+        home: string,
+        persistentHome: string,
+        owner?: QaapTenantPersistentHomeOwner,
+        grantAccess?: QaapTenantPersistentHomeAccessGrant
+    ): void {
+        const failures: string[] = [];
+        const attempt = (step: () => void): void => {
+            try {
+                step();
+            } catch (error) {
+                failures.push(error instanceof Error ? error.message : String(error));
+            }
+        };
+        attempt(() => ensureDirectory(home, owner, grantAccess));
+        attempt(() => ensureDirectory(persistentHome, owner, grantAccess));
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
-            linkEntry(home, persistentHome, entry, true, owner);
+            attempt(() => linkEntry(home, persistentHome, entry, true, owner, grantAccess));
         }
         for (const entry of QAAP_PERSISTENT_HOME_FILES) {
-            linkEntry(home, persistentHome, entry, false, owner);
+            attempt(() => linkEntry(home, persistentHome, entry, false, owner, grantAccess));
+        }
+        if (failures.length > 0) {
+            throw new Error(`Could not link ${failures.length} agent sign-in entries under ${home}: ${failures.join('; ')}`);
         }
     }
 
-    function linkEntry(home: string, persistentHome: string, entry: string, directory: boolean, owner?: QaapTenantPersistentHomeOwner): void {
+    function linkEntry(
+        home: string,
+        persistentHome: string,
+        entry: string,
+        directory: boolean,
+        owner?: QaapTenantPersistentHomeOwner,
+        grantAccess?: QaapTenantPersistentHomeAccessGrant
+    ): void {
         const linkPath = path.join(home, entry);
         const target = path.join(persistentHome, entry);
         const current = lstat(linkPath);
@@ -69,36 +103,54 @@ export namespace QaapTenantPersistentHome {
             // Written into the tmpfs before the link existed: it is the newest state, keep it.
             fs.cpSync(linkPath, target, { recursive: true, force: true });
             fs.rmSync(linkPath, { recursive: true, force: true });
-            applyOwner(target, owner, true);
+            applyOwner(target, owner, true, grantAccess);
         }
         if (directory) {
-            ensureDirectory(target, owner);
+            ensureDirectory(target, owner, grantAccess);
         }
         // A missing file target is fine: the CLI creates it through the link on first write.
         fs.symlinkSync(target, linkPath);
         if (owner) {
-            fs.lchownSync(linkPath, owner.uid, owner.gid);
+            try {
+                fs.lchownSync(linkPath, owner.uid, owner.gid);
+            } catch {
+                // Ownership of a symlink does not decide access: the agent reaches the target through
+                // the ACLs granted on the directory or file it points to, so a refused lchown is harmless.
+            }
         }
     }
 
-    function ensureDirectory(directory: string, owner?: QaapTenantPersistentHomeOwner): void {
+    function ensureDirectory(directory: string, owner?: QaapTenantPersistentHomeOwner, grantAccess?: QaapTenantPersistentHomeAccessGrant): void {
         if (lstat(directory)) {
             return;
         }
         fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-        applyOwner(directory, owner, false);
+        applyOwner(directory, owner, false, grantAccess);
     }
 
-    function applyOwner(entry: string, owner: QaapTenantPersistentHomeOwner | undefined, recursive: boolean): void {
+    function applyOwner(entry: string, owner: QaapTenantPersistentHomeOwner | undefined, recursive: boolean, grantAccess?: QaapTenantPersistentHomeAccessGrant): void {
         if (!owner) {
             return;
         }
-        fs.chownSync(entry, owner.uid, owner.gid);
-        if (recursive && fs.statSync(entry).isDirectory()) {
+        const directory = fs.lstatSync(entry).isDirectory();
+        try {
+            fs.chownSync(entry, owner.uid, owner.gid);
+        } catch (error) {
+            if (!grantAccess || !isAccessRefusal(error)) {
+                throw error;
+            }
+            grantAccess(entry, directory);
+        }
+        if (recursive && directory) {
             for (const child of fs.readdirSync(entry)) {
-                applyOwner(path.join(entry, child), owner, true);
+                applyOwner(path.join(entry, child), owner, true, grantAccess);
             }
         }
+    }
+
+    function isAccessRefusal(error: unknown): boolean {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        return code === 'EPERM' || code === 'EACCES';
     }
 
     function lstat(entry: string): fs.Stats | undefined {

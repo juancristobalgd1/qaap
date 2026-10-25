@@ -319,6 +319,38 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
+    it('grants the agent uid an ACL on a HOME entry it cannot chown, with a default ACL on directories', () => {
+        class HomeGrantService extends TenantBackendAclTestService {
+            grant(entry: string, uid: number, directory: boolean): void {
+                this.grantTenantEntryAccess(entry, uid, directory);
+            }
+        }
+        const service = new HomeGrantService();
+        service.grant('/tmp/qaap-home/.codex', 1001, true);
+        service.grant('/tmp/qaap-home/.claude.json', 1001, false);
+
+        expect(service.commands).to.deep.equal([
+            { file: 'setfacl', args: ['-m', 'u:1001:rwx,d:u:1001:rwx', '/tmp/qaap-home/.codex'] },
+            { file: 'setfacl', args: ['-m', 'u:1001:rw', '/tmp/qaap-home/.claude.json'] },
+        ]);
+    });
+
+    it('fails the HOME grant with the setfacl reason so the link reports it', () => {
+        class RefusingAclService extends TenantBackendAclTestService {
+            protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
+                this.commands.push({ file, args });
+                return { ok: false, reason: 'setfacl: Operation not supported' };
+            }
+
+            grant(entry: string): void {
+                this.grantTenantEntryAccess(entry, 1001, true);
+            }
+        }
+        const service = new RefusingAclService();
+        expect(() => service.grant('/tmp/qaap-home/.codex'))
+            .to.throw('Could not grant agent uid 1001 access to /tmp/qaap-home/.codex (setfacl: Operation not supported).');
+    });
+
     it('reports the exit status and first stderr line of a failed access command', () => {
         class RawRunService extends QaapTenantSpawnService {
             run(file: string, args: readonly string[]): { ok: boolean; reason?: string } {

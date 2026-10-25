@@ -30,7 +30,7 @@ import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qa
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
-import { QaapTenantPersistentHome, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
+import { QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 /** How the spawned process's stdio streams are wired. */
@@ -907,7 +907,10 @@ export class QaapTenantSpawnService {
             const owner = identity?.uid !== undefined && identity.uid > 0
                 ? { uid: identity.uid, gid: identity.gid ?? identity.uid }
                 : undefined;
-            this.linkPersistentTenantHome(home, QaapTenantAgentStorageEnv.homeDir(root), owner);
+            const grantAccess = owner
+                ? (entry: string, directory: boolean) => this.grantTenantEntryAccess(entry, owner.uid, directory)
+                : undefined;
+            this.linkPersistentTenantHome(home, QaapTenantAgentStorageEnv.homeDir(root), owner, grantAccess);
             this.persistentTenantHomes.add(home);
         } catch (error) {
             console.warn(`[qaap-security] could not persist agent sign-in state of ${home}: `
@@ -916,8 +919,20 @@ export class QaapTenantSpawnService {
     }
 
     /** Overridable in tests. */
-    protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner): void {
-        QaapTenantPersistentHome.link(home, persistentHome, owner);
+    protected linkPersistentTenantHome(home: string, persistentHome: string, owner?: QaapTenantPersistentHomeOwner, grantAccess?: QaapTenantPersistentHomeAccessGrant): void {
+        QaapTenantPersistentHome.link(home, persistentHome, owner, grantAccess);
+    }
+
+    /**
+     * ACL fallback for a HOME entry the backend could not chown (no CAP_CHOWN): gives the agent uid
+     * access to `entry`. Directories also get a default ACL so entries created later stay reachable.
+     */
+    protected grantTenantEntryAccess(entry: string, uid: number, directory: boolean): void {
+        const spec = directory ? `u:${uid}:rwx,d:u:${uid}:rwx` : `u:${uid}:rw`;
+        const result = this.runTenantAccessCommand('setfacl', ['-m', spec, entry]);
+        if (!result.ok) {
+            throw new Error(`Could not grant agent uid ${uid} access to ${entry} (${result.reason ?? 'unknown reason'}).`);
+        }
     }
 
     /**
