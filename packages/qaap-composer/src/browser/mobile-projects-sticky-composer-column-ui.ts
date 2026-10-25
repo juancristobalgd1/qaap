@@ -257,12 +257,12 @@ export class MobileProjectsStickyComposerColumnUi {
             if (isStickyComposerUntilDoneActive(untilDone)) {
                 // "Until done" now lives in the Mode sheet: keep its state visible on the trigger.
                 const untilDoneIcon = document.createElement('span');
-                untilDoneIcon.className = 'codicon codicon-sync theia-mobile-projects-sticky-composer-mode-until-done';
+                untilDoneIcon.className = 'codicon codicon-target theia-mobile-projects-sticky-composer-mode-until-done';
                 untilDoneIcon.setAttribute('aria-hidden', 'true');
                 modeBtn.lastElementChild?.before(untilDoneIcon);
                 modeBtn.title = nls.localize(
                     'qaap/mobileProjects/stickyComposerModeUntilDone',
-                    'Mode: {0} · Until done',
+                    'Mode: {0} · Goal',
                     modeLabel,
                 );
                 modeBtn.setAttribute('aria-label', modeBtn.title);

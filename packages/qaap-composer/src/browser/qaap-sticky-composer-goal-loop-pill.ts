@@ -55,7 +55,7 @@ export function syncStickyComposerGoalLoopPill(wrap: HTMLElement, options: Stick
     if (labelEl && labelEl.textContent !== options.label) {
         labelEl.textContent = options.label;
     }
-    const aria = nls.localize('theia/qaap/goalLoop/pillAria', 'Until done — {0}', options.label);
+    const aria = nls.localize('theia/qaap/goalLoop/pillAria', 'Goal — {0}', options.label);
     pill.title = aria;
     pill.setAttribute('aria-label', aria);
     if (pill.parentElement !== row) {

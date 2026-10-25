@@ -403,7 +403,7 @@ export class MobileProjectsBackgroundTaskUi {
         } catch (error) {
             void deleteConversation(conversationId).catch(() => undefined);
             const detail = error instanceof Error ? error.message : String(error);
-            throw new Error(nls.localize('theia/qaap/goalLoop/startFailed', 'Could not start Until done: {0}', detail));
+            throw new Error(nls.localize('theia/qaap/goalLoop/startFailed', 'Could not start Goal: {0}', detail));
         }
         return getConversation(conversationId);
     }
