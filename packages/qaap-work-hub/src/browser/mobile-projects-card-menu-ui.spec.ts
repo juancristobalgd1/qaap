@@ -70,6 +70,7 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
             const menu = ui.buildProjectOptionsMenu(target);
             const items = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')];
             expect(items.map(item => item.textContent?.trim())).to.deep.equal([
+                'Open project',
                 'Pin',
                 'Remove',
                 'Clear all tasks',
@@ -92,6 +93,42 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
         } finally {
             window.matchMedia = originalMatchMedia;
         }
+    });
+});
+
+describe('MobileProjectsCardMenuUi project Open project item', () => {
+
+    useSuiteJSDOM();
+
+    it('opens the project from the menu and hides the sessions overlay', async () => {
+        const target = project({ id: 'alpha' });
+        const selected: string[] = [];
+        let hidOverlay = false;
+        const host = {
+            projectsService: { canRemove: () => true },
+            conversationIndexUi: {
+                conversationsForProject: () => [],
+                countFailedTasks: () => 0,
+            },
+            sessionsSidebar: { hideForMobileOverlay: () => { hidOverlay = true; } },
+            selectSessionsSidebarProject: async (entry: MobileProjectEntry) => { selected.push(entry.id); },
+            onTogglePin: async () => undefined,
+            onRemoveProject: async () => undefined,
+            onClearProjectChats: async () => undefined,
+            onClearFailedTasks: async () => undefined,
+            closeCurrentWorkspace: async () => undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+
+        const ui = new MobileProjectsCardMenuUi(host);
+        const menu = ui.buildProjectOptionsMenu(target);
+        const openItem = [...menu.querySelectorAll<HTMLElement>('.theia-mobile-projects-card-menu-item')]
+            .find(item => item.textContent?.trim() === 'Open project');
+        expect(openItem).to.not.equal(undefined);
+        openItem!.click();
+        await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+
+        expect(selected).to.deep.equal(['alpha']);
+        expect(hidOverlay).to.equal(true);
     });
 });
 
