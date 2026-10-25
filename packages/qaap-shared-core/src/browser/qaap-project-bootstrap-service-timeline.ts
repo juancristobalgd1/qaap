@@ -451,9 +451,19 @@ export function monitorPreviewProcessLifetimeExtracted(ctx: QaapProjectBootstrap
 }
 
 export function attachTerminalOsProcessIdExtracted(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget, previewId: string, port: number, cwd: URI): void {
-        void terminal.processId.then(pid => {
-            if (ctx.activePreviewClaim?.previewId === previewId) {
-                void ctx.reserveActivePreview(port, cwd, pid);
+        void terminal.processId.then(async pid => {
+            if (ctx.activePreviewClaim?.previewId !== previewId) {
+                return;
+            }
+            const claim = await ctx.reserveActivePreview(port, cwd, pid);
+            // The backend answers the re-claim with the identity it kept (it can rebind the port or
+            // reattach another record). Remember that answer, or the frontend keeps the URL it
+            // started with while the backend serves a different one.
+            const remembered = ctx.activePreviewClaim;
+            if (claim.kind === 'claimed' && claim.previewId && claim.previewUrl && claim.port !== undefined
+                && remembered?.previewId === previewId
+                && (claim.previewId !== remembered.previewId || claim.previewUrl !== remembered.previewUrl || claim.port !== remembered.port)) {
+                ctx.rememberActivePreviewClaim({ previewId: claim.previewId, previewUrl: claim.previewUrl, port: claim.port });
             }
         }).catch(() => undefined);
 }
