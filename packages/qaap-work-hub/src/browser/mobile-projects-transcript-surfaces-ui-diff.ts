@@ -110,6 +110,30 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
                 refreshPreviewComposer();
                 return;
             }
+            if (!detected.descriptor) {
+                // Neither detection nor .qaap/preview.json yields a command: say so, with a retry,
+                // instead of handing the start to the agent (which cannot start a server anyway).
+                console.warn('[qaap-preview] no start command detected for project', { projectId: project.id });
+                ctx.host.transcriptPreviewRequestRunning = false;
+                ctx.host.transcriptPreviewRequestPending = false;
+                ctx.syncHeaderPreviewRunButton(project, summary);
+                refreshPreviewComposer();
+                MobileSnackbar.show(
+                    nls.localize(
+                        'qaap/mobileProjects/previewNoStartCommand',
+                        'No start command found — add a dev/start script or .qaap/preview.json',
+                    ),
+                    {
+                        kind: 'warning',
+                        duration: 8000,
+                        actionLabel: nls.localize('qaap/mobileProjects/previewRetry', 'Retry'),
+                        onAction: () => {
+                            void requestTranscriptPreviewExtracted(ctx, project, summary, options);
+                        },
+                    },
+                );
+                return;
+            }
             if (detected.descriptor) {
                 const failure = bootstrap.getStateSnapshot?.();
                 MobileSnackbar.show(

@@ -737,3 +737,44 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(descriptor?.devCommand).to.equal('npm run dev');
     });
 });
+
+describe('QaapProjectBootstrapDetector prefixed dev scripts', () => {
+
+    async function detectDevCommand(scripts: Record<string, string>): Promise<string | undefined> {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'prefixed', scripts }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        return descriptor?.devCommand;
+    }
+
+    it('falls back to start:browser when there is no plain dev script and skips start:electron', async () => {
+        const devCommand = await detectDevCommand({
+            'build:browser': 'node scripts/build.js',
+            'start:electron': 'cd examples/electron && npm run start',
+            'start:browser': 'node scripts/qaap-free-dev-port.js && node scripts/qaap-start-browser.mjs',
+        });
+        expect(devCommand).to.include('start:browser');
+        expect(devCommand).to.not.include('electron');
+    });
+
+    it('prefers dev:* over start:* and start:* over serve:* when no plain script exists', async () => {
+        expect(await detectDevCommand({ 'serve:api': 'node api.js', 'start:web': 'node web.js', 'dev:app': 'vite' }))
+            .to.include('dev:app');
+        expect(await detectDevCommand({ 'serve:api': 'node api.js', 'start:web': 'node web.js' }))
+            .to.include('start:web');
+    });
+
+    it('keeps the plain dev script ahead of prefixed fallbacks', async () => {
+        const devCommand = await detectDevCommand({ 'dev:web': 'vite', dev: 'vite --host' });
+        expect(devCommand).to.include('run dev');
+        expect(devCommand).to.not.include('dev:web');
+    });
+
+    it('does not pick prefixed scripts that name test, lint or build tasks', async () => {
+        expect(await detectDevCommand({ 'dev:test': 'vitest', 'start:lint': 'eslint .', 'serve:build': 'node b.js' }))
+            .to.equal(undefined);
+    });
+});

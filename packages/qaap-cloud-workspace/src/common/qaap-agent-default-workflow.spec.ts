@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { parseQaapPreviewLaunchConfigJson } from '@theia/qaap-shared-core/lib/common/qaap-preview-launch-plan';
 import {
     appendAgentDefaultWorkflowToPrompt,
     buildAgentBoundedEvidenceAuditPromptBlock,
@@ -351,6 +352,18 @@ describe('buildAgentDevPreviewPromptBlock start ownership', () => {
         expect(block).to.include('Qaap starts the preview server only from a detected entry point');
         expect(block).to.not.include('Qaap starts the server separately');
         expect(block).to.include('Never tell the user the app runs at localhost');
+    });
+
+    it('documents the exact .qaap/preview.json launch plan the agent should create when no entry point exists', () => {
+        const block = buildAgentDevPreviewPromptBlock();
+        expect(block).to.include('create .qaap/preview.json');
+        expect(block).to.include('{"version":1,"runtime":"custom","command":"npm","args":["run","start:browser"],"cwd":".","port":3000}');
+        expect(block).to.include('Never say the app is already running or that Qaap has started it');
+    });
+
+    it('the documented example is a launch plan the detector accepts', () => {
+        const parsed = parseQaapPreviewLaunchConfigJson('{"version":1,"runtime":"custom","command":"npm","args":["run","start:browser"],"cwd":".","port":3000}');
+        expect(parsed.ok).to.equal(true);
     });
 });
 
