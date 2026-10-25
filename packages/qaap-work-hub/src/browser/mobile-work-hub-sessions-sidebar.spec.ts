@@ -167,6 +167,21 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         });
     });
 
+    it('keeps the deployed build out of the footer and exposes it in the account tooltip', () => {
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        (sidebar as unknown as { deployedBuildSha: string | undefined }).deployedBuildSha = 'b72a749af00e';
+        sidebar.updateAccountAvatar();
+        expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-build')).to.equal(null);
+        expect(sidebar.node.textContent).to.not.contain('b72a749af00e');
+        const label = sidebar.node.querySelector<HTMLElement>('.theia-mobile-work-hub-sessions-sidebar-account-label');
+        expect(label?.title).to.contain('b72a749af00e');
+    });
+
     it('restores the normal sidebar controls when Settings is hidden', () => {
         const currentWindow = (global as { window?: Window }).window;
         (global as { window?: Window }).window = {
