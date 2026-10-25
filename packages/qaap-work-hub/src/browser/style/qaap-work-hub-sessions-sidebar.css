@@ -2861,23 +2861,92 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     }
 }
 
-/* Project guide: a thin vertical line links the sessions of an expanded project to its header. */
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list {
-    position: relative;
+/* Sessions of an expanded project are indented so the status dot sits under the folder icon and
+   the title starts under the project name (measured: folder at 44px, name at 68px). No vertical
+   guide runs under ordinary sessions. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
+    margin-left: 28px;
+    width: auto;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list::before {
+/* The title fills the row up to the time and actions. The item's own right padding keeps the
+   menu clear, so the body must not add its own gutter on top of it. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-task-item > .theia-mobile-projects-task-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 0;
+}
+
+/* Subtasks: isolated Parallel forks nest under their parent task, indented 16px further. A thin
+   guide drops from the parent's status dot (x = 52px) and turns into a rounded elbow at the last
+   subtask, ending at its vertical centre. Head and rows below are positioned against that axis. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list .theia-mobile-projects-variant-row > .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
+    margin-left: 36px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-group {
+    position: relative;
+    margin: 0 0 6px;
+    padding: 0 0 4px;
+    border-top: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-head {
+    position: relative;
+    padding: 2px 8px 4px 52px;
+}
+
+/* Parent guide: from the parent row's centre down to the first subtask. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-head::before {
     content: "";
     position: absolute;
-    top: 0;
-    bottom: 6px;
-    left: calc(var(--qaap-sessions-row-gutter, 12px) + 7px);
+    top: -16px;
+    bottom: 0;
+    left: 44px;
     width: 1px;
     background: var(--theia-tree-indentGuidesStroke, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
     pointer-events: none;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
-    margin-left: 8px;
-    width: auto;
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-row {
+    position: relative;
+    align-items: center;
+}
+
+/* Between subtasks the guide runs the full row height. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 36px;
+    width: 1px;
+    background: var(--theia-tree-indentGuidesStroke, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
+    pointer-events: none;
+}
+
+/* The last subtask draws the elbow: down to its centre, then right into its status dot. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-row:last-child::before {
+    content: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-row:last-child::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 36px;
+    width: 8px;
+    height: 50%;
+    box-sizing: border-box;
+    border-left: 1px solid var(--theia-tree-indentGuidesStroke, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
+    border-bottom: 1px solid var(--theia-tree-indentGuidesStroke, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
+    border-bottom-left-radius: 6px;
+    pointer-events: none;
+}
+
+/* Touch rows are 44px tall, so the parent's centre is 22px above the head. */
+@media (pointer: coarse), (max-width: 767px) {
+    .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-head::before {
+        top: -22px;
+    }
 }
