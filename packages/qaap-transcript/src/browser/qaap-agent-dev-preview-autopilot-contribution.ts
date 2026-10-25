@@ -39,6 +39,7 @@ import {
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { shouldCaptureSettledVisualTurn } from '@theia/qaap-shared-core/lib/common/qaap-visual-settlement';
+import { isPreviewRootBootingInBootstrap } from './qaap-autopilot-boot-guard';
 
 // A cold dev server can spend well over 10s compiling its first page on a loaded VPS, so give
 // the first reload → readyState poll a 30s budget rather than the original 10s.
@@ -138,6 +139,15 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         if (needsVisualVerification && parseQaapCaptureDirective(lastAgentMessage).mode === 'video') {
             return;
         }
+        // A thread isolated in its own worktree is verified from that worktree; Run variants and
+        // shared-tree threads from the base workspace.
+        const previewRoot = resolveThreadPreviewRoot(conversation);
+        // Re-entering the preview bootstrap refreshes the root and releases the run in flight. While
+        // that root is already starting or installing, wait for the run instead of interrupting it;
+        // nothing is counted against the turn's capture budget, so a later poll retries.
+        if (isPreviewRootBootingInBootstrap(this.bootstrap.getStateSnapshot().phase, this.bootstrap.descriptor?.rootUri.toString(), previewRoot)) {
+            return;
+        }
         // The evidence target is the reply the user is looking at *now*. Captures are attached
         // by message id so a slow dev-server boot can no longer race the next turn's status.
         const targetAgentMessageId = lastAgentMessage?.id;
@@ -146,9 +156,6 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             this.captureAttemptsByTurn.set(turnKey, attempt);
         }
         const outOfBudget = attempt >= VISUAL_CAPTURE_TURN_BUDGET;
-        // A thread isolated in its own worktree is verified from that worktree; Run variants and
-        // shared-tree threads from the base workspace.
-        const previewRoot = resolveThreadPreviewRoot(conversation);
         const readyUrl = await ensureTranscriptDevPreview(this.bootstrap, {
             conversation,
             skipConversationPortProbe: true,
