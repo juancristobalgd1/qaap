@@ -169,6 +169,11 @@ import {
     type AgentCandidate,
     type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
+import {
+    isHostedCodexEntitled,
+    resolveAgentAccess,
+    type QaapAgentConnectionSnapshot,
+} from './qaap-agent-access';
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
@@ -593,16 +598,32 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return listAgentsHelper(this.detectedAgents)
             .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
             .map(agent => {
-                const connectionState = this.agentConnectionState(agent.id, ownerLogin);
-                const hostedCodexAvailable = agent.id.toLowerCase() === 'codex' && this.hostedCodexAllowed(ownerLogin);
-                return {
-                    ...agent,
-                    // A disconnected Codex is still usable through Qaap-hosted access on Pro/Team.
-                    // Starter must connect its own Codex session before the picker becomes active.
-                    available: agent.available && (connectionState !== 'disconnected' || hostedCodexAvailable),
+                const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
+                const accessState = resolveAgentAccess({
+                    agentId: agent.id,
                     connectionState,
-                };
+                    probeSettled,
+                    hostedEntitled: this.hostedCodexAllowed(ownerLogin),
+                });
+                // Codex follows the same access answer as its model list: a disconnected Codex is still
+                // usable through Qaap-hosted access on Pro/Team, and a settled sign-out is not usable.
+                // Other agents keep their connection-only rule.
+                const available = agent.id.toLowerCase() === 'codex'
+                    ? agent.available && accessState !== 'none'
+                    : agent.available && connectionState !== 'disconnected';
+                return { ...agent, available, connectionState, accessState };
             });
+    }
+
+    /**
+     * Last known auth state plus whether its probe has answered (no probe in flight). Reading it may
+     * start the stale probe, so the in-flight check comes after the state read.
+     */
+    agentConnectionSnapshot(agentId: string, ownerLogin?: string): QaapAgentConnectionSnapshot {
+        const normalized = agentId.trim().toLowerCase();
+        const connectionState = this.agentConnectionState(normalized, ownerLogin) ?? 'unknown';
+        const probeSettled = !this.agentConnectionProbes.has(this.agentConnectionCacheKey(normalized, ownerLogin));
+        return { connectionState, probeSettled };
     }
 
     /**
@@ -920,8 +941,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!ownerLogin?.trim()) {
             return false;
         }
-        const entitlements = this.billingStore?.peekEntitlements?.(ownerLogin);
-        return entitlements?.hostedModels === true && entitlements.creditsRemaining > 0;
+        return isHostedCodexEntitled(this.billingStore?.peekEntitlements?.(ownerLogin));
     }
 
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean {

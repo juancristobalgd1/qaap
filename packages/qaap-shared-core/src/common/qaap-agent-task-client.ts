@@ -70,6 +70,8 @@ export interface QaapAgentTaskAgentOption {
     readonly available: boolean;
     /** Installation and authentication are separate: an installed CLI may still need Connect. */
     readonly connectionState?: QaapAgentConnectionState;
+    /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
+    readonly accessState?: 'session' | 'hosted' | 'none' | 'unknown';
 }
 
 export interface QaapAgentTaskListSnapshot {

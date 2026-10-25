@@ -32,6 +32,7 @@ import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-s
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { listNativeAgentModels } from './qaap-agent-native-models';
+import { isHostedCodexEntitled, resolveAgentAccess } from './qaap-agent-access';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
 
@@ -670,24 +671,30 @@ export function listModelsForAgentExtracted(
         if (!owner) {
             return models;
         }
-        // Cold cache → treat as Starter (no hosted) so the picker never offers Pro-only models by default.
-        const hostedModelsAllowed = ctx.billingStore?.peekEntitlements?.(owner)?.hostedModels === true;
-        // Keep the native catalog visible when Starter cannot use hosted Codex models.
-        // The picker can then explain the lock instead of opening an empty submenu;
-        // task startup still enforces the same hosted-model entitlement.
-        const userSessionConnected = ctx.isAgentConnected?.(normalized, owner) === true;
+        // Same access answer as the picker row (resolveAgentAccess), so the row and its models agree.
+        // Keep the native catalog visible when the owner cannot use it yet; the picker explains the lock
+        // instead of opening an empty submenu, and task startup still enforces the billing gate.
+        const snapshot = ctx.agentConnectionSnapshot(normalized, owner);
+        const access = resolveAgentAccess({
+            agentId: normalized,
+            connectionState: snapshot.connectionState,
+            probeSettled: snapshot.probeSettled,
+            hostedEntitled: isHostedCodexEntitled(ctx.billingStore?.peekEntitlements?.(owner)),
+        });
         return models.map(model => {
             if (!isHostedCodexUsage(normalized, model.modelId)) {
                 return model;
             }
-            // A user's own Codex login is BYOK/user-session usage. It must not be locked merely
-            // because the Qaap account is on Starter; only Qaap-hosted execution is plan-gated.
-            if (userSessionConnected) {
+            // A user's own Codex login or Qaap-hosted entitlement unlocks the model. Only a settled
+            // sign-out is locked, and it is an actionable sign-in rather than a plan restriction.
+            if (access === 'session' || access === 'hosted') {
                 return { ...model, available: true };
             }
-            return hostedModelsAllowed
-                ? model
-                : { ...model, available: false, unavailableReason: 'plan' as const };
+            // While the probe is still pending there is no answer yet: show the model without a lock.
+            if (access === 'unknown') {
+                return model;
+            }
+            return { ...model, available: false, unavailableReason: 'not-connected' as const };
         });
 }
 

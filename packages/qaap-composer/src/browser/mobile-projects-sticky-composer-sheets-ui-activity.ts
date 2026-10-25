@@ -10,6 +10,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     createPickerSheetOptionButton,
+    resolveUnavailableModelTitle,
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
 import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
@@ -131,10 +132,7 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                     statsSlow: stats ? stats.median > MODEL_TURN_STATS_SLOW_THRESHOLD_MS : false,
                     available: model.available !== false,
                     unavailableTitle: model.available === false
-                        ? nls.localize(
-                            'qaap/mobileProjects/modelPickerUnavailableByPlan',
-                            'This model requires a plan with hosted model access.',
-                        )
+                        ? resolveUnavailableModelTitle(agentId, model.unavailableReason)
                         : undefined,
                     badgeLabel: model.available === false
                         ? nls.localize('qaap/mobileProjects/modelPickerLocked', 'Locked')

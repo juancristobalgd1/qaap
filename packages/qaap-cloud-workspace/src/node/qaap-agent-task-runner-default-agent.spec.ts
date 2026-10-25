@@ -211,6 +211,7 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
             isAgentEnabled: () => true,
             agentConnectionState: (id: string) => options.states[id] ?? 'unknown',
             agentConnectionStates: new Map(),
+            agentConnectionProbes: new Map(),
             preferenceReaderForOwner: () => () => undefined,
             billingStore: { peekEntitlements: () => options.entitlements },
         });
@@ -255,6 +256,30 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
         const codexOf = (runner: QaapAgentTaskRunner) => runner.listAgents('alice').find(agent => agent.id === 'codex');
         expect(codexOf(withCredits)?.available).to.equal(true);
         expect(codexOf(spent)?.available).to.equal(false);
+    });
+
+    it('listAgents gives the picker row the same access answer as the Codex models', () => {
+        const withCredits = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 10 } });
+        const spent = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 0 } });
+        const codexOf = (runner: QaapAgentTaskRunner) => runner.listAgents('alice').find(agent => agent.id === 'codex');
+        expect(codexOf(withCredits)?.accessState).to.equal('hosted');
+        expect(codexOf(spent)?.accessState).to.equal('none');
+    });
+
+    it('listAgents gives a settled-unknown Codex probe a Sign in row, not an available one', () => {
+        const runner = runnerWith({ states: { codex: 'unknown' }, entitlements: { hostedModels: false, creditsRemaining: 0 } });
+        const codex = runner.listAgents('alice').find(agent => agent.id === 'codex');
+        expect(codex?.accessState).to.equal('none');
+        expect(codex?.available).to.equal(false);
+    });
+
+    it('listAgents keeps a Codex row usable (no plan lock) while its auth probe is still pending', () => {
+        const runner = runnerWith({ states: { codex: 'unknown' }, entitlements: { hostedModels: false, creditsRemaining: 0 } });
+        (runner as unknown as { agentConnectionProbes: Map<string, Promise<unknown>> }).agentConnectionProbes
+            .set('codex:alice', new Promise(() => undefined));
+        const codex = runner.listAgents('alice').find(agent => agent.id === 'codex');
+        expect(codex?.accessState).to.equal('unknown');
+        expect(codex?.available).to.equal(true);
     });
 });
 
