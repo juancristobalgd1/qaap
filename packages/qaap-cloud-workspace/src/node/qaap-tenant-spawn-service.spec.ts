@@ -122,6 +122,10 @@ class FailingStorageSweepService extends TenantBackendAclTestService {
     prepare(root: string): void {
         this.ensureTenantAgentStorage(root);
     }
+
+    isPrepared(root: string): boolean {
+        return this.preparedAgentStorageRoots.has(root);
+    }
 }
 
 const reposRoot = resolveQaapReposRoot();
@@ -257,7 +261,25 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             }
             expect(service.commands.filter(command => command.file === 'find')).to.have.length(1);
             expect(warnings).to.have.length(1);
-            expect(warnings[0]).to.include('could not prepare tenant agent storage').and.to.include('No such file or directory');
+            expect(warnings[0]).to.include('may not reach existing harness state').and.to.include('No such file or directory');
+        } finally {
+            console.warn = savedWarn;
+            fs.rmSync(storageRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('prepares the storage root even when the harness-state sweep fails, so sign-in links are still created', () => {
+        const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-storage-'));
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = storageRoot;
+        const savedWarn = console.warn;
+        console.warn = () => undefined;
+        try {
+            const service = new FailingStorageSweepService();
+            service.prepare(storageRoot);
+            expect(service.isPrepared(storageRoot)).to.equal(true);
+            // The fail-closed ACLs on the root, the config dir and the storage children still ran.
+            expect(service.commands.filter(command => command.file === 'setfacl')).to.have.length(3);
         } finally {
             console.warn = savedWarn;
             fs.rmSync(storageRoot, { recursive: true, force: true });
