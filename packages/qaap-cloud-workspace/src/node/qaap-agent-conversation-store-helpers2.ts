@@ -105,11 +105,14 @@ export function buildTaskCreateRequest(
         }
         : conv;
     const lastUser = requestConv.messages[requestConv.messages.length - 1];
+    // A thread with its own worktree runs isolated from the repository's shared working tree (see the task runner).
+    const ownWorkingTree = requestConv.worktreeBranch ? { ownWorkingTree: true } : {};
     if (turnAgentId === 'shell') {
         return {
             command: deps.stripLeadingAgentMention(lastUser.content),
             cwd: requestConv.cwd,
             title: requestConv.title,
+            ...ownWorkingTree,
         };
     }
     return {
@@ -117,6 +120,7 @@ export function buildTaskCreateRequest(
         agent: turnAgentId,
         cwd: requestConv.cwd,
         title: requestConv.title,
+        ...ownWorkingTree,
         // Clean latest user message (mention-stripped) for opt-in relevance retrieval.
         ...(lastUser?.content ? { userQuery: deps.stripLeadingAgentMention(lastUser.content) } : {}),
         ...(requestConv.autoApprove === false ? { autoApprove: false } : {}),
