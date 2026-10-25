@@ -30,7 +30,7 @@ import { materializeAgentMessageForApi } from '@theia/qaap-shared-core/lib/commo
 
 import { resolveStructuredParsedTraceEvents as resolveStructuredParsedTraceEventsHelper } from './qaap-agent-conversation-store-utils';
 
-import { applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper } from './qaap-agent-conversation-store-helpers';
+import { agentVisibleLog, applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper } from './qaap-agent-conversation-store-helpers';
 
 import { type QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
 import { publishDiscardCheckpointAfterExit } from './qaap-agent-conversation-store-pre-turn-checkpoint';
@@ -225,7 +225,11 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         return 'blocked';
     }
     const detail = await ctx.taskRunner.detail(task.id);
-    const log = ctx.filterAgentLogChunk((detail?.log ?? '').trim());
+    // The reply is the agent's own output: post-agent phases (reviewer, verification command) append to
+    // this same log, and their text must neither decide the outcome nor appear in the transcript.
+    const rawLog = ctx.filterAgentLogChunk((detail?.log ?? '').trim());
+    const log = agentVisibleLog(rawLog);
+    const postAgentOutputDropped = log !== rawLog;
     // 'completed_with_warnings' (clean exit, verification still red) is a delivered turn:
     // it takes the success path below — with a warning trace instead of the failure flow.
     // Exception: CLI blocking failures that still exit 0 — auth/session (Sign-in card),
@@ -349,6 +353,14 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
                 ? ctx.backfillAgentMessageFromStructuredLog(message, turnAgentId, log)
                 : message;
             let settled = backfilled;
+            if (postAgentOutputDropped) {
+                // The live stream already wrote the reviewer's text into this message; rebuild the reply
+                // from the agent-only log so the settled transcript never shows review output as the reply.
+                const agentReply = resolveAgentLogDisplayText(turnAgentId, log).trim();
+                if (agentReply) {
+                    settled = { ...settled, content: agentReply };
+                }
+            }
             if (log && usesAgUiCliTranscriptStream(turnAgentId)
                 && !agentMessageHasStructuredTrace(settled)
                 && (settled.segments?.length ?? 0) === 0) {

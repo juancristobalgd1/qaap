@@ -611,7 +611,12 @@ export class MobileProjectsTranscriptMessagesContentUi {
     }
 
     linkifyTranscriptPreviewUrls(content: string | undefined | null): string {
-        const text = content ?? '';
+        // Agents often quote the preview as an inline code span (`http://localhost:5173`). The bare-URL
+        // pattern below needs whitespace or "(" before the URL, so the code span is linked first.
+        const text = (content ?? '').replace(
+            /`((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?)`/gi,
+            (_match, url: string) => '[`' + url + '`](' + url + ')',
+        );
         return text.replace(
             /(^|[\s(])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-preview\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\/[^\s\x60<)]*)?|https?:\/\/[0-9a-f]{32}(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?){2,}(?::\d{2,5})?(?:\/[^\s\x60<)]*)?)/gi,
             (match, prefix: string, url: string, offset: number) => {

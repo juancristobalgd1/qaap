@@ -15,6 +15,7 @@ import {
     enhanceTranscriptCaptureDirectives,
     isTranscriptCaptureClosed,
     syncTranscriptCaptureClosedRow,
+    transcriptCaptureExpiresAt,
 } from './qaap-transcript-capture-pending-ui';
 import { TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
@@ -74,11 +75,12 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
         },): HTMLElement {
         const row = document.createElement('div');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent';
-        syncTranscriptCaptureClosedRow(row, isTranscriptCaptureClosed(
-            conv,
-            options?.message ?? ctx.resolveLastAgentMessage(conv),
-            !!options?.streaming,
-        ));
+        const captureMessage = options?.message ?? ctx.resolveLastAgentMessage(conv);
+        syncTranscriptCaptureClosedRow(
+            row,
+            isTranscriptCaptureClosed(conv, captureMessage, !!options?.streaming),
+            transcriptCaptureExpiresAt(captureMessage),
+        );
         const defer = !!options?.deferHeavyContent;
         if (defer) {
             row.setAttribute('data-transcript-row-deferred', '1');

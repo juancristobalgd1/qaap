@@ -14,6 +14,7 @@ import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from '@theia/qaap-
 
 export const TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS = 'theia-mobile-agent-transcript-capture-pending';
 export const TRANSCRIPT_CAPTURE_DIRECTIVE_CLASS = 'theia-mobile-agent-transcript-capture-directive';
+const TRANSCRIPT_CAPTURE_DIRECTIVE_TEXT_CLASS = 'theia-mobile-agent-transcript-capture-directive-text';
 /**
  * Set on an agent message row when no capture can land for it any more, so a `[QAAP capture]`
  * directive renders as "not available" instead of an endless "Processing screenshot…" skeleton.
@@ -27,10 +28,29 @@ type CaptureChipState = 'pending' | 'unavailable';
  * settled turn without an error (see `conversationNeedsVisualVerificationEvidence`), and a later
  * agent turn supersedes it. A still-streaming or unknown message stays open.
  */
+/**
+ * How long a settled turn may wait for its visual evidence. The backend captures right after the turn
+ * settles, so a capture that has not landed this long after the reply is not coming; the chip must not
+ * keep a skeleton on screen forever.
+ */
+export const TRANSCRIPT_CAPTURE_EXPIRY_MS = 90_000;
+/** Dataset key on the message row that carries the capture deadline (epoch ms). */
+const TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA = 'qaapCaptureExpiresAt';
+const TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA = 'qaapCaptureExpiryTimer';
+
+/** Epoch ms after which a settled message's capture is given up, or `undefined` while it is still running. */
+export function transcriptCaptureExpiresAt(
+    message: Partial<Pick<QaapAgentMessageDTO, 'runFinishedAt' | 'createdAt'>> | undefined,
+): number | undefined {
+    const settledAt = message?.runFinishedAt ?? message?.createdAt;
+    return settledAt === undefined ? undefined : settledAt + TRANSCRIPT_CAPTURE_EXPIRY_MS;
+}
+
 export function isTranscriptCaptureClosed(
     conv: Pick<QaapAgentConversationDTO, 'messages'> | undefined,
-    message: Pick<QaapAgentMessageDTO, 'id' | 'error'> | undefined,
+    message: Pick<QaapAgentMessageDTO, 'id' | 'error'> & Partial<Pick<QaapAgentMessageDTO, 'runFinishedAt' | 'createdAt'>> | undefined,
     streaming: boolean,
+    now: number = Date.now(),
 ): boolean {
     if (streaming || !message) {
         return false;
@@ -38,12 +58,53 @@ export function isTranscriptCaptureClosed(
     if (message.error?.trim()) {
         return true;
     }
+    const expiresAt = transcriptCaptureExpiresAt(message);
+    if (expiresAt !== undefined && now >= expiresAt) {
+        return true;
+    }
     const lastAgent = conv ? [...conv.messages].reverse().find(candidate => candidate.role === 'agent') : undefined;
     return !!lastAgent && lastAgent.id !== message.id;
 }
 
-export function syncTranscriptCaptureClosedRow(row: HTMLElement, closed: boolean): void {
+/**
+ * Marks a message row closed (no capture can land any more). With `expiresAt`, the row also remembers
+ * its deadline so an open pending chip flips to "not available" when the deadline passes.
+ */
+export function syncTranscriptCaptureClosedRow(row: HTMLElement, closed: boolean, expiresAt?: number): void {
     row.toggleAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR, closed);
+    if (expiresAt === undefined) {
+        delete row.dataset[TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA];
+    } else {
+        row.dataset[TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA] = String(expiresAt);
+    }
+}
+
+/**
+ * Whether the row's capture is closed by its deadline. Also arms a single timer that re-runs the
+ * directive enhancement at the deadline, so a chip that is on screen flips without a new render.
+ */
+function resolveRowCaptureExpiry(host: HTMLElement, row: HTMLElement | null): boolean {
+    if (!row) {
+        return false;
+    }
+    const expiresAt = Number(row.dataset[TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA]);
+    if (!Number.isFinite(expiresAt)) {
+        return false;
+    }
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+        return true;
+    }
+    const view = host.ownerDocument?.defaultView;
+    if (view && !row.dataset[TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA]) {
+        row.dataset[TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA] = '1';
+        view.setTimeout(() => {
+            delete row.dataset[TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA];
+            syncTranscriptCaptureClosedRow(row, true, expiresAt);
+            enhanceTranscriptCaptureDirectives(host);
+        }, remaining + 25);
+    }
+    return false;
 }
 
 function localizeCaptureChipLabel(mode: 'image' | 'video', state: CaptureChipState): string {
@@ -203,7 +264,51 @@ function syncExistingCapturePendingChip(
  * When the agent streams `[QAAP capture]` / `[QAAP record]`, show a skeleton chip below the
  * directive until visual evidence (or a failure note) lands in the same message row.
  */
+/**
+ * `[QAAP capture]` / `[QAAP record]` is a protocol token the capture pipeline and the pending chip read,
+ * not prose for the reader. Wrap each occurrence in a hidden span: `textContent` keeps the token, so the
+ * directive detection below still works, while the reader no longer sees the raw bracket text.
+ */
+export function concealTranscriptCaptureDirectiveText(host: HTMLElement): void {
+    const doc = host.ownerDocument ?? document;
+    const textNodes: Text[] = [];
+    // Numeric SHOW_TEXT and nodeType checks: DOM globals (NodeFilter, Text) may come from another realm.
+    const SHOW_TEXT = 0x4;
+    const TEXT_NODE = 3;
+    const walker = doc.createTreeWalker(host, SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.nodeType === TEXT_NODE && !node.parentElement?.classList.contains(TRANSCRIPT_CAPTURE_DIRECTIVE_TEXT_CLASS)) {
+            textNodes.push(node as Text);
+        }
+    }
+    for (const textNode of textNodes) {
+        const data = textNode.data;
+        const regex = new RegExp(QAAP_CAPTURE_DIRECTIVE_PATTERN, 'gi');
+        const parts: Node[] = [];
+        let cursor = 0;
+        for (let match = regex.exec(data); match; match = regex.exec(data)) {
+            if (match.index > cursor) {
+                parts.push(doc.createTextNode(data.slice(cursor, match.index)));
+            }
+            const concealed = doc.createElement('span');
+            concealed.className = TRANSCRIPT_CAPTURE_DIRECTIVE_TEXT_CLASS;
+            concealed.setAttribute('hidden', '');
+            concealed.textContent = match[0];
+            parts.push(concealed);
+            cursor = match.index + match[0].length;
+        }
+        if (parts.length === 0) {
+            continue;
+        }
+        if (cursor < data.length) {
+            parts.push(doc.createTextNode(data.slice(cursor)));
+        }
+        textNode.replaceWith(...parts);
+    }
+}
+
 export function enhanceTranscriptCaptureDirectives(host: HTMLElement): number {
+    concealTranscriptCaptureDirectiveText(host);
     const row = resolveTranscriptMessageRow(host);
     if (transcriptRowHasResolvedVisualEvidence(row)) {
         removeCapturePendingChips(row ?? host);
@@ -224,7 +329,8 @@ export function enhanceTranscriptCaptureDirectives(host: HTMLElement): number {
 
     resolveCaptureDirectiveAnchor(host);
 
-    const state: CaptureChipState = row?.hasAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR) ? 'unavailable' : 'pending';
+    const closed = !!row?.hasAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR) || resolveRowCaptureExpiry(host, row);
+    const state: CaptureChipState = closed ? 'unavailable' : 'pending';
     const existingChip = host.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)
         ?? host.querySelector<HTMLElement>(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`);
     if (existingChip) {
