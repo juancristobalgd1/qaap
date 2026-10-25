@@ -63,7 +63,7 @@ export interface QaapDevPreviewEndpointContext {
 
     terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): void;
 
-    isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): boolean;
+    isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean;
 
     /**
      * Canonical working directories of the processes listening on `port`. Empty when unknown

@@ -27,6 +27,12 @@ export type QaapDevPreviewRecord = QaapDevPreviewRegistration & {
     readonly touchedAt: number;
     /** Per-preview capability used only on an isolated preview hostname. Never sent to other users. */
     readonly accessToken: string;
+    /**
+     * The record adopted a listener that was already serving (an external server its owner
+     * claimed). No pid describes that listener: the record never carries one, and only the
+     * listener's own liveness decides when it ends.
+     */
+    readonly adopted?: true;
 };
 
 export interface QaapDevPreviewRegisterOptions {
@@ -41,6 +47,8 @@ export interface QaapDevPreviewRegisterOptions {
      * grace, so the record must be reaped as soon as that listener goes away.
      */
     readonly claimedAt?: number;
+    /** Marks a NEW record as adopting an already-serving listener; see {@link QaapDevPreviewRecord.adopted}. */
+    readonly adopted?: boolean;
 }
 
 interface PersistedQaapDevPreviewRegistry {
@@ -160,7 +168,7 @@ export class QaapDevPreviewPortRegistry {
             } else {
                 const refreshed = {
                     ...existing,
-                    osProcessId: registration.osProcessId ?? existing.osProcessId,
+                    osProcessId: existing.adopted ? undefined : registration.osProcessId ?? existing.osProcessId,
                     claimedAt: expired ? now : existing.claimedAt,
                     touchedAt: now,
                     accessToken: expired ? randomBytes(24).toString('base64url') : existing.accessToken,
@@ -189,8 +197,10 @@ export class QaapDevPreviewPortRegistry {
             this.claims.delete(registration.port);
         }
 
+        const { osProcessId, ...coordinates } = registration;
         const record: QaapDevPreviewRecord = {
-            ...registration,
+            ...coordinates,
+            ...(options.adopted ? { adopted: true as const } : osProcessId !== undefined ? { osProcessId } : {}),
             claimedAt: options.claimedAt ?? now,
             touchedAt: now,
             accessToken: this.takeRetainedAccessToken(registration, now) ?? randomBytes(24).toString('base64url'),
@@ -281,7 +291,9 @@ export class QaapDevPreviewPortRegistry {
 
     attachProcess(previewId: string, ownerLogin: string, osProcessId: number | undefined): boolean {
         const record = this.getForOwner(previewId, ownerLogin);
-        if (!record) {
+        if (!record || record.adopted) {
+            // An adopted listener was not started by the reporting process: its pid would let the
+            // reaper drop a live server once that unrelated process exits.
             return false;
         }
         this.previews.set(record.previewId, { ...record, osProcessId, touchedAt: Date.now() });

@@ -1650,6 +1650,61 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.get(previewId)).to.equal(undefined);
         });
 
+        describe('an adopted listener', () => {
+            const adoptListener = async (osProcessId?: number): Promise<{ ep: ClaimTestEndpoint; registry: QaapDevPreviewPortRegistry; previewId: string }> => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new ClaimTestEndpoint();
+                ep.setClaimFakes('_dev', registry, 'skip');
+                ep.listeningPorts.add(5173);
+                await ep.exposeHandleClaim(claimReq(5173), makeRes());
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, {
+                    workspaceId: 'file:///workspace/dev/site',
+                    projectId: 'file:///workspace/dev/site',
+                    processId: 'process-external',
+                    ...(osProcessId !== undefined ? { osProcessId } : {}),
+                }), res);
+                expect((res.record.body as { port: number }).port).to.equal(5173);
+                return { ep, registry, previewId: (res.record.body as { previewId: string }).previewId };
+            };
+
+            it('never inherits the pid of the claim that adopted it, nor accepts one later', async () => {
+                const { ep, registry, previewId } = await adoptListener(process.pid);
+                const record = registry.getForOwner(previewId, '_dev')!;
+                expect(record.adopted).to.equal(true);
+                expect(record.osProcessId).to.equal(undefined);
+
+                expect(registry.attachProcess(previewId, '_dev', process.pid)).to.equal(false);
+                const reclaim = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, {
+                    workspaceId: 'file:///workspace/dev/site',
+                    projectId: 'file:///workspace/dev/site',
+                    processId: 'process-external',
+                    osProcessId: process.pid,
+                }), reclaim);
+                expect((reclaim.record.body as { previewId: string }).previewId).to.equal(previewId);
+                expect(registry.getForOwner(previewId, '_dev')?.osProcessId).to.equal(undefined);
+            });
+
+            it('is kept by the reaper while it answers, even with a dead foreign pid on record', async () => {
+                const { spawnSync } = await import('child_process');
+                const { ep, registry, previewId } = await adoptListener();
+                // A record persisted before adoption stopped carrying pids: the pid is not the listener's.
+                const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const deadPid = spawnSync(process.execPath, ['-e', '0']).pid;
+                previews.set(previewId, { ...previews.get(previewId)!, osProcessId: deadPid });
+
+                await ep.exposeReapStoppedPreviews();
+                expect(registry.get(previewId)?.previewId).to.equal(previewId);
+
+                ep.listeningPorts.clear();
+                ep.listening = false;
+                await ep.exposeReapStoppedPreviews();
+                expect(registry.get(previewId)).to.equal(undefined);
+            });
+        });
+
         it('reclaims the same processId when its registered port is dead instead of returning it as ready', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

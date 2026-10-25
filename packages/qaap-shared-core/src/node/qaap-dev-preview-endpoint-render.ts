@@ -555,6 +555,7 @@ function isPidAttachReclaimInStartGrace(
     osProcessId: number | undefined,
 ): osProcessId is number {
     return osProcessId !== undefined
+        && existing.adopted !== true
         && preferredPort === existing.port
         && Date.now() - existing.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
         && (existing.osProcessId === undefined || existing.osProcessId === osProcessId)
@@ -667,8 +668,10 @@ export async function allocatePreviewPortExtracted(
                 if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, registration.previewId)) {
                     return undefined; // a concurrent claim reached the per-owner cap during the probes
                 }
-                const adopted = ctx.portRegistry.register({ ...registration, port }, {
+                // The claim's pid (the terminal that asked) did not start this listener: never inherit it.
+                const adopted = ctx.portRegistry.register({ ...registration, osProcessId: undefined, port }, {
                     claimedAt: Date.now() - PREVIEW_RESERVATION_START_GRACE_MS,
+                    adopted: true,
                 });
                 if (adopted) {
                     console.info('[qaap-preview] adopted listener explicitly claimed by its owner', {

@@ -146,7 +146,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): boolean {
+    public isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean {
+        if (record.adopted) {
+            // No pid describes an adopted listener; the port probe alone decides (reaper, claims).
+            return false;
+        }
         if (record.port !== undefined && this.tunnelOwnerFor(record.port, record.ownerLogin) !== undefined) {
             // Pids reported for tunnelled runtimes belong to another pid namespace; liveness is
             // decided by probing the port through the tunnel instead.
