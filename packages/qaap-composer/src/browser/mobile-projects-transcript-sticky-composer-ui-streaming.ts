@@ -308,6 +308,9 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
             void ctx.launchComposerDevPreview(project, summary);
         },
         previewStarting,
+        onStopPreview: previewStarting && ctx.host.transcriptSurfacesUi?.stopTranscriptPreview
+            ? () => ctx.host.transcriptSurfacesUi?.stopTranscriptPreview?.(project, summary)
+            : undefined,
         onOpenPreview: previewChips.showViewPreview
             ? () => { void ctx.openComposerPreview(project.id); }
             : undefined,

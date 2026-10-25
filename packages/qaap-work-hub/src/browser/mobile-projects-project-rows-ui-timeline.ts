@@ -8,7 +8,7 @@ import {
     isFailedRunSummary,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import { isQaapAgentTaskStatusGlyphShown, isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import {
     formatStoredAgentFailureMessage,
     localizeAgentFailureShortReason,
@@ -73,6 +73,12 @@ export function applySidebarCompactRowTooltip(item: HTMLElement, task: MobilePro
     const failureHint = resolveTaskFailureHint(summary);
     if (failureHint) {
         lines.push(nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint));
+    }
+    // A status without a glyph (branch, commit, local changes) is named here instead of on the row.
+    // A clean finish ("verified") and an idle task say nothing, so they add no line.
+    const visualStatus = resolveQaapAgentTaskVisualStatus(task, summary);
+    if (!isQaapAgentTaskStatusGlyphShown(visualStatus) && visualStatus.id !== 'idle' && visualStatus.id !== 'verified') {
+        lines.push(nls.localize(visualStatus.labelKey, visualStatus.label));
     }
     const modelId = (summary?.lastTurnAgentModel ?? summary?.agentModel ?? summary?.qaiqModel)?.modelId?.trim();
     if (modelId) {
@@ -170,7 +176,6 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     const isDone = visualStatus.id === 'verified' || visualStatus.id === 'pr-merged';
     const isFailed = visualStatus.id === 'failed';
     const failureHint = resolveTaskFailureHint(summary);
-    const stateColor = visualStatus.color;
     if (ctx.host.justAddedTaskId === task.id) {
         item.classList.add('theia-mod-flash');
     }
@@ -198,23 +203,28 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
                 ? nls.localize('qaap/mobileProjects/lineageChild', 'Forked from another task')
                 : nls.localize('qaap/mobileProjects/lineageBoth', 'Forked from another task and into others');
         taskDot.title = lineageLabel;
-    } else if (visualStatus.iconClass && !isRunning) {
+    } else if (isRunning) {
+        ctx.renderConversationTurnProgress(taskDot, summary);
+    } else if (visualStatus.iconClass && isQaapAgentTaskStatusGlyphShown(visualStatus)) {
         taskDot.className = `theia-mobile-projects-task-dot ${visualStatus.className}`;
         if (visualStatus.gitPr) {
             taskDot.classList.add('theia-mod-git-pr');
         }
         taskDot.append(ctx.createTaskLeadingGlyph(visualStatus.iconClass));
         const statusLabel = nls.localize(visualStatus.labelKey, visualStatus.label);
+        const pullRequestNumber = visualStatus.gitPr ? summary?.linkedPullRequest?.number : undefined;
+        const prHint = pullRequestNumber
+            ? nls.localize('qaap/mobileProjects/pullRequestNumberStatus', 'Pull request #{0} · {1}', String(pullRequestNumber), statusLabel)
+            : statusLabel;
         const statusHint = failureHint
             ? nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint)
-            : statusLabel;
+            : prHint;
         taskDot.setAttribute('aria-label', statusHint);
         taskDot.title = statusHint;
-    } else if (isRunning) {
-        ctx.renderConversationTurnProgress(taskDot, summary);
     } else {
-        taskDot.className = `theia-mobile-projects-task-dot ${visualStatus.className}`;
-        taskDot.style.background = stateColor;
+        // No glyph: a clean finish, or a local git fact (branch, commit, changes) that is not
+        // actionable. The dot keeps its slot so titles stay aligned; the tooltip names the status.
+        taskDot.className = 'theia-mobile-projects-task-dot theia-mod-no-status';
     }
 
     const taskBody = document.createElement('div');

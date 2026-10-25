@@ -371,6 +371,8 @@ export function ensureTranscriptDevPreviewWatchExtracted(ctx: MobileProjectsTran
 }
 
 export function onTranscriptUserMessageSubmittedExtracted(ctx: MobileProjectsTranscriptLiveUiContext, content: string, conv: QaapAgentConversationDTO): void {
+    // A new message is an explicit request again: lift the user-Stop latch (set by Stop turn).
+    ctx.host.transcriptPreviewSuppressedByUser = false;
     ctx.transcriptPreviewSettlePollUntil = Date.now() + 120_000;
     ctx.transcriptDevPreviewBootstrapConversationId = undefined;
     ctx.transcriptPreviewOfferAnnouncedUrl = undefined;

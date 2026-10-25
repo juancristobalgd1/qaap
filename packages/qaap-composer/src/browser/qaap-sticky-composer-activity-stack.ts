@@ -111,6 +111,8 @@ export interface StickyComposerActivityStackOptions {
     onRunApp?: () => void;
     /** True while Run app is waiting for the managed dev server to become reachable. */
     previewStarting?: boolean;
+    /** While a preview starts, the chip stays clickable and stops it (the chip must never be a dead end). */
+    onStopPreview?: () => void;
     onOpenPreview?: () => void;
     /** When set, a commit split-button (primary action + options menu) renders beside the Changes pill. */
     onCommitAction?: (action: QaapGitCommitWorkflowAction) => void;
@@ -271,6 +273,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         options.hideApproveCommit ? 1 : 0,
         options.onRunApp ? 1 : 0,
         options.previewStarting ? 1 : 0,
+        options.onStopPreview ? 1 : 0,
         options.onOpenPreview ? 1 : 0,
         options.onKeepAll ? 1 : 0,
         options.onUndoAll ? 1 : 0,
@@ -1047,6 +1050,17 @@ function patchChangesNextActions(group: HTMLElement, options: StickyComposerActi
             iconClass: 'codicon-globe',
             onClick: options.onOpenPreview,
         }));
+    } else if (options.previewStarting && options.onStopPreview) {
+        // Still starting: spinner look, but a click stops the start instead of being a dead end.
+        group.append(createChangesNextActionButton({
+            className: 'theia-mod-run theia-mod-preview-starting theia-mod-preview-cancelable',
+            label: nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'),
+            hint: nls.localize('qaap/mobileProjects/previewStopAction', 'Starting preview… Tap to stop'),
+            iconClass: 'codicon-loading',
+            busy: true,
+            busyDisabled: false,
+            onClick: options.onStopPreview,
+        }));
     } else if (options.onRunApp) {
         const label = options.previewStarting
             ? nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…')
@@ -1066,16 +1080,20 @@ function createChangesNextActionButton(options: {
     readonly label: string;
     readonly iconClass: string;
     readonly busy?: boolean;
+    /** Busy look only: a busy chip that stays clickable (cancelable start) sets this to false. */
+    readonly busyDisabled?: boolean;
+    /** Tooltip and accessible name when they differ from the visible label (e.g. "tap to stop"). */
+    readonly hint?: string;
     readonly onClick: () => void;
 }): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `theia-mobile-sticky-composer-next-action ${options.className}`;
-    btn.title = options.label;
-    btn.setAttribute('aria-label', options.label);
+    btn.title = options.hint ?? options.label;
+    btn.setAttribute('aria-label', options.hint ?? options.label);
     if (options.busy) {
-        btn.disabled = true;
         btn.setAttribute('aria-busy', 'true');
+        btn.disabled = options.busyDisabled !== false;
     }
     btn.append(createNextActionIcon(options.iconClass), document.createTextNode(options.label));
     if (options.busy) {

@@ -16,6 +16,8 @@ export interface ComposerTranscriptSurfacesApi {
     discoverAndMountTranscriptPreviewIfReady(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     adoptReadyTranscriptPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, readyUrl: string): MobileProjectEntry;
     updateTranscriptPreviewLaunchStatus?(): void;
+    /** Stops a starting preview (the "Stop preview" chip); implemented by the Work Hub surfaces UI. */
+    stopTranscriptPreview?(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
 }
 
 /** Hub project selection; implemented by `MobileProjectsProjectNavigationUi`. */

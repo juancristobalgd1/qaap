@@ -235,6 +235,8 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/mobileProjects/previewStop': 'Detener vista previa',
     'qaap/mobileProjects/previewStopped': 'Vista previa detenida',
     'qaap/mobileProjects/previewStarting': 'Iniciando la vista previa…',
+    'qaap/mobileProjects/previewStopAction': 'Iniciando la vista previa… Toca para detenerla',
+    'qaap/mobileProjects/pullRequestNumberStatus': 'Pull request #{0} · {1}',
     'qaap/mobileProjects/previewUrlPlaceholder': 'Introduce una URL',
     'qaap/mobileProjects/previewLoading': 'Cargando…',
     'qaap/mobileProjects/previewSwitchFailed': 'La aplicación seleccionada no llegó a estar lista.',

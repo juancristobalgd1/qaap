@@ -228,3 +228,38 @@ export function resolveTranscriptComposerQuickActionsMode(
     }
     return previewStarting ? 'preview-only' : 'hidden';
 }
+
+/** What a turn Stop does to the preview request that turn may have started. */
+export type QaapTurnStopPreviewRequestAction =
+    /** No preview request is pending or running: nothing to clear. */
+    | 'none'
+    /** The request only waits on the agent or a probe: clear it so "Starting preview…" becomes "Run app". */
+    | 'clear'
+    /** A real Qaap bootstrap is installing or serving the app: leave it running, the chip stays cancelable. */
+    | 'keep';
+
+export interface QaapTurnStopPreviewRequestInput {
+    readonly requestPending: boolean;
+    readonly requestRunning: boolean;
+    /** Phase of the project bootstrap service (`installing`, `starting`, `running`, `ready-to-run`, ...). */
+    readonly bootstrapPhase?: string;
+    /** A preview URL already answers: the request is done and nothing keeps it alive. */
+    readonly previewUrl?: string;
+}
+
+/**
+ * Stopping the agent turn must not kill a preview process Qaap is starting (the bootstrap keeps
+ * it), but a request that only waits on the agent has no process to keep: it is cleared at once.
+ */
+export function resolveQaapTurnStopPreviewRequestAction(input: QaapTurnStopPreviewRequestInput): QaapTurnStopPreviewRequestAction {
+    if (!input.requestPending && !input.requestRunning) {
+        return 'none';
+    }
+    const bootstrapActive = input.bootstrapPhase === 'installing'
+        || input.bootstrapPhase === 'starting'
+        || input.bootstrapPhase === 'running';
+    if (bootstrapActive && !input.previewUrl) {
+        return 'keep';
+    }
+    return 'clear';
+}
