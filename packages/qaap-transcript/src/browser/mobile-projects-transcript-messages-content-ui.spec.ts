@@ -54,6 +54,20 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         }
     });
 
+    // Opening a preview link first asks the backend for the section's live preview
+    // (`fetchQaapCurrentDevPreview`). Unstubbed, that is a real request to jsdom's origin,
+    // http://localhost:80: refused at once on Linux and macOS, but Windows retries the refused SYN
+    // for about 2 s, past mocha's timeout. Answer as a backend with no live claim does.
+    let previousFetch: typeof globalThis.fetch;
+    beforeEach(() => {
+        previousFetch = globalThis.fetch;
+        globalThis.fetch = async () => new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    afterEach(() => {
+        globalThis.fetch = previousFetch;
+    });
+
     beforeEach(() => {
         if (typeof window !== 'undefined') {
             const testWindow = window as Partial<Pick<Window, 'requestAnimationFrame' | 'cancelAnimationFrame'>>;
