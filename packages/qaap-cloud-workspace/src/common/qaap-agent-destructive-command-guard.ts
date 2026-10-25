@@ -65,16 +65,62 @@ function rmArgsAreRecursiveForce(args: string): boolean {
     return recursive && force;
 }
 
+/**
+ * Splits an absolute POSIX path into normalized segments (`.` dropped, `..` resolved). `undefined` for a
+ * relative path or one that climbs above the root. Plain string logic: this module also runs in the browser.
+ */
+function normalizeAbsolutePosixSegments(value: string): string[] | undefined {
+    if (!value.startsWith('/')) {
+        return undefined;
+    }
+    const segments: string[] = [];
+    for (const part of value.split('/')) {
+        if (!part || part === '.') {
+            continue;
+        }
+        if (part === '..') {
+            if (segments.length === 0) {
+                return undefined;
+            }
+            segments.pop();
+            continue;
+        }
+        segments.push(part);
+    }
+    return segments;
+}
+
+/**
+ * True when an absolute rm target is strictly inside the task workspace, e.g. a build output such as
+ * `/workspace/repo/dist`. The workspace root itself, a `<root>/*` glob (wipes the whole workspace), and
+ * anything outside the root are not inside. Lexical check only: symlinks are resolved by the path
+ * guard that runs on read-only shell commands, not here.
+ */
+function absoluteRmTargetIsInsideWorkspace(target: string, cwd: string | undefined): boolean {
+    const root = cwd ? normalizeAbsolutePosixSegments(cwd) : undefined;
+    if (!root || root.length === 0) {
+        return false;
+    }
+    const withoutGlob = target.endsWith('/*') ? target.slice(0, -2) || '/' : target;
+    const resolved = normalizeAbsolutePosixSegments(withoutGlob);
+    if (!resolved || resolved.length <= root.length) {
+        return false;
+    }
+    return root.every((segment, index) => resolved[index] === segment);
+}
+
 /** rm targets that can reach outside the workspace or wipe it entirely. */
-function rmTargetIsDangerous(args: string): boolean {
+function rmTargetIsDangerous(args: string, cwd: string | undefined): boolean {
     for (const token of args.split(/\s+/)) {
         if (!token || token.startsWith('-')) {
             continue;
         }
         const target = token.replace(/^["']|["']$/g, '');
+        if (target.startsWith('/') && !absoluteRmTargetIsInsideWorkspace(target, cwd)) {
+            return true;
+        }
         if (
-            target.startsWith('/')
-            || target === '~' || target.startsWith('~/')
+            target === '~' || target.startsWith('~/')
             || target === '..' || target.startsWith('../')
             || target === '.' || target === './' || target === '*' || target === './*'
             || target.startsWith('$HOME')
@@ -85,12 +131,16 @@ function rmTargetIsDangerous(args: string): boolean {
     return false;
 }
 
-/** True for shell commands that destroy git history/branches or delete files outside the workspace. */
-export function isDestructiveShellCommand(command: string | undefined): boolean {
-    return isDestructiveShellCommandAtDepth(command, 0);
+/**
+ * True for shell commands that destroy git history/branches or delete files outside the workspace.
+ * `cwd` is the task workspace: an absolute `rm -rf` target inside it is routine cleanup, not an escape.
+ * Without `cwd`, every absolute target is treated as outside.
+ */
+export function isDestructiveShellCommand(command: string | undefined, cwd?: string): boolean {
+    return isDestructiveShellCommandAtDepth(command, 0, cwd);
 }
 
-function isDestructiveShellCommandAtDepth(command: string | undefined, depth: number): boolean {
+function isDestructiveShellCommandAtDepth(command: string | undefined, depth: number, cwd: string | undefined): boolean {
     const text = command?.trim();
     if (!text) {
         return false;
@@ -107,7 +157,7 @@ function isDestructiveShellCommandAtDepth(command: string | undefined, depth: nu
                 payloads.push(payload);
             }
         }
-        if (payloads.some(payload => isDestructiveShellCommandAtDepth(payload, depth + 1))) {
+        if (payloads.some(payload => isDestructiveShellCommandAtDepth(payload, depth + 1, cwd))) {
             return true;
         }
     }
@@ -126,7 +176,7 @@ function isDestructiveShellCommandAtDepth(command: string | undefined, depth: nu
     let match: RegExpExecArray | null;
     while ((match = RM_COMMAND_RE.exec(text)) !== null) {
         const args = match[1] ?? '';
-        if (rmArgsAreRecursiveForce(args) && rmTargetIsDangerous(args)) {
+        if (rmArgsAreRecursiveForce(args) && rmTargetIsDangerous(args, cwd)) {
             return true;
         }
     }
@@ -150,10 +200,10 @@ export function buildDestructiveCommandDenyMessage(): string {
  * Returns the deny message when a pending QAIQ `can_use_tool` request is a shell tool running a
  * destructive command; `undefined` means the request should proceed through the normal approval flow.
  */
-export function findQaiqDestructiveCommandGuardDenial(request: QaapQaiqPendingControlRequest): string | undefined {
+export function findQaiqDestructiveCommandGuardDenial(request: QaapQaiqPendingControlRequest, cwd?: string): string | undefined {
     if (!isShellToolName(request.toolName)) {
         return undefined;
     }
     const command = typeof request.toolInput?.command === 'string' ? request.toolInput.command : undefined;
-    return isDestructiveShellCommand(command) ? buildDestructiveCommandDenyMessage() : undefined;
+    return isDestructiveShellCommand(command, cwd) ? buildDestructiveCommandDenyMessage() : undefined;
 }

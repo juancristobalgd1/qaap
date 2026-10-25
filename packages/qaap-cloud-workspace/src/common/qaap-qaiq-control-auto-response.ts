@@ -115,7 +115,7 @@ export function resolveQaiqControlRequestAutoDecision(
         return { action: 'allow', reason: 'read-only-shell', detail: readOnly.detail };
     }
     return {
-        action: resolvePresetAutoAction(command, autoApprove, request),
+        action: resolvePresetAutoAction(command, autoApprove, request, options.cwd),
         ...(readOnly ? { readOnlyBlockedReason: readOnly.detail } : {}),
     };
 }
@@ -150,7 +150,7 @@ function classifyReadOnlyShellRequest(
     if (!toolName || !isShellTool(toolName)) {
         return undefined;
     }
-    if (findQaiqDestructiveCommandGuardDenial(request)) {
+    if (findQaiqDestructiveCommandGuardDenial(request, options.cwd)) {
         return undefined;
     }
     const coreTools = parseQaiqCoreTools(command);
@@ -191,6 +191,7 @@ function resolvePresetAutoAction(
     command: string,
     autoApprove: boolean | undefined,
     request: QaapQaiqPendingControlRequest,
+    cwd: string | undefined,
 ): QaapQaiqControlAutoAction {
     if (autoApprove === false) {
         return 'queue';
@@ -198,7 +199,7 @@ function resolvePresetAutoAction(
     // Destructive shell commands (force push, hard reset, rm -rf outside the workspace) are never
     // AUTO-approved. Queue them for the Allow/Deny card (ChatGPT / Claude-style) so the user can
     // explicitly consent. Full-access / bypassPermissions still hard-denies them.
-    if (findQaiqDestructiveCommandGuardDenial(request)) {
+    if (findQaiqDestructiveCommandGuardDenial(request, cwd)) {
         if (/(?:^|\s)--permission-mode\s+bypassPermissions(?:\s|$)/.test(command)) {
             return 'deny';
         }

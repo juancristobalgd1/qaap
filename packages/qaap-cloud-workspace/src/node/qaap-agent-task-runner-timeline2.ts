@@ -627,7 +627,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     });
                     if (autoAction !== 'queue') {
                         const devServerDenial = findQaiqDevServerGuardDenial(event.request);
-                        const destructiveDenial = findQaiqDestructiveCommandGuardDenial(event.request);
+                        const destructiveDenial = findQaiqDestructiveCommandGuardDenial(event.request, task.cwd);
                         const denyMessage = devServerDenial
                             ?? destructiveDenial
                             ?? (autoAction === 'deny' && event.request.toolName

@@ -153,4 +153,41 @@ describe('qaap-agent-destructive-command-guard', () => {
             toolInput: { command: 'git status' },
         })).to.equal(undefined);
     });
+
+    describe('rm targets scoped to the task workspace', () => {
+        const workspace = '/workspace/repos/users/jc/repo';
+
+        it('lets routine rm -rf of build output inside the workspace through', () => {
+            expect(isDestructiveShellCommand(`rm -rf ${workspace}/dist`, workspace), 'abs dist').to.equal(false);
+            expect(isDestructiveShellCommand(`rm -rf ${workspace}/packages/a/lib`, workspace), 'nested').to.equal(false);
+            expect(isDestructiveShellCommand(`rm -rf ${workspace}/dist/*`, workspace), 'glob under dist').to.equal(false);
+            expect(isDestructiveShellCommand(`rm -rf ${workspace}/packages/../dist`, workspace), 'dotdot inside').to.equal(false);
+            expect(isDestructiveShellCommand('rm -rf dist', workspace), 'relative').to.equal(false);
+        });
+
+        it('still blocks rm -rf that leaves the workspace or wipes it', () => {
+            expect(isDestructiveShellCommand('rm -rf /workspace/repos/users/jc/other/dist', workspace), 'sibling').to.equal(true);
+            expect(isDestructiveShellCommand(`rm -rf ${workspace}/../other`, workspace), 'escape').to.equal(true);
+            expect(isDestructiveShellCommand(`rm -rf ${workspace}`, workspace), 'root itself').to.equal(true);
+            expect(isDestructiveShellCommand(`rm -rf ${workspace}/*`, workspace), 'workspace glob').to.equal(true);
+            expect(isDestructiveShellCommand('rm -rf /', workspace), 'filesystem root').to.equal(true);
+            expect(isDestructiveShellCommand('rm -rf ~/.cache', workspace), 'home').to.equal(true);
+            expect(isDestructiveShellCommand('rm -rf /workspace/x/dist', undefined), 'no cwd known').to.equal(true);
+        });
+
+        it('applies the same scoping inside nested shell payloads', () => {
+            expect(isDestructiveShellCommand(`sh -c "rm -rf ${workspace}/dist"`, workspace)).to.equal(false);
+            expect(isDestructiveShellCommand('sh -c "rm -rf /etc"', workspace)).to.equal(true);
+        });
+
+        it('passes the workspace through the request-level denial', () => {
+            const request = {
+                requestId: 'r4',
+                toolName: 'Bash',
+                toolInput: { command: `rm -rf ${workspace}/dist` },
+            };
+            expect(findQaiqDestructiveCommandGuardDenial(request, workspace)).to.equal(undefined);
+            expect(findQaiqDestructiveCommandGuardDenial(request)).to.not.equal(undefined);
+        });
+    });
 });

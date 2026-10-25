@@ -4,13 +4,14 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { applyAgentApprovalPolicyToCommand } from './qaap-agent-approval-flags';
 import {
     commandMayChangeShellCwd,
     resolveQaiqControlRequestAutoAction,
     resolveQaiqControlRequestAutoDecision,
     type QaapQaiqControlAutoOptions,
 } from './qaap-qaiq-control-auto-response';
-import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
+import { QAIQ_STDIO_APPROVAL_FLAGS, type QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 describe('qaap-qaiq-control-auto-response', () => {
     const approveForMeCommand = 'qaiq --permission-mode default --allowed-tools Read,Grep,Glob,LS,Edit,Write,NotebookEdit';
@@ -327,6 +328,57 @@ describe('qaap-qaiq-control-auto-response', () => {
             expect(commandMayChangeShellCwd('cat abcd.txt')).to.equal(false);
             expect(commandMayChangeShellCwd('grep -r cdn src')).to.equal(false);
             expect(commandMayChangeShellCwd(undefined)).to.equal(false);
+        });
+    });
+
+    describe('approve for me: routine shell work runs without a prompt', () => {
+        const workspace = '/workspace/repos/users/jc/repo';
+        const approveForMeTask = (rules: { shell: boolean; network: boolean }): string => applyAgentApprovalPolicyToCommand('qaiq -p "task"', {
+            agentId: 'qaiq',
+            approvalPolicyId: 'approve-for-me',
+            autoApprove: true,
+            toolApprovalRules: rules,
+        }) + ` ${QAIQ_STDIO_APPROVAL_FLAGS}`;
+        const bash = (command: string): QaapQaiqPendingControlRequest => ({
+            requestId: `req-${command}`,
+            toolName: 'Bash',
+            toolInput: { command },
+        });
+        const options: QaapQaiqControlAutoOptions = { cwd: workspace };
+
+        it('allows read, git inspection, build, test and workspace cleanup commands', () => {
+            const command = approveForMeTask({ shell: true, network: false });
+            const routine = [
+                'ls -la',
+                'cat package.json',
+                'git status',
+                'git diff HEAD~1',
+                'git log --oneline -5',
+                'npm run compile',
+                'npx tsc -b packages/qaap-cloud-workspace',
+                'npx mocha ./packages/qaap-shared-core/lib/common/x.spec.js',
+                `rm -rf ${workspace}/packages/qaap-cloud-workspace/lib`,
+            ];
+            for (const shellCommand of routine) {
+                expect(resolveQaiqControlRequestAutoAction(command, true, bash(shellCommand), options), shellCommand).to.equal('allow');
+            }
+        });
+
+        it('keeps destructive and dev-server commands behind their guards', () => {
+            const command = approveForMeTask({ shell: true, network: false });
+            expect(resolveQaiqControlRequestAutoAction(command, true, bash('git push --force origin main'), options)).to.equal('queue');
+            expect(resolveQaiqControlRequestAutoAction(command, true, bash('rm -rf /etc'), options)).to.equal('queue');
+            expect(resolveQaiqControlRequestAutoAction(command, true, bash('npm run dev'), options)).to.equal('deny');
+        });
+
+        it('a stale shell:false scope is what made every Bash call get denied', () => {
+            const command = approveForMeTask({ shell: false, network: false });
+            expect(resolveQaiqControlRequestAutoAction(command, true, bash('ls -la'), options)).to.equal('deny');
+        });
+
+        it('request-approval still queues every shell command', () => {
+            const command = approveForMeTask({ shell: true, network: false });
+            expect(resolveQaiqControlRequestAutoAction(command, false, bash('ls -la'), options)).to.equal('queue');
         });
     });
 });
