@@ -9,6 +9,7 @@ import {
     buildAgentBoundedEvidenceAuditPromptBlock,
     buildAgentCommunicationPromptBlock,
     buildAgentDefaultWorkflowPromptBlock,
+    buildAgentDevPreviewPromptBlock,
     buildAgentDestructiveCommandsPromptBlock,
     buildAgentDevServerVerificationPromptBlock,
     buildAgentEndOfTurnPromptBlock,
@@ -340,5 +341,24 @@ describe('reply language pin', () => {
         const block = buildAgentCommunicationPromptBlock();
         expect(block).to.include('after the final "---"');
         expect(block).to.include('Never mix languages');
+    });
+});
+
+describe('buildAgentDevPreviewPromptBlock start ownership', () => {
+    it('states the agent cannot start the server and Qaap starts only detected entry points', () => {
+        const block = buildAgentDevPreviewPromptBlock();
+        expect(block).to.include('You cannot start the preview server yourself');
+        expect(block).to.include('Qaap starts the preview server only from a detected entry point');
+        expect(block).to.not.include('Qaap starts the server separately');
+        expect(block).to.include('Never tell the user the app runs at localhost');
+    });
+});
+
+describe('buildAgentDevServerVerificationPromptBlock start promises', () => {
+    it('never promises an unconditional Qaap start or a localhost address to the user', () => {
+        const block = buildAgentDevServerVerificationPromptBlock();
+        expect(block).to.not.include('Qaap starts it and opens the preview');
+        expect(block).to.include('do not say that Qaap will start one');
+        expect(block).to.include('never cite localhost or a bare port to the user');
     });
 });

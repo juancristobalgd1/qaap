@@ -11,6 +11,7 @@ import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { clearQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { isStalledPreviewAgentFallback, TRANSCRIPT_PREVIEW_AGENT_FALLBACK_TIMEOUT_MS } from './transcript-preview-liveness';
 
 export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -150,10 +151,40 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
 
         const message = nls.localize(
             'qaap/mobileProjects/previewAgentRequest',
-            'Prepare this app for live in-IDE preview. Qaap starts and keeps the dev server running in a dedicated terminal with hot reload — do NOT run long-lived dev commands in shell (pnpm dev, npm start, vite, next dev, etc.); shell tools time out after ~30s and break preview. Install dependencies only if node_modules is missing. Fix build/typecheck issues with one-shot commands. When ready, reply with the expected local port (e.g. 5173) and confirm dependencies are installed.',
+            'Prepare this app for live in-IDE preview. Qaap starts the dev server from the detected entry point (a dev, start, serve or develop script, or .qaap/preview.json) in a dedicated terminal with hot reload — do NOT run long-lived dev commands in shell (pnpm dev, npm start, vite, next dev, etc.); shell tools time out after ~30s and break preview. Install dependencies only if node_modules is missing. Fix build/typecheck issues with one-shot commands. Confirm dependencies are installed and state whether a runnable entry point exists; if none exists, create .qaap/preview.json and say so. Never describe the app as running on localhost.',
         );
         ctx.host.transcriptPreviewRequestRunning = true;
         ctx.host.transcriptPreviewRequestPending = true;
+        // The agent may never start a server (blocked shell, no entry point). Without this watchdog
+        // the "Starting preview…" chip would wait forever: release it after a bounded wait instead.
+        window.setTimeout(() => {
+            const stalled = isStalledPreviewAgentFallback({
+                launchGeneration,
+                currentGeneration: ctx.previewLaunchGeneration,
+                stillPending: !!ctx.host.transcriptPreviewRequestPending,
+                hasPreviewUrl: !!ctx.host.projects.find(candidate => candidate.id === project.id)?.previewUrl,
+                suppressedByUser: !!ctx.host.transcriptPreviewSuppressedByUser,
+            });
+            if (!stalled) {
+                return;
+            }
+            console.warn('[qaap-preview] agent fallback produced no live preview before the wait ran out', {
+                projectId: project.id,
+                conversationId: summary.id,
+                waitMs: TRANSCRIPT_PREVIEW_AGENT_FALLBACK_TIMEOUT_MS,
+            });
+            ctx.host.transcriptPreviewRequestRunning = false;
+            ctx.host.transcriptPreviewRequestPending = false;
+            ctx.syncHeaderPreviewRunButton(project, summary);
+            refreshPreviewComposer();
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/previewDidNotStart',
+                    'Preview did not start. Check the Dev terminal and retry.',
+                ),
+                { kind: 'warning', duration: 8000 },
+            );
+        }, TRANSCRIPT_PREVIEW_AGENT_FALLBACK_TIMEOUT_MS);
         refreshPreviewComposer();
         if (options?.revealPreviewTab) {
             revealPreviewTab();

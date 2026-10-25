@@ -39,7 +39,7 @@ export function buildDevServerShellDenyMessage(): string {
         + 'Qaap runs the dev server in a dedicated terminal with hot reload. '
         + 'Run only one-shot commands (install, build, typecheck, test). '
         + 'When the app is ready to preview, reply stating the expected local port (e.g. 5173) and confirm dependencies are installed; '
-        + 'Qaap will start the server and open the preview automatically.';
+        + 'Qaap starts the server only from a detected entry point or .qaap/preview.json; if none exists, report that instead of promising a preview.';
 }
 
 /**

@@ -259,7 +259,9 @@ export function buildAgentDevPreviewPromptBlock(): string {
         DEV_PREVIEW_MARKER,
         'Qaap keeps the dev server alive in a dedicated IDE terminal with hot reload.',
         'Never run long-lived dev commands in shell (pnpm dev, npm start, vite, next dev, astro dev, etc.) — shell tools time out after ~30s and kill the preview.',
-        'Use one-shot install/build/typecheck/test commands only. When the app should be previewable, reply with the expected local port (e.g. 5173) and confirm dependencies are installed; Qaap starts the server separately.',
+        'Use one-shot install/build/typecheck/test commands only. You cannot start the preview server yourself: background shell commands (&, nohup, disown) are blocked.',
+        'Qaap starts the preview server only from a detected entry point (a dev, start, serve or develop script) or a valid .qaap/preview.json. When the app should be previewable, confirm dependencies are installed and state whether such an entry point exists; never promise that Qaap will start a server that no entry point detects.',
+        'Never tell the user the app runs at localhost or on a bare port: the user opens the preview from Qaap, not from their own browser.',
         'Prefer scaffolding web apps in the workspace root. Qaap auto-detects Node, static HTML, Django, FastAPI/Flask, Go, Rust, .NET, and PHP projects.',
         'For another runtime or an ambiguous entry point, create .qaap/preview.json version 1 with runtime, command, argv-style args, workspace-relative cwd, and port. Use {{PORT}} in an argument when Qaap must inject the allocated port.',
     ].join('\n');
@@ -285,9 +287,10 @@ export function buildAgentDevServerVerificationPromptBlock(): string {
         'If you cannot verify (command timed out, connection refused, no curl available), say so explicitly — never report a URL you have not confirmed.',
         'Connection refused on a "run/start the app" request usually means Qaap\'s preview is still installing dependencies or starting — it is not a reason to stop.'
             + ' Make the project previewable instead: install dependencies with a one-shot command, fix build/config errors, and confirm the expected port.'
-            + ' Never tell the user to run the dev server themselves (npm run dev, pnpm dev, vite, ...) — Qaap starts it and opens the preview.',
+            + ' Never tell the user to run the dev server themselves (npm run dev, pnpm dev, vite, ...) — Qaap starts it from the detected entry point and opens the preview.',
         'Partial output from a killed or timed-out process (e.g. "VITE ready in 1606ms" followed by a shell timeout) is NOT evidence the server is still running. The process may have been killed after producing that output.',
-        'If no supported entry point or valid .qaap/preview.json launch plan was detected, report that clearly — do not invent a dev server, port, or URL.',
+        'If no supported entry point or valid .qaap/preview.json launch plan was detected, report that clearly — do not invent a dev server, port, or URL, and do not say that Qaap will start one.',
+        'The curl check above runs inside your sandbox only: never cite localhost or a bare port to the user as the preview address.',
     ].join('\n');
 }
 

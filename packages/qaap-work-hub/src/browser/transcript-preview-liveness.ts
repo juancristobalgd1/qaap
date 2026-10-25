@@ -13,6 +13,29 @@ export const TRANSCRIPT_PREVIEW_LIVENESS_MAX_PROBES = 3;
 /** Spacing between the probes of one liveness assessment. */
 export const TRANSCRIPT_PREVIEW_LIVENESS_PROBE_SPACING_MS = 2500;
 /**
+ * How long the agent-fallback preview request may keep "Starting preview…" up without a live
+ * preview URL before the chip is released (the Run app action then retries).
+ */
+export const TRANSCRIPT_PREVIEW_AGENT_FALLBACK_TIMEOUT_MS = 180_000;
+
+/**
+ * True when a preview request started by the agent fallback is still waiting on the launch that
+ * armed the watchdog: same launch generation, still pending, no ready preview URL, not cancelled.
+ */
+export function isStalledPreviewAgentFallback(input: {
+    readonly launchGeneration: number;
+    readonly currentGeneration: number;
+    readonly stillPending: boolean;
+    readonly hasPreviewUrl: boolean;
+    readonly suppressedByUser: boolean;
+}): boolean {
+    return input.launchGeneration === input.currentGeneration
+        && input.stillPending
+        && !input.hasPreviewUrl
+        && !input.suppressedByUser;
+}
+
+/**
  * Consecutive definitive failures (`stopped` / `gone`) needed before a page that is showing is
  * declared dead. A single failed probe never blanks a live page.
  */
