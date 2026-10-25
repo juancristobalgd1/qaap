@@ -28,7 +28,7 @@ import {
     hasComposerAgentActivity as hasComposerAgentActivityHelper,
     resolveChangedFilesStats as resolveChangedFilesStatsHelper,
 } from './mobile-projects-transcript-sticky-composer-helpers';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import { extractTranscriptPreviewId } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-content-ui';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import {
@@ -288,6 +288,11 @@ export async function openComposerPreviewExtracted(ctx: MobileProjectsTranscript
             url => ctx.host.transcriptOpenProject?.id === projectId
                 ? ctx.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(url)
                 : Promise.resolve(false),
+            undefined,
+            () => fetchQaapCurrentDevPreview(
+                [projectId],
+                (ctx.host.transcriptComposerSummary ?? ctx.host.transcriptOpenSummary)?.id,
+            ),
         );
         if (!opened) {
             // A URL the backend just verified as ready must not dead-end in a silent no-op (the
