@@ -377,7 +377,15 @@ export interface QaapAgentDescriptor {
     readonly available: boolean;
     /** Authentication state is reported separately from CLI installation. */
     readonly connectionState?: QaapAgentConnectionState;
+    /**
+     * How the owner can run this agent right now: their own sign-in (`session`), Qaap-hosted access
+     * (`hosted`, Codex on a plan with credits), nothing usable (`none`), or not yet known (`unknown`).
+     */
+    readonly accessState?: QaapAgentAccessState;
 }
+
+/** See {@link QaapAgentDescriptor.accessState}. Resolved by `resolveAgentAccess` on the backend. */
+export type QaapAgentAccessState = 'session' | 'hosted' | 'none' | 'unknown';
 
 /** Selectable QAIQ model option exposed to the frontend picker. */
 export interface QaapQaiqModelOption {

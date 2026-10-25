@@ -28,6 +28,7 @@ import type {
     QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import type { QaapAgentConnectionSnapshot } from './qaap-agent-access';
 import type { QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapAgentReadOnlyEnforcement } from '../common/qaap-agent-readonly-workspace';
@@ -161,6 +162,7 @@ export interface QaapAgentTaskRunnerContext {
     isAgentConfigured(): boolean;
     isAgentConnected(agentId: string, ownerLogin?: string): boolean;
     isAgentConnectedFresh(agentId: string, ownerLogin?: string): Promise<boolean>;
+    agentConnectionSnapshot(agentId: string, ownerLogin?: string): QaapAgentConnectionSnapshot;
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean;
     listAgents(ownerLogin?: string): QaapAgentDescriptor[];
     defaultAgent(ownerLogin?: string): string;

@@ -4,9 +4,9 @@
 // *****************************************************************************
 
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { nls } from '@theia/core/lib/common/nls';
 import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
 import { formatQaiqModelProviderLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import { resolveUnavailableModelTitle } from './qaap-agent-ui';
 
 export interface QaapAgentPickerSearchEntry {
     readonly id: string;
@@ -116,10 +116,7 @@ export function createAgentPickerInlineModelButton(options: {
         button.classList.add('theia-mod-disabled');
         button.disabled = true;
         button.setAttribute('aria-disabled', 'true');
-        button.title = nls.localize(
-            'qaap/mobileProjects/modelPickerUnavailableByPlan',
-            'This model requires a plan with hosted model access.',
-        );
+        button.title = resolveUnavailableModelTitle(agentId, model.unavailableReason);
     }
 
     const content = document.createElement('span');

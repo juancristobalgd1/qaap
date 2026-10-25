@@ -481,5 +481,5 @@ export class MobileProjectsStickyComposerAgentsUi {
 
 /** Stable identity of what an agent picker row shows, used to skip no-op background repaints. */
 function composerAgentCatalogSignature(agents: readonly QaapAgentTaskAgentOption[]): string {
-    return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState]));
+    return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState, agent.accessState]));
 }

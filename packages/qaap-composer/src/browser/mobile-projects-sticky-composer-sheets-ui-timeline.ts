@@ -293,7 +293,10 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             id: agent.id,
             label: agent.label,
             models: [],
-            available: agent.available !== false && agent.connectionState !== 'disconnected',
+            // Same access answer as the backend row: a settled Codex sign-out is `none` (even when its
+            // probe reported `unknown`), and a hosted Codex stays usable while `disconnected`.
+            available: agent.available !== false
+                && (agent.accessState === 'hosted' || agent.connectionState !== 'disconnected'),
         });
     }
     if (agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id))) {
@@ -341,6 +344,10 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             // key is the sole way the backend makes QAIQ unavailable (its connection state comes
             // from the per-owner key preflight); revisit this if QAIQ gains another unavailable cause.
             const needsApiKey = missingQaiqByok || agentNeedsSettingsApiKeyPath(agentId);
+            // Codex with no sign-in and no hosted entitlement (access `none`) is opened via the same sign-in flow.
+            const needsSignIn = !needsApiKey
+                && agentId.trim().toLowerCase() === 'codex'
+                && options.agents.some(agent => agent.id === agentId && agent.accessState === 'none');
             content.append(createUnavailableAgentSheetOption({
                 agentId,
                 label,
@@ -351,12 +358,14 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                         agentDescription,
                     )
                     : resolveAgentPickerConnectionDescription(agentId, label, agentDescription),
-                actionLabel: nls.localize(
-                    needsApiKey
-                        ? 'qaap/agentPicker/addApiKey'
-                        : 'qaap/agentPicker/connect',
-                    needsApiKey ? 'Add API key' : 'Connect',
-                ),
+                actionLabel: needsSignIn
+                    ? nls.localize('qaap/agentPicker/signIn', 'Sign in')
+                    : nls.localize(
+                        needsApiKey
+                            ? 'qaap/agentPicker/addApiKey'
+                            : 'qaap/agentPicker/connect',
+                        needsApiKey ? 'Add API key' : 'Connect',
+                    ),
                 onAction: () => {
                     if (needsApiKey) {
                         options.onOpenAiFeaturesSettings?.(agentId);
