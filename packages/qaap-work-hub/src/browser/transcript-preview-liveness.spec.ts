@@ -8,6 +8,8 @@ import {
     classifyTranscriptPreviewLoss,
     decideTranscriptPreviewLiveness,
     isSameTranscriptPreviewClaim,
+    isStalledPreviewAgentFallback,
+    TRANSCRIPT_PREVIEW_AGENT_FALLBACK_TIMEOUT_MS,
     TRANSCRIPT_PREVIEW_LIVENESS_MAX_PROBES,
     TRANSCRIPT_PREVIEW_SHOWING_PAGE_FAILURES_TO_DEAD,
 } from './transcript-preview-liveness';
@@ -89,5 +91,27 @@ describe('classifyTranscriptPreviewLoss', () => {
         const b = 'https://ffffffffffffffffffffffffffffffff.previews.qaap.example';
         expect(isSameTranscriptPreviewClaim(`${a}/`, `${a}/docs/demo/?x=1`)).to.equal(true);
         expect(isSameTranscriptPreviewClaim(`${a}/`, `${b}/`)).to.equal(false);
+    });
+});
+
+describe('isStalledPreviewAgentFallback', () => {
+    const waiting = { launchGeneration: 3, currentGeneration: 3, stillPending: true, hasPreviewUrl: false, suppressedByUser: false };
+
+    it('releases a request that is still pending with no preview after the wait', () => {
+        expect(isStalledPreviewAgentFallback(waiting)).to.equal(true);
+        expect(TRANSCRIPT_PREVIEW_AGENT_FALLBACK_TIMEOUT_MS).to.be.greaterThan(0);
+    });
+
+    it('leaves a request alone once a newer launch superseded it', () => {
+        expect(isStalledPreviewAgentFallback({ ...waiting, currentGeneration: 4 })).to.equal(false);
+    });
+
+    it('leaves a request alone once its preview URL arrived or it was already cleared', () => {
+        expect(isStalledPreviewAgentFallback({ ...waiting, hasPreviewUrl: true })).to.equal(false);
+        expect(isStalledPreviewAgentFallback({ ...waiting, stillPending: false })).to.equal(false);
+    });
+
+    it('leaves a request alone when the user stopped the preview', () => {
+        expect(isStalledPreviewAgentFallback({ ...waiting, suppressedByUser: true })).to.equal(false);
     });
 });

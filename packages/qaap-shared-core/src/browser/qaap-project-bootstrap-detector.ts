@@ -90,6 +90,15 @@ const IMPLICIT_MONOREPO_DIRS = [
 /** Scripts the detector will pick up as a "dev server" entry point, in priority order. */
 const DEV_SCRIPT_PRIORITY = ['dev', 'start', 'serve', 'develop'];
 
+/**
+ * Prefixed dev-style scripts (`dev:web`, `start:browser`, `serve:api`), tried in this order when the
+ * package has no plain dev/start/serve/develop script. Stable: the first matching key in
+ * `package.json` order wins within a prefix.
+ */
+const FALLBACK_DEV_SCRIPT_PREFIXES = ['dev:', 'start:', 'serve:'];
+/** Suffixes that name a non-server script even under a dev-style prefix (`start:electron`, `dev:test`). */
+const NON_SERVER_SCRIPT_SUFFIX_RE = /(?:test|lint|build|watch|electron|prod|typecheck|e2e|storybook|format|doc)/i;
+
 const LOCKFILE_TO_PM: ReadonlyArray<readonly [string, QaapPackageManager]> = [
     ['bun.lockb', 'bun'],
     ['pnpm-lock.yaml', 'pnpm'],
@@ -174,7 +183,7 @@ export class QaapProjectBootstrapDetector {
         const installCommand = buildBootstrapInstallCommand(packageManager);
 
         const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
-        const devScriptKey = this.pickDevScript(scripts);
+        const devScriptKey = this.pickRootDevScript(scripts);
         const { kind, expectedPort } = this.guessFramework(pkg);
 
         let devCommand: string | undefined;
@@ -1384,6 +1393,26 @@ export class QaapProjectBootstrapDetector {
         for (const key of DEV_SCRIPT_PRIORITY) {
             if (available.includes(key)) {
                 return key;
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Root entry point: the plain dev script, else the first prefixed dev-style script
+     * (`dev:*`, then `start:*`, then `serve:*`) that does not name a non-server task.
+     */
+    protected pickRootDevScript(scripts: Record<string, unknown>): string | undefined {
+        const direct = this.pickDevScript(scripts);
+        if (direct) {
+            return direct;
+        }
+        const available = Object.keys(scripts).filter(k => typeof scripts[k] === 'string');
+        for (const prefix of FALLBACK_DEV_SCRIPT_PREFIXES) {
+            const match = available.find(key => key.startsWith(prefix)
+                && !NON_SERVER_SCRIPT_SUFFIX_RE.test(key.slice(prefix.length)));
+            if (match) {
+                return match;
             }
         }
         return undefined;

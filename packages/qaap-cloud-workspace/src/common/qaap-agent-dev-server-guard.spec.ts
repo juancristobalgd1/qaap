@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { findQaiqDevServerGuardDenial, isLongLivedDevServerShellCommand } from './qaap-agent-dev-server-guard';
+import { buildDevServerShellDenyMessage, findQaiqDevServerGuardDenial, isLongLivedDevServerShellCommand } from './qaap-agent-dev-server-guard';
 
 describe('qaap-agent-dev-server-guard', () => {
 
@@ -67,5 +67,14 @@ describe('qaap-agent-dev-server-guard', () => {
             toolName: 'Bash',
             toolInput: { command: 'pnpm build' },
         })).to.equal(undefined);
+    });
+});
+
+describe('buildDevServerShellDenyMessage', () => {
+    it('does not promise a preview Qaap may not be able to start', () => {
+        const message = buildDevServerShellDenyMessage();
+        expect(message).to.not.include('will start the server and open the preview automatically');
+        expect(message).to.include('.qaap/preview.json');
+        expect(message).to.not.include('localhost');
     });
 });
