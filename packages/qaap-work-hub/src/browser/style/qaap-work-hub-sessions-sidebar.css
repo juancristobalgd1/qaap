@@ -2703,6 +2703,7 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
     position: relative;
+    box-sizing: border-box;
     min-height: 32px;
     padding: 0 var(--qaap-sessions-row-gutter, 12px);
     border-radius: 8px;
@@ -2869,4 +2870,5 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
     margin-left: 8px;
+    width: auto;
 }
