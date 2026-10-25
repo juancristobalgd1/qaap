@@ -23,6 +23,7 @@ import {
     shouldKeepSessionsSidebarOpenAfterNavigation,
 } from './mobile-work-hub-sessions-sidebar';
 import { ensureWorkHubSessionsSidebarExtracted } from './mobile-projects-sessions-sidebar-ui-render';
+import { MobileProjectsPullRequestsSidebarUi } from './mobile-projects-pull-requests-sidebar-ui';
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 
 disableImportJSDOM();
@@ -645,6 +646,48 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         // A late GitHub answer paints into the node the UI rendered into last.
         lastHost.querySelector('.results')!.textContent = 'No pull requests';
         expect(sidebar.node.textContent).to.contain('No pull requests');
+        sidebar.hide();
+    });
+
+    it('keeps an embedded pull-request sidebar open when a view tab or state chip is pressed', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        const pullRequestsUi = new MobileProjectsPullRequestsSidebarUi({
+            inboxPullRequests: [],
+            inboxPullRequestsLoading: false,
+            inboxPullRequestsLoaded: true,
+            inboxGithubSignedIn: true,
+            refreshInboxPullRequests: async () => undefined,
+            openPullRequestDetail: () => undefined,
+            searchPullRequests: async request => ({ pullRequests: [], page: request.page ?? 1, hasMore: false, signedIn: true }),
+        });
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            renderPullRequestList: host => pullRequestsUi.render(host),
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+            isEmbedded: () => true,
+        });
+        document.body.append(sidebar.node);
+        sidebar.showPullRequests();
+        sidebar.show();
+        expect(sidebar.isPullRequestsVisible()).to.equal(true);
+
+        // Pressing a control re-renders the list, detaching the pressed node before the document click handler runs.
+        sidebar.node.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-pull-requests-tab[data-view="reviewing"]')!.click();
+        expect(pullRequestsUi.currentStateFilter).to.equal('all');
+        expect(sidebar.isPullRequestsVisible()).to.equal(true);
+        expect(sidebar.node.querySelector('.theia-mobile-work-hub-pull-requests-tab[data-view="reviewing"]')!.getAttribute('aria-selected')).to.equal('true');
+
+        sidebar.node.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-pull-requests-state-chip[data-state="open"]')!.click();
+        expect(pullRequestsUi.currentStateFilter).to.equal('open');
+        expect(sidebar.isPullRequestsVisible()).to.equal(true);
+        expect(sidebar.node.querySelector('.theia-mobile-work-hub-pull-requests-state-chip[data-state="open"]')!.getAttribute('aria-pressed')).to.equal('true');
         sidebar.hide();
     });
 
