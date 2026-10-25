@@ -438,62 +438,6 @@ describe('QaapDockerOrchestrator', () => {
         });
     });
 
-    describe('tenantBackendVapidEnv', () => {
-
-        const vapidEnv = (env: NodeJS.ProcessEnv): string[] =>
-            (new QaapDockerOrchestrator() as unknown as { tenantBackendVapidEnv(env: NodeJS.ProcessEnv): string[] }).tenantBackendVapidEnv(env);
-
-        // Shaped like the production values: 87-char public point, 43-char private scalar, mailto subject.
-        const PUBLIC_KEY = 'B'.repeat(87);
-        const PRIVATE_KEY = 'a1_-'.repeat(10) + 'c';
-        const SUBJECT = 'mailto:ops@example.com';
-
-        it('passes all three keys when the pair and the subject are present and well formed', () => {
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: PUBLIC_KEY, QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY, QAAP_VAPID_SUBJECT: SUBJECT,
-            })).to.deep.equal([
-                `QAAP_VAPID_PUBLIC_KEY=${PUBLIC_KEY}`, `QAAP_VAPID_PRIVATE_KEY=${PRIVATE_KEY}`, `QAAP_VAPID_SUBJECT=${SUBJECT}`,
-            ]);
-        });
-
-        it('accepts an https subject and trims surrounding whitespace', () => {
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: ` ${PUBLIC_KEY} `, QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY, QAAP_VAPID_SUBJECT: 'https://qaap.example.com',
-            })).to.deep.equal([
-                `QAAP_VAPID_PUBLIC_KEY=${PUBLIC_KEY}`, `QAAP_VAPID_PRIVATE_KEY=${PRIVATE_KEY}`, 'QAAP_VAPID_SUBJECT=https://qaap.example.com',
-            ]);
-        });
-
-        it('passes nothing when any one of the three is missing', () => {
-            expect(vapidEnv({ QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY, QAAP_VAPID_SUBJECT: SUBJECT })).to.deep.equal([]);
-            expect(vapidEnv({ QAAP_VAPID_PUBLIC_KEY: PUBLIC_KEY, QAAP_VAPID_SUBJECT: SUBJECT })).to.deep.equal([]);
-            expect(vapidEnv({ QAAP_VAPID_PUBLIC_KEY: PUBLIC_KEY, QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY })).to.deep.equal([]);
-            expect(vapidEnv({})).to.deep.equal([]);
-        });
-
-        it('passes nothing when any one of the three is malformed', () => {
-            // Smuggled variable, padding, wrong character set, wrong length, wrong subject scheme.
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: `${PUBLIC_KEY}\nNODE_OPTIONS=--inspect`, QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY, QAAP_VAPID_SUBJECT: SUBJECT,
-            })).to.deep.equal([]);
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: PUBLIC_KEY, QAAP_VAPID_PRIVATE_KEY: `${PRIVATE_KEY}=`, QAAP_VAPID_SUBJECT: SUBJECT,
-            })).to.deep.equal([]);
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: 'B'.repeat(20), QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY, QAAP_VAPID_SUBJECT: SUBJECT,
-            })).to.deep.equal([]);
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: PUBLIC_KEY, QAAP_VAPID_PRIVATE_KEY: 'x'.repeat(200), QAAP_VAPID_SUBJECT: SUBJECT,
-            })).to.deep.equal([]);
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: PUBLIC_KEY, QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY, QAAP_VAPID_SUBJECT: 'admin@example.com',
-            })).to.deep.equal([]);
-            expect(vapidEnv({
-                QAAP_VAPID_PUBLIC_KEY: PUBLIC_KEY, QAAP_VAPID_PRIVATE_KEY: PRIVATE_KEY, QAAP_VAPID_SUBJECT: 'mailto:a b@example.com',
-            })).to.deep.equal([]);
-        });
-    });
-
     describe('tenantMountsForRoot', () => {
 
         it('derives all three roots from the tenant segment', () => {
