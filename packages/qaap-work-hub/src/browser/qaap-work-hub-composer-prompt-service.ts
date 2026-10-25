@@ -9,7 +9,7 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
-import { createConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { createConversation, createConversationRequestId } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
@@ -31,6 +31,12 @@ import type { MobileProjectsPanel } from './mobile-projects-panel';
 export class QaapWorkHubComposerPromptService {
 
     protected readonly panels = new Set<MobileProjectsPanel>();
+
+    /**
+     * The submit currently creating a conversation, or whose create failed. A retry of the same prompt in the
+     * same cwd reuses its idempotency key so the server returns the conversation a slow attempt already created.
+     */
+    protected pendingSubmit: { prompt: string; cwd: string; clientRequestId: string } | undefined;
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
@@ -142,14 +148,21 @@ export class QaapWorkHubComposerPromptService {
         }
         const agent = options.agentId ?? readStoredAgent(cwd) ?? QAAP_COMPOSER_DEFAULT_AGENT_ID;
         const agentModel = options.agentModel ?? resolveStoredAgentModelForSubmit(agent, cwd);
+        const retry = this.pendingSubmit?.prompt === prompt && this.pendingSubmit.cwd === cwd ? this.pendingSubmit : undefined;
+        const clientRequestId = retry?.clientRequestId ?? createConversationRequestId();
+        this.pendingSubmit = { prompt, cwd, clientRequestId };
         try {
             await createConversation({
                 cwd,
+                clientRequestId,
                 agent,
                 title: prompt,
                 message: prompt,
                 ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
             });
+            if (this.pendingSubmit?.clientRequestId === clientRequestId) {
+                this.pendingSubmit = undefined;
+            }
             this.messages.info(nls.localize(
                 'qaap/workHub/composerPromptStarted',
                 'Task started with {0}.',
