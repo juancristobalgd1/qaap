@@ -71,6 +71,11 @@ export interface QaapAgentTask {
     /** The caller required this turn not to modify {@link cwd} — see {@link readOnlyEnforcement}. */
     readonly readOnlyWorkspace?: boolean;
     /**
+     * The turn was classified as small talk (see `isConversationalTurn`): it runs with the minimal
+     * preamble and skips post-turn self-verification, review and auto-continue.
+     */
+    readonly conversationalTurn?: boolean;
+    /**
      * What the resolved backend can actually enforce for {@link readOnlyWorkspace}. Recorded rather
      * than assumed: `'none'` means the turn ran unrestricted and the read-only claim is only prompt
      * text, which is exactly the state a reader must be able to tell apart from a real guarantee.

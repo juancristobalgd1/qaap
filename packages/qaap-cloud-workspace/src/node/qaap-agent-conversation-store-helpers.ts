@@ -24,6 +24,7 @@ import {
 } from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 import { formatAgentClosingReport, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
+import { isConversationalTurn } from '../common/qaap-agent-conversational-turn';
 import {
     detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
@@ -510,6 +511,10 @@ export function maybeAutoContinueIncompleteTurn(
             message.role === 'agent' && message.runUserMessageId === userMessageId
         );
     if (!userMessage || !agentMessage || agentMessage.role !== 'agent' || conv.status !== 'idle') {
+        return;
+    }
+    // A greeting or thanks is complete by definition: never re-prompt it as an unfinished task.
+    if (isConversationalTurn(userMessage.content)) {
         return;
     }
     const resolvedTurnAgentId = turnAgentId ?? userMessage.turnAgentId ?? conv.agentId;

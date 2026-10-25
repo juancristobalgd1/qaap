@@ -31,6 +31,19 @@ describe('QaapOpencodeStreamAccumulator', () => {
         ]);
     });
 
+    it('keeps reasoning out of the visible answer text segments', () => {
+        const acc = new QaapOpencodeStreamAccumulator();
+        acc.push([
+            '{"type":"reasoning","part":{"type":"reasoning","text":"The user only said hi, so no tools."}}',
+            '{"type":"text","part":{"type":"text","text":"Hi! How can I help?"}}',
+        ].join('\n') + '\n');
+        const segments = acc.getSegments();
+        expect(segments).to.deep.equal([
+            { type: 'thinking', content: 'The user only said hi, so no tools.' },
+            { type: 'text', content: 'Hi! How can I help?' },
+        ]);
+    });
+
     it('maps reasoning events to thinking segments', () => {
         const acc = new QaapOpencodeStreamAccumulator();
         acc.push('{"type":"reasoning","part":{"type":"reasoning","text":"plan step"}}\n');

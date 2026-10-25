@@ -51,6 +51,7 @@ import {
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
+import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -375,6 +376,11 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 return;
             }
             prompt = hookedPrompt;
+            // Classified on the hooked, mention-stripped prompt so it matches what buildAgentCommand sees.
+            if (isConversationalTurn(ctx.stripLeadingAgentMention(prompt), request.userQuery)) {
+                task = { ...task, conversationalTurn: true };
+                ctx.tasks.set(task.id, task);
+            }
             try {
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
@@ -725,7 +731,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 ctx.finishTask(task.id, 'completed_with_warnings', code ?? undefined);
                 return;
             }
-            if (code === 0 && QAAP_AGENT_VERIFY_ENABLED) {
+            if (code === 0 && QAAP_AGENT_VERIFY_ENABLED && !isConversationalTurnTask(ctx.tasks.get(task.id) ?? task)) {
                 void ctx.finishSuccessfulTaskAfterVerification(task, code ?? undefined);
                 return;
             }
