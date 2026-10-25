@@ -14,6 +14,7 @@ import { sharedSecondTicker } from '@theia/qaap-transcript/lib/browser/qaap-shar
 import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { setTaskTitleText } from './mobile-projects-task-title-marquee';
+import { applySidebarCompactRowTooltip } from './mobile-projects-project-rows-ui-timeline';
 
 export function patchSidebarCompactTaskRowExtracted(ctx: MobileProjectsProjectRowsUiContext, row: HTMLElement,
         project: MobileProjectEntry,
@@ -29,6 +30,10 @@ export function patchSidebarCompactTaskRowExtracted(ctx: MobileProjectsProjectRo
             'theia-mod-unread-reply',
             isQaapAgentTaskUnreadReply(summary, ctx.host.conversationIndexUi.isConversationUnread(summary)),
         );
+        const item = row.querySelector<HTMLElement>('.theia-mobile-projects-task-item');
+        if (item) {
+            applySidebarCompactRowTooltip(item, task, summary);
+        }
         return ctx.patchWorkHubTaskRowContent(row, task, summary, options);
 }
 

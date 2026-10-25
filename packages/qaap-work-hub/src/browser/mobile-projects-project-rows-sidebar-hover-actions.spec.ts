@@ -189,7 +189,7 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
             onActivate: () => { opened++; },
         });
 
-        const chip = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-task-failure-hint .theia-mobile-projects-failed-run-chip');
+        const chip = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-failed-run-chip');
         expect(chip?.textContent).to.equal('Retry');
         expect(chip?.getAttribute('aria-label')).to.equal('Retry task');
         expect(row.querySelector('.theia-mobile-projects-conversation-retry-btn')).to.equal(null);
@@ -319,9 +319,9 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         const failedTask = { ...task, id: failedSummary.id, state: 'failed' as const };
         const row = ui.createTaskItem(project, failedTask, undefined, failedSummary, new Set(), { compact: true });
 
-        const hint = row.querySelector('.theia-mobile-projects-task-failure-hint');
-        expect(hint).to.not.equal(null);
-        expect(hint?.textContent).to.contain('Failed: Error: dev server exited with code 1');
+        // The reason is not a visible line any more: it lives in the row tooltip and the status dot.
+        expect(row.querySelector('.theia-mobile-projects-task-failure-hint')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-projects-task-item')?.getAttribute('title')).to.contain('Failed: Error: dev server exited with code 1');
         expect(row.querySelector('.theia-mobile-projects-task-dot')?.getAttribute('aria-label'))
             .to.equal('Failed: Error: dev server exited with code 1');
 
@@ -335,5 +335,60 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         const userFailedRow = ui.createTaskItem(project, userFailedTask, undefined, userFailedSummary, new Set(), { compact: true });
         expect(userFailedRow.querySelector('.theia-mobile-projects-task-failure-hint')).to.equal(null);
         expect(userFailedRow.textContent).not.to.contain('Deploy this to production');
+    });
+
+    it('renders a failed compact row as one line: title, time and a small error indicator, with no model line', () => {
+        const failedSummary = summary({
+            id: 'failed-one-line',
+            status: 'failed',
+            lastMessageRole: 'agent',
+            lastMessageError: 'Bash exited with code 1.',
+            agentModel: { provider: 'openai', vendor: 'openai', modelId: 'Big Pickle' },
+        });
+        const row = createUi().createTaskItem(project, { ...task, id: failedSummary.id, state: 'failed' as const }, undefined, failedSummary, new Set(), { compact: true });
+
+        expect(row.querySelector('.theia-mobile-projects-task-title-row .theia-mobile-projects-task-since')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-projects-task-foot')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-projects-task-failure-hint')).to.equal(null);
+        const dot = row.querySelector('.theia-mobile-projects-task-dot');
+        expect(dot?.classList.contains('theia-mod-failed')).to.equal(true);
+        expect(dot?.querySelector('.codicon-error')).to.not.equal(null);
+        expect(dot?.getAttribute('aria-label')).to.contain('Failed: ');
+        // The model and the failure reason are in the tooltip and accessible name, not in the row text.
+        const item = row.querySelector('.theia-mobile-projects-task-item');
+        expect(item?.getAttribute('title')).to.contain('Failed: ');
+        expect(item?.getAttribute('title')).to.contain('Model: Big Pickle');
+        expect(item?.getAttribute('aria-label')).to.contain(task.title);
+        expect(row.textContent).not.to.contain('Big Pickle');
+    });
+
+    it('keeps Continue/Retry, archive and the menu in the DOM, revealed by hover or focus rather than shown inline', () => {
+        const failedSummary = summary({
+            id: 'failed-actions',
+            status: 'failed',
+            lastMessageRole: 'agent',
+            lastMessageError: 'Bash exited with code 1.',
+        });
+        const row = createUi().createTaskItem(project, { ...task, id: failedSummary.id, state: 'failed' as const }, undefined, failedSummary, new Set(), { compact: true });
+
+        const chip = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-failed-run-chip');
+        const archive = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-conversation-archive-btn');
+        const menu = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-conversation-menu-btn');
+        // Visibility is a CSS class (hover/focus reveal), but the controls stay real, focusable buttons.
+        expect(chip?.tagName).to.equal('BUTTON');
+        expect(chip?.classList.contains('theia-mod-row-action')).to.equal(true);
+        expect(archive?.tagName).to.equal('BUTTON');
+        expect(menu?.tagName).to.equal('BUTTON');
+        expect(chip?.parentElement).to.equal(row);
+        expect(archive?.parentElement).to.equal(row);
+    });
+
+    it('shows no recovery chip on a completed compact row', () => {
+        const done = summary({ id: 'done-row', status: 'idle', lastMessageRole: 'agent' });
+        const row = createUi().createTaskItem(project, task, undefined, done, new Set(), { compact: true });
+
+        expect(row.querySelector('.theia-mobile-projects-failed-run-chip')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-projects-conversation-archive-btn')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-projects-task-item')?.getAttribute('title')).to.not.contain('Model:');
     });
 });

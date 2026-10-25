@@ -2693,3 +2693,191 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     opacity: 0.85;
   }
 }
+
+/* ── Sessions sidebar: one-line compact rows (final pass) ──
+   Compact (sidebar) task rows are a single line: the title (ellipsis) and the time at the right
+   edge. The failure reason and model live in the row tooltip; Continue/Retry, archive and the
+   overflow menu are revealed on hover or focus (desktop). On touch only the overflow menu stays
+   visible, and it carries the same recovery and archive actions. Scoped to the sessions sidebar
+   list, so the Work Hub task list keeps its own rows. */
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
+    position: relative;
+    box-sizing: border-box;
+    min-height: 32px;
+    padding: 0 var(--qaap-sessions-row-gutter, 12px);
+    border-radius: 8px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-task-item {
+    min-height: 32px;
+    padding: 6px 4px 6px 0;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Status slot: the 16px glyph and the status dot share one fixed 16px column, so the title always
+   starts after the glyph. The generic 7px rule below the dot's own states (cancelled) shrank the
+   slot and pulled the title 9px left, into the glyph. The cancelled dot is transparent (the glyph
+   draws the icon), so widening its box is visually neutral. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mod-sidebar-compact .theia-mobile-projects-task-item > .theia-mobile-projects-task-dot:not(.theia-mod-complete):not(.theia-mod-verified):not(.theia-mod-git-pr):not(.theia-mod-failed):not(.theia-mod-running):not(.theia-mod-needs-input) {
+    flex: 0 0 16px;
+    width: 16px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-task-title-row {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-task-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The time stays in the row's flow at the right edge; it yields to the actions on hover/focus. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-task-since {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-size: 12px;
+    line-height: 16px;
+    opacity: 0.6;
+    white-space: nowrap;
+    visibility: visible;
+    z-index: auto;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact.theia-mod-current .theia-mobile-projects-task-since {
+    opacity: 0.8;
+}
+
+/* Actions sit over the time slot. Invisible until the row is hovered, focused or its menu is open;
+   still in the DOM and focusable, so keyboard users reach them. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mod-row-action,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-archive-btn,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-menu-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-out;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mod-row-action {
+    right: 64px;
+    height: 24px;
+    min-width: 24px;
+    margin: 0;
+    padding: 0 6px;
+}
+
+/* Icon-only recovery chip: the label stays in the DOM (and the accessible name) but is visually hidden. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-failed-run-chip > span:not(.codicon) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-archive-btn {
+    right: 34px;
+    width: 26px;
+    height: 26px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-menu-btn {
+    right: 4px;
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:hover .theia-mod-row-action,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:focus-within .theia-mod-row-action,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact.theia-mod-menu-open .theia-mod-row-action,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:hover .theia-mobile-projects-conversation-archive-btn,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:focus-within .theia-mobile-projects-conversation-archive-btn,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact.theia-mod-menu-open .theia-mobile-projects-conversation-archive-btn,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:hover .theia-mobile-projects-conversation-menu-btn,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:focus-within .theia-mobile-projects-conversation-menu-btn,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact.theia-mod-menu-open .theia-mobile-projects-conversation-menu-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* While the actions are shown, the time gives way to them and the title fades before them. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:hover .theia-mobile-projects-task-since,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:focus-within .theia-mobile-projects-task-since,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact.theia-mod-menu-open .theia-mobile-projects-task-since {
+    visibility: hidden;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:hover .theia-mobile-projects-task-title-row,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact:focus-within .theia-mobile-projects-task-title-row {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 96px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 96px), transparent);
+}
+
+/* Touch: no hover. The overflow menu is the entry point for Continue/Retry and Archive. */
+@media (pointer: coarse), (max-width: 767px) {
+    .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
+        min-height: 44px;
+    }
+
+    .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-task-item {
+        min-height: 44px;
+        padding-right: 48px;
+    }
+
+    .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mod-row-action,
+    .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-archive-btn {
+        display: none;
+    }
+
+    .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-menu-btn {
+        opacity: 0.85;
+        pointer-events: auto;
+        right: 6px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-task-since {
+        visibility: visible;
+    }
+}
+
+/* Project guide: a thin vertical line links the sessions of an expanded project to its header. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list {
+    position: relative;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 6px;
+    left: calc(var(--qaap-sessions-row-gutter, 12px) + 7px);
+    width: 1px;
+    background: var(--theia-tree-indentGuidesStroke, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
+    pointer-events: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) > .theia-mobile-projects-chats-list .theia-mobile-projects-task-row.theia-mod-sidebar-compact {
+    margin-left: 8px;
+    width: auto;
+}

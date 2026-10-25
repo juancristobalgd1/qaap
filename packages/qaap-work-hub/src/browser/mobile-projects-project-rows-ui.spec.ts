@@ -206,29 +206,23 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
             { compact: true },
         );
 
-        expect(row.querySelector('.theia-qaap-agent-identity-label')?.textContent).to.equal('gpt-5.6-luna');
+        // The one-line compact row shows no model; the last executed turn's model lives in the tooltip.
+        expect(row.querySelector('.theia-qaap-agent-identity-label')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-projects-task-item')?.getAttribute('title')).to.contain('Model: gpt-5.6-luna');
 
-        const patched = (ui as unknown as {
-            patchWorkHubTaskRowContent: (
-                r: HTMLElement,
-                t: MobileProjectTaskView,
-                s: QaapAgentConversationSummaryDTO,
-                o?: unknown,
-                st?: { isRunning?: boolean },
-            ) => boolean;
-        }).patchWorkHubTaskRowContent(
+        const patched = ui.patchSidebarCompactTaskRow(
             row,
+            { id: 'project-1', name: 'Project' } as never,
             task,
             {
                 ...executedSummary,
                 lastTurnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-astra' },
             },
-            undefined,
-            { isRunning: false },
         );
 
         expect(patched).to.equal(true);
-        expect(row.querySelector('.theia-qaap-agent-identity-label')?.textContent).to.equal('gpt-5.6-astra');
+        expect(row.querySelector('.theia-mobile-projects-task-item')?.getAttribute('title')).to.contain('Model: gpt-5.6-astra');
+        expect(row.querySelector('.theia-mobile-projects-task-item')?.getAttribute('title')).to.not.contain('gpt-5.6-luna');
     });
 });
 
