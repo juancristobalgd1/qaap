@@ -626,6 +626,7 @@ export async function runOneShotCommand(
 
 export const QAAP_AGENT_VERIFY_MAX_ATTEMPTS = 2;
 export const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
+const VERIFY_NPM_RUN_PREFIX = 'npm run ';
 
 export interface VerifySuccessfulAgentTaskDeps {
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
@@ -633,6 +634,11 @@ export interface VerifySuccessfulAgentTaskDeps {
     resolveVerificationScriptsForCwd(cwd: string): Promise<readonly string[]>;
     isTaskStillRunning(taskId: string): boolean;
     runVerificationScripts(task: QaapAgentTask, env: NodeJS.ProcessEnv, scripts: readonly string[], startedAt: number): Promise<{ command: string; result: QaapGenericCommandResult } | undefined>;
+    /**
+     * Fingerprint of the task's worktree state (HEAD, tracked diff, untracked files); `undefined`
+     * when it cannot be read, which disables the reuse of earlier passes.
+     */
+    fingerprintWorktree?(task: QaapAgentTask): string | undefined;
     runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number, scopePaths: readonly string[]): Promise<QaapGenericCommandResult | undefined>;
     summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string;
     /** Dirty paths in the task's checkout; `undefined` when git cannot report them (scope rules then stay off). */
@@ -686,8 +692,25 @@ export async function verifySuccessfulAgentTask(
     let lastCommand = '';
     let lastFailure: QaapGenericCommandResult | undefined;
     deps.onVerificationPhase?.(task, { status: 'running', attempt: 0, maxAttempts: QAAP_AGENT_VERIFY_MAX_ATTEMPTS, startedAt });
+    // A script that already passed on the exact same worktree state is not run again: a fix turn
+    // that changed nothing cannot have turned it red, and a full build or typecheck is costly.
+    const passedOnFingerprint = new Map<string, string>();
     while (deps.isTaskStillRunning(task.id) && Date.now() - startedAt < QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
-        const failed = await deps.runVerificationScripts(task, env, scripts, startedAt);
+        const fingerprint = deps.fingerprintWorktree?.(task);
+        const pendingScripts = fingerprint === undefined
+            ? scripts
+            : scripts.filter(script => passedOnFingerprint.get(script) !== fingerprint);
+        const failed = await deps.runVerificationScripts(task, env, pendingScripts, startedAt);
+        if (fingerprint !== undefined) {
+            // Scripts run in order and stop at the first failure: everything before it passed.
+            const failedScript = failed?.command.startsWith(VERIFY_NPM_RUN_PREFIX)
+                ? failed.command.slice(VERIFY_NPM_RUN_PREFIX.length)
+                : undefined;
+            const failedIndex = failed === undefined ? pendingScripts.length : pendingScripts.indexOf(failedScript ?? '');
+            for (const script of pendingScripts.slice(0, Math.max(0, failedIndex))) {
+                passedOnFingerprint.set(script, fingerprint);
+            }
+        }
         if (!failed) {
             return { status: 'passed', command: lastCommand || `npm run ${scripts[scripts.length - 1]}`, attempts };
         }
