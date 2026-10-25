@@ -71,6 +71,19 @@ function previewHostLabelOfUrl(previewUrl: unknown): string | undefined {
     }
 }
 
+/** Body for an isolated preview host whose label is not live (stopped, or replaced by a newer claim). */
+export const QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE = 'Preview not found.\n'
+    + 'This preview link is no longer current: the preview was stopped or replaced by a newer one.\n'
+    + 'Open the preview again from Qaap to get the current link.\n';
+
+/**
+ * Answers an isolated preview host that matches no live claim. The label is a rotating capability,
+ * so a link goes stale whenever its preview is re-claimed; say so instead of a bare 404.
+ */
+export function respondUnknownPreviewHost(res: Response): void {
+    res.status(404).type('text/plain').send(QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE);
+}
+
 /**
  * Handlers that must run BEFORE the frontend static server and Theia's gzipped-asset routes
  * (registered through `EarlyExpressMiddleware` in `initialize()`): contributions' `configure()`
@@ -89,7 +102,7 @@ export function earlyMiddlewareExtracted(ctx: QaapDevPreviewEndpointContext): Ha
             }
             const record = ctx.portRegistry.getByHostLabel(hostLabel);
             if (!record) {
-                res.status(404).type('text/plain').send('Preview not found.');
+                respondUnknownPreviewHost(res);
                 return;
             }
             ctx.portRegistry.touchPreview(record.previewId, record.ownerLogin);
