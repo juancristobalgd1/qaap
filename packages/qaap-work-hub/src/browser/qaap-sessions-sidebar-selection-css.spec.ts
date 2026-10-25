@@ -103,6 +103,22 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/:has\(\.theia-mobile-projects-conversation-retry-btn\)[^{}]*::after\s*\{[^}]*width:\s*136px/s);
     });
 
+    it('indents session rows under the project folder without a guide under ordinary sessions', () => {
+        // Status dot under the folder icon (margin 28px), title under the project name.
+        expect(css).to.match(/collapsed\)\s*>\s*\.theia-mobile-projects-chats-list \.theia-mobile-projects-task-row\.theia-mod-sidebar-compact\s*\{\s*margin-left:\s*28px;/s);
+        expect(css).not.to.match(/project-group:not\(\.theia-mod-collapsed\) > \.theia-mobile-projects-chats-list::before/);
+        // The title takes the row up to the time and actions instead of stopping at a gutter.
+        expect(css).to.match(/\.theia-mod-sidebar-compact \.theia-mobile-projects-task-item > \.theia-mobile-projects-task-body\s*\{[^}]*padding-right:\s*0;/s);
+    });
+
+    it('nests subtasks under their parent with a guide that ends in an elbow at the last one', () => {
+        expect(css).to.match(/variant-row > \.theia-mobile-projects-task-row\.theia-mod-sidebar-compact\s*\{\s*margin-left:\s*36px;/s);
+        expect(css).to.match(/variant-row:last-child::before\s*\{\s*content:\s*none;/s);
+        expect(css).to.match(/variant-row:last-child::after\s*\{[^}]*height:\s*50%;[^}]*border-bottom-left-radius:\s*6px;/s);
+        // The variant group's dashed top border (mobile-workbench-conversation.css) must not show in the sidebar.
+        expect(css).to.match(/\.theia-mobile-projects-variant-group\s*\{[^}]*border-top:\s*none;/s);
+    });
+
     it('hides the header back button and the shortcuts nav from the eagerly bundled sheet', () => {
         // The pull-request sheet is attached lazily (after `ready` + idle): a [hidden] override that
         // only lives there leaves codicon's `display` in charge until then, so the root sidebar
