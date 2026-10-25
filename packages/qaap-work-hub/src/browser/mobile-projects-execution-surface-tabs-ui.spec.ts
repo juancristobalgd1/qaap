@@ -19,6 +19,10 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { clearQaapPreviewDismissedByUser, isQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import {
+    clearPendingTranscriptFilesViewMode,
+    readPendingTranscriptFilesViewMode,
+} from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 
 disableImportJSDOM();
 
@@ -947,6 +951,39 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         ui.selectTranscriptTab('files', project, summary);
 
         expect(requestedMode).to.equal('files');
+    });
+
+    it('opens the Files surface in Changes mode when the composer Changes pill selects review', () => {
+        clearPendingTranscriptFilesViewMode();
+        const observed: { requestedMode?: string; pendingMode?: string } = {};
+        const host = createHost();
+        (host.transcriptSurfacesUi as unknown as {
+            ensureTranscriptFilesTab: (_project: MobileProjectEntry, _summary: unknown, mode?: string) => void;
+        }).ensureTranscriptFilesTab = (_project, _summary, mode) => {
+            observed.requestedMode = mode;
+            observed.pendingMode = readPendingTranscriptFilesViewMode();
+        };
+        const ui = createUi(host);
+        const project = { id: 'p-pill', name: 'Pill' } as MobileProjectEntry;
+        const summary = {
+            id: 'conv-pill',
+            cwd: '/tmp/pill',
+            agentId: 'task',
+            title: 'Pill',
+            status: 'idle' as const,
+            createdAt: 1,
+            updatedAt: 1,
+            messageCount: 0,
+        };
+
+        ui.selectTranscriptTab('review', project, summary);
+
+        // Files tab is stored, but the mount must not force 'files': the pending
+        // Changes mode has to survive until the file view consumes it.
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+        expect(observed.requestedMode).to.equal(undefined);
+        expect(observed.pendingMode).to.equal('changes');
+        clearPendingTranscriptFilesViewMode();
     });
 
     it('routes IDE Changes to the native Source Control view', () => {
