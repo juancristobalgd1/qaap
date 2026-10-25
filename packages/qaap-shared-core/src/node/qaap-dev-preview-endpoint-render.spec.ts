@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { Response } from '@theia/core/shared/express';
-import { QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE, respondUnknownPreviewHost } from './qaap-dev-preview-endpoint-render';
+import { qaapPublicOriginFromEnv, renderUnknownPreviewHostHtml, respondUnknownPreviewHost } from './qaap-dev-preview-endpoint-render';
 
 describe('qaap-dev-preview-endpoint-render', () => {
 
@@ -28,18 +28,42 @@ describe('qaap-dev-preview-endpoint-render', () => {
             return { res, sent };
         }
 
-        it('answers 404 as plain text that says the link is no longer current and how to recover', () => {
+        it('answers 404 HTML that says the link is no longer current and links back to Qaap', () => {
             const { res, sent } = fakeResponse();
-            respondUnknownPreviewHost(res);
+            respondUnknownPreviewHost(res, 'https://qaap.example.test');
             expect(sent.status).to.equal(404);
-            expect(sent.type).to.equal('text/plain');
-            expect(sent.body).to.equal(QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE);
+            expect(sent.type).to.equal('text/html');
+            expect(sent.body).to.equal(renderUnknownPreviewHostHtml('https://qaap.example.test'));
+        });
+    });
+
+    describe('renderUnknownPreviewHostHtml', () => {
+        it('keeps the legacy "Preview not found." line and the recovery hint', () => {
+            const html = renderUnknownPreviewHostHtml();
+            expect(html).to.contain('<p>Preview not found.</p>');
+            expect(html).to.contain('no longer current');
+            expect(html).to.contain('Open the preview again from Qaap');
         });
 
-        it('keeps the legacy "Preview not found." prefix and adds the recovery hint', () => {
-            expect(QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE.startsWith('Preview not found.\n')).to.equal(true);
-            expect(QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE).to.contain('no longer current');
-            expect(QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE).to.contain('Open the preview again');
+        it('links to the Qaap origin only when one is configured', () => {
+            expect(renderUnknownPreviewHostHtml('https://qaap.example.test')).to.contain('href="https://qaap.example.test"');
+            expect(renderUnknownPreviewHostHtml('https://qaap.example.test')).to.contain('>Open Qaap</a>');
+            expect(renderUnknownPreviewHostHtml()).to.not.contain('Open Qaap');
+        });
+
+        it('escapes the origin it links to', () => {
+            const html = renderUnknownPreviewHostHtml('https://qaap.example.test"><script>x</script>');
+            expect(html).to.not.contain('<script>');
+            expect(html).to.contain('&quot;&gt;&lt;script&gt;');
+        });
+    });
+
+    describe('qaapPublicOriginFromEnv', () => {
+        it('returns the origin of an http(s) QAAP_OAUTH_PUBLIC_URL and nothing else', () => {
+            expect(qaapPublicOriginFromEnv({ QAAP_OAUTH_PUBLIC_URL: 'https://qaap.example.test/some/path' })).to.equal('https://qaap.example.test');
+            expect(qaapPublicOriginFromEnv({ QAAP_OAUTH_PUBLIC_URL: 'javascript:alert(1)' })).to.equal(undefined);
+            expect(qaapPublicOriginFromEnv({ QAAP_OAUTH_PUBLIC_URL: 'not a url' })).to.equal(undefined);
+            expect(qaapPublicOriginFromEnv({})).to.equal(undefined);
         });
     });
 });

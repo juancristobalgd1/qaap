@@ -106,6 +106,18 @@ export class QaapDevPreviewPortRegistry {
      * in the same millisecond must still count as separate expiries.
      */
     protected readonly expiryReported = new Map<number, { readonly ownerLogin: string; at: number }>();
+    /**
+     * Access tokens of previews released by a re-claim (not by an explicit stop). The next
+     * registration of the same identity, owner, root and port reuses the token for one claim TTL, so
+     * a link the user already holds keeps resolving to the same preview.
+     */
+    protected readonly retainedAccessTokens = new Map<string, {
+        readonly accessToken: string;
+        readonly ownerLogin: string;
+        readonly root: string;
+        readonly port: number;
+        readonly retainedAt: number;
+    }>();
 
     /**
      * Fires with a port whose preview claim was released, expired, rebound or handed to a new
@@ -181,7 +193,7 @@ export class QaapDevPreviewPortRegistry {
             ...registration,
             claimedAt: options.claimedAt ?? now,
             touchedAt: now,
-            accessToken: randomBytes(24).toString('base64url'),
+            accessToken: this.takeRetainedAccessToken(registration, now) ?? randomBytes(24).toString('base64url'),
         };
         this.previews.set(registration.previewId, record);
         this.previewIdByPort.set(registration.port, registration.previewId);
@@ -312,10 +324,26 @@ export class QaapDevPreviewPortRegistry {
         this.onDidReleasePortEmitter.fire(port);
     }
 
-    releasePreview(previewId: string, ownerLogin: string): boolean {
+    /**
+     * Drops a preview claim. Pass `keepAccessToken` only for an internal re-claim of the same
+     * identity (the next registration on the same root and port reuses the token); an explicit stop
+     * rotates the token so the old link stops resolving.
+     */
+    releasePreview(previewId: string, ownerLogin: string, options: { readonly keepAccessToken?: boolean } = {}): boolean {
         const record = this.getForOwner(previewId, ownerLogin);
         if (!record) {
             return false;
+        }
+        if (options.keepAccessToken) {
+            this.retainedAccessTokens.set(record.previewId, {
+                accessToken: record.accessToken,
+                ownerLogin: record.ownerLogin,
+                root: record.root,
+                port: record.port,
+                retainedAt: Date.now(),
+            });
+        } else {
+            this.retainedAccessTokens.delete(record.previewId);
         }
         this.previews.delete(record.previewId);
         if (this.previewIdByPort.get(record.port) === record.previewId) {
@@ -463,6 +491,23 @@ export class QaapDevPreviewPortRegistry {
             return false;
         }
         return Date.now() - record.touchedAt > QaapDevPreviewPortRegistry.CLAIM_TTL_MS;
+    }
+
+    /**
+     * The token a re-claim released, when it still belongs to this identity, owner, root and port
+     * and is within the claim TTL. Any other registration rotates it (and drops the retained entry).
+     */
+    protected takeRetainedAccessToken(registration: QaapDevPreviewRegistration, now: number): string | undefined {
+        const retained = this.retainedAccessTokens.get(registration.previewId);
+        this.retainedAccessTokens.delete(registration.previewId);
+        if (!retained || now - retained.retainedAt > QaapDevPreviewPortRegistry.CLAIM_TTL_MS) {
+            return undefined;
+        }
+        return retained.ownerLogin === registration.ownerLogin
+            && retained.root === registration.root
+            && retained.port === registration.port
+            ? retained.accessToken
+            : undefined;
     }
 
     protected sameRegistration(left: QaapDevPreviewRecord, right: QaapDevPreviewRegistration): boolean {

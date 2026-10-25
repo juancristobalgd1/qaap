@@ -71,17 +71,45 @@ function previewHostLabelOfUrl(previewUrl: unknown): string | undefined {
     }
 }
 
-/** Body for an isolated preview host whose label is not live (stopped, or replaced by a newer claim). */
-export const QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE = 'Preview not found.\n'
-    + 'This preview link is no longer current: the preview was stopped or replaced by a newer one.\n'
-    + 'Open the preview again from Qaap to get the current link.\n';
+/**
+ * Public origin of Qaap itself (`QAAP_OAUTH_PUBLIC_URL`), or undefined when unset or not http(s).
+ * Only used to link back to the IDE from a stale preview page; it carries no preview data.
+ */
+export function qaapPublicOriginFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    const raw = env.QAAP_OAUTH_PUBLIC_URL?.trim();
+    if (!raw) {
+        return undefined;
+    }
+    try {
+        const url = new URL(raw);
+        return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function escapeHtmlText(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 /**
- * Answers an isolated preview host that matches no live claim. The label is a rotating capability,
- * so a link goes stale whenever its preview is re-claimed; say so instead of a bare 404.
+ * Page for an isolated preview host whose label is not live (stopped, or replaced by a newer claim).
+ * The label is a rotating capability, so a link goes stale whenever its preview is re-claimed; the
+ * page says so and links back to Qaap instead of a bare 404.
  */
-export function respondUnknownPreviewHost(res: Response): void {
-    res.status(404).type('text/plain').send(QAAP_PREVIEW_HOST_UNKNOWN_MESSAGE);
+export function renderUnknownPreviewHostHtml(qaapOrigin?: string): string {
+    const link = qaapOrigin ? `<p><a href="${escapeHtmlText(qaapOrigin)}">Open Qaap</a></p>` : '';
+    return '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+        + '<title>Preview not found</title>'
+        + '<p>Preview not found.</p>'
+        + '<p>This preview link is no longer current: the preview was stopped or replaced by a newer one. '
+        + 'Open the preview again from Qaap to get the current link.</p>'
+        + link;
+}
+
+/** Answers an isolated preview host that matches no live claim with {@link renderUnknownPreviewHostHtml}. */
+export function respondUnknownPreviewHost(res: Response, qaapOrigin?: string): void {
+    res.status(404).type('text/html').send(renderUnknownPreviewHostHtml(qaapOrigin));
 }
 
 /**
@@ -102,7 +130,7 @@ export function earlyMiddlewareExtracted(ctx: QaapDevPreviewEndpointContext): Ha
             }
             const record = ctx.portRegistry.getByHostLabel(hostLabel);
             if (!record) {
-                respondUnknownPreviewHost(res);
+                respondUnknownPreviewHost(res, qaapPublicOriginFromEnv());
                 return;
             }
             ctx.portRegistry.touchPreview(record.previewId, record.ownerLogin);
@@ -427,8 +455,10 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
                     return;
                 }
             }
+            // Same identity re-claimed while its dev server is not answering yet: the link the user
+            // already holds must keep resolving once the server is up, so keep the access token.
             ctx.terminatePreviewProcess(existing);
-            ctx.portRegistry.releasePreview(existing.previewId, owner);
+            ctx.portRegistry.releasePreview(existing.previewId, owner, { keepAccessToken: true });
         }
     }
 
