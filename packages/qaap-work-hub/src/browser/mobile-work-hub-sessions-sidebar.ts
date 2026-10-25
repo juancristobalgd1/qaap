@@ -162,11 +162,14 @@ export class MobileWorkHubSessionsSidebar {
         if (!this.visible || !this.root.classList.contains('theia-mod-embedded') || this.sidebarMode === 'settings') {
             return;
         }
-        const target = event.target;
-        if (!(target instanceof Node) || this.root.contains(target)) {
+        // The composed path is fixed when the event is dispatched. A control pressed inside the
+        // sidebar may re-render its list (filter tabs, chips), detaching the target before this
+        // document listener runs, so `root.contains(target)` would wrongly report an outside click.
+        const path = event.composedPath();
+        if (!(event.target instanceof Node) || path.includes(this.root)) {
             return;
         }
-        if (target instanceof Element && target.closest('.theia-qaap-account-menu, .theia-mobile-work-hub-preferences')) {
+        if (path.some(node => node instanceof Element && node.matches('.theia-qaap-account-menu, .theia-mobile-work-hub-preferences'))) {
             return;
         }
         this.hide();
