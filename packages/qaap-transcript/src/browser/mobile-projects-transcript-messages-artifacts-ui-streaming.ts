@@ -60,7 +60,7 @@ export function syncRowProcessAccordionExtracted(ctx: MobileProjectsTranscriptMe
         const provenance = ctx.resolveTurnProvenance(conv, message);
         const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
         if (segmentsBody) {
-            syncTranscriptStandaloneTurnProvenance(segmentsBody, provenance.turnAgentId, provenance.turnAgentModel);
+            syncTranscriptStandaloneTurnProvenance(segmentsBody, provenance.turnAgentId, provenance.turnAgentModel, provenance.fallback);
         }
         syncMobileProcessAccordionState(accordion, {
             isWorking,

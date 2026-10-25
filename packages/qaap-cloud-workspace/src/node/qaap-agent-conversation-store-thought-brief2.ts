@@ -24,7 +24,7 @@ import type { QaapAgentTask } from '../common/qaap-agent-task';
 
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 
-import { agentModelKey, agentTurnQualifiesForModelFallback, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
+import { agentModelKey, agentTurnQualifiesForModelFallback, resolveAgentModelFallbackReason, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
 
 import { countDurableLoopSpawns as countDurableLoopSpawnsHelper } from './qaap-agent-conversation-store-helpers';
 
@@ -248,6 +248,11 @@ export async function maybeRetryTurnWithFallbackModelViaGraphExtracted(ctx: Qaap
                     taskId: undefined,
                     turnAgentId,
                     turnAgentModel: nextModel,
+                    // The first hop's requested model stays the notice's "from" across a second hop.
+                    ...(currentModel ? {
+                        fallbackFromModel: message.fallbackFromModel ?? currentModel,
+                        fallbackReason: resolveAgentModelFallbackReason(agentMessage),
+                    } : {}),
                 }
                 : message);
         const retryConv: QaapAgentConversation = {

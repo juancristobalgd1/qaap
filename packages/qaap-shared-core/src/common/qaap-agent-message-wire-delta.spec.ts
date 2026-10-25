@@ -405,3 +405,32 @@ describe('toAgentMessageWirePayload', () => {
         expect(snapshot.traceEvents).to.have.length(1);
     });
 });
+
+describe('fallback provenance on the wire', () => {
+    const requested = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'minimax/minimax-m3.1-flash' };
+    const fallback = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free' };
+
+    it('keeps fallbackFromModel and fallbackReason in the payload and the snapshot', () => {
+        const user = { id: 'u', role: 'user' as const, content: 'levanta la app', createdAt: 1, turnAgentId: 'qaiq', turnAgentModel: fallback, fallbackFromModel: requested, fallbackReason: 'model-unavailable' as const };
+        const payload = toAgentMessageWirePayload({ ...user, traceEvents: undefined, segments: undefined, runUserMessageId: undefined, runActive: undefined, runFinishedAt: undefined });
+        expect(payload.fallbackFromModel).to.deep.equal(requested);
+        expect(payload.fallbackReason).to.equal('model-unavailable');
+        const snapshot = toAgentMessageWireSnapshot(user);
+        expect(snapshot.fallbackFromModel).to.deep.equal(requested);
+        expect(snapshot.fallbackReason).to.equal('model-unavailable');
+    });
+
+    it('does not collapse a re-seal that only adds the fallback provenance into noop', () => {
+        const before = toAgentMessageWireSnapshot({ id: 'u', role: 'user', content: 'levanta la app', createdAt: 1, turnAgentId: 'qaiq', turnAgentModel: requested });
+        const after = toAgentMessageWireSnapshot({ ...before, turnAgentModel: fallback, fallbackFromModel: requested, fallbackReason: 'model-unavailable' });
+        const delta = computeAgentMessageWireDelta(before, after, 'qaiq');
+        expect(delta.kind).to.not.equal('noop');
+        const applied = applyAgentMessageWireDelta({ messages: [payloadOf(before)] }, delta);
+        expect(applied?.fallbackFromModel).to.deep.equal(requested);
+        expect(applied?.turnAgentModel).to.deep.equal(fallback);
+    });
+});
+
+function payloadOf(snapshot: QaapAgentMessageWireSnapshot): QaapAgentMessageDTO {
+    return toAgentMessageWirePayload(snapshot);
+}

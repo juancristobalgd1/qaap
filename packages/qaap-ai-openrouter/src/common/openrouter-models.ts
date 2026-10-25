@@ -41,6 +41,10 @@ export const OPENROUTER_EXCLUDED_MODEL_SLUGS: ReadonlySet<string> = new Set([
     'openai/gpt-oss-120b:free',
     'z-ai/glm-4.5-air:free',
     'nousresearch/hermes-3-llama-3.1-405b:free',
+    // Not in the OpenRouter catalog as of 2026-10-25 (`/api/v1/models` has only the paid
+    // `minimax/minimax-m3.1-flash`): every turn on it failed with "may not exist or you may not have
+    // access" and fell back silently. Removed from the curated list; the paid slug is not a free pick.
+    'minimax/minimax-m3.1-flash:free',
 ]);
 
 /** Default OpenRouter endpoint. It is OpenAI Chat-Completions compatible. */
@@ -69,8 +73,6 @@ export const OPENROUTER_DEFAULT_FREE_MODELS: readonly string[] = [
 
     // Nvidia — 1M context, largest free Nemotron; best fit for the agent's large system prompt.
     'nvidia/nemotron-3-ultra-550b-a55b:free',
-    // MiniMax — 1M context, agentic/tool-use tuned.
-    'minimax/minimax-m3.1-flash:free',
     // Google AI Studio — 262k context, strong general model.
     'google/gemma-4-31b-it:free',
     // Poolside — coding-focused.

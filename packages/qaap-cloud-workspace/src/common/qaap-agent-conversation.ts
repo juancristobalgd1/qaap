@@ -7,7 +7,7 @@ import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
 import type { QaapExternalTaskOrigin } from './qaap-external-task';
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import type { QaapAgentConversationIsolation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentConversationIsolation, QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import {
     agentMessageHasVisualVerificationMarker,
@@ -130,6 +130,15 @@ export interface QaapAgentMessage {
      * conversation's current default.
      */
     readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
+    /**
+     * Set on a user message whose turn was re-run on a fallback model because the model the turn
+     * was sent with was reported unavailable: the model that was asked for. {@link turnAgentModel}
+     * is then the fallback that actually ran. Drives the transcript notice and the composer adopting
+     * the fallback model for this conversation.
+     */
+    readonly fallbackFromModel?: QaapCreateAgentTaskQaiqModel;
+    /** Why {@link fallbackFromModel} was replaced. */
+    readonly fallbackReason?: QaapAgentModelFallbackReason;
     /** Original user turn that owns this backend-generated auto-continuation chain. */
     readonly autoContinueRootMessageId?: string;
     /**

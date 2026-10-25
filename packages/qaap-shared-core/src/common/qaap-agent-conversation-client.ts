@@ -190,6 +190,12 @@ export type QaapAgentMessageSegmentDTO =
         readonly parentToolUseId?: string;
     };
 
+/**
+ * Why a user turn was re-run on a fallback model: the selected model was reported unavailable
+ * (`model-unavailable`), or the turn ended without a usable answer (`turn-failed`).
+ */
+export type QaapAgentModelFallbackReason = 'model-unavailable' | 'turn-failed';
+
 export interface QaapAgentMessageDTO {
     readonly id: string;
     readonly role: 'user' | 'agent';
@@ -210,6 +216,10 @@ export interface QaapAgentMessageDTO {
     readonly turnAgentId?: string;
     /** Set alongside {@link turnAgentId}: the model that drove this turn. */
     readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
+    /** Set on a user message re-run on a fallback model: the model that was unavailable. See the backend doc. */
+    readonly fallbackFromModel?: QaapCreateAgentTaskQaiqModel;
+    /** Why {@link fallbackFromModel} was replaced. */
+    readonly fallbackReason?: QaapAgentModelFallbackReason;
     readonly error?: string;
     /**
      * Set on an agent message: the user message whose run produced it. See the backend

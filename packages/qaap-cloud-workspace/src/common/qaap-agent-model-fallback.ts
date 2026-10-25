@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+import type { QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     agentUsesNativeModelCatalog,
@@ -210,6 +211,16 @@ export function agentTurnHasRetryableToolSupportFailure(
         return agentTurnLooksLikeToolCallEmittedAsText(agentMessage.segments);
     }
     return looksLikeToolCallJsonText(agentMessage.content);
+}
+
+/**
+ * Why a settled turn is being re-run on another model, for the transcript notice: the selected model
+ * was reported unavailable, or the turn produced no usable answer for any other reason.
+ */
+export function resolveAgentModelFallbackReason(
+    agentMessage: QaapAgentModelFallbackEvidence | undefined,
+): QaapAgentModelFallbackReason {
+    return agentTurnHasRetryableModelFailure(agentMessage) ? 'model-unavailable' : 'turn-failed';
 }
 
 /** Agent output a fallback decision reads: a transcript message, or the parsed log of a task. */

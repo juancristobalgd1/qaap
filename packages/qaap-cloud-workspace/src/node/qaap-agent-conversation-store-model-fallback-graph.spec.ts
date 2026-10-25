@@ -235,6 +235,9 @@ describe('QaapAgentConversationStore model fallback via the chat-turn graph (QAA
         expect(user.error).to.equal(undefined);
         expect(agentModelKey(user.turnAgentModel)).to.equal(agentModelKey(CHAIN[1]));
         expect(next.messages.some(m => m.id === 'f1-a1')).to.be.false;
+        // The swap is never silent: the re-sealed user turn says which model was asked for and why.
+        expect(agentModelKey(user.fallbackFromModel)).to.equal(agentModelKey(MODEL_ZERO));
+        expect(user.fallbackReason).to.equal('turn-failed');
         // Run ledger: lazily adopted, retry edge walked, tried-set persisted as artifact.
         const record = chatTurnRuns(runStore)[0];
         expect(record.run.status).to.equal('running');
@@ -245,6 +248,26 @@ describe('QaapAgentConversationStore model fallback via the chat-turn graph (QAA
         const tried = JSON.parse(record.artifacts[QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT]);
         expect(tried).to.include(agentModelKey(MODEL_ZERO));
         expect(tried).to.include(agentModelKey(CHAIN[1]));
+    });
+
+    it('stamps fallbackFromModel with model-unavailable when the selected model is rejected (graph and imperative)', async () => {
+        for (const graph of ['on', 'off']) {
+            process.env.QAAP_TURN_GRAPH = graph;
+            const id = `unavail-${graph}`;
+            const base = retriableConversation(id, 'task-unavail', MODEL_ZERO);
+            const rejected = base.messages.find(m => m.role === 'agent')!;
+            // The CLI's own wording for a model it cannot reach: classified as model_unavailable.
+            const conv = { ...base, messages: base.messages.map(m => m.role === 'agent'
+                ? { ...m, content: `There's an issue with the selected model (${agentModelKey(MODEL_ZERO)}). It may not exist or you may not have access to it.` }
+                : m) };
+            store.seed(conv);
+            const handled = await store.retryFallback(id, `${id}-u1`, rejected.id, failedTask('task-unavail'), conv, conv.messages.find(m => m.role === 'agent'));
+            expect(handled, graph).to.be.true;
+            const user = store.get(id)!.messages.find(m => m.role === 'user')!;
+            expect(agentModelKey(user.fallbackFromModel), graph).to.equal(agentModelKey(MODEL_ZERO));
+            expect(user.fallbackReason, graph).to.equal('model-unavailable');
+            expect(agentModelKey(user.turnAgentModel), graph).to.equal(agentModelKey(CHAIN[1]));
+        }
     });
 
     it('never retries a QAIQ turn refused for a missing provider key (graph and imperative)', async () => {

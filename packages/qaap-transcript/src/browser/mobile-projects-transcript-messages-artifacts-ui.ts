@@ -8,7 +8,7 @@ import {
     type QaapAgentMessageDTO,
     type QaapAgentMessageSegmentDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { TurnProvenance } from './mobile-turn-provenance-badge';
 import { resolveTranscriptToolRowParts, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
 import { type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
@@ -261,7 +261,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     resolveTurnProvenance(conv: QaapAgentConversationDTO | undefined,
-        message: QaapAgentMessageDTO | undefined,): { readonly turnAgentId?: string; readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel } {
+        message: QaapAgentMessageDTO | undefined,): TurnProvenance {
         return resolveTurnProvenanceExtracted(this, conv, message);
     }
 

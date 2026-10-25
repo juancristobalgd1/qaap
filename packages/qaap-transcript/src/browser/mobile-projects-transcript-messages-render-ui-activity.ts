@@ -53,7 +53,7 @@ export function tryPatchStreamingAgentTextContentExtracted(ctx: MobileProjectsTr
             // (an unlikely race, but the wire delta layer doesn't rule it out)
             // still ends up attributed once the field arrives.
             const provenance = ctx.artifactsUi.resolveTurnProvenance(conv, nextMsg);
-            syncTranscriptStandaloneTurnProvenance(existingRow, provenance.turnAgentId, provenance.turnAgentModel);
+            syncTranscriptStandaloneTurnProvenance(existingRow, provenance.turnAgentId, provenance.turnAgentModel, provenance.fallback);
             return true;
         }
         if (!prevComparable) {
@@ -219,7 +219,7 @@ export function createTranscriptAgentFailureRowExtracted(ctx: MobileProjectsTran
         // badge, same host function, as the tool-less success case in
         // createTranscriptAgentSegmentsRow.
         const provenance = ctx.artifactsUi.resolveTurnProvenance(conv, msg);
-        syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel);
+        syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel, provenance.fallback);
         const failedTool = extractLastFailedToolFromMessage(msg);
         const canRetry = conv?.status === 'failed' && !!ctx.host.retryOpenFailedConversationTask;
         const agentId = provenance.turnAgentId ?? conv?.agentId;
@@ -293,7 +293,7 @@ export function createTranscriptMessageRowExtracted(ctx: MobileProjectsTranscrip
             // visual slot as the segments-body-hosted badge (both sit at the top of
             // the same padded flex column, see .theia-mobile-agent-transcript-msg).
             const provenance = ctx.artifactsUi.resolveTurnProvenance(options?.conv, options?.message);
-            syncTranscriptStandaloneTurnProvenance(row, provenance.turnAgentId, provenance.turnAgentModel);
+            syncTranscriptStandaloneTurnProvenance(row, provenance.turnAgentId, provenance.turnAgentModel, provenance.fallback);
             syncTranscriptCaptureClosedRow(
                 row,
                 isTranscriptCaptureClosed(options?.conv, options?.message, !!options?.streaming),
