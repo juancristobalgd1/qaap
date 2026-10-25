@@ -5,9 +5,11 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     agentUsesSettingsModelCatalog,
     isSameAgentModel,
+    OPENCODE_AGENT_ID,
     readStoredAgentModel,
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isOpenCodeFreeModelId } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
 import {
     createPickerSheetOptionButton,
     resolveUnavailableModelTitle,
@@ -45,7 +47,8 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
         onSelect: (model: QaapQaiqModelOption) => void,
         loadFailed = false,
         onRetry?: () => void,
-        onOpenAiFeaturesSettings?: () => void,): void {
+        onOpenAiFeaturesSettings?: () => void,
+        onSignIn?: () => void,): void {
         if (loadFailed) {
             const error = document.createElement('div');
             error.className = 'theia-qaap-agent-sheet-load-error';
@@ -102,7 +105,16 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
             }
             return;
         }
-        for (const [vendor, providerModels] of groupQaiqModelsByProvider(agentCapableModels)) {
+        const isOpenCode = agentId.trim().toLowerCase() === OPENCODE_AGENT_ID;
+        const sections: readonly AgentModelPickerSection[] = isOpenCode
+            ? splitOpenCodeModelSections(agentCapableModels)
+            : Array.from(groupQaiqModelsByProvider(agentCapableModels), ([vendor, providerModels]) => ({
+                vendor,
+                models: providerModels,
+                paid: false,
+            }));
+        for (const pickerSection of sections) {
+            const { vendor, models: providerModels, paid } = pickerSection;
             const section = document.createElement('div');
             section.className = 'theia-qaap-agent-sheet-provider';
             const label = document.createElement('div');
@@ -116,11 +128,30 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                 appendLlmProviderIcon(label, vendor, undefined, 'sm');
             }
             const labelText = document.createElement('span');
-            labelText.textContent = formatQaiqModelProviderLabel(vendor);
+            labelText.textContent = paid
+                ? nls.localize('qaap/agentPicker/paidModels', 'Paid')
+                : formatQaiqModelProviderLabel(vendor);
             label.append(labelText);
+            // One sign-in action per locked group, in its header; locked rows reuse it below.
+            if (paid && onSignIn && providerModels.some(model => model.available === false)) {
+                const signIn = document.createElement('button');
+                signIn.type = 'button';
+                signIn.className = 'theia-qaap-agent-sheet-connect';
+                signIn.textContent = nls.localize('qaap/agentPicker/signIn', 'Sign in');
+                signIn.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onSignIn();
+                });
+                label.append(signIn);
+            }
             section.append(label);
             for (const model of providerModels) {
                 const stats = resolveModelTurnStats(canonicalModelStatsKey(model));
+                // A locked OpenCode paid row opens the same sign-in as the header action.
+                const lockedSignIn = isOpenCode && model.available === false && model.unavailableReason === 'not-connected'
+                    ? onSignIn
+                    : undefined;
                 section.append(createPickerSheetOptionButton({
                     label: model.label || model.modelId,
                     llmVendor: model.vendor,
@@ -138,10 +169,32 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                         ? nls.localize('qaap/mobileProjects/modelPickerLocked', 'Locked')
                         : undefined,
                     badgeWarning: model.available === false,
+                    onLockedSelect: lockedSignIn,
                     onSelect: () => onSelect(model),
                 }));
             }
             list.append(section);
         }
+}
+
+/** One picker group; `paid` marks the locked OpenCode group that carries the sign-in header action. */
+interface AgentModelPickerSection {
+    readonly vendor: string;
+    readonly models: readonly QaapQaiqModelOption[];
+    readonly paid: boolean;
+}
+
+/** OpenCode free models first, then its paid models, so the paid group can be locked as one unit. */
+function splitOpenCodeModelSections(models: readonly QaapQaiqModelOption[]): AgentModelPickerSection[] {
+    const freeModels = models.filter(model => isOpenCodeFreeModelId(model.modelId));
+    const paidModels = models.filter(model => !isOpenCodeFreeModelId(model.modelId));
+    const sections: AgentModelPickerSection[] = [];
+    if (freeModels.length > 0) {
+        sections.push({ vendor: OPENCODE_AGENT_ID, models: freeModels, paid: false });
+    }
+    if (paidModels.length > 0) {
+        sections.push({ vendor: OPENCODE_AGENT_ID, models: paidModels, paid: true });
+    }
+    return sections;
 }
 

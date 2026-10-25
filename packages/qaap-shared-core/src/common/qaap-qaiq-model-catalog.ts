@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { OPENCODE_FALLBACK_MODELS, type QaapQaiqModelOption } from './qaap-agent-task-client';
+import { OPENCODE_PAID_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 import {
     formatQaiqModelProviderLabel,
     listByokModelsFromDescriptor,
@@ -177,6 +178,7 @@ export function formatQaiqModelDisplayLabel(model: { readonly modelId: string; r
         return label;
     }
     const modelId = model.modelId.trim();
-    const known = OPENCODE_FALLBACK_MODELS.find(candidate => candidate.modelId === modelId);
+    const known = OPENCODE_FALLBACK_MODELS.find(candidate => candidate.modelId === modelId)
+        ?? OPENCODE_PAID_MODEL_OPTIONS.find(candidate => candidate.modelId === modelId);
     return known?.label ?? formatQaiqModelIdShortLabel(modelId);
 }

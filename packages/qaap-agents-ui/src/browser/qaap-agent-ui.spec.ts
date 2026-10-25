@@ -9,7 +9,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { formatQaiqModelDisplayLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
-import { createAgentIdentityElement, populateAgentToolbarButton } from './qaap-agent-ui';
+import { createAgentIdentityElement, createPickerSheetOptionButton, populateAgentToolbarButton } from './qaap-agent-ui';
 
 disableImportJSDOM();
 
@@ -24,7 +24,8 @@ describe('model chip label', () => {
 
     it('resolves a catalog label from the id alone', () => {
         expect(formatQaiqModelDisplayLabel({ modelId: 'opencode/big-pickle' })).to.equal('Big Pickle');
-        expect(formatQaiqModelDisplayLabel({ modelId: 'opencode/mimo-v2.5-free' })).to.equal('MiMo V2.5 Free');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'opencode/nemotron-3-ultra-free' })).to.equal('Nemotron 3 Ultra Free');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'opencode/claude-opus-4-7' })).to.equal('Claude Opus 4.7');
     });
 
     it('falls back to the short slug for models the catalog does not know', () => {
@@ -65,5 +66,42 @@ describe('model chip label', () => {
             connectionState: 'disconnected',
         });
         expect(qaiq.querySelector('.theia-qaap-agent-connect-chip')?.textContent).to.equal('Add API key');
+    });
+});
+
+describe('picker sheet option lock', () => {
+    let disableJSDOM: () => void;
+    beforeEach(() => { disableJSDOM = enableJSDOM(); });
+    afterEach(() => disableJSDOM());
+
+    it('disables a locked row when no locked action is given', () => {
+        let selected = 0;
+        const row = createPickerSheetOptionButton({ label: 'Locked', available: false, onSelect: () => selected++ });
+        expect(row.disabled).to.equal(true);
+        row.click();
+        expect(selected).to.equal(0);
+    });
+
+    it('keeps a locked row tappable and runs its locked action instead of selecting', () => {
+        let selected = 0;
+        let locked = 0;
+        const row = createPickerSheetOptionButton({
+            label: 'Locked',
+            available: false,
+            onLockedSelect: () => locked++,
+            onSelect: () => selected++,
+        });
+        expect(row.disabled).to.equal(false);
+        expect(row.getAttribute('aria-disabled')).to.equal('true');
+        row.click();
+        expect(locked).to.equal(1);
+        expect(selected).to.equal(0);
+    });
+
+    it('keeps an available row selecting normally', () => {
+        let selected = 0;
+        const row = createPickerSheetOptionButton({ label: 'Free', onLockedSelect: () => undefined, onSelect: () => selected++ });
+        row.click();
+        expect(selected).to.equal(1);
     });
 });

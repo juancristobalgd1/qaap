@@ -48,6 +48,14 @@ describe('qaap-agent-task-client', () => {
         expect(models.some(model => model.label.includes('EROFS'))).to.be.false;
     });
 
+    it('keeps paid OpenCode models visible and locked when the backend returns nothing', () => {
+        const models = normalizeOpenCodeModelOptions([]);
+        const paid = models.filter(model => model.available === false);
+        expect(paid).to.have.length(73);
+        expect(paid.every(model => model.unavailableReason === 'not-connected')).to.be.true;
+        expect(models.filter(model => model.available === undefined)).to.have.length(10);
+    });
+
     it('canonicalizes known OpenCode model labels from a valid backend response', () => {
         const models = normalizeOpenCodeModelOptions([
             { provider: 'openai', vendor: 'opencode', modelId: 'opencode/big-pickle', label: 'opencode/big-pickle' },

@@ -116,6 +116,40 @@ describe('QAIQ/OpenClaude model routing', () => {
         expect(models.every(model => model.available === true)).to.equal(true);
     });
 
+    describe('OpenCode paid-model access', () => {
+        const opencodeCtx = (
+            connectionState: 'connected' | 'disconnected' | 'unknown',
+            probeSettled: boolean,
+        ): QaapAgentTaskRunnerContext => ({
+            normalizeAgentId: () => undefined,
+            agentConnectionSnapshot: () => ({ connectionState, probeSettled }),
+            billingStore: { peekEntitlements: () => undefined },
+        } as unknown as QaapAgentTaskRunnerContext);
+
+        it('keeps free OpenCode models usable and locks paid ones without a sign-in', () => {
+            const models = listModelsForAgentExtracted(opencodeCtx('disconnected', true), 'opencode', 'starter-user');
+            const free = models.filter(model => model.modelId.endsWith('-free') || model.modelId === 'opencode/big-pickle');
+            const paid = models.filter(model => !free.includes(model));
+            expect(free).to.have.length(10);
+            expect(paid).to.have.length(73);
+            expect(free.every(model => model.available === undefined && model.unavailableReason === undefined)).to.equal(true);
+            expect(paid.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
+        });
+
+        it('unlocks paid OpenCode models for a connected owner', () => {
+            const models = listModelsForAgentExtracted(opencodeCtx('connected', true), 'opencode', 'pro-user');
+            const paid = models.filter(model => !model.modelId.endsWith('-free') && model.modelId !== 'opencode/big-pickle');
+            expect(paid).to.have.length(73);
+            expect(paid.every(model => model.available === true && model.unavailableReason === undefined)).to.equal(true);
+        });
+
+        it('shows paid OpenCode models without a lock while the auth probe is still pending', () => {
+            const models = listModelsForAgentExtracted(opencodeCtx('unknown', false), 'opencode', 'pro-user');
+            expect(models.some(model => model.modelId === 'opencode/claude-opus-4-7')).to.equal(true);
+            expect(models.every(model => model.available !== false && model.unavailableReason === undefined)).to.equal(true);
+        });
+    });
+
     describe('Codex access (shared with the picker row)', () => {
         const codexCtx = (
             connectionState: 'connected' | 'disconnected' | 'unknown',
