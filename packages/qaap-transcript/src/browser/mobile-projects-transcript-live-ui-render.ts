@@ -177,7 +177,10 @@ const adoptedTurnFallbackByHost = new WeakMap<object, string>();
 export function adoptTurnFallbackModelExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conversationId: string, message: QaapAgentMessageDTO): void {
         const host = ctx.host;
         const fallbackModel = message.turnAgentModel;
-        if (message.role !== 'user' || !message.fallbackFromModel || !fallbackModel) {
+        // Only a dead pick moves the composer. A turn that merely failed transiently keeps the pick:
+        // the notice still says it was re-run, but the user's model choice is left alone.
+        if (message.role !== 'user' || !message.fallbackFromModel || !fallbackModel
+            || message.fallbackReason !== 'model-unavailable') {
             return;
         }
         const conv = host.transcriptLastConv;

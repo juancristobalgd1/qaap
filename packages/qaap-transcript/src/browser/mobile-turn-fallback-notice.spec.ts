@@ -116,6 +116,13 @@ describe('composer adopts the fallback model for that conversation only', () => 
         expect(applied, 'same turn is not re-adopted').to.have.length(1);
     });
 
+    it('keeps the composer model when the turn merely failed transiently (notice only)', () => {
+        const transient = { ...fallbackMessage('u9'), fallbackReason: 'turn-failed' as const };
+        adoptTurnFallbackModelExtracted(ctx as never, conversationId, transient);
+        expect(applied, 'no adoption, no persistence').to.have.length(0);
+        expect(composerModel).to.deep.equal(requested);
+    });
+
     it('does not override a later manual pick for the same turn', () => {
         adoptTurnFallbackModelExtracted(ctx as never, conversationId, fallbackMessage('u1'));
         composerModel = requested;
