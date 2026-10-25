@@ -391,6 +391,37 @@ export function resolveQaapAgentTaskVisualStatus(
     return STATUS_BY_ID['idle'];
 }
 
+/**
+ * Statuses that earn a glyph on a session row: work in progress, something that needs the user,
+ * a failure, or a pull request outcome (open, draft, conflicting, failing checks, merged, closed).
+ * Everything else is either a clean finish ("verified", "idle") or a local git fact ("branch",
+ * "committed", "pushed", "changes") that is not actionable by itself. Those keep their meaning in
+ * the row tooltip only.
+ */
+const SIDEBAR_GLYPH_STATUS_IDS: ReadonlySet<QaapAgentTaskVisualStatusId> = new Set<QaapAgentTaskVisualStatusId>([
+    'queued',
+    'running',
+    'background',
+    'needs-you',
+    'blocked',
+    'failed',
+    'interrupted',
+    'warnings',
+    'pr-ready',
+    'pr-merged',
+    'pr-draft',
+    'pr-conflicts',
+    'pr-unknown',
+    'pr-closed',
+    'checks-failed',
+    'checks-pending',
+]);
+
+/** True when a session row shows this status as a glyph; otherwise the status goes to the tooltip. */
+export function isQaapAgentTaskStatusGlyphShown(status: Pick<QaapAgentTaskVisualStatus, 'id'>): boolean {
+    return SIDEBAR_GLYPH_STATUS_IDS.has(status.id);
+}
+
 /** True when the latest message of a conversation is an agent reply the user has not read yet. */
 export function isQaapAgentTaskUnreadReply(
     summary: Pick<QaapAgentConversationSummaryDTO, 'lastMessageRole' | 'messageCount'> | undefined,

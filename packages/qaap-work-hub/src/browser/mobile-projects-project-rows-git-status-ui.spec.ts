@@ -112,8 +112,35 @@ describe('MobileProjectsProjectRowsUi Git/PR status', () => {
         const glyph = row.querySelector<HTMLElement>('.theia-mobile-projects-task-dot');
         expect(glyph?.classList.contains('theia-mod-pr-ready')).to.equal(true);
         expect(glyph?.querySelector('.codicon-git-pull-request')).not.to.equal(null);
-        expect(glyph?.getAttribute('aria-label')).to.equal('PR ready');
+        expect(glyph?.getAttribute('aria-label')).to.equal('Pull request #12 · PR ready');
+        expect(glyph?.title).to.equal('Pull request #12 · PR ready');
         expect(row.querySelector('.theia-mobile-projects-task-status-chip')).to.equal(null);
+    });
+
+    it('renders no glyph for a finished session that only has a worktree branch, and names the branch in the tooltip', () => {
+        const base = summary(undefined);
+        const row = createUi().createTaskItem(
+            project,
+            { ...task, title: 'hi' },
+            undefined,
+            { ...base, worktreeBranch: 'agent/hi' },
+            new Set(),
+            { compact: true },
+        );
+        const dot = row.querySelector<HTMLElement>('.theia-mobile-projects-task-dot');
+        expect(dot?.querySelector('.codicon')).to.equal(null);
+        expect(dot?.classList.contains('theia-mod-no-status')).to.equal(true);
+        expect(dot?.hasAttribute('title')).to.equal(false);
+        const item = row.querySelector<HTMLElement>('.theia-mobile-projects-task-item');
+        expect(item?.title).to.contain('Branch');
+    });
+
+    it('renders no glyph for a clean finished session without git state', () => {
+        const row = createUi().createTaskItem(project, task, undefined, summary(undefined), new Set(), { compact: true });
+        const dot = row.querySelector<HTMLElement>('.theia-mobile-projects-task-dot');
+        expect(dot?.querySelector('.codicon')).to.equal(null);
+        expect(dot?.classList.contains('theia-mod-no-status')).to.equal(true);
+        expect(row.querySelector<HTMLElement>('.theia-mobile-projects-task-item')?.title).to.not.contain('Branch');
     });
 
     it('renders merged purple semantics only for an explicit merged state', () => {

@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus, resolveQaapGitPrVisualStatus } from './qaap-agent-task-visual-status';
+import { isQaapAgentTaskStatusGlyphShown, isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus, resolveQaapGitPrVisualStatus } from './qaap-agent-task-visual-status';
 
 describe('resolveQaapAgentTaskVisualStatus', () => {
     it('keeps failures above every other signal', () => {
@@ -192,5 +192,47 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
             true,
         );
         expect(status.id).to.equal('verified');
+    });
+});
+
+describe('isQaapAgentTaskStatusGlyphShown', () => {
+    type Summary = NonNullable<Parameters<typeof resolveQaapAgentTaskVisualStatus>[1]>;
+    const glyphFor = (state: string, summary?: Partial<Summary>): boolean =>
+        isQaapAgentTaskStatusGlyphShown(resolveQaapAgentTaskVisualStatus({ state }, summary as Summary | undefined));
+
+    it('shows a glyph for work in progress and for anything that needs the user', () => {
+        expect(glyphFor('running')).to.equal(true);
+        expect(glyphFor('queued')).to.equal(true);
+        expect(glyphFor('needs-input')).to.equal(true);
+        expect(glyphFor('blocked')).to.equal(true);
+        expect(glyphFor('failed')).to.equal(true);
+        expect(glyphFor('interrupted')).to.equal(true);
+        expect(glyphFor('completed_with_warnings')).to.equal(true);
+    });
+
+    it('shows a glyph for an open, draft, conflicting or failing pull request', () => {
+        const withPr = (linkedPullRequest: Partial<NonNullable<Summary['linkedPullRequest']>>): Partial<Summary> =>
+            ({ linkedPullRequest }) as Partial<Summary>;
+        expect(glyphFor('completed', withPr({ state: 'open', number: 7, tests: 'passing' }))).to.equal(true);
+        expect(glyphFor('completed', withPr({ state: 'open', number: 7, draft: true }))).to.equal(true);
+        expect(glyphFor('completed', withPr({ state: 'open', number: 7, mergeable: false }))).to.equal(true);
+        expect(glyphFor('completed', withPr({ state: 'open', number: 7, tests: 'failing' }))).to.equal(true);
+    });
+
+    it('shows no glyph for a clean finish or an idle task', () => {
+        expect(glyphFor('completed')).to.equal(false);
+        expect(glyphFor('idle')).to.equal(false);
+    });
+
+    it('shows no glyph for a branch, a commit, a push or local changes without a pull request', () => {
+        expect(glyphFor('completed', { worktreeBranch: 'agent/hi' })).to.equal(false);
+        expect(glyphFor('completed', { hasGitOperation: true })).to.equal(false);
+        expect(glyphFor('completed', { lastGitActionKind: 'commit' })).to.equal(false);
+        expect(glyphFor('completed', { lastGitActionKind: 'push' })).to.equal(false);
+        expect(glyphFor('completed', { linesAdded: 4 })).to.equal(false);
+    });
+
+    it('keeps the glyph for a merged pull request: a PR outcome, not a clean finish', () => {
+        expect(glyphFor('completed', { linkedPullRequest: { state: 'merged', number: 3 } } as Partial<Summary>)).to.equal(true);
     });
 });
