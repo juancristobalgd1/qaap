@@ -136,7 +136,7 @@ export interface QaapDevPreviewEndpointContext {
     probeLocalDevServer(port: number, ownerLogin?: string): Promise<boolean>;
 
     /** True when a new dev server could bind `port` (real bind test; tunnelled runtimes always pass). */
-    isPortBindable(port: number, ownerLogin?: string): Promise<boolean>;
+    isPortBindable(port: number, ownerLogin?: string, root?: string): Promise<boolean>;
     /** True when every unclaimed listener of this runtime belongs to `login` (single-tenant backend). */
     ownsUnclaimedPorts(login: string | undefined): boolean;
 

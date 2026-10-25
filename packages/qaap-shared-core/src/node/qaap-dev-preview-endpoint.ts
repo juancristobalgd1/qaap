@@ -18,6 +18,7 @@ import { QAAP_DEV_PREVIEW_PREFIX, type QaapDevPreviewMemoryStatus } from '../com
 import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-headers';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { QaapDevPreviewUpstreamTunnel } from './qaap-dev-preview-upstream-tunnel';
+import { QaapDevPreviewForwardedPorts, normalizeQaapForwardedPortOwner } from './qaap-dev-preview-forwarded-ports';
 import { isQaapDevPreviewPortBindable } from './qaap-dev-preview-port-bind-probe';
 import { findListeningProcessCwdsOnPort } from './qaap-dev-preview-port-listener';
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
@@ -72,6 +73,13 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
      */
     @inject(QaapDevPreviewUpstreamTunnel) @optional()
     protected readonly upstreamTunnel?: QaapDevPreviewUpstreamTunnel;
+
+    /**
+     * Ports this backend itself listens on to forward previews into task sandboxes. Absent → no
+     * forwarders, and a busy port is always somebody else's.
+     */
+    @inject(QaapDevPreviewForwardedPorts) @optional()
+    protected readonly forwardedPorts?: QaapDevPreviewForwardedPorts;
 
     /** Runs before static file handlers; see {@link earlyMiddlewareExtracted}. Optional for tests. */
     @inject(EarlyExpressMiddleware) @optional()
@@ -364,14 +372,32 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
 
     /**
      * True when a new dev server could bind `port` here. Tunnelled runtimes live in another network
-     * namespace where a local bind proves nothing; their HTTP probe stays authoritative.
+     * namespace where a local bind proves nothing; their HTTP probe stays authoritative. A port
+     * held by this backend's own sandbox forwarder counts as free only for the owner (and worktree
+     * `root`) that forwarder serves: it already leads into their sandbox, where the server binds.
      * @internal Used by the extracted qaap-dev-preview-endpoint-* modules.
      */
-    public async isPortBindable(port: number, ownerLogin?: string): Promise<boolean> {
+    public async isPortBindable(port: number, ownerLogin?: string, root?: string): Promise<boolean> {
         if (this.tunnelOwnerFor(port, ownerLogin) !== undefined) {
             return true;
         }
-        return isQaapDevPreviewPortBindable(port);
+        if (await isQaapDevPreviewPortBindable(port)) {
+            return true;
+        }
+        return this.isOwnForwardedPort(port, ownerLogin, root);
+    }
+
+    /**
+     * Whether `port` is held by a sandbox forwarder serving exactly `ownerLogin` in the worktree of
+     * `root`. Fails closed: no owner, no root, no forwarder or a forwarder without a known owner.
+     */
+    protected isOwnForwardedPort(port: number, ownerLogin: string | undefined, root: string | undefined): boolean {
+        const owner = normalizeQaapForwardedPortOwner(ownerLogin);
+        if (!owner || !root || !this.forwardedPorts) {
+            return false;
+        }
+        const forwardOwner = normalizeQaapForwardedPortOwner(this.forwardedPorts.ownerOf(port, root));
+        return forwardOwner !== undefined && forwardOwner === owner;
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

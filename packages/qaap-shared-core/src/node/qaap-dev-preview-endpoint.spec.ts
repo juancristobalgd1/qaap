@@ -554,8 +554,8 @@ describe('QaapDevPreviewEndpoint', () => {
             readonly boundPorts = new Set<number>();
             realBindProbe = false;
 
-            override isPortBindable(port: number, ownerLogin?: string): Promise<boolean> {
-                return this.realBindProbe ? super.isPortBindable(port, ownerLogin) : Promise.resolve(!this.boundPorts.has(port));
+            override isPortBindable(port: number, ownerLogin?: string, root?: string): Promise<boolean> {
+                return this.realBindProbe ? super.isPortBindable(port, ownerLogin, root) : Promise.resolve(!this.boundPorts.has(port));
             }
 
             setClaimFakes(login: string, registry: unknown, authKind: 'authenticated' | 'skip' = 'authenticated'): void {
@@ -758,6 +758,77 @@ describe('QaapDevPreviewEndpoint', () => {
             } finally {
                 await new Promise<void>(resolve => blocker.close(() => resolve()));
             }
+        });
+
+        describe('a port held by this backend\'s own sandbox forwarder', () => {
+            const sandboxRoot = '/workspace/repos/users/alice/site';
+            let forwarder: net.Server;
+            let forwardedPort: number;
+            let forwardOwner: string | undefined;
+            const askedRoots: Array<string | undefined> = [];
+
+            beforeEach(async () => {
+                forwarder = net.createServer();
+                await new Promise<void>(resolve => forwarder.listen({ port: 0, host: '127.0.0.1' }, resolve));
+                forwardedPort = (forwarder.address() as net.AddressInfo).port;
+                forwardOwner = 'Alice';
+                askedRoots.length = 0;
+            });
+            afterEach(async () => {
+                await new Promise<void>(resolve => forwarder.close(() => resolve()));
+            });
+
+            const withForwarder = (ep: ClaimTestEndpoint): ClaimTestEndpoint => {
+                (ep as unknown as { forwardedPorts: unknown }).forwardedPorts = {
+                    ownerOf: (port: number, root?: string) => {
+                        askedRoots.push(root);
+                        return port === forwardedPort && root?.startsWith(sandboxRoot) ? forwardOwner : undefined;
+                    },
+                };
+                ep.realBindProbe = true;
+                return ep;
+            };
+
+            it('counts as free only for the owner and worktree the forwarder serves', async () => {
+                const ep = withForwarder(new ClaimTestEndpoint());
+                expect(await ep.isPortBindable(forwardedPort, 'alice', sandboxRoot)).to.equal(true);
+                expect(await ep.isPortBindable(forwardedPort, ' ALICE ', `${sandboxRoot}/web`)).to.equal(true);
+                expect(await ep.isPortBindable(forwardedPort, 'bob', sandboxRoot)).to.equal(false);
+                expect(await ep.isPortBindable(forwardedPort, 'alice', '/workspace/repos/users/alice/other')).to.equal(false);
+                expect(await ep.isPortBindable(forwardedPort, 'alice')).to.equal(false);
+                expect(await ep.isPortBindable(forwardedPort, undefined, sandboxRoot)).to.equal(false);
+                forwardOwner = undefined;
+                expect(await ep.isPortBindable(forwardedPort, 'alice', sandboxRoot)).to.equal(false);
+            });
+
+            it('stays occupied when nothing forwards ports here', async () => {
+                const ep = new ClaimTestEndpoint();
+                ep.realBindProbe = true;
+                expect(await ep.isPortBindable(forwardedPort, 'alice', sandboxRoot)).to.equal(false);
+            });
+
+            it('lets the owner\'s process claim reserve the forwarded port and sends everyone else past it', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const root = `file://${sandboxRoot}`;
+                const identity = { workspaceId: root, projectId: root, processId: 'process-forwarded' };
+
+                const aliceRegistry = new Registry();
+                const alice = withForwarder(new ClaimTestEndpoint());
+                alice.setClaimFakes('alice', aliceRegistry);
+                const aliceRes = makeRes();
+                await alice.exposeHandleClaim(claimReq(forwardedPort, identity, root), aliceRes);
+                expect(aliceRes.record.code).to.equal(200);
+                expect((aliceRes.record.body as { port: number }).port).to.equal(forwardedPort);
+                expect(askedRoots).to.include(sandboxRoot);
+
+                const bobRoot = 'file:///workspace/repos/users/bob/site';
+                const bob = withForwarder(new ClaimTestEndpoint());
+                bob.setClaimFakes('bob', new Registry());
+                const bobRes = makeRes();
+                await bob.exposeHandleClaim(claimReq(forwardedPort, { workspaceId: bobRoot, projectId: bobRoot, processId: 'process-bob' }, bobRoot), bobRes);
+                expect(bobRes.record.code).to.equal(200);
+                expect((bobRes.record.body as { port: number }).port).to.not.equal(forwardedPort);
+            });
         });
 
         it('allocates distinct ports atomically for two projects of the same user', async () => {

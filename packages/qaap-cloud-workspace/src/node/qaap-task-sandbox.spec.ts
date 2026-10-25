@@ -368,6 +368,57 @@ describe('QaapTaskSandboxService', function (): void {
         await service.end(sandbox.root);
     });
 
+    describe('forwarded port ownership (QaapDevPreviewForwardedPorts)', () => {
+        afterEach(() => setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined }));
+
+        it('names the login the sandbox was created for, scoped to its own worktree', async () => {
+            setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined });
+            const service = new FakeDockerSandboxService();
+            const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA, ownerLogin: 'Alice' });
+            const port = await service.forwardPort(sandbox, 5180);
+            try {
+                expect(service.ownerOf(port)).to.equal('alice');
+                expect(service.ownerOf(port, path.join(worktreeA, 'web'))).to.equal('alice');
+                expect(service.ownerOf(port, worktreeB)).to.equal(undefined);
+                expect(service.ownerOf(port + 1 === 65536 ? port - 1 : port + 1)).to.equal(undefined);
+            } finally {
+                await service.end(sandbox.root);
+            }
+            expect(service.ownerOf(port)).to.equal(undefined);
+        });
+
+        it('has no owner for a sandbox created without a login on a shared backend', async () => {
+            setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined });
+            const service = new FakeDockerSandboxService();
+            const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA });
+            const port = await service.forwardPort(sandbox, 5180);
+            try {
+                expect(service.ownerOf(port, worktreeA)).to.equal(undefined);
+            } finally {
+                await service.end(sandbox.root);
+            }
+        });
+
+        it('serves the pinned tenant in a tenant backend, and nobody when the sandbox names someone else', async () => {
+            const service = new FakeDockerSandboxService();
+            const unnamed = await service.acquire({ taskId: 't1', cwd: worktreeA });
+            const foreign = await service.acquire({ taskId: 't2', cwd: worktreeB, ownerLogin: 'mallory' });
+            const unnamedPort = await service.forwardPort(unnamed, 5180);
+            const foreignPort = await service.forwardPort(foreign, 5181);
+            try {
+                setEnv({ QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_LOGIN: 'Alice' });
+                expect(service.ownerOf(unnamedPort, worktreeA)).to.equal('alice');
+                expect(service.ownerOf(foreignPort, worktreeB)).to.equal(undefined);
+                setEnv({ QAAP_TENANT_LOGIN: undefined });
+                expect(service.ownerOf(unnamedPort, worktreeA)).to.equal(undefined);
+            } finally {
+                setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined });
+                await service.end(unnamed.root);
+                await service.end(foreign.root);
+            }
+        });
+    });
+
     it('passes the devcontainer remoteEnv to exec by name, under the task\'s own variables', async () => {
         const service = new FakeDockerSandboxService();
         const base = await service.acquire({ taskId: 't1', cwd: worktreeA });

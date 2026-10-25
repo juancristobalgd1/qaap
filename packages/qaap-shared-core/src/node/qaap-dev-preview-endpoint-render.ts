@@ -682,7 +682,7 @@ export async function allocatePreviewPortExtracted(
             }
             continue;
         }
-        if (!await ctx.isPortBindable(port, owner)) {
+        if (!await ctx.isPortBindable(port, owner, registration.root)) {
             // Something holds the port without answering HTTP (a Theia/Node backend still booting,
             // the host IDE on a non-default port). Handing it out makes the dev server die on bind.
             continue;

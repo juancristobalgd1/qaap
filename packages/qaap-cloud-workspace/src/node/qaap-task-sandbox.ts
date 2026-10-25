@@ -11,6 +11,8 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { normalizeQaapForwardedPortOwner, type QaapDevPreviewForwardedPorts } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forwarded-ports';
 import { QaapDevcontainerResolver, type QaapTaskSandboxImagePlan } from './qaap-devcontainer-config';
 import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import { QaapTaskSandboxBrokerClient } from './qaap-task-sandbox-broker-client';
@@ -152,6 +154,8 @@ interface SandboxForward {
 
 interface SandboxEntry {
     sandbox: QaapTaskSandbox;
+    /** Login (lower case) of the task that created the sandbox, as resolved server-side. */
+    readonly ownerLogin?: string;
     readonly tasks: Set<string>;
     teardownTimer?: ReturnType<typeof setTimeout>;
     /** Loopback forwarders on the backend, by HOST port. */
@@ -171,7 +175,7 @@ export type QaapTaskSandboxMode = 'direct' | 'broker';
 export type QaapTaskSandboxEndMode = 'destroy' | 'archive';
 
 @injectable()
-export class QaapTaskSandboxService implements BackendApplicationContribution {
+export class QaapTaskSandboxService implements BackendApplicationContribution, QaapDevPreviewForwardedPorts {
 
     @inject(QaapDevcontainerResolver) @optional()
     protected readonly devcontainers: QaapDevcontainerResolver = new QaapDevcontainerResolver();
@@ -549,6 +553,37 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         return bound;
     }
 
+    /**
+     * {@link QaapDevPreviewForwardedPorts}: the owner of the sandbox whose forwarder holds the host
+     * `port`. With `root`, only when that sandbox is also the one owning `root`'s worktree, so a
+     * preview of one worktree is never pointed at another worktree's forwarder.
+     */
+    ownerOf(port: number, root?: string): string | undefined {
+        for (const entry of this.entries.values()) {
+            if (!entry.forwards.has(port)) {
+                continue;
+            }
+            if (root !== undefined && this.sandboxFor(root) !== entry.sandbox) {
+                return undefined;
+            }
+            return this.forwardOwner(entry);
+        }
+        return undefined;
+    }
+
+    /**
+     * Who a sandbox's forwarders serve. A per-tenant backend serves exactly the tenant pinned in its
+     * environment: a sandbox created for anyone else (inconsistent state) has no known owner. On a
+     * shared backend it is the login the creating task ran as; none recorded → unknown.
+     */
+    protected forwardOwner(entry: SandboxEntry): string | undefined {
+        if (/^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '')) {
+            const tenant = normalizeQaapForwardedPortOwner(process.env[QAAP_TENANT_LOGIN_ENV]);
+            return tenant !== undefined && (entry.ownerLogin === undefined || entry.ownerLogin === tenant) ? tenant : undefined;
+        }
+        return entry.ownerLogin;
+    }
+
     /** The backend host port that reaches `containerPort` in the sandbox owning `cwd`, if forwarded. */
     hostPortFor(cwd: string, containerPort: number): number | undefined {
         const sandbox = this.sandboxFor(cwd);
@@ -748,8 +783,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         return process.env.QAAP_TASK_SANDBOX_OWNER?.trim() || os.hostname();
     }
 
-    protected newEntry(sandbox: QaapTaskSandbox): SandboxEntry {
-        return { sandbox, tasks: new Set(), forwards: new Map(), expectedPorts: new Map(), watchAll: false, unavailablePorts: new Set() };
+    protected newEntry(sandbox: QaapTaskSandbox, ownerLogin?: string): SandboxEntry {
+        return {
+            sandbox, ownerLogin: normalizeQaapForwardedPortOwner(ownerLogin),
+            tasks: new Set(), forwards: new Map(), expectedPorts: new Map(), watchAll: false, unavailablePorts: new Set(),
+        };
     }
 
     protected async createEntry(root: string, options: QaapTaskSandboxAcquireOptions): Promise<SandboxEntry> {
@@ -789,7 +827,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
         };
         console.info(`[qaap-task-sandbox] ${created ? 'started' : 'reused'} ${name} for ${root} `
             + `(image ${plan.image}, ${plan.kind}) in ${startupMs} ms${postCreateMs !== undefined ? `, postCreate ${postCreateMs} ms` : ''}`);
-        const entry = this.newEntry(sandbox);
+        const entry = this.newEntry(sandbox, options.ownerLogin);
         this.entries.set(root, entry);
         await this.seedPortBaseline(entry);
         return entry;
@@ -831,7 +869,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution {
             remoteEnv: devcontainer?.remoteEnv ?? {},
             exec: { host: created.host, port: created.port, token: created.token },
         };
-        const entry = this.newEntry(sandbox);
+        const entry = this.newEntry(sandbox, options.ownerLogin);
         this.entries.set(root, entry);
         await this.seedPortBaseline(entry);
         if (created.created && devcontainer?.postCreateCommand) {
