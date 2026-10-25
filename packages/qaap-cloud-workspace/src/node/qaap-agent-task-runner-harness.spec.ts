@@ -152,6 +152,26 @@ describe('QaapAgentTaskRunner connection probes', () => {
         expect(agents.find(agent => agent.id === 'claude')?.connectionState).to.equal('unknown');
     });
 
+    it('serves a remembered snapshot without waiting for its stale re-probe', async () => {
+        let resolveProbe: (state: ConnectionState) => void = () => undefined;
+        const { runner, probes } = createRunner(agentId => agentId === 'codex'
+            ? new Promise<ConnectionState>(resolve => { resolveProbe = resolve; })
+            : Promise.resolve('connected'));
+        const states = (runner as unknown as { agentConnectionStates: Map<string, { state: ConnectionState; at: number }> }).agentConnectionStates;
+        // Both harnesses were answered long ago: the snapshot must be served, not held for the budget.
+        states.set('codex:alice', { state: 'connected', at: 0 });
+        states.set('claude:alice', { state: 'connected', at: 0 });
+        const startedAt = Date.now();
+        const agents = await runner.listAgentsFresh('alice', 5000);
+        expect(Date.now() - startedAt).to.be.lessThan(1000);
+        expect(agents.find(agent => agent.id === 'codex')?.connectionState).to.equal('connected');
+        // The re-probe still runs in the background and lands in the cache for the next request.
+        expect(probes).to.include('codex');
+        resolveProbe('disconnected');
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(runner.listAgents('alice').find(agent => agent.id === 'codex')?.connectionState).to.equal('disconnected');
+    });
+
     it('keeps serving the last known state while a stale entry is re-probed', async () => {
         let next: ConnectionState = 'connected';
         const { runner, probes } = createRunner(async () => next);

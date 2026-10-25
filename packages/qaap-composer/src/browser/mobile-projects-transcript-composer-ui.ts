@@ -47,6 +47,7 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
 import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
+import { writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 
 export interface ComposerAgentPickerChrome {
     readonly sheet: HTMLElement;
@@ -194,7 +195,9 @@ export class MobileProjectsTranscriptComposerUi {
             const snapshot = await this.host.loadBackendAgentSnapshot();
             let pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(snapshot.agents);
             let filteredAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(pickerAgents);
-            if (filteredAgents.length === 0) {
+            // Same rule as the sticky composer: the 3 s wait only covers a page whose live stream has not reported agents yet.
+            const streamHasAgents = (this.host.activeTasks?.getAgents() ?? []).length > 0;
+            if (filteredAgents.length === 0 && !streamHasAgents) {
                 await this.host.stickyComposerAgentsUi.waitForSelectableActiveTaskAgents(3000);
                 const liveAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
                     this.host.activeTasks?.getAgents() ?? [],
@@ -208,6 +211,7 @@ export class MobileProjectsTranscriptComposerUi {
                 }
             }
             this.host.transcriptComposerBackendAgents = pickerAgents;
+            writeComposerAgentCatalogSession(pickerAgents);
             this.host.transcriptComposerQaiqModels = snapshot.qaiqModels;
             const resolved = this.host.stickyComposerAgentsUi.reconcileStickyComposerPinnedAgent(
                 this.host.transcriptComposerPinnedAgentId ?? readStoredAgent(cwd),
