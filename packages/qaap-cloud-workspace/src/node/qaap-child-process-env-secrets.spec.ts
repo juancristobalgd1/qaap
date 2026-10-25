@@ -17,17 +17,4 @@ describe('qaap-child-process-env (QAAP_SECRETS_KEYS)', () => {
         expect(env.PATH).to.equal('/usr/bin');
         expect(env.QAAP_TASK_TOKEN).to.equal('helper');
     });
-
-    it('never hands the VAPID private key or subject to agent processes, but keeps the public key', () => {
-        const env = childProcessEnv({
-            QAAP_VAPID_PRIVATE_KEY: 'priv-b64url',
-            QAAP_VAPID_SUBJECT: 'mailto:ops@example.com',
-            QAAP_VAPID_PUBLIC_KEY: 'pub-b64url',
-            PATH: '/usr/bin',
-        });
-        expect(env).not.to.have.property('QAAP_VAPID_PRIVATE_KEY');
-        expect(env).not.to.have.property('QAAP_VAPID_SUBJECT');
-        expect(env.QAAP_VAPID_PUBLIC_KEY).to.equal('pub-b64url');
-        expect(env.PATH).to.equal('/usr/bin');
-    });
 });

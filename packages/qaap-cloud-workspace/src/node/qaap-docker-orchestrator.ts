@@ -128,13 +128,6 @@ const TENANT_WORKER_ENV_DENYLIST = new Set([
     'QAAP_SYSTEM_SKILLS_DIR',
 ]);
 
-/** Web Push public key: base64url P-256 point (65 bytes, 87 characters). Length bounds only reject junk. */
-const VAPID_PUBLIC_KEY_PATTERN = /^[A-Za-z0-9_-]{64,128}$/;
-/** Web Push private key: base64url scalar (32 bytes, 43 characters). */
-const VAPID_PRIVATE_KEY_PATTERN = /^[A-Za-z0-9_-]{32,96}$/;
-/** Web Push subject: a contact URI the push services accept (`mailto:` or `https:`), no whitespace or control characters. */
-const VAPID_SUBJECT_PATTERN = /^(?:mailto:|https:)[\x21-\x7E]{1,250}$/;
-
 interface QaapTenantMountSet {
     readonly reposRoot: string;
     readonly worktreesRoot: string;
@@ -1052,30 +1045,6 @@ export class QaapDockerOrchestrator {
         return value && /^[A-Za-z0-9_.:,+/=-]+$/.test(value) ? [`QAAP_SECRETS_KEYS=${value}`] : [];
     }
 
-    /**
-     * Web Push keypair for the tenant backend (`QAAP_VAPID_PUBLIC_KEY`, `QAAP_VAPID_PRIVATE_KEY`,
-     * `QAAP_VAPID_SUBJECT`). The tenant backend stores the browser subscriptions and sends the
-     * "agent finished" notifications, so it needs the control plane's keypair. All three are passed
-     * together or not at all: a partial or malformed set would leave QaapWebPushService disabled.
-     * Passed only to the backend container, never to agent processes (see QAAP_BACKEND_ONLY_ENV).
-     * Kept out of the recreate check, like QAAP_SECRETS_KEYS, so a deploy does not recreate running tenants.
-     */
-    protected tenantBackendVapidEnv(env: NodeJS.ProcessEnv = process.env): string[] {
-        const publicKey = env.QAAP_VAPID_PUBLIC_KEY?.trim() ?? '';
-        const privateKey = env.QAAP_VAPID_PRIVATE_KEY?.trim() ?? '';
-        const subject = env.QAAP_VAPID_SUBJECT?.trim() ?? '';
-        if (!VAPID_PUBLIC_KEY_PATTERN.test(publicKey)
-            || !VAPID_PRIVATE_KEY_PATTERN.test(privateKey)
-            || !VAPID_SUBJECT_PATTERN.test(subject)) {
-            return [];
-        }
-        return [
-            `QAAP_VAPID_PUBLIC_KEY=${publicKey}`,
-            `QAAP_VAPID_PRIVATE_KEY=${privateKey}`,
-            `QAAP_VAPID_SUBJECT=${subject}`,
-        ];
-    }
-
     protected tenantBackendPublicUrlEnv(env: NodeJS.ProcessEnv = process.env): string[] {
         return ['QAAP_OAUTH_PUBLIC_URL', 'QAAP_PREVIEW_BASE_DOMAIN', 'QAAP_PREVIEW_ALLOW_SAME_SITE', 'QAAP_PREVIEW_SHARE_TTL_HOURS']
             .map(key => [key, env[key]?.trim()] as const)
@@ -1459,7 +1428,6 @@ export class QaapDockerOrchestrator {
                 ...this.tenantBackendExternalTaskEnv(),
                 ...this.tenantBackendLimitsEnv(),
                 ...this.tenantBackendSecretsEnv(),
-                ...this.tenantBackendVapidEnv(),
             ];
             const repoMount =`${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
             const worktreeMount = `${dockerMounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
