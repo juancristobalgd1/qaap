@@ -318,7 +318,32 @@ export async function openReadyTranscriptPreviewUrlExtracted(ctx: MobileProjects
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', previewProject, summary);
 }
 
+/**
+ * The agent fallback runs when no start command was detected, and the agent may write
+ * `.qaap/preview.json` during its turn. When that turn settles and the request still waits without
+ * a URL, detection runs once more with no second agent turn: a command now found starts the
+ * bootstrap, none leaves the chip on "Run app" / "No start command found". Turn end is the trigger
+ * because the Work Hub has no watcher on workspace files. Every branch of the request that does not
+ * wait on a running process clears `transcriptPreviewRequestPending`, so one settle relaunches at
+ * most once. A request already running, or a user Stop (`transcriptPreviewSuppressedByUser`), is
+ * left alone.
+ */
+export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
+    const project = ctx.host.transcriptOpenProject;
+    const summary = ctx.host.transcriptOpenSummary;
+    const conv = ctx.host.transcriptLastConv;
+    if (!project || !summary || !conv || summary.id !== conv.id) {
+        return;
+    }
+    if (!ctx.host.transcriptPreviewRequestPending || ctx.host.transcriptPreviewRequestRunning
+        || ctx.host.transcriptPreviewSuppressedByUser || !ctx.host.requestTranscriptPreview) {
+        return;
+    }
+    void ctx.host.requestTranscriptPreview(project, summary, { allowAgentFallback: false });
+}
+
 export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
+    relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx);
     const conv = ctx.host.transcriptLastConv;
     if (!conv || !conversationShouldWatchDevPreview(conv, window.location.origin)) {
         return;

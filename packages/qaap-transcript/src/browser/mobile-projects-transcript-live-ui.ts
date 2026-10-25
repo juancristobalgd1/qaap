@@ -89,6 +89,12 @@ export interface MobileProjectsTranscriptLiveHost {
         conv: QaapAgentConversationDTO,
     ): Promise<void>;
     beginTranscriptDevPreviewRequest(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
+    /** Work Hub preview request; the turn-settle relaunch re-runs it without an agent fallback. */
+    requestTranscriptPreview?(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },
+    ): Promise<void>;
     stageTranscriptPreviewReadyUrl(readyUrl: string): void;
     projectBootstrap?: QaapProjectBootstrapService;
     agUiFrontendTools?: import('@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;

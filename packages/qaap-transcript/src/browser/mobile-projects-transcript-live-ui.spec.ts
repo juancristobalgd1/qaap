@@ -12,7 +12,8 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
 import type { QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
-import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     enableTranscriptRenderMetrics,
     getTranscriptRenderMetricsSnapshot,
@@ -610,5 +611,110 @@ describe('MobileProjectsTranscriptLiveUi', () => {
 
         chatHost.remove();
         composerHost.remove();
+    });
+
+    describe('turn-settle preview relaunch', () => {
+
+        const project = {
+            id: 'p-relaunch',
+            name: 'Relaunch',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        } as unknown as MobileProjectEntry;
+        const summary = {
+            id: 'conv-relaunch',
+            cwd: '/tmp/relaunch',
+            agentId: 'codex',
+            title: 'Relaunch',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+        } as QaapAgentConversationSummaryDTO;
+        const settledConv = {
+            id: 'conv-relaunch',
+            cwd: '/tmp/relaunch',
+            agentId: 'codex',
+            title: 'Relaunch',
+            status: 'idle' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [],
+        } as unknown as QaapAgentConversationDTO;
+
+        /** Builds a live UI whose settle path is observable; `onRequest` mimics the request's flag handling. */
+        function settleFixture(options: {
+            pending: boolean;
+            running?: boolean;
+            suppressed?: boolean;
+            onRequest?: (host: MobileProjectsTranscriptLiveHost) => void;
+        }): { liveUi: MobileProjectsTranscriptLiveUi; host: MobileProjectsTranscriptLiveHost; requests: Array<{ allowAgentFallback?: boolean }> } {
+            const chatHost = document.createElement('div');
+            const composerHost = document.createElement('div');
+            document.body.append(chatHost, composerHost);
+            const host = createHost(chatHost, composerHost);
+            host.transcriptOpenSummaryId = summary.id;
+            host.transcriptOpenProject = project;
+            host.transcriptOpenSummary = summary;
+            host.transcriptLastConv = settledConv;
+            host.transcriptPreviewRequestPending = options.pending;
+            host.transcriptPreviewRequestRunning = options.running ?? false;
+            host.transcriptPreviewSuppressedByUser = options.suppressed ?? false;
+            const requests: Array<{ allowAgentFallback?: boolean }> = [];
+            host.requestTranscriptPreview = async (_project, _summary, requestOptions) => {
+                requests.push({ allowAgentFallback: requestOptions?.allowAgentFallback });
+                options.onRequest?.(host);
+            };
+            const liveUi = new MobileProjectsTranscriptLiveUi(host);
+            (liveUi as unknown as { refreshTranscriptPreviewOffer: () => Promise<void> }).refreshTranscriptPreviewOffer = async () => undefined;
+            return { liveUi, host, requests };
+        }
+
+        it('relaunches the detection once when the agent fallback turn settles without a URL', async () => {
+            const fixture = settleFixture({
+                pending: true,
+                // Like the real request: the agent turn already ran and the no-command branch clears the pending flag.
+                onRequest: host => { host.transcriptPreviewRequestPending = false; },
+            });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.requests).to.deep.equal([{ allowAgentFallback: false }]);
+            expect(fixture.host.transcriptPreviewRequestPending).to.equal(false);
+        });
+
+        it('does not relaunch when no preview request is pending', async () => {
+            const fixture = settleFixture({ pending: false });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.requests).to.deep.equal([]);
+        });
+
+        it('does not relaunch a request that is still running', async () => {
+            const fixture = settleFixture({ pending: true, running: true });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.requests).to.deep.equal([]);
+        });
+
+        it('does not relaunch after the user stopped the preview', async () => {
+            const fixture = settleFixture({ pending: true, suppressed: true });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.requests).to.deep.equal([]);
+        });
     });
 });

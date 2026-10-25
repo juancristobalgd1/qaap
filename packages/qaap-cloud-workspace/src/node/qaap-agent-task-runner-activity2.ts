@@ -188,6 +188,7 @@ export async function verifySuccessfulAgentTaskExtracted(ctx: QaapAgentTaskRunne
             resolveVerificationScriptsForCwd: cwd => ctx.resolveVerificationScriptsForCwd(cwd),
             isTaskStillRunning: id => ctx.isTaskStillRunning(id),
             runVerificationScripts: (t, e, s, sa) => ctx.runVerificationScripts(t, e, s, sa),
+            fingerprintWorktree: t => ctx.captureWorktreeFingerprint(t.cwd),
             runAgentVerificationFixTurn: (t, e, c, r, a, sa, sp) => ctx.runAgentVerificationFixTurn(t, e, c, r, a, sa, sp),
             summarizeVerificationFailure: (c, r) => ctx.summarizeVerificationFailure(c, r),
             listWorktreeChanges: t => ctx.listWorktreeChanges(t.cwd),
