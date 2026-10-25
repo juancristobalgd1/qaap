@@ -31,12 +31,16 @@ on:
 #
 # The `gate` job decides whether a run is redundant. An `opened` run is redundant when the PR has
 # ci:full right now (read through the API, not the payload). A `labeled` run is redundant when its
-# label is not ci:full. Redundant runs skip every job (`needs: gate`, `if:`), so no work doubles.
+# label is not ci:full. Redundant runs do NOT skip `lint` and `build`: every step is guarded by
+# `if: needs.gate.outputs.redundant != 'true'`, so each job ends SUCCESS in seconds, and the build
+# matrix is ubuntu-only, so no work doubles and no runner is taken for windows/macOS.
 # Race: if the gate reads the labels before `gh pr create` adds ci:full, the `opened` run does the
 # full work too. That is a duplicate, but it is never cancelled. If the API call fails the gate
 # answers redundant=false and warns: a duplicate is cheaper than losing CI.
-# Skipped checks count as satisfied for required checks, so "Lint" and "Build and Test (...)" keep
-# reporting. `concurrency` cannot read job outputs, so its condition repeats the event rules.
+# Required checks must END IN SUCCESS, never SKIPPED: a SKIPPED required check blocks the PR under
+# rulesets (mergeStateStatus BLOCKED while the rollup is SUCCESS, PR #368). So `lint` and `build`
+# have no job-level `if:`; their steps are guarded instead, and a redundant run reports the same
+# check names as success. `concurrency` cannot read job outputs, so its condition repeats the event rules.
 concurrency:
   group: ${{ github.workflow }}-${{ (github.event.action == 'opened' || (github.event.action == 'labeled' && github.event.label.name != 'ci:full')) && github.run_id || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'opened' && !(github.event.action == 'labeled' && github.event.label.name != 'ci:full') }}
@@ -81,7 +85,6 @@ jobs:
   lint:
     name: Lint
     needs: gate
-    if: needs.gate.outputs.redundant != 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
@@ -89,10 +92,18 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
 
     steps:
+      - name: Redundant run
+        if: needs.gate.outputs.redundant == 'true'
+        shell: bash
+        run: |
+          echo "Redundant run: the simultaneous labeled run does the full work."
+
       - name: Checkout
+        if: needs.gate.outputs.redundant != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Use Node.js 24.x
+        if: needs.gate.outputs.redundant != 'true'
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
           node-version: 24.x
@@ -100,11 +111,13 @@ jobs:
           cache: npm
 
       - name: Use Python 3.13
+        if: needs.gate.outputs.redundant != 'true'
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.13'
 
       - name: Install and Build
+        if: needs.gate.outputs.redundant != 'true'
         shell: bash
         run: |
           # Same fetch-retry flags, plus whole-install retries (scripts/qaap-npm-ci-retry.sh).
@@ -113,6 +126,7 @@ jobs:
           ./scripts/check_git_status.sh
 
       - name: Lint
+        if: needs.gate.outputs.redundant != 'true'
         shell: bash
         run: |
           NX_DAEMON=false npx lerna run lint --stream --concurrency 2
@@ -120,26 +134,34 @@ jobs:
   build:
     name: Build and Test (${{ matrix.os }}, node-${{ matrix.node }})
     needs: gate
-    if: needs.gate.outputs.redundant != 'true'
 
     strategy:
       fail-fast: false
       matrix:
         # Only the ubuntu legs are required checks. windows/macOS are the slowest legs (20-29 min) and
         # saturate the shared runners, so PRs run them only with the `ci:full` label; master pushes
-        # and manual runs always run all three OSes. The job name above must stay
+        # and manual runs always run all three OSes. Redundant runs (gate) are ubuntu-only, with the
+        # same job names. The job name above must stay
         # "Build and Test (<os>, node-<node>)": branch protection requires the ubuntu contexts by name.
-        os: ${{ fromJSON((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full')) && '["windows-2022", "ubuntu-22.04", "macos-15"]' || '["ubuntu-22.04"]') }}
+        os: ${{ fromJSON((needs.gate.outputs.redundant == 'true' && '["ubuntu-22.04"]') || ((github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full')) && '["windows-2022", "ubuntu-22.04", "macos-15"]') || '["ubuntu-22.04"]') }}
         node: [22.x, 24.x]
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
     steps:
+      - name: Redundant run
+        if: needs.gate.outputs.redundant == 'true'
+        shell: bash
+        run: |
+          echo "Redundant run: the simultaneous labeled run does the full work."
+
       - name: Checkout
+        if: needs.gate.outputs.redundant != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Use Node.js ${{ matrix.node }}
+        if: needs.gate.outputs.redundant != 'true'
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
           node-version: ${{ matrix.node }}
@@ -147,11 +169,13 @@ jobs:
           cache: npm
 
       - name: Use Python 3.13
+        if: needs.gate.outputs.redundant != 'true'
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.13'
       
       - name: Build
+        if: needs.gate.outputs.redundant != 'true'
         shell: bash
         run: |
           # Same fetch-retry flags, plus whole-install retries (scripts/qaap-npm-ci-retry.sh).
@@ -196,18 +220,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
 
       - name: Download Plugins
+        if: needs.gate.outputs.redundant != 'true'
         shell: bash
         run: |
           npm run download:plugins -- --rate-limit 3
           
       - name: Test (headless)
-        if: matrix.tests != 'skip'
+        if: needs.gate.outputs.redundant != 'true' && matrix.tests != 'skip'
         shell: bash
         run: |
           npm run rebuild:browser
           npm run test:theia
 
       - name: Test (browser)
+        if: needs.gate.outputs.redundant != 'true'
         env:
           QAAP_SKIP_AUTH: 'true'
         run: |
@@ -217,7 +243,7 @@ jobs:
         # Quarantined (ops/flaky.md): Electron 'after all' hook timeout is runner noise; it still runs and logs,
         # but only blocks when QAAP_RUN_QUARANTINED=1.
         continue-on-error: ${{ vars.QAAP_RUN_QUARANTINED != '1' }}
-        if: runner.os == 'Linux'
+        if: needs.gate.outputs.redundant != 'true' && runner.os == 'Linux'
         env:
           QAAP_SKIP_AUTH: 'true'
         run: |
