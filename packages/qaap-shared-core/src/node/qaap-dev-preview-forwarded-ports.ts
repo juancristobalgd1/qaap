@@ -17,6 +17,11 @@ export interface QaapDevPreviewForwardedPorts {
      * belong to the runtime of the worktree that contains `root`; otherwise undefined.
      */
     ownerOf(port: number, root?: string): string | undefined;
+    /**
+     * The preview on `port` of `owner` was terminated: close the forwarder that was opened for it,
+     * unless it belongs to another owner or something else (an open terminal) still uses it.
+     */
+    releasePreviewPort(port: number, owner: string): void;
 }
 
 /** Lower-cased, trimmed login; undefined for an empty one. */

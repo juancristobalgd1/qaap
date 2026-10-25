@@ -130,6 +130,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): void {
+        if (record.port !== undefined && record.ownerLogin) {
+            // The forwarder this backend opened for the preview would keep the port busy (and lead
+            // into the sandbox) after its server is gone; the next claim must be able to bind it.
+            this.forwardedPorts?.releasePreviewPort(record.port, record.ownerLogin);
+        }
         const tunnelOwner = record.port !== undefined ? this.tunnelOwnerFor(record.port, record.ownerLogin) : undefined;
         if (tunnelOwner !== undefined && record.port !== undefined && this.upstreamTunnel) {
             // The recorded pid and the port's listeners live in the tenant runtime, not in this

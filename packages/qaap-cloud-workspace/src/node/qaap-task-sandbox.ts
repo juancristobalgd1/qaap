@@ -146,8 +146,13 @@ export interface QaapTaskSandbox {
     readonly exec?: { readonly host: string; readonly port: number; readonly token: string };
 }
 
+/** Why a forwarder exists: an expected preview port, the terminal port watcher, or a direct call. */
+type SandboxForwardUse = 'preview' | 'watch' | 'manual';
+
 interface SandboxForward {
     readonly server: net.Server;
+    /** Every reason this forwarder is open; it closes on a preview release only when none is left. */
+    readonly uses: Set<SandboxForwardUse>;
     /** Port inside the sandbox; retargeted when the app ignores the preview port it was given. */
     containerPort: number;
 }
@@ -507,7 +512,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             return;
         }
         entry.expectedPorts.set(port, new Set(entry.lastPorts ?? []));
-        this.forwardPort(sandbox, port, port).catch(error =>
+        this.forwardPort(sandbox, port, port, 'preview').catch(error =>
             console.warn(`[qaap-task-sandbox] preview forward ${port} → ${sandbox.name} failed: ${(error as Error).message}`));
         this.ensurePortWatcher(entry);
     }
@@ -521,7 +526,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
      * (doc/qaap-task-sandbox.md). Resolves to the host port. An existing forwarder on `hostPort`
      * is retargeted to `containerPort`.
      */
-    async forwardPort(sandbox: QaapTaskSandbox, containerPort: number, hostPort = 0): Promise<number> {
+    async forwardPort(sandbox: QaapTaskSandbox, containerPort: number, hostPort = 0, use: SandboxForwardUse = 'manual'): Promise<number> {
         const entry = this.entries.get(sandbox.root);
         if (!entry) {
             throw new Error(`Sandbox ${sandbox.name} is not running.`);
@@ -530,16 +535,22 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             const existing = entry.forwards.get(hostPort);
             if (existing) {
                 existing.containerPort = containerPort;
+                existing.uses.add(use);
                 return hostPort;
             }
         } else {
             for (const [port, candidate] of entry.forwards) {
                 if (candidate.containerPort === containerPort) {
+                    candidate.uses.add(use);
                     return port;
                 }
             }
         }
-        const forward: SandboxForward = { server: net.createServer(socket => this.bridge(sandbox, forward.containerPort, socket)), containerPort };
+        const forward: SandboxForward = {
+            server: net.createServer(socket => this.bridge(sandbox, forward.containerPort, socket)),
+            containerPort,
+            uses: new Set([use]),
+        };
         await new Promise<void>((resolve, reject) => {
             forward.server.once('error', reject);
             forward.server.listen(hostPort, '127.0.0.1', () => resolve());
@@ -569,6 +580,35 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             return this.forwardOwner(entry);
         }
         return undefined;
+    }
+
+    /**
+     * {@link QaapDevPreviewForwardedPorts}: the preview of `owner` on host `port` was terminated.
+     * Only a forwarder opened for an expected preview port of a sandbox serving `owner` is touched:
+     * the port stops being expected, and the forwarder closes unless the terminal port watcher or
+     * a direct forward also uses it. Other owners' and unknown-owner sandboxes are never touched.
+     */
+    releasePreviewPort(port: number, owner: string): void {
+        const login = normalizeQaapForwardedPortOwner(owner);
+        for (const entry of this.entries.values()) {
+            const forward = entry.forwards.get(port);
+            if (!forward && !entry.expectedPorts.has(port)) {
+                continue;
+            }
+            if (!login || this.forwardOwner(entry) !== login || (forward && !forward.uses.has('preview'))) {
+                return;
+            }
+            entry.expectedPorts.delete(port);
+            if (!forward) {
+                return;
+            }
+            forward.uses.delete('preview');
+            if (forward.uses.size === 0) {
+                entry.forwards.delete(port);
+                forward.server.close();
+            }
+            return;
+        }
     }
 
     /**
@@ -703,7 +743,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             const candidate = ports.find(port => !baseline.has(port) && !claimed.has(port) && !entry.expectedPorts.has(port));
             if (candidate !== undefined) {
                 claimed.add(candidate);
-                await this.forwardPort(sandbox, candidate, expected);
+                await this.forwardPort(sandbox, candidate, expected, 'preview');
                 console.info(`[qaap-task-sandbox] preview port ${expected} → ${sandbox.name}:${candidate} (the app ignores PORT)`);
             }
         }
@@ -714,7 +754,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             if (claimed.has(port) || entry.forwards.has(port) || entry.unavailablePorts.has(port) || this.hostPortForEntry(entry, port) !== undefined) {
                 continue;
             }
-            await this.forwardPort(sandbox, port, port).catch(() => entry.unavailablePorts.add(port));
+            await this.forwardPort(sandbox, port, port, 'watch').catch(() => entry.unavailablePorts.add(port));
         }
     }
 

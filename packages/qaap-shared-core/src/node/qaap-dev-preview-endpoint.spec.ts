@@ -766,6 +766,7 @@ describe('QaapDevPreviewEndpoint', () => {
             let forwardedPort: number;
             let forwardOwner: string | undefined;
             const askedRoots: Array<string | undefined> = [];
+            const released: Array<[number, string]> = [];
 
             beforeEach(async () => {
                 forwarder = net.createServer();
@@ -773,6 +774,7 @@ describe('QaapDevPreviewEndpoint', () => {
                 forwardedPort = (forwarder.address() as net.AddressInfo).port;
                 forwardOwner = 'Alice';
                 askedRoots.length = 0;
+                released.length = 0;
             });
             afterEach(async () => {
                 await new Promise<void>(resolve => forwarder.close(() => resolve()));
@@ -784,6 +786,7 @@ describe('QaapDevPreviewEndpoint', () => {
                         askedRoots.push(root);
                         return port === forwardedPort && root?.startsWith(sandboxRoot) ? forwardOwner : undefined;
                     },
+                    releasePreviewPort: (port: number, owner: string) => { released.push([port, owner]); },
                 };
                 ep.realBindProbe = true;
                 return ep;
@@ -799,6 +802,14 @@ describe('QaapDevPreviewEndpoint', () => {
                 expect(await ep.isPortBindable(forwardedPort, undefined, sandboxRoot)).to.equal(false);
                 forwardOwner = undefined;
                 expect(await ep.isPortBindable(forwardedPort, 'alice', sandboxRoot)).to.equal(false);
+            });
+
+            it('releases the forwarder of a terminated preview of a known owner', () => {
+                const ep = withForwarder(new ClaimTestEndpoint());
+                ep.terminatePreviewProcess({ port: forwardedPort, ownerLogin: 'alice' });
+                ep.terminatePreviewProcess({ port: forwardedPort });
+                ep.terminatePreviewProcess({ ownerLogin: 'alice' });
+                expect(released).to.deep.equal([[forwardedPort, 'alice']]);
             });
 
             it('stays occupied when nothing forwards ports here', async () => {
