@@ -1593,6 +1593,93 @@ describe('QaapDevPreviewEndpoint', () => {
             expect((reclaimRes.record.body as { previewId: string }).previewId).to.equal(first.previewId);
             expect(registry.records()).to.have.length(1);
         });
+
+        describe('pid re-claim of a reservation inside its start grace', () => {
+            /** Never signals anything: the claim paths under test call terminatePreviewProcess. */
+            class PidReclaimEndpoint extends ClaimTestEndpoint {
+                readonly terminated: number[] = [];
+                override terminatePreviewProcess(record: { readonly port?: number }): void {
+                    this.terminated.push(record.port ?? -1);
+                }
+            }
+            const root = 'file:///workspace/alice/sandboxed-site';
+            const identity = { workspaceId: root, projectId: root, processId: 'process-terminal' };
+            const PORT = 47311;
+
+            const reserve = async (): Promise<{ ep: PidReclaimEndpoint; registry: QaapDevPreviewPortRegistry; first: { previewId: string; previewUrl: string; port: number } }> => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new PidReclaimEndpoint();
+                ep.setClaimFakes('alice', registry);
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, identity, root), res);
+                expect(res.record.code).to.equal(200);
+                // The sandbox forwarder now holds the port on the backend: it is not bindable.
+                ep.boundPorts.add(PORT);
+                return { ep, registry, first: res.record.body as { previewId: string; previewUrl: string; port: number } };
+            };
+
+            it('keeps port, label and token when the terminal reports its pid before the server answers', async () => {
+                const { ep, registry, first } = await reserve();
+                const token = registry.getForOwner(first.previewId, 'alice')!.accessToken;
+
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), res);
+
+                expect(res.record.code).to.equal(200);
+                expect(res.record.body).to.deep.equal(first);
+                const record = registry.getForOwner(first.previewId, 'alice')!;
+                expect(record.port).to.equal(PORT);
+                expect(record.accessToken).to.equal(token);
+                expect(record.osProcessId).to.equal(process.pid);
+                expect(registry.records()).to.have.length(1);
+                expect(ep.terminated).to.deep.equal([]);
+            });
+
+            it('still terminates and reallocates outside the start grace', async () => {
+                const { ep, registry, first } = await reserve();
+                const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const stored = previews.get(first.previewId)!;
+                previews.set(first.previewId, { ...stored, claimedAt: Date.now() - 6 * 60_000 });
+
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), res);
+
+                expect(res.record.code).to.equal(200);
+                expect(ep.terminated).to.deep.equal([PORT]);
+                expect((res.record.body as { port: number }).port).to.equal(PORT + 1);
+            });
+
+            it('still hands the identity over when the recorded root differs', async () => {
+                const { ep, registry, first } = await reserve();
+                const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const stored = previews.get(first.previewId)!;
+                previews.set(first.previewId, { ...stored, root: '/legacy/non-canonical/sandboxed-site' });
+
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), res);
+
+                expect(res.record.code).to.equal(200);
+                expect(ep.terminated).to.deep.equal([PORT]);
+                expect(registry.getForOwner(first.previewId, 'alice')?.root).to.equal(stored.root);
+            });
+
+            it('does not keep the reservation for another port or a different recorded pid', async () => {
+                const { ep, first } = await reserve();
+                const otherPort = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT + 7, { ...identity, osProcessId: process.pid }, root), otherPort);
+                expect(ep.terminated).to.deep.equal([PORT]);
+
+                const second = await reserve();
+                const previews = (second.registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const stored = previews.get(second.first.previewId)!;
+                previews.set(second.first.previewId, { ...stored, osProcessId: process.ppid });
+                const otherPid = makeRes();
+                await second.ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), otherPid);
+                expect(second.ep.terminated).to.deep.equal([PORT]);
+                expect(first.port).to.equal(PORT);
+            });
+        });
     });
 
     describe('probe ownership (SEC-8)', () => {
