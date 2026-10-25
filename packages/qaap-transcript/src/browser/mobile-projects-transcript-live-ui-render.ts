@@ -8,6 +8,7 @@ import {
     type QaapAgentMessageDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { applyAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
+import { resolveQaapTurnStopPreviewRequestAction } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     advanceTranscriptSemanticProgressClock,
     resolveTranscriptStreamingAgentSegments,
@@ -76,7 +77,35 @@ export function restoreOpenTranscriptSnapshotExtracted(ctx: MobileProjectsTransc
         ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
 }
 
+/**
+ * Stop of the open turn: a preview request that only waits on the agent is cleared at once, so the
+ * composer chip returns to "Run app" without waiting for an agent reply. A real Qaap bootstrap keeps
+ * running (its chip stays cancelable). A cleared request is latched as user-stopped so the settle
+ * relaunch does not start it again; the next submitted message lifts the latch.
+ */
+function applyTurnStopPreviewRequestExtracted(ctx: MobileProjectsTranscriptLiveUiContext, summary: QaapAgentConversationSummaryDTO): void {
+        const isOpen = ctx.host.transcriptOpenSummary?.id === summary.id || ctx.host.transcriptLastConv?.id === summary.id;
+        if (!isOpen) {
+            return;
+        }
+        const action = resolveQaapTurnStopPreviewRequestAction({
+            requestPending: ctx.host.transcriptPreviewRequestPending,
+            requestRunning: ctx.host.transcriptPreviewRequestRunning,
+            bootstrapPhase: ctx.host.projectBootstrap?.phase,
+            previewUrl: ctx.host.transcriptOpenProject?.previewUrl,
+        });
+        if (action !== 'clear') {
+            return;
+        }
+        ctx.host.transcriptPreviewRequestPending = false;
+        ctx.host.transcriptPreviewRequestRunning = false;
+        ctx.host.transcriptPreviewSuppressedByUser = true;
+        ctx.host.transcriptStickyComposerUi.refreshComposerActivityStack();
+        ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+}
+
 export function applyOptimisticConversationCancelExtracted(ctx: MobileProjectsTranscriptLiveUiContext, summary: QaapAgentConversationSummaryDTO): void {
+        applyTurnStopPreviewRequestExtracted(ctx, summary);
         const conv = ctx.host.transcriptLastConv;
         if (!conv || conv.id !== summary.id) {
             return;

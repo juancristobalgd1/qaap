@@ -389,6 +389,43 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(button?.querySelector('.qaap-border-beam-bloom')).to.not.equal(null);
         });
 
+        it('keeps the starting chip clickable and stops the start when a stop handler is given', () => {
+            const actions: string[] = [];
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 10, removed: 1 },
+                onReview: () => undefined,
+                onRunApp: () => undefined,
+                previewStarting: true,
+                onStopPreview: () => { actions.push('stop'); },
+            });
+            document.body.append(host!);
+
+            const button = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action');
+            expect(button?.textContent).to.equal('Starting preview…');
+            expect(button?.classList.contains('theia-mod-preview-cancelable')).to.equal(true);
+            expect(button?.disabled).to.equal(false);
+            expect(button?.getAttribute('aria-busy')).to.equal('true');
+            expect(button?.getAttribute('aria-label')).to.equal('Starting preview… Tap to stop');
+            button?.click();
+            expect(actions).to.deep.equal(['stop']);
+        });
+
+        it('returns to Run app as soon as the pending start is cleared, without a stop handler left behind', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 10, removed: 1 },
+                onReview: () => undefined,
+                onRunApp: () => undefined,
+                previewStarting: false,
+                onStopPreview: () => undefined,
+            });
+            document.body.append(host!);
+
+            const button = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action');
+            expect(button?.textContent).to.equal('Run app');
+            expect(button?.disabled).to.equal(false);
+            expect(button?.classList.contains('theia-mod-preview-cancelable')).to.equal(false);
+        });
+
         it('hides preview and run actions when the composer has no file activity', () => {
             const host = renderStickyComposerChangesPill({
                 onRunApp: () => undefined,
