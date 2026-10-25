@@ -9,7 +9,7 @@ import * as path from 'node:path';
 import type { QaapAgentConversation, QaapAgentMessage } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
-import { agentCliLogBeforePostAgentPhases } from './qaap-agent-conversation-store-helpers';
+import { agentVisibleLog } from './qaap-agent-conversation-store-helpers';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
@@ -146,10 +146,26 @@ describe('QaapAgentConversationStore completed-turn auth failure', () => {
         expect(reason).to.match(/needs you to sign in/i);
     });
 
-    it('agentCliLogBeforePostAgentPhases keeps the full log when no post-agent phase header exists', () => {
+    it('agentVisibleLog keeps the full log when no post-agent phase header exists', () => {
         const log = 'plain agent reply\nwith two lines';
-        expect(agentCliLogBeforePostAgentPhases(log)).to.equal(log);
-        expect(agentCliLogBeforePostAgentPhases('reply\n[qaap] Verifying: npm test\nfail')).to.equal('reply');
+        expect(agentVisibleLog(log)).to.equal(log);
+    });
+
+    it('agentVisibleLog drops reviewer and verification output but keeps a self-verification fix attempt', () => {
+        const log = [
+            'Listo, cambié Hero.tsx.',
+            '[qaap] Verifying: npm run lint',
+            '  12:3  error  Unexpected any',
+            '[qaap] Verification failed. Starting codex fix attempt 1/2.',
+            'Corregí el tipo.',
+            '[qaap] High-risk change — starting independent codex review.',
+            'I\'ll review this change adversarially.',
+        ].join('\n');
+        expect(agentVisibleLog(log)).to.equal([
+            'Listo, cambié Hero.tsx.',
+            '[qaap] Verification failed. Starting codex fix attempt 1/2.',
+            'Corregí el tipo.',
+        ].join('\n'));
     });
 
     it('resolveCompletedTurnAuthFailureReason ignores a successful turn that merely describes auth code (no structured error)', () => {
@@ -260,6 +276,68 @@ describe('QaapAgentConversationStore completed-turn auth failure', () => {
         const agent = settled?.messages.find(message => message.id === 'agent-1');
         expect(agent?.error).to.match(/sign in/i);
         expect(agent?.content).to.match(/Failed to authenticate|OAuth session/i);
+    });
+
+    it('applyTaskOutcome keeps the independent reviewer text out of the settled agent reply', async () => {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+
+        const userMessage: QaapAgentMessage = {
+            id: 'user-r',
+            role: 'user',
+            content: 'Levanta la app',
+            createdAt: 1,
+            taskId: 'task-review',
+            turnAgentId: 'opencode',
+        };
+        const agentMessage: QaapAgentMessage = {
+            id: 'agent-r',
+            role: 'agent',
+            content: '',
+            createdAt: 2,
+            runUserMessageId: 'user-r',
+            runActive: true,
+        };
+        store.seed({
+            id: 'conv-review',
+            cwd: '/tmp/repo',
+            agentId: 'opencode',
+            title: 'Review',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [userMessage, agentMessage],
+        } as QaapAgentConversation);
+        (store as unknown as {
+            taskToConversation: Map<string, { conversationId: string; userMessageId: string; turnAgentId: string; agentMessageId?: string }>;
+        }).taskToConversation.set('task-review', {
+            conversationId: 'conv-review',
+            userMessageId: 'user-r',
+            turnAgentId: 'opencode',
+            agentMessageId: 'agent-r',
+        });
+        runner.logByTaskId.set('task-review', [
+            'Listo, la app está en marcha.',
+            '[qaap] Verifying: npm run lint',
+            '  12:3  error  Unexpected any',
+            '[qaap] High-risk change — starting independent codex review.',
+            'I\'ll review this change adversarially.',
+        ].join('\n'));
+
+        await store.settleRun('task-review', {
+            id: 'task-review',
+            state: 'completed',
+            exitCode: 0,
+        } as unknown as QaapAgentTask);
+
+        const settled = store.getConversation('conv-review');
+        expect(settled?.status).to.not.equal('failed');
+        const agent = settled?.messages.find(message => message.id === 'agent-r');
+        expect(agent?.error).to.equal(undefined);
+        expect(agent?.content).to.contain('Listo, la app');
+        expect(agent?.content).to.not.contain('adversarially');
+        expect(agent?.content).to.not.contain('[qaap]');
     });
 
     it('applyTaskOutcome marks completed quota failures as failed with Quota dialog copy', async () => {

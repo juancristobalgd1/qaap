@@ -229,15 +229,36 @@ export function appendAgentReply(
  * CLI that is not signed in) must never decide whether the delivered turn failed. Returns the log up to
  * the first post-agent phase header; the full log when no such header exists.
  */
-const POST_AGENT_PHASE_LOG_HEADER = /(?:^|\n)\[qaap\] (?:Verifying:|Goal loop verifying:|High-risk change|Skipping reviewer |Skipping self-verification)/;
+const POST_AGENT_PHASE_LOG_HEADER = /^\[qaap\] (?:Verifying:|Goal loop verifying:|High-risk change|Skipping reviewer |Skipping self-verification)/;
+/** A self-verification fix attempt is the agent speaking again: its output is the reply, not a phase. */
+const AGENT_OUTPUT_RESUMES_LOG_HEADER = /^\[qaap\] (?:Verification failed\. Starting |Starting attempt )/;
 
-export function agentCliLogBeforePostAgentPhases(log: string): string {
-    const header = POST_AGENT_PHASE_LOG_HEADER.exec(log);
-    return header ? log.slice(0, header.index) : log;
+/**
+ * The agent's own output of a settled turn. Post-agent phases (the verification command, the
+ * independent reviewer, skipped-reviewer notes) append their output to the same task log, and the
+ * reviewer's plain text is not wrapped in any marker the display filter removes. Lines between a
+ * phase header and the next agent-output header are dropped; the lines stay in the task log itself.
+ */
+export function agentVisibleLog(log: string): string {
+    const kept: string[] = [];
+    let inPostAgentPhase = false;
+    for (const line of log.split('\n')) {
+        if (POST_AGENT_PHASE_LOG_HEADER.test(line)) {
+            inPostAgentPhase = true;
+            continue;
+        }
+        if (AGENT_OUTPUT_RESUMES_LOG_HEADER.test(line)) {
+            inPostAgentPhase = false;
+        }
+        if (!inPostAgentPhase) {
+            kept.push(line);
+        }
+    }
+    return kept.join('\n');
 }
 
 export function resolveCompletedTurnAuthFailureReason(log: string | undefined, agentId?: string): string | undefined {
-    const trimmed = agentCliLogBeforePostAgentPhases(log ?? '').trim();
+    const trimmed = agentVisibleLog(log ?? '').trim();
     if (!trimmed) {
         return undefined;
     }

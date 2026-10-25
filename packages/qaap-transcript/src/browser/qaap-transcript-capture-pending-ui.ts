@@ -28,10 +28,29 @@ type CaptureChipState = 'pending' | 'unavailable';
  * settled turn without an error (see `conversationNeedsVisualVerificationEvidence`), and a later
  * agent turn supersedes it. A still-streaming or unknown message stays open.
  */
+/**
+ * How long a settled turn may wait for its visual evidence. The backend captures right after the turn
+ * settles, so a capture that has not landed this long after the reply is not coming; the chip must not
+ * keep a skeleton on screen forever.
+ */
+export const TRANSCRIPT_CAPTURE_EXPIRY_MS = 90_000;
+/** Dataset key on the message row that carries the capture deadline (epoch ms). */
+const TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA = 'qaapCaptureExpiresAt';
+const TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA = 'qaapCaptureExpiryTimer';
+
+/** Epoch ms after which a settled message's capture is given up, or `undefined` while it is still running. */
+export function transcriptCaptureExpiresAt(
+    message: Partial<Pick<QaapAgentMessageDTO, 'runFinishedAt' | 'createdAt'>> | undefined,
+): number | undefined {
+    const settledAt = message?.runFinishedAt ?? message?.createdAt;
+    return settledAt === undefined ? undefined : settledAt + TRANSCRIPT_CAPTURE_EXPIRY_MS;
+}
+
 export function isTranscriptCaptureClosed(
     conv: Pick<QaapAgentConversationDTO, 'messages'> | undefined,
-    message: Pick<QaapAgentMessageDTO, 'id' | 'error'> | undefined,
+    message: Pick<QaapAgentMessageDTO, 'id' | 'error'> & Partial<Pick<QaapAgentMessageDTO, 'runFinishedAt' | 'createdAt'>> | undefined,
     streaming: boolean,
+    now: number = Date.now(),
 ): boolean {
     if (streaming || !message) {
         return false;
@@ -39,12 +58,53 @@ export function isTranscriptCaptureClosed(
     if (message.error?.trim()) {
         return true;
     }
+    const expiresAt = transcriptCaptureExpiresAt(message);
+    if (expiresAt !== undefined && now >= expiresAt) {
+        return true;
+    }
     const lastAgent = conv ? [...conv.messages].reverse().find(candidate => candidate.role === 'agent') : undefined;
     return !!lastAgent && lastAgent.id !== message.id;
 }
 
-export function syncTranscriptCaptureClosedRow(row: HTMLElement, closed: boolean): void {
+/**
+ * Marks a message row closed (no capture can land any more). With `expiresAt`, the row also remembers
+ * its deadline so an open pending chip flips to "not available" when the deadline passes.
+ */
+export function syncTranscriptCaptureClosedRow(row: HTMLElement, closed: boolean, expiresAt?: number): void {
     row.toggleAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR, closed);
+    if (expiresAt === undefined) {
+        delete row.dataset[TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA];
+    } else {
+        row.dataset[TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA] = String(expiresAt);
+    }
+}
+
+/**
+ * Whether the row's capture is closed by its deadline. Also arms a single timer that re-runs the
+ * directive enhancement at the deadline, so a chip that is on screen flips without a new render.
+ */
+function resolveRowCaptureExpiry(host: HTMLElement, row: HTMLElement | null): boolean {
+    if (!row) {
+        return false;
+    }
+    const expiresAt = Number(row.dataset[TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA]);
+    if (!Number.isFinite(expiresAt)) {
+        return false;
+    }
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+        return true;
+    }
+    const view = host.ownerDocument?.defaultView;
+    if (view && !row.dataset[TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA]) {
+        row.dataset[TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA] = '1';
+        view.setTimeout(() => {
+            delete row.dataset[TRANSCRIPT_CAPTURE_EXPIRY_TIMER_DATA];
+            syncTranscriptCaptureClosedRow(row, true, expiresAt);
+            enhanceTranscriptCaptureDirectives(host);
+        }, remaining + 25);
+    }
+    return false;
 }
 
 function localizeCaptureChipLabel(mode: 'image' | 'video', state: CaptureChipState): string {
@@ -269,7 +329,8 @@ export function enhanceTranscriptCaptureDirectives(host: HTMLElement): number {
 
     resolveCaptureDirectiveAnchor(host);
 
-    const state: CaptureChipState = row?.hasAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR) ? 'unavailable' : 'pending';
+    const closed = !!row?.hasAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR) || resolveRowCaptureExpiry(host, row);
+    const state: CaptureChipState = closed ? 'unavailable' : 'pending';
     const existingChip = host.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)
         ?? host.querySelector<HTMLElement>(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`);
     if (existingChip) {
