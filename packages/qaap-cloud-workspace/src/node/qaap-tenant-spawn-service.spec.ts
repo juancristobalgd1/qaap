@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
@@ -112,9 +113,13 @@ class TenantBackendAclTestService extends QaapTenantSpawnService {
 
 /** Fails the `find` sweeps with a concrete cause, as a live harness that deletes files mid-sweep does. */
 class FailingStorageSweepService extends TenantBackendAclTestService {
+    /** When set, only `find` sweeps rooted at this directory fail; the others succeed. */
+    failingSweepDir?: string;
+
     protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
         this.commands.push({ file, args });
-        return file === 'find'
+        const failed = file === 'find' && (this.failingSweepDir === undefined || args[0] === this.failingSweepDir);
+        return failed
             ? { ok: false, reason: 'find exit status 1: setfacl: /home/theia/.qaap/.qaap-agent-storage/cache/x.db: No such file or directory' }
             : { ok: true };
     }
@@ -237,9 +242,10 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         service.grant('/home/theia/.qaap', root, 1001);
 
         const finds = service.commands.filter(command => command.file === 'find');
-        // Existing root-owned dirs and files (opencode.db, opencode.log) under cache and data.
-        expect(finds).to.have.length(4);
-        for (const dir of [`${root}/cache`, `${root}/data`]) {
+        // Existing root-owned dirs and files (opencode.db, opencode.log) under cache and data, and the
+        // root-owned CLI state (.codex, .claude, ...) under home that the sign-in links point to.
+        expect(finds).to.have.length(6);
+        for (const dir of [`${root}/cache`, `${root}/data`, QaapTenantAgentStorageEnv.homeDir(root)]) {
             const forDir = finds.filter(command => command.args[0] === dir);
             expect(forDir.map(command => command.args[command.args.indexOf('-type') + 1])).to.deep.equal(['d', 'f']);
             expect(forDir[0]?.args).to.include.members(['-uid', '0', 'u:1001:rwx,d:u:1001:rwx']);
@@ -247,7 +253,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         }
     });
 
-    it('attempts the agent storage grant once per root and logs its concrete cause once', () => {
+    it('attempts the agent storage grant once per root and logs its concrete cause once per directory', () => {
         const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-storage-'));
         process.env.QAAP_AGENT_UID = '1001';
         process.env.QAAP_TENANT_CONFIG_ROOT = storageRoot;
@@ -259,9 +265,36 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             for (let attempt = 0; attempt < 5; attempt++) {
                 service.prepare(storageRoot);
             }
-            expect(service.commands.filter(command => command.file === 'find')).to.have.length(1);
-            expect(warnings).to.have.length(1);
+            // One failing dirs sweep per cache, data and home; the files sweep is skipped after a failure.
+            expect(service.commands.filter(command => command.file === 'find')).to.have.length(3);
+            expect(warnings).to.have.length(3);
             expect(warnings[0]).to.include('may not reach existing harness state').and.to.include('No such file or directory');
+        } finally {
+            console.warn = savedWarn;
+            fs.rmSync(storageRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps sweeping the home directory when the cache sweep fails', () => {
+        const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-storage-'));
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_TENANT_CONFIG_ROOT = storageRoot;
+        const savedWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+        try {
+            const service = new FailingStorageSweepService();
+            service.failingSweepDir = QaapTenantAgentStorageEnv.cacheDir(storageRoot);
+            service.prepare(storageRoot);
+            const finds = service.commands.filter(command => command.file === 'find');
+            const homeDir = QaapTenantAgentStorageEnv.homeDir(storageRoot);
+            // The cache failure skips only its own file sweep; data and home are still repaired.
+            expect(finds.filter(command => command.args[0] === homeDir).map(command => command.args[command.args.indexOf('-type') + 1]))
+                .to.deep.equal(['d', 'f']);
+            expect(finds.filter(command => command.args[0] === QaapTenantAgentStorageEnv.dataDir(storageRoot))).to.have.length(2);
+            expect(warnings).to.have.length(1);
+            expect(warnings[0]).to.include(QaapTenantAgentStorageEnv.cacheDir(storageRoot));
+            expect(service.isPrepared(storageRoot)).to.equal(true);
         } finally {
             console.warn = savedWarn;
             fs.rmSync(storageRoot, { recursive: true, force: true });
