@@ -183,8 +183,10 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   `Smoke Test for Browser Example Production Build on ubuntu-22.04 with Node.js 24.x`.
 - **Rule:** a workflow that produces a required check has **no `paths-ignore`/`paths` on
   `pull_request`** (`push` may keep it). A required check filtered out by paths never reports,
-  so docs-only PRs stay on "Expected" forever. Never skip a required job with a job-level `if:`
-  either: GitHub treats a skipped required check as passing, without anything having run.
+  so docs-only PRs stay on "Expected" forever. Never let a required check END SKIPPED. A skipped required check blocks the PR under rulesets
+  (`mergeStateStatus: BLOCKED` while the rollup says SUCCESS; seen on PR #368), even though nothing
+  failed. So a required job has no job-level `if:`: its steps are guarded with `if:` instead, and
+  the job still finishes SUCCESS.
 - **Rule:** the `Build and Test` matrix is computed inline (`fromJSON(...)` in
   `strategy.matrix.os` of `ci-cd.yml`): PRs run only `ubuntu-22.04`; master pushes,
   `workflow_dispatch` and PRs labeled **`ci:full`** also run `windows-2022` and `macos-15`
@@ -203,11 +205,15 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   cancelled. synchronize, reopened and labeled=ci:full keep the PR group with cancel-in-progress.
   The `gate` job (its own `permissions`: contents/pull-requests/issues read) reads the PR labels
   live through the API for `opened`; a run is redundant when ci:full is present, or when it is
-  `labeled` with another label. Redundant runs skip every job (`needs: gate`, `if:`).
+  `labeled` with another label. Redundant runs do not skip `lint` and `build`: they
+  keep `needs: gate`, guard every step with `if: needs.gate.outputs.redundant != 'true'`, print a
+  "Redundant run" line and finish SUCCESS without work, and the build matrix is ubuntu-only so no
+  windows/macOS runner is taken (the matrix reads `needs` in `jobs.<id>.strategy`, which GitHub allows).
   Race: if the gate reads before `gh pr create` adds ci:full, the `opened` run completes too. That is a
   duplicate, never a cancellation. If the API fails the gate answers redundant=false with a warning.
-  Skipped jobs must count as satisfied for required checks; that is the exception to the "no `if:` on
-  required checks" rule above.
+  The earlier design let redundant runs SKIP `lint` and `build`, which made the required checks
+  SKIPPED and blocked PR #368 under the ruleset. Do not reintroduce it: a skipped required check is not
+  a pass under rulesets.
   `qaap-guards` keeps its own group; `qaap-vps-deploy` keeps its single non-cancelling group.
 
 ### 12. Installs retry the whole `npm ci`
