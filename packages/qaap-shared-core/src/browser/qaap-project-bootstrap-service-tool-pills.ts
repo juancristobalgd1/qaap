@@ -331,6 +331,10 @@ export function buildStateChangeExtracted(ctx: QaapProjectBootstrapServiceContex
 export function setPhaseExtracted(ctx: QaapProjectBootstrapServiceContext, phase: QaapBootstrapPhase): void {
         const previousPhase = ctx._phase;
         ctx._phase = phase;
+        if (phase !== 'starting') {
+            // The in-flight start identity only means something while that start is still booting.
+            ctx.devRunPlanKey = undefined;
+        }
         if (phase === 'running') {
             ctx._previewReadiness = 'transport-ready';
             ctx._previewWaitTimedOut = false;

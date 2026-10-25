@@ -409,6 +409,7 @@ export async function switchMonorepoAppExtracted(ctx: QaapProjectBootstrapServic
 export async function stopManagedDevServerForAppSwitchExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
         logBootstrapReleaseExtracted(ctx, 'stopManagedDevServerForAppSwitch');
         ctx.devRunGeneration++;
+        ctx.devRunPlanKey = undefined;
         ctx.releaseActivePreview('stopManagedDevServerForAppSwitch');
         // The replacement is a different app process, not a reattachment. Give it a new process
         // identity so a delayed probe/claim from the stopped app cannot be adopted as the new one.

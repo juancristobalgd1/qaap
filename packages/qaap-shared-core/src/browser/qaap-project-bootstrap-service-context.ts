@@ -57,6 +57,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'detector'
     | 'devOutputTail'
     | 'devPortOverride'
+    | 'devRunPlanKey'
     | 'devPreviewFallbackTimers'
     | 'devPreviewHealthFailures'
     | 'devPreviewHealthTimer'

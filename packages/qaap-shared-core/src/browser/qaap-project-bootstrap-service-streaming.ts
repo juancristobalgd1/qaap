@@ -115,6 +115,11 @@ export async function buildAndStartPreviewExtracted(ctx: QaapProjectBootstrapSer
         await runDevServerExtracted(ctx, options, command);
 }
 
+/** Identity of a dev start: the same app launched with the same command on the same folder. */
+function devRunPlanKeyOf(plan: { command: string; cwd: URI }): string {
+    return `${plan.cwd.toString()}\n${plan.command}`;
+}
+
 export async function runDevServerExtracted(ctx: QaapProjectBootstrapServiceContext, options?: { conversationId?: string },
         commandOverride?: string): Promise<void> {
         if (options?.conversationId !== undefined) {
@@ -129,6 +134,19 @@ export async function runDevServerExtracted(ctx: QaapProjectBootstrapServiceCont
         const busyForActiveConversation = (ctx._phase === 'starting' || ctx._phase === 'running')
             && ctx.devTerminalConversationId === ctx.activePreviewConversationId;
         if (busyForActiveConversation) {
+            return;
+        }
+        // A start of this very app (same cwd and command, so same root) is still booting, or the
+        // install of the active root is running: do not begin another run, which would release the
+        // claim and kill the process that is coming up. The caller waits for the run in flight.
+        const startInFlight = ctx._phase === 'installing'
+            || (ctx._phase === 'starting' && ctx.devRunPlanKey === devRunPlanKeyOf(plan));
+        if (startInFlight) {
+            console.info('[qaap-bootstrap] start already in flight, reusing it', {
+                phase: ctx._phase,
+                root: descriptor.rootUri.toString(),
+                conversationId: ctx.activePreviewConversationId,
+            });
             return;
         }
         ctx.devPortOverride = undefined;
@@ -169,6 +187,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
         ctx.activeDevPortHint = undefined;
         const runId = ++ctx.devRunGeneration;
         ctx.devRunOomKillBaseline = ctx.readOomKillCount();
+        ctx.devRunPlanKey = devRunPlanKeyOf(plan);
         ctx.setPhase('starting');
 
         let spawnPlan = ctx.buildDevSpawnPlan(plan);

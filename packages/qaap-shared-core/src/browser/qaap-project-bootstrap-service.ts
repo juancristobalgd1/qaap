@@ -376,6 +376,12 @@ export class QaapProjectBootstrapService {
      */
     public devTerminalConversationId: string | undefined;
     /**
+     * Identity (cwd + command) of the dev start currently booting, set while the phase is `starting`.
+     * A second request for the same start reuses it instead of releasing the live preview.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devRunPlanKey: string | undefined;
+    /**
      * Project selected in Work Hub; hosted `/workspace` is never a valid substitute.
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */

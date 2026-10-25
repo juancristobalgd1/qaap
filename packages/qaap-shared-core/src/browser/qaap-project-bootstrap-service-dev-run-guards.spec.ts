@@ -919,4 +919,76 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect((state.devTerminalByConversationId as Map<string, { rootKey: string | undefined }>).get('conv-c')?.rootKey).to.equal(ROOT_A);
         });
     });
+
+    describe('runDevServer reuses a start in flight', () => {
+        const ROOT = URI.fromFilePath(PROJECT_CWD);
+        const DESCRIPTOR = { name: 'app', rootUri: ROOT, nodeModulesPresent: true, apps: [], packageManager: 'npm' };
+        const OTHER_PLAN = { ...PLAN, command: 'npm run preview' };
+        const planKey = (plan: typeof PLAN): string => `${plan.cwd.toString()}\n${plan.command}`;
+
+        let consoleInfo: sinon.SinonStub;
+        beforeEach(() => {
+            consoleInfo = sinon.stub(console, 'info');
+        });
+        afterEach(() => consoleInfo.restore());
+
+        /** Session whose `startDevServer` only counts calls; `phase` and `runKey` describe the run in flight. */
+        const makeCtx = (phase: string, runKey: string | undefined, plan = PLAN): { ctx: QaapProjectBootstrapServiceContext; starts: () => number } => {
+            let starts = 0;
+            const state = {
+                _phase: phase,
+                _descriptor: DESCRIPTOR,
+                _selectedApp: undefined,
+                devRunPlanKey: runKey,
+                devTerminalConversationId: undefined,
+                activePreviewConversationId: 'c1',
+                devPortOverride: 5000,
+                automaticPortRecoveryAttempts: 3,
+                previewAutoRetryAttempts: 2,
+                attemptedDevPorts: new Set<number>([1]),
+                portRecoveryFrom: 1,
+                resolveDevPlan: () => plan,
+                startDevServer: async () => { starts++; },
+            };
+            return { ctx: state as unknown as QaapProjectBootstrapServiceContext, starts: () => starts };
+        };
+
+        it('does not start another run while the same app is booting', async () => {
+            const { ctx, starts } = makeCtx('starting', planKey(PLAN));
+            await streaming.runDevServerExtracted(ctx);
+            expect(starts()).to.equal(0);
+        });
+
+        it('keeps the port state of the run in flight', async () => {
+            const { ctx } = makeCtx('starting', planKey(PLAN));
+            await streaming.runDevServerExtracted(ctx);
+            expect(ctx.devPortOverride).to.equal(5000);
+            expect(ctx.automaticPortRecoveryAttempts).to.equal(3);
+        });
+
+        it('does not start another run while the install of the active root is running', async () => {
+            const { ctx, starts } = makeCtx('installing', undefined);
+            await streaming.runDevServerExtracted(ctx);
+            expect(starts()).to.equal(0);
+        });
+
+        it('starts a different app while another app is booting', async () => {
+            const { ctx, starts } = makeCtx('starting', planKey(PLAN), OTHER_PLAN);
+            await streaming.runDevServerExtracted(ctx);
+            expect(starts()).to.equal(1);
+        });
+
+        it('starts after a switch cleared the in-flight start, even though the phase reads starting', async () => {
+            const { ctx, starts } = makeCtx('starting', undefined);
+            await streaming.runDevServerExtracted(ctx);
+            expect(starts()).to.equal(1);
+        });
+
+        it('does not treat a finished start as in flight', async () => {
+            const { ctx, starts } = makeCtx('running', planKey(PLAN));
+            ctx.devTerminalConversationId = 'other';
+            await streaming.runDevServerExtracted(ctx);
+            expect(starts()).to.equal(1);
+        });
+    });
 });
