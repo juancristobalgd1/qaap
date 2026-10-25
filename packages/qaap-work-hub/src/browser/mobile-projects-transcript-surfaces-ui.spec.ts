@@ -919,3 +919,46 @@ describe('MobileProjectsTranscriptSurfacesUi — unavailable preview causes', ()
         expect(snackbar.called).to.equal(false);
     });
 });
+
+describe('MobileProjectsTranscriptSurfacesUi — preview request without a start command', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        sinon.restore();
+        document.body.replaceChildren();
+    });
+
+    function buildRequestHost(bootstrapSnapshot: { descriptor?: unknown; selectedApp?: unknown }): {
+        host: MobileProjectsTranscriptSurfacesHost;
+        ui: MobileProjectsTranscriptSurfacesUi;
+    } {
+        const project = sampleProject();
+        const { host } = buildSyncHeaderPreviewHost({ activeTab: 'messages' });
+        (host as unknown as { projects: MobileProjectEntry[] }).projects = [project];
+        (host as unknown as { projectsService: unknown }).projectsService = { getProjectCwd: () => '/tmp/demo' };
+        (host as unknown as { preparedCwdByProjectId: Map<string, string> }).preparedCwdByProjectId = new Map();
+        (host as unknown as { projectBootstrap: unknown }).projectBootstrap = {
+            refreshFromProjectRoot: async () => undefined,
+            getStateSnapshot: () => bootstrapSnapshot,
+        };
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        sinon.stub(ui, 'resolveRunnableTranscriptProjectRoot').returns('/tmp/demo');
+        return { host, ui };
+    }
+
+    it('shows the no-start-command notice and releases the chip when detection finds nothing', async () => {
+        const snackbar = sinon.stub(MobileSnackbar, 'show');
+        const bootstrapModule = await import('@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap');
+        sinon.stub(bootstrapModule, 'ensureTranscriptDevPreview').resolves(undefined);
+        const { host, ui } = buildRequestHost({ descriptor: undefined, selectedApp: undefined });
+        host.transcriptPreviewRequestPending = true;
+
+        await ui.requestTranscriptPreview(sampleProject(), sampleSummary(), { allowAgentFallback: false });
+
+        expect(host.transcriptPreviewRequestRunning).to.equal(false);
+        expect(host.transcriptPreviewRequestPending).to.equal(false);
+        const notices = snackbar.getCalls().map(call => String(call.args[0]));
+        expect(notices.some(text => /No start command found/.test(text))).to.equal(true);
+    });
+});
