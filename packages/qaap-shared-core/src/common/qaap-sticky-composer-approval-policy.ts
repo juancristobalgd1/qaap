@@ -25,33 +25,34 @@ export interface QaapAgentApprovalPolicyOption {
 export const QAAP_AGENT_APPROVAL_POLICIES: readonly QaapAgentApprovalPolicyOption[] = [
     {
         id: 'request-approval',
-        label: nls.localize('qaap/mobileProjects/approvalPolicyRequest', 'Request approval'),
+        label: nls.localize('qaap/mobileProjects/approvalPolicyRequest', 'Ask before changes'),
         description: nls.localize(
             'qaap/mobileProjects/approvalPolicyRequestHint',
-            'Always ask before editing external files and running risky commands.',
+            'Ask before file changes.',
         ),
-        toolbarIconClass: 'codicon-inspect',
-        sheetIconClass: 'codicon-inspect',
+        // No `codicon-hand` in the bundled set; debug-pause is the closest "stop and wait" glyph.
+        toolbarIconClass: 'codicon-debug-pause',
+        sheetIconClass: 'codicon-debug-pause',
     },
     {
         id: 'approve-for-me',
-        label: nls.localize('qaap/mobileProjects/approvalPolicyAuto', 'Approve for me'),
+        label: nls.localize('qaap/mobileProjects/approvalPolicyAuto', 'Autonomous mode'),
         description: nls.localize(
             'qaap/mobileProjects/approvalPolicyAutoHint',
-            'Ask only for actions detected as high risk; approve routine workspace work automatically.',
+            'Ask when there\'s risk.',
         ),
-        toolbarIconClass: 'codicon-shield',
-        sheetIconClass: 'codicon-shield',
+        toolbarIconClass: 'codicon-workspace-trusted',
+        sheetIconClass: 'codicon-workspace-trusted',
     },
     {
         id: 'full-access',
         label: nls.localize('qaap/mobileProjects/approvalPolicyFull', 'Full access'),
         description: nls.localize(
             'qaap/mobileProjects/approvalPolicyFullHint',
-            'Unrestricted network and filesystem access without approval prompts.',
+            'Run with fewer confirmations.',
         ),
-        toolbarIconClass: 'codicon-zap',
-        sheetIconClass: 'codicon-zap',
+        toolbarIconClass: 'codicon-workspace-untrusted',
+        sheetIconClass: 'codicon-workspace-untrusted',
     },
 ];
 
