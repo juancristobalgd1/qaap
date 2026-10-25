@@ -261,6 +261,9 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             options.onOpenAiFeaturesSettings
                 ? () => options.onOpenAiFeaturesSettings?.(modelAgentId)
                 : undefined,
+            options.onProactiveLogin
+                ? () => options.onProactiveLogin?.(modelAgentId, options.project)
+                : undefined,
         );
         if ((pickerModels?.length ?? 0) > 0 && filteredModels.length === 0) {
             replaceAgentPickerLoading(chrome.list, ctx.createAgentPickerNoResultsHint());

@@ -10,6 +10,7 @@ import {
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { listHermesNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-hermes-model-catalog';
 import { listOpenClaudeNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-openclaude-model-catalog';
+import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
 
 /** Keep in sync with {@link SETTINGS_MODEL_CATALOG_AGENT_IDS} in qaap-agent-model-selection. */
 export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq']);
@@ -117,14 +118,10 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
         case 'gemini':
             return listStaticAntigravityModels(id);
         case 'opencode':
+            // Free models first, then the paid catalog (locked per owner by the runner's access rule).
             return [
-                nativeOption(id, 'opencode/big-pickle', 'Big Pickle'),
-                nativeOption(id, 'opencode/ling-3.0-flash-fin-free', 'Ling 3.0 Flash Fin Free'),
-                nativeOption(id, 'opencode/mimo-v2.5-free', 'MiMo V2.5 Free'),
-                nativeOption(id, 'opencode/muse-spark-1.2-contributor-free', 'Muse Spark 1.2 Contributor Free'),
-                nativeOption(id, 'opencode/muse-spark-1.3-contributor-free', 'Muse Spark 1.3 Contributor Free'),
-                nativeOption(id, 'opencode/nemotron-3-ultra-free', 'Nemotron 3 Ultra Free'),
-                nativeOption(id, 'opencode/nemotron-3.5-lightning-free', 'Nemotron 3.5 Lightning Free'),
+                ...OPENCODE_FREE_MODEL_OPTIONS.map(model => nativeOption(id, model.modelId, model.label)),
+                ...OPENCODE_PAID_MODEL_OPTIONS.map(model => nativeOption(id, model.modelId, model.label)),
             ];
         case 'grok':
             return [

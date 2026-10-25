@@ -385,6 +385,11 @@ export function createPickerSheetOptionButton(options: {
     readonly badgeWarning?: boolean;
     readonly available?: boolean;
     readonly unavailableTitle?: string;
+    /**
+     * Locked rows stay tappable when set and run this instead of {@link onSelect} (e.g. to open
+     * sign-in). Without it a locked row is disabled.
+     */
+    readonly onLockedSelect?: () => void;
     readonly menuItem?: boolean;
     readonly onSelect: () => void;
 }): HTMLButtonElement {
@@ -397,9 +402,10 @@ export function createPickerSheetOptionButton(options: {
     if (options.selected) {
         btn.classList.add('theia-mod-selected');
     }
+    const lockedSelectable = options.available === false && !!options.onLockedSelect;
     if (options.available === false) {
         btn.classList.add('theia-mod-disabled');
-        btn.disabled = true;
+        btn.disabled = !lockedSelectable;
         btn.setAttribute('aria-disabled', 'true');
         if (options.unavailableTitle) {
             btn.title = options.unavailableTitle;
@@ -441,6 +447,8 @@ export function createPickerSheetOptionButton(options: {
     btn.append(content);
     if (options.available !== false) {
         btn.addEventListener('click', options.onSelect);
+    } else if (options.onLockedSelect) {
+        btn.addEventListener('click', options.onLockedSelect);
     }
     return btn;
 }

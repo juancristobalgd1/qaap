@@ -16,6 +16,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from './qaap-builtin-agents';
 import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
+import { OPENCODE_FREE_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 
 export {
@@ -99,15 +100,7 @@ export interface QaapQaiqModelOption {
  * its user-data directory is read-only, so the picker must still have a useful catalog
  * instead of exposing the CLI diagnostic or rendering an empty submenu.
  */
-export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
-    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/big-pickle', label: 'Big Pickle' },
-    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/ling-3.0-flash-fin-free', label: 'Ling 3.0 Flash Fin Free' },
-    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/mimo-v2.5-free', label: 'MiMo V2.5 Free' },
-    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/muse-spark-1.2-contributor-free', label: 'Muse Spark 1.2 Contributor Free' },
-    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/muse-spark-1.3-contributor-free', label: 'Muse Spark 1.3 Contributor Free' },
-    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/nemotron-3-ultra-free', label: 'Nemotron 3 Ultra Free' },
-    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/nemotron-3.5-lightning-free', label: 'Nemotron 3.5 Lightning Free' },
-];
+export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = OPENCODE_FREE_MODEL_OPTIONS;
 
 /**
  * Keep Codex's native rows visible if a hosted API responds before its runner catalog is warm.
@@ -129,7 +122,14 @@ export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOpti
             if (!known) {
                 return { ...model, vendor: OPENCODE_AGENT_ID };
             }
-            return model.available === undefined ? known : { ...known, available: model.available };
+            if (model.available === undefined) {
+                return known;
+            }
+            return {
+                ...known,
+                available: model.available,
+                ...(model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
+            };
         });
     return validModels.length > 0 ? validModels : [...OPENCODE_FALLBACK_MODELS];
 }

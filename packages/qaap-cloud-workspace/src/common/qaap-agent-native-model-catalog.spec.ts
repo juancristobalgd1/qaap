@@ -54,15 +54,21 @@ describe('qaap-agent-native-model-catalog', () => {
     it('lists static fallbacks per agent', () => {
         expect(listStaticNativeAgentModels('codex').length).to.be.greaterThan(0);
         expect(listStaticNativeAgentModels('qwen').map(m => m.modelId)).to.include('qwen3-coder-plus');
-        expect(listStaticNativeAgentModels('opencode').map(m => m.modelId)).to.deep.equal([
+        const opencodeIds = listStaticNativeAgentModels('opencode').map(m => m.modelId);
+        expect(opencodeIds.slice(0, 10)).to.deep.equal([
+            'opencode/beam-free',
             'opencode/big-pickle',
-            'opencode/ling-3.0-flash-fin-free',
-            'opencode/mimo-v2.5-free',
-            'opencode/muse-spark-1.2-contributor-free',
-            'opencode/muse-spark-1.3-contributor-free',
+            'opencode/deepseek-v4.1-flash-free',
+            'opencode/flint-40b-free',
+            'opencode/glm-5.3-flash-free',
+            'opencode/mimo-v2.6-flash-free',
+            'opencode/minimax-m3.1-flash-free',
             'opencode/nemotron-3-ultra-free',
             'opencode/nemotron-3.5-lightning-free',
+            'opencode/nemotron-3.5-super-vl-free',
         ]);
+        expect(opencodeIds).to.have.length(83);
+        expect(opencodeIds).to.not.include('opencode/mimo-v2.5-free');
         expect(listStaticNativeAgentModels('openclaude').map(m => m.modelId)).to.deep.equal([
             'claude-sonnet-4-6',
             'claude-opus-4-7',

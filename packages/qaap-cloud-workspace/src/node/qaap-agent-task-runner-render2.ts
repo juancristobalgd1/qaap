@@ -18,6 +18,7 @@ import {
     type QaapAgentTaskDetail,
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
+    type QaapAgentAccessState,
 } from '../common/qaap-agent-task';
 import { rememberQaapHostedRuntime } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { QaapSecretCipher } from '@theia/qaap-persistence/lib/node/qaap-secret-cipher';
@@ -29,6 +30,7 @@ import {
     resolveQaapCodexTemplate,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isOpenCodeFreeModelId } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { listNativeAgentModels } from './qaap-agent-native-models';
@@ -652,6 +654,23 @@ export function listQaiqModelsExtracted(ctx: QaapAgentTaskRunnerContext, ownerLo
         );
 }
 
+/**
+ * OpenCode free models stay usable without a sign-in. Paid models stay visible but locked until the
+ * owner is connected; an unknown (still probing) state shows no lock.
+ */
+function applyOpenCodePaidModelAccess(model: QaapQaiqModelOption, access: QaapAgentAccessState): QaapQaiqModelOption {
+    if (isOpenCodeFreeModelId(model.modelId)) {
+        return model;
+    }
+    if (access === 'session' || access === 'hosted') {
+        return { ...model, available: true };
+    }
+    if (access === 'unknown') {
+        return model;
+    }
+    return { ...model, available: false, unavailableReason: 'not-connected' as const };
+}
+
 export function listModelsForAgentExtracted(
         ctx: QaapAgentTaskRunnerContext,
         agentId: string | undefined,
@@ -682,6 +701,9 @@ export function listModelsForAgentExtracted(
             hostedEntitled: isHostedCodexEntitled(ctx.billingStore?.peekEntitlements?.(owner)),
         });
         return models.map(model => {
+            if (normalized === 'opencode') {
+                return applyOpenCodePaidModelAccess(model, access);
+            }
             if (!isHostedCodexUsage(normalized, model.modelId)) {
                 return model;
             }
