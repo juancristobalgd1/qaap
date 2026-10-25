@@ -94,20 +94,48 @@ describe('QaapTenantPersistentHome', () => {
             expect(fs.readFileSync(path.join(persistentHome, '.gemini', 'oauth_creds.json'), 'utf8')).to.equal('tmpfs');
         });
 
-        it('continues with the remaining entries when one ACL grant fails, then reports the failure', () => {
+        it('continues with the remaining entries when one ACL grant fails, and reports it once as a warning', () => {
             sinon.stub(fs, 'chownSync').throws(accessRefused());
             sinon.stub(fs, 'lchownSync').throws(accessRefused());
+            const warn = sinon.stub(console, 'warn');
             const grant = sinon.spy((entry: string) => {
                 if (entry === path.join(persistentHome, '.codex')) {
                     throw new Error('setfacl: no space left on device');
                 }
             });
 
-            expect(() => QaapTenantPersistentHome.link(home, persistentHome, owner, grant))
-                .to.throw('Could not link 1 agent sign-in entries');
+            expect(() => QaapTenantPersistentHome.link(home, persistentHome, owner, grant)).not.to.throw();
+            expect(warn.calledOnce).to.equal(true);
+            expect(String(warn.firstCall.args[0])).to.include('could not link 1 agent sign-in entries').and.to.include('no space left on device');
             expect(fs.lstatSync(path.join(home, '.codex'), { throwIfNoEntry: false })).to.equal(undefined);
             expect(fs.readlinkSync(path.join(home, '.claude'))).to.equal(path.join(persistentHome, '.claude'));
             expect(fs.readlinkSync(path.join(home, '.gemini'))).to.equal(path.join(persistentHome, '.gemini'));
+        });
+
+        it('throws so the caller retries when HOME itself cannot be made accessible', () => {
+            sinon.stub(fs, 'chownSync').throws(accessRefused());
+            const grant = sinon.spy((entry: string) => {
+                if (entry === home) {
+                    throw new Error('setfacl: Operation not supported');
+                }
+            });
+
+            expect(() => QaapTenantPersistentHome.link(home, persistentHome, owner, grant))
+                .to.throw(/Could not prepare agent sign-in storage for .*Operation not supported/);
+        });
+
+        it('grants access to an existing root-owned HOME, not only to directories it creates', () => {
+            fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+            sinon.stub(fs, 'chownSync').throws(accessRefused());
+            sinon.stub(fs, 'lchownSync').throws(accessRefused());
+            const grant = sinon.spy();
+
+            QaapTenantPersistentHome.link(home, persistentHome, owner, grant);
+
+            expect(grant.calledWith(home, true)).to.equal(true);
+            expect(grant.calledWith(persistentHome, true)).to.equal(true);
+            // The volatile HOME is only prepared itself: its existing children are not walked.
+            expect(grant.calledWith(path.join(home, '.claude'), true)).to.equal(false);
         });
 
         it('ignores a refused lchown on the symlink itself, since access follows its target', () => {

@@ -54,7 +54,9 @@ export namespace QaapTenantPersistentHome {
 
     /**
      * Every entry is attempted even when an earlier one fails, so one refused step cannot leave the
-     * other sign-in links missing. Failures are reported together once all entries were tried.
+     * other sign-in links missing. When HOME or its persistent directory cannot be made accessible
+     * this throws, so the caller retries the whole link. Failures of single entries are only logged
+     * once, together, because the storage is still usable and the next link does not repeat them.
      */
     export function link(
         home: string,
@@ -62,24 +64,28 @@ export namespace QaapTenantPersistentHome {
         owner?: QaapTenantPersistentHomeOwner,
         grantAccess?: QaapTenantPersistentHomeAccessGrant
     ): void {
-        const failures: string[] = [];
-        const attempt = (step: () => void): void => {
+        const rootFailures: string[] = [];
+        const entryFailures: string[] = [];
+        const attempt = (failures: string[], step: () => void): void => {
             try {
                 step();
             } catch (error) {
                 failures.push(error instanceof Error ? error.message : String(error));
             }
         };
-        attempt(() => ensureDirectory(home, owner, grantAccess));
-        attempt(() => ensureDirectory(persistentHome, owner, grantAccess));
+        attempt(rootFailures, () => prepareRoot(home, owner, grantAccess));
+        attempt(rootFailures, () => prepareRoot(persistentHome, owner, grantAccess));
         for (const entry of QAAP_PERSISTENT_HOME_DIRECTORIES) {
-            attempt(() => linkEntry(home, persistentHome, entry, true, owner, grantAccess));
+            attempt(entryFailures, () => linkEntry(home, persistentHome, entry, true, owner, grantAccess));
         }
         for (const entry of QAAP_PERSISTENT_HOME_FILES) {
-            attempt(() => linkEntry(home, persistentHome, entry, false, owner, grantAccess));
+            attempt(entryFailures, () => linkEntry(home, persistentHome, entry, false, owner, grantAccess));
         }
-        if (failures.length > 0) {
-            throw new Error(`Could not link ${failures.length} agent sign-in entries under ${home}: ${failures.join('; ')}`);
+        if (rootFailures.length > 0) {
+            throw new Error(`Could not prepare agent sign-in storage for ${home}: ${rootFailures.join('; ')}`);
+        }
+        if (entryFailures.length > 0) {
+            console.warn(`[qaap-security] could not link ${entryFailures.length} agent sign-in entries of ${home}: ${entryFailures.join('; ')}`);
         }
     }
 
@@ -125,6 +131,19 @@ export namespace QaapTenantPersistentHome {
             return;
         }
         fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        applyOwner(directory, owner, false, grantAccess);
+    }
+
+    /**
+     * Creates HOME or its persistent directory when missing and applies the owner or access grant on
+     * every call, even when it already exists: the production HOME is created root:root 0700 by an
+     * earlier start step, so skipping existing roots would leave the agent uid unable to traverse it.
+     * Not recursive, so the volatile HOME is never walked.
+     */
+    function prepareRoot(directory: string, owner?: QaapTenantPersistentHomeOwner, grantAccess?: QaapTenantPersistentHomeAccessGrant): void {
+        if (!lstat(directory)) {
+            fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        }
         applyOwner(directory, owner, false, grantAccess);
     }
 
