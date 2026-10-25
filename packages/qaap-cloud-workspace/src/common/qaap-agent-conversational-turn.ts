@@ -10,9 +10,9 @@ export const QAAP_CONVERSATIONAL_TURN_MARKER = '[QAAP conversational turn]';
 const MAX_CONVERSATIONAL_MESSAGE_LENGTH = 40;
 
 /**
- * Small talk only. Deliberately excludes approvals ("yes", "sure", "sí", "no", "bien") because a
- * short reply to an agent question can be a go-ahead that must run tools. "ok" and "vale" are the
- * exception: they are acknowledgements in the common case.
+ * Greetings, thanks, sign-offs and capability questions only. Anything that can read as an approval
+ * or an instruction to continue is excluded ("ok", "vale", "sigue", "listo", "go", "do it", "cool",
+ * "genial", "bien"...): after a plan in plan mode such a reply must run the plan with tools.
  */
 const CONVERSATIONAL_PHRASES: ReadonlySet<string> = new Set([
     // English greetings, thanks, sign-offs and capability questions.
@@ -20,13 +20,13 @@ const CONVERSATIONAL_PHRASES: ReadonlySet<string> = new Set([
     'good morning', 'good afternoon', 'good evening', 'whats up', 'what\'s up',
     'how are you', 'how are you doing', 'how\'s it going',
     'thanks', 'thank you', 'thx', 'ty', 'thanks a lot', 'thank you so much',
-    'ok', 'okay', 'cool', 'great', 'nice', 'perfect', 'got it', 'bye', 'goodbye', 'see you',
+    'bye', 'goodbye', 'see you',
     'what can you do', 'what do you do', 'who are you', 'what are you', 'what can you help with',
     // Spanish (diacritics are stripped before matching).
     'hola', 'buenas', 'buenos dias', 'buenas tardes', 'buenas noches', 'buen dia', 'buenas buenas',
-    'que tal', 'que tal estas', 'como estas', 'que tal va', 'todo bien',
-    'gracias', 'muchas gracias', 'mil gracias', 'vale', 'vale gracias', 'de nada',
-    'genial', 'perfecto', 'entendido', 'adios', 'chao', 'hasta luego', 'hasta manana',
+    'que tal', 'que tal estas', 'como estas',
+    'gracias', 'muchas gracias', 'mil gracias', 'de nada',
+    'adios', 'chao', 'hasta luego', 'hasta manana',
     'que puedes hacer', 'que haces', 'quien eres', 'que eres', 'en que me puedes ayudar',
 ]);
 

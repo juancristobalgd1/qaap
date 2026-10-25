@@ -15,7 +15,7 @@ import {
 describe('isConversationalOnlyMessage', () => {
 
     it('classifies greetings, thanks and acknowledgements in English and Spanish as conversational', () => {
-        for (const text of ['hi', 'Hi!', 'hello', 'hey there', 'hola', '¡Hola!', 'buenos días', 'gracias', 'Muchas gracias.', 'thanks', 'ok', 'okay', 'vale']) {
+        for (const text of ['hi', 'Hi!', 'hello', 'hey there', 'hola', '¡Hola!', 'buenos días', 'gracias', 'Muchas gracias.', 'thanks', 'bye']) {
             expect(isConversationalOnlyMessage(text), text).to.equal(true);
         }
     });
@@ -23,6 +23,16 @@ describe('isConversationalOnlyMessage', () => {
     it('classifies capability questions as conversational', () => {
         for (const text of ['what can you do?', '¿qué puedes hacer?', 'who are you', 'que haces']) {
             expect(isConversationalOnlyMessage(text), text).to.equal(true);
+        }
+    });
+
+    it('never classifies approvals or continue instructions as conversational', () => {
+        for (const text of [
+            'ok', 'OK!', 'okay', 'vale', 'dale', 'perfecto', 'listo', 'continua', 'continúa', 'sigue',
+            'go', 'do it', 'go ahead', 'sí', 'si', 'yes', 'sure', 'cool', 'great', 'genial', 'bien',
+            'todo bien', 'got it', 'entendido', 'nice',
+        ]) {
+            expect(isConversationalOnlyMessage(text), text).to.equal(false);
         }
     });
 
