@@ -266,6 +266,13 @@ describe('QaapAgentCliUpdateService', () => {
             .to.equal('Codex update failed. Try again in a moment.');
     });
 
+    it('reports a denied spawn as a start failure, not as an install-folder write error', () => {
+        const spawnDenied = new Error('spawn /usr/bin/setpriv EACCES');
+        const message = describeQaapNpmInstallFailure('Codex', { status: null, signal: null, stdout: '', stderr: '', error: spawnDenied });
+        expect(message).to.equal('Codex update could not start npm on this server: permission denied (EACCES). Try again; if it keeps failing, contact support.');
+        expect(message).not.to.match(/install folder/);
+    });
+
     it('runs npm through an absolute setpriv with a complete drop and without lifecycle scripts', () => {
         const invocation = buildQaapNpmInstallInvocation(
             '@openai/codex',
@@ -476,7 +483,8 @@ describe('QaapAgentCliUpdateService hardening', () => {
 
         expect(npm.file).to.equal('/usr/bin/setpriv');
         expect(npm.args).to.include('@openai/codex@latest');
-        expect(npm.cwd).to.equal(prefix);
+        // A root backend cannot chdir into the agent-owned prefix (mode 770, agent uid): spawn would fail with EACCES.
+        expect(npm.cwd).to.equal('/');
         expect(npm.env).to.include({
             HOME: work.home,
             npm_config_cache: work.cache,
@@ -537,6 +545,7 @@ describe('QaapAgentCliUpdateService hardening', () => {
         expect(rootService.processes[0].file).to.equal('/usr/bin/setpriv');
         expect(rootService.processes[0].args.slice(0, 2)).to.deep.equal(['--reuid', '1001']);
         expect(rootService.processes[0].args).to.include('--no-new-privs');
+        expect(rootService.processes[0].cwd).to.equal('/');
         expect(existsSync(marker)).to.equal(false);
     });
 
