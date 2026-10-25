@@ -27,6 +27,13 @@ export const QAAP_PERSISTENT_HOME_DIRECTORIES: readonly string[] = [
     '.config', // gh, copilot and other XDG_CONFIG_HOME users
 ];
 
+/**
+ * Agent HOME inside a tenant backend container: the private `/tmp` tmpfs (read-only rootfs). Here
+ * rather than in `qaap-tenant-spawn-service.ts` so the task sandbox service can use it without an
+ * import cycle.
+ */
+export const QAAP_TENANT_BACKEND_HOME = '/tmp/qaap-home';
+
 /** Single files at the HOME root that hold account state (Claude Code writes through the link). */
 export const QAAP_PERSISTENT_HOME_FILES: readonly string[] = [
     '.claude.json',

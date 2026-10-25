@@ -120,6 +120,7 @@ async function main() {
             tenantLogin: container.Labels['com.qaap.tenant-login'], name: container.Names[0].replace(/^\//, ''), running: container.State === 'running',
         })),
         listTenantBackendTargets: () => [{ containerId: tenantName, containerName: tenantName, host: '127.0.0.1', port, tenantLogin: TENANT }],
+        taskSandboxToolchainPlacements: async () => [{ docker, image: IMAGE, nodeId: 'default' }],
         taskSandboxPlacement: async () => ({
             docker, image: IMAGE, user: '1001:1001', network: internalNet, directEgressNetwork: egressNet, egressEnv: {},
             roots: [
@@ -159,9 +160,12 @@ async function main() {
     if (result.error) {
         throw new Error(result.error);
     }
+    // The tenant's spare sandbox (doc/qaap-task-sandbox.md, "Spare sandbox") outlives the tasks by design.
+    const spare = broker.spareName(TENANT);
     let left = '';
     for (let i = 0; i < 30; i++) {
-        left = docker$('ps', '-a', '--filter', `label=com.qaap.task-sandbox.broker=true`, '--filter', `label=com.qaap.tenant-login=${TENANT}`, '--format', '{{.Names}}');
+        left = docker$('ps', '-a', '--filter', `label=com.qaap.task-sandbox.broker=true`, '--filter', `label=com.qaap.tenant-login=${TENANT}`, '--format', '{{.Names}}')
+            .split('\n').filter(name => name && name !== spare).join(' ');
         if (!left) {
             break;
         }

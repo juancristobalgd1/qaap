@@ -30,7 +30,7 @@ import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qa
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
-import { QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
+import { QAAP_TENANT_BACKEND_HOME, QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 /** How the spawned process's stdio streams are wired. */
@@ -42,8 +42,7 @@ export interface QaapTenantAccessCommandResult {
     readonly reason?: string;
 }
 
-/** Agent HOME inside a tenant backend container: the private `/tmp` tmpfs (read-only rootfs). */
-export const QAAP_TENANT_BACKEND_HOME = '/tmp/qaap-home';
+export { QAAP_TENANT_BACKEND_HOME };
 
 /** HOME/USER/LOGNAME for a tenant child plus, inside tenant containers, cache/data relocation vars. */
 export type QaapTenantHomeEnvOverlay = { HOME?: string; USER?: string; LOGNAME?: string } & Record<string, string>;

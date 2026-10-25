@@ -196,9 +196,65 @@ server bound (Vite's `localhost` included) and for any port.
 | Devcontainer Dockerfile cache miss | 0: background build, base image now |
 | `postCreateCommand` | outside the budget, reported separately |
 
+**Broker mode (production) since Oct 25 2026: toolchain prewarm and a spare sandbox.** Two ideas taken
+from local microVM sandboxes (warm pool, prepared images), applied to containers:
+
+- **Toolchain prewarm.** Each deploy ships a new tenant image, hence a new `qaap-agent-toolchain-*`
+  volume. It used to be filled by the first sandbox on each node after the deploy, inside that task's
+  wait (the 8.0 s production start below). `QaapTaskSandboxBroker.onStart` now fills the volume of
+  every Docker node (`QaapDockerOrchestrator.taskSandboxToolchainPlacements`) at control-plane boot.
+  A node that fails is logged and left to its first create, which retries.
+- **Spare sandbox.** Each tenant keeps one ready sandbox that no task owns yet (see "Spare sandbox"
+  below). A base-image create with the same HOME links adopts it with `docker rename`, which keeps
+  its processes, addresses and exec token, and queues a refill. A create with a devcontainer image or
+  `containerEnv`, or with other HOME links, starts a sandbox as before and leaves the spare alone.
+
+Measured with `node scripts/qaap-task-sandbox-startup-bench.mjs` (Oct 25 2026, macOS, Docker Desktop
+29.1.2, `node:22-bookworm-slim`; 3 runs of 6 creates each, fresh namespace per run as after a deploy).
+Times are what a task waits for in the broker's `create`:
+
+| | Before | Prewarm only (`QAAP_TASK_SANDBOX_SPARE=0`) | Prewarm + spare |
+|---|---|---|---|
+| First sandbox after boot | 1,164–5,927 ms (fills the toolchain) | 224–386 ms | **15–19 ms** |
+| Later sandboxes, p50 | 283–590 ms (max 1,702) | 213–232 ms | **23–25 ms** (max 32) |
+| Boot prewarm (off the task path) | — | 304–329 ms | 416–767 ms |
+
+On the VPS image (9 GB) the before numbers are larger: 8.0 s for the first sandbox after a deploy, 2.8 s
+for two in parallel. The spare's start (≈ 0.2–0.4 s locally) moves off the task path entirely. The broker
+e2e passes 14/14 with the spare on (10 consecutive runs); one earlier run lost the second sandbox's exec
+connection and was not reproduced.
+
 `acquire()` fails if the container is not ready within 30 s. That fails the task with the
 container's last log lines; it never silently runs unsandboxed. Each start is logged as
 `[qaap-task-sandbox] started <name> … in <ms> ms`.
+
+## Spare sandbox
+
+One per tenant, broker mode only. It is created by `QaapTaskSandboxBroker.ensureSpareLocked` with the
+same `runSandbox` as every sandbox of that tenant: the same fixed tenant roots, uid `1001:1001`,
+hardening, internal and egress networks, toolchain entrypoint and stdin-delivered exec token. Its
+`WorkingDir` is the tenant's repos root (exec requests always carry their own cwd).
+
+- **When.** On `prepare` from the tenant backend: `QaapTaskSandboxService` sends it each time the control
+  plane (re)opens the link, with the HOME links of `QAAP_TENANT_BACKEND_HOME`, so a spare is ready after
+  every deploy or control-plane restart. And after every base-image create, queued behind it on the
+  tenant's lock, so the next task finds one too. A broker that predates `prepare` ignores the op: the
+  tenant backend logs one warning when the call times out.
+- **Adoption.** Only when the create's image is the base image, it has no `containerEnv`, and its HOME
+  links are the spare's (they are linked when the exec server starts). The spare is renamed to the
+  worktree's sandbox name; `list` reports the adopted root from memory, because labels cannot change.
+  A spare that stopped or cannot be renamed is removed and the create starts a sandbox instead.
+- **Invisible to the tenant.** `list` leaves it out (a restarted tenant backend would reap it as an
+  orphan), the per-tenant cap does not count it, and no spare is kept once the tenant is at the cap.
+- **Lifetime.** It is reaped with the tenant's other sandboxes when its backend stops being routed for
+  60 s, and replaced when its HOME links or image no longer match. After a control-plane restart its
+  token is gone, so the next `prepare` or create replaces it.
+- **Cost.** One idle exec server (node) per routed tenant: tens of MB of RSS and no CPU, under the same
+  memory limit as any sandbox. Off with `QAAP_TASK_SANDBOX_SPARE=0`.
+
+**Metrics.** `GET {runtime}/metrics` on the control plane reports `taskSandbox`: p50/p95/max of creates
+served by a spare and of cold starts, the number of reuses, spares created and failed, and toolchain
+populations (count, duration, failures).
 
 ## Threat model
 
@@ -247,7 +303,7 @@ the broker answers with `POST {runtime}/task-sandbox/reply`. Authentication uses
   arguments; the broker verifies it with the secret of the tenant whose link carried it and
   rejects replays by id.
 
-**2. The broker's three operations**, each scoped to the linked tenant:
+**2. The broker's operations**, each scoped to the linked tenant:
 
 - `create { root, devcontainer: { image?, containerEnv? }, homeLinks }`. `root` is the worktree as
   the tenant backend sees it and must lie strictly inside that tenant's own repos, worktrees or
@@ -259,6 +315,7 @@ the broker answers with `POST {runtime}/task-sandbox/reply`. Authentication uses
   network or egress-proxy env, and no published port.
 - `destroy { name, mode }` and `list`: only containers labelled `com.qaap.task-sandbox.broker` and
   `com.qaap.tenant-login=<tenant>`.
+- `prepare { homeLinks }`: keep a spare sandbox ready for these HOME links (see "Spare sandbox").
 - At most `QAAP_TASK_SANDBOX_MAX_PER_TENANT` (default 8) sandboxes per tenant, counting every
   state but archives. Creates and destroys of one tenant are serialized, so concurrent creates
   cannot overshoot the cap. At most `QAAP_TASK_SANDBOX_MAX_ARCHIVES_PER_TENANT` (default 3)
@@ -431,6 +488,7 @@ the Work Hub UI with both previews.
 | `QAAP_TASK_SANDBOX_PULL_ALLOWLIST` | empty (never pull) | Broker mode: image reference prefixes that may be pulled |
 | `QAAP_TASK_SANDBOX_PULLS_PER_TENANT` / `_PULLS_PER_DAY` | 1 / 5 | Broker mode: concurrent and daily pulls per tenant |
 | `QAAP_TASK_SANDBOX_PORT_WATCH_MS` | 1000 | Preview port detection interval |
+| `QAAP_TASK_SANDBOX_SPARE` | on | Broker mode: keep one spare sandbox per tenant (`0` = off) |
 
 ## Web Push in backend-per-tenant mode (pull outbox)
 
