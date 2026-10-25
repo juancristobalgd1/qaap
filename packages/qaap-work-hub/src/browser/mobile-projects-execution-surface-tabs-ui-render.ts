@@ -789,6 +789,9 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
     }
     // 'review' (Changes) is merged into the 'files' tab — redirect with a
     // pending view-mode flag so the file view activates changes mode on mount.
+    // The content mount keeps the original 'review' id: its review branch sets the
+    // pending Changes mode, whereas mounting 'files' would clear it and show the tree.
+    const mountTab = tab;
     if (tab === 'review') {
         writePendingTranscriptFilesViewMode('changes');
         tab = 'files';
@@ -820,7 +823,7 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
         ctx.host.ensureAgentsHubExecutionShellRendered();
     }
     ctx.showOnlyExecutionSurfaceTab(tab);
-    ctx.mountExecutionSurfaceTabContent(project, summary, tab);
+    ctx.mountExecutionSurfaceTabContent(project, summary, mountTab);
     try {
         ctx.host.root.classList.add('theia-mod-project-surface-chat');
         ctx.host.root.classList.remove('theia-mod-project-surface-tools');

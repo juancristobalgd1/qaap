@@ -32,16 +32,16 @@ export function createStickyComposerUntilDoneToggle(options: StickyComposerUntil
         button.setAttribute('aria-disabled', 'true');
         button.dataset.disabledReason = options.disabledReason;
     }
-    const label = nls.localize('theia/qaap/goalLoop/untilDone', 'Until done');
+    const label = nls.localize('theia/qaap/goalLoop/untilDone', 'Goal');
     button.title = disabled
         ? options.disabledReason!
         : checked
-            ? nls.localize('theia/qaap/goalLoop/untilDoneOnTitle', 'Until done: the agent keeps iterating, verifying and reviewing until the goal is met')
-            : nls.localize('theia/qaap/goalLoop/untilDoneOffTitle', 'Until done: off — run a single turn');
+            ? nls.localize('theia/qaap/goalLoop/untilDoneOnTitle', 'Goal: the agent keeps iterating, verifying and reviewing until the goal is met')
+            : nls.localize('theia/qaap/goalLoop/untilDoneOffTitle', 'Goal: off — run a single turn');
     button.setAttribute('aria-label', `${label}. ${button.title}`);
 
     const icon = document.createElement('span');
-    icon.className = 'codicon codicon-sync';
+    icon.className = 'codicon codicon-target';
     icon.setAttribute('aria-hidden', 'true');
     const text = document.createElement('span');
     text.className = `${UNTIL_DONE_TOGGLE_CLASS}-label`;
@@ -86,16 +86,16 @@ export function createStickyComposerUntilDoneSheetOption(
     }
     btn.title = disabled
         ? options.disabledReason!
-        : nls.localize('theia/qaap/goalLoop/untilDoneOnTitle', 'Until done: the agent keeps iterating, verifying and reviewing until the goal is met');
+        : nls.localize('theia/qaap/goalLoop/untilDoneOnTitle', 'Goal: the agent keeps iterating, verifying and reviewing until the goal is met');
 
     const content = document.createElement('span');
     content.className = 'theia-mobile-sticky-composer-sheet-option-content';
     const icon = document.createElement('span');
-    icon.className = 'codicon codicon-sync';
+    icon.className = 'codicon codicon-target';
     icon.setAttribute('aria-hidden', 'true');
     const label = document.createElement('span');
     label.className = 'theia-mobile-sticky-composer-sheet-option-label';
-    label.textContent = nls.localize('theia/qaap/goalLoop/untilDone', 'Until done');
+    label.textContent = nls.localize('theia/qaap/goalLoop/untilDone', 'Goal');
     content.append(icon, label);
     if (disabled) {
         // Touch has no tooltips: spell out why the toggle is unavailable.

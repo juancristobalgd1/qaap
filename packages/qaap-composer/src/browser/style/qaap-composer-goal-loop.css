@@ -157,7 +157,7 @@
   background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
 }
 
-.theia-mobile-projects-sticky-composer-until-done-option .codicon-sync {
+.theia-mobile-projects-sticky-composer-until-done-option .codicon-target {
   font-size: 14px;
 }
 

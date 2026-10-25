@@ -194,7 +194,7 @@ describe('qaap-conversation-composer-state', () => {
     });
 
     it('formatComposerRunPermissionsLabel joins mode and policy', () => {
-        expect(formatComposerRunPermissionsLabel('Build', 'request-approval')).to.equal('Build · Request approval');
+        expect(formatComposerRunPermissionsLabel('Build', 'request-approval')).to.equal('Build · Ask before changes');
         expect(formatComposerRunPermissionsLabel(undefined, 'full-access')).to.equal('Full access');
     });
 

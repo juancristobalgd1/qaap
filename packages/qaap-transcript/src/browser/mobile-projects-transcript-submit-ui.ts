@@ -531,7 +531,7 @@ export class MobileProjectsTranscriptSubmitUi {
         if (base.status === 'streaming') {
             throw new Error(nls.localize(
                 'theia/qaap/goalLoop/startWhileStreaming',
-                'Wait for the current turn to finish before starting Until done.',
+                'Wait for the current turn to finish before starting a Goal.',
             ));
         }
         await startGoalLoop(conversationId, { goal: draft.trim() || outbound, initialPrompt: outbound });

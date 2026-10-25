@@ -55,5 +55,12 @@ describe('sticky composer Until done toggle', () => {
             expect(button.getAttribute('aria-label')).to.contain(button.dataset.disabledReason ?? '');
             expect(toggled).to.equal(false);
         });
+
+        it('labels the goal toggle "Goal" with the target icon', () => {
+            const button = createStickyComposerUntilDoneToggle({ checked: false, onToggle: () => undefined });
+            expect(button.querySelector('.codicon-target')).to.not.equal(null);
+            expect(button.querySelector('.codicon-sync')).to.equal(null);
+            expect(button.querySelector('.theia-mobile-projects-sticky-composer-until-done-label')?.textContent).to.equal('Goal');
+        });
     });
 });

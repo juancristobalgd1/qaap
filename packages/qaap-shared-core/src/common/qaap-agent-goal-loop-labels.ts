@@ -91,7 +91,7 @@ export function resolveGoalLoopChipView(summary: QaapGoalLoopSummaryFields | und
     return {
         label,
         tone: 'running',
-        title: nls.localize('theia/qaap/goalLoop/chipRunningTitle', 'Until done: iteration {0} of {1}', current, total),
+        title: nls.localize('theia/qaap/goalLoop/chipRunningTitle', 'Goal: iteration {0} of {1}', current, total),
         phase,
     };
 }

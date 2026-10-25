@@ -533,19 +533,6 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 6%, transparent);
 }
 
-/* Deployed-build SHA sits next to the account name: `Juan Cristobal (abc123…)`. */
-.theia-mobile-work-hub-sessions-sidebar-build {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-family: var(--monaco-monospace-font, monospace);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--theia-foreground) 42%, transparent);
-  white-space: nowrap;
-  user-select: text;
-}
-
 /* Quiet notice: a newer backend build waits for the user's running turns to finish. */
 .theia-mobile-work-hub-sessions-sidebar-update {
   flex: 0 0 auto;

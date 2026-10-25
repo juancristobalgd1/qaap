@@ -461,8 +461,7 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     /**
-     * Account label: `Name` or `Name (shortSha)` when a deployed build is known.
-     * The SHA stays muted inside the account button.
+     * Account label: the account name only. A known deployed build is exposed as the label tooltip.
      */
     protected syncAccountLabel(): void {
         const name = this.accountBtn.title.trim()
@@ -472,14 +471,11 @@ export class MobileWorkHubSessionsSidebar {
         nameEl.className = 'theia-mobile-work-hub-sessions-sidebar-account-name';
         nameEl.textContent = name;
         this.accountLabel.append(nameEl);
+        // The deployed build stays out of the footer; it is kept in the account tooltip for support.
         const build = this.deployedBuildSha?.trim();
-        if (build) {
-            const buildEl = document.createElement('span');
-            buildEl.className = 'theia-mobile-work-hub-sessions-sidebar-build';
-            buildEl.textContent = `(${build})`;
-            buildEl.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
-            this.accountLabel.append(buildEl);
-        }
+        this.accountLabel.title = build
+            ? nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build)
+            : '';
         if (this.backendUpdate) {
             this.accountLabel.append(this.createBackendUpdateChip(this.backendUpdate));
         }
@@ -507,8 +503,8 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     /**
-     * Loads the muted deployed-build SHA from `/qaap/api/auth/config` and places it next to the
-     * account name. Absent in local dev (no `QAAP_BUILD_SHA`); omitted when the fetch fails.
+     * Loads the deployed-build SHA from `/qaap/api/auth/config` for the account tooltip. Absent in
+     * local dev (no `QAAP_BUILD_SHA`); omitted when the fetch fails.
      */
     protected loadDeployedBuildSha(): void {
         void fetchQaapAuthConfig().then(config => {

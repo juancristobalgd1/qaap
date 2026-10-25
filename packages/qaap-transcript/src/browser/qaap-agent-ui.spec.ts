@@ -91,7 +91,7 @@ describe('qaap-agent-ui', () => {
         const button = document.createElement('button');
         const policy = resolveAgentApprovalPolicyOption('approve-for-me');
         populateApprovalPolicyToolbarButton(button, policy);
-        expect(button.querySelector('.theia-qaap-approval-policy-toolbar-icon.codicon-shield')).to.exist;
+        expect(button.querySelector('.theia-qaap-approval-policy-toolbar-icon.codicon-workspace-trusted')).to.exist;
         expect(button.querySelector('.theia-mobile-projects-sticky-composer-approval-policy-label')?.textContent)
             .to.equal(policy.label);
         expect(button.querySelector('.codicon-chevron-down')).to.exist;
