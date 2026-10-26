@@ -86,7 +86,9 @@ describe('qaap-agent-live-preview-port', () => {
         it('names the reserved port and warns against the port in .qaap/preview.json', () => {
             const hint = buildLivePreviewPortHint(5175);
             expect(hint).to.equal('Qaap\'s live preview for this project runs on port 5175 (see the Preview tab). '
-                + 'The port in .qaap/preview.json is only the preferred port; never report it as the app\'s address.');
+                + 'The port in .qaap/preview.json is only the preferred port; never report it as the app\'s address. '
+                + 'Qaap already starts and supervises the dev server; never run dev/start/serve/preview commands yourself; '
+                + 'verify with a one-shot HTTP check (e.g. curl) against the live port instead.');
         });
 
         it('omits any port when none is reserved and points to the Preview tab', () => {
@@ -94,6 +96,8 @@ describe('qaap-agent-live-preview-port', () => {
             expect(hint).to.not.match(/runs on port/);
             expect(hint).to.match(/^The port in \.qaap\/preview\.json is only the preferred port; never report it as the app's address\./);
             expect(hint).to.contain('Refer the user to the Preview tab for the live address.');
+            expect(hint).to.contain('Qaap already starts and supervises the dev server; never run dev/start/serve/preview commands yourself.');
+            expect(hint).to.not.match(/curl/);
         });
     });
 });
