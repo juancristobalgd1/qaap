@@ -87,3 +87,6 @@ security.debian.org
 .googletagmanager.com
 .google-analytics.com
 plausible.io
+# Product dependencies found blocked in production (Oct 26): OpenCode model list, Open VSX AI registry
+.opencode.ai
+.open-vsx.org
