@@ -66,3 +66,24 @@ cdnjs.cloudflare.com
 .algolia.io
 .mapbox.com
 .cloudinary.com
+# Placeholder images and mock APIs used by prototypes
+placehold.co
+via.placeholder.com
+.picsum.photos
+jsonplaceholder.typicode.com
+dummyjson.com
+randomuser.me
+pokeapi.co
+# Play CDN, video embeds, other git hosts, Debian packages
+cdn.tailwindcss.com
+.youtube.com
+.youtube-nocookie.com
+.ytimg.com
+.gitlab.com
+.bitbucket.org
+deb.debian.org
+security.debian.org
+# Analytics snippets
+.googletagmanager.com
+.google-analytics.com
+plausible.io
