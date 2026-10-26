@@ -28,6 +28,7 @@ import {
     extractDevOutputProbePorts,
 } from './qaap-project-bootstrap-dev-errors';
 import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
+import { readyTimeoutProbeAttempts } from '../common/qaap-preview-launch-plan';
 import {
     qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
@@ -227,8 +228,12 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
         ctx._previewReadiness = 'waiting-for-server';
         ctx._previewWaitTimedOut = false;
         ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
+        const readyTimeoutMs = ctx._descriptor?.readyTimeoutMs;
+        const readyAttempts = readyTimeoutMs !== undefined
+            ? readyTimeoutProbeAttempts(readyTimeoutMs, DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS)
+            : DEV_PREVIEW_OPEN_PROBE_ATTEMPTS;
         let ready = await waitForQaapDevPreviewPort(port, {
-            maxAttempts: DEV_PREVIEW_OPEN_PROBE_ATTEMPTS,
+            maxAttempts: readyAttempts,
             intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
         });
         if (!ready) {
@@ -245,7 +250,8 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
             ctx._previewWaitTimedOut = true;
             ctx._error = nls.localize(
                 'qaap/projectBootstrap/previewWaitTimedOut',
-                'The server has not answered after 30 seconds. Check the startup log, then retry.',
+                'The server has not answered after {0} seconds. Check the startup log, then retry.',
+                String(Math.round(((readyAttempts - 1) * DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS) / 1000)),
             );
             ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
             return;
