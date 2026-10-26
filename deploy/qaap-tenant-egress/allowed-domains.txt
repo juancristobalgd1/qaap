@@ -16,3 +16,9 @@
 .x.ai
 .moonshot.ai
 .minimax.io
+.chatgpt.com
+.claude.ai
+.claude.com
+.cursor.com
+.nousresearch.com
+accounts.google.com

@@ -236,6 +236,8 @@ services:
       # Never use Docker's shared default bridge for untrusted tenant workers. Each tenant gets an
       # internal bridge; backend-per-tenant mode publishes only through its hardened ingress relay.
       QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-isolated-bridge}
+      # Empty (default) = direct tenant egress. Set to qaap-tenant-egress:current to route tenant egress through the Squid allowlist proxy.
+      QAAP_TENANT_EGRESS_PROXY_IMAGE: ${QAAP_TENANT_EGRESS_PROXY_IMAGE:-}
       # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
       # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.
       # Public origin for Checkout success/cancel URLs (prefer the Caddy HTTPS host).

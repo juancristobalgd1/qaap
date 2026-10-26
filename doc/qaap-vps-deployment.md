@@ -22,6 +22,27 @@ bridge for direct outbound traffic. Direct egress is enabled only when that prox
 unset; with the proxy configured, tenant containers use the proxy and do not join the direct
 egress bridge. `QAAP_TENANT_NETWORK_MODE=none` disables tenant networking.
 
+### Enabling the tenant egress proxy
+
+The proxy is off by default (tenant egress is direct). To enable it:
+
+1. Set `QAAP_TENANT_EGRESS_PROXY_IMAGE=qaap-tenant-egress:current` in the VPS env and deploy.
+   `qaap-vps-update.sh` builds `deploy/qaap-tenant-egress` into the rootless tenant daemon and
+   tags it with that value. Unset or empty means direct egress.
+2. Idle tenant containers are recreated with the proxy env on their next use. Busy tenants keep
+   direct egress until they are recreated.
+3. Pre-flight checks before enabling:
+   1. The host relay on `10.0.2.2:14873` (the rootless tenant path to the host loopback) is reached
+      today over the direct-egress bridge. It will NOT be reachable from the internal bridge or
+      through Squid, because private destinations are denied. Confirm what uses it and whether
+      tenants still need it before enabling. The repo's sources reference the port only in the
+      loopback guard allow-list.
+   2. After enabling, from a tenant container: `curl --noproxy '*' https://example.com` must fail;
+      `curl https://registry.npmjs.org/` and a model provider must succeed through the proxy;
+      `curl http://169.254.169.254/` must be denied.
+   3. Run one real agent task per agent CLI in use, sign-in included.
+4. Rollback: unset `QAAP_TENANT_EGRESS_PROXY_IMAGE` and redeploy.
+
 Docker assigns an address pool to each bridge, so configure enough small subnets on every daemon
 that runs tenant containers. Merge a setting like this into the Docker daemon configuration:
 

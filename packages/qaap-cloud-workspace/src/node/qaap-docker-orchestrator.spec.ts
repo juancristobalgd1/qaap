@@ -50,6 +50,7 @@ interface QaapDockerOrchestratorTestAccess {
     tenantEgressProxyEnv(): Record<string, string>;
     tenantNetworkMatches(network: { Name?: string; Driver?: string; Internal?: boolean; Labels?: Record<string, string>; Options?: Record<string, string> }, networkName: string): boolean;
     tenantDirectEgressNetworkNameFor(ownerLogin?: string): string;
+    tenantDirectEgressNetworkFor(networkMode: string, ownerLogin?: string): string | undefined;
     tenantDirectEgressNetworkMatches(network: { Name?: string; Driver?: string; Internal?: boolean; Labels?: Record<string, string>; Options?: Record<string, string> }, networkName: string, ownerLogin: string): boolean;
     tenantEgressProxyNameFor(ownerLogin?: string): string;
     tenantEgressProxyMatches(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string, tenantNetwork: string, image: string): boolean;
@@ -1559,6 +1560,7 @@ describe('QaapDockerOrchestrator', () => {
             expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({});
             process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:release';
             expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({
+                NODE_USE_ENV_PROXY: '1',
                 HTTP_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 HTTPS_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 http_proxy: 'http://qaap-tenant-egress-proxy:3128',
@@ -1566,6 +1568,17 @@ describe('QaapDockerOrchestrator', () => {
                 NO_PROXY: 'localhost,127.0.0.1,::1',
                 no_proxy: 'localhost,127.0.0.1,::1',
             });
+        });
+
+        it('treats an empty or blank proxy image as direct egress', () => {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            for (const value of ['', '   ']) {
+                process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = value;
+                expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({});
+                expect(orchestrator.tenantDirectEgressNetworkFor('qaap-net-v3-alice', 'alice')).to.equal(orchestrator.tenantDirectEgressNetworkNameFor('alice'));
+            }
+            process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:release';
+            expect(orchestrator.tenantDirectEgressNetworkFor('qaap-net-v3-alice', 'alice')).to.equal(undefined);
         });
 
         it('gives each tenant a separate proxy container and rejects shared proxy containers', async () => {

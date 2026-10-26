@@ -2822,6 +2822,8 @@ export class QaapDockerOrchestrator {
         }
         const proxy = `http://${QAAP_TENANT_EGRESS_PROXY_ALIAS}:3128`;
         return {
+            // Node 22.23 native fetch ignores HTTP(S)_PROXY unless this is set; the tenant backend calls GitHub with fetch.
+            NODE_USE_ENV_PROXY: '1',
             HTTP_PROXY: proxy,
             HTTPS_PROXY: proxy,
             http_proxy: proxy,
