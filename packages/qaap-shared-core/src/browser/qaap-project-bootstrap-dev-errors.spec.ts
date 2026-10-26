@@ -53,6 +53,33 @@ describe('qaap-project-bootstrap-dev-errors', () => {
         expect(describeDevProcessExit(undefined, '', 3001)).to.deep.equal({ message: 'Dev server exited with code ?.', exitedWithoutListening: false });
     });
 
+    it('reports a process killed by a signal as stopped, not as a clean exit', () => {
+        const output = 'Listening soon...\r\n';
+        expect(describeDevProcessExit(0, output, 3001, 15)).to.deep.equal({
+            message: 'The dev server was stopped (SIGTERM) before it listened on port 3001.',
+            exitedWithoutListening: false,
+        });
+        expect(describeDevProcessExit(0, output, 3001, 'SIGTERM').message)
+            .to.equal('The dev server was stopped (SIGTERM) before it listened on port 3001.');
+        expect(describeDevProcessExit(0, output, 3001, '15').message)
+            .to.equal('The dev server was stopped (SIGTERM) before it listened on port 3001.');
+        expect(describeDevProcessExit(0, output, 3001, 9).message)
+            .to.equal('The dev server was stopped (SIGKILL) before it listened on port 3001.');
+        expect(describeDevProcessExit(0, output, 3001, 2).message)
+            .to.equal('The dev server was stopped (SIGINT) before it listened on port 3001.');
+        expect(describeDevProcessExit(0, output, 3001, 20).message)
+            .to.equal('The dev server was stopped (signal 20) before it listened on port 3001.');
+        expect(describeDevProcessExit(0, output, undefined, 15).message)
+            .to.equal('The dev server was stopped (SIGTERM) before the preview server started listening.');
+    });
+
+    it('keeps the clean-exit message when no signal is reported', () => {
+        expect(describeDevProcessExit(0, '', 3001, undefined).message)
+            .to.contain('The dev command exited with code 0 without listening on port 3001.');
+        expect(describeDevProcessExit(0, '', 3001, 0).message)
+            .to.contain('The dev command exited with code 0 without listening on port 3001.');
+    });
+
     it('diagnoses out-of-memory before any other failure kind', () => {
         const diagnosis = diagnoseBootstrapFailure('Error: something\n[qaap] The dev server was killed because the workspace ran out of memory.', 'fallback');
         expect(diagnosis.kind).to.equal('out-of-memory');

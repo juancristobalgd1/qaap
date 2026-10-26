@@ -145,6 +145,28 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(descriptor?.devCommand).to.equal("'python3' '-m' 'http.server' '{{PORT}}'");
         expect(descriptor?.expectedPort).to.equal(8000);
         expect(descriptor?.nodeModulesPresent).to.equal(true);
+        expect(descriptor?.readyTimeoutMs).to.equal(undefined);
+    });
+
+    it('carries an explicit readyTimeoutMs from the preview plan onto the descriptor', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/.qaap/preview.json', JSON.stringify({
+            version: 1,
+            runtime: 'custom',
+            name: 'Theia',
+            command: 'node',
+            args: ['node_modules/@theia/cli/bin/theia', 'start', '--port', '{{PORT}}'],
+            port: 3000,
+            readyTimeoutMs: 180000,
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detectWithBackend(detector, 'posix');
+        expect(descriptor?.kind).to.equal('custom');
+        expect(descriptor?.readyTimeoutMs).to.equal(180000);
     });
 
     it('auto-detects Django at the workspace root', async () => {

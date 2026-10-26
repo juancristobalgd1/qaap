@@ -543,6 +543,7 @@ export class QaapProjectBootstrapDetector {
             devCommand: renderQaapPreviewLaunchCommand(plan, OS.backend.isWindows ? 'win32' : 'posix'),
             devCommandLabel: [plan.command, ...plan.args].join(' '),
             expectedPort: plan.port,
+            readyTimeoutMs: plan.readyTimeoutMs,
             nodeModulesPresent: true,
             apps: [],
             scaffoldRelativePath: plan.cwd === '.' ? undefined : plan.cwd,

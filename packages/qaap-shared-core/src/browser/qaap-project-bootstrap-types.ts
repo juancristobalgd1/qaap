@@ -144,6 +144,8 @@ export interface QaapProjectDescriptor {
     readonly devCommandLabel?: string;
     /** Optional hint to seed port detection if stdout parsing fails. */
     readonly expectedPort?: number;
+    /** Wait for the preview server to answer, from `readyTimeoutMs` in `.qaap/preview.json`. */
+    readonly readyTimeoutMs?: number;
     /** True when dev tooling shims exist under `node_modules/.bin` (not just an empty tree). */
     readonly nodeModulesPresent: boolean;
     /** Workspace layout flavor, when the project is a monorepo. */

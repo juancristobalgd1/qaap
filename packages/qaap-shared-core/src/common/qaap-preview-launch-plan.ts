@@ -21,6 +21,11 @@ export interface QaapPreviewLaunchPlan {
     readonly command: string;
     readonly args: readonly string[];
     readonly port: number;
+    /**
+     * How long the preview waits for the server to answer, for apps that boot slowly (e.g. Theia).
+     * Absent means the default wait; values are clamped to {@link QAAP_PREVIEW_READY_TIMEOUT_MAX_MS}.
+     */
+    readonly readyTimeoutMs?: number;
 }
 
 export type QaapPreviewLaunchConfigResult =
@@ -30,6 +35,8 @@ export type QaapPreviewLaunchConfigResult =
 const RUNTIMES = new Set<QaapPreviewRuntime>(['custom', 'python', 'go', 'rust', 'dotnet', 'php']);
 const MAX_ARGUMENTS = 64;
 const MAX_ARGUMENT_LENGTH = 1_024;
+/** Upper bound for the optional `readyTimeoutMs`, so a typo cannot keep a preview waiting for hours. */
+export const QAAP_PREVIEW_READY_TIMEOUT_MAX_MS = 10 * 60_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,6 +84,7 @@ export function parseQaapPreviewLaunchConfig(value: unknown): QaapPreviewLaunchC
         || value.name.length > 120 || invalidControlCharacters(value.name))) {
         return { ok: false, error: 'Preview name must be a non-empty bounded string.' };
     }
+    const readyTimeoutMs = parseReadyTimeoutMs(value.readyTimeoutMs);
     return {
         ok: true,
         plan: {
@@ -87,8 +95,29 @@ export function parseQaapPreviewLaunchConfig(value: unknown): QaapPreviewLaunchC
             command: value.command,
             args: rawArgs as string[],
             port: value.port as number,
+            ...(readyTimeoutMs !== undefined ? { readyTimeoutMs } : {}),
         },
     };
+}
+
+/**
+ * Accepts only a finite positive number (clamped to the maximum). Anything else is ignored rather
+ * than rejecting the whole launch plan, so the preview falls back to the default wait.
+ */
+function parseReadyTimeoutMs(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+        return undefined;
+    }
+    return Math.min(value, QAAP_PREVIEW_READY_TIMEOUT_MAX_MS);
+}
+
+/**
+ * Number of readiness probes that fit in `readyTimeoutMs`, given the probe interval. Matches the
+ * polling helper's budget of `(attempts - 1) × intervalMs` of sleep, so the wait lasts about the
+ * requested time.
+ */
+export function readyTimeoutProbeAttempts(readyTimeoutMs: number, intervalMs: number): number {
+    return Math.floor(readyTimeoutMs / intervalMs) + 1;
 }
 
 export function parseQaapPreviewLaunchConfigJson(raw: string): QaapPreviewLaunchConfigResult {

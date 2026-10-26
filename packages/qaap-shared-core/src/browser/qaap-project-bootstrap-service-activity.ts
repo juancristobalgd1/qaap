@@ -590,6 +590,7 @@ export function watchAttachedDevTerminalExtracted(ctx: QaapProjectBootstrapServi
                     event.code,
                     ctx.readTerminalTail(terminal) || ctx.devOutputTail,
                     ctx.activePreviewClaim?.port ?? plan.expectedPort,
+                    event.signal,
                 );
                 void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
             }

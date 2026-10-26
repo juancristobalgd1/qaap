@@ -325,6 +325,7 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
                         event.code,
                         ctx.readTerminalTail(terminal) || ctx.devOutputTail,
                         ctx.activePreviewClaim?.port ?? spawnPlan.targetPort,
+                        event.signal,
                     );
                     void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
                 }
