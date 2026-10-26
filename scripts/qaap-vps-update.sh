@@ -517,8 +517,11 @@ else
 fi
 # Safety net (a no-op when the pre-switch seed succeeded): seed through the new container.
 preload_tenant_image
-# Opt-in tenant egress proxy: a no-op unless QAAP_TENANT_EGRESS_PROXY_IMAGE is set in the deploy environment.
-build_tenant_egress_proxy_image "" "$REPO_DIR/deploy/qaap-tenant-egress"
+# Opt-in tenant egress proxy: a no-op unless QAAP_TENANT_EGRESS_PROXY_IMAGE is set. Not fatal: the
+# switch already happened, and a previous deploy's proxy image (same tag) keeps tenants working.
+if ! build_tenant_egress_proxy_image "" "$REPO_DIR/deploy/qaap-tenant-egress"; then
+    echo '[qaap-vps-update] WARNING: tenant egress proxy image build failed; tenants that need a new proxy will fail to start until it is built' >&2
+fi
 refresh_caddy
 docker compose ps
 

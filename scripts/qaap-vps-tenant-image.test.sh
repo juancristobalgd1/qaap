@@ -53,6 +53,7 @@ case "$1" in
         [[ "$2" == theia ]] || exit 2
         if [[ "$4" == *Config.Env* ]]; then
             printf 'QAAP_DOCKER_ROOTLESS=1\nDOCKER_HOST=unix:///run/user/1000/docker.sock\nQAAP_TENANT_DOCKER_IMAGE=%s\n' "$FAKE_TENANT_IMAGE"
+            [[ -n "${FAKE_EGRESS_IMAGE:-}" ]] && printf 'QAAP_TENANT_EGRESS_PROXY_IMAGE=%s\n' "$FAKE_EGRESS_IMAGE"
         elif [[ "$4" == *Mounts* && "$4" == */run/user/1000/docker.sock* ]]; then
             printf '%s\n' "$FAKE_SOCKET"
         fi
@@ -311,7 +312,14 @@ if QAAP_TENANT_EGRESS_PROXY_IMAGE=qaap-tenant-egress:current build_proxy \
 else
     fail 'the egress proxy image was not built into the rootless daemon'
 fi
-grep -Fq 'build_tenant_egress_proxy_image "" "$REPO_DIR/deploy/qaap-tenant-egress"' "$UPDATE" \
+setup egress-container-env
+if FAKE_EGRESS_IMAGE=qaap-tenant-egress:current build_proxy \
+    && grep -Fxq "rootless build -t qaap-tenant-egress:current $ROOT/deploy/qaap-tenant-egress" "$FAKE_STATE/calls"; then
+    pass 'the egress proxy tag is read from the Theia container env when the deploy shell lacks it'
+else
+    fail 'the egress proxy tag was not read from the Theia container env'
+fi
+grep -Fq 'if ! build_tenant_egress_proxy_image "" "$REPO_DIR/deploy/qaap-tenant-egress"; then' "$UPDATE" \
     && pass 'qaap-vps-update.sh builds the egress proxy after the tenant preload' || fail 'qaap-vps-update.sh no longer builds the egress proxy'
 
 # 10) Deploy wiring: the update script sources the seed and hands it the pinned digest.

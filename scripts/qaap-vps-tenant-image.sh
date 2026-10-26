@@ -201,18 +201,23 @@ preload_tenant_image() {
 }
 
 # Builds the tenant egress Squid proxy (deploy/qaap-tenant-egress) into the rootless tenant daemon,
-# tagged QAAP_TENANT_EGRESS_PROXY_IMAGE, which the orchestrator then starts on demand. Does nothing
-# when that variable is empty or blank: tenant egress stays direct. Args (all optional): the Theia
-# container to build through (default: the running theia service container) and the build context
-# (default: none, so the caller must pass the repository's deploy/qaap-tenant-egress).
+# tagged QAAP_TENANT_EGRESS_PROXY_IMAGE, which the orchestrator then starts on demand. The tag comes
+# from this shell or, like QAAP_TENANT_DOCKER_IMAGE above, from the running Theia container (the
+# deploy shell does not read the VPS .env). Does nothing when it is empty or blank: tenant egress
+# stays direct. Args: the Theia container to build through (default: the running theia service
+# container) and the build context (the repository's deploy/qaap-tenant-egress).
 build_tenant_egress_proxy_image() {
     local image="${QAAP_TENANT_EGRESS_PROXY_IMAGE:-}" container_id="${1:-}" context="${2:-}" socket
+    if [[ -z "$container_id" ]]; then
+        container_id="$(docker compose ps -q --status running theia | tr -d '\r' | sed -n '1p')"
+    fi
+    if [[ -z "${image//[[:space:]]/}" && -n "$container_id" ]]; then
+        image="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | sed -n 's/^QAAP_TENANT_EGRESS_PROXY_IMAGE=//p')"
+    fi
     image="${image//[[:space:]]/}"
     if [[ -z "$image" ]]; then
         return 0
-    fi
-    if [[ -z "$container_id" ]]; then
-        container_id="$(docker compose ps -q --status running theia | tr -d '\r' | sed -n '1p')"
     fi
     if [[ -z "$container_id" ]]; then
         echo '[qaap-vps-update] no Theia container available to build the tenant egress proxy' >&2
