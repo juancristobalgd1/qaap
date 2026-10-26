@@ -185,7 +185,8 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
             const stalled = isStalledPreviewAgentFallback({
                 launchGeneration,
                 currentGeneration: ctx.previewLaunchGeneration,
-                stillPending: !!ctx.host.transcriptPreviewRequestPending,
+                // Running alone keeps the chip up too: the sync path may clear Pending first.
+                stillPending: !!ctx.host.transcriptPreviewRequestPending || !!ctx.host.transcriptPreviewRequestRunning,
                 hasPreviewUrl: !!ctx.host.projects.find(candidate => candidate.id === project.id)?.previewUrl,
                 suppressedByUser: !!ctx.host.transcriptPreviewSuppressedByUser,
             });
