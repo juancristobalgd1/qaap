@@ -59,6 +59,7 @@ import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentStorageHealthCheck } from './qaap-agent-storage-health-check';
 import { QaapHealthCheckContribution } from '@theia/qaap-shared-core/lib/node/qaap-health-check-contribution';
+import { QaapDevPreviewForwardedPorts } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forwarded-ports';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
 import { QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTaskSandboxBroker } from './qaap-task-sandbox-broker';
@@ -268,6 +269,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapDevcontainerResolver).toSelf().inSingletonScope();
     bind(QaapTaskSandboxService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskSandboxService);
+    // The dev-preview endpoint tells the owner's own sandbox forwarder from a foreign port holder.
+    bind(QaapDevPreviewForwardedPorts).toService(QaapTaskSandboxService);
     // Production path (doc/qaap-task-sandbox.md): the broker runs on the control plane, its client in tenant backends.
     bind(QaapTaskSandboxBroker).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskSandboxBroker);

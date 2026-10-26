@@ -9,7 +9,7 @@ import type { OutgoingHttpHeaders } from 'http';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import * as net from 'net';
 import * as path from 'path';
-import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
+import { QaapDevPreviewEndpoint, canonicalizeQaapPreviewRoot } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
@@ -554,8 +554,8 @@ describe('QaapDevPreviewEndpoint', () => {
             readonly boundPorts = new Set<number>();
             realBindProbe = false;
 
-            override isPortBindable(port: number, ownerLogin?: string): Promise<boolean> {
-                return this.realBindProbe ? super.isPortBindable(port, ownerLogin) : Promise.resolve(!this.boundPorts.has(port));
+            override isPortBindable(port: number, ownerLogin?: string, root?: string): Promise<boolean> {
+                return this.realBindProbe ? super.isPortBindable(port, ownerLogin, root) : Promise.resolve(!this.boundPorts.has(port));
             }
 
             setClaimFakes(login: string, registry: unknown, authKind: 'authenticated' | 'skip' = 'authenticated'): void {
@@ -758,6 +758,92 @@ describe('QaapDevPreviewEndpoint', () => {
             } finally {
                 await new Promise<void>(resolve => blocker.close(() => resolve()));
             }
+        });
+
+        describe('a port held by this backend\'s own sandbox forwarder', () => {
+            const sandboxRoot = '/workspace/repos/users/alice/site';
+            // The allocator passes the claim's canonical fs path (`C:\workspace\...` on Windows).
+            const sandboxRoots = [sandboxRoot, canonicalizeQaapPreviewRoot(FileUri.fsPath(`file://${sandboxRoot}`))];
+            const isInsideSandbox = (root: string | undefined): boolean => root !== undefined
+                && sandboxRoots.some(base => root === base || root.startsWith(`${base}/`) || root.startsWith(`${base}${path.sep}`));
+            let forwarder: net.Server;
+            let forwardedPort: number;
+            let forwardOwner: string | undefined;
+            const askedRoots: Array<string | undefined> = [];
+            const released: Array<[number, string]> = [];
+
+            beforeEach(async () => {
+                forwarder = net.createServer();
+                await new Promise<void>(resolve => forwarder.listen({ port: 0, host: '127.0.0.1' }, resolve));
+                forwardedPort = (forwarder.address() as net.AddressInfo).port;
+                forwardOwner = 'Alice';
+                askedRoots.length = 0;
+                released.length = 0;
+            });
+            afterEach(async () => {
+                await new Promise<void>(resolve => forwarder.close(() => resolve()));
+            });
+
+            const withForwarder = (ep: ClaimTestEndpoint): ClaimTestEndpoint => {
+                (ep as unknown as { forwardedPorts: unknown }).forwardedPorts = {
+                    ownerOf: (port: number, root?: string) => {
+                        askedRoots.push(root);
+                        return port === forwardedPort && isInsideSandbox(root) ? forwardOwner : undefined;
+                    },
+                    releasePreviewPort: (port: number, owner: string) => { released.push([port, owner]); },
+                };
+                ep.realBindProbe = true;
+                return ep;
+            };
+
+            it('counts as free only for the owner and worktree the forwarder serves', async () => {
+                const ep = withForwarder(new ClaimTestEndpoint());
+                expect(await ep.isPortBindable(forwardedPort, 'alice', sandboxRoot)).to.equal(true);
+                expect(await ep.isPortBindable(forwardedPort, ' ALICE ', `${sandboxRoot}/web`)).to.equal(true);
+                expect(await ep.isPortBindable(forwardedPort, 'bob', sandboxRoot)).to.equal(false);
+                expect(await ep.isPortBindable(forwardedPort, 'alice', '/workspace/repos/users/alice/other')).to.equal(false);
+                expect(await ep.isPortBindable(forwardedPort, 'alice')).to.equal(false);
+                expect(await ep.isPortBindable(forwardedPort, undefined, sandboxRoot)).to.equal(false);
+                forwardOwner = undefined;
+                expect(await ep.isPortBindable(forwardedPort, 'alice', sandboxRoot)).to.equal(false);
+            });
+
+            it('releases the forwarder of a terminated preview of a known owner', () => {
+                const ep = withForwarder(new ClaimTestEndpoint());
+                ep.terminatePreviewProcess({ port: forwardedPort, ownerLogin: 'alice' });
+                ep.terminatePreviewProcess({ port: forwardedPort });
+                ep.terminatePreviewProcess({ ownerLogin: 'alice' });
+                expect(released).to.deep.equal([[forwardedPort, 'alice']]);
+            });
+
+            it('stays occupied when nothing forwards ports here', async () => {
+                const ep = new ClaimTestEndpoint();
+                ep.realBindProbe = true;
+                expect(await ep.isPortBindable(forwardedPort, 'alice', sandboxRoot)).to.equal(false);
+            });
+
+            it('lets the owner\'s process claim reserve the forwarded port and sends everyone else past it', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const root = `file://${sandboxRoot}`;
+                const identity = { workspaceId: root, projectId: root, processId: 'process-forwarded' };
+
+                const aliceRegistry = new Registry();
+                const alice = withForwarder(new ClaimTestEndpoint());
+                alice.setClaimFakes('alice', aliceRegistry);
+                const aliceRes = makeRes();
+                await alice.exposeHandleClaim(claimReq(forwardedPort, identity, root), aliceRes);
+                expect(aliceRes.record.code).to.equal(200);
+                expect((aliceRes.record.body as { port: number }).port).to.equal(forwardedPort);
+                expect(askedRoots.some(isInsideSandbox)).to.equal(true);
+
+                const bobRoot = 'file:///workspace/repos/users/bob/site';
+                const bob = withForwarder(new ClaimTestEndpoint());
+                bob.setClaimFakes('bob', new Registry());
+                const bobRes = makeRes();
+                await bob.exposeHandleClaim(claimReq(forwardedPort, { workspaceId: bobRoot, projectId: bobRoot, processId: 'process-bob' }, bobRoot), bobRes);
+                expect(bobRes.record.code).to.equal(200);
+                expect((bobRes.record.body as { port: number }).port).to.not.equal(forwardedPort);
+            });
         });
 
         it('allocates distinct ports atomically for two projects of the same user', async () => {
@@ -1568,6 +1654,61 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.get(previewId)).to.equal(undefined);
         });
 
+        describe('an adopted listener', () => {
+            const adoptListener = async (osProcessId?: number): Promise<{ ep: ClaimTestEndpoint; registry: QaapDevPreviewPortRegistry; previewId: string }> => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new ClaimTestEndpoint();
+                ep.setClaimFakes('_dev', registry, 'skip');
+                ep.listeningPorts.add(5173);
+                await ep.exposeHandleClaim(claimReq(5173), makeRes());
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, {
+                    workspaceId: 'file:///workspace/dev/site',
+                    projectId: 'file:///workspace/dev/site',
+                    processId: 'process-external',
+                    ...(osProcessId !== undefined ? { osProcessId } : {}),
+                }), res);
+                expect((res.record.body as { port: number }).port).to.equal(5173);
+                return { ep, registry, previewId: (res.record.body as { previewId: string }).previewId };
+            };
+
+            it('never inherits the pid of the claim that adopted it, nor accepts one later', async () => {
+                const { ep, registry, previewId } = await adoptListener(process.pid);
+                const record = registry.getForOwner(previewId, '_dev')!;
+                expect(record.adopted).to.equal(true);
+                expect(record.osProcessId).to.equal(undefined);
+
+                expect(registry.attachProcess(previewId, '_dev', process.pid)).to.equal(false);
+                const reclaim = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, {
+                    workspaceId: 'file:///workspace/dev/site',
+                    projectId: 'file:///workspace/dev/site',
+                    processId: 'process-external',
+                    osProcessId: process.pid,
+                }), reclaim);
+                expect((reclaim.record.body as { previewId: string }).previewId).to.equal(previewId);
+                expect(registry.getForOwner(previewId, '_dev')?.osProcessId).to.equal(undefined);
+            });
+
+            it('is kept by the reaper while it answers, even with a dead foreign pid on record', async () => {
+                const { spawnSync } = await import('child_process');
+                const { ep, registry, previewId } = await adoptListener();
+                // A record persisted before adoption stopped carrying pids: the pid is not the listener's.
+                const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const deadPid = spawnSync(process.execPath, ['-e', '0']).pid;
+                previews.set(previewId, { ...previews.get(previewId)!, osProcessId: deadPid });
+
+                await ep.exposeReapStoppedPreviews();
+                expect(registry.get(previewId)?.previewId).to.equal(previewId);
+
+                ep.listeningPorts.clear();
+                ep.listening = false;
+                await ep.exposeReapStoppedPreviews();
+                expect(registry.get(previewId)).to.equal(undefined);
+            });
+        });
+
         it('reclaims the same processId when its registered port is dead instead of returning it as ready', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
@@ -1592,6 +1733,93 @@ describe('QaapDevPreviewEndpoint', () => {
             expect((reclaimRes.record.body as { port: number }).port).to.equal(5173);
             expect((reclaimRes.record.body as { previewId: string }).previewId).to.equal(first.previewId);
             expect(registry.records()).to.have.length(1);
+        });
+
+        describe('pid re-claim of a reservation inside its start grace', () => {
+            /** Never signals anything: the claim paths under test call terminatePreviewProcess. */
+            class PidReclaimEndpoint extends ClaimTestEndpoint {
+                readonly terminated: number[] = [];
+                override terminatePreviewProcess(record: { readonly port?: number }): void {
+                    this.terminated.push(record.port ?? -1);
+                }
+            }
+            const root = 'file:///workspace/alice/sandboxed-site';
+            const identity = { workspaceId: root, projectId: root, processId: 'process-terminal' };
+            const PORT = 47311;
+
+            const reserve = async (): Promise<{ ep: PidReclaimEndpoint; registry: QaapDevPreviewPortRegistry; first: { previewId: string; previewUrl: string; port: number } }> => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new PidReclaimEndpoint();
+                ep.setClaimFakes('alice', registry);
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, identity, root), res);
+                expect(res.record.code).to.equal(200);
+                // The sandbox forwarder now holds the port on the backend: it is not bindable.
+                ep.boundPorts.add(PORT);
+                return { ep, registry, first: res.record.body as { previewId: string; previewUrl: string; port: number } };
+            };
+
+            it('keeps port, label and token when the terminal reports its pid before the server answers', async () => {
+                const { ep, registry, first } = await reserve();
+                const token = registry.getForOwner(first.previewId, 'alice')!.accessToken;
+
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), res);
+
+                expect(res.record.code).to.equal(200);
+                expect(res.record.body).to.deep.equal(first);
+                const record = registry.getForOwner(first.previewId, 'alice')!;
+                expect(record.port).to.equal(PORT);
+                expect(record.accessToken).to.equal(token);
+                expect(record.osProcessId).to.equal(process.pid);
+                expect(registry.records()).to.have.length(1);
+                expect(ep.terminated).to.deep.equal([]);
+            });
+
+            it('still terminates and reallocates outside the start grace', async () => {
+                const { ep, registry, first } = await reserve();
+                const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const stored = previews.get(first.previewId)!;
+                previews.set(first.previewId, { ...stored, claimedAt: Date.now() - 6 * 60_000 });
+
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), res);
+
+                expect(res.record.code).to.equal(200);
+                expect(ep.terminated).to.deep.equal([PORT]);
+                expect((res.record.body as { port: number }).port).to.equal(PORT + 1);
+            });
+
+            it('still hands the identity over when the recorded root differs', async () => {
+                const { ep, registry, first } = await reserve();
+                const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const stored = previews.get(first.previewId)!;
+                previews.set(first.previewId, { ...stored, root: '/legacy/non-canonical/sandboxed-site' });
+
+                const res = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), res);
+
+                expect(res.record.code).to.equal(200);
+                expect(ep.terminated).to.deep.equal([PORT]);
+                expect(registry.getForOwner(first.previewId, 'alice')?.root).to.equal(stored.root);
+            });
+
+            it('does not keep the reservation for another port or a different recorded pid', async () => {
+                const { ep, first } = await reserve();
+                const otherPort = makeRes();
+                await ep.exposeHandleClaim(claimReq(PORT + 7, { ...identity, osProcessId: process.pid }, root), otherPort);
+                expect(ep.terminated).to.deep.equal([PORT]);
+
+                const second = await reserve();
+                const previews = (second.registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+                const stored = previews.get(second.first.previewId)!;
+                previews.set(second.first.previewId, { ...stored, osProcessId: process.ppid });
+                const otherPid = makeRes();
+                await second.ep.exposeHandleClaim(claimReq(PORT, { ...identity, osProcessId: process.pid }, root), otherPid);
+                expect(second.ep.terminated).to.deep.equal([PORT]);
+                expect(first.port).to.equal(PORT);
+            });
         });
     });
 
