@@ -60,12 +60,31 @@ export interface DevServerShellDenyOptions {
      * agent is told where the app really runs instead of being asked to invent a port.
      */
     readonly reservedPort?: number;
+    /** Real state of the reserved port, measured by the backend just before the denial (see `probeReservedDevPreviewStatus`). */
+    readonly previewStatus?: DevServerPreviewStatus;
+}
+
+/** Health of the reserved preview port as measured by the backend. */
+export interface DevServerPreviewStatus {
+    /** `true` when any HTTP response came back from the reserved port. */
+    readonly answering: boolean;
+    /** Status code of that HTTP response, when `answering`. */
+    readonly httpStatus?: number;
 }
 
 /** Deny guidance sent back to the agent so it self-corrects instead of retrying. */
 export function buildDevServerShellDenyMessage(options: DevServerShellDenyOptions = {}): string {
     const reservedPort = options.reservedPort;
+    const previewStatus = options.previewStatus;
     const head = 'Blocked by Qaap: do not start dev servers from shell tools — they time out after ~30s and kill the live preview. ';
+    if (reservedPort !== undefined && previewStatus) {
+        const statusLine = previewStatus.answering
+            ? `Qaap's preview of this project is already running on port ${reservedPort} and answers HTTP ${previewStatus.httpStatus ?? 200}. `
+                + `Do not start another server and do not probe other ports; tell the user the app is live in the Preview tab (port ${reservedPort}).`
+            : `Qaap's preview of this project is reserved on port ${reservedPort} but is not answering yet; Qaap is starting it. `
+                + 'Do not start another server, and tell the user it is starting in the Preview tab.';
+        return head + statusLine + ' Run only one-shot commands (install, build, typecheck, test).';
+    }
     const serverLine = reservedPort !== undefined
         ? `Qaap's preview owns this project's dev server, reserved on port ${reservedPort} (see the Preview tab). Do not start another server, and do not report any other port: `
             + `when you describe the app, say that it is served by Qaap's Preview on port ${reservedPort}. `

@@ -25,6 +25,7 @@ import {
 } from '../common/qaap-qaiq-stdio-approvals';
 import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
+import { probeReservedDevPreviewStatus } from './qaap-dev-preview-status-probe';
 import { buildLivePreviewPortHint } from '../common/qaap-agent-live-preview-port';
 import {
     buildQaiqAutoDeniedToolMessage,
@@ -629,9 +630,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         ...(autoDecision.reason ? { autoApprovalReason: autoDecision.reason } : {}),
                     });
                     if (autoAction !== 'queue') {
-                        const devServerDenial = findQaiqDevServerGuardDenial(event.request, {
-                            reservedPort: ctx.reservedDevPreviewPort?.(task),
-                        });
+                        const reservedPort = ctx.reservedDevPreviewPort?.(task);
+                        const devServerDenial = findQaiqDevServerGuardDenial(event.request, { reservedPort });
                         const destructiveDenial = findQaiqDestructiveCommandGuardDenial(event.request, task.cwd);
                         const denyMessage = devServerDenial
                             ?? destructiveDenial
@@ -645,15 +645,25 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         } else if (destructiveDenial) {
                             logStream.write('\n[qaap] auto-denied destructive shell command; the agent must propose it for explicit user approval.\n');
                         }
-                        try {
-                            child.stdin?.write(buildQaiqControlResponseLine(
-                                event.request,
-                                autoAction === 'allow' ? 'approve' : 'reject',
-                                denyMessage ? { denyMessage } : {},
-                            ));
-                        } catch {
-                            // stdin already closed — the turn is over anyway.
+                        const writeControlResponse = (message: string | undefined): void => {
+                            try {
+                                child.stdin?.write(buildQaiqControlResponseLine(
+                                    event.request,
+                                    autoAction === 'allow' ? 'approve' : 'reject',
+                                    message ? { denyMessage: message } : {},
+                                ));
+                            } catch {
+                                // stdin already closed — the turn is over anyway.
+                            }
+                        };
+                        if (devServerDenial && reservedPort !== undefined) {
+                            // The denial states the live preview's measured health, so it is answered once the probe settles.
+                            void probeReservedDevPreviewStatus(reservedPort).then(previewStatus => {
+                                writeControlResponse(findQaiqDevServerGuardDenial(event.request, { reservedPort, previewStatus }) ?? devServerDenial);
+                            });
+                            continue;
                         }
+                        writeControlResponse(denyMessage);
                         continue;
                     }
                     const pending = ctx.pendingQaiqControlRequests.get(task.id) ?? [];

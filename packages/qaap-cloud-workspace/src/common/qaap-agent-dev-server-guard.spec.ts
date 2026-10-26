@@ -161,3 +161,25 @@ describe('findQaiqDevServerGuardDenial with a reserved preview port', () => {
         expect(findQaiqDevServerGuardDenial(request)).to.equal(buildDevServerShellDenyMessage());
     });
 });
+
+describe('buildDevServerShellDenyMessage with the measured preview status', () => {
+    it('reports that the live preview answers HTTP 200 and forbids another server or other ports', () => {
+        const message = buildDevServerShellDenyMessage({ reservedPort: 5175, previewStatus: { answering: true, httpStatus: 200 } });
+        expect(message).to.include("Qaap's preview of this project is already running on port 5175 and answers HTTP 200.");
+        expect(message).to.include('Do not start another server and do not probe other ports');
+        expect(message).to.include('the app is live in the Preview tab (port 5175)');
+        expect(message).to.not.match(/5173|5176/);
+    });
+
+    it('reports a reserved port that is not answering yet as starting in the Preview tab', () => {
+        const message = buildDevServerShellDenyMessage({ reservedPort: 5175, previewStatus: { answering: false } });
+        expect(message).to.include('is reserved on port 5175 but is not answering yet; Qaap is starting it');
+        expect(message).to.include('Do not start another server');
+        expect(message).to.include('tell the user it is starting in the Preview tab');
+    });
+
+    it('keeps the generic message when no port is known, even with a status', () => {
+        const message = buildDevServerShellDenyMessage({ previewStatus: { answering: true, httpStatus: 200 } });
+        expect(message).to.equal(buildDevServerShellDenyMessage());
+    });
+});
