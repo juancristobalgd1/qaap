@@ -32,6 +32,7 @@ import {
     isQaapAgentTaskFinished,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
@@ -217,6 +218,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     @inject(QaapTenantActivityTracker) @optional()
     protected readonly tenantActivity: QaapTenantActivityTracker | undefined;
+
+    /** Live preview claims: the authoritative port Qaap reserved for a project (see reservedDevPreviewPort). */
+    @inject(QaapDevPreviewPortRegistry) @optional()
+    protected readonly previewPortRegistry: QaapDevPreviewPortRegistry | undefined;
 
     /** Each user's last turn per agent, shown in the harness settings (see listHarnessStatuses). */
     @inject(QaapAgentLastTurnStore) @optional()
@@ -1145,6 +1150,18 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public previewProviderEnv(ownerLogin?: string): NodeJS.ProcessEnv {
         return previewProviderEnvExtracted(this, ownerLogin);
+    }
+
+    /**
+     * The port of the single live preview claim the task owner holds under the task's cwd. Several
+     * claims under one root are ambiguous (sections share it), so no port is returned then.
+     */
+    public reservedDevPreviewPort(task: QaapAgentTask): number | undefined {
+        if (!task.ownerLogin || !this.previewPortRegistry) {
+            return undefined;
+        }
+        const claims = this.previewPortRegistry.listForOwnerUnderRoot(task.ownerLogin, task.cwd);
+        return claims.length === 1 ? claims[0].port : undefined;
     }
 
     /** Env-only fallback when no model alias or provider list is configured yet. */

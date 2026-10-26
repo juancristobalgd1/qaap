@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { buildDevServerShellDenyMessage, findQaiqDevServerGuardDenial, isLongLivedDevServerShellCommand } from './qaap-agent-dev-server-guard';
+import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 describe('qaap-agent-dev-server-guard', () => {
 
@@ -104,7 +105,7 @@ describe('qaap-agent-dev-server-guard', () => {
             toolInput: { command: 'nohup pnpm dev &' },
         });
         expect(denial).to.be.a('string');
-        expect(denial).to.contain('expected local port');
+        expect(denial).to.contain('the Preview tab reports the real one');
     });
 
     it('lets non-shell tools and one-shot shell commands through', () => {
@@ -127,5 +128,36 @@ describe('buildDevServerShellDenyMessage', () => {
         expect(message).to.not.include('will start the server and open the preview automatically');
         expect(message).to.include('.qaap/preview.json');
         expect(message).to.not.include('localhost');
+    });
+
+    it('does not prime the agent with an example port to report', () => {
+        expect(buildDevServerShellDenyMessage()).to.not.match(/5173/);
+    });
+
+    it('tells the agent the reserved port Qaap owns instead of asking it to guess one', () => {
+        const message = buildDevServerShellDenyMessage({ reservedPort: 5174 });
+        expect(message).to.include('port 5174');
+        expect(message).to.include('do not report any other port');
+        expect(message).to.not.match(/5173/);
+        expect(message).to.not.include('state the expected');
+    });
+});
+
+describe('findQaiqDevServerGuardDenial with a reserved preview port', () => {
+    const request: QaapQaiqPendingControlRequest = {
+        requestId: 'r1',
+        toolUseId: 't1',
+        toolName: 'Bash',
+        toolInput: { command: 'npm run dev -- --host 0.0.0.0 --port 5173' },
+    };
+
+    it('passes the reserved port into the deny message sent back to the agent', () => {
+        const denial = findQaiqDevServerGuardDenial(request, { reservedPort: 5174 });
+        expect(denial).to.include('port 5174');
+        expect(denial).to.not.match(/port 5173/);
+    });
+
+    it('keeps the generic deny message when no port is known', () => {
+        expect(findQaiqDevServerGuardDenial(request)).to.equal(buildDevServerShellDenyMessage());
     });
 });

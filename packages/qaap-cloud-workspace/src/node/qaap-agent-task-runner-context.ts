@@ -228,6 +228,8 @@ export interface QaapAgentTaskRunnerContext {
     normalizeAgentBinding(binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding;
     /** Provider env an agent spawned for `ownerLogin` would see (operator keys withheld where required). */
     previewProviderEnv(ownerLogin?: string): NodeJS.ProcessEnv;
+    /** Port of the live preview claim Qaap holds under the task's cwd, when exactly one is known. */
+    reservedDevPreviewPort?(task: QaapAgentTask): number | undefined;
     resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string;
     assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void;
     applyTemplate(template: string, prompt: string, vars?: Record<string, string>): string;
